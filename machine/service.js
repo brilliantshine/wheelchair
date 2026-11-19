@@ -143,6 +143,7 @@ const CODEX_MODES = ['sandboxed', 'unrestricted'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const PREVIEW_TIMEOUT_MS = 60_000;
 const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md'], worker: ['cards.md'], mapper: ['cards.md'], reviewer: [], verifier: [] };
+const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
 function composeRolePrompt(input) {
   const first = `Role: ${input.role}`;
   if (input.role_prompt) return `${first}\n${input.role_prompt}`;
@@ -150,6 +151,7 @@ function composeRolePrompt(input) {
   const header = cards.length ? 'Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context.' : 'Your role rules are below, already loaded: do not read these files again unless this text is no longer in your context.';
   const read = file => fs.readFileSync(path.join(ROOT, 'protocol', 'app', file), 'utf8').trimEnd();
   const parts = [`${first}\n${header} \`<root>\` is \`${ROOT}\`.`, read(`${input.role}.md`)];
+  if (ROLE_REALISM.has(input.role)) parts.push(`--- realism.md ---\n${read('realism.md')}`);
   for (const file of cards) parts.push(`--- ${file} ---\n${read(file)}`);
   const layers = typeof input.role_layers === 'string' ? input.role_layers.trim() : '';
   if (layers) parts.push(layers);

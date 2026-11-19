@@ -79,7 +79,7 @@ test('settings prompt preview composes role and card rule placeholders by role',
   await withContext(async (context) => {
     const lead = (await api(context, '/settings/prompt?role=lead')).body.text;
     assert.match(lead, /^Role: lead\nYour role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context\. `<root>` is `[^`]+`\./);
-    const leadFiles = ['[full text of protocol/app/lead.md]', '[full text of protocol/app/cards.md]', '[full text of protocol/app/cards-lead.md]'];
+    const leadFiles = ['[full text of protocol/app/lead.md]', '[full text of protocol/app/realism.md]', '[full text of protocol/app/cards.md]', '[full text of protocol/app/cards-lead.md]'];
     let cursor = 0;
     for (const file of leadFiles) {
       const index = lead.indexOf(file, cursor);
@@ -91,10 +91,12 @@ test('settings prompt preview composes role and card rule placeholders by role',
     const reviewer = (await api(context, '/settings/prompt?role=reviewer')).body.text;
     assert.match(reviewer, /^Role: reviewer\nYour role rules are below, already loaded: do not read these files again unless this text is no longer in your context\. `<root>` is `[^`]+`\./);
     assert.match(reviewer, /\[full text of protocol\/app\/reviewer\.md\]/);
+    assert.match(reviewer, /\[full text of protocol\/app\/reviewer\.md\]\n\[full text of protocol\/app\/realism\.md\]/);
     assert.doesNotMatch(reviewer, /\[full text of protocol\/app\/cards(?:-lead)?\.md\]/);
 
     const worker = (await api(context, '/settings/prompt?role=worker')).body.text;
     assert.match(worker, /\[full text of protocol\/app\/worker\.md\]\n\[full text of protocol\/app\/cards\.md\]/);
+    assert.doesNotMatch(worker, /realism\.md/);
     assert.doesNotMatch(worker, /cards-lead\.md/);
     for (const output of [lead, reviewer, worker]) assert.doesNotMatch(output, /before responding/);
   });
