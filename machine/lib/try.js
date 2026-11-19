@@ -5,6 +5,25 @@ const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 
+function wayPaths(stderr, code) {
+  const lines = Buffer.isBuffer(stderr) ? stderr.toString() : String(stderr || '');
+  const errors = lines.split('\n').filter(line => /^error:/.test(line));
+  const paths = [];
+  const allLines = lines.split('\n');
+  for (let i = 0; i < allLines.length; i++) {
+    if (!/^error:.*:$/.test(allLines[i])) continue;
+    for (let j = i + 1; j < allLines.length && /^\s+\S/.test(allLines[j]); j++) paths.push(allLines[j].trim());
+  }
+  if (paths.length) {
+    const shown = paths.slice(0, 50);
+    if (paths.length > 50) shown.push(`and ${paths.length - 50} more`);
+    return `These files in your copy are in the way: ${shown.join(', ')}`;
+  }
+  if (code === 'killed') return 'Git took too long.';
+  const first = errors[0]?.replace(/^error:\s*/, '');
+  return first ? `Git did not switch your copy: ${first}` : 'Git did not switch your copy.';
+}
+
 class TryService {
   constructor({ stateDir, root, projects, switchTimeout = 900000, scanTimeout = 300000, metadataTimeout = 4000, killGrace = 10000, gitExecutable = 'git' }) { this.stateDir = stateDir; this.root = root; this.projects = projects; this.locks = new Map(); this.switchTimeout = switchTimeout; this.scanTimeout = scanTimeout; this.metadataTimeout = metadataTimeout; this.killGrace = killGrace; this.gitExecutable = gitExecutable; }
   lockState(folder) { if (!this.locks.has(folder)) this.locks.set(folder, { held: false, generation: 0 }); return this.locks.get(folder); }
@@ -246,9 +265,7 @@ class TryService {
         } else if (outcome === 'nothing-moved') {
           record.pending = null;
           if (first) { await this.git(folder, ['update-ref', '-d', returnRef]); await fsp.unlink(this.protectedPath(folder)).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
-          const lines = result.stderr.toString().split('\n'); const marker = lines.findIndex(line => /would be overwritten by (?:checkout|switch)/.test(line));
-          const paths = marker < 0 ? [] : lines.slice(marker + 1).filter(line => /^\s+\S/.test(line)).map(line => line.trim());
-          last.reason = paths.length ? `These files in your copy are in the way: ${paths.join(', ')}` : result.code === 'killed' ? 'Git took too long.' : (gitMessage || 'Git did not switch your copy.');
+          last.reason = wayPaths(result.stderr, result.code);
         } else {
           last.reason = 'A switch was interrupted. Check your copy at your computer, then press Done.';
           if (filtered) Object.assign(record.pending, this.listFields(filtered));
@@ -339,9 +356,7 @@ class TryService {
           await fsp.unlink(this.protectedPath(folder)).catch(error => { if (error.code !== 'ENOENT') throw error; });
         } else if (outcome === 'nothing-moved') {
           record.pending = null;
-          const lines = result.stderr.toString().split('\n'); const marker = lines.findIndex(line => /would be overwritten by (?:checkout|switch)/.test(line));
-          const paths = marker < 0 ? [] : lines.slice(marker + 1).filter(line => /^\s+\S/.test(line)).map(line => line.trim());
-          last.reason = paths.length ? `These files in your copy are in the way: ${paths.join(', ')}` : result.code === 'killed' ? 'Git took too long.' : (message || 'Git did not switch your copy.');
+          last.reason = wayPaths(result.stderr, result.code);
         } else {
           last.reason = 'A switch was interrupted. Check your copy at your computer, then press Done.';
           if (filtered) Object.assign(record.pending, this.listFields(filtered));
@@ -380,4 +395,4 @@ class TryService {
       index_lock: busy ? null : indexLock, last: record.last || null, kept };
   }
 }
-module.exports = { TryService };
+module.exports = { TryService, wayPaths };

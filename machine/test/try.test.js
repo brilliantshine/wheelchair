@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { TryService } = require('../lib/try');
+const { TryService, wayPaths } = require('../lib/try');
 const service = new TryService({ stateDir: '/tmp/state', root: '/tmp/root', projects: async () => ({ checked: { ok: true } }) });
 test('validates all actions and their fields', async () => {
   const base = { thread_id: '0123456789ab', project: '/tmp' };
@@ -53,6 +53,9 @@ test('outcome table honors only git removal warning lines', () => {
   assert.equal(service.judge(from, to, to, [], result(0, "warning: unable to unlink 'file'")), 'interrupted');
   assert.equal(service.judge(from, to, to, [], result(0, "subject warning: unable to unlink 'file'")), 'success');
   assert.equal(service.judge(from, to, from, [], result('killed')), 'nothing-moved');
+});
+test('wayPaths uses a plain fallback for Aborting-only stderr', () => {
+  assert.equal(wayPaths('Aborting\n', 1), 'Git did not switch your copy.');
 });
 test('protected filter excludes exact untracked paths only', async () => {
   const { makeTemp } = require('../../test-support/run-dir'); const root = await makeTemp('try-protected-');
@@ -395,6 +398,24 @@ test('tracked path colliding with an ignored file on Back is refused with the fi
   await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'collision\n'); await fs.writeFile(path.join(f.repo, 'collision'), 'mine');
   await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done();
   assert.equal(result.last.outcome, 'nothing-moved'); assert.equal(result.last.reason, 'These files in your copy are in the way: collision'); assert.equal(await fs.readFile(path.join(f.repo, 'collision'), 'utf8'), 'mine');
+});
+test('Try keeps an ignored directory intact when the thread tracks its path as a file', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await fs.writeFile(path.join(f.agent, 'cache'), 'thread file'); f.agentGit('add', 'cache'); f.agentGit('commit', '-m', 'track cache file');
+  await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'cache/\n'); await fs.mkdir(path.join(f.repo, 'cache')); await fs.writeFile(path.join(f.repo, 'cache', 'save'), 'keep');
+  const before = f.git('rev-parse', 'HEAD'); await f.instance.handle(f.request); const result = await f.done();
+  assert.equal(result.last.outcome, 'nothing-moved'); assert.match(result.last.reason, /cache/); assert.equal(f.git('rev-parse', 'HEAD'), before);
+  assert.equal(await fs.readFile(path.join(f.repo, 'cache', 'save'), 'utf8'), 'keep');
+});
+test('Back keeps an ignored directory intact when the earlier branch tracks its path as a file', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await fs.writeFile(path.join(f.repo, 'cache'), 'original'); f.git('add', 'cache'); f.git('commit', '-m', 'track cache file');
+  f.agentGit('merge', 'main', '-m', 'merge tracked cache'); await fs.unlink(path.join(f.agent, 'cache')); f.agentGit('add', '-u'); f.agentGit('commit', '-m', 'remove cache');
+  assert.equal((await f.instance.handle(f.request)).accepted, true); const trial = await f.done(); assert.equal(trial.state, 'trying-this');
+  await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'cache/\n'); await fs.mkdir(path.join(f.repo, 'cache')); await fs.writeFile(path.join(f.repo, 'cache', 'save'), 'keep');
+  const before = f.git('rev-parse', 'HEAD'); await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done();
+  assert.equal(result.last.outcome, 'nothing-moved'); assert.match(result.last.reason, /cache/); assert.equal(f.git('rev-parse', 'HEAD'), before);
+  assert.equal(await fs.readFile(path.join(f.repo, 'cache', 'save'), 'utf8'), 'keep');
 });
 test('folder under state worktrees is refused', async () => {
   const path = require('node:path'); const f = await tryFixture(); f.instance.stateDir = f.root;
