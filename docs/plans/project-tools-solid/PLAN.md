@@ -807,3 +807,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — R6 accepted (band: scout): both thread constructors (`emptyThread`, `createLocked`) now set the default; scout found no other constructor in viewer/app.
 - 2026-11-18 — R5: worker reported no choices; I listed 1: the tmux-spelling match is one-way, so a live `wc-a_b` also protects a `wc-a.b` dir (only delays cleanup; accepted).
 - 2026-11-18 — R5 accepted (band: scout): sweep keeps dirs of live sessions under tmux's `_` spelling.
+- 2026-11-18 — Verification attempt 4 on 0e852e1: Claude PASS, GPT FAIL (3 gaps). Duplicate-header gap has survived two fix attempts (R1, R3) — now over-flagging when `mcpServers` is written twice; per the two-attempt rule, no third try: raised to the lead. Other gaps: sweep tmux-spelling collision keeps an ended session's file (1 attempt so far, R5); card Markdown eats underscores in names (new). Work stopped pending Collin.
