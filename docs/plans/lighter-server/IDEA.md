@@ -9,7 +9,7 @@ created: 2026-11-18
 
 ## What we're building
 
-Make wheelchair's app server use much less CPU and memory, so that with many agents running the machine's power goes to
+Make wheelchair's app server use much less CPU, so that with many agents running the machine's power goes to
 the agents, not to wheelchair watching them. Also stop the project's browser test runs
 from flooding the machine with browsers when several agents test at once.
 
