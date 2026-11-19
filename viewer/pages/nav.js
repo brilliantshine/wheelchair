@@ -1,5 +1,18 @@
 (function () {
   'use strict';
+  // Shared by every page (nav.js loads first): calls fn every ms while the tab is visible, does
+  // nothing on a tick while hidden, and on becoming visible calls fn once and restarts the
+  // interval so the next tick is a full ms later. stop() removes it for good.
+  window.wcPoller = function (fn, ms) {
+    let id = setInterval(tick, ms), stopped = false;
+    function tick() { if (!stopped && document.visibilityState === 'visible') fn(); }
+    function onShow() {
+      if (stopped || document.visibilityState !== 'visible') return;
+      clearInterval(id); id = setInterval(tick, ms); fn();
+    }
+    document.addEventListener('visibilitychange', onShow);
+    return { stop() { stopped = true; clearInterval(id); document.removeEventListener('visibilitychange', onShow); } };
+  };
   // The header every app page shares: logo, hub line, the Features / Threads / Agents control
   // with the live agent count and the Needs you count.
   const host = document.getElementById('app-nav');
@@ -150,6 +163,6 @@
   refreshSessions();
   refreshAlert();
   setInterval(refreshAlert, 300000);
-  setInterval(refreshNeeds, 10000);
-  setInterval(refreshSessions, 10000);
+  window.wcPoller(refreshNeeds, 10000);
+  window.wcPoller(refreshSessions, 10000);
 })();
