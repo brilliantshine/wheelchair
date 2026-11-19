@@ -203,3 +203,17 @@ Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 208 fai
 ### Verification attempt 5 (commit 1e162e0): declined gap
 
 - `pushInsteadOf` can send pushes to another repository than the configured URL text that Read validated (`machine/lib/project-tools.js:40-47`). Declined by the lead: covered by the round-8 Accepted Risk on git `insteadOf` rewriting; `pushInsteadOf` is the same mechanism in Collin's own git config. Gaps 2-4 are in `REMEDIATION-5.md`.
+
+### Remediation 5 (after verification attempt 5, commit 1e162e0)
+
+Gap 1 was declined (above). Gaps 2-4 were fixed in R5-1; R5-2 added the exact regression test for gap 2. Details are in `REMEDIATION-5.md`.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| 2 An untouched sibling header was renamed (trimmed) | Structural: rows and fields the user didn't touch are copied from the raw entry (dirty/touched flags); edited row names with leading or trailing spaces are refused | `viewer/pages/project-tools.js:100-101,543,599-624` | deep-equal one-field-edit test; ' X-Legacy ' sibling test (R5-2); trailing-space test |
+| 3 The value prompt stayed hidden after a key removal | The open editor's key rows refresh on every key-list change | `viewer/pages/project-tools.js:489,689` | key-removed-while-editing test |
+| 4 Reload enabled during its own read | One `lockBtn` helper for every request control; selects locked with `locked()` | `viewer/pages/project-tools.js:155-156,212-214,274,294,640,773-804` | Reload-disabled test |
+
+The five earlier stale-reply tests became lock assertions: a user can no longer switch mid-request, so the reply-tag drop is backstop code.
+
+Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 208 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; `npm --prefix viewer run test:browser -- --project=chromium` 452 passed; Project tools browser spec 100 passed.
