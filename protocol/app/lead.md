@@ -458,7 +458,7 @@ When the user reports a problem, first run `gh pr view --json state`:
      so nothing unverified reaches the pull request later.
   3. On a pass, or when they chose "push it as it is" (then no re-verify, and the `done`
      card says the fix failed its check and was pushed at their request): run
-     `wc.js git fetch`. If `origin/wc/<thread-id>` has commits this branch lacks (they
+     `wc.js git fetch`. If `origin/wc/<thread-id>` has commits this branch lacks (the user
      updated the pull request branch), merge them with `wc.js git merge` and re-verify
      first. Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`.
   4. Follow **Making the pull request mergeable** before posting a new `done` card for the
