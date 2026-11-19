@@ -48,3 +48,58 @@ test('project tools launch privately and stale Antigravity files are swept', asy
     process.env.PATH = oldPath; if (oldLog === undefined) delete process.env.FAKE_TOOLS_LOG; else process.env.FAKE_TOOLS_LOG = oldLog; agy.prepare = oldPrepare; console.error = oldError;
   }
 });
+
+async function sweepFixture(names, live = ['wc-name_part-worker']) {
+  const state = await makeTemp('agy-sweep-'), base = path.join(state, 'agy-tools');
+  fs.mkdirSync(base);
+  const old = new Date(Date.now() - 600000);
+  for (const name of names) { fs.mkdirSync(path.join(base, encodeURIComponent(name))); fs.utimesSync(path.join(base, encodeURIComponent(name)), old, old); }
+  const service = new MachineService({ stateDir: state });
+  service.liveTmux = () => live === null ? null : new Set(live);
+  service.sessions = {};
+  return { service, dir: name => path.join(base, encodeURIComponent(name)), exists: name => fs.existsSync(path.join(base, encodeURIComponent(name))) };
+}
+const dot = 'wc-name.part-worker', under = 'wc-name_part-worker';
+const record = (status, created_at = '2025-01-01T00:00:00Z') => ({ status, created_at });
+
+test('sweep protects the live underscore record over a stopped dot record', async () => {
+  const f = await sweepFixture([dot, under]);
+  f.service.sessions = { [dot]: record('stopped'), [under]: record('ready') };
+  f.service.sweepAgyTools(); assert.equal(f.exists(dot), false); assert.equal(f.exists(under), true);
+});
+
+test('sweep protects the live dot record over a stopped underscore record', async () => {
+  const f = await sweepFixture([dot, under]);
+  f.service.sessions = { [dot]: record('ready'), [under]: record('stopped') };
+  f.service.sweepAgyTools(); assert.equal(f.exists(under), false); assert.equal(f.exists(dot), true);
+});
+
+test('a refused start is retained only for the grace period', async () => {
+  const f = await sweepFixture([dot, under]);
+  f.service.sessions = { [under]: record('ready') };
+  const now = new Date(); fs.utimesSync(f.dir(dot), now, now);
+  f.service.sweepAgyTools(); assert.equal(f.exists(dot), true); assert.equal(f.exists(under), true);
+  const old = new Date(Date.now() - 600000); fs.utimesSync(f.dir(dot), old, old);
+  f.service.sweepAgyTools(); assert.equal(f.exists(dot), false); assert.equal(f.exists(under), true);
+});
+
+test('the newest non-stopped record wins a collision', async () => {
+  const f = await sweepFixture([dot, under]);
+  f.service.sessions = { [dot]: record('ready', '2025-02-01T00:00:00Z'), [under]: record('ready') };
+  f.service.sweepAgyTools(); assert.equal(f.exists(dot), true); assert.equal(f.exists(under), false);
+});
+
+test('without records the exact spelling wins, or a lone rewritten name survives', async () => {
+  const f = await sweepFixture([dot, under]);
+  f.service.sweepAgyTools(); assert.equal(f.exists(dot), false); assert.equal(f.exists(under), true);
+  const lone = await sweepFixture([dot]);
+  lone.service.sweepAgyTools(); assert.equal(lone.exists(dot), true);
+});
+
+test('non-live entries respect grace and an unknown tmux state removes nothing', async () => {
+  const f = await sweepFixture(['wc-old', 'wc-young'], null);
+  const now = new Date(); fs.utimesSync(f.dir('wc-young'), now, now);
+  f.service.sweepAgyTools(); assert.equal(f.exists('wc-old'), true); assert.equal(f.exists('wc-young'), true);
+  f.service.liveTmux = () => new Set();
+  f.service.sweepAgyTools(); assert.equal(f.exists('wc-old'), false); assert.equal(f.exists('wc-young'), true);
+});
