@@ -52,6 +52,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 22 | openbox mode ends when the openbox process exits (child `exit` listener); supersedes Decision 16's scope check and the per-op `systemctl` query | A leftover process can keep the scope active; openbox can exit after setting its property | review-round-5 |
 | 23 | openbox's config allows only click-to-focus (`Focus`, `Raise`) in `Client`/`Frame`; its config lookup is isolated to the screen directory; supersedes Decision 21's empty bindings | No bindings would break clicking into a dialog; openbox falls back to the desktop `rc.xml` if ours fails to load | review-round-6 |
 | 24 | The window manager moves to its own thread; this plan builds the other six items. Decisions 7, 10, 11, 16, 17 and 19–23 now belong to that thread's design | Collin picked Own thread after six review rounds kept finding openbox gaps | idea-change |
+| 25 | `maxScreens` stays an instance property here (the part of Decision 20 this plan keeps); only `allowOpenbox` moved with Decision 24 | S2 and its tests still use it | review-round-7 |
 ## Spec
 
 Builds on the merged screens work (`wc.js screen`, PR #113). Everything in
@@ -69,17 +70,15 @@ returning `{ missing: [names in TOOLS order] }`. It uses the same
 existing missing-tools 422 (message unchanged).
 
 **Approval card.** In `machine/service.js`, where a lead's `approval` card gets
-`input.warnings` (`:1571-1574`), on Linux also add, in this order after the startup-size
-warning:
-
-- when `missing` is non-empty: `Screens won't work on <hostname>: missing <a, b>. Builds that don't use a screen are unaffected.`
+`input.warnings` (`:1571-1574`), on Linux, when `missing` is non-empty, also add this after the startup-size warning:
+`Screens won't work on <hostname>: missing <a, b>. Builds that don't use a screen are unaffected.`
 
 `<hostname>` is `os.hostname()`. `warnings` is present only when it has at least one
 entry, and holds at most 10 (the card validator's limit, `viewer/app/card.js:171`). These
 are information only: `ready`, `viewer/app/ready.js` and `/v1/status` do not change, and
 Start building is never blocked by them.
 
-**Installer.** In `install.sh`, on Linux only (`platform` is not `Darwin`), before
+**Installer.** In `install.sh`, only when `platform` is `Linux`, before
 `configure_service` is first called (`install.sh:474`), so the bookmark stays the last
 line of output (`install/test/run.sh:188-191,575`), check each tool with `command -v`. Keep the same eight names as
 `TOOLS`, with a comment in both places saying to keep them in step. Print to stderr:
@@ -189,15 +188,16 @@ directory. `exec` keeps the pid (S5 unchanged).
     - The child emitted `error`, or exited with any code (including a non-zero code, or
       `null` from a signal), and the marker does not exist: fail with 422
       `app did not start: <reason>`.
-    - The deadline passes with neither: SIGKILL the child, stop the app scope at once
-      (`immediate(unit)`), and fail with 422
-      `app did not start: no hand-over within 5 s`.
-  - The `<reason>` for a failed launch is worked out only after the fence (below):
+    - The deadline passes with neither: SIGKILL the child, then fail with 422
+      `app did not start: no hand-over within 5 s`. This fixed message is the reason;
+      the log is not read.
+  - The `<reason>` for the other failures is worked out only after the fence (below):
     - the last non-empty line of the log bytes written since spawn, preferring the last
       line starting `Failed to`;
     - if there is none, or the log can't be read (any read error is caught), the error
       message or `systemd-run exited <code|signal>`.
-  - In every failure case, in this order: stop the app scope at once (`immediate(unit)`),
+  - In every failure case (including the timeout), in this order: stop the app scope at
+    once (`immediate(unit)`, called exactly once),
     run the generation fence (see Cancellation first; a fenced launch writes nothing and
     returns 409), then read the reason, set `failed: true` on the in-memory record,
     `trySave`, and skip
@@ -219,7 +219,9 @@ directory. `exec` keeps the pid (S5 unchanged).
 - The guaranteed mouseup's timeout is `Math.max(0, end - Date.now())`, which is at least
   the reserve unless a step overran.
 - A drag therefore finishes within the base deadline (10 s in production) plus process
-  overhead. Mouseup is still always attempted, and the first error still wins.
+  overhead. As today, mouseup is attempted whenever the first move succeeded: a failure of
+  the first move ends the drag before mousedown, with no mouseup. The first error still
+  wins.
 - `move` and `click` are unchanged.
 - **Timeouts really end.** In `runTool()` (`screen-input.js:7-19`), when the timeout
   fires, SIGKILL the child, destroy its stdout and stderr streams, and resolve at once
@@ -459,13 +461,32 @@ Collin chose Keep going after round 3; review budget reset.
 
 Collin moved the window manager to its own thread; review budget reset.
 
-**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since Round 6:**
 - S4 (openbox) removed: Decision 24 and IDEA.md.
 - S1: no window-manager warning or hint; `screenTools` returns only `missing`.
 - S2: `trySave` list without openbox.
 - Validation: openbox tests and live assertion removed.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Decision 20's `maxScreens` part moved by mistake | upheld | Decision 25 |
+| intent | minor | S1 "in this order" leftover | upheld | Reworded |
+| mechanics | major | Timeout has two reasons and two `immediate` calls | upheld | Fixed message; one `immediate` |
+| mechanics | minor | Decision 20 split | upheld | Same as the intent finding |
+| mechanics | minor | Installer guard should be `Linux` | upheld | `platform` is `Linux` |
+| mechanics | minor | Mouseup guarantee when the first move fails | upheld | Stated as today's behaviour |
+
+### Round 8 — 2026-11-18
+
+**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+
+**Changed since Round 7:**
+- S1: one warning, no ordering; the installer guard is `platform` = `Linux`.
+- S6: the timeout uses its fixed message, and `immediate(unit)` is called once.
+- S7: mouseup applies once the first move succeeded.
+- Decision 25.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
