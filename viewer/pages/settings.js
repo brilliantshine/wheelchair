@@ -992,8 +992,8 @@
   // The timer runs only while Accounts or Usage is shown.
   function syncSection() {
     const live = section === 'accounts' || section === 'usage';
-    if (live && !usageTimer) usageTimer = setInterval(refreshUsage, 30000);
-    if (!live && usageTimer) { clearInterval(usageTimer); usageTimer = null; }
+    if (live && !usageTimer) usageTimer = window.wcPoller(refreshUsage, 30000);
+    if (!live && usageTimer) { usageTimer.stop(); usageTimer = null; }
     if (live) refreshUsage();
     if (section === 'usage') {
       fetch(API + '/usage/seen', { method: 'POST' }).then(() => window.dispatchEvent(new CustomEvent('wc-usage-seen'))).catch(() => {});

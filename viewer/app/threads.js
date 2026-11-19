@@ -85,7 +85,7 @@ async function createThread(hub, input) {
 
 async function threadBySession(hub, name) {
   for (const thread of await hub.allThreads()) {
-    if (thread.sessions.some((session) => session.name === name)) return thread;
+    if (thread.sessions.some((session) => session.name === name)) return structuredClone(thread);
   }
   throw appError(404, 'calling session is unknown');
 }
