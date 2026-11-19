@@ -195,3 +195,21 @@ test('a new thread gets the default project_tools record when the machine start 
     assert.deepEqual(saved.project_tools, expected);
   } finally { await close(c); }
 });
+
+test('a handoff import creates a thread with the default project_tools, even when the lead cannot start', async () => {
+  const { makeTemp } = require('../../test-support/run-dir.js');
+  const ops = require('../app/handoff-ops.js');
+  const { defaultProjectTools } = require('../app/threads.js');
+  const dir = await makeTemp('ptools-import-');
+  const hub = new Hub({ stateDir: dir }); await hub.state.init();
+  const id = 'a'.repeat(12);
+  const file = { thread: { id, title: 'Title', slug: 'plan' }, head: 'b'.repeat(40), stage: 'approved', exported_at: 'date', history: [] };
+  hub.client.handoff = async (_, input) => ({ inspect: { worktree_exists: false }, known: { checked_out: [] }, 'claim-commit': { sha: 'c'.repeat(40) }, 'claim-push': { result: 'landed' }, running: { names: [] }, 'set-branch': { result: 'ok' }, reopen: { ok: true } })[input.action];
+  hub.restartLead = async () => { throw new Error('machine unavailable'); };
+  const result = await hub.withThread(id, () => ops.createLocked(hub, { file, machine: 'hub', project: '/repo' }));
+  assert.equal(result.outcome, 'created');
+  await hub.restartLead(id).catch(() => {});
+  const thread = await hub.thread(id);
+  assert.deepEqual(thread.project_tools, defaultProjectTools());
+  assert.deepEqual(thread.project_tools, { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] });
+});
