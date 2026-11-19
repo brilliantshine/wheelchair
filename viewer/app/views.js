@@ -31,12 +31,13 @@ async function features(hub) {
   // does not hold up every page that asks for this list. A thread is locked only to record a
   // slug or status that changed, and then re-read under the lock so no concurrent write is lost.
   const threads = (await hub.allThreads()).filter((thread) => !thread.archived);
-  const rows = await Promise.all(threads.map(async (thread) => {
+  const rows = await Promise.all(threads.map(async (listed) => {
+    let thread = listed;
     const needs = [];
     addNeeds(needs, thread);
     if (!thread.slug && thread.worktree) {
       const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
-      if (names.length === 1) await recordSlug(hub, thread, names[0]);
+      if (names.length === 1) { thread = structuredClone(thread); await recordSlug(hub, thread, names[0]); }
     }
     if (thread.stub && !thread.sessions.length) return { needs };
     if (!thread.slug) return { needs };
@@ -96,12 +97,17 @@ async function newPlanDirectories(worktree, defaultBranch = 'main') {
 // Archiving usually removes the worktree, and then git checks only fail; skipping them keeps
 // the thread list, which every page polls, from spawning git for each one on every poll. A
 // worktree the archive failed to remove is still searched.
-async function findSlug(hub, thread) {
-  if (thread.slug || !thread.worktree) return;
-  if (thread.archived && await fs.stat(thread.worktree).then(() => false, (error) => error.code === 'ENOENT' || error.code === 'ENOTDIR')) return;
+async function discoverSlug(thread) {
+  if (thread.slug || !thread.worktree) return null;
+  if (thread.archived && await fs.stat(thread.worktree).then(() => false, (error) => error.code === 'ENOENT' || error.code === 'ENOTDIR')) return null;
   const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
-  if (names.length !== 1) return;
-  thread.slug = names[0];
+  return names.length === 1 ? names[0] : null;
+}
+
+async function findSlug(hub, thread) {
+  const slug = await discoverSlug(thread);
+  if (!slug) return;
+  thread.slug = slug;
   await hub.save(thread);
   if (hub.registerPlan) await hub.registerPlan(path.join(thread.worktree, 'docs', 'plans', thread.slug));
 }
@@ -184,4 +190,4 @@ async function findSessionMachine(hub, name) {
   return group?.machine || null;
 }
 
-module.exports = { readStatus, STATUS_GROUP, addNeeds, features, findSessionMachine, findSlug, newPlanDirectories, sessions };
+module.exports = { readStatus, STATUS_GROUP, addNeeds, features, findSessionMachine, findSlug, discoverSlug, newPlanDirectories, sessions };
