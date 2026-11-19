@@ -396,16 +396,53 @@ class MachineService {
     const dir = path.join(this.stateDir, 'agy-tools');
     let entries;
     try { entries = fs.readdirSync(dir); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return; }
-    for (const entry of entries) {
+    const groups = new Map();
+    const decoded = entries.map(entry => {
       let name;
       try { name = decodeURIComponent(entry); safeName(name, 'session name'); if (!name.startsWith('wc-')) name = null; } catch { name = null; }
-      // tmux rewrites `.` and `:` in session names to `_`.
-      if (name && (starting.has(name) || live.has(name) || live.has(name.replace(/[.:]/g, '_')))) continue;
-      const file = path.join(dir, entry);
-      try {
-        if (Date.now() - fs.lstatSync(file).mtimeMs < 60000) continue;
-        fs.rmSync(file, { recursive: true, force: true });
-      } catch (error) { this.log(error); }
+      const item = { entry, name };
+      if (name) {
+        const tmuxName = name.replace(/[.:]/g, '_');
+        if (!groups.has(tmuxName)) groups.set(tmuxName, []);
+        groups.get(tmuxName).push(item);
+      }
+      return item;
+    });
+    const protectedEntries = new Set();
+    const mtime = item => {
+      if (!('mtime' in item)) {
+        try { item.mtime = fs.lstatSync(path.join(dir, item.entry)).mtimeMs; }
+        catch (error) { this.log(error); item.mtime = null; }
+      }
+      return item.mtime;
+    };
+    const byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : a.entry < b.entry ? -1 : a.entry > b.entry ? 1 : 0;
+    // tmux rewrites `.` and `:` to `_`, so several dirs can map to one live name.
+    // The machine's record identifies the running session; a refused start has no record.
+    for (const [tmuxName, group] of groups) {
+      if (!live.has(tmuxName)) continue;
+      const recorded = group.filter(item => this.sessions[item.name] && this.sessions[item.name].status !== 'stopped');
+      let chosen;
+      if (recorded.length) {
+        recorded.sort((a, b) => (Date.parse(this.sessions[b.name].created_at) - Date.parse(this.sessions[a.name].created_at)) ||
+          Number(b.name === tmuxName) - Number(a.name === tmuxName) || byName(a, b));
+        chosen = recorded[0];
+      } else {
+        chosen = group.find(item => item.name === tmuxName);
+        if (!chosen) {
+          const readable = group.filter(item => mtime(item) !== null);
+          readable.sort((a, b) => mtime(b) - mtime(a) || byName(a, b));
+          chosen = readable[0];
+        }
+      }
+      if (chosen) protectedEntries.add(chosen);
+    }
+    for (const item of decoded) {
+      if (protectedEntries.has(item) || (item.name && starting.has(item.name))) continue;
+      const age = mtime(item);
+      if (age === null || Date.now() - age < 60000) continue;
+      try { fs.rmSync(path.join(dir, item.entry), { recursive: true, force: true }); }
+      catch (error) { this.log(error); }
     }
   }
   // Spec "Machine service on the hub": a live wc-* tmux session missing from sessions.json (a lost or
