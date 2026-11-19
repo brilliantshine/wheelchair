@@ -486,7 +486,7 @@ if [[ $(platform) == Linux ]]; then
         systemd-run|systemctl) package=systemd ;;
       esac
       seen=0
-      for existing in "${missing_packages[@]}"; do [[ $existing == "$package" ]] && seen=1; done
+      for existing in ${missing_packages[@]+"${missing_packages[@]}"}; do [[ $existing == "$package" ]] && seen=1; done
       [[ $seen == 1 ]] || missing_packages+=("$package")
     fi
   done
