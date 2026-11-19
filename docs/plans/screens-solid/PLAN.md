@@ -532,7 +532,7 @@ Collin moved the window manager to its own thread; review budget reset.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S7: drag reserve for mouseup; runTool resolves at once on timeout; tests | `machine/lib/screen-input.js`, `machine/test/screen-input.test.js` | standard · gpt-6.1-terra | wc-2aac26176dff-worker | `node --test machine/test/screen-input.test.js`; `bash machine/test/run.sh` | done |
 | T2 | tricky — S2 cap, S3 pruning, S5 pids, S6 hand-over marker, plus `screenTools` export (S1 part); tests | `machine/lib/screen.js`, `machine/test/screen.test.js` (+ optional `machine/test/screen-hardening.test.js`) | standard · gpt-6.1-terra | wc-2aac26176dff-worker-2 | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh` | done |
-| T3 | S1: approval-card warning and installer warning; tests (after T2, needs `screenTools`) | `machine/service.js` (approval block), `install.sh`, `install/test/run.sh`, a new machine test file | standard | | `bash machine/test/run.sh`; `bash install/test/run.sh` | not started |
+| T3 | S1: approval-card warning and installer warning; tests (after T2, needs `screenTools`) | `machine/service.js` (approval block), `install.sh`, `install/test/run.sh`, a new machine test file | standard | wc-2aac26176dff-worker-3 | `bash machine/test/run.sh`; `bash install/test/run.sh` | dispatched |
 
 ## Log
 
