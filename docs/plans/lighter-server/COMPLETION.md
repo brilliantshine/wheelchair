@@ -90,3 +90,16 @@ both logs end: 1040 passed (14.5m)
 - Accepted Risks in PLAN.md stand: timers' locked re-reads remain; memory growth from transcripts until the chat follow-up.
 
 ## Remediation rounds
+
+### Remediation 1 (verification attempt 1)
+
+Gap (REMEDIATION-1.md): a same-size in-place rewrite within one filesystem timestamp tick of the previous write left `(mtimeMs, ctimeMs, size, ino)` identical, so the cache served the old record. Reproduced: 198 of 200 back-to-back same-size rewrites on ext4 left the stat identical.
+
+Fix (R1-T1, light / gpt-6-luna): `viewer/app/state.js:141` takes `checkedAt` before the stat; `viewer/app/state.js:144-146` reuses a cached record only when the key matches and `max(mtimeMs, ctimeMs) < checkedAt - SETTLE_MS` (2000 ms, `viewer/app/state.js:11`). Test: `viewer/test/app-snapshot.test.js:53` (immediate same-size rewrite after a cached read is seen; a settled file is parsed once). Existing zero-read tests wait `SETTLE_MS + 200` ms after writing fixtures; no assertion weakened.
+
+`node --test viewer/test/*.test.js`:
+```text
+# tests 694
+# pass 694
+# fail 0
+```
