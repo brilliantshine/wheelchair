@@ -326,9 +326,12 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Machine: S1 `known` transcript route, S2 cheap copies and dedupe sets, API.md, machine S5 tests | `machine/service.js`, `machine/API.md`, `machine/test/` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker | `bash machine/test/run.sh` | running |
+| T1 | Machine: S1 `known` transcript route, S2 cheap copies and dedupe sets, API.md, machine S5 tests | `machine/service.js`, `machine/API.md`, `machine/test/` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker | `bash machine/test/run.sh` | done |
 | T2 | Hub: S3 chat/report split, S4 idle sweep, S4b last-seen throttle, fake machine new form, hub S5 tests | `viewer/app/{chat,hub,state,sessions,asides,routes}.js`, `viewer/test/` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
 
 ## Log
 - 2026-11-19 Ready check at approval: hub and machine service answer (`wc.js session list`); Claude CLI installed; Codex preflight passed (token fresh).
 - 2026-11-19 Build accepted: approval fc33ce31-cebd-4f1a-a656-d9741c8d9707
+- 2026-11-19 — T1 accepted (band: scout): machine `known` route, cheap copies, dedupe sets; `bash machine/test/run.sh` re-run by sub-lead 347/347 pass. Test gaps (gen/end not asserted, blank lines across batches not explicit, archived read not exercising the queue wait, no test for the per-copy set on a kept file without a trailing newline, or for stop/archive drops) sent to T3.
+- 2026-11-19 — Choice: T1, machine/service.js: injectable clock `options.transcriptNow` and public `sweepTranscriptSets()`, 60 s unref'd interval.
+- 2026-11-19 — Choice: T1, machine/service.js: worker listed 1 choice; scout listed more, logged here: legacy (no `known`) reads now also wait in the session's copy queue; `findTranscript`/`kimiBinding` stay outside the queue; `known` ignores `offset`; `copyTranscript` refactored into `queueTranscript(name, work)`; set kept only if the session is not stopped and still registered; `used` updated even when every new line was a duplicate; `known` regex also accepts `<ino>:<end>` (the birthtime-0 form); short read stops at EOF; empty kept file of an unknown (archived) session answers `unavailable`; registry `changed` also counts `transcript_path`; `?.`/`??=` guards on `transcriptSets`/`copying` for tests that bypass the constructor.
