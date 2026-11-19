@@ -228,7 +228,7 @@
     composerEl.hidden = !!t.handoff_op;
     const before = $('before-handoff'); before.hidden = !t.imported;
     const history = $('handoff-history'); history.textContent = '';
-    if (t.imported) for (const entry of t.imported.history || []) history.appendChild(el('p', '', [entry.at, entry.who === 'collin' ? 'You' : entry.who, entry.text].filter(Boolean).join(' · ')));
+    if (t.imported) for (const entry of t.imported.history || []) history.appendChild(el('p', '', [entry.at, entry.who === 'user' ? 'You' : entry.who, entry.text].filter(Boolean).join(' · ')));
   }
 
   // ---- the right column: this thread's files ----
@@ -430,10 +430,10 @@
       }
     }
     cardsBefore();
-    // Pair each pending bubble with Collin's message still in the lead's queue, so it can be
+    // Pair each pending bubble with the user's message still in the lead's queue, so it can be
     // sent now. One queued before this page loaded has no pending bubble and gets its own.
     const lead = leadSession();
-    const waiting = ((lead && lead.queue) || []).filter((q) => q.source === 'collin');
+    const waiting = ((lead && lead.queue) || []).filter((q) => q.source === 'user');
     // Pending ones already delivered (not queued) come first; the queue then shows in its own
     // order, whichever tab each message was sent from.
     const left = waiting.slice();
@@ -492,7 +492,7 @@
     return row;
   }
 
-  // How many times the transcript (since any import) already shows these words from Collin.
+  // How many times the transcript (since any import) already shows these words from the user.
   function humanCount(text) {
     return data.items.filter((i) => sinceImport(i.at) && i.type === 'human' && !i.card && i.text === text).length;
   }
@@ -501,7 +501,7 @@
   async function sendNow(at) {
     sendingNow[at] = true; sigs.chat = null; render();
     const lead = leadSession();
-    const item = ((lead && lead.queue) || []).find((q) => q.source === 'collin' && q.at === at);
+    const item = ((lead && lead.queue) || []).find((q) => q.source === 'user' && q.at === at);
     const seen = item ? humanCount(item.text) : 0;   // counted before sending: the reply may lag the transcript
     try {
       const out = await post(T + '/send-now', { at });
@@ -577,7 +577,7 @@
       label = ' Withdrawn \u00b7 ' + card.retracted_note;
       tag.classList.add('resolved');
     } else if (card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
-      label = ' ' + (card.resolved_note || (card.resolved_by === 'collin' ? 'Dismissed' : 'Resolved'));
+      label = ' ' + (card.resolved_note || (card.resolved_by === 'user' ? 'Dismissed' : 'Resolved'));
       tag.classList.add('resolved');
     } else if (card.kind === 'question' && card.resolved_by) {
       label = ' Answered in chat' + (card.resolved_note ? ' \u00b7 ' + card.resolved_note : '');
@@ -590,7 +590,7 @@
     tag.append(icon(ICON.check, 12), document.createTextNode(label));
     return tag;
   }
-  // The box under a question's options: Collin's own answer, sent as `[card <id>] answered: <text>`.
+  // The box under a question's options: the user's own answer, sent as `[card <id>] answered: <text>`.
   function ownWords(card) {
     const wrap = el('div', 'own-words');
     const ta = el('textarea');
@@ -604,7 +604,7 @@
       press(card, 'answered', text).then(() => { if (card.answered) delete answerDrafts[card.id]; });
     }, !ta.value.trim());
     ta.addEventListener('input', () => { answerDrafts[card.id] = ta.value; send.disabled = !ta.value.trim(); });
-    // A poll that redraws the chat replaces this box; keep the caret where Collin was typing.
+    // A poll that redraws the chat replaces this box; keep the caret where the user was typing.
     ta.addEventListener('focus', () => { answerFocus = card.id; });
     ta.addEventListener('blur', () => setTimeout(() => { if (ta.isConnected && answerFocus === card.id) answerFocus = null; }, 0));
     const keepCaret = () => { answerCaret[card.id] = [ta.selectionStart, ta.selectionEnd, ta.selectionDirection]; };
@@ -794,7 +794,7 @@
           a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
           const actions = el('div', 'actions'); actions.appendChild(a); box.appendChild(actions);
         }
-        // A card a lead posted stays until it is settled. Collin answers it with either
+        // A card a lead posted stays until it is settled. the user answers it with either
         // button, and the lead always replies, so nothing closes silently.
         if (!card.system && !card.answered) {
           const actions = el('div', 'actions');

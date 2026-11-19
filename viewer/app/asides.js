@@ -59,7 +59,7 @@ async function change(hub, thread, aside, action, input) {
       const lead = [...thread.sessions].reverse().find((s) => s.role === 'lead' && s.live);
       if (!lead) throw appError(409, 'no live lead');
       const quote = aside.anchor.quote.length > 80 ? `${aside.anchor.quote.slice(0, 80)}…` : aside.anchor.quote;
-      await hub.enqueue(thread, lead.name, `${input.line}\n\n(from aside ${aside.number} on: "${quote}")`, 'collin');
+      await hub.enqueue(thread, lead.name, `${input.line}\n\n(from aside ${aside.number} on: "${quote}")`, 'user');
       aside.sent_line = input.line;
     }
     close(aside, input.outcome);

@@ -78,7 +78,7 @@ test('renders a Claude human turn after unwrapping pasted content', () => {
   ]);
 });
 
-test('renders a Claude message sent mid-turn as a Collin bubble, and skips task notices', () => {
+test('renders a Claude message sent mid-turn as a the user bubble, and skips task notices', () => {
   const transcript = lines([
     { type: 'user', origin: { kind: 'human' }, timestamp: '2026-11-14T10:00:00.000Z', message: { role: 'user', content: 'Start' } },
     { type: 'assistant', timestamp: '2026-11-14T10:00:01.000Z', message: { role: 'assistant', content: [{ type: 'text', text: 'Working.' }] } },
@@ -142,7 +142,7 @@ test('replaces a restart context marker and keeps its lead reply', () => {
   ]);
 });
 
-test('renders a card press as a short Collin bubble', () => {
+test('renders a card press as a short the user bubble', () => {
   const transcript = lines([
     {
       type: 'user',

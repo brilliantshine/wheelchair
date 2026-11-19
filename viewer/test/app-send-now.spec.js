@@ -11,12 +11,12 @@ const row = (text) => JSON.stringify({ type: 'attachment', timestamp: new Date()
 let ctx;
 test.beforeEach(async ({ page }) => { ctx = await startWorld(); await signIn(page, ctx); });
 test.afterEach(async () => { await ctx.close(); });
-async function open(page, text, copies = 1) {
+async function open(page, text, copies = 1, source = 'user') {
   const made = await ctx.make({ cli: 'claude' });
   const file = path.join(ctx.state, made.id + '.jsonl');
   await fs.writeFile(file, '');
   await ctx.patch(made.id, (t) => {
-    Object.assign(t.sessions[0], { transcript_path: file, cli: 'claude', ready: true, turn_ended: false, queue: Array.from({ length: copies }, (_, i) => ({ text, source: 'collin', at: new Date(Date.now() + i).toISOString() })) });
+    Object.assign(t.sessions[0], { transcript_path: file, cli: 'claude', ready: true, turn_ended: false, queue: Array.from({ length: copies }, (_, i) => ({ text, source, at: new Date(Date.now() + i).toISOString() })) });
     t.queues = { [t.sessions[0].name]: t.sessions[0].queue };
   });
   await page.goto(ctx.server.url + '/app/thread?id=' + made.id);
@@ -72,4 +72,11 @@ test('a regular composer send already shown by a poll does not get a queued dupl
   await expect(page.locator('#msg')).toHaveValue('');
   await expect(page.locator('#chat .human')).toHaveCount(1, { timeout: 4500 });
   await expect(page.locator('#queued-note')).toBeHidden();
+});
+
+test('an old queued message remains pending and can be sent now', async ({ page }) => {
+  const { made } = await open(page, 'old queued message', 1, 'collin');
+  await page.locator('.send-now').click();
+  await expect(page.locator('#chat .pending .tag')).toHaveText(['sent']);
+  expect(ctx.machine.sessions.get(made.sessions[0].name).submits).toContain('old queued message');
 });
