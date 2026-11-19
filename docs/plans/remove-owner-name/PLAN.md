@@ -128,6 +128,7 @@ comments, other test and fixture mentions, and everything under `docs/`.
 |------|--------------|-------|
 | A restart/import context message already queued before the upgrade is delivered later with the old `collin` tags | Needs a lead waiting (e.g. for an account) across the upgrade; one-off and harmless (a data tag, not prose) | 2 |
 | `wc.js session list --full` shows queued messages with `source: "collin"` | No rule tells agents to use `--full`; it is a data tag, not wording; D1's rename removes it | 2 |
+| Full viewer suite can fail a fixture startup when its port is taken (seen at `viewer/test/app-hub.test.js:1804` on the merge with main) | Port race in the shared test helper (`viewer/test/helpers/server.js:20`), not this change; the file passed 115/115 alone | lead-check |
 
 ## Review Rounds
 
