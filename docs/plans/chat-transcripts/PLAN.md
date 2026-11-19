@@ -278,6 +278,20 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 | mechanics | minor | Aside queued behind the lock can lose its fallback | upheld | Decision #18, S4.1 |
 | mechanics | minor | Archived read can overlap a copy started before archive | upheld | S1.2 |
 
+### Round 3 — 2026-11-19
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 2:**
+- S3.2: reply handling reordered; `unchanged` matched before any empty-data check; unknown `status` falls back (Decision #17).
+- S4.1: pending protection starts before the thread lock in `hub.chat` and the aside route, via one helper (Decision #18).
+- S4b: throttle check and reservation synchronous, keyed by the name passed.
+- S1.2: archived read waits on that session's copy queue.
+- S5: last-seen test update; aside test behind a held lock.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
