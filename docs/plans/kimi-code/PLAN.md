@@ -960,6 +960,9 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: Z1, `machine/service.js:77`: `publicSession` strips the six machine-only fields from every session the HTTP API returns, for every CLI (`source_transcript` is set for all CLIs; the hub never reads it). `stopFatal` removes a verifier's created checkout once absence is confirmed, so a fatal stop started by the poller itself also removes it (scout-found). The array-comment test temporarily wraps `JSON.parse`.
+- 2026-11-18 — Z1 accepted (band: scout): machine 204/204 re-run by the sub-lead. Remediation 5 gaps 1-3 fixed.
+
 - 2026-11-18 — Verification attempt 5: Claude PASS, GPT FAIL with 3 new gaps (REMEDIATION-5.md); Z1 (gpt) dispatched.
 
 - 2026-11-18 — Verification attempt 5 at `031756a`: `wc-01b8cb1bf051-verifier-9` (claude-opus-5-5) and `wc-01b8cb1bf051-verifier-10` (gpt-6.2-sol).
