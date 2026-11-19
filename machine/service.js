@@ -226,7 +226,7 @@ class MachineService {
     this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
     this.sessions = {};
     this.projectToolsBoot = crypto.randomUUID();
-    this.projectTools = new Map();
+    this.projectToolsState = new Map();
     this.projectToolsWrites = new Map();
     this.startupWarning = null;
     this.startupSamples = new Map();
@@ -681,14 +681,14 @@ class MachineService {
   }
   updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs) {
     // Machines built without the constructor (some tests) get the maps on first use.
-    this.projectToolsBoot ||= crypto.randomUUID(); this.projectTools ||= new Map(); this.projectToolsWrites ||= new Map();
+    this.projectToolsBoot ||= crypto.randomUUID(); this.projectToolsState ||= new Map(); this.projectToolsWrites ||= new Map();
     const id = encodeURIComponent(safeName(input.thread_id, 'thread id'));
-    let state = this.projectTools.get(id);
+    let state = this.projectToolsState.get(id);
     if (!state) {
       try { state = JSON.parse(fs.readFileSync(path.join(this.stateDir, 'project-tools', `${id}.json`), 'utf8')); }
       catch { state = null; }
       if (!this.validProjectToolsState(state)) state = { seq: 0, file: [], programs: [], clis: {} };
-      this.projectTools.set(id, state);
+      this.projectToolsState.set(id, state);
     }
     const { mcp, warnings, hash } = read;
     if (mcp === null && warnings.length) {
@@ -710,7 +710,7 @@ class MachineService {
     const previous = this.projectToolsWrites.get(id) || Promise.resolve();
     const write = previous.then(async () => {
       const file = path.join(this.stateDir, 'project-tools', `${id}.json`), temp = `${file}.tmp`;
-      try { await mkdir(path.dirname(file)); await fsp.writeFile(temp, `${json(this.projectTools.get(id))}\n`, { mode: 0o600 }); await fsp.rename(temp, file); }
+      try { await mkdir(path.dirname(file)); await fsp.writeFile(temp, `${json(this.projectToolsState.get(id))}\n`, { mode: 0o600 }); await fsp.rename(temp, file); }
       catch (error) { await fsp.unlink(temp).catch(() => {}); this.log(error); }
     });
     this.projectToolsWrites.set(id, write);

@@ -7,7 +7,7 @@
   const API = '/wheelchair/api';
   const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
   const LOST = 'Save may still be finishing; reload in a minute and check Waiting to merge before saving again.';
-  const HEADER_NOTE = "Codex agents don't get tools with headers. Claude may read some credential-like names as empty in headers, so check the tool signs in.";
+  const HEADER_NOTE = "Codex takes a header only when it is plain text, ${NAME} or Bearer ${NAME}. Claude may read some credential-like names as empty in headers, so check the tool signs in.";
   const RESERVED_MSG = "can't be set here: it would change how the agent itself runs";
   const KNOWN_OUTCOMES = ['saved', 'opened', 'pr_failed', 'failed', 'refused', 'removed'];
   let reservedLists = { exact: [], prefixes: [] };

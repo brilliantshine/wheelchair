@@ -212,9 +212,9 @@ test('add a tool, edit one keeping unknown fields, remove one with a confirmatio
   // header warning shows at once on a web-address form
   await page.locator('#pt-add').click();
   await page.getByLabel('Kind', { exact: true }).selectOption('http');
-  await expect(page.getByText("Codex agents don't get tools with headers")).toBeHidden();
+  await expect(page.getByText('Codex takes a header only when')).toBeHidden();
   await page.getByRole('button', { name: 'Add a header' }).click();
-  await expect(page.getByText("Codex agents don't get tools with headers. Claude may read some credential-like names as empty in headers, so check the tool signs in.")).toBeVisible();
+  await expect(page.getByText("Codex takes a header only when it is plain text, ${NAME} or Bearer ${NAME}. Claude may read some credential-like names as empty in headers, so check the tool signs in.")).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
 
   // edit db: args and a plain setting; the unknown `timeout` field and the key setting stay

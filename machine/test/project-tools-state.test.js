@@ -61,7 +61,7 @@ test('state ownership, invalid files, failure, reset, retry and persistence', as
   await f.file(f.work, {}); const reset = await f.start(s); assert.deepEqual(reset.project_tools.clis, {}); assert.deepEqual(reset.project_tools.file, []);
   await s.projectToolsWrites.get('thread'); const disk = JSON.parse(await fsp.readFile(path.join(f.state, 'project-tools/thread.json'))); assert.equal(disk.seq, reset.project_tools.seq);
   assert.ok(!('project_tools' in s.sessionList()[0])); assert.ok(!('project_tools' in s.status().sessions[0]));
-  const review = await f.start(s, { role: 'reviewer' }); assert.ok(!('project_tools' in review)); assert.equal(s.projectTools.get('thread').seq, disk.seq);
+  const review = await f.start(s, { role: 'reviewer' }); assert.ok(!('project_tools' in review)); assert.equal(s.projectToolsState.get('thread').seq, disk.seq);
   const s2 = await f.service(); const restarted = await f.start(s2); assert.equal(restarted.project_tools.seq, disk.seq + 1); assert.notEqual(restarted.project_tools.boot, reset.project_tools.boot);
 });
 
@@ -141,4 +141,11 @@ test('invalid saved state falls back and valid saved state loads', async t => {
   assert.deepEqual(result.project_tools.file, valid.file);
   assert.deepEqual(result.project_tools.clis, valid.clis);
   assert.ok(s.sessions[result.name]);
+});
+
+test('thread project-tools state does not replace the Settings project tools handler', async () => {
+  const root = await makeTemp('tools-state-names-');
+  const service = new MachineService({ stateDir: path.join(root, 'state') });
+  assert.equal(typeof service.projectTools.read, 'function');
+  assert.ok(service.projectToolsState instanceof Map);
 });
