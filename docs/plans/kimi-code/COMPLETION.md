@@ -374,3 +374,23 @@ node --test viewer/test/*.test.js   # in two halves: 439/439 and 208/208
 TZ=UTC npm --prefix viewer run test:browser   # 28 skipped, 774 passed (3.7m)
 node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ```
+
+### Remediation 11 — 2026-11-18
+
+Verification attempt 11 (`f4da961`): Claude verifier PASS; GPT verifier FAIL with 2 gaps (`REMEDIATION-11.md`).
+
+| Gap | Resolution | Fixed at | Test |
+|-----|------------|----------|------|
+| 1. A fatal-stop notice is lost when the thread is archived before the hub's dead-session check | Collin: live with it (Decision 56); Accepted Risk added | — | — |
+| 2. A `[x]`-like item in a multi-line array was read as a table header | Collin: fix (Decision 57). Lines inside an unclosed array are skipped; brackets and `#` are counted only outside basic (`"…"`) and literal (`'…'`) strings | `machine/adapters/kimi.js:19-46` | `machine/test/kimi.test.js` (array with `[x]` before the oauth keys; nested arrays and quoted `]`; single-quoted strings) |
+
+Validation on the merged branch at `65d6875`:
+
+```
+bash machine/test/run.sh            # tests 210, pass 210, fail 0
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 191 passed, 1 failed — only "real wheelchair directory is byte-identical after suite"
+node --test viewer/test/*.test.js   # in two halves: 437/439 (app-hub "starts a replacement lead…" and app-quiet "6 message clears debt"; both files untouched by this round, 115/115 and 18/18 alone) and 208/208
+TZ=UTC npm --prefix viewer run test:browser   # 28 skipped, 774 passed (4.3m)
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```

@@ -969,6 +969,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — COMPLETION.md "Remediation 11" added. Verification attempt 12 next.
+
 - 2026-11-18 — Q2 accepted (band: scout): `readConfig` skips lines inside an unclosed array (bracket depth counted outside quoted strings and comments); tests 32/32 and machine 209/209 re-run by the sub-lead. Choice: Q2 factored a `bracketDelta` helper (scout-found). Scout noted single-quoted TOML literal strings were not treated as quoted; the sub-lead made both scans (comment strip and bracket depth) share one `scan` that treats `"…"` (with escapes) and `'…'` (no escapes) as quoted, with a test in `machine/test/kimi.test.js`; kimi tests 33/33, machine 210/210. Remediation 11 complete.
 
 - 2026-11-18 — Q2 (light, gpt) dispatched for remediation 11 gap 2 (Decision 57).
