@@ -745,6 +745,8 @@ Filled by Stage 3. One row per worker brief.
 | R2 | Remediation 1, gap 2: saved state shape check; flaky PATH test | machine/service.js (state loader), machine/test/project-tools-state.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-8 | project-tools-state test; machine/test/run.sh x3 | done |
 | R3 | Remediation 2, gap 1 (2nd attempt): iterative duplicate-header scan | machine/lib/project-mcp.js (duplicateHeaderServers), machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-9 | reader/codex/agy tests; machine/test/run.sh | done |
 | R4 | Remediation 2, gap 2: default project_tools on new threads | viewer/app/threads.js (emptyThread), viewer/test/app-project-tools.test.js | light / claude-haiku-5-5 | wc-b9ca1682b0fa-worker-10 | app-project-tools; viewer/test/*.test.js | done |
+| R5 | Remediation 3, gap 1: sweep matches tmux's `_` spelling of `.`/`:` | machine/service.js (sweepAgyTools), machine/test/project-tools-service.test.js | light / gpt-6-luna | wc-b9ca1682b0fa-worker-11 | project-tools-service; machine/test/run.sh | running |
+| R6 | Remediation 3, gap 2 (2nd attempt): default record on handoff-imported threads | viewer/app/threads.js, viewer/app/handoff-ops.js (createLocked), viewer/test/app-project-tools.test.js | standard / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-12 | handoff + project-tools tests; viewer/test/*.test.js | running |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -799,3 +801,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: R4, viewer/app/threads.js: `project_tools` default placed after `archived`; stub threads (also built by `emptyThread`) get it too.
 - 2026-11-18 — Choice: R4, viewer/test/app-project-tools.test.js: the no-snapshot precondition reads the fake machine's session map rather than injecting a custom answer.
 - 2026-11-18 — R4 accepted (band: scout): new threads carry the default record; first snapshot still applies (stored created_at null counts as older).
+- 2026-11-18 — Verification attempt 3 on a856aa8: Claude PASS, GPT FAIL (2 gaps). R3's duplicate-header fix held. New gap: sweep vs tmux name spelling. Default-record gap returns via handoff import (second and last attempt, R6). REMEDIATION-3.md written.
