@@ -836,3 +836,16 @@ test('the Reload button is disabled while its own read is pending', async ({ pag
   release();
   await expect(page.locator('.pt-status')).toContainText('The project was reloaded');
 });
+
+test('editing one header value keeps an untouched sibling header name exactly', async ({ page }) => {
+  const mcpServers = { w: { type: 'http', url: 'https://a', headers: { ' X-Legacy ': 'a', Other: 'b' }, timeout: 5 } };
+  const calls = await open(page, { read: readBody({ source: { state: 'ok', reason: null, document: { mcpServers } }, keys: [], references: {}, checks: {} }) });
+  await tool(page, 'w').getByRole('button', { name: 'Edit w' }).click();
+  await page.getByLabel('Header value').nth(1).fill('c');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect(page.locator('.pt-status')).toContainText('Saved');
+  const sent = calls.save[0].tools.w;
+  expect(sent).toEqual({ type: 'http', url: 'https://a', headers: { ' X-Legacy ': 'a', Other: 'c' }, timeout: 5 });
+  expect(Object.keys(sent.headers)).toEqual([' X-Legacy ', 'Other']);
+});
