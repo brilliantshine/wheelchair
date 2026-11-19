@@ -66,6 +66,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 26 | Supersedes 25's reuse rule: a result with problems is reused for 2 minutes after it finished | The hub sends a thread's starts one at a time, so arrival-time reuse never fires | review-round-7 |
 | 27 | Rare timing cases around the connection check (a start, cancel, handoff or service restart landing mid-check; two near-simultaneous starts) are accepted as known limits when their worst effect is a stale problem card or result until the next tools-getting start. Still fixed: anything that would build the wrong thing, leave a tool or card wrong permanently, leak a secret, or leave processes or files behind | Collin's pick "Accept as known limits" after rounds 6-8 | user |
 | 28 | Supersedes 22: a check result is reused only when both the file's hash and the in-memory environment digest match (§6) | Round 9: a removed or changed token must rerun the check | review-round-10 |
+| 29 | Clutter left by a machine service restart during a connection test (an empty checkout, an unused branch, a stray test program) is a known limit; the cleanup already in §6 stays as best effort. Token-bearing files (Antigravity plugin dirs) must still always be cleaned up | Collin's pick "Accept the clutter" after rounds 9-11 | user |
 
 ## Spec
 
@@ -220,6 +221,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Clutter after a machine service restart during a connection test (Decision 29) | Collin's choice; harmless, rare; token files are still always swept | user |
 | A stdio tool that ignores stdin closing can outlive a machine service crash during a connection check | Needs a crash inside an ~11 s window and a server that breaks the MCP shutdown rule; pidfile recovery added more failure modes than it removed (round 10) | review-round-10 |
 | Rare timing cases during the connection check (Decision 27) can leave the card or `session list` result stale until the next tools-getting start | Collin's choice; the next start sends the whole state again | user |
 | The check and an agent's CLI can run the same stdio server at once; a server holding an exclusive resource (fixed port) may fail in one of them | Several agents in one thread already run their own copies at once; such a server is broken for wheelchair regardless of the check | review-round-1 |
@@ -462,6 +464,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | blocking | Worker checkout left after restart | upheld | §6 restart journal (same as intent major) |
 | mechanics | blocking | Verifier cleanup could remove a live pane's checkout | upheld | §6 needs confirmed tmux absence |
 | mechanics | major | Conflicting OAuth rule | upheld | §5 (same as intent major) |
+
+### Round 12 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 11:** §4 sweep guard (starting names, then tmux); §5 `login` needs `resource_metadata=` and no configured headers; §6 cancel/failure cleanup deletes a worker's new branch, restart journal, tmux-confirmed cleanup, thread-branch checkout reuse; Validation; Decision 29 (restart clutter accepted).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
