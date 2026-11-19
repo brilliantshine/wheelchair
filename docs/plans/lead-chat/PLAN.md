@@ -57,6 +57,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 20 | IDEA.md "What good looks like" bullet 3 reworded: each lead learns of the overlap and tells its user, who decides who does what | Follows from the user's pick in Decision 19 ("leads just inform") | idea-change |
 | 21 | Split off: the formal rules for turning an overlap into a user decision (when to post a card, holding or changing builds, pending changes during review, restarts) and `card.js` printing card ids move to a stub thread. Here, a lead mentions an overlap in one line and the user decides in chat as usual | That part drew blocking/major findings in rounds 4-6 while the rest settled; the user picked "Split it off" | user |
 | 22 | Check (b) moves from "right before the approval card" to the visible turn that sets `ready-for-review`; the pre-approval question card from round 7 is dropped | The approval turn is hidden, and a card there tangled with approval, restart and handoff rules; a shown reply before review needs no new rule | review-round-8 |
+| 23 | After the review budget was reached again (rounds 7-9), run one more review pass | User's pick ("One more pass") | user |
 
 ## Spec
 
@@ -489,6 +490,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | blocking | RE-RAISE: archive in progress widens the dropped-message gap to seconds | accepted-risk | Still a rare path (user archives that exact thread while another lead messages it); Accepted Risk text corrected |
 | mechanics | major | No trigger for (b) when every question was defaulted | upheld | (b) runs in whatever turn sets ready-for-review |
 | mechanics | major | Two open `reach` cards can't be told apart | upheld | One open `reach` card per thread |
+
+### Round 10 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 9:** §4 check (b) runs in whatever turn sets `ready-for-review` and holds reviewers until the user replies to a new overlap; §3 one open `reach` card per thread; Accepted Risk on the dropped-message gap reworded; Validation line for a second `reach` card.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
