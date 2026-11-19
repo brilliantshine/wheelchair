@@ -88,6 +88,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 51 | A hub Stop sends the fatal-stop notice only when the session was still live in the hub before that Stop; tested with a retried Stop | Fatal-stop notification failed verification attempt 4 after R3 and P1 (a retried Stop notified twice) | user |
 | 52 | Kimi approval detection allows an optional `▶` or `❯` before both the title and the choice, keeping Decision 48's shape; tested with the installed renderer's exact lines, false-positive tests unchanged | Verification attempt 6: the real renderer draws `▶ Run this command?` / `▶ 1. Approve once`, which Decision 48's matcher rejected | user |
 | 53 | Stop refining Kimi approval detection; layouts beyond the tested ones (long write previews, plan reviews with custom choices) are an Accepted Risk | Approval detection failed verification again in attempt 7 after R1, Q1, A1 and A2 | user |
+| 54 | A recovered pane showing Kimi's folder-trust screen (`Trust this folder?` with `Trust and continue` and `Exit`) is classed as Kimi, checked before the Claude fallback; tested with the recorded trust screen | Recovered-pane classification failed verification attempt 9 after R1 and W1 (a Kimi pane at folder trust was classed as Claude) | user |
 
 ## Spec
 
@@ -962,6 +963,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Collin on remediation 9 gap 2: fix it (Decision 54); K1 (light, gpt) dispatched.
 
 - 2026-11-18 — Choice: V1, `machine/service.js`: floor comparison factored into `kimiVersionStatus`; `kimiLaunchPath()` re-resolves and re-checks right before the launch command is built and fails closed if the cache entry changed; `commandFor` takes a `context` with `kimiExecutable`. A start refused at that point leaves its newly created worktree on disk (the existing `finally` only releases reservations; other post-creation failures such as a tmux error already leak the same way) — residual risk, scout-found. V1 accepted (band: scout): machine 207/207 re-run by the sub-lead. Remediation 9 gap 1 fixed.
 
