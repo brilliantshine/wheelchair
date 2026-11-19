@@ -963,6 +963,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — S1 accepted (band: scout): caption text exactly as the brief; settings spec 66/66 re-run by the sub-lead. Remediation 8 gap 3 fixed.
+
 - 2026-11-18 — M1 accepted (band: scout): binding uses the joined text of the user prompt's text parts. Choice: M1 added `type: 'text'` to the shared `prompt()` fixture (`machine/test/kimi-turns.test.js:22`). The worker stopped at its guardrail on the pending-stop test, whose chat fixture (`:261`) lacked `type: 'text'` (real Kimi parts carry it, per `samples/wire.jsonl`); it failed 3/3 on the branch and passed on the base, so the sub-lead corrected that fixture. Machine 206/206. Remediation 8 gap 1 fixed.
 
 - 2026-11-18 — Verification attempt 8: Claude PASS, GPT FAIL with 3 new gaps (REMEDIATION-8.md); M1 (gpt), H1 (gpt), S1 (claude) dispatched in parallel (disjoint files).
