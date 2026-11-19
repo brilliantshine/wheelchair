@@ -61,6 +61,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 24 | Try writes get their own lock, separate from agents' `inRepoQueue`; Status takes no lock; writes are acknowledged then finished in the background; switch process groups are tracked by `pgid` across restarts and terminated (SIGTERM, then SIGKILL) after their deadline; one outcome table; `pending` blocks Try and Back; Dismiss never reconciles or scans; a leftover `index.lock` is reported, never deleted | Round 8 findings | review-round-8 |
 | 25 | Rare broken switches (killed, service restarted mid-switch, half-switched, unexpected) are all shown as "interrupted" with files and his earlier branch, and he sorts them out at his computer then presses Done; Finish, process-group tracking across restarts and automatic re-judging are deferred (D3). Supersedes the parts of 22-24 about Finish, `pgid` and the full outcome table | Collin chose "Hand rare cases to me" | user |
 | 26 | Done, Try and Back refused while `index.lock` exists; git output reporting a failed removal counts as interrupted; Back judges and finalizes from one scan; Status checks a lock generation before showing an interruption; Done re-creates a missing return pin before keeping it | Round 9 findings | review-round-9 |
+| 27 | Only `unable to unlink`/`unable to rmdir` with HEAD at the target overrides the table; scan-free checks run before acknowledging, and every accepted action writes `last` with an outcome; the lock-file line shows in any state; `appeared` lists raw paths, capped at 50 | Round 10 findings | review-round-10 |
 
 ## Spec
 
@@ -109,8 +110,13 @@ Terms:
   deadline the machine sends SIGTERM to the group, waits 10 seconds, sends SIGKILL, and
   waits until the group is gone before going on. The exit code (or `killed`) is kept in
   memory for judging the outcome.
-- **Acknowledged, then finished**: `try` and `back` answer the hub as soon as they hold
-  the lock (`{accepted: true}`) and finish in the background; the hub keeps its default
+- **Acknowledged, then finished**: `try` and `back` first run, synchronously, the checks
+  that need no scan (version, folder checks, identity, `pending`, `index.lock`, Stale,
+  target ref, return branch). A failure is answered at once as a refusal. Otherwise they
+  answer the hub as soon as they hold the lock (`{accepted: true}`) and finish in the
+  background. Every accepted action ends by writing `last` with its outcome, including
+  refusals found later (not clean, submodule) and including when no `pending` was ever
+  written; the hub keeps its default
   5-second timeout (`viewer/app/machine-client.js:10`). The page shows "Switching…",
   re-reads Status every 3 seconds while it says running, then shows `last`.
 - **Outcome of a switch**, judged once git has exited, by HEAD identity, a status scan
@@ -124,9 +130,12 @@ Terms:
   | source | clean | nonzero or killed | nothing moved (killed: "git took too long"; else git's message) |
   | anything else | | | **interrupted** |
 
-  Before the table: if git's output contains `unable to unlink` or a line starting
-  `error:`, the outcome is interrupted whatever the exit code (git can report a removal
-  it could not do and still exit 0).
+  Before the table: git runs with `LC_ALL=C`. If HEAD is at the target and git's
+  output contains `unable to unlink` or `unable to rmdir` (git can report a removal it
+  could not do and still exit 0), the outcome is interrupted. No other output changes
+  the outcome: a refusal before HEAD moves ("would be overwritten by checkout") is
+  "nothing moved" with the "in the way" sentence and git's listed paths (6), and a
+  hook's own `error:` lines leave a success a success with a warning.
   Interrupted (also: the scan failed, or the service finds `pending` set at start-up or
   on a later request, meaning it stopped mid-switch): `pending` is kept, with `files`
   from the scan when there was one. Wheelchair does not try to repair it (see Deferred
@@ -134,7 +143,8 @@ Terms:
   branch his copy was on before trying, and says: "Check your copy at your computer,
   then press Done." **Done** is Dismiss (4). If `<git-dir>/index.lock` exists, Status
   adds "Git left a lock file: <full path>. At your computer, check no git is running,
-  then delete it." It is never deleted automatically. The interrupted line also says
+  then delete it." It is never deleted automatically, and Status shows this line
+  whenever the file exists, in any state. The interrupted line also says
   "Git may still be running in this folder" (the machine service unit uses
   `KillMode=process`, `install.sh:401`, so a switch can outlive a service restart).
   **Done is refused while `<git-dir>/index.lock` exists** ("Git may still be running in
@@ -162,7 +172,9 @@ written atomically (temp file then rename):
   pending: null | { op: "try"|"back", first: bool, thread_id,
                     from: HEADid, to: HEADid, files?: [path],
                     return_point?, return_ref? },  // first Try only
-  last: null | { op, thread_id, at, warning?, files?, appeared? },
+  last: null | { op, thread_id, at,
+                 outcome: "success"|"warning"|"nothing-moved"|"refused"|"interrupted",
+                 reason, files?: [path], appeared?: [path], appeared_count? },
   kept: [ { ref, label, thread_id, branch?, at } ] }            // pinned commits
 ```
 
@@ -222,9 +234,12 @@ folder share it). Version checks happen under the lock before anything else.
       the saved sha. If Moved, pin HEAD as `kept`.
    2. Write `pending {op: "back", from: HEAD, to: <resolved target>}`, switch (or Same
       place), and judge the outcome from its one scan; the record is changed only after
-      that scan. Success: `active` and `pending` cleared, return pin deleted; any files
-      the scan found (for example ones the trial's ignore rules hid) are listed as
-      "These files appeared after switching back", left in place. Nothing moved:
+      that scan. Success: `active` and `pending` cleared, return pin deleted; the protected
+      filter decides cleanliness as usual, but `appeared` lists the raw untracked paths
+      from that same scan, protected ones included (for example ones the trial's ignore
+      rules hid, or ones the advanced return branch no longer ignores), as "These files
+      appeared after switching back", left in place; at most 50 are listed, with
+      `appeared_count` giving the total. Nothing moved:
       `pending` cleared, still trying. Interrupted: `pending` kept.
 3. **Status** (GET, takes no lock and never waits). The machine keeps, per folder, an
    in-memory lock generation that increases on every acquire and release. Status reads
@@ -337,7 +352,11 @@ submodule changes.
     project; `try` answers `accepted` at once and the page shows `last` after polling;
     Try and Back refused while `pending` is set; Done refused while `index.lock`
     exists; a git switch that exits 0 after "unable to unlink" (interrupted); Status
-    polled across a switch finishing never shows "interrupted";
+    polled across a switch finishing never shows "interrupted"; an ignored file in the
+    way stays "nothing moved" with its path listed; a post-checkout hook printing
+    `error:` stays a success with warning; a dirty first Try answers `accepted` then
+    writes `last` as refused with the files; `index.lock` line shown after a "nothing
+    moved";
   - Done after an interrupted Try with HEAD at the target (Switch back kept); after an
     interrupted Back with HEAD at the return branch (counts as success, no "switched by
     hand"); after an interrupted move between threads (`active` kept);
@@ -634,6 +653,24 @@ Budget reset after Collin's decision.
 interrupted line says git may still be running; git output reporting a failed removal
 counts as interrupted; Back judges and finalizes from one scan; Status lock-generation
 check; Done re-creates a missing return pin; identity-mismatch wording. Decision 26.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | blocking | The `error:` rule turns a plain "in the way" refusal into an interruption | upheld | Only removal failures with HEAD at the target |
+| intent | minor | A hook's `error:` line turns success into interrupted | upheld | Same fix |
+| intent | minor | Lock-file line only when interrupted | upheld | Shown in any state |
+| mechanics | blocking | Same as intent 1 | upheld (dup) | Same fix, `LC_ALL=C` |
+| mechanics | major | Refusals found after acknowledgement have nowhere to go | upheld | Scan-free checks first; `last.outcome` and `reason` |
+| mechanics | minor | `appeared` raw or filtered unclear | upheld | Raw, capped at 50 |
+
+### Round 11 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 10:** the git-output override narrowed to removal failures with
+HEAD at the target, under `LC_ALL=C`; scan-free checks run before acknowledging; `last`
+gains `outcome` and `reason` and is written by every accepted action; lock-file line in
+any state; `appeared` uses raw paths, capped. Decision 27.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
