@@ -957,6 +957,9 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: A1, `machine/adapters/kimi.js:104-116`: box edges (`│`) stripped from each line; titles matched by prefix; an optional `❯` and `1.`-style number before a choice; the plan-review test pane is unframed (scout-found; report said none).
+- 2026-11-18 — A1 accepted (band: scout): machine 201/201 re-run by the sub-lead. Remediation 3 gap 1 fixed per Decision 48.
+
 - 2026-11-18 — Collin on the version-floor gap: leave it (Decision 49, Accepted Risk). Remediation 3 gap 3 settled by the plan.
 
 - 2026-11-18 — Choice: P1, `viewer/app/sessions.js`: notices moved into `notifyEnded`; because handoff export and handoff ops also call `stopManagedSession`, stopping a fatal-ended Kimi session during a handoff now sends the same reason notice and card (scout-found, not reported). Tests combine the worker, lead, no-reason and later-`pollDead` cases in one fixture.
