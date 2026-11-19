@@ -194,3 +194,27 @@ $ node --test test-support/test/*.test.js
 # fail 0
 ```
 
+
+### After verification attempt 5 on `4d8ae9c`
+
+Attempt 5: Claude verifier PASS; GPT verifier FAIL with three gaps, triaged under the lead's finishing rule.
+
+| Gap | Outcome | Implemented at | Validated by |
+|-----|---------|----------------|--------------|
+| Validation: the machine suite rewrote the live Antigravity Stop hook (`~/.gemini/config/hooks.json`) because a project-tools state test started an `agy` session on the real HOME | Fixed (R11): the test fixture uses a temporary HOME and restores it | machine/test/project-tools-state.test.js (`fixture`) | live hooks.json sha256 identical before and after `bash machine/test/run.sh` |
+| §§2–3: on systemd ≥258 a `$` in a literal Codex header value is expanded by `systemd-run` | Accepted Risk (lead agreed; hearth runs systemd 257) | — | — |
+| §6: a hand-edited saved state with a `clis.constructor` key crashes a recompute | Accepted Risk (rare setup) | — | — |
+
+Final validation (feature branch after R11, `de4854c`):
+
+```
+$ sha256sum ~/.gemini/config/hooks.json
+e827a361dfff88491a0be7aec1744d328a76be016f7d5b6e888735f49e2063cc
+$ bash machine/test/run.sh
+# tests 202
+# pass 202
+# fail 0
+$ sha256sum ~/.gemini/config/hooks.json
+e827a361dfff88491a0be7aec1744d328a76be016f7d5b6e888735f49e2063cc
+```
+Viewer (`node --test viewer/test/*.test.js`) and test-support (9/9) were unchanged by R11; attempt 5 verifiers' runs: viewer failures only known flakes and port collisions, each passing alone.
