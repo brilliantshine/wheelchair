@@ -86,6 +86,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 49 | Leave the version floor's handling of malformed SemVer as is; recorded as an Accepted Risk | Version-floor parsing survived two fix attempts (verification attempt 3: `02.6.3`, `2.6.3+abc..def`, `2.6.4-01` accepted); real `kimi --version` prints plain versions | user |
 | 50 | Live with the remaining permission-prompt false positive; recorded as an Accepted Risk | Permission-prompt detection failed verification attempt 4 after R1, Q1 and A1 (Decision 48): title and choice from separate blocks of ordinary output can still match | user |
 | 51 | A hub Stop sends the fatal-stop notice only when the session was still live in the hub before that Stop; tested with a retried Stop | Fatal-stop notification failed verification attempt 4 after R3 and P1 (a retried Stop notified twice) | user |
+| 52 | Kimi approval detection allows an optional `▶` or `❯` before both the title and the choice, keeping Decision 48's shape; tested with the installed renderer's exact lines, false-positive tests unchanged | Verification attempt 6: the real renderer draws `▶ Run this command?` / `▶ 1. Approve once`, which Decision 48's matcher rejected | user |
 
 ## Spec
 
@@ -959,6 +960,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Collin on remediation 6 gap 1: fix it (Decision 52); dispatched as A2 (light, gpt).
 
 - 2026-11-18 — L1 accepted (band: scout): exactly the brief's helper (reads the isolated machine's name-keyed `sessions.json`); syntax and test-support 9/9 re-run by the sub-lead; the worker's live check 5 run: `5 pinned light model | PASS`, cleanup clean, `1 passed; 0 failed`. Remediation 6 gap 4 fixed; gap 1 with Collin.
 
