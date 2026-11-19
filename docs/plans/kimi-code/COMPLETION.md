@@ -191,3 +191,26 @@ node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ```
 
 Residual after remediation 1: the approval titles come from Kimi's shipped code, not a captured live prompt; a failed or timed-out version check is cached until the binary changes or the service restarts.
+
+### Remediation 2 — 2026-11-18
+
+Verification attempt 2 (`de31e26`): Claude verifier PASS; GPT verifier FAIL with 5 gaps (`REMEDIATION-2.md`).
+
+| Gap | Fix | Fixed at | Test |
+|-----|-----|----------|------|
+| 1. Offset could pass an unhandled turn when the spool drained mid-batch | Offset saved only when every turn in the batch was handed off and the spool is not waiting | `machine/service.js:725-742` | `machine/test/kimi-turns.test.js:97` |
+| 2. Starter not told of a Kimi limit-hit | Settled by the plan: Decision 47 (shared limit-hit handling unchanged); Spec flowchart reworded | `docs/plans/kimi-code/PLAN.md` Decision 47, Spec flowchart | n/a (no code change) |
+| 3. Plan-review approval screen not detected | `promptText` also matches `Ready to build with this plan?` with an `Approve` choice line | `machine/adapters/kimi.js:104` | `machine/test/kimi.test.js:357` |
+| 4. `2.6.3foo` / `2.6.3.0` passed the floor | Whole-token version parse from the first line, optional name and `version` word | `machine/service.js:1313-1316` | `machine/test/kimi.test.js` (version floor cases) |
+| 5. `min_protocol_version` `1.5.1` / malformed accepted | Dotted-integer parse; min ≤ 1.5 component-wise; malformed incompatible | `machine/adapters/kimi.js:63-72` | `machine/test/kimi-turns.test.js` (protocol cases) |
+
+Validation on the merged branch at `1ed4d45`:
+
+```
+bash machine/test/run.sh            # tests 200, pass 200, fail 0
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 191 passed, 1 failed — only "real wheelchair directory is byte-identical after suite" (live Codex account files under ~/.wheelchair/accounts/ written during the run)
+node --test viewer/test/*.test.js   # tests 644, pass 644, fail 0
+npm --prefix viewer run test:browser   # 28 skipped, 774 passed (3.4m)
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```
