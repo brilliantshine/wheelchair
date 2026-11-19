@@ -36,10 +36,13 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
   const identity = dir => projectIdentity(dir, (p, a) => run(p, a));
   const must = async promise => { const r = await promise; if (!r.ok) throw new Error(reason(r)); return r.stdout; };
   async function remote(dir) {
-    const a = await git(dir, 'remote', 'get-url', 'origin'), b = await git(dir, 'remote', 'get-url', '--push', 'origin');
-    if (!a.ok || !b.ok) return null;
-    const repo = repoName(a.stdout), pushRepo = repoName(b.stdout);
-    return repo && pushRepo && repo.toLowerCase() === pushRepo.toLowerCase() ? { repo, url: b.stdout.trim() } : null;
+    const a = await git(dir, 'config', '--get-all', 'remote.origin.url'), b = await git(dir, 'config', '--get-all', 'remote.origin.pushurl');
+    if (!a.ok || (!b.ok && b.status !== 1)) return null;
+    const urls = a.stdout.trim().split('\n'), pushes = b.ok ? b.stdout.trim().split('\n') : urls;
+    if (urls.length !== 1 || pushes.length !== 1) return null;
+    const push = pushes[0];
+    const repo = repoName(urls[0]), pushRepo = repoName(push);
+    return repo && pushRepo && repo.toLowerCase() === pushRepo.toLowerCase() ? { repo, url: push.trim() } : null;
   }
   async function sourceAt(dir, ref) {
     const tree = await must(git(dir, 'ls-tree', ref, '--', '.mcp.json'));
@@ -131,7 +134,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
           await must(git(worktree, 'push', `--force-with-lease=refs/heads/${newBranch}:`, destination.url, `HEAD:refs/heads/${newBranch}`));
           const pr = await run('gh', ['pr', 'create', '--repo', destination.repo, '--head', newBranch, '--base', branch, '--title', 'Update project tools', '--body', "Saved from the wheelchair app's Project tools screen."]);
           if (!pr.ok) return { status: 200, body: { outcome: 'pr_failed', key_revision: store.revision, keys: keys(store), branch: newBranch, compare_url: `https://github.com/${destination.repo}/compare/${branch}...${newBranch}?expand=1`, error: reason(pr) } };
-          return { status: 200, body: { outcome: 'opened', key_revision: store.revision, keys: keys(store), pr_url: pr.stdout.trim(), warnings } };
+          return { status: 200, body: { outcome: 'opened', key_revision: store.revision, keys: keys(store), pr_url: pr.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.startsWith('https://')).at(-1) || pr.stdout.trim(), warnings } };
         } catch (e) { return failed(e); } finally { if (added) await git(input.path, 'worktree', 'remove', '--force', worktree); }
       });
     } catch (e) { return failed(e); }
