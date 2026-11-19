@@ -180,7 +180,7 @@ class ScreenManager {
     env.DISPLAY = screen.state.display; env.XAUTHORITY = path.join(screen.dir, 'xauth');
     const appEnv = { ...env, ...Object.fromEntries(parsed.env) };
     if (!findCommand(parsed.command[0], session.worktree, appEnv.PATH)) throw error(422, `command not found: ${parsed.command[0]}`);
-    const input = require('./screen-input'); const ctx = { env }; const baseline = await input.windowIds(ctx, { probeTimeoutMs: 1000 });
+    const input = require('./screen-input'); const ctx = { env }; const phaseStart = Date.now(); const baseline = await input.windowIds(ctx, { probeTimeoutMs: 1000, deadline: phaseStart + 6000 });
     this.fence(session, screen, generation);
     const n = screen.state.next_app++; const log = path.join(screen.dir, `app-${n}.log`); const unit = this.unit(screen, `app${n}`);
     const command = ['env', '--', ...parsed.env.map(([k, v]) => `${k}=${v}`), ...parsed.command];
@@ -191,7 +191,7 @@ class ScreenManager {
     try { child = spawn('systemd-run', args, { env, cwd: session.worktree, detached: true, stdio: ['ignore', fd, fd] }); } finally { fs.closeSync(fd); }
     child.unref(); await this.registered(child, unit);
     try { this.fence(session, screen, generation); } catch (e) { this.immediate(unit); throw e; }
-    const focused = await input.autoFocus(ctx, baseline); this.fence(session, screen, generation);
+    const focused = await input.autoFocus(ctx, baseline, { startedAt: phaseStart }); this.fence(session, screen, generation);
     return { ok: true, app: n, log, focused };
   }
   async handle(session, body) {
