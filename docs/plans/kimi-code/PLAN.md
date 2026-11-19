@@ -957,6 +957,9 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: C1, `viewer/app/usage.js:110`: the per-CLI Kimi problem is checked after `signed_in` and before the account's own problem, gated on `a.provider === 'kimi'`; `cliProblems` is recorded for every reachable machine.
+- 2026-11-18 — C1 accepted (band: scout): targeted 33/33 re-run by the sub-lead (worker's full viewer run 646/646). Remediation 4 gap 3 fixed.
+
 - 2026-11-18 — Lead: fix remediation 4 gap 3 now (C1, light, claude); gaps 1 and 2 are with Collin.
 
 - 2026-11-18 — Verification attempt 4: Claude PASS, GPT FAIL with 3 gaps (REMEDIATION-4.md). Permission-prompt detection and fatal-stop notification survived two fix attempts again: sent to the lead; work stopped pending Collin.
