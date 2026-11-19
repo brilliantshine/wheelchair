@@ -326,6 +326,8 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Machine: S1 `known` transcript route, S2 cheap copies and dedupe sets, API.md, machine S5 tests | `machine/service.js`, `machine/API.md`, `machine/test/` | standard (tbd) | — | `bash machine/test/run.sh` | not started |
+| T2 | Hub: S3 chat/report split, S4 idle sweep, S4b last-seen throttle, fake machine new form, hub S5 tests | `viewer/app/{chat,hub,state,sessions,asides,routes}.js`, `viewer/test/` | standard (tbd) | — | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | not started |
 
 ## Log
 - 2026-11-19 Ready check at approval: hub and machine service answer (`wc.js session list`); Claude CLI installed; Codex preflight passed (token fresh).
