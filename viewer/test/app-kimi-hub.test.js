@@ -37,6 +37,24 @@ test('Kimi report selects a turn and orders the last step parts by block', () =>
   assert.equal(lastAssistantText('kimi', lines(rows)), 'later');
 });
 
+test('Kimi report ignores stale and subagent turn ends', () => {
+  const rows = [
+    {type:'turn.prompt',origin:{kind:'user'},turnId:0},
+    {type:'context.append_loop_event',event:{type:'step.begin',uuid:'zero'}},
+    {type:'context.append_loop_event',event:{type:'content.part',stepUuid:'zero',block:0,part:{type:'text',text:'turn zero'}}},
+    {type:'turn.ended',turnId:0,agentId:'main'},
+    {type:'turn.prompt',origin:{kind:'user'},turnId:1},
+    {type:'turn.ended',turnId:0,agentId:'main'},
+    {type:'turn.ended',turnId:1,agentId:'agent-0'},
+    {type:'context.append_loop_event',event:{type:'step.begin',uuid:'one'}},
+    {type:'context.append_loop_event',event:{type:'content.part',stepUuid:'one',block:1,part:{type:'text',text:'turn '}}},
+    {type:'context.append_loop_event',event:{type:'content.part',stepUuid:'one',block:2,part:{type:'text',text:'one'}}},
+    {type:'turn.ended',turnId:1,agentId:'main'},
+  ];
+  assert.equal(lastAssistantText('kimi', lines(rows), 1), 'turn one');
+  assert.equal(lastAssistantText('kimi', lines(rows), 0), 'turn zero');
+});
+
 test('turn watermark drops retries and interrupted turn releases permission without report or reminder', async () => {
   const target = {name:'worker',role:'reviewer',started_by:'lead',cli:'kimi',live:true,ready:true,permission_open:true,needs_open:true,needs_card:'n',queue:[{text:'next',source:'app'}],owes_reply:true};
   const lead = {name:'lead',role:'lead',live:true,ready:false,queue:[]};
