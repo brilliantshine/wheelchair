@@ -177,6 +177,20 @@ test('a page load with the hub unreachable shows the hub sentence', async ({ pag
   await expect(panel(page).locator('.card-error')).toHaveText("Can't reach the hub.");
 });
 
+test('a failed background poll clears its hub error once a later poll succeeds', async ({ page }) => {
+  const fake = await setup(page, S({ state: 'busy' }));
+  // Wait for the page-load read to show the busy state: only then does the page schedule its next poll.
+  await expect(panel(page)).toContainText('A switch is running.');
+  fake.abortGet = true;
+  const gets = fake.gets;
+  await expect.poll(() => fake.gets).toBeGreaterThan(gets);
+  await expect(panel(page).locator('.card-error')).toHaveText("Can't reach the hub.");
+  fake.abortGet = false;
+  fake.status = S({ state: 'none', last: { op: 'try', thread_id: fake.threadId, at: 'now', outcome: 'success', reason: 'Switched.', files: [], files_count: 0 } });
+  await expect(panel(page).locator('.card-error')).toHaveCount(0, { timeout: 8000 });
+  await expect(panel(page)).toContainText('Switched your copy to this thread.');
+});
+
 test('a refused write shows the reason and re-reads Status once', async ({ page }) => {
   const fake = await setup(page, S());
   fake.write = async () => ({ status: 200, json: { accepted: false, reason: 'Your copy changed since this page loaded.', status: fake.status } });

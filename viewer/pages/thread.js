@@ -349,8 +349,8 @@
       const res = await fetch(T + '/try');
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || out.detail || 'http ' + res.status);
-      if (seq === copy.seq) { copy.status = out; if (!quiet) copy.error = ''; }
-    } catch (e) { if (seq === copy.seq) copy.error = copyErrorText(e); }
+      if (seq === copy.seq) { copy.status = out; if (!quiet || copy.errorFrom === 'load') { copy.error = ''; copy.errorFrom = ''; } }
+    } catch (e) { if (seq === copy.seq) { copy.error = copyErrorText(e); copy.errorFrom = 'load'; } }
     finally { if (seq === copy.seq) copy.loading = false; renderCopy(); }
     copySchedule();
   }
@@ -370,9 +370,9 @@
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || out.detail || 'http ' + res.status);
       copyTake(out.status);
-      if (out.accepted === false) { copy.error = out.reason || 'That did not work.'; reread = true; }
+      if (out.accepted === false) { copy.error = out.reason || 'That did not work.'; copy.errorFrom = 'write'; reread = true; }
       else if (out.accepted === true) copy.waiting = true;
-    } catch (e) { copy.error = copyErrorText(e); reread = true; }
+    } catch (e) { copy.error = copyErrorText(e); copy.errorFrom = 'write'; reread = true; }
     finally { copy.sending = false; renderCopy(); }
     if (reread) { copy.waiting = false; await copyLoad(true); } else copySchedule();
   }
