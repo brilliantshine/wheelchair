@@ -61,9 +61,9 @@ test('folder checks reject service root, worktrees and operations in progress', 
   assert.equal(spawnSync('git', ['init', repo]).status, 0);
   const instance = new TryService({ stateDir: path.join(root, 'state'), root: path.join(repo, 'wheelchair'), projects: null });
   const record = await instance.read(repo);
-  assert.match(instance.folderCheck(repo, record), /runs wheelchair/);
+  assert.match(await instance.folderCheck(repo, record), /runs wheelchair/);
   instance.root = path.join(root, 'outside'); await fs.writeFile(path.join(repo, '.git', 'rebase-apply'), 'in progress');
-  assert.match(instance.folderCheck(repo, record), /operation in progress/);
+  assert.match(await instance.folderCheck(repo, record), /operation in progress/);
 });
 test('Status on a repo with an LFS filter runs no filter; pending is interrupted after reload', async () => {
   const { makeTemp } = require('../../test-support/run-dir'); const fs = require('node:fs/promises'); const path = require('node:path'); const { spawnSync } = require('node:child_process');
@@ -73,7 +73,7 @@ test('Status on a repo with an LFS filter runs no filter; pending is interrupted
   const log = path.join(root, 'filter-log'); git('config', 'filter.lfs.smudge', `echo hit >> '${log}'; cat`);
   await fs.writeFile(path.join(repo, 'file'), 'data'); git('add', 'file'); git('commit', '-m', 'base');
   const instance = new TryService({ stateDir: path.join(root, 'state'), root: path.join(root, 'other'), projects: async () => ({ checked: { ok: true } }) });
-  const record = await instance.read(repo); record.identity = instance.identity(repo); record.pending = { from: instance.head(repo), files: ['file'], thread_id: '0123456789ab' }; await instance.write(repo, record);
+  const record = await instance.read(repo); record.identity = await instance.identity(repo); record.pending = { from: await instance.head(repo), files: ['file'], thread_id: '0123456789ab' }; await instance.write(repo, record);
   const status = await instance.handle({ action: 'status', project: repo, thread_id: '0123456789ab' });
   assert.equal(status.state, 'interrupted'); assert.deepEqual(status.files, ['file']); await assert.rejects(fs.access(log));
 });
@@ -121,7 +121,7 @@ test('Try refused while pending or index.lock exists; index.lock is reported and
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
   const lock = path.join(f.repo, '.git', 'index.lock'); await fs.writeFile(lock, '');
   const refused = await f.instance.handle(f.request); assert.match(refused.reason, /Git may still be running/); assert.equal(refused.status.index_lock, lock); await fs.access(lock);
-  const record = await f.instance.read(f.repo); record.identity = f.instance.identity(f.repo); record.pending = { from: f.instance.head(f.repo), thread_id: f.request.thread_id }; await f.instance.write(f.repo, record);
+  const record = await f.instance.read(f.repo); record.identity = await f.instance.identity(f.repo); record.pending = { from: await f.instance.head(f.repo), thread_id: f.request.thread_id }; await f.instance.write(f.repo, record);
   assert.match((await f.instance.handle(f.request)).reason, /interrupted/);
 });
 test('post-checkout hook exiting nonzero or printing error follows its exit code', async () => {
@@ -155,7 +155,7 @@ test('a pre-switch scan timing out writes refused in last with no pending', asyn
   await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, 'refused'); assert.match(status.last.reason, /too long/); assert.equal((await f.instance.read(f.repo)).pending, null);
 });
 test('Status lock generation check does not publish interruption across a switch', async () => {
-  const f = await tryFixture(); const record = await f.instance.read(f.repo); record.identity = f.instance.identity(f.repo); record.pending = { from: f.instance.head(f.repo) }; await f.instance.write(f.repo, record);
+  const f = await tryFixture(); const record = await f.instance.read(f.repo); record.identity = await f.instance.identity(f.repo); record.pending = { from: await f.instance.head(f.repo) }; await f.instance.write(f.repo, record);
   const read = f.instance.read.bind(f.instance); f.instance.read = async folder => { const value = await read(folder); f.instance.acquire(folder); f.instance.release(folder); return value; };
   assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).state, 'busy');
 });
@@ -204,4 +204,13 @@ test('same thread target advances and Status offers newest', async () => {
   f.git('update-ref', 'refs/heads/wc/0123456789ab', commit.stdout.trim());
   assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).newest, true);
   await f.instance.handle(f.request); assert.equal((await f.done()).active_commit, commit.stdout.trim());
+});
+test('metadata calls are asynchronous and Status remains bounded when Git hangs', async () => {
+  const { makeTemp } = require('../../test-support/run-dir'); const fs = require('node:fs/promises'); const path = require('node:path');
+  const root = await makeTemp('try-metadata-'); const executable = path.join(root, 'git');
+  await fs.writeFile(executable, '#!/bin/sh\nexec sleep 10\n', { mode: 0o755 });
+  const instance = new TryService({ stateDir: path.join(root, 'state'), root: path.join(root, 'other'), projects: async () => ({ checked: { ok: true } }), gitExecutable: executable });
+  let ticked = false; setTimeout(() => { ticked = true; }, 50);
+  const start = Date.now(); await instance.handle({ action: 'status', project: root, thread_id: '0123456789ab' });
+  assert.equal(ticked, true); assert.ok(Date.now() - start < 4500);
 });
