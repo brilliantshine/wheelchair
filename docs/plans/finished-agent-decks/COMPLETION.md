@@ -254,3 +254,36 @@ $ node --test viewer/test/*.test.js      # load average 24-30 from other session
 # pass 639
 # fail 2      # app-machines.test.js, app-uploads-archive.test.js: 8/8 and 3/3 when run alone
 ```
+
+### Remediation 6 — 2026-11-19
+
+Verification attempt 6 ran on eacd33d. The Claude verifier passed. The GPT verifier failed with two gaps. For gap 1, Collin chose to reword the invariant (PLAN.md Decision 19): a popover keeps its scroll position, or the nearest one the box allows, and rows that were visible stay visible. Gap 1 therefore has no code change, only a boundary test. Details are in `REMEDIATION-6.md`.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| 1. Popover scrollTop clamped when the box grows on refresh | No code change (Decision 19). New boundary test: the popover is scrolled to its bottom, the deck moves off screen, and the box grows. The test asserts the box stays inside the viewport, that `clientHeight` grew, that scrollTop equals `min(want, scrollHeight - clientHeight)` ±2, and that every fully visible round is still fully visible | `viewer/test/app-agents-decks.spec.js` "popover scrolled to the bottom grows on refresh" | That test: phone 997→850 (box 642→826), desktop 1211→894 (box 428→782), in Chromium and Firefox |
+| 2. `--title '--round'` refused | The bare-`--round` check moved from a raw-argument scan into `flags()`, so it only applies where `--round` is in flag position | `viewer/app/wc.js` `flags()`; the scan in `sessionRequest` removed | `viewer/test/app-session-meta.test.js` "review round is validated before dedupe…" (asserts `--title --round` is accepted and a bare `--round` refused) |
+
+Lanes:
+- R7: light, gpt-6-luna.
+- R8: standard, claude-sonnet-5-5.
+
+Validation on the merged branch (50764ad):
+
+```text
+$ node --test --test-timeout=120000 viewer/test/*.test.js
+# tests 629
+# pass 628
+# fail 0          # app-hub.test.js reported "not ok" at file level under load
+$ node --test viewer/test/app-hub.test.js
+# tests 114
+# pass 114
+# fail 0
+
+$ npm --prefix viewer run test:browser
+  1 failed        # [chromium] app-threads.spec.js:340 desktop "message box posts and shows queued" (known intermittent)
+  34 skipped
+  883 passed (5.1m)
+$ npx playwright test test/app-threads.spec.js:340
+  4 passed (14.5s)
+```
