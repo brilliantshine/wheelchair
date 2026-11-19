@@ -62,6 +62,19 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   }
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
+  if (request.method === 'POST' && bits.length === 2 && bits[0] === 'project-tools' &&
+      ['read', 'save', 'remove-key'].includes(bits[1])) {
+    if (!body || typeof body.path !== 'string') return send(response, 400, { error: 'path is required' });
+    const { machine, ...input } = body;
+    const name = typeof machine === 'string' && machine ? machine : 'hub';
+    try {
+      const result = await hub.client.passThrough(name, `/v1/project-tools/${bits[1]}`, 'POST', input, 120_000);
+      return send(response, result.status, result.body);
+    } catch (error) {
+      if (error.status === 404 && error.message === `unknown machine: ${name}`) return send(response, 404, { error: error.message });
+      return send(response, 504, { error: error.message === 'machine timeout' ? 'machine timeout' : error.message === 'machine returned invalid JSON' ? error.message : 'machine unavailable' });
+    }
+  }
   if (bits[0] === 'machine') {
     return handleMachine(hub, request, response, bits, body, machineAuthenticated);
   }
