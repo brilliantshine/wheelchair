@@ -59,7 +59,7 @@ Viewer hub and Agents page (`viewer/app/sessions.js`, `viewer/app/agents.js`, `v
 - Retries keep today's attempt dedupe (`viewer/app/sessions.js:606-611`): a start whose `--attempt` matches a live or unanswered session returns that session (an unanswered one is retried as today); its stored `round` never changes, and the new call's `--round` is ignored; otherwise a new session is created carrying the `--round` of its own start call. No other change to dedupe.
 - `round` is included in the public session and in the Agents API node.
 - Protocol: lead.md step 5 tells the lead to pass `--round <N>` (the review round number, same as the progress `pass`) when starting reviewers, including restarts within a round. sub-lead.md tells the sub-lead to pass `--round <N>` (the verification attempt number, same as the verify progress `pass`) when starting build verifiers. Small-fix, after-done and steps-only verifiers are started without `--round`.
-- Verification attempt numbering (sub-lead.md, and the `pass` definition in `protocol/app/cards.md`): a build's attempts are numbered 1, 2, 3 in start order, every fresh attempt (including the all-deferred re-check) taking 1 + the larger of: the highest `round` among this thread's verifiers in `wc.js session list`, and the highest N among committed `docs/plans/<slug>/REMEDIATION-N.md` files (so a remediation file is never overwritten, including for a build that straddles this change); restarting a dead or blocked verifier within an attempt reuses that attempt's number. The verify progress `pass` is that same number. Replace the cards.md wording "`REMEDIATION-N.md`'s N + 1 for a re-verify" with this rule. `wc.js session list` shows each session's `round` (it is in the public session).
+- Verification attempt numbering (sub-lead.md, and the `pass` definition in `protocol/app/cards.md`): a build's attempts are numbered 1, 2, 3 in start order, every fresh attempt (including the all-deferred re-check) taking 1 + the larger of: the highest `round` among this thread's verifiers in `wc.js session list`, and the highest N among committed `docs/plans/<slug>/REMEDIATION-N.md` files (so a remediation file is never overwritten, including for a build that straddles this change); restarting a dead or blocked verifier within an attempt reuses that attempt's number, and so does a replacement sub-lead whose highest-numbered attempt has no reported verdict (all its verifiers died or were stopped before reporting). The sub-lead.md rule "Attempt 1 sharpens the brief" is reworded to apply to the build's first remediation (no `REMEDIATION-*.md` committed yet), whatever its attempt number. The verify progress `pass` is that same number. Replace the cards.md wording "`REMEDIATION-N.md`'s N + 1 for a re-verify" with this rule. `wc.js session list` shows each session's `round` (it is in the public session).
 
 ### 2. Per-round counts and outcome in the Agents API
 For each lead in `GET /wheelchair/api/agents`, add `rounds: { review: {<N>: R}, verify: {<N>: R} }` built from the thread's `progress` cards (including replaced ones) with `stage` `review` / `verify`. For each pass N, use the latest card for that stage and pass whose phase is `fixing` or `clean`:
@@ -72,7 +72,7 @@ Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> 
 ### 3. Decks on the tree (Hide finished agents OFF)
 - Among one parent's children, finished nodes with the same `role` form a deck when there are 2 or more. A single finished node stays a normal box. Live (working, waiting, idle) nodes are never in a deck. "Finished" is the existing page definition.
 - The deck replaces those boxes, placed at the position of its newest member in the existing creation order. The deck is a parent in its own right: the children of all its members are merged into one child list under the deck (sorted by creation), and grouping under it uses the deck as their parent. So the verifiers of two decked sub-leads can share one deck. This is the meaning of "same parent" for agents under a deck.
-- Deck card: role, count (`×40`), one-line title, and "finished <relative time>" from the newest member's `ended_at` (falling back to its last activity time when absent). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
+- Deck card: role, count (`×40`), one-line title, and "finished <relative time>" from the latest `ended_at` across all members (a member without `ended_at` uses its last activity time). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
 - Title: reviewer → "Plan review · N rounds"; verifier → "<newest member's title> · N rounds" (e.g. "Checked parts 1–4 · 3 rounds"; "Checks" when it has no title). Either gets the suffix ", last round clean" when the `rounds` entry for H (same stage) has `clean: true`. N (the count shown) = number of distinct `round` values among members; H = the highest of them. Members with no `round` are not counted in N; if no member has a round, reviewer/verifier decks use the other-deck title. Other decks: the newest member's title (role when it has none).
   - No approval tracking: the suffix reports only what round H's progress line says.
 - Hide finished agents ON: behaviour unchanged (decks never shown; a selected finished agent and needed ancestors still shown as boxes).
@@ -83,7 +83,7 @@ Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> 
 - The square row has an accessible label: "<N> rounds; objections went from <first counted> to <last counted>" (verifiers: "problems"); with fewer than two counted rounds, "<N> rounds".
 
 ### 5. Deck popover
-- Clicking a deck (button, keyboard-activatable) opens a popover anchored under it; Escape, clicking outside or clicking the deck again closes it. Only one open at a time. It survives the 5-second refresh (stays open, content updates). The open popover, and any expanded round, is remembered by the name of one member session (the newest at opening); after a refresh it reopens on whichever deck now contains that session (for example after two child decks merge), with the same round expanded if it still exists; if no deck contains it, the popover closes.
+- Clicking a deck (button, keyboard-activatable) opens a popover anchored under it; Escape, clicking outside or clicking the deck again closes it. Only one open at a time. It survives the 5-second refresh (stays open, content updates). The open popover, and any expanded round, is remembered by the name of one member session (the newest at opening); after a refresh it reopens on whichever deck now contains that session (for example after two child decks merge), with the same round expanded if it still exists and "Show all" restored if it was pressed (if the remembered round would fall past the five-row cutoff, the list opens in Show all); if no deck contains it, the popover closes.
 - Reviewer/verifier decks with rounds list rounds newest first: square, "Round N", "<k> reviewers · <text>" (verifiers: "<k> verifiers"). <text> is "1 objection: <first>" when found is 1 and the round's members' reports total exactly one finding line; else "<found> objections" (singular for 1; "problems" for verifiers); "no objections" for 0; "not counted" with no entry. A round whose entry has `clean: true` and found > 0 appends " · none serious" (a clean round can still hold minor objections, so its square may be yellow or worse while the title says "last round clean"; that is intended). Members without a round are listed as a final group "Other". Shows the latest 5 rounds, then a "Show all N rounds" button that expands in place.
 - Opening a round lists its agents (title, finished time); each is selectable exactly like a box: sets `?agent=` and shows that agent in the right panel. The deck containing the selected agent is drawn selected.
 - Other decks list their agents newest first, latest 5 then "Show all N agents", each selectable the same way.
@@ -123,6 +123,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A finding or gap whose evidence itself contains ` — ` can show part of the evidence in the one-objection text | Reports have no escaping; the line is still counted, only the shown text is longer than ideal | 5 |
 | After a lead restart mid-round, a stale report's single finding can be shown as the round's one objection | Rare (restart mid-round with exactly one leftover finding); only the text is wrong, the count and color are right | 2 |
 
 ## Review Rounds
@@ -220,7 +221,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 5 — 2026-11-18
 
-**Lanes:** intent: claude; mechanics: (no provider constraint, intent start was waiting); cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 4:**
 - IDEA.md example and Constraint now say "last round clean" (Decision 13).
@@ -231,6 +232,23 @@ exit. Downgrades and declines cite evidence.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | "last round clean" next to a yellow/orange square looks contradictory | upheld | §5 popover row appends " · none serious" for clean rounds with minor objections; stated as intended |
+| mechanics | major | A sub-lead restart could push the first failure into attempt 2, skipping the "attempt 1 sharpens the brief" rule | upheld | §1: unreported attempt reused on sub-lead restart; sub-lead.md rule reworded to "first remediation" |
+| mechanics | minor | Remembered expanded round hidden past the five-row cutoff | upheld | §5 restores Show all |
+| mechanics | minor | Evidence containing ` — ` leaks into the shown text | accepted-risk | Accepted Risks; count unaffected |
+| mechanics | minor | Deck finish time from newest-created member, not latest finish | upheld | §3 uses latest `ended_at` across members |
+
+### Round 6 — 2026-11-18
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 5:**
+- §1: unreported attempt reused by a replacement sub-lead; sub-lead.md first-remediation wording.
+- §3: deck finish time is the latest across members.
+- §5: " · none serious" on clean rounds with minor objections; Show all restored on refresh.
+- Accepted Risks: ` — ` inside evidence.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
