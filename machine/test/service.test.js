@@ -66,7 +66,11 @@ async function service(root, options = {}) {
   process.env.PATH = `${fake.bin}:${prior.PATH}`; process.env.FAKE_LOG = fake.log; process.env.FAKE_PANE = fake.pane;
   let instance = new MachineService({ stateDir: state, host: '127.0.0.1', port: listen });
   try { await instance.listen(); } catch (error) { Object.assign(process.env, prior); throw error; }
-  return { instance, state, fake, base: `http://127.0.0.1:${listen}`, async close() { await new Promise(resolve => instance.server.close(resolve)); Object.assign(process.env, prior); } };
+  return { instance, state, fake, base: `http://127.0.0.1:${listen}`, async close() {
+    // A test that fails mid-start ends with that start still running. Wait for it before PATH
+    // drops the fake tmux, or it launches a real session in the user's own tmux server.
+    while (instance.startingNames.size) await Promise.allSettled([...instance.startingNames.values()]);
+    await new Promise(resolve => instance.server.close(resolve)); Object.assign(process.env, prior); } };
 }
 async function api(env, method, endpoint, body, headers = {}) {
   const response = await fetch(`${env.base}${endpoint}`, { method, headers: { 'content-type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
