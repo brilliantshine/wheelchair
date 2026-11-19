@@ -50,6 +50,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | Round squares are for reviewer decks only; verifier decks stack like worker decks; no change to verification numbering, sub-lead.md or cards.md. Supersedes the verifier parts of Decisions 2, 10 and 11, and removes Deferred D3 | Verifier numbering caused most of the review churn; builds rarely need more than two or three checks | user |
 | 15 | IDEA.md updated: verifier decks have no squares | Follows Decision 14 | idea-change |
 | 16 | Clarifies 14: verifier decks keep Decision 10's newest-member title, without " · N rounds" | Matches Spec §3 | review-round-7 |
+| 17 | Fix the Agents page refresh now: restore the page scroll on every refresh (not only with an agent selected) and re-place an open deck popover against the restored deck; phone test with a long tree, no selection, an open popover, across a refresh. This changes refresh behaviour beyond decks, by Collin's choice | Verification attempt 4's surviving G5 symptom came from the pre-existing scroll reset (`viewer/pages/agents.js:246`); Collin picked fixing it over deferring | user |
 | 9 | Popover shows the latest 5 rounds (or agents) before "Show all" | Proposal says "the latest few" | defaulted |
 
 ## Spec
@@ -323,6 +324,7 @@ Filled by Stage 3. One row per worker brief.
 | R2 | tricky — Remediation 1, G3-G5: one-line deck title, outlines behind the card, popover inside the viewport | `viewer/pages/{agents.js,views.css}`, `viewer/test/app-agents-decks.spec.js` | standard · claude-sonnet-5-5 | wc-d268e3df9c50-worker-4 (r2-a1) | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
 | R3 | tricky — Remediation 2 (second attempt for G4/G5): popover scroll, phone outlines, wider deck title | `viewer/pages/{agents.js,views.css}`, `viewer/test/app-agents-decks.spec.js` | standard · claude-sonnet-5-5 | wc-d268e3df9c50-worker-5 (r3-a1) | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
 | R4 | Remediation 3: deck connectors meet the card (drop deck margin); page uses only `finished_at` | `viewer/pages/agents.js:83`, `viewer/pages/views.css` `.agents-deck`, `viewer/test/app-agents-decks.spec.js` | light · claude-haiku-5-5 | wc-d268e3df9c50-worker-6 (r4-a1) | `npm --prefix viewer run test:browser` | done |
+| R5 | Remediation 4 (Decision 17): keep page scroll across the Agents refresh, re-place an open popover | `viewer/pages/agents.js` lines 6 and 246, `viewer/test/app-agents-decks.spec.js` | light · claude-haiku-5-5 | wc-d268e3df9c50-worker-7 (r5-a1) | `npm --prefix viewer run test:browser` | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -371,3 +373,4 @@ Build accepted: approval 408048b5-0427-443e-9d5e-4fc6d2b09c7d
 - 2026-11-18 — Choice: R4, `viewer/pages/views.css`: removing the deck margin applies to every deck, so the gap between sibling decks drops from 26px to 16px and the outlines overflow into it.
 - 2026-11-18 — R4 accepted (band: scout): D and E fixed exactly as briefed; the scout confirmed both new tests fail on the old code. Re-run here: browser 862 passed, 32 skipped, 0 failed (worker branch); node 641/641 (merged).
 - 2026-11-18 — Verification attempt 4 on 8f4a9e0: Claude verifier PASS; GPT verifier FAIL with 1 gap, which it ties to G5: on phone the 5-second refresh scrolls the page to the top when no agent is selected (`viewer/pages/agents.js:246`, behaviour from before this build), leaving an open popover off screen. G5 has had two fix attempts, so this went to the lead as a surviving gap (sub-lead.md step 6); the build is waiting on Collin's choice.
+- 2026-11-18 — Collin chose option 1 (fix now) for the attempt-4 gap; logged as Decision 17. It changes the Agents page's refresh behaviour beyond decks. REMEDIATION-4.md, task R5.
