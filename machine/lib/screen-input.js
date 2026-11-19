@@ -21,7 +21,7 @@ function runTool(cmd, argv, { env, timeoutMs }) {
 }
 function failure(cmd, result) {
   const line = result.stderr.split(/\r?\n/).filter(s => s.trim()).pop();
-  return Object.assign(new Error(result.timedOut ? `${cmd} timed out` : line || `${cmd} exited ${result.code}`), { status: 422 });
+  return Object.assign(new Error(result.timedOut ? `${cmd} timed out` : line || `${cmd} exited ${result.code}`), { status: 422, timedOut: result.timedOut });
 }
 function invalid(err) { return Object.assign(new Error(err.message), { status: 422 }); }
 async function call(ctx, cmd, args, timeoutMs) {
@@ -37,7 +37,7 @@ async function windows(ctx, timeout, strict, deadline = Infinity) {
   for (const id of ids) {
     let output;
     try { output = await call(ctx, 'xwininfo', ['-id', id], remaining()); }
-    catch (err) { if (strict) throw err; continue; }
+    catch (err) { if (strict && err.timedOut) throw err; continue; }
     let info; try { info = parseWindowInfo(output); } catch (err) { throw invalid(err); }
     if (info.viewable) { const { viewable, ...item } = info; found.push(item); }
   }
