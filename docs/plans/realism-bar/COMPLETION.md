@@ -118,3 +118,16 @@ use (no rare paths). See `REMEDIATION-1.md`. Fixed by R1 (light, claude-haiku-5-
 
 Validation after the merge: `node --test viewer/test/*.test.js` 685 pass, 0 fail;
 `bash machine/test/run.sh` exit 0, 345 pass, 0 fail; the Validation grep matches all seven files.
+
+### Remediation 2 — 2026-11-19
+
+Attempt 2 on `9a6c511`: claude-opus-5-5 PASS; gpt-6.2-sol FAIL, 2 gaps, both judged normal use.
+See `REMEDIATION-2.md`. Fixed by R2 (light, claude-haiku-5-5):
+
+| Gap | Fix at |
+|-----|--------|
+| Closure sentence swept in upheld findings from Review Rounds | `protocol/app/reviewer.md:54-60` |
+| Lead's own planned-thread verifiers not briefed with Accepted Risks | `protocol/app/lead.md:110-111` |
+
+Validation after the merge: `node --test viewer/test/*.test.js` 685 pass, 0 fail;
+`bash machine/test/run.sh` exit 0, 345 pass, 0 fail; the Validation grep matches all seven files.
