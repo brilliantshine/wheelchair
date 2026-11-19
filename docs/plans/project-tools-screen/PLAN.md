@@ -396,6 +396,7 @@ account-level tools; merging the PR; everything under Deferred.
 | 11 | Exact display of unusual read-only field contents | Odd file contents; they're shown escaped (Log 52) | verification | Attempt 9: exact rendering of unusual read-only field contents beyond the escaped JSON form. |
 | 12 | Disabling a Save's PR link during a reload retry | Needs a failed reload after a Save (Log 52) | verification | Attempt 9: the PR link from a Save stays clickable while a failed reload is retried. |
 | 13 | Key values containing a NUL byte | Hard to type; fails safe with no leak (Log 52) | verification | Attempt 9: a key value containing a NUL byte stops the agent from starting (fixed message, exit 127, nothing leaked). |
+| 14 | Keeping an edit made while a tool Save is still running | Needs an edit during the few seconds a Save runs; the Save sends the right data (Log 52) | verification | Attempt 10: an edit applied while a tool Save is still pending can be dropped by the reload after the PR opens (the Save's sent payload was correct). |
 
 ## Accepted Risks
 
@@ -862,3 +863,4 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-19 — Verification attempt 10 started on 7fefd39: verifier-19 (claude-opus-5-5) and verifier-20 (gpt-6.2-sol); the brief carries Log 52's gap bar and Deferred rows 1-13.
 - 2026-11-19 — Verification attempt 10: gpt verifier-20 PASS (stopped); one hardening candidate (an edit applied while a tool Save is pending can be dropped by the reload after the PR opens; the sent payload was correct). Waiting for verifier-19.
 - 2026-11-19 — Verification attempt 10 (7fefd39): claude verifier-19 PASS (stopped). Both verifiers passed. One hardening candidate (gpt) proposed to the lead for Deferred.
+- 2026-11-19 — Lead: attempt 10's hardening candidate deferred as Deferred row 14 (source verification).
