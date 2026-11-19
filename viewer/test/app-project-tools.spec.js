@@ -334,8 +334,7 @@ test.describe('phone', () => {
     await page.getByRole('button', { name: 'Set DB_TOKEN' }).click();
     await expect.poll(() => calls.save.length).toBe(2);
     await noSideScroll(page);
-    const box = await page.locator('#pt-save').boundingBox();
-    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    await expect.poll(() => page.locator('#pt-save').evaluate((el) => { const r = el.getBoundingClientRect(); return r.x + r.width; })).toBeLessThanOrEqual(390);
   });
 });
 
