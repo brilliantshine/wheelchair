@@ -1,6 +1,6 @@
 ---
 slug: lighter-server
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -594,3 +594,4 @@ Accepted then: a SIGKILL at the instant a tmux client is launching a server can 
 - 2026-11-19 — Choice: T2, `viewer/pages/aside.js`: `openAside` stops and nulls the poller even when the new aside has no id.
 - 2026-11-19 — Choice: T2, `viewer/test/app-hidden-tabs.spec.js`: overrides `document.visibilityState` and uses Playwright's clock paused after load (`pauseAt`/`runFor`).
 - 2026-11-19 — T2 accepted (band: bigger-scout): scout found no deviations; one flagged risk (term-view `stop()` before `start()`) checked and not reachable, `start()` runs synchronously at creation. Re-ran `app-hidden-tabs.spec.js`: 12 passed. Worker's two-runs check: max 2 browsers per run, 1074 traces each in its own output folder, both 1040 passed.
+- 2026-11-19 — Full validation on the feature branch after both merges: `node --test viewer/test/*.test.js` 693 pass; `npm --prefix viewer run test:browser` 1040 passed, 34 skipped; `bash install/test/run.sh` 192 passed. `viewer/AGENTS.md` router rows updated (state.js cache, wcPoller, workers: 2).
