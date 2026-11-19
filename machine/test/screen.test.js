@@ -192,6 +192,13 @@ test('archive removes screen files and keeps them with an unfinished rebase', as
     const kept = await f.service.archive('other'); assert.equal(kept.uploads_removed, null); assert.equal(kept.kept[0].reason, 'rebase in progress'); assert.equal(fs.existsSync(otherDir), true);
   } finally { await f.close(); }
 });
+test('archive keeps screen files when uploads cannot be removed', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); const dir = path.join(f.service.stateDir, 'screens', 'thread');
+    await fsp.writeFile(path.join(f.service.stateDir, 'uploads'), 'not a directory');
+    const result = await f.service.archive('thread'); assert.equal(result.uploads_removed, false); assert.equal(fs.existsSync(dir), true);
+  } finally { await f.close(); }
+});
 test('session stop kills the screen before removing a verifier worktree', async () => {
   const f = await fixture(); try {
     f.a.role = 'verifier'; f.a.created_worktree = true; await f.call('start'); await f.service.stop(f.a.name);
