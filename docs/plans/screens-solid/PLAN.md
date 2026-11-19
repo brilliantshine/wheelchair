@@ -530,5 +530,10 @@ Collin moved the window manager to its own thread; review budget reset.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | S7: drag reserve for mouseup; runTool resolves at once on timeout; tests | `machine/lib/screen-input.js`, `machine/test/screen-input.test.js` | standard | | `node --test machine/test/screen-input.test.js`; `bash machine/test/run.sh` | dispatched |
+| T2 | tricky — S2 cap, S3 pruning, S5 pids, S6 hand-over marker, plus `screenTools` export (S1 part); tests | `machine/lib/screen.js`, `machine/test/screen.test.js` (+ optional `machine/test/screen-hardening.test.js`) | standard | | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh` | dispatched |
+| T3 | S1: approval-card warning and installer warning; tests (after T2, needs `screenTools`) | `machine/service.js` (approval block), `install.sh`, `install/test/run.sh`, a new machine test file | standard | | `bash machine/test/run.sh`; `bash install/test/run.sh` | not started |
 
 ## Log
+
+- 2026-11-19 — Build started. S4 (openbox) excluded per the lead: moved to its own thread. T1 and T2 run in parallel (disjoint files); T3 waits for T2's `screenTools`. S3 pruning lives in `screen.js` `execute()` so T1 owns `screen-input.js` alone.
