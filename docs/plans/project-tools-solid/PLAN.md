@@ -69,6 +69,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 29 | Clutter left by a machine service restart during a connection test (an empty checkout, an unused branch, a stray test program) is a known limit; the cleanup already in §6 stays as best effort. Token-bearing files (Antigravity plugin dirs) must still always be cleaned up | Collin's pick "Accept the clutter" after rounds 9-11 | user |
 | 30 | Final review round with a strict filter: only findings that would build the wrong thing, leak a token or secret, or leave a tool missing for good are fixed; everything else is recorded as an accepted risk. A clean result goes to approval | Collin's pick "Final round, then approve" after 14 rounds | user |
 | 31 | The check and Antigravity's file use the environment captured from a throwaway tmux session started exactly like the agent, read through a FIFO; supersedes the rule-built environment (tmux globals, `update-environment`, `PATH`, `PWD` rules) | Collin's pick "Ask tmux directly": removes the class of environment-mismatch findings from rounds 13-17 | user |
+| 32 | Supersedes 31's FIFO: the throwaway tmux pane runs a small Node probe that sends its environment over a Unix socket the service listens on | A shell redirect can create a file and a FIFO open cannot be cancelled; connecting to a socket does neither | review-round-20 |
 
 ## Spec
 
