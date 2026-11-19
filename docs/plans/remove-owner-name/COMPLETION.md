@@ -87,3 +87,11 @@ The browser failures are timing-flaky and in specs this change does not touch: `
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-19
+
+Verification attempt 1 on 1188b129: Claude verifier PASS, GPT verifier FAIL with 3 gaps (`REMEDIATION-1.md`).
+
+- **G1 — full viewer/browser suites exit 1 (Validation 4).** Lead's ruling: not a gap in this change, and not deferred. Evidence: every failing test differed between runs (`app-uploads-archive.test.js:72`, `app-quiet.test.js` "6 message clears debt", `server.test.js` "global write lock" and a port refusal, browser `app-handoff.spec.js:222`, `app-threads.spec.js:340,550,620`, `app-agents-decks.spec.js:247`). None of those files, nor `viewer/server.js`, is changed on this branch. The GPT verifier reproduced the Firefox approval timeout on the pre-change commit. Each passes when rerun alone. The sub-lead's full `node --test viewer/test/*.test.js` run passed 686/686 (above), and T3's full browser run passed 1028.
+- **G2 — Validation 6 test read the queue, not delivery.** Fixed: `viewer/test/app-handoff-restart.test.js:85-88` now fires `turn-ended` and asserts on `c.machine.sessions.get(lead.name).submits[0]` (prefix `[wc:context import]`), keeping the saved-state assertions. `node --test viewer/test/app-handoff-restart.test.js` → 13 pass, 0 fail (rerun by the sub-lead); `app-hub.test.js` 115 pass.
+- **G3 — `protocol/app/lead.md:491` capitalised "The user's" mid-sentence.** Fixed to "the user's".
