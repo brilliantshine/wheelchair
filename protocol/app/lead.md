@@ -107,7 +107,8 @@ reason; if none is left, the check passed. On a planned thread, record each drop
 Accepted Risks with round `lead-check`, in a separate PLAN.md-only commit after the verified
 one and before pushing; a small fix has no plan and records nothing. That record commit
 needs no re-verification and is not an unverified commit for the repair rules. A check with
-only rare gaps never counts toward a retry, the repair budget or a question to Collin.
+only rare gaps never counts toward a retry, the repair budget or a question to Collin. On a
+planned thread, every such verifier's brief also includes the plan's Accepted Risks table.
 
 ### 1. Starting: a small fix, or a feature
 

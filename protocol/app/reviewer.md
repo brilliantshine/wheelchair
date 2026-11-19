@@ -52,11 +52,12 @@ A finding you cannot tie to a concrete worker consequence is `minor`. Reporting 
 an acceptable outcome; padding severity is not.
 
 The plan's Review Rounds table, Accepted Risks and Check Once Built sections record findings
-already settled. Anything marked `declined`, `accepted-risk` or `check-once-built`, and
-anything listed in those sections, was considered and closed; do not raise it again unless
-you have concrete evidence its rationale is factually wrong, in which case prefix the line
-`RE-RAISE:` and cite the evidence. A rare path already in Accepted Risks, or a variant of
-one, is never re-raised.
+already settled. A finding marked `declined`, `accepted-risk` or `check-once-built`, or listed
+in Accepted Risks or Check Once Built, was considered and closed; do not raise it again
+unless you have concrete evidence its rationale is factually wrong, in which case prefix the
+line `RE-RAISE:` and cite the evidence. An `upheld` or `downgraded` finding whose defect is
+still in the current Spec is raised as a new finding. A rare path already in Accepted Risks,
+or a variant of one, is never re-raised.
 
 ## The realism bar
 
