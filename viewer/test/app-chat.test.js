@@ -361,11 +361,63 @@ test('GET /threads/:id/graph reads an archived thread graph from its branch, and
 
 test('a failed transcript read keeps the last copy for the chat, not for a report', async () => {
   const { sessionTranscript } = require('../app/chat.js');
-  let fail = false;
-  const hub = { call: async () => { if (fail) throw new Error('machine timeout'); return { data: '{"a":1}\n' }; } };
+  let fail = false; const routes = [];
+  const hub = { call: async (_, route) => { routes.push(route); if (fail) throw new Error('machine timeout'); return { data: '{"a":1}\n', gen: 'g', end: 8 }; } };
   const thread = { machine: 'm' }; const session = { name: 'wc-t-lead' };
   assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), '{"a":1}\n');
   fail = true;
   assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), '{"a":1}\n');
   assert.equal(await sessionTranscript(hub, thread, session), '');
+  assert.equal(routes.at(-1), '/v1/sessions/wc-t-lead/transcript');
+});
+
+test('stamped chat polls share parsed items and invalidate them when parser context changes', async () => {
+  const chat = require('../app/chat.js');
+  const raw = lines([{ type: 'user', origin: { kind: 'human' }, message: { content: '[wc:context stub]' } }]);
+  const thread = { id: 't', machine: 'm', parent_title: 'First', sessions: [{ name: 'lead', role: 'lead', cli: 'claude' }], cards: [], pinned: {}, queues: {} };
+  const routes = [];
+  const hub = { readSnapshot: async () => thread, state: { settings: async () => null }, call: async (_, route) => { routes.push(route); return route.includes('?') ? { unchanged: true, gen: 'g', end: 4 } : { data: raw, gen: 'g', end: 4 }; } };
+  const original = chat.transcriptItems; let parses = 0;
+  chat.transcriptItems = (...args) => { parses++; return original(...args); };
+  try {
+    const first = await chat.chat(hub, 't');
+    const second = await chat.chat(hub, 't');
+    assert.deepEqual(second, first);
+    assert.equal(parses, 1);
+    assert.equal(routes[1], '/v1/sessions/lead/transcript?known=g%3A4');
+    thread.parent_title = 'Second';
+    assert.equal((await chat.chat(hub, 't')).items[0].text, 'Started from Second');
+    assert.equal(parses, 2);
+  } finally { chat.transcriptItems = original; }
+});
+
+test('old machines, missing entries, empty replies and failures follow transcript fallback rules', async () => {
+  const { sessionTranscript } = require('../app/chat.js');
+  const routes = []; let reply = { data: 'old' };
+  const hub = { call: async (_, route) => { routes.push(route); if (reply instanceof Error) throw reply; return reply; } };
+  const thread = { id: 't', machine: 'm' }, session = { name: 'lead' };
+  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'old');
+  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'old');
+  assert.equal(routes[1], '/v1/sessions/lead/transcript');
+  hub.transcripts.get('m/lead').gen = 'g'; hub.transcripts.get('m/lead').end = 3;
+  hub.call = async (_, route) => { routes.push(route); if (route.includes('?')) { hub.transcripts.delete('m/lead'); return { unchanged: true, gen: 'g', end: 3 }; } return { data: 'whole', gen: 'h', end: 5 }; };
+  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'whole');
+  assert.equal(routes.at(-1), '/v1/sessions/lead/transcript');
+  hub.call = async () => ({ data: '' });
+  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'whole');
+  hub.call = async () => { throw new Error('timeout'); };
+  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'whole');
+});
+
+test('idle transcript pruning protects queued and active chat operations', async () => {
+  const { Hub } = require('../app/hub.js');
+  let now = 0; const hub = new Hub({ codeVersion: '', now: () => now });
+  hub.transcripts.set('m/lead', { text: 'text', lastRead: 0, thread: 't' });
+  now = 600_001;
+  let release; const gate = new Promise((resolve) => { release = resolve; });
+  const lock = hub.withThread('t', () => gate);
+  const pending = hub.withChatThread('t', async () => {});
+  hub.pruneTranscripts(); assert.equal(hub.transcripts.size, 1);
+  release(); await lock; await pending;
+  hub.pruneTranscripts(); assert.equal(hub.transcripts.size, 0);
 });
