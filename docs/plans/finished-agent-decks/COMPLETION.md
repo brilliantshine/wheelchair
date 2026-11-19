@@ -146,3 +146,35 @@ $ bash machine/test/run.sh
 ```
 
 Routers: none changed. The `machine/service.js` change keeps that file's existing role.
+
+### Remediation 2 — 2026-11-18
+
+Verification attempt 2 ran on commit 151b5c2, and both verifiers failed it. After merging duplicates there were two gaps: A, the popover could not be scrolled (G5 again), and B, the stacked outlines did not show on phone (G4 again). The lead also added C: widen the deck card so the example title fits at 1280px. The details are in `REMEDIATION-2.md`. This was the second fix attempt for G4 and G5.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| A popover snapped back to the top when scrolled | The scroll listener ignores the popover's own scroll events. `placePop` measures without clearing `maxHeight` and restores `scrollTop`. The scroll position is carried across the 5-second refresh. | `viewer/pages/agents.js` (scroll listener; `render`; `redrawPop`; `placePop`) | `viewer/test/app-agents-decks.spec.js`, "popover scrolls, keeps its scroll across a poll, and a bottom row is clickable" (phone and desktop) |
+| B outlines hidden on phone | The deck's branch wrapper gets `isolation: isolate`, so the outlines no longer depend on any ancestor | `viewer/pages/agents.js` `branch`; `viewer/pages/views.css` `.agents-deck-branch` | `viewer/test/app-agents-decks.spec.js`, "stacked outlines are painted outside the deck edge" (pixel comparison, phone and desktop) |
+| C example title cut off at 1280px | On desktop the deck is `max-content`, between 190px and 290px wide, and longer titles still end in an ellipsis | `viewer/pages/views.css`, `min-width: 900px` block | `viewer/test/app-agents-decks.spec.js`, "desktop deck title is not truncated for the full example" |
+
+Lane: R3, standard, claude-sonnet-5-5.
+
+Validation on the merged branch:
+
+```text
+$ npm --prefix viewer run test:browser
+  30 skipped
+  856 passed (5.0m)
+(exit 0)
+
+$ node --test viewer/test/*.test.js
+not ok 258 - a verifier report survives a failed submit and the queue timer retries it   # app-hub.test.js passes 114/114 alone, twice
+# tests 641
+# pass 640
+# fail 1
+
+$ bash machine/test/run.sh
+# tests 170
+# pass 170
+# fail 0
+```
