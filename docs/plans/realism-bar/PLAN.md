@@ -1,6 +1,6 @@
 ---
 slug: realism-bar
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -11,11 +11,6 @@ the north star this plan serves. Goal and Constraints live there, not here, so t
 get buried as this file grows.
 
 ## Open Questions
-
-### Q2: In two-part mode, do rare paths go to Deferred (the follow-up thread) or Accepted Risks?
-- **Context:** Deferred feeds a follow-up thread, which would chase the same rare paths again.
-- **Options:** (A) Accepted Risks in every mode; Deferred keeps realistic hardening only; (B) Deferred as today.
-- **Recommendation:** A.
 
 ## Watch List
 
@@ -41,22 +36,118 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | When the lead cannot tell whether a finding is normal use, it asks Collin with a question card; otherwise it decides without asking | IDEA.md What good looks like | defaulted |
 | 5 | The clean test and review budget are unchanged: an accepted-risk finding already does not block a clean round | lead.md clean test counts only upheld blocking/major and open user-decisions | defaulted |
 | 6 | Rare-path findings are still reported, marked rare; the lead records each in Accepted Risks without asking Collin, and later rounds treat them as settled | Collin picked "Record it, don't ask": the record is what stops re-raising | user |
+| 7 | Rare paths go to Accepted Risks in every mode; Deferred keeps realistic hardening only | Collin picked "Accepted risks": a follow-up thread would otherwise repeat the loop | user |
+| 8 | The definition lives once, in a new `protocol/app/realism.md`, loaded into the starting instructions of lead, sub-lead, reviewer and verifier by the same mechanism that loads card files | protocol/app/AGENTS.md "A rule lives in one file"; reviewers and verifiers get no card files today | defaulted |
+| 9 | Reviewers mark rare findings with a `PATH: rare` field after LENS; verifiers report rare paths as `RISK:` lines that do not by themselves make the verdict FAIL | Keeps the old line forms valid; a RISK line never starts remediation | defaulted |
+| 10 | Rare-path findings are not counted in the review progress line's found/fixed, like declined findings | The line should show real work only | defaulted |
+| 11 | When unsure whether a path is normal use, reviewers and verifiers report it as normal (no PATH tag, a GAP line); the lead or sub-lead may reclassify with a reason | Errs toward checking; the classifier with the plan in hand decides | defaulted |
 
 ## Spec
 
-The settled design, grown as decisions land. Bar: a fresh agent with no conversation
-history can implement from this section alone — behavior, boundaries, edge cases,
-non-goals, and concrete validation commands.
+Protocol and prompt-composition change. No new cards, no UI.
 
-A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
-Spec is still churning. See `protocol/diagrams.md`.
+### S1. `protocol/app/realism.md` (new)
 
-## Deferred
+One short section, the single source of the bar:
 
-Optional; present only in the lighter modes.
+- **Normal use**: a healthy machine, ordinary actions by Collin and the agents, and input
+  the real tool or service actually produces. A plain restart, a killed or crashed session,
+  a closed browser tab, a network drop, two threads running at once are normal use.
+- **Rare path**: needs two unlikely things together, or something that does not happen in
+  ordinary running. Examples: a crash or restart that also loses or corrupts state files;
+  races inside a sub-second window between two actors; files swapped or edited
+  mid-operation; tampering by a local user or agent; malformed input the source never
+  writes; unusual screen layouts or versions the tool does not ship.
+- **Always fixed, however rare**: secret or token leaks, permission or sandbox bypass,
+  building the wrong thing, anything a Spec validation command checks, silent loss of
+  Collin's work in normal use.
+- **Unsure**: treat as normal use (report it as a normal finding or GAP) and say why it
+  might be rare; the lead (review) or sub-lead (verification) decides.
+- **What happens to a rare path**: reported once, recorded in the plan's Accepted Risks
+  without asking Collin, never fixed in this thread, never moved to Deferred, never
+  re-raised. Applies in every mode.
 
-| # | Item | Why it can wait | Source | Notes for the follow-up |
-|---|------|-----------------|--------|-------------------------|
+### S2. Loading it
+
+- `machine/service.js` `ROLE_CARDS` and `viewer/app/settings.js` `ROLE_CARD_FILES` add
+  `realism.md` for `lead`, `sub-lead`, `reviewer`, `verifier` (not worker, mapper). The
+  header wording for reviewer/verifier changes to the "role rules and card rules" form only
+  if needed for consistency; the existing "role rules" header may stay.
+- Rename nothing else. Update `machine/test/service.test.js`,
+  `viewer/test/app-settings.test.js`, and `viewer/test/protocol-rules.test.js` expectations
+  (if any assert the file list). `protocol/app/AGENTS.md` table gains a row for
+  `realism.md` and its "Reviewer and verifier get neither card file" sentence stays true.
+- The composed role instructions must stay under the existing size check in
+  `viewer/app/settings.js` `assertFits`.
+
+### S3. `protocol/app/reviewer.md`
+
+- Add the optional field: `SEVERITY: <s> — LENS: <l> — PATH: rare — <finding> — <evidence>`.
+  Omit `PATH` for normal-use findings (old form stays valid). Severity rules unchanged.
+- Say: apply the bar in `realism.md`; a rare-path finding gets one line, tagged, and its
+  severity is still the worker consequence.
+- Accepted Risks already settles findings; add that a rare path already listed there or
+  a variant of the same rare path is not raised again.
+- `viewer/app/agents.js` reviewer report parse: skip a `PATH: …` field when picking the
+  finding text for the Agents screen, so `first` shows the finding, not `PATH: rare`.
+  Add a test in the existing agents/viewer test file.
+
+### S4. `protocol/app/verifier.md`
+
+- Accepted Risks items are out of scope, like Deferred.
+- New line form after GAP lines: `RISK: <spec item> — <rare path> — <evidence>`.
+  A report whose only problems are RISK lines is `VERDICT: PASS` followed by its RISK
+  lines. RISK lines never appear in steps-only reports.
+- Anything on the "always fixed" list is a GAP even if rare.
+
+### S5. `protocol/app/lead.md`
+
+- Review triage: a finding the lead judges a rare path (tagged or not) gets verdict
+  `accepted-risk`, moves to Accepted Risks with the round, and is not counted in the
+  progress `found`/`fixed`. A `PATH: rare` finding the lead judges normal use is triaged as
+  usual. Never a `user-decision` for a rare path; ask Collin only when the lead cannot tell
+  whether it is normal use.
+- Lighter modes: "hardening" for Deferred means realistic hardening; rare paths go to
+  Accepted Risks, not Deferred. Verification per-gap answers gain a third option,
+  "accept as rare", recorded in Accepted Risks.
+- Brief reviewers and verifiers with the Accepted Risks table (already true for
+  reviewers; add for the sub-lead's verifier brief via S6).
+- Small-fix, after-done and repair verifiers: RISK lines are read and not acted on; no plan
+  records them. The lead may mention a notable one in the done card `note`.
+- Surviving-gap question cards are only for normal-use gaps.
+
+### S6. `protocol/app/sub-lead.md`
+
+- Verifier briefs include the plan's Accepted Risks table.
+- After each attempt: RISK lines, and any GAP the sub-lead judges a rare path by
+  `realism.md` (with a one-line reason), are written to PLAN.md Accepted Risks with round
+  `verification-N`, committed, and do not go to remediation or count toward the two-attempt
+  rule. If every GAP was moved this way, the attempt counts as PASS. When the sub-lead
+  cannot tell, it asks the lead with a `message` (`asks: true`).
+- Step 4a's lighter-mode list marks gaps `hardening`, `must-fix` or `rare`; rare ones are
+  saved as Accepted Risks, not Deferred.
+- The build `result` summary names how many rare paths were accepted.
+
+### S7. `protocol/templates/PLAN.md`
+
+Accepted Risks table header: `| Risk | Why accepted | Round |` keeps its shape; the
+explanatory text adds that rare paths per `protocol/app/realism.md` land here in every mode
+with round `review-round-N` or `verification-N`.
+
+### Non-goals
+
+No change to severity meanings, the clean test, the review budget, cards, the approval
+card, or Deferred card validation.
+
+### Validation
+
+```bash
+node --test viewer/test/*.test.js
+bash machine/test/run.sh
+grep -n "realism.md" machine/service.js viewer/app/settings.js protocol/app/AGENTS.md
+```
+
+All pass; the grep shows the file in both role lists and the router.
 
 ## Accepted Risks
 
