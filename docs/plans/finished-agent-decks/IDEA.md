@@ -32,7 +32,7 @@ working agents are hard to find and the review history is unreadable.
   as "Plan review · 20 rounds, last round clean".
 - A verifier deck stacks like any other deck, without round squares (Collin's choice, PLAN.md Decision 14).
 - Clicking a deck opens a popover under it: rounds newest first (square, "Round 18",
-  reviewers and objections) for reviewers and verifiers, agents newest first for the rest.
+  reviewers and objections) for reviewers, agents newest first for the rest.
   Opening a round lists its agents, and picking one shows it in the right-hand panel like
   any box.
 - A `?` next to "Hide finished agents" opens "How to read this tree" with the color key and
