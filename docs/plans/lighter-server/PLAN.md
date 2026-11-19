@@ -296,6 +296,17 @@ bash install/test/run.sh
 
 **Budget:** third round since Collin's last decision without a clean one; stopped and asked Collin.
 
+### Round 8 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+Collin chose "Keep going" (budget reset).
+
+**Changed since Round 7:** S6 simplified to a visibility gate with no in-flight sharing or target binding (#39); S3 most recently read entry kept regardless of size (#40); S7 baseline prints n/a for budget fields; Validation updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
