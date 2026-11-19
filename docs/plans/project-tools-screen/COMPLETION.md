@@ -46,7 +46,7 @@ All rows are `this run` (the plan has no Prior Work).
 | "needs <name>, not set on this machine" key warning | this run | `machine/lib/project-tools.js:26` | `project-tools.test.js` |
 | Key name regex; reserved list refused by form and machine | this run | `machine/lib/project-keys.js:11-12`; `machine/lib/project-tools.js` `validateName`; page `keyNameProblem` | `project-keys.test.js`; `project-tools.test.js` reserved-name test |
 | Values browser → hub → machine; mode-600 store per project; hub never stores/logs; screen never receives values | this run | `machine/lib/project-keys.js:40-48` (`writeKeyStore`, temp + rename + `finally` unlink); `viewer/app/routes.js:65-75`; `viewer/app/machine-client.js:82` | `project-tools.test.js` "key store mode 600"; `viewer/test/app-project-tools.test.js` (value absent from hub state) |
-| Launch: only Claude/Codex tool roles, only referenced non-reserved keys, outside argv/`session.command`/persisted data/logs | this run | `machine/service.js:620-640` (env file `session-env/<name>.sh` mode 600, `sh -c '. "$0" && rm -f -- "$0" && exec "$@"'`); `machine/lib/project-keys.js:50` (`launchKeys`) | `machine/test/project-keys.test.js` / launch tests (Claude and Codex worker, reviewer and agy get none, value absent from tmux argv, `session.command`, `sessions.json`) |
+| Launch: only Claude/Codex tool roles, only referenced non-reserved keys, outside argv/`session.command`/persisted data/logs | this run | `machine/service.js:628-635` (env file `session-env/<name>.json` mode 600, read and deleted by the Node launcher `machine/lib/env-launch.js`, no shell; Remediation 8); `machine/lib/project-keys.js:50` (`launchKeys`) | `machine/test/project-keys.test.js` / launch tests (Claude and Codex worker, reviewer and agy get none, value absent from tmux argv, `session.command`, `sessions.json`) |
 | Keys on this machine list: stored ∪ default-branch refs, usage, set/replace, Add a key, Remove with confirmation | this run | `viewer/pages/project-tools.js:656` (`paintKeys`), `keyRow` | `app-project-tools.spec.js` keys tests |
 | Asking for a value when Save adds an unset key reference | this run | `viewer/pages/project-tools.js` `rowEditor` secret field, `:553` (`saveTools`) | `app-project-tools.spec.js` |
 | Remove checks identity and key revision | this run | `machine/lib/project-tools.js:142-150` | `project-tools.test.js` "keys-only ... removal with revision checks", "changed key revision and project identity are refused" |
@@ -115,7 +115,7 @@ $ npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings
 ## Known gaps / residual risks
 
 - Nested defaults `${A:-${B}}` in a command/args/URL hold back only `A`.
-- If tmux fails to start after the env file is written, the mode-600 env file stays in `<stateDir>/session-env/` until removed.
+- If tmux fails to start after the env file is written, the mode-600 JSON env file stays in `<stateDir>/session-env/` until removed.
 - `projectIdentity` at session launch runs git without a timeout (launch, not the routes).
 - The Settings section is built once per page load; returning to it from another section shows the last read until a project is picked again.
 - No test asserts the env file's mode or that a key-store failure still starts the session (the code catches and logs it).
@@ -241,3 +241,26 @@ Attempt 7: the claude verifier passed; the gpt verifier failed with 3 gaps. Lead
 | 3 Read-only cards hid headers, key status, unknown fields | One card renderer (`toolCard` via `viewEntry` and `rowLine`) for editable and read-only tools | `viewer/pages/project-tools.js:108-123,356-368,382` | read-only web tool card test |
 
 Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 209 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; Project tools and Settings browser tests 186 passed twice (R7-1) and 188 passed (R7-2). The Chromium full suite fails only on the clock-dependent `app-accounts.spec.js` "lead waiting line" tests (they fail within 3 hours of midnight and do so on the pre-build merge base).
+
+## Remediation 8
+
+Attempt 8: the claude verifier passed; the gpt verifier failed with 4 gaps. Gap 1 was new, and the lead chose the fix. Gaps 2-4 were the read-only card display family, which survived R6 and R7. Collin picked "Show every field as written" (Decision Log 51, now in the Spec's Reading section). Details are in `REMEDIATION-8.md`.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| 1 A shell special key name (`OPTIND`) broke the launcher, which printed the value | Node launcher reads the mode-600 JSON env file, deletes it and execs the CLI, with no shell. Its own errors are fixed messages. The shell's special names are reserved | `machine/lib/env-launch.js`; `machine/service.js:628-635`; `machine/lib/project-keys.js:9` | `machine/test/project-keys.test.js:41,73,84,98` (session launch, OPTIND/IFS with a hostile value, invalid JSON and missing CLI, forced ENOEXEC); `isReserved` cases |
+| 2 An http tool with an extra `command` was labelled command | Cards the form can't edit take their kind from `type` only; `viewEntry` deleted | `viewer/pages/project-tools.js:374-402` | `app-project-tools.spec.js:989` |
+| 3 A read-only header `Bearer ${TOKEN} trailing` hid TOKEN's status | Read-only rows show a set or not set chip for each referenced name in the tool's machine `checks.keys` | `viewer/pages/project-tools.js:344-351` | `app-project-tools.spec.js:1006` |
+| 4 `{"type":"custom","timeout":5000}` hid both fields | Every raw field shown in file order as `name: value` text, plus a key line from `checks.keys` (Log 51) | `viewer/pages/project-tools.js:400` | `app-project-tools.spec.js:998,1018,1025` |
+
+Validation after remediation (sub-lead), on the merged branch unless noted:
+- `bash machine/test/run.sh`: pass 212, fail 0.
+- `node --test viewer/test/*.test.js`: pass 641, fail 0.
+- `npm --prefix viewer run test:browser -- --project=chromium`: 471 passed, 14 skipped.
+- `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`: 198 passed, on the R8-2 branch.
+
+Accepted residuals (lead):
+- Node's `process.execve` aborts on a late exec failure, such as a corrupt executable or a race after the up-front checks, instead of printing the fixed message. The abort prints the error code and a stack trace with no values; `project-keys.test.js:98` keeps that checked.
+- The Node 20 spawn fallback is untested here, because this machine runs Node 22.
+
+Lanes: R8-1 standard / gpt-6.1-terra (worker-22); R8-2 standard / claude-sonnet-5-5 (worker-23).
