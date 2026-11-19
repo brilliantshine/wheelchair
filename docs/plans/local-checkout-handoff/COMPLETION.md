@@ -136,3 +136,20 @@ bash machine/test/run.sh            # tests 411, pass 411, fail 0
 node --test viewer/test/*.test.js   # tests 695, pass 694, fail 1: routes.test.js "wrong cookies and cookies from before a rotation are refused" (file untouched by this branch; alone: pass 22, fail 0, twice)
 npm --prefix viewer run test:browser   # 34 skipped, 1060 passed (11.6m), exit 0
 ```
+
+### Remediation 2 — 2026-11-19
+
+Verification attempt 2 (`e856552c`): Claude PASS (G1, G2, G7 confirmed), GPT FAIL with four gaps. The lead's per-gap answer fixed H1 and H4 and deferred H2 and H3 as PLAN.md D14 and D15. Details in `REMEDIATION-2.md`.
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| H1: raw browser text ("Failed to fetch", "NetworkError…") when the connection drops | `copyErrorText` maps any fetch `TypeError` to "Can't reach the hub." in both the status load and the write | `viewer/pages/thread.js` `copyErrorText`, `copyLoad`, `copyWrite` | `viewer/test/app-try.spec.js`: failed write with failed re-read; failed page load |
+| H4: machine fixture had `wc/<id>` in the user checkout, not in a linked worktree as the Spec's Validation names | `tryFixture()` adds `git worktree add <root>/agent wc/0123456789ab`; tests that change the thread branch commit through it. No product code changed | `machine/test/try.test.js` `tryFixture` | all 66 try tests now run with the linked worktree |
+
+Validation after the fixes, on the feature branch:
+
+```text
+bash machine/test/run.sh               # tests 411, pass 411, fail 0
+npm --prefix viewer run test:browser   # 34 skipped, 1064 passed (11.1m), exit 0
+node --test viewer/test/*.test.js      # tests 695, pass 694, fail 1: run.test.js "run validation refuses each new schema violation" (file untouched by this branch; alone: pass 8, fail 0, twice). The same suite passed 695/695 on this branch after R2b, before R2a, which changed only machine tests.
+```
