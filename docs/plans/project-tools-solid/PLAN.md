@@ -1,6 +1,6 @@
 ---
 slug: project-tools-solid
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -82,6 +82,26 @@ Builds on local-projects (PR #112, `docs/plans/local-projects/PLAN.md`). Everyth
 
 Scope (Decision 33): no connection test and no reading of the agent's environment. wheelchair never expands a variable anywhere. Those move to a follow-up thread.
 
+```mermaid
+flowchart TD
+  A[An agent that gets project tools starts] --> B[Read the project's .mcp.json]
+  B --> C{Agent's CLI}
+  C -->|Claude| D[Claude reads the file itself]
+  C -->|Codex| E[Turn each tool into Codex settings;<br>skip what Codex can't take, with a line]
+  C -->|Antigravity| F[Write a private tool file for this agent;<br>skip what it can't take, with a line]
+  D --> G{In the thread's own folder?}
+  E --> G
+  F --> G
+  G -->|yes| H[Look for each tool's program;<br>missing ones get a line]
+  G -->|no| I[Keep the folder-specific lines as they were]
+  H --> J[Save the thread's lines and hand them back with the start]
+  I --> J
+  J --> K{Any lines?}
+  K -->|yes| L[Thread shows one 'Project tools problem' card]
+  K -->|no| M[Close the card if open]
+  F -.-> N[Private file deleted when the agent ends]
+```
+
 ### 1. Reader (`machine/lib/project-mcp.js`)
 
 - Accept `type: "sse"` (with a non-empty string `url`) as valid. Claude reads `.mcp.json` itself and handles sse; Codex and Antigravity skip it (sections 3, 4).
@@ -137,7 +157,7 @@ For a tools-getting session with servers:
   - Line: `{ names: [name], text: "<name>: its program can't be found" }`. The command itself is not printed.
 - A `command` containing `${` is not checked.
 - A thread-worktree start whose reader returned a file with no valid servers (all invalid) sets `programs` = [] (§6 step 3b with no lines).
-- `path`: the start reads the tmux server's global `PATH` (`tmux show-environment -g PATH`, async, with a real 2 s deadline: on expiry the tmux child is killed and the start goes on with the fallback, so a hung tmux never stalls it; `NAME=value` output used, `-NAME` or failure falls back to the service's own `process.env.PATH`), because an agent's pane gets the tmux global environment. Read, and `missingPrograms` run, only for tools-getting starts in the thread's worktree whose reader returned servers, before section 6's update; other checkouts skip both.
+- `path`: the start reads the tmux server's global `PATH` (`tmux show-environment -g PATH`, async, with a 2 s deadline: on expiry the child is killed and the start goes on with the fallback. The deadline covers only this read; a tmux server that stops answering altogether still stalls the launch that follows, as it does today, and is out of scope; `NAME=value` output used, `-NAME` or failure falls back to the service's own `process.env.PATH`), because an agent's pane gets the tmux global environment. Read, and `missingPrograms` run, only for tools-getting starts in the thread's worktree whose reader returned servers, before section 6's update; other checkouts skip both.
 
 ### 6. Machine project-tools state (`machine/service.js`)
 
@@ -203,8 +223,8 @@ For a tools-getting session with servers:
 - `bash machine/test/run.sh`, new tests:
   - Codex: bearer, env header, every project override (real in argv, `<redacted>` in `session.command`, including args and url query strings), mixed `${}` header skip, duplicate header skip, sse skip, non-ASCII budget (under 64 Ki UTF-16 units, over 64 KiB bytes → dropped; line names every dropped server); `systemd-run` gets `--description`.
   - Antigravity: an http entry with a stray `args` and a stdio entry with a stray `headers` translate normally; plugin files and `--add-dir` for tool roles, none for reviewer; http entry written with `type: "http"`; same-key env left out of the file; any other `${` skips the server with its line; literal header copied into the file and absent from `session.command` and logs; files 0600 and dirs 0700; sweep removes dirs of sessions not live, keeps live and starting ones and any dir younger than 60 s, removes nothing when tmux state is unknown, has no await between its checks and removals; dir removed by the timer after its pane exits even with the record at `ready`; a session name containing `/` maps to one encoded directory; no old warning.
-  - Program check: absolute, worktree-relative and PATH programs found; missing or non-executable reported without printing the command; `${` command not checked; PATH from `tmux set-environment -g PATH` is used; a tmux that never answers falls back after 2 s; fallback to the service PATH when tmux has none.
-  - State: `realpath` of a missing thread directory does not abort a worker start; `programs` changes only from the thread's worktree;
+  - Program check: absolute, worktree-relative and PATH programs found; missing or non-executable reported without printing the command; `${` command not checked; PATH from `tmux set-environment -g PATH` is used; a `show-environment` that never answers (only that call hung, the rest of tmux normal) falls back after 2 s; fallback to the service PATH when tmux has none.
+  - State: after a missing-program line is recorded, a thread-worktree start with a nonempty file whose entries are all invalid keeps the reader lines in `file`, sets `programs` = [] and does not read PATH; `realpath` of a missing thread directory does not abort a worker start; `programs` changes only from the thread's worktree;
   - Program check: a directory named like the program does not count; a relative PATH entry is searched under the worktree; `bin/link/../runner` with `link` a symlink is checked through the symlink.
   - State (cont.): `seq` increases per start; `boot` changes per service start; worker start replaces its CLI's lines but never `file` or `programs`, and never resets; reset only from the thread's worktree (by path; a verifier checkout on the same branch does not qualify); reader failure keeps other lines; a fixed or removed server loses its skip lines on every CLI whose lines came from the same file hash or the thread's checkout (a worker checkout's line with another file survives a thread start); repeated start returns the same `project_tools`; writes land in order; `.tmp` leftovers swept at startup; a failed state write still starts the agent; `project_tools` absent from machine session-list and status responses; no state change for non-tool roles.
 - `node --test viewer/test/*.test.js`, new tests: card opens; same names with different text keep the card and update its body; different names replace it; reset closes it; per-CLI lines kept apart; program lines shown; an older `seq` snapshot ignored; a new `boot` with a lower `seq` applied, but not from an older session; applied in `startSession`, a queued promotion and `resumeUnanswered` without re-taking the thread lock; `project_tools` not left on the session record; default `wc.js session list` shows `project_tools`.
@@ -681,6 +701,14 @@ exit. Downgrades and declines cite evidence.
 ### Round 26 — 2026-11-19
 
 **Changed since Round 25:** §4 only translated fields per transport are read or scanned; §5 `programs` = [] for a file with no valid servers, PATH read has a real 2 s deadline; Validation; Decision 37 (Collin confirmed the private-file exception covers every written value).
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | "A hung tmux never stalls it" overpromises | upheld | §5 deadline scoped to the PATH read only |
+| mechanics | major | Deadline covers only the PATH read; whole-tmux hang undefined | downgraded (minor) | A whole-tmux hang stalls today's launch already (`machine/service.js:625`); §5 now says the deadline covers only this read and the rest is out of scope; Validation scoped |
+| mechanics | minor | No state test for all-invalid file after a missing-program line | upheld | Validation |
 
 ## Prior Work
 
