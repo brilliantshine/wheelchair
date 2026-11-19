@@ -110,3 +110,39 @@ These are recorded in PLAN.md's Log.
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-18
+
+Verification attempt 1, on commit 6cee582: the Claude verifier passed and the GPT verifier failed with five gaps, all recorded in `REMEDIATION-1.md`. The lead chose to fix all five and defer none. For G2 it widened the scope to `machine/service.js` `forwardSession`.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| G1 round value given as a JSON list was accepted | Only an integer number or a string of digits is accepted | `viewer/app/sessions.js:602` | `viewer/test/app-session-meta.test.js:133` (`[2]`, `[[3]]`, `{}`, `true`, `null` refused) |
+| G2 the relay dropped the hub's flag-specific reason | The relay prefers the hub's `detail` when it is a non-empty string | `machine/service.js` `forwardSession` (about line 1081) | `machine/test/service.test.js` "a hub refusal detail reaches the agent" |
+| G3 deck title wrapped to two lines | One line with an ellipsis; the full title is in the tooltip and in the deck's accessible name | `viewer/pages/agents.js` `deckCard`; `viewer/pages/views.css` `.agents-deck .agents-box-title` | `viewer/test/app-agents-decks.spec.js` "deck title is one ellipsized line…" |
+| G4 outlines painted over the deck face | `isolation: isolate` removed; the deck face is opaque; the outlines sit behind it | `viewer/pages/views.css` `.agents-deck` | `viewer/test/app-agents-decks.spec.js` "deck face is opaque…"; checked against a screenshot by the R2 worker |
+| G5 popover opened below the screen | Placed below the deck, above it, or on whichever side has more room, with its height capped and its position kept inside the viewport | `viewer/pages/agents.js` `placePop` | `viewer/test/app-agents-decks.spec.js` "popover stays inside the viewport…" (390×844 and 1280×800) |
+
+The lanes were R1 on standard gpt-6.1-terra and R2 on standard claude-sonnet-5-5.
+
+Validation on the merged branch after remediation:
+
+```text
+$ npm --prefix viewer run test:browser
+  28 skipped
+  846 passed (6.2m)
+(exit 0)
+
+$ node --test viewer/test/*.test.js
+not ok 349 - 6 message clears debt      # known intermittent; app-quiet.test.js passes alone
+# tests 641
+# pass 640
+# fail 1
+
+$ bash machine/test/run.sh
+# tests 170
+# pass 170
+# fail 0
+```
+
+Routers: none changed. The `machine/service.js` change keeps that file's existing role.
