@@ -802,3 +802,6 @@ Build accepted: approval 299bc31c-a6e3-48d7-ad41-a29f94b6a272
 
 - 2026-11-19 — All tasks done; full validation on the feature branch: machine 409/409, viewer node 695/695, browser 1057 passed with one unrelated Firefox flake (`app-send-now`, 24/24 on repeat). COMPLETION.md written; status verifying.
 - 2026-11-19 — Verification attempt 1 (61a04ea9): Claude PASS, GPT FAIL with 11 gaps plus 2 from the Claude report, 13 after merging. Lead's per-gap answer: fix G1 (duplicate kept pins on refused Back), G2 (re-read Status after a refusal), G7 (git spawn failure crashes the service); G3-G6 and G8-G13 deferred as D4-D13 (source verification).
+- 2026-11-19 — Choice: R1b, `viewer/test/app-try.spec.js`: test name and a 500 ms settle wait showing no second re-read follows.
+- 2026-11-19 — Choice: R1b, `viewer/test/app-try.spec.js`: re-checks the reason text after the re-read.
+- 2026-11-19 — R1b accepted (band: scout): one-line fix as briefed (G2). My re-run: app-try.spec 20/20, viewer node 695/695. The worker made an empty folder `/home/collin/.local/state/scratch-r1b` outside the worktree (disclosed; left in place).
