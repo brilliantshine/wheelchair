@@ -182,8 +182,19 @@ grep -rni collin viewer machine test-support codex install sensitivity sudo-help
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Implement S1–S6: normaliser, new writers/readers, handoff v2, API.md, comments, tests | viewer/app, viewer/pages, viewer/server.js, viewer/index.html, viewer/playwright.config.js, viewer/test, test-support/smoke/live.js, docs/maps/owner-name-state.md | standard / gpt-6.1-terra | wc-9b2a60752bc2-worker | Spec Validation block | in progress |
+| T1 | Implement S1–S6: normaliser, new writers/readers, handoff v2, API.md, comments, tests | viewer/app, viewer/pages, viewer/server.js, viewer/index.html, viewer/playwright.config.js, viewer/test, test-support/smoke/live.js, docs/maps/owner-name-state.md | standard / gpt-6.1-terra | wc-9b2a60752bc2-worker | Spec Validation block | done |
 
 ## Log
 
 - 2026-11-19 — Decomposed into one task (T1): the code, comment and test changes share the same files, so splitting would only serialise them.
+- 2026-11-19 — T1 came back "blocked": the viewer Node gate failed twice, the second time with `app-quiet.test.js` and `app-uploads-archive.test.js` failures while the worker ran the browser and machine suites at the same time. Re-run alone it passes: 698 pass, 0 fail. Browser 1044 passed and 34 skipped; machine exit 0; test-support 9 pass. Both greps hit only `state.js` normalizeThread, the `handoff.js` v1 branch and the compatibility tests.
+- 2026-11-19 — T1 accepted (band: bigger-scout): the diff matches S1–S6. Sub-lead follow-ups after the merge: capitalised a sentence in the comment at `viewer/pages/thread.js:797`, and corrected two stale statements in `docs/maps/owner-name-state.md` ("v1 export" and the future-tense migration paragraph).
+- 2026-11-19 — The worker reported one choice; the scout listed 7:
+- 2026-11-19 — Choice: T1, tests: the old dismissed-card browser check sits in `viewer/test/app-merged.spec.js` beside the existing resolved-card tests.
+- 2026-11-19 — Choice: T1, state.js: `normalizeThread` is also applied in `updateThread()`, a reader the Spec didn't list.
+- 2026-11-19 — Choice: T1, handoff.js: v1 `collin` entries are converted in place on the parsed `file.history`.
+- 2026-11-19 — Choice: T1, docs/maps/owner-name-state.md: the summary paragraph was rewritten as a whole rather than edited statement by statement.
+- 2026-11-19 — Choice: T1, app-handoff-restart.test.js: the old "relabels owner tags without changing saved state" test was renamed, and now asserts that saved state is converted.
+- 2026-11-19 — Choice: T1, tests: the normaliser unit tests are in a new file, `viewer/test/app-owner-normalize.test.js`.
+- 2026-11-19 — Choice: T1, app-send-now.spec.js: the `open()` helper gained a `source` parameter.
+- 2026-11-19 — Choice: T1, interrupted-import test: Retry is exercised by re-importing over a saved `create` handoff_op (the `handoff-import.js:26` path), not through the Retry route.
