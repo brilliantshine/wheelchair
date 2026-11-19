@@ -14,6 +14,13 @@ const views = require('./views.js');
 const handoff = require('./handoff.js');
 const { handle } = require('./routes.js');
 
+function sweepTranscripts(hub) {
+  const cutoff = hub.now() - 600_000;
+  for (const [key, entry] of hub.transcriptCache) {
+    if (entry.lastRead < cutoff && !hub.threadLocks.has(entry.threadId)) hub.transcriptCache.delete(key);
+  }
+}
+
 class Hub {
   constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval, quietGraceMs, quietEscalateMs, usagePollInterval, now = Date.now, transcriptSweepInterval = 60_000 } = {}) {
     this.usagePollInterval = usagePollInterval;
@@ -81,7 +88,7 @@ class Hub {
     }
     const existing = (await this.allThreads()).filter((t) => !t.archived && !t.lead_name && t.sessions?.some((s) => s.role === 'lead')).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
     for (const thread of existing) await this.saveWithLeadName(structuredClone(thread));
-    this.transcriptTimer = setInterval(() => this.sweepTranscripts(), this.transcriptSweepInterval);
+    this.transcriptTimer = setInterval(() => sweepTranscripts(this), this.transcriptSweepInterval);
     this.transcriptTimer.unref();
     this.asideTimer = setInterval(() => this.allThreads().then((threads) => Promise.all([...threads.filter(require('./asides.js').needsPump).map((t) => require('./asides.js').pump(this, t.id, { fromTimer: true })), ...threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id))])).catch(() => {}), 2000);
     this.asideTimer.unref();
@@ -105,13 +112,6 @@ class Hub {
     await sessions.retryWaiting(this);
   }
 
-  sweepTranscripts() {
-    const cutoff = this.now() - 600_000;
-    for (const [key, entry] of this.transcriptCache) {
-      if (entry.lastRead < cutoff && !this.threadLocks.has(entry.threadId)) this.transcriptCache.delete(key);
-    }
-  }
-  stop() { clearInterval(this.transcriptTimer); }
   machines() { return this.state.machines(); }
   projects() { return this.state.projects(); }
   machineSeen(name) { return this.lastSeen.get(name) || null; }
@@ -285,4 +285,4 @@ class Hub {
   findSessionMachine(name) { return views.findSessionMachine(this, name); }
 }
 
-module.exports = { DEFAULT_STATE, Hub, handle, transcriptItems: chat.transcriptItems };
+module.exports = { DEFAULT_STATE, Hub, handle, sweepTranscripts, transcriptItems: chat.transcriptItems };

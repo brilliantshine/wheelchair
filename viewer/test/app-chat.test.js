@@ -399,7 +399,7 @@ test('chat versions, fallback and independent fresh report reads', async () => {
 });
 
 test('idle sweep protects queued aside and timer drops idle entries', async () => {
-  const { Hub } = require('../app/hub.js'); const asides = require('../app/asides.js'); const settings = require('../app/settings.js');
+  const { Hub, sweepTranscripts } = require('../app/hub.js'); const asides = require('../app/asides.js'); const settings = require('../app/settings.js');
   const dir = await makeTemp('wc-chat-sweep-'); let now = 0;
   const hub = new Hub({ stateDir: dir, now: () => now, transcriptSweepInterval: 10 }); await hub.init();
   const thread = { id: 'cutoff', machine: 'm', project: '/tmp', sessions: [{ role: 'lead', name: 'lead', cli: 'claude', live: true, cli_session_id: 'parent' }], cards: [], pinned: {}, queues: {}, asides: [] };
@@ -412,12 +412,12 @@ test('idle sweep protects queued aside and timer drops idle entries', async () =
   const original = settings.modelCommand; settings.modelCommand = async () => ({ stdout: 'model' });
   try {
     const queued = hub.withThread(thread.id, async () => asides.create(hub, await hub.thread(thread.id), { message_id: 'lead#0', start: 0, end: 1, quote: 'a', action: 'ask' }));
-    now = 600001; hub.sweepTranscripts();
+    now = 600001; sweepTranscripts(hub);
     release(); await held; assert.equal((await queued).anchor.message_id, 'lead#0');
     await new Promise((resolve) => setImmediate(resolve));
     now += 600001;
     await new Promise((resolve) => setTimeout(resolve, 40)); assert.equal(hub.transcriptCache.size, 0);
-  } finally { release(); hub.stop(); settings.modelCommand = original; }
+  } finally { release(); clearInterval(hub.transcriptTimer); settings.modelCommand = original; }
 });
 
 test('machine seen writes are reserved synchronously and throttled', async () => {
