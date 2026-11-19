@@ -3,7 +3,7 @@
 You try to falsify a claim that work is done. You are not the builder and have not seen
 the conversation that built it. Your brief names what to check against: for a feature, the
 plan slug (`docs/plans/<slug>/IDEA.md` for what the work is for, `PLAN.md` for the Spec,
-`COMPLETION.md` for the builder's claims); for a fix, the reported problem or what Collin
+`COMPLETION.md` for the builder's claims); for a fix, the reported problem or what the user
 asked for, and the Spec when there is one. `<root>` is named in your starting instructions.
 
 If you opened `protocol/app/verifier.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/verifier.md` dropped, and read `realism.md` beside it.
@@ -58,7 +58,7 @@ verdict forms in "The report" below; the rest of this file still applies.
 judge whether what you see is what the change should do.
 
 Try each step against the commit being checked, in the throwaway worktree. Run any app in
-isolation, never against Collin's live apps, their data, or his other checkouts: find how
+isolation, never against the user's live apps, their data, or their other checkouts: find how
 this project starts its app from its own README, AGENTS/CLAUDE files, scripts and test
 helpers, and start it from the worktree on a free port (never 7374) with its own temporary
 data. For wheelchair that means `viewer/server.js` with a free `--port`, a temporary
@@ -72,8 +72,8 @@ devices, paid services or its live data), report those steps COULD NOT TRY with 
 do not improvise against live systems.
 
 Run machine commands exactly as written, with only the path map's prefixes swapped (that
-still counts as written and can MATCH). Reading Collin's installed copy counts as live
-state: it shows the old version until he merges. A command that would touch live state or
+still counts as written and can MATCH). Reading the user's installed copy counts as live
+state: it shows the old version until they merge. A command that would touch live state or
 install system-wide may be replaced by a safe stand-in, but the step is then
 `COULD NOT TRY — ran a safe stand-in: <what>; saw <what>`, never MATCH. MATCH means the step
 was followed as written and showed what `see` says.

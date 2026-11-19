@@ -14,7 +14,7 @@ Every stage reads rules from `protocol/` and writes state to `docs/plans/<slug>/
 
 The diagram-sensitivity dial is the deliberate exception: `sensitivity/set.sh` is the only writer of the region rendered from `protocol/sensitivity.md` into each present harness's global instruction file, loaded every turn in every project. That repo-owned region is overwritten on every run; other context-window rules belong in `protocol/`.
 
-The root sudo helper is the other reach outside the clone and the only part that runs as root. Collin installs it as a system service with `sudo-helper/install.sh` from a root-owned copy agents cannot edit; `./install.sh` never installs or updates it.
+The root sudo helper is the other reach outside the clone and the only part that runs as root. The user installs it as a system service with `sudo-helper/install.sh` from a root-owned copy agents cannot edit; `./install.sh` never installs or updates it.
 
 **`status:` in `PLAN.md` is the state machine, not a label.** Stages refuse to run out of order; editing it to pass a gate skips the gate.
 

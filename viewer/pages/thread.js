@@ -228,7 +228,7 @@
     composerEl.hidden = !!t.handoff_op;
     const before = $('before-handoff'); before.hidden = !t.imported;
     const history = $('handoff-history'); history.textContent = '';
-    if (t.imported) for (const entry of t.imported.history || []) history.appendChild(el('p', '', [entry.at, entry.who, entry.text].filter(Boolean).join(' · ')));
+    if (t.imported) for (const entry of t.imported.history || []) history.appendChild(el('p', '', [entry.at, entry.who === 'collin' ? 'You' : entry.who, entry.text].filter(Boolean).join(' · ')));
   }
 
   // ---- the right column: this thread's files ----

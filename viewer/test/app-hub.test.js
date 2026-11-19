@@ -1419,7 +1419,7 @@ test('restart context includes the latest twenty Collin and card messages', asyn
     const replacement = after.sessions.find((session) => session.name === restarted.body.name);
     const contextMessage = replacement.queue.find((message) => message.source === 'context');
     const state = JSON.parse(contextMessage.text.replace(/^\[wc:context restart] Thread state:\n/, ''));
-    const expected = before.sent.filter((message) => ['collin', 'card'].includes(message.source)).slice(-20);
+    const expected = before.sent.filter((message) => ['collin', 'card'].includes(message.source)).slice(-20).map((message) => ({ ...message, source: message.source === 'collin' ? 'user' : message.source }));
     assert.deepEqual(state.recent_messages, expected);
   });
 });

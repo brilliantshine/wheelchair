@@ -1958,7 +1958,7 @@ class MachineService {
           try { input = { ...input, ...await this.sudo.register(input) }; }
           catch (error) {
             if (error.status) throw error;
-            throw Object.assign(new Error(`sudo helper not installed on ${os.hostname()}; Collin installs it once with: sudo ${ROOT}/sudo-helper/install.sh`), { status: 503 });
+            throw Object.assign(new Error(`sudo helper not installed on ${os.hostname()}; the user installs it once with: sudo ${ROOT}/sudo-helper/install.sh`), { status: 503 });
           }
         }
         // Cards keep their order: anything still spooled from a hub outage goes first.

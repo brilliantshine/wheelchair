@@ -2,7 +2,7 @@
 
 Owned by [`protocol/`](../AGENTS.md). The machine puts the role file and its card files, and for the lead, sub-lead, reviewer and verifier `realism.md`, into each session's starting instructions (Claude) or one composed file the session reads once (GPT, Antigravity, Kimi); asides keep their pointer. Reviewer and verifier get neither card file. Sessions do not need the slash-command stage files. Those stay untouched until a later feature retires them.
 
-The organizing idea: **Collin hears from the workflow only through cards and the lead's
+The organizing idea: **The user hears from the workflow only through cards and the lead's
 visible replies.** Every file here is written around that, and `cards.md` and `cards-lead.md` are the contract
 that makes it checkable: `viewer/app/card.js` validates against it.
 
@@ -22,7 +22,7 @@ that makes it checkable: `viewer/app/card.js` validates against it.
 ## Boundaries
 
 - **These files never reference the old stage-file communication rules or their record
-  files.** The per-turn wording hook is gone. Leads follow Collin's writing style from
+  files.** The per-turn wording hook is gone. Leads follow the user's writing style from
   Settings instead.
 - **A rule lives in one file.** Card fields live in `cards.md` or `cards-lead.md`, each in one place; a role file
   names a card kind and says when to post it.

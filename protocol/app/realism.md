@@ -2,7 +2,7 @@
 
 How likely a problem must be before it is chased. It applies in every plan mode.
 
-- **Normal use**: a healthy machine, ordinary actions by Collin and the agents, and input
+- **Normal use**: a healthy machine, ordinary actions by the user and the agents, and input
   the real tool or service produces. A plain restart, a killed or crashed session, a closed
   browser tab, a network drop and two threads running at once are normal use. Problems in
   normal use are fixed.
@@ -13,13 +13,13 @@ How likely a problem must be before it is chased. It applies in every plan mode.
   writes; unusual screen layouts or versions the tool does not ship.
 - **Always fixed, however rare**: secret or token leaks, permission or sandbox bypass,
   building the wrong thing, anything a Spec validation command checks, silent loss of
-  Collin's work in normal use.
+  the user's work in normal use.
 - **Unsure**: report it as normal use and say why it might be rare. The judge decides: the
   lead for review findings and for its own verifiers; the sub-lead for build verification.
-- **Pulled-back items**: a finding or gap about an item Collin pulled back from Deferred is
-  never a rare path. It is fixed, or Collin is asked, as `lead.md` says.
+- **Pulled-back items**: a finding or gap about an item the user pulled back from Deferred is
+  never a rare path. It is fixed, or the user is asked, as `lead.md` says.
 - **What happens to a rare path**: it is reported once and recorded in the plan's Accepted
-  Risks without asking Collin. It is never fixed in this thread, never moved to Deferred
+  Risks without asking the user. It is never fixed in this thread, never moved to Deferred
   and never raised again.
 - **Check once built**: a finding about how code not yet written might behave ("this could
   race if the poller is written like X"), where the Spec is clear and correct and only the
