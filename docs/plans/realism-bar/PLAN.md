@@ -398,3 +398,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-19 — Choice (not reported by worker, found by scout): T1b, sub-lead.md:248-251 and lead.md:320-323, 406-409: line-wrap points; a slightly ragged wrap left as is.
 - 2026-11-19 — T2 accepted (band: scout): all five changes match the brief; report's machine-suite paste was truncated, sub-lead re-ran both suites on the T2 branch: viewer 685/685, machine 345/345, exit 0. Worker reported no choices; scout found none.
 - 2026-11-19 — Verification attempt 1 FAIL (claude-opus-5-5, gpt-6.2-sol): 3 distinct gaps, all judged normal use (none rare): RE-RAISE exception lost via T1b brief text, review fixed count can exceed found, lighter-mode plan review sends rare hardening to Deferred. R1 dispatched (light, claude-haiku-5-5).
+- 2026-11-19 — R1 accepted (band: scout): three edits verbatim; lines 286-288 and 319-322 of lead.md wrap raggedly (cosmetic, left).
+- 2026-11-19 — Choice: R1, lead.md:286-288 and 319-322: re-wrap only the touched lines, leaving short orphan lines.
