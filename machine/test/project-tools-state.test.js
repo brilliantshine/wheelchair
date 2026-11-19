@@ -11,6 +11,7 @@ async function fixture(t) {
   const root = await makeTemp('tools-state-'), bin = path.join(root, 'bin'), state = path.join(root, 'state');
   const work = path.join(state, 'worktrees', 'project', 'wc', 'thread'), worker = path.join(root, 'worker');
   await fsp.mkdir(bin, { recursive: true }); await fsp.mkdir(work, { recursive: true }); await fsp.mkdir(worker);
+  const home = path.join(root, 'home'); await fsp.mkdir(home);
   const script = `#!/bin/sh
 case "$(basename "$0"):$1" in
  systemd-run:*) exit 1;;
@@ -21,8 +22,8 @@ case "$(basename "$0"):$1" in
 esac
 `;
   for (const name of ['git', 'tmux', 'systemd-run']) await fsp.writeFile(path.join(bin, name), script, { mode: 0o755 });
-  const old = { PATH: process.env.PATH, TOOLS_PATH: process.env.TOOLS_PATH, TOOLS_CALLS: process.env.TOOLS_CALLS };
-  process.env.PATH = `${bin}:${old.PATH}`; process.env.TOOLS_PATH = '-PATH'; process.env.TOOLS_CALLS = path.join(root, 'calls');
+  const old = { PATH: process.env.PATH, TOOLS_PATH: process.env.TOOLS_PATH, TOOLS_CALLS: process.env.TOOLS_CALLS, HOME: process.env.HOME };
+  process.env.PATH = `${bin}:${old.PATH}`; process.env.TOOLS_PATH = '-PATH'; process.env.TOOLS_CALLS = path.join(root, 'calls'); process.env.HOME = home;
   const services = [];
   async function service() { const s = new MachineService({ stateDir: state, host: '127.0.0.1', port: 1 }); await s.init(); services.push(s); return s; }
   t.after(async () => { for (const s of services) { await Promise.all(s.projectToolsWrites.values()); for (const timer of [s.pollTimer, s.stepsTimer, s.trustTimer, s.agyToolsTimer]) clearInterval(timer); } for (const [k,v] of Object.entries(old)) if (v === undefined) delete process.env[k]; else process.env[k] = v; });
