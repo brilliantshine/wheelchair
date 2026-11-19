@@ -735,7 +735,7 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Reader (§1) and Codex adapter (§2, §3 adapter parts) | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/test/project-mcp-codex.test.js, machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker | node --test codex + reader tests; machine/test/run.sh | running |
+| T1 | Reader (§1) and Codex adapter (§2, §3 adapter parts) | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/test/project-mcp-codex.test.js, machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker | node --test codex + reader tests; machine/test/run.sh | done |
 | T2 | Antigravity adapter (§4 adapter parts) | machine/adapters/agy.js, machine/test/project-mcp-agy.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-2 | node --test agy + accounts tests; machine/test/run.sh | running |
 | T3 | Program check module (§5 module) | machine/lib/project-programs.js, machine/test/project-programs.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-3 | node --test project-programs; machine/test/run.sh | done |
 | T4 | tricky — Service plumbing: line logging, Codex redaction and --description, Antigravity file writing and sweep (§3, §4 service parts) | machine/service.js, machine/test/service.test.js, machine/test/project-mcp.test.js, new machine tests | standard | | machine/test/run.sh | waiting on T1, T2 |
@@ -751,3 +751,10 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: T3, machine/lib/project-programs.js: `path` is assumed to be a string (no guard); `mcp: null` returns [] before reading it. (Report said "none"; scout listed this and test helpers only.)
 - 2026-11-18 — Choice: T3, machine/test/project-programs.test.js: added a quoted server name case (`odd name`) exercising `serverLabel`.
 - 2026-11-18 — T3 accepted (band: scout): program check module; 6/6 focused, 175/175 machine tests re-run locally for focused file.
+- 2026-11-18 — worker didn't report its choices accurately ("none"); I listed 5 from the scout's read:
+- 2026-11-18 — Choice: T1, machine/adapters/codex.js: header names are not scanned for `${` (they become literal TOML keys; nothing is expanded).
+- 2026-11-18 — Choice: T1, machine/adapters/codex.js: `Authorization: ${NAME}` (no `Bearer`) goes to `env_http_headers`.
+- 2026-11-18 — Choice: T1, machine/adapters/codex.js: redactions computed by a stride-2 walk over the override pairs after `projectStart`.
+- 2026-11-18 — Choice: T1, machine/adapters/codex.js: the budget line's names are every server that passed the checks, in object order.
+- 2026-11-18 — Choice: T1, machine/lib/project-mcp.js: the outer catch-all failure returns `hash: null` even if bytes were read.
+- 2026-11-18 — T1 accepted (band: scout): reader and Codex adapter; 26/26 focused tests re-run. Interim: service still logs `[object Object]` and ignores redactions until T4.
