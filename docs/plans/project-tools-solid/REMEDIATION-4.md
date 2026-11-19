@@ -190,3 +190,36 @@ node --test viewer/test/*.test.js
 - Paste the full summary output (pass/fail counts) of every validation command into your report.
 - If the same gate fails twice, stop and report rather than iterating.
 - Close your report with: "List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none."
+
+## After verification attempt 5
+
+### R11
+
+Gap (verification attempt 5): the machine suite rewrites the live Antigravity Stop hook. `machine/test/project-tools-state.test.js` "cross-CLI recomputation honors hashes and thread checkout ownership" starts an `agy` session; Antigravity's prepare (`machine/adapters/agy.js:12`) writes `path.join(os.homedir(), '.gemini', 'config', 'hooks.json')`, and the fixture never changes HOME, so the real `~/.gemini/config/hooks.json` gets pointed at the test's worktree.
+
+Ownership boundary: `machine/test/project-tools-state.test.js` (only the `fixture` function), your report `docs/plans/project-tools-solid/reports/R11.md`. Touch nothing else.
+
+## Exactly what to change (in `fixture`, machine/test/project-tools-state.test.js ~lines 10-27)
+1. After the existing `await fsp.mkdir(worker);`, create a home: `const home = path.join(root, 'home'); await fsp.mkdir(home);`
+2. Add `HOME: process.env.HOME` to the `old` object (so the existing `t.after` restore loop puts it back), and set `process.env.HOME = home;` on the same line where `PATH`, `TOOLS_PATH`, `TOOLS_CALLS` are set.
+Pattern already in the tree: `machine/test/service.test.js:887` ("keep it off the real home").
+
+## Validation
+Run exactly this and paste all output (the two hashes must be identical; do not touch the real file in any other way):
+```
+sha256sum ~/.gemini/config/hooks.json
+node --test machine/test/project-tools-state.test.js
+sha256sum ~/.gemini/config/hooks.json
+bash machine/test/run.sh
+sha256sum ~/.gemini/config/hooks.json
+```
+
+## Rules for this task
+- Plan slug `project-tools-solid`. The lead's session is `wc-b9ca1682b0fa-lead`; send it a `message` card if something this brief does not settle blocks you.
+- Never run `./install.sh` and never start a viewer server by hand (tests start their own isolated servers). Never run `sudo`.
+- Never delete files with `rm` (or any other delete) outside your own test temp folders.
+- Your own `wc.js` and `card.js` calls are always allowed.
+- Commit with `node /home/collin/projects/personal/wheelchair/viewer/app/wc.js git commit -m "<msg>" --paths <path>`, one path per call.
+- Paste the full summary output (pass/fail counts) of every validation command into your report.
+- If the same gate fails twice, stop and report rather than iterating.
+- Close your report with: "List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none."
