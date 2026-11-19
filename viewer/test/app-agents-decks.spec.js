@@ -140,6 +140,25 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await pop.locator('.deck-round-btn').first().click(); await inside();
     });
 
+    test('page scroll and an open popover survive a refresh with no agent selected', async ({ page }) => {
+      test.skip(label !== 'phone');
+      const rounds = { review: Object.fromEntries(Array.from({ length: 40 }, (_, i) => [i + 1, { found: 1 }])) };
+      const workers = Array.from({ length: 12 }, (_, i) => node('lw' + i, 'worker', i, { live: true, state: 'working' }));
+      await open(page, () => lead([...workers, ...Array.from({ length: 40 }, (_, i) => reviewer(i + 1, 0))], rounds));
+      await page.locator('.agents-deck').evaluate(d => d.scrollIntoView({ block: 'center' }));
+      const scrollBefore = await page.evaluate(() => scrollY);
+      expect(scrollBefore).toBeGreaterThan(0);
+      await page.locator('.agents-deck').click();
+      const pop = page.locator('.deck-pop'); await expect(pop).toHaveCount(1);
+      const topBefore = (await pop.boundingBox()).y;
+      await page.waitForTimeout(5500);
+      await expect(pop).toHaveCount(1);
+      expect(Math.abs(await page.evaluate(() => scrollY) - scrollBefore)).toBeLessThanOrEqual(2);
+      const b = await pop.boundingBox();
+      expect(b.x).toBeGreaterThanOrEqual(8 - 0.5); expect(b.y).toBeGreaterThanOrEqual(8 - 0.5); expect(b.x + b.width).toBeLessThanOrEqual(viewport.width - 8 + 0.5); expect(b.y + b.height).toBeLessThanOrEqual(viewport.height - 8 + 0.5);
+      expect(Math.abs(b.y - topBefore)).toBeLessThanOrEqual(2);
+    });
+
     test('popover scrolls, keeps its scroll across a poll, and a bottom row is clickable', async ({ page }) => {
       const rounds = { review: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [i + 1, { found: 1 }])) };
       await open(page, () => lead(Array.from({ length: 20 }, (_, i) => reviewer(i + 1, 0)), rounds));
