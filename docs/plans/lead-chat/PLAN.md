@@ -168,6 +168,9 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
 - New lead-only, shown, unpinned kind `reach`. Fields: `thread` (required, the other
   thread's id from `--all-projects`; the one card field that holds a thread id), `why`
   (required, one line in the user's terms).
+- Only one `reach` card may be open in a thread at a time: the hub refuses another
+  (422, `a reach request is already open`) while one is unanswered and not retracted, so a
+  press always refers to the one open request.
 - At post time the hub refuses it (422) when the thread does not exist (`no such thread`), is
   the sender's own thread (`that is this thread`), is not on the same machine
   (`that thread is on another machine`), is not reachable (`that thread is archived` /
@@ -202,8 +205,11 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
 
 **`protocol/app/lead.md`**: add a section "Other leads on this machine":
 - **When to look:** run `wc.js session leads` (a) after the mapper's `result` arrives and
-  you have read MAP.md, (b) in the turn where the last planning question is settled and you set
-  `status: ready-for-review` (that turn answers your user, so its reply is shown), (c) whenever the user asks.
+  you have read MAP.md, (b) in the turn that sets `status: ready-for-review`, whatever started it
+  (a settled question, IDEA.md's confirmation when every design question was defaulted, or
+  a hidden message); if that turn is hidden, carry the line as "Leads inform" says. If (b)
+  finds an overlap you have not already told your user about, start no reviewers until your
+  user has replied to it, (c) whenever the user asks.
   For a small fix, once before making the edits. Show the user nothing unless something
   overlaps; when something does, say so in one line in your reply.
 - **Overlap:** when a listed thread's title, idea or stage suggests it touches the same files
@@ -278,7 +284,7 @@ New tests in `viewer/test/` must cover:
   between two legacy threads with no `provider` field; a cross-thread question never shows as
   outstanding on the Agents screen; the
   receiving thread's chat view hides the delivered message and the reply.
-- `reach`: each post-time refusal; Allow writes only the pressed thread and the other lead
+- `reach`: each post-time refusal, including a second open `reach` card; Allow writes only the pressed thread and the other lead
   can then message back; Allow on a target archived after posting answers the card, links
   nothing and queues `allow failed: that thread is archived`; Allow when already linked succeeds without change; Don't allow links
   nothing; a second press refused; retract works; an open `reach` card appears in Needs you.
@@ -308,7 +314,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Two threads naming the same project through different paths (a symlink) are not treated as the same project | Users pick projects from the same list; needs an unusual setup | review-round-1 |
-| A target's lead dies or the target is archived in the sub-second gap between storing a cross-thread message and queuing it, so that message is dropped | Two unlikely events in a sub-second window; the sender can resend | review-round-1 |
+| A target's lead dies or the target is archived in the gap between storing a cross-thread message and queuing it, so that message is dropped. The gap can last a few seconds while an archive is running | Needs the user to archive that exact thread while another lead messages it; the sender learns it from the thread list and can resend | review-round-1, updated review-round-9 |
 | A thread archived and then brought back by a newer handoff import keeps its old cross-project links | Needs an archive, a re-import of the same thread and a stale link together; IDEA.md asks for no extra security | review-round-7 |
 | A crash between saving a cross-thread message in the sender's thread and queuing it on the target loses that one delivery | Needs a hub crash inside a sub-second window; the sender can resend | planning |
 
@@ -472,12 +478,17 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 9 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 8:** Decision 22: §4 check (b) now runs in the visible turn that sets `ready-for-review`; the pre-approval overlap question card is removed, so "Leads inform" again ends at "No new card or timing rule applies."
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Check (b)'s "shown" reason not always true | upheld | (b) runs in whatever turn sets ready-for-review; hidden turns carry the line |
+| intent | minor | Overlap at (b) is decided while reviewers already run | upheld | No reviewers start until the user replies to a new overlap at (b) |
+| mechanics | blocking | RE-RAISE: archive in progress widens the dropped-message gap to seconds | accepted-risk | Still a rare path (user archives that exact thread while another lead messages it); Accepted Risk text corrected |
+| mechanics | major | No trigger for (b) when every question was defaulted | upheld | (b) runs in whatever turn sets ready-for-review |
+| mechanics | major | Two open `reach` cards can't be told apart | upheld | One open `reach` card per thread |
 
 ## Prior Work
 
