@@ -5,6 +5,7 @@ const c = require('./common');
 const usual = () => c.home('CODEX_HOME', '.codex');
 const loginEnv = dir => dir ? { CODEX_HOME: dir } : {};
 const { run } = require('../lib/usage-probe');
+const { serverLabel } = require('../lib/project-mcp');
 function parseUsage(response) {
   if (response?.error || !response?.result?.rateLimits) throw new Error('invalid Codex usage response');
   const limits = response.result.rateLimits; let five_hour = null, week = null;
@@ -25,7 +26,7 @@ const tomlString = value => `"${String(value).replace(/[\\"\u0000-\u001f\u007f]/
 // grow the overrides about fourfold, so they are measured after quoting and dropped as a whole
 // when over budget, rather than letting the session fail to start.
 const PROJECT_OVERRIDE_BUDGET = 64 * 1024;
-const quotedLength = value => `'${String(value).replace(/'/g, `'\\''`)}'`.length + 1;
+const quotedLength = value => Buffer.byteLength(`'${String(value).replace(/'/g, `'\\''`)}'`, 'utf8') + 1;
 module.exports = {
   provider: 'gpt', loginEnv, parseUsage,
   usageProbe(dir, options = {}) { return run('codex', ['app-server'], { ...options, env: { ...process.env, ...loginEnv(dir) }, parse: parseUsage, messages: [
@@ -62,12 +63,14 @@ module.exports = {
     const argv = ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
     const warnings = [];
     const projectStart = argv.length;
+    const included = [];
     if (context?.tools && context.mcp) {
       for (const name of Object.keys(context.mcp.servers)) {
         const entry = context.mcp.servers[name];
         let reason;
         if (!/^[A-Za-z0-9_-]+$/.test(name)) reason = 'its name must use only letters, digits, _ and -';
-        else if (Object.hasOwn(entry, 'headers')) reason = 'servers with headers are not supported on Codex yet';
+        else if (entry.type === 'sse') reason = 'uses sse, which Codex does not support';
+        else if (entry.type === 'http' && new Set(Object.keys(entry.headers || {}).map(key => key.toLowerCase())).size !== Object.keys(entry.headers || {}).length) reason = 'has the same header twice';
         // Only the fields this transport uses are read: the reader validates stdio fields for stdio
         // entries and only `url` for http ones, so an http entry's other keys may be anything.
         else if (entry.type === 'http' ? entry.url.includes('${') :
@@ -76,10 +79,28 @@ module.exports = {
             (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || value !== `\${${key}}`))) {
           reason = 'it uses ${...} that Codex cannot pass through';
         }
-        if (reason) { warnings.push(`server ${JSON.stringify(name)} skipped on Codex: ${reason}`); continue; }
+        const literalHeaders = [], envHeaders = [];
+        let bearer;
+        if (!reason && entry.type === 'http') {
+          for (const [key, value] of Object.entries(entry.headers || {})) {
+            const token = /^Bearer \$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+            const env = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+            if (key.toLowerCase() === 'authorization' && token) bearer = token[1];
+            else if (env) envHeaders.push(`${tomlString(key)}=${tomlString(env[1])}`);
+            else if (!value.includes('${')) literalHeaders.push(`${tomlString(key)}=${tomlString(value)}`);
+            else { reason = 'a header uses ${...} that Codex cannot pass through'; break; }
+          }
+        }
+        if (reason) { warnings.push({ names: [name], text: `${serverLabel(name)}: skipped on Codex: ${reason}` }); continue; }
+        included.push(name);
         const prefix = `mcp_servers.project_${name}`;
         const add = (key, value) => argv.push('-c', `${prefix}.${key}=${value}`);
-        if (entry.type === 'http') add('url', tomlString(entry.url));
+        if (entry.type === 'http') {
+          add('url', tomlString(entry.url));
+          if (bearer !== undefined) add('bearer_token_env_var', tomlString(bearer));
+          if (literalHeaders.length) add('http_headers', `{${literalHeaders.join(',')}}`);
+          if (envHeaders.length) add('env_http_headers', `{${envHeaders.join(',')}}`);
+        }
         else {
           const literal = [], passthrough = [];
           for (const [key, value] of Object.entries(entry.env || {})) {
@@ -97,9 +118,11 @@ module.exports = {
     }
     if (argv.slice(projectStart).reduce((sum, value) => sum + quotedLength(value), 0) > PROJECT_OVERRIDE_BUDGET) {
       argv.length = projectStart;
-      warnings.push('project tools skipped on Codex: .mcp.json is too large to pass on the command line');
+      warnings.push({ names: included, text: `${included.map(serverLabel).join(', ')}: skipped on Codex: .mcp.json is too large to pass on the command line` });
     }
-    return { argv, warnings };
+    const redactions = [];
+    for (let i = projectStart + 1; i < argv.length; i += 2) redactions.push(i);
+    return { argv, warnings, redactions };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('Ask Codex to do anything'); }, answerPrompts() { return null; },
