@@ -264,3 +264,14 @@ Accepted residuals (lead):
 - The Node 20 spawn fallback is untested here, because this machine runs Node 22.
 
 Lanes: R8-1 standard / gpt-6.1-terra (worker-22); R8-2 standard / claude-sonnet-5-5 (worker-23).
+
+## Remediation 9
+
+Attempt 9: the claude verifier passed; the gpt verifier failed with 1 gap. The lead applied Decision Log 52 (Collin: "Stop chasing rare cases; decide what is realistic"): gap 1 is fixed under rule (b), and five hardening candidates became Deferred rows 9-13 (source verification). Details are in `REMEDIATION-9.md`.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| 1 The hub decoded each reply chunk separately, so a UTF-8 character split across chunks was garbled and an ordinary Save pushed `Ol��` | `response.setEncoding('utf8')` before the data listener in `requestJson` | `viewer/app/machine-client.js:31` | `viewer/test/app-project-tools.test.js:85` (`á` split after `0xC3`; fails without the line) |
+
+Validation after remediation (sub-lead): `node --test viewer/test/*.test.js` pass 642 fail 0; `bash machine/test/run.sh` pass 212 fail 0 (Remediation 8, machine unchanged since). Lane: R9-1 light / gpt-6-luna (worker-24).
+
