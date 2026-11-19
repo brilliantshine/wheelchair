@@ -1,6 +1,6 @@
 ---
 slug: finished-agent-decks
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
