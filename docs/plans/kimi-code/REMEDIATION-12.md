@@ -10,3 +10,4 @@ Verification attempt 12 at `d8545fa`: `wc-01b8cb1bf051-verifier-23` (claude-opus
 ## Status
 
 Gap 1 is recovered-pane classification again (after R1, W1, K1): sent to the lead. Gap 2 is new.
+Gap 2 fixed by F1.

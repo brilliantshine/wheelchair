@@ -969,6 +969,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — F1 accepted (band: scout): `loginStatus` counts only regular files as credentials, trusted and untrusted paths; machine 211/211 re-run by the sub-lead. Remediation 12 gap 2 fixed; gap 1 with Collin.
+
 - 2026-11-18 — Lead on remediation 12 gap 2: fix (regular file only); F1 (light, gpt) dispatched. Gap 1 with Collin.
 
 - 2026-11-18 — Verification attempt 12: Claude PASS, GPT FAIL with 2 gaps (REMEDIATION-12.md); recovered-pane classification survived again: both sent to the lead.
