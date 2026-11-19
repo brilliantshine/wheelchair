@@ -33,7 +33,7 @@ case "$(basename \"$0\"):$1" in
   codex:--version) echo codex-test ;;
 esac
 `;
-  for (const name of ['tmux', 'systemd-run', ...(realGit ? [] : ['git']), 'gh', 'claude', 'codex', 'agy', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
+  for (const name of ['tmux', 'systemd-run', 'systemctl', ...(realGit ? [] : ['git']), 'gh', 'claude', 'codex', 'agy', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
   await write(pane, paneText);
   return { bin, log, pane };
 }

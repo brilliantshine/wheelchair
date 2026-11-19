@@ -15,7 +15,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/state.js` | Hub-state paths, atomic JSON writes, and thread persistence. |
 | `app/machine-client.js` | The authenticated client for machine-service routes, including JSON status and body pass-through. |
 | `app/cards.js`, `card.js` | Hub card handling, including hidden `resolve` and `retract` cards, and the agent-side card validator/CLI. |
-| `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI. |
+| `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js screen`, the invisible-screen commands). |
 | `app/quiet.js` | The quiet-turn detector: who owes a report, the reminders to an agent and its starter, and the system `needs` card, run on the queue retry timer. |
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
 | `app/asides.js` | Aside records, prompts, turn lifecycle and graph handling. |
