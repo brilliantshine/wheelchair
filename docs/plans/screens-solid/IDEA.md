@@ -20,7 +20,6 @@ Screens work for normal use, but have rough edges:
 - A machine missing Xvfb, ffmpeg or xdotool is only found out when an agent tries a screen.
 - Nothing limits how many screens run at once.
 - Screenshots pile up for the whole life of a thread; only archiving removes them.
-- Apps that need a window manager (resizing, full screen, dialogs) misbehave.
 - The app's process ids are not saved in the screen's state.
 - A launch that fails before the app starts says it succeeded.
 - A drag can take about 11 seconds when its limit is 10.
@@ -31,7 +30,6 @@ Screens work for normal use, but have rough edges:
 - Starting a screen past the limit gives a clear error instead of another screen.
 - A long-running thread does not keep piling up old screenshots; they are cleared while
   the thread is still open.
-- An app that needs a window manager gets one when one is installed.
 - A screen's state shows each app's process ids.
 - A launch that fails before the app starts returns an error with the reason.
 - A drag never takes more than 10 seconds.
@@ -41,6 +39,7 @@ Screens work for normal use, but have rough edges:
 - Installing Xvfb, ffmpeg, xdotool or a window manager for Collin.
 - Changing how screens are torn down (still by systemd user slice).
 - New screen commands beyond what the parent work built.
+- A window manager for apps that need one: moved to its own thread.
 
 ## Constraints
 
