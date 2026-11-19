@@ -268,23 +268,41 @@ function transcriptItems(cli, raw, thread, sessionName) {
   return parser ? parser(raw, thread, sessionName) : [{ type: 'notice', text: `This session's CLI (${cli}) has no transcript reader.`, at: new Date(0).toISOString() }];
 }
 
-// The machine service keeps each session's transcript copy (a Claude Stop hook or a bound
-// Codex rollout tells it where the source is), so the hub reads it from there; the hub's own
-// record never learns the path.
-// With `keepLast` (the chat page), a read that fails or times out, as when the service is busy
-// while the agent works, falls back to the last copy this hub read, so the chat never empties
-// for one poll and refills on the next. A report reader passes nothing: a stale copy could
-// hand it an earlier message as the report.
-async function sessionTranscript(hub, thread, session, { keepLast = false } = {}) {
-  hub.transcriptCache ??= new Map();
-  const key = `${thread.machine}/${session.name}`;
+// Report reads always fetch fresh text and do not touch chat's parsed entries.
+async function sessionTranscript(hub, thread, session) {
   try {
     const result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}/transcript`, 'GET');
-    if (result?.data) { hub.transcriptCache.set(key, result.data); return result.data; }
-  } catch { /* the service may be down or the session unknown to it: fall back below */ }
-  if (keepLast && hub.transcriptCache.has(key)) return hub.transcriptCache.get(key);
+    if (result?.data) return result.data;
+  } catch { /* fall through to the local transcript */ }
+  return localTranscript(session);
+}
+
+async function localTranscript(session) {
   if (!session.transcript_path) return '';
   return fs.readFile(session.transcript_path, 'utf8').catch(() => '');
+}
+
+async function chatTranscript(hub, thread, session) {
+  hub.transcriptCache ??= new Map();
+  const key = `${thread.machine}/${session.name}`;
+  const parseKey = JSON.stringify([session.cli, session.name, thread.parent_title]);
+  const entry = hub.transcriptCache.get(key);
+  const known = entry && entry.parseKey === parseKey && entry.gen != null ? `${entry.gen}:${entry.end}` : '-';
+  try {
+    const result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}/transcript?known=${encodeURIComponent(known)}`, 'GET');
+    if (result?.status === 'unchanged' && entry && entry.parseKey === parseKey && result.gen === entry.gen && result.end === entry.end) {
+      entry.lastRead = hub.now();
+      return entry.parsed;
+    }
+    if ((result?.status === 'full' || result?.status === undefined) && result?.data) {
+      const parsed = transcriptItems(session.cli, result.data, thread, session.name);
+      hub.transcriptCache.set(key, { parsed, gen: result.gen, end: result.end, parseKey, threadId: thread.id, lastRead: hub.now() });
+      return parsed;
+    }
+  } catch { /* machine unavailable: use the last parsed chat */ }
+  if (entry) { entry.lastRead = hub.now(); return entry.parsed; }
+  const raw = await localTranscript(session);
+  return raw || !Object.hasOwn(PARSERS, session.cli) ? transcriptItems(session.cli, raw, thread, session.name) : [];
 }
 
 // A reviewer's or verifier's report is the last assistant message of its turn.
@@ -324,9 +342,7 @@ async function chat(hub, id) {
   }
   const items = [];
   for (const session of thread.sessions.filter((item) => item.role === 'lead')) {
-    const raw = await sessionTranscript(hub, thread, session, { keepLast: true });
-    if (!raw && Object.hasOwn(PARSERS, session.cli)) continue;
-    items.push(...transcriptItems(session.cli, raw, thread, session.name));
+    items.push(...await chatTranscript(hub, thread, session));
   }
   // Settings "Tool steps: Hide" drops the lead's tool calls (commands, file reads) entirely.
   const { tool_steps: toolSteps } = await require('./settings.js').load(hub);
@@ -351,4 +367,4 @@ async function chat(hub, id) {
   };
 }
 
-module.exports = { cardBubble, chat, lastAssistantText, sessionTranscript, stripStyleTrailer, textOf, transcriptItems, unwrap };
+module.exports = { cardBubble, chat, chatTranscript, lastAssistantText, sessionTranscript, stripStyleTrailer, textOf, transcriptItems, unwrap };

@@ -15,7 +15,7 @@ const handoff = require('./handoff.js');
 const { handle } = require('./routes.js');
 
 class Hub {
-  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval, quietGraceMs, quietEscalateMs, usagePollInterval } = {}) {
+  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval, quietGraceMs, quietEscalateMs, usagePollInterval, now = Date.now, transcriptSweepInterval = 60_000 } = {}) {
     this.usagePollInterval = usagePollInterval;
     this.root = root || path.resolve(__dirname, '..', '..');
     // The server supplies the commit it read at its own boot.  Direct Hub tests still read
@@ -37,6 +37,10 @@ class Hub {
     this.stateDir = this.state.dir;
     this.threadsDir = this.state.threadsDir;
     this.lastSeen = new Map();
+    this.now = now;
+    this.machineSeenWrites = new Map();
+    this.transcriptCache = new Map();
+    this.transcriptSweepInterval = transcriptSweepInterval;
     this.threadLocks = new Map();
     this.runningHandoffOps = new Set();
     this.uploadsInFlight = new Map();
@@ -77,6 +81,8 @@ class Hub {
     }
     const existing = (await this.allThreads()).filter((t) => !t.archived && !t.lead_name && t.sessions?.some((s) => s.role === 'lead')).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
     for (const thread of existing) await this.saveWithLeadName(structuredClone(thread));
+    this.transcriptTimer = setInterval(() => this.sweepTranscripts(), this.transcriptSweepInterval);
+    this.transcriptTimer.unref();
     this.asideTimer = setInterval(() => this.allThreads().then((threads) => Promise.all([...threads.filter(require('./asides.js').needsPump).map((t) => require('./asides.js').pump(this, t.id, { fromTimer: true })), ...threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id))])).catch(() => {}), 2000);
     this.asideTimer.unref();
     this.pollTimer = setInterval(() => this.pollDead().catch(() => {}), 10_000);
@@ -99,11 +105,22 @@ class Hub {
     await sessions.retryWaiting(this);
   }
 
+  sweepTranscripts() {
+    const cutoff = this.now() - 600_000;
+    for (const [key, entry] of this.transcriptCache) {
+      if (entry.lastRead < cutoff && !this.threadLocks.has(entry.threadId)) this.transcriptCache.delete(key);
+    }
+  }
+  stop() { clearInterval(this.transcriptTimer); }
   machines() { return this.state.machines(); }
   projects() { return this.state.projects(); }
   machineSeen(name) { return this.lastSeen.get(name) || null; }
-  async markMachineSeen(name, at = new Date().toISOString()) {
+  async markMachineSeen(name, at = new Date(this.now()).toISOString()) {
     this.lastSeen.set(name, at);
+    const now = this.now();
+    const last = this.machineSeenWrites.get(name);
+    if (last !== undefined && now - last < 60_000) return at;
+    this.machineSeenWrites.set(name, now);
     await this.state.markMachineSeen(name, at);
     return at;
   }
