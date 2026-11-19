@@ -50,9 +50,10 @@ function readConfig(dir) {
   return result;
 }
 function loginStatus(dir) {
+  const isFile = p => { try { return fs.statSync(p).isFile(); } catch { return false; } };
   const config = readConfig(dir), credentials = path.join(home(dir), 'credentials'); let authenticated = false;
-  if (config.problem) { try { authenticated = fs.readdirSync(credentials).some(f => f.endsWith('.json')); } catch {} }
-  else if (/^oauth\/[A-Za-z0-9._-]+$/.test(config.key || '')) authenticated = fs.existsSync(path.join(credentials, `${config.key.slice(6)}.json`));
+  if (config.problem) { try { authenticated = fs.readdirSync(credentials).some(f => f.endsWith('.json') && isFile(path.join(credentials, f))); } catch {} }
+  else if (/^oauth\/[A-Za-z0-9._-]+$/.test(config.key || '')) authenticated = isFile(path.join(credentials, `${config.key.slice(6)}.json`));
   if (config.problem) return { logged_in: false, authenticated, problem: config.problem };
   let global = false; try { global = new URL(config.oauth_host).hostname === 'auth.kimi.ai'; } catch {}
   return { logged_in: authenticated && global, authenticated, ...(authenticated && !global ? { problem: "signed in to Kimi's China region; log in again" } : {}) };

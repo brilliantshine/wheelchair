@@ -22,6 +22,21 @@ test('Kimi config, authentication, region, and effort', () => {
   fs.unlinkSync(file); fs.mkdirSync(file); assert.match(kimi.loginStatus(dir).problem, /can't be read/);
   assert.deepEqual(kimi.loginStatus(makeTempSync('kimi-empty-')), { logged_in: false, authenticated: false });
 });
+test('Kimi authentication requires regular credential files', () => {
+  const dir = fixture(), credential = path.join(dir, 'credentials', 'dummy.json');
+  fs.unlinkSync(credential); fs.mkdirSync(credential);
+  assert.deepEqual(kimi.loginStatus(dir), { logged_in: false, authenticated: false });
+  fs.rmdirSync(credential); fs.writeFileSync(credential, '{}');
+  assert.deepEqual(kimi.loginStatus(dir), { logged_in: true, authenticated: true });
+
+  const untrusted = makeTempSync('kimi-untrusted-');
+  fs.mkdirSync(path.join(untrusted, 'credentials', 'x.json'), { recursive: true });
+  fs.writeFileSync(path.join(untrusted, 'config.toml'), 'value = """\nuntrusted\n"""\n');
+  assert.deepEqual(kimi.loginStatus(untrusted), { logged_in: false, authenticated: false, problem: "Kimi Code's config.toml has multi-line strings wheelchair can't read" });
+  fs.rmdirSync(path.join(untrusted, 'credentials', 'x.json'));
+  fs.writeFileSync(path.join(untrusted, 'credentials', 'x.json'), '{}');
+  assert.deepEqual(kimi.loginStatus(untrusted), { logged_in: false, authenticated: true, problem: "Kimi Code's config.toml has multi-line strings wheelchair can't read" });
+});
 test('Kimi prompts and role message', () => {
   assert.deepEqual(kimi.answerPrompts({}, 'Trust this folder?\n❯ Trust and continue'), { step: 'trust', keys: ['Enter'] });
   assert.deepEqual(kimi.answerPrompts({}, 'Trust this folder?\n❯ Exit'), { step: 'trust-select', keys: ['Up'] });
