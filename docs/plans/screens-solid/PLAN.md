@@ -1,6 +1,6 @@
 ---
 slug: screens-solid
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -554,3 +554,4 @@ Collin moved the window manager to its own thread; review budget reset.
 - 2026-11-19 — Choice: T3, `install.sh`: package de-duplication by a nested loop over the packages already listed; the warning prints on every Linux run, including `--no-serve`.
 - 2026-11-19 — T3 accepted (band: scout): merged-tree machine suite 369/369; installer suite 197 passed, 1 failed. The one failure, `real wheelchair directory is byte-identical after suite`, also fails on the base branch without T3: it hashes the live `~/.wheelchair`, which the running app writes to during the suite. Viewer suite 694/694 (an earlier run stalled at load average ~33).
 - 2026-11-19 — Addition (sub-lead): installer tests now also assert exit status 0 in the missing, present and Darwin cases, and a new `screen_partial` case covers some tools missing (xdotool, xwininfo, systemd-run → xdotool x11-utils systemd). The scout found the present and Darwin cases would pass on an installer crash.
+- 2026-11-19 — All tasks done; COMPLETION.md written; status verifying. Verification attempt 1: one top-tier verifier, not GPT (every builder ran on GPT; review_families both).
