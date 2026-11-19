@@ -330,8 +330,8 @@ test('launcher signal before hand-over fails', async () => {
 });
 test('handover timeout kills launcher and stops scope once with fixed reason', async () => {
   const f = await fixture(); try {
-    await f.call('start'); f.service.screens.handoverMs = 1000; await f.configure({ launch: 'hang' });
-    const result = await f.call('run', ['--', 'app']); assert.equal(result.body.error, 'app did not start: no hand-over within 1 s');
+    await f.call('start'); await f.configure({ launch: 'hang' });
+    const result = await f.call('run', ['--', 'app']); assert.equal(result.body.error, 'app did not start: no hand-over within 5 s'); assert.equal(result.status, 422);
     const pid = f.service.screens.screens.get(f.a.name).state.apps[0].pid; await new Promise(resolve => setTimeout(resolve, 100)); assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
     const calls = await f.calls(); assert.equal(calls.filter(c => c.name === 'systemctl' && c.args.includes('stop') && c.args.some(a => /-app1\.scope$/.test(a))).length, 1);
   } finally { await f.close(); }
