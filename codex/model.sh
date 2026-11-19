@@ -232,13 +232,33 @@ def listed_models(cache_path):
     return newer_first(parsed) + other
 
 
+def kimi_config(text):
+    """Model tables of Kimi Code's config: tomllib when present, else a plain scan (Python < 3.11)."""
+    try:
+        import tomllib
+    except ImportError:
+        models, current = {}, None
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("["):
+                match = re.fullmatch(r'\[models\."([^"\\]*)"\]', line)
+                current = match.group(1) if match else None
+                if current is not None:
+                    models.setdefault(current, {})
+            elif current is not None:
+                match = re.fullmatch(r'display_name\s*=\s*"([^"\\]*)"', line)
+                if match:
+                    models[current]["display_name"] = match.group(1)
+        return {"models": models}
+    return tomllib.loads(text)
+
+
 def kimi_models():
     """The model aliases in Kimi Code's config, as [{value, label}], or [] when unreadable."""
     path = os.environ.get("WHEELCHAIR_KIMI_CONFIG") or os.path.expanduser("~/.kimi-code/config.toml")
     try:
-        import tomllib
-        with open(path, "rb") as handle:
-            config = tomllib.load(handle)
+        with open(path, encoding="utf-8") as handle:
+            config = kimi_config(handle.read())
     except Exception:
         return []
     models = config.get("models") if isinstance(config, dict) else None
@@ -246,7 +266,8 @@ def kimi_models():
         return []
     listed = []
     for alias, entry in models.items():
-        if not isinstance(alias, str) or not KIMI_VALUE.match(alias):
+        # Only aliases a pin can hold: fullmatch (no trailing newline), and never the "none" marker.
+        if not isinstance(alias, str) or alias == "none" or not KIMI_VALUE.fullmatch(alias):
             continue
         name = entry.get("display_name") if isinstance(entry, dict) else None
         label = f"{name} ({alias})" if isinstance(name, str) and name.strip() else alias

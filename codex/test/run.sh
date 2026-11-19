@@ -276,7 +276,7 @@ assert 'check heads-up stays filtered for the same cache' equals "$output" "head
 
 # show lists Kimi Code's configured model aliases, with display names, and [] when the config is missing.
 new_case
-printf '%s\n' 'default_model = "kimi-code/k3"' '[models."kimi-code/k3"]' 'model = "k3"' 'display_name = "K3"' '[models."kimi-code/k3.1-pro"]' 'model = "k3.1-pro"' '[models."Bad Alias"]' 'display_name = "x"' > "$case_dir/kimi.toml"
+printf '%s\n' 'default_model = "kimi-code/k3"' '[models."kimi-code/k3"]' 'model = "k3"' 'display_name = "K3"' '[models."kimi-code/k3.1-pro"]' 'model = "k3.1-pro"' '[models."Bad Alias"]' 'display_name = "x"' '[models.none]' '[models."kimi-code/k3\n"]' > "$case_dir/kimi.toml"
 output=$(WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" WHEELCHAIR_KIMI_CONFIG="$case_dir/kimi.toml" "$model" show --json)
 assert 'show JSON lists Kimi aliases from the Kimi config' json_assert 'import json,sys; assert json.load(sys.stdin)["kimi_visible"] == [{"value":"kimi-code/k3","label":"K3 (kimi-code/k3)"},{"value":"kimi-code/k3.1-pro","label":"kimi-code/k3.1-pro"}]'
 output=$(WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" WHEELCHAIR_KIMI_CONFIG="$case_dir/missing.toml" "$model" show --json)
