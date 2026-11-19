@@ -113,6 +113,7 @@
     const state = {
       picker: null, machine: '', path: '',
       read: null, token: null, keys: [], tools: {}, sourceTools: {},
+      baseName: nullObj(),    // draft tool name -> the baseline tool name it came from
       pending: nullObj(),     // key values typed in the tool form, by name
       busy: false, loading: false, loads: 0, readSeq: 0, pickSeq: 0, gen: 0,
     };
@@ -233,11 +234,12 @@
       let res;
       try { res = await post('/project-tools/read', { machine, path }); } finally { endLoad(); }
       const { status: code, body } = res;
-      if (seq !== state.readSeq || !fresh(t)) return;
+      if (seq !== state.readSeq || !fresh(t)) return { ok: false, stale: true };
       if (!body || !body.mode || code >= 400) {
         view.replaceChildren();
-        setStatus("Couldn't read this project: " + ((body && (body.reason || body.error)) || (code ? 'http ' + code : 'the hub could not be reached')), true);
-        return;
+        const why = (body && (body.reason || body.error)) || (code ? 'http ' + code : 'the hub could not be reached');
+        if (!keepStatus) setStatus("Couldn't read this project: " + why, true);
+        return { ok: false, reason: why };
       }
       state.read = body;
       reservedLists = body.reserved || { exact: [], prefixes: [] };
@@ -245,9 +247,25 @@
       state.keys = [...(body.keys || [])];
       state.sourceTools = isPlain(body.source?.document?.mcpServers) ? body.source.document.mcpServers : {};
       state.tools = structuredClone(state.sourceTools);
+      state.baseName = nullObj();
+      for (const n of Object.keys(state.sourceTools)) setOwn(state.baseName, n, n);
       state.pending = nullObj();
       if (!keepStatus) setStatus(null);
       buildView();
+      return { ok: true };
+    }
+
+    // Reloads after a save or a 409 and shows the save's own message; a failed reload is said
+    // plainly, with a button that runs the read again. Returns false when the view moved on.
+    async function reloadThenShow(okParts, failParts, bad, c) {
+      const res = await readProject(true);
+      if (res.stale || !fresh(c)) return false;
+      if (res.ok) setStatus(okParts, bad);
+      else {
+        setStatus([...failParts, h('p', { text: "Couldn't reload the project: " + res.reason }),
+          button('Reload', () => { if (state.loading) return; reloadThenShow(okParts, failParts, bad, tag()); })], true);
+      }
+      return true;
     }
 
     // ---- the view ----------------------------------------------------------------------
@@ -321,18 +339,23 @@
       return h('li', {}, h('span', { class: 'mono', text: row.name }), ' = ', h('span', { class: 'mono', text: row.value }));
     }
 
-    // Tools other than `except` whose loaded checks name the key `key`.
+    // The loaded checks of a draft tool, found by the baseline name it came from.
+    function checksFor(name) {
+      const base = own(state.baseName, name);
+      return base === undefined ? {} : own(state.read?.checks, base) || {};
+    }
+    // Draft tools other than `except` whose baseline checks name the key `key`.
     function toolsUsingKey(key, except) {
       const checks = state.read?.checks;
       if (!isPlain(checks)) return [];
-      return Object.keys(checks).filter((n) => n !== except && (own(checks, n)?.keys || []).includes(key));
+      return Object.keys(state.tools).filter((n) => n !== except && (checksFor(n).keys || []).includes(key));
     }
 
     function toolCard(name) {
       const r = state.read;
       const raw = state.tools[name];
       const p = parseEntry(raw);
-      const checks = own(r.checks, name) || {};
+      const checks = checksFor(name);
       const card = h('div', { class: 'pt-tool', 'data-tool': name });
       card.append(h('div', { class: 'pt-tool-head' }, h('h3', { text: name }),
         h('span', { class: 'pt-chip', text: p ? (p.kind === 'command' ? 'command' : 'web address') : 'edit in the file' })));
@@ -368,7 +391,7 @@
         confirmHost.replaceChildren(
           h('p', { text: 'Remove ' + name + '? It goes away when you Save.' }),
           h('div', { class: 'actions' },
-            button('Yes, remove ' + name, () => { if (state.loading) return; delete state.tools[name]; paintTools(); paintSave(); }, { class: 'danger' }),
+            button('Yes, remove ' + name, () => { if (state.loading) return; delete state.tools[name]; delete state.baseName[name]; paintTools(); paintSave(); }, { class: 'danger' }),
             button('Cancel', () => { confirmHost.hidden = true; remove.hidden = false; })));
       }, { 'aria-label': 'Remove ' + name });
       actions.append(remove);
@@ -393,7 +416,7 @@
       const p = raw ? parseEntry(raw) : null;
       if (raw && !p) return;
       const f = formState = {
-        origName, raw, p, name: origName || '', kind: p ? p.kind : 'command',
+        origName, raw, p, orig: raw ? parseEntry(raw) : null, name: origName || '', kind: p ? p.kind : 'command',
         command: p?.command || '', url: p?.url || '', argsText: (p?.args || []).join('\n'), argsRO: !!p?.argsRO,
         commandRO: !!p?.commandRO, urlRO: !!p?.urlRO,
         envRows: p ? p.envRows : [], hdrRows: p ? p.hdrRows : [],
@@ -525,8 +548,14 @@
         state.pending = pending;
         if (origName !== null && origName !== name) {
           const next = nullObj();
-          for (const [k, v] of Object.entries(state.tools)) setOwn(next, k === origName ? name : k, k === origName ? entry : v);
+          const nextBase = nullObj();
+          for (const [k, v] of Object.entries(state.tools)) {
+            setOwn(next, k === origName ? name : k, k === origName ? entry : v);
+            const b = own(state.baseName, k);
+            if (b !== undefined) setOwn(nextBase, k === origName ? name : k, b);
+          }
           state.tools = next;
+          state.baseName = nextBase;
         } else setOwn(state.tools, name, entry);
         formState = null;
         els.form.replaceChildren();
@@ -560,22 +589,34 @@
         }
         return out;
       };
+      const same = !!f.orig && f.orig.kind === f.kind;
+      const rowsSame = (a, b) => a.length === b.length && a.every((x, i) => {
+        const y = b[i];
+        if (!!x.ro !== !!y.ro || x.name !== y.name) return false;
+        if (x.ro) return deepEqual(x.raw, y.raw);
+        return x.mode === y.mode && (x.value || '') === (y.value || '') && (x.prefix || '') === (y.prefix || '') && (x.keyName || '') === (y.keyName || '');
+      });
       if (f.kind === 'command') {
-        delete e.url; delete e.headers;
-        if (e.type !== undefined && e.type !== 'stdio') delete e.type;
-        if (!f.commandRO) e.command = f.command.trim();
-        if (!f.argsRO) {
+        if (!same) {
+          delete e.url; delete e.headers;
+          if (e.type !== undefined && e.type !== 'stdio') delete e.type;
+        }
+        if (!f.commandRO && !(same && f.command === f.orig.command)) e.command = f.command.trim();
+        if (!f.argsRO && !(same && f.argsText === f.orig.args.join('\n'))) {
           const args = f.argsText.split('\n').map((s) => s.replace(/\r$/, '')).filter((s) => s !== '');
           if (args.length) e.args = args; else delete e.args;
         }
-        const env = rowsObj(f.envRows, 'env');
-        if (Object.keys(env).length) e.env = env; else delete e.env;
+        if (!(same && rowsSame(f.envRows, f.orig.envRows))) {
+          const env = rowsObj(f.envRows, 'env');
+          if (Object.keys(env).length) e.env = env; else delete e.env;
+        }
       } else {
-        delete e.command; delete e.args; delete e.env;
-        e.type = 'http';
-        if (!f.urlRO) e.url = f.url.trim();
-        const headers = rowsObj(f.hdrRows, 'hdr');
-        if (Object.keys(headers).length) e.headers = headers; else delete e.headers;
+        if (!same) { delete e.command; delete e.args; delete e.env; e.type = 'http'; }
+        if (!f.urlRO && !(same && f.url === f.orig.url)) e.url = f.url.trim();
+        if (!(same && rowsSame(f.hdrRows, f.orig.hdrRows))) {
+          const headers = rowsObj(f.hdrRows, 'hdr');
+          if (Object.keys(headers).length) e.headers = headers; else delete e.headers;
+        }
       }
       return e;
     }
@@ -675,18 +716,13 @@
         applyKeys(body);
         const link = h('a', { href: body.pr_url, target: '_blank', rel: 'noopener', text: body.pr_url });
         const parts = [h('p', {}, 'Pull request opened: ', link), h('p', { text: 'New threads get the change once it is merged.' }), warningsList(body.warnings)].filter(Boolean);
-        await readProject(true);
-        if (!fresh(c)) return false;
-        setStatus(parts);
-        return true;
+        return reloadThenShow(parts, parts, false, c);
       }
       if (outcome === 'pr_failed') {
         applyKeys(body);
         const parts = [h('p', { text: 'The change was pushed but the pull request could not be opened: ' + (body.error || 'unknown error') }),
           h('p', {}, 'Branch ' + body.branch + '. ', h('a', { href: body.compare_url, target: '_blank', rel: 'noopener', text: 'Open the pull request yourself' }))];
-        await readProject(true);
-        if (!fresh(c)) return false;
-        setStatus(parts, true);
+        await reloadThenShow(parts, parts, true, c);
         return false;
       }
       if (outcome === 'failed') {
@@ -698,9 +734,7 @@
       // refused
       const reason = body.reason || 'refused';
       if (code === 409) {
-        await readProject(true);
-        if (!fresh(c)) return false;
-        setStatus(reason + '. The project was reloaded; make your change again.', true);
+        await reloadThenShow([reason + '. The project was reloaded; make your change again.'], [reason + '.'], true, c);
       } else setStatus(reason, true);
       return false;
     }
