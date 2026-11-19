@@ -1,6 +1,6 @@
 ---
 slug: realism-bar
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -64,6 +64,18 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ## Spec
 
 Protocol and prompt-composition change. No new cards, no UI.
+
+```mermaid
+flowchart TD
+  A[Reviewer or verifier finds a problem] --> B{Normal use, on the always-fix list, or pulled back?}
+  B -- yes --> C[Fixed as today; still stuck after two fixes, Collin is asked]
+  B -- "rare path" --> D[Recorded in Accepted Risks, no question to Collin]
+  B -- "only the built code can tell" --> E[Added to Check Once Built]
+  B -- "can't tell" --> F[Lead decides; asks Collin only if still unsure]
+  E --> G[Verifiers check it against the build] --> B
+  D --> H[Later rounds and attempts treat it as settled]
+```
+
 
 ### S1. `protocol/app/realism.md` (new)
 
@@ -132,7 +144,9 @@ One short section, the single source of the bar:
   usual. Never a `user-decision` for a rare path; ask Collin only when the lead cannot tell
   whether it is normal use.
 - Lighter modes: "hardening" for Deferred means realistic hardening; rare paths go to
-  Accepted Risks, not Deferred. The lead's per-gap answers at step 4a stay defer or fix;
+  Accepted Risks, not Deferred. The lead's per-gap answers at step 4a stay defer or fix, but an
+  always-fixed gap is never deferrable: add it to `lead.md:385` ("A failing Spec validation
+  command and a pulled-back item are never deferrable");
   rare judgment happens before step 4a (S6), where the sub-lead asks the lead when unsure.
 - "Every gap is deferrable hardening" (the Fix them / Defer them choice) counts only
   Deferred hardening, never accepted rare gaps.
@@ -172,8 +186,8 @@ One short section, the single source of the bar:
   finish" choice. In a lighter mode, step 4a's trigger becomes "the merged list is
   non-empty after rare-path judgment" (replacing "after all verifiers report a failure");
   its list marks the remaining gaps `hardening` or `must-fix` as today, and every gap on
-  the always-fixed list is `must-fix` and never deferrable (added beside lead.md's existing
-  "never defer a failing Spec validation command or a pulled-back item").
+  the always-fixed list is `must-fix` and never deferrable (added to `sub-lead.md:246`, "never defer a failing Spec validation command or a
+  pulled-back item", and to `lead.md:385` per S5).
 - Rare gaps are not counted in the verify progress `found`/`fixed` (step 5 counts only the
   gaps that go to remediation), like deferred gaps.
 - The build `result` summary names how many rare paths were accepted.
@@ -182,7 +196,7 @@ One short section, the single source of the bar:
 
 Accepted Risks table header: `| Risk | Why accepted | Round |` keeps its shape; the
 explanatory text adds that rare paths per `protocol/app/realism.md` land here in every mode
-with round `review-round-N` or `verification-N`.
+with round `review-round-N`, `verification-N` or `lead-check`.
 
 ### S8. Check once built
 
@@ -203,8 +217,8 @@ with round `review-round-N` or `verification-N`.
 - **Verification** (`sub-lead.md`, `verifier.md`): the sub-lead's verifier brief includes the
   Check Once Built table; the verifier checks each row against the built code like a Spec
   item and reports a confirmed problem as `GAP: Check once built #<n> — <what> — <evidence>`,
-  which then goes through the realism bar like any other gap. Accepted Risks wins: a row
-  whose problem is already in Accepted Risks is not reported again. The row itself stays as
+  which then goes through the realism bar like any other gap. Accepted Risks and Deferred
+  win: a row whose problem is already in Accepted Risks or Deferred is not reported again. The row itself stays as
   review history.
 - **Template** (`protocol/templates/PLAN.md`): add the `## Check Once Built` section after
   Accepted Risks, with one line saying what it holds.
@@ -322,12 +336,15 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 6 — 2026-11-19
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:** S5 record-only PLAN.md commit and `lead-check` label; S6 always-fixed gaps never deferrable; S8 reviewers treat Check Once Built rows as settled (decision 30).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Always-fixed non-deferrable rule missing from lead.md's own line | upheld | S5, S6 name both lines |
+| mechanics | minor | S7 omits `lead-check` | upheld | S7 |
+| mechanics | minor | Deferred also wins over a Check Once Built row | upheld | S8 |
 
 ## Prior Work
 
