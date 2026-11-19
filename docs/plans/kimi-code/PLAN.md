@@ -93,6 +93,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 56 | Live with a fatal-stop notice lost when the thread is archived before the hub's dead-session check; recorded as an Accepted Risk | Verification attempt 11, after R3, P1 and B1 | user |
 | 57 | The config reader skips lines while inside an unclosed `[` value (multi-line arrays), tested with a `[x]`-like item before the managed oauth keys | Verification attempt 11: a multi-line array item was read as a table header, contrary to the Spec | user |
 | 58 | Recovery recognises a Kimi pane by a line starting `Ask When Needed` or `Never Ask` plus a `context: N%` line; `thinking` is not required (Kimi omits it when thinking is off) | Verification attempt 12: a recovered Kimi pane with thinking off was taken for Claude | user |
+| 59 | From verification attempt 13 on, only gaps that break normal use are fixed; rare failure paths are recorded as Accepted Risks without asking. Normal use: starting, running, reporting, stopping and signing in Kimi agents on a healthy machine, and anything a Spec validation command checks. Rare failure paths: machine restarts with lost state, files swapped or corrupted mid-operation, malformed versions or configs Kimi never writes, unusual approval layouts, races within a second or so | Twelve verification attempts kept finding rare edge cases | user |
 
 ## Spec
 
@@ -972,6 +973,7 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 - 2026-11-18 — F1 accepted (band: scout): `loginStatus` counts only regular files as credentials, trusted and untrusted paths; machine 211/211 re-run by the sub-lead. Remediation 12 gap 2 fixed; gap 1 with Collin.
 - 2026-11-19 — Remediation 12 gap 1 fixed by the sub-lead at Collin's choice (Decision 58): `recoverFromTmux` no longer requires `thinking` in the Kimi footer (`machine/service.js:402`); recovery test adds a thinking-off Kimi pane (stopped) and a Claude pane mentioning the footer mid-line (left alone). Commit `569d4fe`.
+- 2026-11-19 — Decision 59 (Collin, via the lead): from attempt 13 on, fix only gaps that break normal use or fail a validation command; rare failure paths become Accepted Risks. Verifiers 25 and 26 told by message.
 
 - 2026-11-18 — Lead on remediation 12 gap 2: fix (regular file only); F1 (light, gpt) dispatched. Gap 1 with Collin.
 
