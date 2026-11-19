@@ -283,7 +283,8 @@ round" list into the round's section before launching.
 In a lighter mode, name the mode and include the Deferred table in each brief as settled,
 like Accepted Risks. If triage upholds that a Deferred item is needed, remove its row,
 fold it into the Spec, log it with source `review-round-N`, and repost the card after the
-save. Move other hardening findings to Deferred with that source; verdict and found count
+save. Move other realistic hardening findings to Deferred with that source (a rare path goes to
+Accepted Risks, as below); verdict and found count
 work as usual, and the saved row resolves the finding. A finding moved to Deferred does
 not count against the clean test: no blocking or major finding upheld that stays in the
 Spec and no open `user-decision`. The budget otherwise stays the same.
@@ -315,8 +316,10 @@ reviewers.
 After triage, if the round is clean by the test below, resolve any counted minor or
 accepted-risk findings and post `phase: clean` with equal `found` and `fixed` (omit both
 if none counted), then proceed to approval. Otherwise post `phase: fixing`, `found: F`,
-`fixed: 0`, and re-post as `fixed` rises for each saved Spec fix, Accepted Risk or Collin
-decision. Count `upheld`, `downgraded`, `accepted-risk` and `user-decision` findings as
+`fixed: 0`, and re-post as `fixed` rises for each counted finding resolved: a saved Spec fix,
+Accepted Risk or Collin decision. A rare-path Accepted Risk or a `check-once-built` row
+never raises `fixed`. Count `upheld`, `downgraded`, `accepted-risk` and `user-decision`
+findings as
 found, never `declined`, `check-once-built` or a rare-path `accepted-risk`; a finding is
 resolved when its Spec fix is saved, its risk moved to Accepted Risks, or Collin's decision
 logged. While a `question` or the review budget's

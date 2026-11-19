@@ -53,8 +53,10 @@ an acceptable outcome; padding severity is not.
 
 The plan's Review Rounds table, Accepted Risks and Check Once Built sections record findings
 already settled. Anything marked `declined`, `accepted-risk` or `check-once-built`, and
-anything listed in those sections, was considered and closed; do not raise it again. A rare
-path already in Accepted Risks, or a variant of one, is not raised again either.
+anything listed in those sections, was considered and closed; do not raise it again unless
+you have concrete evidence its rationale is factually wrong, in which case prefix the line
+`RE-RAISE:` and cite the evidence. A rare path already in Accepted Risks, or a variant of
+one, is never re-raised.
 
 ## The realism bar
 
