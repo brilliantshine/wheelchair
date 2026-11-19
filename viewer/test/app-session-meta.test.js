@@ -130,7 +130,7 @@ test('review round is validated before dedupe and retained on retry', async () =
     const first = await start({ round: '2' });
     assert.equal(first.status, 200); assert.equal(first.body.session.round, 2);
     assert.equal((await start({ round: 3 })).body.session.round, 2);
-    for (const round of [0, -1, 1.5, 'abc', null]) { const res = await start({ round }); assert.equal(res.status, 400); assert.match(res.body.detail, /--round/); }
+    for (const round of [0, -1, 1.5, 'abc', [2], [[3]], {}, true, null]) { const res = await start({ round }); assert.equal(res.status, 400); assert.match(res.body.detail, /--round/); }
     for (const role of ['verifier', 'worker']) { const res = await start({ role, round: 1 }); assert.equal(res.status, 400); assert.match(res.body.detail, /--round/); }
   } finally { await close(context); }
 });
