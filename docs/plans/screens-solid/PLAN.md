@@ -47,6 +47,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | The optional hint says `sudo apt install openbox` only | `xprop` ships in x11-utils with `xwininfo`, which screens already need | review-round-1 |
 | 18 | Launch waits for the hand-over marker or the launcher ending, within one 5 s deadline; scope activation alone is not hand-over | Activation precedes `exec`; a launcher can still fail after it | review-round-2 |
 | 19 | openbox start uses one 5 s deadline for registration and readiness, and kills the launcher at expiry | Separate waits could overrun, and a late openbox could survive | review-round-2 |
+| 20 | Test settings `maxScreens` and `allowOpenbox` are instance properties on `service.screens`; supersedes Decision 13's constructor option | The fixture builds `MachineService`, which constructs the manager itself | review-round-4 |
+| 21 | openbox runs with a fixed config with no key or mouse bindings | Default bindings open menus with `Execute` actions, which would run commands outside the Codex sandbox | review-round-5 |
+| 22 | openbox mode ends when the openbox process exits (child `exit` listener); supersedes Decision 16's scope check and the per-op `systemctl` query | A leftover process can keep the scope active; openbox can exit after setting its property | review-round-5 |
 ## Spec
 
 Builds on the merged screens work (`wc.js screen`, PR #113). Everything in
@@ -142,14 +145,37 @@ The installer never installs anything and its exit status is unchanged.
 - In `start()`, after the display number is known and its xauth entry is written, and
   before the state is saved as `running`: if `this.allowOpenbox` (an instance property,
 `true` by default; tests set it) and `screenTools().openboxInstalled` are both true, start
-  `openbox --sm-disable` in its own scope in the screen's slice
-  (`scopeArgs(screen, 'wm')`), with `DISPLAY` and `XAUTHORITY` set to the screen's, stdio
-  to `wm.log` in the screen directory.
+  `openbox --sm-disable --config-file <dir>/openbox-rc.xml` in its own scope in the
+  screen's slice (`scopeArgs(screen, 'wm')`), with `DISPLAY` and `XAUTHORITY` set to the
+  screen's, and stdio to `wm.log` in the screen directory.
+- **No way to run commands through openbox.** Before spawning, write
+  `<dir>/openbox-rc.xml` (mode `0600`), a fixed config with empty `<keyboard/>` and
+  `<mouse/>` sections:
+  `<?xml version="1.0"?><openbox_config xmlns="http://openbox.org/3.4/rc"><keyboard/><mouse/></openbox_config>`.
+  - With no key or mouse bindings, no menu can be opened and no `Execute` action exists.
+  - Plain `openbox` (not `openbox-session`) runs no autostart.
+  - So nothing an agent clicks or types can start a process outside the Codex sandbox.
+  - Agents drive apps, not the window manager, so no bindings are needed. Placement,
+    full screen and dialog handling don't depend on bindings.
+- **openbox's own exit is the source of truth.** `systemd-run --scope` execs openbox in
+  place, so the spawned child is openbox.
+  - Attach its `exit` and `error` listeners right after spawn. The child is not
+    `unref`'d.
+  - When either fires, if this screen is still the current one at the same generation:
+    set `state.window_manager` to `null` and `trySave`. From then on, window ops use
+    today's behaviour; openbox is not restarted.
+  - This replaces any per-op scope query: no `systemctl` call is made before window ops.
+    A process outliving openbox in its scope therefore doesn't matter.
+  - A service restart tears all screens down (existing startup cleanup), so the
+    in-memory listener is enough.
 - **Readiness.** No registration wait (`registered()` is unchanged and not called for
   openbox). Within a single 5 s deadline from spawning openbox, poll
   `xprop -root _NET_SUPPORTING_WM_CHECK` (screen's `DISPLAY`/`XAUTHORITY`) every 100 ms.
-  Each probe's timeout is `min(1000, time left)`. openbox counts as ready when that
-  returns a window id.
+  Each probe's timeout is `min(1000, time left)`.
+  - openbox counts as ready when that returns a window id and the child has not exited.
+  - openbox sets the property before loading its config and theme. If it then exits
+    during start-up, the exit listener drops the screen back to today's behaviour, before
+    or after `running` is saved.
 - If the deadline passes first, or the spawn fails: SIGKILL the spawned `systemd-run`
   child if it is still running (so a late-registering openbox cannot start), stop the
   `wm` scope at once (`immediate(unit(screen, 'wm'))`), and carry on without it.
@@ -163,14 +189,6 @@ The installer never installs anything and its exit status is unchanged.
   clears it.
 - Teardown is unchanged: openbox's scope is in the screen's slice, so killing the slice
   ends it.
-- **openbox exiting later.** Before each window op (`windows`, `focus`, `shot --window`,
-  and `run`'s autofocus), when `state.window_manager` is `"openbox"`, query the `wm`
-  scope with `systemctl --user show --property=ActiveState --value`. Only a confirmed
-  inactive result clears the mode: the command succeeded and its trimmed output is exactly
-  `inactive` or `failed`. Then set `state.window_manager` to `null`, `trySave`, and use
-  today's behaviour for that op and after; openbox is not restarted. Any other result
-  changes nothing, and the op runs in openbox mode: a failed or timed-out query, or empty
-  or unrecognised output.
 - `status` adds `window_manager` (the state value).
 - **Windows with openbox running** (`state.window_manager === "openbox"`):
   - Listing windows (`windows`, `windowIds`, `autoFocus` baseline and polling) takes ids
@@ -239,8 +257,10 @@ directory. `exec` keeps the pid (S5 unchanged).
     the last non-empty line of the log bytes written since spawn, preferring the last line
     starting `Failed to`. If there is none, it is the error message or
     `systemd-run exited <code|signal>`.
-  - In every failure case: set `failed: true` on the in-memory record, stop the app scope
-    at once (`immediate(unit)`), `trySave`, and skip autofocus. A failed write never
+  - In every failure case, in this order: stop the app scope at once (`immediate(unit)`),
+    run the generation fence (see Cancellation first; a fenced launch writes nothing and
+    returns 409), then set `failed: true` on the in-memory record, `trySave`, and skip
+    autofocus. A failed write never
     changes the 422 or the cleanup. `status` reports a record
     with `failed: true` as `exited` without querying its scope.
 - **Cancellation first.** After every post-spawn outcome (hand-over, any failure, or
@@ -286,14 +306,15 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   is not Linux, if the service has a platform seam; otherwise the test is skipped off
   Linux. Installer prints each message in a temp home with a shimmed PATH, and prints
   nothing on Darwin.
-- S2, with `service.screens.maxScreens = 1` (stop and failed-write cases also check the slice was signalled):
+- S2, with `service.screens.maxScreens = 1`:
   - A second session's `start` gets the 422, and the first's screen is unaffected.
   - After stopping the first, the second starts.
   - Two simultaneous starts yield exactly one screen.
-  - A start whose state write fails (e.g. a read-only screen directory) leaves no slot
-    held, so a later start succeeds.
+  - A start whose first state write fails (e.g. a read-only screen directory) leaves no
+    slot held and spawns no scope, so a later start succeeds.
   - A screen whose final `save()` fails during start still has its cookie removed and
     its slice signalled.
+  - Stopping a screen signals its slice.
 - S3: after 52 shots, `shot-1.png` and `shot-2.png` are gone, 3–52 remain, and the next
   shot is `shot-53.png`. A non-shot file in the directory survives. A pruning error (e.g.
   an unreadable directory) still returns the shot.
@@ -301,15 +322,17 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   - A `wm` scope is started, and `status` shows `window_manager: "openbox"`.
   - `windows` uses `_NET_CLIENT_LIST`, and `focus` calls `windowactivate --sync`.
   - Without them: no `wm` scope, `null`, and today's calls.
-  - A fake `xprop` that never reports `_NET_SUPPORTING_WM_CHECK`, with the fake WM scope
-    slow to register (2 s): the `wm` scope is stopped, the value is `null`, today's calls
+  - A fake `xprop` that never reports `_NET_SUPPORTING_WM_CHECK`: the `wm` scope is
+    stopped, the value is `null`, today's calls
     are used, and the screen is running within 5 s of the openbox spawn plus 300 ms.
   - A session stopped during the readiness wait gets 409, the screen is not saved as
     running, and both scopes are stopped.
-  - A failing state write when openbox is found gone still runs that op the old way and
-    returns its result.
-  - A `systemctl show` that fails once, or succeeds with empty or unrecognised output,
-    during a window op leaves the mode as openbox.
+  - A fake openbox that exits after start (its scope kept active by a leftover child)
+    switches the next `windows` call to `null` and today's calls. The same holds when
+    that state write fails.
+  - A fake openbox that exits right after the property appears ends up with `null`.
+  - openbox is invoked with `--config-file` naming a `0600` file whose `<keyboard>` and
+    `<mouse>` sections are empty and that contains no `<action`.
   - Fixture: the shared fake-tool fixture sets `service.screens.allowOpenbox = false`, so
     a host with openbox installed never starts it in other tests. S4 tests set it `true`
     and shim `openbox` and `xprop`.
@@ -336,7 +359,8 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   - Failed launches show `exited` in `status` even while the fake scope still reports
     active.
   - A session stopped while hand-over is pending gets 409, not 422, and the app scope is
-    stopped.
+    stopped. When the thread is archived during a failing launch, the screen directory is
+    still absent afterwards.
   - A failing state write right after spawn, or when recording `failed`, still gives the
     hand-over outcome (`ok` or the 422), not 500.
 - S7, `runTool`: a fake tool that starts a background `sleep 5` holding its stdout and
@@ -472,13 +496,33 @@ Collin chose Keep going after round 3; review budget reset.
 
 ### Round 5 — 2026-11-18
 
-**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since Round 4:**
 - S2: test settings are instance properties (`maxScreens`, `allowOpenbox`); one `trySave` rule for new writes; overlap bound about 4 s.
 - S4: readiness polls `xprop` only (no `registered()`); fence again after the wait; names `openboxInstalled`, `allowOpenbox`, `ctx.openbox`.
 - S5 and S6: post-spawn and `failed` writes use `trySave`; the failure order is set, stop, save.
 - Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Decision 13 disagrees with the Spec | upheld | Decision 20 |
+| intent | minor | 2 s slow-registration fixture tests nothing now | upheld | Removed |
+| mechanics | blocking | Default openbox config can run commands outside the Codex sandbox | upheld | Fixed binding-free config (Decision 21) |
+| mechanics | blocking (RE-RAISE) | A leftover process keeps the `wm` scope active after openbox exits | upheld | Track openbox's own exit (Decision 22) |
+| mechanics | major | Property set before config load; openbox can still abort | upheld | Covered by the exit listener |
+| mechanics | major | Fence vs failure write order in S6 | upheld | Stop, fence, then write |
+| mechanics | minor | S2 test asks for a slice signal where none exists | upheld | Assertions split |
+
+### Round 6 — 2026-11-18
+
+**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+
+**Changed since Round 5:**
+- S4: a fixed openbox config with no bindings; openbox mode ends on openbox's own exit (no per-op `systemctl` query); readiness also needs the child alive.
+- S6: failure order is stop, fence, write.
+- Validation: S2 assertions split; S4 tests for leftover processes, early exit and the config.
+- Decisions 20–22.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
