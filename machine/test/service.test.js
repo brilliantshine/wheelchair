@@ -867,8 +867,14 @@ test('composed prompts, provider pointers, and ledger', async () => {
       const session = await start(env, { role, thread_id: role, role_layers: '  final layer  ' });
       const file = path.join(env.state, 'prompts', `${session.name}.md`), prompt = await fs.readFile(file, 'utf8');
       const cards = !['reviewer', 'verifier'].includes(role);
+      const realism = ['lead', 'sub-lead', 'reviewer', 'verifier'].includes(role);
       assert.ok(prompt.startsWith(`Role: ${role}\nYour role rules${cards ? ' and card rules' : ''} are below, already loaded: do not read these files again unless this text is no longer in your context. \`<root>\` is \`${root}\`.`));
       assert.ok(prompt.includes((await fs.readFile(path.join(root, 'protocol/app', `${role}.md`), 'utf8')).trimEnd()));
+      assert.equal(prompt.includes('--- realism.md ---'), realism);
+      if (realism) {
+        assert.ok(prompt.includes((await fs.readFile(path.join(root, 'protocol/app/realism.md'), 'utf8')).trimEnd()));
+        if (cards) assert.ok(prompt.indexOf('--- realism.md ---') < prompt.indexOf('--- cards.md ---'));
+      }
       assert.equal(prompt.includes('--- cards.md ---'), cards);
       assert.equal(prompt.includes('--- cards-lead.md ---'), role === 'lead');
       assert.ok(prompt.endsWith('\n\nfinal layer'));

@@ -57,6 +57,7 @@ for (const role of roles) {
     assert.ok(fallback && fallback.includes(`/protocol/app/${role}.md`) && fallback.includes('dropped'));
     assert.equal(fallback.includes('read `cards.md`'), !['reviewer', 'verifier'].includes(role));
     assert.equal(fallback.includes('`cards-lead.md`'), role === 'lead');
+    assert.equal(fallback.includes('`realism.md`'), ['lead', 'sub-lead', 'reviewer', 'verifier'].includes(role));
   });
 }
 
