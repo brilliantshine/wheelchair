@@ -90,6 +90,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 53 | Stop refining Kimi approval detection; layouts beyond the tested ones (long write previews, plan reviews with custom choices) are an Accepted Risk | Approval detection failed verification again in attempt 7 after R1, Q1, A1 and A2 | user |
 | 54 | A recovered pane showing Kimi's folder-trust screen (`Trust this folder?` with `Trust and continue` and `Exit`) is classed as Kimi, checked before the Claude fallback; tested with the recorded trust screen | Recovered-pane classification failed verification attempt 9 after R1 and W1 (a Kimi pane at folder trust was classed as Claude) | user |
 | 55 | Live with the sub-second window between the final Kimi version check and launch; recorded as an Accepted Risk | Verification attempt 10: a binary replaced during the final `--version` check still launched after V1 | user |
+| 56 | Live with a fatal-stop notice lost when the thread is archived before the hub's dead-session check; recorded as an Accepted Risk | Verification attempt 11, after R3, P1 and B1 | user |
+| 57 | The config reader skips lines while inside an unclosed `[` value (multi-line arrays), tested with a `[x]`-like item before the managed oauth keys | Verification attempt 11: a multi-line array item was read as a table header, contrary to the Spec | user |
 
 ## Spec
 
@@ -628,6 +630,7 @@ re-raise them.
 | Under the auto permission setting, ordinary Kimi output showing both approval phrases near the bottom while no input box shows can raise a stray permission card; it clears when the input box returns. Under bypass, Kimi runs Never Ask and shows no approval screen | Collin's decision after permission-prompt detection failed verification again (Decision 50) | verification |
 | Under the auto permission setting, Kimi approval panels whose title scrolls above the detection window (long write previews) or plan reviews with custom choices raise no card; the agent waits until someone looks at its terminal. Under bypass Kimi runs Never Ask and shows no approvals | Collin's decision to stop refining approval detection after verification attempt 7 (Decision 53) | verification |
 | A kimi binary replaced by an older one during the final version check (under a second, right before launch) can still launch | Collin's decision after the version-at-launch gap survived V1 (Decision 55) | verification |
+| Archiving a thread in the second or so between a Kimi fatal stop and the hub's next dead-session check drops that session's ended notice; the thread is archived and every session in it is ended anyway | Collin's decision after the fatal-stop notice gap recurred in verification attempt 11 (Decision 56) | verification |
 
 ## Review Rounds
 
@@ -965,6 +968,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Collin on remediation 11: gap 1 live with it (Decision 56, Accepted Risk); gap 2 fix it (Decision 57).
 
 - 2026-11-18 — Verification attempt 11: Claude PASS, GPT FAIL with 2 gaps (REMEDIATION-11.md), both in repeatedly-fixed areas: sent to the lead.
 

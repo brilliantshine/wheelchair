@@ -10,3 +10,5 @@ Verification attempt 11 at `f4da961`: `wc-01b8cb1bf051-verifier-21` (claude-opus
 ## Status
 
 Both are in areas fixed twice or more before (fatal-stop notice: R3, P1, B1; config reader: T1, Z1). Sent to the lead.
+
+**Decisions (Collin):** gap 1 — live with it (Decision 56, Accepted Risk). Gap 2 — fix it (Decision 57).
