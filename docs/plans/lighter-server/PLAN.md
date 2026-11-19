@@ -65,6 +65,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 38 | IDEA.md narrowed to the app server: the machine service is not changed (S4 moved out, S5 dropped), added to "Not doing" | Follows from #27 and #36; keeps IDEA and the plan consistent | idea-change |
 | 39 | Hidden-tab pausing is a visibility gate only: the helper skips ticks while hidden and calls the page's existing poll function once when shown; each page keeps its own in-flight handling and its own post-action refreshes exactly as today. No shared promise, queued follow-up or target binding | Simpler; if a running poll drops the on-show call, the next tick (1-10s) covers it, no later than today. The extra machinery drew findings in four rounds | review-round-7 |
 | 40 | The most recently read transcript entry is never evicted by the byte budget, even if it alone exceeds 64 MB | Otherwise an oversized transcript evicts itself and an actively viewed chat loses its fallback | review-round-7 |
+| 41 | Supersedes #40: entries for the sessions of the most recently read thread are never evicted for size | A thread can have several lead sessions; keeping only the last-read entry let a chat poll evict its own oversized transcript | review-round-8 |
+| 42 | `releaseLimits` keeps its current logic (no snapshot prefilter), joining `pollDead`, `pollIdle` and the aside timer | It checks the clock after taking the lock; a prefilter would delay an expiring limit by a sweep, for a 60s timer whose cost is small | review-round-8 |
+| 43 | On becoming visible, the poller calls `fn` and restarts its interval from that moment | Otherwise the on-show call and the next tick can overlap and an older reply can overwrite a newer one | review-round-8 |
 
 ## Spec
 
@@ -86,7 +89,7 @@ Current code is described in `MAP.md` (file:line). Decision numbers refer to the
 - Split `findSlug` (`viewer/app/views.js:99`) into a read-only `discoverSlug(thread)` that returns the slug or `null` without mutating or saving, and the persisting step. `GET /threads` (both views) calls `discoverSlug` on the snapshot; only when it returns a slug does it lock, re-read with `hub.thread()`, run `discoverSlug` again on the fresh record, and if it still returns a slug set it, save and register the plan, as `findSlug` does today. For a thread where that happened (or where the locked re-check found a slug already saved by someone else), the response is built from the fresh record read under the lock (after the save, with its `updated_at`), not the earlier snapshot. `findSlug`'s other callers keep its current behaviour (implemented on top of `discoverSlug`). No status discovery is added to `/threads` (#22).
 - `GET /threads` builds its response from snapshots. A snapshot that needs `hub.thread()`'s provider migration (`viewer/app/hub.js:111`: no `provider`, has `cli` and sessions) is instead read through `hub.thread()` under the lock, as today, so the migration is saved and its `updated_at` shows in the response. For the same thread files, the JSON returned equals today's.
 - Chat (`hub.chat`, `viewer/app/hub.js:244`) keeps its lock through assembly (#33). Inside it, `chat.chat` and `hub.chat` read the thread and its parent with `threadSnapshot`, except that a record needing the provider migration (as for `/threads`) is read with `hub.thread()`, which saves it, as today. They use `discoverSlug`, and only when a slug is found take `hub.thread()`, set the slug, save and register as above; the rest of the assembly then uses that fresh record. Response objects built from snapshots are new objects; snapshots are never mutated.
-- Timers keep their intervals and take their listing from the cache. These six apply their own existing eligibility check to each snapshot first and lock and re-read only matching threads, re-applying the check to the fresh record before sending, saving or changing anything (#23, #28): `retryQueues`, `checkQuiet`, `pollWaiting` (a stub's parent is read from the snapshot list for eligibility and from disk under the lock before acting), `pollMerged`, `retryWaiting`, `releaseLimits`. `pollDead`, `pollIdle` and the aside timer keep their logic unchanged apart from the cached listing (#28).
+- Timers keep their intervals and take their listing from the cache. These five apply their own existing eligibility check to each snapshot first and lock and re-read only matching threads, re-applying the check to the fresh record before sending, saving or changing anything (#23, #28): `retryQueues`, `checkQuiet`, `pollWaiting` (a stub's parent is read from the snapshot list for eligibility and from disk under the lock before acting), `pollMerged`, `retryWaiting`. `pollDead`, `pollIdle`, `releaseLimits` and the aside timer keep their logic unchanged apart from the cached listing (#28, #42).
 - A snapshot that does not match is skipped this tick; a changed file is re-read on the next listing, so a thread that becomes eligible is picked up on the next tick, as today.
 
 ### S3. Hub transcript memory (`viewer/app/chat.js`, `viewer/app/sessions.js`)
@@ -96,7 +99,7 @@ The hub keeps calling the machine's transcript route exactly as today (no new pa
 - Replace the unbounded `hub.transcriptCache` with `transcripts: key(machine/session) -> { text, parsed, parsedKey, lastRead }`. It is filled and used exactly as `transcriptCache` is today: set from each successful non-empty reply, used by chat (`keepLast`) only when a read fails or times out, never by a report reader (`viewer/app/sessions.js:373`).
 - Parsed reuse: the entry stores `parsed` with `parsedKey` = `session.cli` plus every thread field the parser reads (today `thread.parent_title`, `viewer/app/chat.js:130`; the worker lists all of them in the Log); `parsed` always belongs to the entry's current `text` (no second copy of the text is kept). On each successful fetch, compare the new text with the stored `text` before storing it: if identical and `parsedKey` matches, reuse `parsed`; otherwise store the new text, drop `parsed`, parse and store the new result. Chat output equals parsing the whole transcript today.
 - Fallbacks stay as today: when a chat read fails and no entry is held (never read, or evicted), and whenever a report read fails, the code falls through to today's local `session.transcript_path` read (`viewer/app/chat.js:232-233`); eviction never turns into an empty transcript while the machine or the local file can supply it (see Accepted Risks for the case where neither can).
-- Memory (#25): an entry not read for 10 minutes is dropped; when the total `text` bytes exceed 64 MB, least-recently-read entries are dropped until under, except that the most recently read entry is never dropped for size (#40); `parsed` is kept only for the sessions of the 4 most recently read threads. Checks run on every read and in the 60s wait timer. After eviction a read behaves exactly as a first read does today.
+- Memory (#25): an entry not read for 10 minutes is dropped; when the total `text` bytes exceed 64 MB, least-recently-read entries are dropped until under, except that entries for the sessions of the most recently read thread are never dropped for size (#41); `parsed` is kept only for the sessions of the 4 most recently read threads. Checks run on every read and in the 60s wait timer. After eviction a read behaves exactly as a first read does today.
 - Also prune never-cleared per-thread maps in the hub (`handoffStatus`, `handoffStatusAt`, `handoffInspect`, `viewer/app/hub.js:43-45`) for threads that are archived or gone, in the 60s timer; and entries in `state.watched` (`viewer/server.js:1494`) whose path no longer exists.
 
 ### S4. Machine transcript reads
@@ -109,7 +112,7 @@ Dropped (#27). The machine service's tmux, readiness, trust, Codex step and `sta
 
 ### S6. Hidden tabs (`viewer/pages/*.js`)
 
-- Add one shared helper, for example `poller(fn, ms)` returning `{ stop() }` (#39). It calls `fn` every `ms` only while `document.visibilityState` is `visible` (a tick while hidden does nothing) and calls `fn` once when the tab becomes visible. It adds no in-flight tracking: `fn` is the page's existing poll function, with whatever guard that page has today. `stop()` removes the poller for good, so a stopped poller is never called again by a later visibility change. Pages keep their post-action refresh calls exactly as today.
+- Add one shared helper, for example `poller(fn, ms)` returning `{ stop() }` (#39). It calls `fn` every `ms` only while `document.visibilityState` is `visible` (a tick while hidden does nothing) and, when the tab becomes visible, calls `fn` once and restarts its interval from that moment, so the next tick comes a full `ms` later (#43). It adds no in-flight tracking: `fn` is the page's existing poll function, with whatever guard that page has today. `stop()` removes the poller for good, so a stopped poller is never called again by a later visibility change. Pages keep their post-action refresh calls exactly as today.
 - Use it for: Threads, Agents, Features and nav polls, the thread chat poll, the aside panel poll (`viewer/pages/aside.js:30`), the terminal pane poll (`viewer/pages/term-view.js:177`) and the Settings usage poll. Where a page today clears or replaces a timer (closing, retargeting or finishing an aside, closing a terminal), it calls `stop()` and creates a new poller where it created a new timer.
 - Not paused: Settings sign-in polling (#20), and the `/usage/alert` 5-minute check.
 
@@ -129,10 +132,10 @@ New tests (in the existing suites):
 - `viewer/test`: with N unchanged thread files, a second `allThreads()` parses no file (spy on the read/parse path); an atomic outside replace, an in-place outside write with a new size, a new file and a deleted file are each reflected on the next call; mutating a returned record throws; `save` then `allThreads` returns the saved content.
 - `viewer/test`: `discoverSlug` never mutates or saves; a `/threads` fixture includes a record without `provider`, and its migration is saved with the same response as today; a thread whose slug is discovered appears in that same response with the slug and new `updated_at`; `GET /threads?view=list` makes no per-thread locked re-read when nothing needs persisting, and its JSON equals the pre-change output for the fixture set.
 - `viewer/test`: identical fetched text re-uses the parsed result without parsing; changed text re-parses; a different `session.cli` re-parses; a failed chat read with an evicted entry and a failed report read both fall back to the local `transcript_path`; a timeout after a successful read still shows the last chat; a change in `parent_title` alone re-renders; the chat route parses no thread file when nothing changed; the handoff lock test (`viewer/test/app-handoff.test.js:372`) still passes; chat for a legacy thread without `provider` still saves the migration and returns `provider`; the chat result equals a whole-file parse; an entry unread for 10 minutes (fake clock) is evicted; 
-- Browser test (`viewer/test/*.spec.js`): a page makes no poll request while hidden and polls once immediately when shown; a stopped aside or terminal poller is not called on show; sign-in keeps polling while hidden.
+- Browser test (`viewer/test/*.spec.js`): while hidden, a page makes none of the paused poll requests (the `/usage/alert` check and sign-in are not paused); when shown it polls once immediately and the next tick comes a full interval later; a stopped aside or terminal poller is not called on show; sign-in keeps polling while hidden.
 - Leftovers: for each runner, a normal run, and runs killed after 20s with SIGINT and with SIGTERM, leave no process carrying that run's `WHEELCHAIR_TEST_RUN` 10 seconds later (scan `/proc/*/environ`).
-- `viewer/test`: a report read never returns a stored entry after a failed fetch; the transcript budget evicts least-recently-read entries over 64 MB; parsed items are kept only for the 4 most recently read threads; a single transcript over 64 MB stays held while it is the most recently read.
-- `node test-support/bench/hub-idle.js` after the change: phase 1 CPU seconds at most a quarter of the pre-change phase 1; phase 2 CPU seconds lower than the pre-change phase 2; the transcript budget bytes at both RSS points at most 64 MB plus the size of one transcript; RSS at the end at most 110% of RSS 6 minutes into phase 2; peak RSS below the pre-change peak. If the pre-change heap summary shows a large holder not covered by S1–S3, the implementer reports it to the lead before building.
+- `viewer/test`: a report read never returns a stored entry after a failed fetch; the transcript budget evicts least-recently-read entries over 64 MB; parsed items are kept only for the 4 most recently read threads; transcripts of the most recently read thread stay held even when they alone exceed 64 MB, including a thread with one oversized and one small lead session.
+- `node test-support/bench/hub-idle.js` after the change: phase 1 CPU seconds at most a quarter of the pre-change phase 1; phase 2 CPU seconds lower than the pre-change phase 2; the transcript budget bytes at both RSS points at most 64 MB (no fixture thread's sessions exceed it alone); RSS at the end at most 110% of RSS 6 minutes into phase 2; peak RSS below the pre-change peak. If the pre-change heap summary shows a large holder not covered by S1–S3, the implementer reports it to the lead before building.
 
 Commands (all must pass):
 ```bash
@@ -149,6 +152,7 @@ bash install/test/run.sh
 |------|--------------|-------|
 | Live thread files are large (one is 2.7 MB, mostly per-session briefs) and rewritten on every event, so busy threads are still re-parsed often | The cache still removes all idle and archived re-reads (most of the bytes); shrinking stored session records changes what is kept and is a separate piece of work | 1 |
 | A thread page not opened for over 10 minutes, whose sessions live on a machine that is unreachable and have no local transcript file, shows an empty chat until the machine is back (today it shows the last copy the hub read) | Rare (remote machine down, thread not viewed recently), the machine already shows as unreachable, and it is what happens after any hub restart today; keeping copies forever is the memory growth being fixed | 6 |
+| A hidden thread tab's browser-tab title does not update when the thread is renamed until the tab is shown again | Only the tab strip text; it updates the moment the tab is opened, and pausing hidden tabs is the point of S6 | 8 |
 
 ## Review Rounds
 
@@ -303,6 +307,21 @@ bash install/test/run.sh
 Collin chose "Keep going" (budget reset).
 
 **Changed since Round 7:** S6 simplified to a visibility gate with no in-flight sharing or target binding (#39); S3 most recently read entry kept regardless of size (#40); S7 baseline prints n/a for budget fields; Validation updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Hidden thread tab's title goes stale | accepted-risk | Accepted Risks |
+| intent | minor | Browser test contradicts unpaused /usage/alert | upheld | Validation |
+| mechanics | blocking | Oversized entry in a multi-session chat evicted by its sibling | upheld | #41 |
+| mechanics | major | On-show call overlaps next tick | upheld | #43 |
+| mechanics | major | releaseLimits prefilter delays expired limits | upheld | #42 |
+| mechanics | minor | Benchmark byte bound too loose | upheld | Validation |
+
+### Round 9 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 8:** S3 size exception covers the most recently read thread's sessions (#41); S2 `releaseLimits` unchanged (#42); S6 on-show restarts the interval (#43); Validation (browser test scope, byte bound, multi-session case); Accepted Risk for hidden tab titles.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
