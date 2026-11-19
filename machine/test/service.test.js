@@ -1773,7 +1773,7 @@ test('copier cuts a crash fragment before replaying a complete source row', asyn
   } finally { await env.close(); }
 });
 
-test('busy transcript copies reuse in-memory hashes and rebuild after a failed append or idle drop', async () => {
+test('busy transcript copies reuse in-memory hashes and drop them when idle or stopped', async () => {
   const env = await service(await temp()); try {
     await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'busy-hashes.jsonl');
     await write(source, '{"one":1}\n'); await env.instance.copyTranscript(session, source);
@@ -1792,8 +1792,11 @@ test('busy transcript copies reuse in-memory hashes and rebuild after a failed a
       assert.equal(keptReads, 1);
       assert.equal(await readFile(session.transcript_path, 'utf8'), '{"one":1}\n{"two":2}\n{"three":3}\n{"four":4}\n');
       env.instance.copyHashes.get(session.name).used -= 11 * 60_000;
-      const other = path.join(path.dirname(env.state), 'other.jsonl'); await write(other, '{"x":1}\n');
-      await env.instance.copyTranscript({ ...session, name: 'wc-t-other', transcript_path: undefined, transcript_source: undefined }, other);
+      await env.instance.copyTranscript(session, source);
+      assert.equal(env.instance.copyHashes.has(session.name), false);
+      await fs.appendFile(source, '{"five":5}\n'); await env.instance.copyTranscript(session, source);
+      assert.equal(env.instance.copyHashes.has(session.name), true);
+      await env.instance.stop(session.name);
       assert.equal(env.instance.copyHashes.has(session.name), false);
     } finally { fs.readFile = readFile; }
   } finally { await env.close(); }

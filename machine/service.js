@@ -142,7 +142,7 @@ const PERMISSION_MODES = { auto: 'auto', bypass: 'bypassPermissions' };
 const CODEX_MODES = ['sandboxed', 'unrestricted'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const PREVIEW_TIMEOUT_MS = 60_000;
-// A session's in-memory copy hashes are dropped after this long without a copy with new lines.
+// A session's in-memory copy hashes are dropped when it stops or ends, or after this long without new lines.
 const COPY_HASHES_IDLE_MS = 10 * 60_000;
 const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md'], worker: ['cards.md'], mapper: ['cards.md'], reviewer: [], verifier: [] };
 const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
@@ -850,7 +850,7 @@ class MachineService {
     return spool;
   }
   async fatalKimi(session, reason) {
-    if (!session.end_reason) { session.end_reason = reason; await this.persistSessions(); }
+    if (!session.end_reason) { session.end_reason = reason; this.copyHashes?.delete(session.name); await this.persistSessions(); }
     return this.stopFatal(session);
   }
   async stopFatal(session) {
@@ -1077,6 +1077,7 @@ class MachineService {
     const session = this.managed(name);
     if (session.end_reason) return this.stopFatal(session);
     this.tmux(['kill-session', '-t', name]);
+    this.copyHashes?.delete(name);
     session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     this.screens.killSession(name);
@@ -1207,6 +1208,8 @@ class MachineService {
     return run;
   }
   async copyTranscriptNow(session, source) {
+    this.copyHashes ??= new Map();
+    for (const [name, entry] of this.copyHashes) if (Date.now() - entry.used > COPY_HASHES_IDLE_MS) this.copyHashes.delete(name);
     if (!source || (session.cli === 'kimi' && session.end_reason)) return { offset: 0, lines: [] };
     let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
     const current = session.transcript_source;
@@ -1226,9 +1229,7 @@ class MachineService {
       // Each session keeps its kept copy's line hashes in memory, valid while the kept
       // file's inode and size match what this copier last left there.  Anything else
       // (first copy, restart, a crash fragment, an outside edit) rebuilds from the file.
-      this.copyHashes ??= new Map();
       const now = Date.now();
-      for (const [name, entry] of this.copyHashes) if (now - entry.used > COPY_HASHES_IDLE_MS) this.copyHashes.delete(name);
       let kept = this.copyHashes.get(session.name);
       let keptStat = null;
       try { keptStat = await fsp.stat(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
