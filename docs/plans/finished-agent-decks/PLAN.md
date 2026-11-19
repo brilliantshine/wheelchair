@@ -136,6 +136,7 @@ Changing Hide finished agents ON; decking live agents; closed asides; changing h
 |---|------|-----------------|--------|-------------------------|
 | D1 | Full keyboard handling in the deck popover: arrow keys between rows, focus moved into the popover and returned to the deck on close | Mouse/tap, Enter/Space to open and Escape to close already work | planning | Follow the proposal's popover; check with Playwright keyboard tests on both browsers |
 | D2 | Deck squares for agents started before this change (backfilling round numbers from old cards and plans) | New threads get rounds from now on; old ones still deck, just without squares | planning | Membership can't be recovered reliably from timestamps (MAP.md); would need a best-effort match against progress `checking` cards |
+| D3 | Keep the rows in view when a refresh adds a round above them in an open, scrolled deck popover (anchor on a visible round, not a pixel offset) | Rare timing: only while reading a scrolled review history as another round finishes within one 5 s refresh. The list shifts one row; the popover stays open and on screen | verification | Attempt 7 GPT gap: round 21 added, scrollTop kept at 165, round 9 (phone) / 8 (desktop) clipped; `viewer/pages/agents.js:220`. Fix: record the first fully visible `data-round` and its offset before redraw, restore by it after `placePop` |
 
 ## Accepted Risks
 
@@ -399,3 +400,4 @@ Build accepted: approval 408048b5-0427-443e-9d5e-4fc6d2b09c7d
 - 2026-11-19 — Verification attempt 7 started on f6be1d5: wc-d268e3df9c50-verifier-13 (Claude) and wc-d268e3df9c50-verifier-14 (GPT).
 - 2026-11-19 — Attempt 7, Claude verifier (verifier-13) on a26fd34: PASS, no gaps. Node 641/641, machine 170/170, browser 884 passed, 0 failed.
 - 2026-11-19 — Attempt 7, GPT verifier (verifier-14) on a26fd34: FAIL, 1 gap. A refresh that adds a new round above the visible rows keeps the pixel scrollTop, so a previously visible row can be clipped. I marked it hardening (rare timing, popover stays open and on screen) and sent it to the lead. Node 640/641, with the upload test passing alone; browser 880 passed, 4 failed in app-threads, all passing when re-run.
+- 2026-11-19 — The lead deferred attempt 7's only gap as hardening (D3, source verification), under Collin's rule that rare cases are hardening. All-deferred re-check used. Verification attempt 8 runs on this commit.
