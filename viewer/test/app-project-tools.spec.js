@@ -901,3 +901,37 @@ test('R6-1: a tool the form cannot edit still shows its kind and what it runs', 
   await expect(tool(page, 'w')).toContainText('https://x');
   await expect(tool(page, 'w')).toContainText('Edit in the file');
 });
+
+test('R6-2: a touched field that ends equal to the original is written back as read', async ({ page }) => {
+  const calls = await open(page, { read: withTools({ c: { command: 'run', env: {}, args: [] } }) });
+  await page.getByRole('button', { name: 'Edit c' }).click();
+  await page.getByRole('button', { name: 'Add a setting' }).click();
+  await page.getByRole('button', { name: /Remove setting/ }).first().click();
+  await page.getByLabel('Arguments, one per line').fill('x');
+  await page.getByLabel('Arguments, one per line').fill('');
+  await page.getByLabel('Command', { exact: true }).fill('run2');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect.poll(() => calls.save.length).toBe(1);
+  expect(calls.save[0].tools.c).toEqual({ command: 'run2', env: {}, args: [] });
+});
+
+test('R6-2: command and web address are not trimmed', async ({ page }) => {
+  const calls = await open(page, { read: withTools({ w: { type: 'http', url: 'https://a', headers: {} } }) });
+  await page.getByRole('button', { name: 'Edit w' }).click();
+  await page.getByLabel('URL', { exact: true }).fill(' https://b ');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect.poll(() => calls.save.length).toBe(1);
+  expect(calls.save[0].tools.w).toEqual({ type: 'http', url: ' https://b ', headers: {} });
+});
+
+test('R6-2: typing in the web address and restoring it sends the entry unchanged', async ({ page }) => {
+  const raw = { type: 'http', url: 'https://a', headers: {}, timeout: 3 };
+  await open(page, { read: withTools({ w: structuredClone(raw) }) });
+  await page.getByRole('button', { name: 'Edit w' }).click();
+  await page.getByLabel('URL', { exact: true }).fill('https://zz');
+  await page.getByLabel('URL', { exact: true }).fill('https://a');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await expect(page.locator('#pt-save')).toBeDisabled();
+});
