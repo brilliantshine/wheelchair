@@ -42,10 +42,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | On the machine, the dedupe hashes of the kept file live in memory per session: built from the kept file the first time a copy has new lines, updated only after a successful append, dropped after 10 minutes with no copy for that session and when the session is stopped or archived | Avoids rehashing the whole file on every new line without an unbounded set; committing after the append means a failed append cannot hide lines from the next try | defaulted |
 | 11 | The `known`/`full`/`unchanged` answer is computed inside the per-session copy queue (`copyTranscript`), after that read's copy | A hook-triggered copy appending at the same moment cannot leave a half-written tail in a reply | defaulted |
 | 12 | Kept as the parent split it: the thread lock, the 2-second poll, the page and the parsers do not change | IDEA "Not doing" and Constraints | adopted |
+| 13 | Refines #6: no text hash. A reply from an older machine is parsed every time, as today | Only mattered while hub and machine are on different versions; simpler entry | review-round-1 |
 | 14 | Idle drops on both hub and machine run from an `unref`'d timer, not only on traffic | Otherwise closing the last tab leaves everything held (round-1 finding) | review-round-1 |
 | 15 | The machine's dedupe set holds only non-empty lines and is dropped after a failed append | Matches today's rebuild-from-disk results exactly, including blank lines across batches and partial appends | review-round-1 |
 | 16 | `machines.json`'s `last_seen` is written at most once a minute per machine; the in-memory value updates every call | It is read from disk only at hub start; otherwise every chat poll rewrites the file | review-round-1 |
-| 13 | Refines #6: no text hash. A reply from an older machine is parsed every time, as today | Only mattered while hub and machine are on different versions; simpler entry | review-round-1 |
 
 ## Spec
 
@@ -244,6 +244,21 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 | mechanics | minor | Fallback after a parent-title change shows the old title | accepted-risk | Accepted Risks |
 | mechanics | minor | Aside creation calls `chat()` directly, bypassing pending protection | upheld | Confirmed `asides.js:34`; S4.1 |
 | mechanics | minor | After a failed append the kept set could let lines be appended twice | upheld | Decision #15, S2.2 |
+
+### Round 2 — 2026-11-19
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 1:**
+- S2.2: dedupe set holds only non-empty lines; dropped after a failed append (Decision #15).
+- S2.3, S4.2: idle drops run from an `unref`'d timer (Decision #14).
+- S3.2: unknown-CLI notice kept on empty reads; text hash removed (Decision #13).
+- S4.1: `chat()` itself also counts as pending (aside creation).
+- S4b (new): `machines.json` last-seen write throttled to once a minute (Decision #16).
+- S5 tests for the above; one new Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
