@@ -264,3 +264,35 @@ test('unreadable key store gives complete failed save and remove replies', async
     assert.equal(reply.body.key_revision, 0); assert.deepEqual(reply.body.keys, []);
   }
 });
+
+test('malformed key stores never expose values in replies or launch logs', async () => {
+  const { MachineService } = require('../service');
+  const f = await fixture(), state = path.join(f.root, 'state');
+  await fs.writeFile(path.join(f.repo, '.mcp.json'), JSON.stringify({ mcpServers: { local: { command: 'tool', env: { K: '${K}' } } } }));
+  const initial = (await f.tools.read({ path: f.repo })).body;
+  await f.tools.save({ path: f.repo, token: initial.token, tools: null, keys: { K: 'original' } });
+  const dir = path.join(state, 'project-keys'), [file] = await fs.readdir(dir);
+  await fs.writeFile(path.join(f.root, 'bin', 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  await fs.writeFile(path.join(f.root, 'bin', 'tmux'), '#!/bin/sh\nif [ "$1" = capture-pane ]; then printf "auto mode on\\n❯ Ready\\n"; fi\n', { mode: 0o755 });
+  const previousPath = process.env.PATH; process.env.PATH = `${path.join(f.root, 'bin')}:${previousPath}`;
+  const previousError = console.error, logs = []; console.error = (...args) => logs.push(args.join(' '));
+  try {
+    for (const [index, text] of [
+      `{"project":${JSON.stringify(initial.token.project)},"revision":1,"keys":{"K":"SECRET-VALUE-123"`,
+      JSON.stringify({ project: initial.token.project, revision: 1, keys: 'SECRET-VALUE-123' }),
+    ].entries()) {
+      await fs.writeFile(path.join(dir, file), text);
+      const read = await f.tools.read({ path: f.repo });
+      const save = await f.tools.save({ path: f.repo, token: initial.token, tools: null, keys: { K: 'new' } });
+      const remove = await f.tools.removeKey({ path: f.repo, token: initial.token, name: 'K' });
+      for (const reply of [read, save, remove]) assert.doesNotMatch(JSON.stringify(reply.body), /SECRET-VALUE-123/);
+      assert.equal(read.body.notice, "the key store on this machine can't be read");
+      assert.equal(save.body.error, "the key store on this machine can't be read");
+      assert.equal(remove.body.error, "the key store on this machine can't be read");
+      const instance = new MachineService({ stateDir: state, host: '127.0.0.1', port: 0 });
+      await instance.start({ role: 'worker', cli: 'claude', thread_id: `bad${index}`, token: `bad${index}`, worktree: f.repo, name: `wc-bad${index}-worker` });
+    }
+    assert.equal(logs.filter(line => line === "the key store on this machine can't be read").length, 2);
+    for (const line of logs) assert.doesNotMatch(line, /SECRET-VALUE-123/);
+  } finally { console.error = previousError; process.env.PATH = previousPath; }
+});
