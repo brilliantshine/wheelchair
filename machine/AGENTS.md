@@ -9,6 +9,8 @@ agents own neither tmux nor the machine secret.
 | `service.js` | Dependency-free Node HTTP service, session registry, tmux/git boundary, worktrees (each new one links the clone's installed `node_modules` and lists the links in git's exclude file; `from_remote_branch` builds one at an exact pushed commit), the hub-only `/v1/handoff` actions (claims, branch inspection, kill/running) and durable archive markers, readiness, transcript copies, and durable spools. |
 | `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`, `kimi.js`). |
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
+| `lib/try.js` | Folder-local Try records, checks, Git switches and metadata-only status. |
+| `test/try.test.js` | Try endpoint, record, switching and status tests against isolated repositories. |
 | `lib/aside-turns.js` | Durable headless aside turns, CLI spawning, parsing and restart recovery. |
 | `lib/sudo.js` | Durable sudo request registration, polling, outcome delivery and cancellation. |
 | `lib/screen.js` | Per-session invisible X screens for `POST /v1/agent/screen`: Xvfb with a per-screen cookie, app launch (sandboxed for Codex), screenshots, validated xdotool input, one systemd user slice per screen for teardown, the 60 s sweep and startup cleanup. `test/screen-live.sh` drives it against real Xvfb. |

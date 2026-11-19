@@ -23,6 +23,8 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /threads/:id/cards/:cardId/dismiss` | — | `{ok:true}`; closes an open `needs` card a lead posted (`resolved_by:"user"`, shown dimmed as resolved). The thread page no longer shows a Dismiss button; it uses the press actions above. A `system` needs card is refused with 422, an unknown card with 404 |
 | `POST /threads/:id/open` | `{start_now?:boolean}` | a started stub, or `{waiting:true,thread}` |
 | `POST /threads/:id/export` | — | `200` JSON file with attachment filename; checks eligibility, pushes and freezes the thread. A refusal is `409` with the reason in `detail` |
+| `GET /threads/:id/try` | — | Machine checkout status with `active_thread_title`; available on archived threads |
+| `POST /threads/:id/try` | `{action:"try"|"back"|"dismiss"|"forget",version?,kept?}` | Machine write answer with `active_thread_title` in `status`; available on archived threads |
 | `GET /threads/:id/handoff` | — | `{state:"unchanged"|"moved"|"inspect-failed"|"own-cancelled"|"undo-unfinished",at,picked_up_at?,last_error?,can_cancel?}`; remote inspection is cached for 60 seconds |
 | `GET /threads/:id/handoff-file` | — | Saved JSON file with attachment filename; `404` if no saved file matches the handed-off head |
 | `POST /threads/:id/restart` | — | replacement lead session; its restart context is queued first |

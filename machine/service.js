@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const { TryService } = require('./lib/try');
 const { startupWarning } = require('./lib/startup-warning');
 const { createProjectTools } = require('./lib/project-tools');
 const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
@@ -222,6 +223,7 @@ function requestJson(urlText, method, headers, payload, timeout = 5000) {
 class MachineService {
   constructor(options) {
     this.stateDir = path.resolve(options.stateDir || DEFAULT_STATE);
+    this.tryService = new TryService({ stateDir: this.stateDir, root: ROOT, projects: params => this.projects(params) });
     this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir });
     this.projectToolsLocks = new Map();
     this.configPath = path.join(this.stateDir, 'machine.json');
@@ -1951,6 +1953,12 @@ class MachineService {
         const type = IMAGE_TYPES[path.extname(name).toLowerCase()];
         response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': 'attachment' } : {}) });
         file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/try') {
+        await this.authorize(request, 'hub');
+        let input;
+        try { input = await bodyOf(request); } catch (error) { if (error.status === 400) error.status = 422; throw error; }
+        return send(response, 200, await this.tryService.handle(input));
       }
       if (request.method === 'POST' && url.pathname === '/v1/handoff') {
         await this.authorize(request, 'hub');
