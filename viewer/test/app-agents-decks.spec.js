@@ -4,7 +4,7 @@
 const { test, expect } = require('@playwright/test');
 const { closeViews, openPage, setupViews } = require('./helpers/app-views-setup.js');
 
-const VIEWPORTS = { phone: { width: 360, height: 844 }, desktop: { width: 1280, height: 800 } };
+const VIEWPORTS = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } };
 let context;
 test.beforeAll(async () => { context = await setupViews(); });
 test.afterAll(async () => { await closeViews(context); });
@@ -100,6 +100,44 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator('.deck-agent')).toHaveCount(3, { timeout: 8000 });
       await expect(page.locator('.deck-pop')).toHaveCount(1);
       await expect(page.locator('.agents-deck')).toContainText('×4');
+    });
+
+    test('deck title is one ellipsized line with the full text in the tooltip and name', async ({ page }) => {
+      const rounds = { review: { 1: { found: 2 }, 2: { found: 0, clean: true } } };
+      await open(page, () => lead(Array.from({ length: 20 }, (_, i) => reviewer(i % 2 + 1, i)), rounds));
+      const deck = page.locator('.agents-deck'), title = deck.locator('.agents-box-title');
+      const full = await title.textContent();
+      await expect(title).toHaveAttribute('title', full);
+      await expect(deck).toHaveAttribute('aria-label', new RegExp(full));
+      const m = await title.evaluate(t => { const cs = getComputedStyle(t), lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3; return { h: t.getBoundingClientRect().height, lh, ws: cs.whiteSpace, to: cs.textOverflow }; });
+      expect(m.ws).toBe('nowrap'); expect(m.to).toBe('ellipsis'); expect(m.h).toBeLessThan(m.lh * 1.9);
+      const ordinary = await page.locator('.agents-box:not(.agents-deck) .agents-box-title').first().evaluate(t => getComputedStyle(t).whiteSpace);
+      expect(ordinary).not.toBe('nowrap');
+    });
+
+    test('deck face is opaque and the two outlines sit offset down and right behind it', async ({ page }) => {
+      await open(page, () => lead([reviewer(1), reviewer(2)]));
+      const r = await page.locator('.agents-deck').evaluate(d => {
+        const alpha = c => { const m = c.match(/rgba?\(([^)]+)\)/)[1].split(',').map(Number); return m.length === 4 ? m[3] : 1; };
+        const t = e => { const m = getComputedStyle(d, e).transform.match(/matrix\(([^)]+)\)/)[1].split(',').map(Number); return [m[4], m[5]]; };
+        return { alpha: alpha(getComputedStyle(d).backgroundColor), before: t('::before'), after: t('::after'), z: [getComputedStyle(d, '::before').zIndex, getComputedStyle(d, '::after').zIndex] };
+      });
+      expect(r.alpha).toBe(1);
+      for (const o of [r.before, r.after]) { expect(o[0]).toBeGreaterThan(0); expect(o[1]).toBeGreaterThan(0); }
+      expect(r.z.every(z => Number(z) < 0)).toBe(true);
+    });
+
+    test('popover stays inside the viewport for a deck near the bottom', async ({ page }) => {
+      const rounds = { review: Object.fromEntries([1, 2, 3, 4, 5].map(r => [r, { found: 1 }])) };
+      await open(page, () => lead([1, 2, 3, 4, 5].flatMap(r => [reviewer(r, 0), reviewer(r, 1)]), rounds));
+      await page.addStyleTag({ content: '.agents-count { margin-bottom: 1600px !important; }' });
+      const deck = page.locator('.agents-deck');
+      await deck.evaluate(d => d.scrollIntoView({ block: 'end' }));
+      await deck.click();
+      const pop = page.locator('.deck-pop'); await expect(pop).toHaveCount(1);
+      const inside = async () => { const b = await pop.boundingBox(); expect(b.x).toBeGreaterThanOrEqual(8 - 0.5); expect(b.y).toBeGreaterThanOrEqual(8 - 0.5); expect(b.x + b.width).toBeLessThanOrEqual(viewport.width - 8 + 0.5); expect(b.y + b.height).toBeLessThanOrEqual(viewport.height - 8 + 0.5); };
+      await inside();
+      await pop.locator('.deck-round-btn').first().click(); await inside();
     });
 
     test('decked sub-leads share one deck of workers', async ({ page }) => {
