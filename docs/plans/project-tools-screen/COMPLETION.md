@@ -122,3 +122,26 @@ $ npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings
 - Everything in the plan's Deferred table and Accepted Risks.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1, commit 515a36f)
+
+Gaps and briefs: `REMEDIATION-1.md`. Lead decision: fix all eight, defer none.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| 1 Kind change dropped read-only parts | Refused while any read-only row (incl. reserved-name env rows), read-only args/command/URL or unknown field exists | `viewer/pages/project-tools.js:448` | `app-project-tools.spec.js` kind-refusal test (four cases) |
+| 2 Late key reply applied to another project | Reply dropped unless machine, path and read sequence still match | `viewer/pages/project-tools.js:613-618,728-733` | late-reply test (save path) |
+| 3 `${...}` in command/args/URL editable | Shown read-only, kept as is | `viewer/pages/project-tools.js:90-92,431-443,531,541` | args read-only test |
+| 4 Unknown fields hidden | Listed read-only on card and form | `viewer/pages/project-tools.js:313,439-440` | unknown-field test |
+| 5 "set" next to "needs … not set" | "needs" warnings computed from current keys | `viewer/pages/project-tools.js:320-328` | key-warning test |
+| 6 "shared with" only from baseline | Computed from the current draft, live in the editor | `viewer/pages/project-tools.js:290-300,401,410-412` | shared-with test |
+| 7 Waiting PRs hidden when unreadable | Shown in tools mode always | `viewer/pages/project-tools.js:228-242` | unreadable + waiting test |
+| 8 Temp worktree left after failed add | `finally` removes and prunes whenever the path was chosen | `machine/lib/project-tools.js:138-142` | failing post-checkout hook test |
+
+Validation after remediation (sub-lead, on the merged branch):
+
+```
+$ bash machine/test/run.sh                      # pass 202, fail 0
+$ node --test viewer/test/*.test.js             # pass 641, fail 0
+$ npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js   # 120 passed
+```
