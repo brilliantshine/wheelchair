@@ -384,7 +384,7 @@ test('real git am in progress is refused', async () => {
 test('a long switch does not delay the same project agent worktree queue', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const { MachineService } = require('../service'); const f = await tryFixture();
   const marker = path.join(f.root, 'hook-started'); await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), `#!/bin/sh\ntouch '${marker}'\nsleep 2\n`, { mode: 0o755 });
-  const machine = new MachineService({ stateDir: path.join(f.root, 'machine') }); await f.instance.handle(f.request);
+  const machine = new MachineService({ stateDir: path.join(f.root, 'machine') }); machine.tryService = f.instance; await machine.tryService.handle(f.request);
   for (let i = 0; i < 200 && !require('node:fs').existsSync(marker); i++) await new Promise(resolve => setTimeout(resolve, 10));
   await fs.access(marker); let ran = false; await Promise.race([machine.inRepoQueue(f.repo, async () => { ran = true; }), new Promise((_, reject) => setTimeout(() => reject(new Error('queue delayed')), 500))]);
   assert.equal(ran, true); assert.equal((await f.done()).last.outcome, 'success');
@@ -442,8 +442,10 @@ test('required smudge filter failing on a move between threads records exact int
 test('real git switch unable to unlink warning is interrupted', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
   const dir = path.join(f.repo, 'locked'); await fs.mkdir(dir); await fs.writeFile(path.join(dir, 'tracked'), 'mine'); f.git('add', 'locked/tracked'); f.git('commit', '-m', 'add tracked');
+  const runGit = f.instance.runGit.bind(f.instance); let switched;
+  f.instance.runGit = async (folder, args, timeout) => { const result = await runGit(folder, args, timeout); if (args.includes('switch')) switched = result; return result; };
   await fs.chmod(dir, 0o555);
-  try { await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.state, 'interrupted'); assert.equal(status.last.outcome, 'interrupted'); assert.equal(await fs.readFile(path.join(dir, 'tracked'), 'utf8'), 'mine'); }
+  try { await f.instance.handle(f.request); const status = await f.done(); assert.equal(switched.code, 0); assert.match(switched.stderr.toString(), /^warning: unable to unlink 'locked\/tracked'/m); assert.equal(status.state, 'interrupted'); assert.equal(status.last.outcome, 'interrupted'); assert.equal(await fs.readFile(path.join(dir, 'tracked'), 'utf8'), 'mine'); }
   finally { await fs.chmod(dir, 0o755); }
 });
 test('commit subject containing unable to unlink gives plain success', async () => {
