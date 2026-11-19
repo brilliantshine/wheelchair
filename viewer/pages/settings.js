@@ -1379,11 +1379,20 @@
   let backgroundVisit = null;
   let backgroundGeneration = 0;
   const bg = window.wcBackground;
+  function cancelBackgroundCandidate(v) {
+    if (v.pendingImage) { v.pendingImage.src = ''; v.pendingImage = null; }
+    if (v.pendingUrl) { URL.revokeObjectURL(v.pendingUrl); v.pendingUrl = null; }
+  }
+  function cancelBackgroundWork(v) {
+    if (v.frame != null) { cancelAnimationFrame(v.frame); v.frame = null; }
+    cancelBackgroundCandidate(v);
+  }
   function discardBackground() {
     const visit = backgroundVisit;
     backgroundVisit = null; backgroundGeneration++;
     if (!visit) return;
     visit.op++;
+    cancelBackgroundWork(visit);
     if (visit.token) bg.release(visit.token);
     if (visit.url) URL.revokeObjectURL(visit.url);
   }
@@ -1403,25 +1412,36 @@
   }
   async function selectBackground(v, file) {
     if (!file || v.saving) return;
+    cancelBackgroundCandidate(v);
     const op = ++v.op; v.pending = true; v.error = ''; repaintBackground(v);
     let url;
     try {
-      if (file.size > 25 * 1024 * 1024) throw new Error('Choose an image no larger than 25 MiB.');
+      if (file.size > 25 * 1024 * 1024) { const error = new Error(); error.status = 413; throw error; }
       const original = new Uint8Array(await file.arrayBuffer());
+      if (backgroundVisit !== v || op !== v.op) return;
       const normalized = window.wcBackgroundFormat.normalize(original);
       url = URL.createObjectURL(new Blob([normalized.bytes], { type: normalized.mediaType }));
       const image = new Image();
+      v.pendingUrl = url; v.pendingImage = image;
       await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('Could not decode this image.')); image.src = url; });
       if (backgroundVisit !== v || op !== v.op) return;
+      v.pendingUrl = null; v.pendingImage = null;
       beginBackground(v);
-      if (!v.dirty) throw new Error('Background settings are not available yet.');
+      if (!v.dirty) { const error = new Error(); error.status = 503; throw error; }
       const previous = v.url;
       v.url = url; url = null; v.image = image; v.file = original; v.mediaType = normalized.mediaType;
       v.filename = file.name; v.size = file.size; v.imageId = null; v.status = '';
       bg.publish(v.token, v.image, v.opacity);
       if (previous) URL.revokeObjectURL(previous);
-    } catch (error) { if (backgroundVisit === v && op === v.op) v.error = error.message || 'Could not read this image.'; }
-    finally { if (url) URL.revokeObjectURL(url); if (backgroundVisit === v && op === v.op) { v.pending = false; repaintBackground(v); } }
+    } catch (error) {
+      if (backgroundVisit === v && op === v.op) v.error = error.status === 413 ? 'Choose an image no larger than 25 MiB.'
+        : error.status === 415 ? 'Choose a PNG, JPG, WEBP, or GIF image.'
+          : error.status === 503 ? 'Background settings are unavailable. Please try again.' : 'Could not open this image. Choose another file.';
+    }
+    finally {
+      if (url) URL.revokeObjectURL(url);
+      if (backgroundVisit === v && op === v.op) { v.pendingUrl = null; v.pendingImage = null; v.pending = false; repaintBackground(v); }
+    }
   }
   async function saveBackground(v) {
     if (!v.dirty || v.pending || v.saving) return;
@@ -1431,7 +1451,8 @@
       if (v.file) response = await fetch(API + '/settings/background/upload?revision=' + v.revision + '&opacity=' + v.opacity, { method: 'POST', headers: { 'content-type': v.mediaType }, body: v.file });
       else response = await fetch(API + '/settings/background', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: v.revision, image_id: v.imageId, opacity: v.opacity }) });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) { const e = new Error(response.status === 409 ? 'The background changed elsewhere. Choose Cancel to load the saved version.' : (body.detail || body.error || 'Could not save background.')); throw e; }
+      if (response.status === 409) void bg.accept(body);
+      if (!response.ok) { const e = new Error(response.status === 409 ? 'The background changed elsewhere. Choose Cancel to load the saved version.' : 'Could not save the background. Please try again.'); throw e; }
       void bg.accept(body);
       if (backgroundVisit !== v) return;
       discardBackground();
@@ -1442,15 +1463,20 @@
     const v = ensureBackground();
     const state = bg.current(), m = state.metadata;
     const opacity = v.dirty ? v.opacity : (m?.opacity ?? 35);
-    const hasImage = v.dirty ? !!(v.image || v.imageId) : !!(m?.image_id && !m.missing_image);
+    const hasImage = v.dirty ? !!(v.image || v.imageId) : state.available;
     const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', disabled: v.saving, 'aria-label': 'Choose background image', onchange: e => selectBackground(v, e.target.files[0]) });
     const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', value: String(opacity), disabled: v.saving || !hasImage || (!v.dirty && !state.ready), 'aria-label': 'Visibility' });
     const value = h('span', { text: opacity + '%' });
     slider.addEventListener('input', () => {
       beginBackground(v); if (!v.dirty) return;
       v.opacity = Number(slider.value); v.status = ''; value.textContent = v.opacity + '%';
-      if (v.image) bg.publish(v.token, v.image, v.opacity);
-      else bg.publishSaved(v.token, v.opacity);
+      if (v.frame != null) cancelAnimationFrame(v.frame);
+      v.frame = requestAnimationFrame(() => {
+        v.frame = null;
+        if (backgroundVisit !== v || !v.dirty) return;
+        if (v.image) bg.publish(v.token, v.image, v.opacity);
+        else bg.publishSaved(v.token, v.opacity);
+      });
       const save = document.getElementById('background-save'); if (save) save.disabled = v.pending || v.saving;
       const cancel = document.getElementById('background-cancel'); if (cancel) cancel.disabled = false;
     });
@@ -1463,16 +1489,17 @@
           h('button', { id: 'background-save', type: 'button', class: 'primary', text: 'Save', disabled: !v.dirty || v.pending || v.saving, onclick: () => saveBackground(v) }),
           h('button', { id: 'background-cancel', type: 'button', text: 'Cancel', disabled: !v.dirty || v.saving, onclick: () => { discardBackground(); bg.refresh(); repaintBackground(ensureBackground()); } }),
           h('button', { type: 'button', text: 'Remove background', disabled: v.saving || !m, onclick: () => {
-            ++v.op; v.pending = false; beginBackground(v); if (!v.dirty) return;
+            ++v.op; cancelBackgroundWork(v); v.pending = false; beginBackground(v); if (!v.dirty) return;
             const old = v.url; v.url = null; v.image = null; v.file = null; v.imageId = null; v.filename = ''; v.opacity = 35; v.error = ''; v.status = '';
             bg.publish(v.token, null, 35); if (old) URL.revokeObjectURL(old); repaintBackground(v);
           } })),
-        v.error && h('p', { class: 'inline-err', role: 'alert', text: v.error }),
+        (v.error || state.error) && h('p', { class: 'inline-err', role: 'alert', text: v.error || state.error }),
         h('p', { class: 'note', role: 'status', text: v.status || (v.pending ? 'Loading image…' : (!m ? 'Loading background…' : '')) })));
   }
   if (bg) {
     bg.subscribe(() => { if (section === 'background' && backgroundVisit && !backgroundVisit.dirty && !backgroundVisit.pending) repaintBackground(backgroundVisit); });
     window.addEventListener('backgroundrestore', () => { discardBackground(); if (section === 'background') repaintBackground(ensureBackground()); });
+    window.addEventListener('backgrounddispose', discardBackground);
   }
 
   // ---------------------------------------------------------------- shell
