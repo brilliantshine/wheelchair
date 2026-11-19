@@ -314,16 +314,22 @@ to Accepted Risks, or Collin's decision logged. While a `question` or the review
 Recurring objections are sorted: a real choice for Collin becomes a `question` card, a
 vague part is rewritten, a repeat is rejected with the reason recorded.
 
-**Offer a split.** When one part of the Spec has drawn upheld blocking or major findings in
-three rounds in a row while the rest of the Spec drew none in the latest of them, do not
-wait for the budget: post a `question` card offering to move that part into its own
-thread, in place of the budget's `needs` card if both would fire. Name the part in his
-words and say what the rest does without it. Options: "Split it off" and "Keep it here"
-(leaning: split). On "Split it off": remove that part from the Spec, log the decision
-(source `user`), post a `stub` card whose summary names the part, its open findings and
-this plan's path (`depends_on_parent` true when it builds on the rest), then run the next
-round on the change. On "Keep it here": carry on; the budget resets as for any decision
-of his.
+**Offer a split.** When one part of the Spec has drawn upheld blocking or major findings
+in three rounds in a row, and no other part drew any in the latest of them, do not wait
+for the budget: offer to move that part into its own thread. Earlier findings elsewhere do
+not matter; what counts is that the rest has settled. Count only findings that stay in
+the Spec (not ones moved to Deferred), and only rounds after his last answer to a split
+offer for that part. Post the offer as a `question` card before any other question from
+that round (a split may make them moot), and in place of the budget's `needs` card if
+both would fire. Name the part in his words and say what the rest does without it.
+Options: "Split it off" and "Keep it here" (leaning: split). On "Split it off": remove
+that part from the Spec and log the decision with source `user`; if the part is named in
+IDEA.md's What or What good looks like, his press is his agreement to the scope change:
+move it to Not doing with a pointer to the new thread and log it with source
+`idea-change` instead. Post a `stub` card whose summary names the part, its open findings
+and this plan's path (`depends_on_parent` true when it builds on the rest), then run the
+next round on the change. On "Keep it here": carry on; the budget resets as for any
+decision of his.
 
 **Budget.** A round is clean when your triage upholds no blocking and no major finding and
 no `user-decision` is open. Three triaged rounds since Collin's last decision without a
