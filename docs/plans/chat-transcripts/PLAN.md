@@ -35,13 +35,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | `gen` is the kept file's inode and birth time; `end` is its size; both from one `fstat` of one open handle, and a `full` reply's data is read from that same handle up to `end` | The machine owns the kept file and only appends to it, so same gen + same size means same content; one handle avoids mixing two versions | adopted |
 | 4 | The machine replies in the new form only when the request carries a `known` parameter (`known=-` when the hub holds nothing). Without it, the reply is exactly today's `{offset, data}` | An older hub never sends `known` and keeps working unchanged; report readers keep using the legacy form | defaulted |
 | 5 | A reply with no `status` (an older machine) is treated as `full`; empty `data` in any reply is treated as `unavailable` | Older machines ignore `known` (MAP.md); parent #59: an empty reply means fall back, never "empty chat" | adopted |
-| 6 | The hub keeps per lead session only the parsed chat, the `gen`/`end` it came from, a hash of the text for older machines, the parse key and `lastRead`. It no longer keeps the raw text | Parsed chat is enough for both reuse and fallback; dropping the raw text roughly halves what each entry holds. A parse-key change asks for a `full` reply, so the text is never needed again | defaulted |
+| 6 | The hub keeps per lead session only the parsed chat, the `gen`/`end` it came from, the parse key and `lastRead`. It no longer keeps the raw text | Parsed chat is enough for both reuse and fallback; dropping the raw text roughly halves what each entry holds. A parse-key change asks for a `full` reply, so the text is never needed again | defaulted |
 | 7 | Parent #50, #52, #53, #58: an entry is dropped only after 10 minutes unread, no size cap; `lastRead` is set for all of a thread's lead entries when `hub.chat` is called (before the lock) and when an entry is used; never dropped while a chat request for that thread is pending | Collin's earlier pick in the parent thread; an open chat re-reads every 2 s so it is never dropped | adopted |
 | 8 | Report readers (`viewer/app/sessions.js`) never send `known`, never read and never fill the hub's entries; they fall through to the local `transcript_path` as today | A stale copy could hand them an earlier message as the report (parent S3) | adopted |
 | 9 | On the machine, a copy that finds no new complete line in the source does not read the kept file and does not save the session registry (unless the bound source path, inode or offset changed) | This is the work every unchanged poll does today (`machine/service.js:1217-1225`) | defaulted |
 | 10 | On the machine, the dedupe hashes of the kept file live in memory per session: built from the kept file the first time a copy has new lines, updated only after a successful append, dropped after 10 minutes with no copy for that session and when the session is stopped or archived | Avoids rehashing the whole file on every new line without an unbounded set; committing after the append means a failed append cannot hide lines from the next try | defaulted |
 | 11 | The `known`/`full`/`unchanged` answer is computed inside the per-session copy queue (`copyTranscript`), after that read's copy | A hook-triggered copy appending at the same moment cannot leave a half-written tail in a reply | defaulted |
 | 12 | Kept as the parent split it: the thread lock, the 2-second poll, the page and the parsers do not change | IDEA "Not doing" and Constraints | adopted |
+| 13 | Refines #6: no text hash. A reply from an older machine is parsed every time, as today | Only mattered while hub and machine are on different versions; simpler entry | review-round-1 |
 
 ## Spec
 
@@ -116,9 +117,9 @@ under today's thread lock:
 2. Reply handling:
    - `unchanged` → use `entry.parsed`. Update `lastRead`.
    - `full` with non-empty `data`, or a reply with no `status` and non-empty `data` (older
-     machine): if an entry exists with the same parse key and the same text hash, reuse
-     its `parsed`; else parse with `transcriptItems`. Store `{parsed, gen, end, hash,
-     parseKey, lastRead: now}` (`gen`/`end` absent for an older machine).
+     machine): parse with `transcriptItems` and store `{parsed, gen, end, parseKey,
+     lastRead: now}` (`gen`/`end` absent for an older machine, which is then parsed on
+     every poll, as today).
    - `unavailable`, empty `data`, a thrown error or timeout → fallback: if an entry exists,
      use its `parsed` (whatever its parse key) and update `lastRead`; else read the local
      `session.transcript_path` as today and parse it without storing it; if that is empty
@@ -127,8 +128,6 @@ under today's thread lock:
    transcript text. Reused `parsed` arrays are never mutated by later code: the worker
    checks every consumer of `items` in `chat()` and either confirms none mutates or
    copies at the point of mutation.
-4. The hash is any fast stable hash of the text (for example SHA-1); it is computed only
-   for older-machine replies and `full` replies.
 
 ### S4. Hub: dropping idle entries
 
@@ -161,7 +160,7 @@ New tests, at least:
   lines; a dedupe set is dropped after 10 idle minutes (fake clock) and rebuilt correctly.
 - Hub (`viewer/test/app-chat.test.js`): second poll on an unchanged transcript sends
   `known` and does not call the parser; `full` re-parses; an older-machine reply (no
-  `status`) works and identical text is not re-parsed; `unavailable`, empty and thrown
+  `status`) works; `unavailable`, empty and thrown
   replies fall back to the held parsed chat, else the local path; a `parent_title` change
   re-requests with `known=-` and re-parses; an entry unread for 10 minutes is dropped
   (fake clock) but not while a chat request for its thread is pending; report readers
@@ -208,6 +207,8 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | In-memory dedupe set (S2.2-S2.3) only speeds copies with new lines; could be deferred | declined | Hook-triggered copies run the same code for every session on every hook event (MAP.md: `machine/service.js:1307`), so while agents work, today's whole-file rehash happens per event, not per poll; the set is what makes an active agent cheap. Kept |
+| intent | minor | Text hash only helps older-machine replies; drop it | upheld | Decision #13; S3.2 and tests simplified |
 
 ## Implementation Tasks
 
