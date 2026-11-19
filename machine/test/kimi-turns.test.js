@@ -19,9 +19,25 @@ function setup() {
     fs.writeFileSync(file, rows.map(row => JSON.stringify(row)).join('\n')+'\n'); return file;
   }
   const metadata = { type: 'metadata', protocol_version: '1.5', min_protocol_version: '1.5' };
-  const prompt = name => ({ type: 'turn.prompt', origin: { kind: 'user' }, input: [{ text: `[wc:role] Role: worker\nSession: ${name}\n` }] });
+  const prompt = name => ({ type: 'turn.prompt', origin: { kind: 'user' }, input: [{ type: 'text', text: `[wc:role] Role: worker\nSession: ${name}\n` }] });
   return { machine, session, log, metadata, prompt };
 }
+test('binding rejects a role message quoted after ordinary prompt text', async () => {
+  const { machine, session, log, metadata, prompt } = setup();
+  const row = prompt(session.name);
+  row.input = [{ type: 'text', text: 'Hello ' }, { type: 'text', text: `[wc:role] Role: worker\nSession: ${session.name}\nRead …` }];
+  log('quoted', [metadata, row]);
+  await machine.kimiBinding(session);
+  assert.equal(session.source_transcript, undefined);
+});
+test('binding joins role message text parts before checking its session line', async () => {
+  const { machine, session, log, metadata, prompt } = setup();
+  const row = prompt(session.name);
+  row.input = [{ type: 'text', text: '[wc:role] Role: worker\n' }, { type: 'text', text: `Session: ${session.name}\nRead …` }];
+  const file = log('split', [metadata, row]);
+  await machine.kimiBinding(session);
+  assert.equal(session.source_transcript, file);
+});
 test('binding is shared and selects each session marker, ignoring subagents', async () => {
   const { machine, session, log, metadata, prompt } = setup();
   const other = { ...session, name: 'wc-abc-worker-2' }; machine.sessions[other.name] = other;

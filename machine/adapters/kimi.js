@@ -48,6 +48,11 @@ function marker(value, name) {
   if (typeof value === 'string') return value.startsWith('[wc:role]') && value.split(/\r?\n/).includes(`Session: ${name}`);
   return value && typeof value === 'object' && Object.values(value).some(v => marker(v, name));
 }
+function userPromptText(input) {
+  if (typeof input === 'string') return input;
+  if (Array.isArray(input)) return input.filter(part => part?.type === 'text').map(part => part.text).join('');
+  return '';
+}
 async function findTranscript(session, dir) {
   if (session.source_transcript) return session.source_transcript;
   if (bindings.has(session)) return bindings.get(session);
@@ -83,7 +88,8 @@ async function findTranscript(session, dir) {
             continue;
           }
           const prompt = rows.find(row => row.type === 'turn.prompt' && row.origin?.kind === 'user');
-          if (prompt && marker(prompt.input, session.name) && !session.source_transcript) {
+          const userText = prompt && userPromptText(prompt.input);
+          if (prompt && userText.startsWith('[wc:role]') && userText.split(/\r?\n/).includes(`Session: ${session.name}`) && !session.source_transcript) {
             Object.assign(session, { source_transcript: file, kimi_session_id: id.name, kimi_log_id: { dev: stat.dev, ino: stat.ino } });
             return file;
           }
