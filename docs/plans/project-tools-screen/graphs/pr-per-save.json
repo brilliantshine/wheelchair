@@ -1,0 +1,3 @@
+{"form":"side-by-side","explanation":"How saving works under each design. The left is the current plan, where every save shares one branch; the right gives each save its own pull request. Keys aren't affected either way.","columns":[
+{"title":"One shared pull request (now)","items":["Save adds to the waiting pull request if there is one","The screen shows the waiting changes","Needs locking, ownership checks and leftover-branch handling","Review keeps finding new gaps here"]},
+{"title":"A pull request per save (simpler)","items":["Each Save opens a new pull request on a new branch","The screen shows main, plus a list of pull requests waiting to merge","Nothing shared, so nothing to overwrite","Two waiting saves can conflict; GitHub shows it and you close one"]}]}

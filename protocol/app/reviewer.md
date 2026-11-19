@@ -51,6 +51,11 @@ you.
 A finding you cannot tie to a concrete worker consequence is `minor`. Reporting nothing is
 an acceptable outcome; padding severity is not.
 
+A case that only happens with a crash or a race at an exact moment (a process dying
+mid-step, two processes writing the same file at once, a timer firing in a narrow window)
+is `minor`, unless it is realistic in normal use or it loses data. Say which in the
+evidence.
+
 The plan's Review Rounds table and Accepted Risks section record findings already settled.
 Anything marked `declined` or `accepted-risk` was considered and closed; do not raise it
 again unless you have concrete evidence its rationale is factually wrong, in which case

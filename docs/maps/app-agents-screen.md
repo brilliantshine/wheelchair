@@ -16,6 +16,8 @@ The page fetches agents and thread timestamps together on load and every five se
 
 The browser suite loops desktop and phone viewports; it intercepts `/api/agents` with nested fixtures, checks wide scrolling and narrow centering, phone selection, status and URL selection across refresh, and terminal behavior (`viewer/test/app-views.spec.js:8-19,57-172`). Its setup starts a real isolated server and fake machines, seeds threads and gets the remember cookie (`viewer/test/helpers/app-views-setup.js:68-81,91-97`). Node tests assert the server-side tree's states, hierarchy, waits, aside data and secret filtering, rather than DOM interaction (`viewer/test/app-agents.test.js:20-44,52-103`). `npm --prefix viewer run test:browser` runs Playwright's `*.spec.js` in Chromium and Firefox (`viewer/package.json:8`; `viewer/playwright.config.js:8-16`).
 
+> The covered files changed after the checked-against commit. The lighter-server paths were rechecked against `e4117bdcacf06f2a3c73dd22d8af8d8086cb00e3`; see [lighter-server/MAP.md](../plans/lighter-server/MAP.md). Other claims below retain their historical checked-against commit.
+
 ## Session signals and messages
 
 From the agents-activity mapping pass, checked against the same commit. Line numbers predate that feature's own changes.

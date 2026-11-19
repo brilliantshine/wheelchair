@@ -56,8 +56,8 @@ Use `node <root>/viewer/app/wc.js session start --role <role> --tier top --brief
 <path> --attempt <id> --title "<a few words saying what this agent does, in Collin's
 terms>"`, and `session stop <name>`, `session list`. The title is what the Agents screen
 shows on the agent's box. The list output is
-`{ sessions, review_families }`. The hub chooses the provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt|gemini>`
-or `--not-provider <claude|gpt|gemini>`; leads, sub-leads and mappers may not. The hub checks the
+`{ sessions, review_families }`. The hub chooses the provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt|gemini|kimi>`
+or `--not-provider <claude|gpt|gemini|kimi>`; leads, sub-leads and mappers may not. The hub checks the
 rules and refuses anything else with the reason. A refusal is final: change the request
 rather than resending it.
 
@@ -114,7 +114,7 @@ Collin picks the project and the machine, then writes in plain words.
   documents. Read `review_families` and the lead's provider in `sessions` from
   `session list`. Start a verifier on that commit with
   `--not-provider <the provider the lead runs on>` if `review_families` is `both`, or no
-  provider flag if it is `claude`, `gpt`, or `gemini`, and a brief that says what Collin asked for;
+  provider flag if it is `claude`, `gpt`, `gemini`, or `kimi`, and a brief that says what Collin asked for;
   its `result` names the commit it checked. A failed check gets one more attempt; a
   gap surviving two attempts comes to Collin as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
@@ -250,6 +250,9 @@ later changes or queued pull-backs and change nothing.
 
 ### 5. Review, silent
 
+Start reviewers, including restarts within a round, with `--round <N>`, using the review
+round number (the progress `pass`). Never start verifiers with `--round`.
+
 Before each round, read `review_families` from `session list`. If it is `both`, start two
 reviewer sessions, each fresh, each given only the plan path and repo access, never
 this conversation. Start the intent-lens reviewer with `--provider claude` (a preference:
@@ -259,7 +262,7 @@ start came back `waiting`, start the mechanics reviewer with no provider flag. T
 drops a provider constraint it cannot meet and says so in the start output's `note`.
 Brief them from `<root>/protocol/app/reviewer.md`: one takes the **mechanics lens**, one
 the **intent lens**. With one family usable, both land on it, one per lens. If
-`review_families` is `claude`, `gpt`, or `gemini`, start one fresh reviewer with no provider flag,
+`review_families` is `claude`, `gpt`, `gemini`, or `kimi`, start one fresh reviewer with no provider flag,
 briefed with both lenses from `reviewer.md`. Record one lane and `cross-family: no` in
 the Review Rounds "Lanes" line. Include in each brief the Review Rounds table and Accepted
 Risks from PLAN.md, so settled findings are not re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
@@ -294,8 +297,9 @@ You may not downgrade or decline a finding you have not checked against the Spec
 code; the verdict cites evidence. A reviewer's severity is an opinion, not a gate, and
 severity is what the finding would do to an implementing worker: `blocking` (would build
 the wrong thing or could not implement it), `major` (would have to stop and ask), `minor`
-(everything else). Stop each reviewer when its `result` arrives; each round starts fresh
-reviewers.
+(everything else). A case that needs a crash or a race at an exact moment is `minor`
+unless it is realistic in normal use or loses data, as `reviewer.md` says. Stop each
+reviewer when its `result` arrives; each round starts fresh reviewers.
 
 After triage, if the round is clean by the test below, resolve any counted minor or
 accepted-risk findings and post `phase: clean` with equal `found` and `fixed` (omit both
@@ -309,6 +313,26 @@ to Accepted Risks, or Collin's decision logged. While a `question` or the review
 
 Recurring objections are sorted: a real choice for Collin becomes a `question` card, a
 vague part is rewritten, a repeat is rejected with the reason recorded.
+
+**Offer a split.** When one part of the Spec has drawn upheld blocking or major findings
+in three rounds in a row, and no other part drew any in the latest of them, do not wait
+for the budget: offer to move that part into its own thread. Earlier findings elsewhere do
+not matter; what counts is that the rest has settled. Count only findings that stay in
+the Spec (not ones moved to Deferred), and only rounds after his last answer to a split
+offer for that part. Post the offer as a `question` card before any other question from
+that round (a split may make them moot), and in place of the budget's `needs` card if
+both would fire. Name the part in his words and say what the rest does without it.
+Options: "Split it off" and "Keep it here" (leaning: split). On "Split it off": remove
+that part from the Spec and log the decision with source `user`; if that takes away
+anything IDEA.md's What or What good looks like promises, his press is his agreement to the scope change:
+move it to Not doing with a pointer to the new thread and log it with source
+`idea-change` instead. Post a `stub` card whose summary names the part and points to this
+plan's path and its Review Rounds table for the open findings, without quoting them
+(`depends_on_parent` true when it builds on the rest). Move Deferred rows that belong
+only to that part into the stub's summary, delete them and repost the `deferred` card.
+Settle any question still open from
+that round, then run the next round on the change. On "Keep it here": carry on; the budget resets as for any
+decision of his.
 
 **Budget.** A round is clean when your triage upholds no blocking and no major finding and
 no `user-decision` is open. Three triaged rounds since Collin's last decision without a
@@ -426,7 +450,7 @@ When Collin reports a problem, first run `gh pr view --json state`:
   1. Commit the fix (`wc.js git commit`, exact paths).
   2. Read `review_families` and the lead's provider in `sessions` from `session list`.
      Start a verifier on that commit with `--not-provider <the provider the lead runs on>`
-     if `review_families` is `both`, or no provider flag if it is `claude`, `gpt`, or `gemini`,
+     if `review_families` is `both`, or no provider flag if it is `claude`, `gpt`, `gemini`, or `kimi`,
      briefed with the reported problem and the plan's Spec. Its
      `result` names the commit it checked. A failed check gets one more
      attempt; a gap surviving two attempts comes to Collin as a `question` card: push the
@@ -759,7 +783,7 @@ restart of the imported thread; if Collin asks for it, post it then.
 ## Diagrams
 
 See the `diagram` section of `cards-lead.md` for the forms and how to pick one. Show an image
-with an `image` card.
+with an `image` card. To show Collin what an agent saw on its invisible screen, post the screenshot path from its report with an `image` card.
 
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a
 picture, write the graph with `<root>/protocol/graphs.md`: its schema, where graph files

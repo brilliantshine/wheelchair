@@ -15,7 +15,7 @@
   const path = () => '/asides/' + encodeURIComponent(current.id);
   function waiting() { return (data.cards || []).find(c => ['question', 'needs', 'approval'].includes(c.kind) && !c.answered); }
   function closePanel(scroll) {
-    const card = scroll && waiting(); current = null; clearInterval(timer); timer = null; panel.hidden = true; document.body.classList.remove('aside-open');
+    const card = scroll && waiting(); current = null; if (timer) timer.stop(); timer = null; panel.hidden = true; document.body.classList.remove('aside-open');
     files.hidden = !files.children.length; draft = null; summaryAfter = null; notice = ''; heavyBlocked = false;
     if (card) document.getElementById('card-' + card.id)?.scrollIntoView({ block: 'center' });
   }
@@ -27,7 +27,7 @@
       if (JSON.stringify(next) !== JSON.stringify(current)) { current = next; renderPanel(); }
     } catch (e) { notice = e.message; renderPanel(); }
   }
-  function openAside(a, focusInput = false) { current = a; notice = ''; heavyBlocked = false; draft = null; summaryAfter = null; listOpen = false; panel.hidden = false; files.hidden = true; document.body.classList.add('aside-open'); renderPanel(); if (focusInput) panel.querySelector('.aside-input')?.focus(); clearInterval(timer); if (a.id) { refresh(); timer = setInterval(refresh, 2000); } renderChip(); }
+  function openAside(a, focusInput = false) { current = a; notice = ''; heavyBlocked = false; draft = null; summaryAfter = null; listOpen = false; panel.hidden = false; files.hidden = true; document.body.classList.add('aside-open'); renderPanel(); if (focusInput) panel.querySelector('.aside-input')?.focus(); if (timer) timer.stop(); timer = null; if (a.id) { refresh(); timer = window.wcPoller(refresh, 2000); } renderChip(); }
   async function create(anchor, action) {
     bar.hidden = true; window.getSelection()?.removeAllRanges();
     openAside({ anchor, action, history: [], status: 'open' }, action === 'ask');

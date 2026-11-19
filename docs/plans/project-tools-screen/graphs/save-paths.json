@@ -1,0 +1,4 @@
+{"form":"side-by-side","explanation":"Three ways a saved change could reach the branch new threads start from. Compare how fast it lands and what checks it. Leaves out where keys are stored, which is a separate question.","columns":[
+{"title":"Push straight to main","items":["Tap Save","Machine commits and pushes to main","Next new thread has it","Fastest; no review; fails if main is protected"]},
+{"title":"Pull request (suggested)","items":["Tap Save","Machine pushes a branch and opens a pull request","You merge it on GitHub","Next new thread has it","One extra tap; reviewable"]},
+{"title":"Small thread does it","items":["Tap Save","A thread starts and its lead edits the file","An agent checks it, then a pull request","You merge it","Slowest; uses model turns"]}]}

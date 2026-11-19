@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const button = (text, fn, cls = '') => { const b = el('button', cls, text); b.type = 'button'; b.onclick = fn; return b; };
-  let data = { leads: [], machines: [] }, threads = [], term = null, termName = null, folded = true, showFinished = false, pathObserver = null, redrawPaths = null;
+  let data = { leads: [], machines: [] }, threads = [], term = null, termName = null, folded = true, showFinished = false, pathObserver = null, redrawPaths = null, pop = null, infoOpen = false, redrawPop = null, popKeep = null, placePopNow = null, deckNow = [], lastLead = null, popTop = null;
   window.addEventListener('resize', () => redrawPaths?.());
   const panel = $('agents-terminal');
   const phone = () => matchMedia('(max-width: 899px)').matches;
@@ -41,6 +41,13 @@
   $('brief-close').onclick = () => $('brief-dialog').close();
   function go(lead, agent) { pending = false; const u = new URL(location.href); u.hash = ''; if (lead) u.searchParams.set('lead', lead); else u.searchParams.delete('lead'); if (agent) u.searchParams.set('agent', agent); else u.searchParams.delete('agent'); history.pushState(null, '', u); render(); }
   window.addEventListener('popstate', render);
+  window.addEventListener('scroll', e => { if (e.target?.closest?.('.deck-pop')) return; placePopNow?.(); }, true); window.addEventListener('resize', () => placePopNow?.());
+  document.addEventListener('click', e => {
+    const inside = sel => e.composedPath().some(n => n.matches?.(sel));
+    if (pop && !inside('.deck-pop, .agents-deck')) { pop = null; redrawPop?.(); }
+    if (infoOpen && !inside('.agents-info, .agents-info-btn')) { infoOpen = false; const box = document.querySelector('.agents-info'); if (box) box.hidden = true; document.querySelector('.agents-info-btn')?.setAttribute('aria-expanded', 'false'); }
+  });
+  document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (pop) { pop = null; redrawPop?.(); } if (infoOpen) { infoOpen = false; const box = document.querySelector('.agents-info'); if (box) box.hidden = true; document.querySelector('.agents-info-btn')?.setAttribute('aria-expanded', 'false'); } });
   function nodes(node) { return node ? [node, ...(node.children || []).flatMap(nodes)] : []; }
   function status(node) { return ({ working: 'Working', waiting: node.waiting_on?.label || 'Waiting', 'not-started': 'Not started', finished: 'Finished', idle: 'Idle', 'needs-you': 'Needs you' })[node.state] || 'Idle'; }
   function duration(node) { let start, end = Date.now(), word; if (node.state === 'finished') { start = node.created_at; end = Date.parse(node.ended_at); word = 'Ran'; } else if (node.state === 'working') { start = node.turn_started_at || node.created_at; word = 'Working for'; } else { start = node.turn_ended_at; word = 'Idle for'; } const t = Date.parse(start); if (!Number.isFinite(t) || !Number.isFinite(end)) return ''; const mins = Math.max(0, Math.floor((end - t) / 60000)); return `${word} ${mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`}`; }
@@ -70,16 +77,52 @@
     for (const spot of spots) { map.append(svg('circle',{cx:spot.x,cy:spot.y,r:10,class:`activity-spot${current?.kind === spot.kind ? ' current' : ''}`})); map.append(svg('text',{x:spot.tx,y:spot.ty,'text-anchor':spot.anchor,class:'activity-label'},spot.label)); if ((Number(counts[spot.kind]) || 0) >= 5) map.append(svg('text',{x:spot.tx,y:spot.ty+12,'text-anchor':spot.anchor,class:'activity-count'},String(counts[spot.kind]))); if (current?.kind === spot.kind) { const now = svg('text',{x:spot.tx,y:spot.ty+((Number(counts[spot.kind]) || 0)>=5 ? 24 : 12),'text-anchor':spot.anchor,class:'activity-now','data-since':current.since},`now · ${timer(seconds(current.since))}`); map.append(now); } }
     figure.append(map,el('figcaption','',`Thicker line: used more · Ring around the middle: how full its memory is${typeof percent === 'number' ? ` (${percent}%)` : ''} · Dotted line: its last few moves`)); fragment.append(figure); if (insight) fragment.append(insight); const latest = el('div','agents-latest'); latest.append(el('strong','','Latest')); if (!(activity.latest || []).length) latest.append(el('p','agents-muted','Nothing yet.')); else for (const item of activity.latest.slice(0,4)) { const row = el('div','agents-latest-row'); row.append(el('span',`latest-${item.state}`,({running:'●',done:'✓',failed:'✕'})[item.state] || ''),el('time','',clock(item.at)),el('span','',item.label)); latest.append(row); } fragment.append(latest); return fragment;
   }
+
+  const SQUARE = n => n >= 5 ? '#d9645a' : n >= 3 ? '#e0904a' : n >= 1 ? '#d9c45a' : '#4ea87b', GREY = '#6b7280';
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const finishedAt = n => n.finished_at || '';
+  const roundOf = n => Number.isInteger(n.round) && n.round >= 1 ? n.round : null;
+  const memberRounds = members => [...new Set(members.map(roundOf).filter(r => r !== null))].sort((a, b) => a - b);
+  function square(found, cls = '') { const q = el('span', `agents-sq ${cls}`.trim()); q.style.background = found === undefined ? GREY : SQUARE(found); return q; }
+  function squares(lead, rounds, size) {
+    const entries = lead.rounds?.review || {}; const row = el('span', 'agents-squares'); row.setAttribute('role', 'img');
+    const counted = rounds.map(r => entries[String(r)]?.found).filter(f => Number.isInteger(f));
+    row.setAttribute('aria-label', counted.length >= 2 ? `${rounds.length} rounds; objections went from ${counted[0]} to ${counted[counted.length - 1]}` : `${rounds.length} rounds`);
+    for (const r of rounds) row.append(square(entries[String(r)]?.found));
+    return row;
+  }
+  function deckTitle(lead, members) {
+    const newest = members[members.length - 1];
+    if (newest.role === 'reviewer') { const rounds = memberRounds(members); if (rounds.length) { const clean = lead.rounds?.review?.[String(rounds[rounds.length - 1])]?.clean === true; return `Plan review · ${plural(rounds.length, 'round', 'rounds')}${clean ? ', last round clean' : ''}`; } }
+    return newest.display_title || newest.role || 'Agent';
+  }
+  function roundText(lead, r, members) {
+    const entry = lead.rounds?.review?.[String(r)]; if (!entry) return 'not counted';
+    const found = Number(entry.found) || 0; let text;
+    if (found === 0) text = 'no objections';
+    else { const total = members.reduce((t, m) => t + (m.report?.findings || 0), 0), first = members.map(m => m.report?.first).find(Boolean); text = found === 1 && total === 1 && first ? `1 objection: ${first}` : plural(found, 'objection', 'objections'); }
+    return entry.clean && found > 0 ? `${text} · round clean` : text;
+  }
+
+  function infoButton() { const b = button('?', () => { infoOpen = !infoOpen; const box = document.querySelector('.agents-info'); if (box) box.hidden = !infoOpen; b.setAttribute('aria-expanded', String(infoOpen)); }, 'agents-info-btn'); b.setAttribute('aria-label', 'How to read this tree'); b.setAttribute('aria-expanded', String(infoOpen)); return b; }
+  function infoPopout() {
+    const box = el('div', 'agents-info'); box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'How to read this tree'); box.hidden = !infoOpen;
+    const head = el('div', 'agents-pop-head'); head.append(el('strong', '', 'How to read this tree'), button('✕', () => { infoOpen = false; box.hidden = true; document.querySelector('.agents-info-btn')?.setAttribute('aria-expanded', 'false'); }, 'agents-pop-close')); head.lastChild.setAttribute('aria-label', 'Close');
+    const key = el('div', 'agents-key'); for (const [c, t] of [[SQUARE(5), '5+'], [SQUARE(3), '3–4'], [SQUARE(1), '1–2'], [SQUARE(0), 'none'], [GREY, 'not counted']]) { const k = el('span', 'agents-key-item'); const q = el('span', 'agents-sq'); q.style.background = c; k.append(q, t); key.append(k); }
+    const example = (label, seq) => { const row = el('div', 'agents-example'); const sq = el('span', 'agents-squares'); for (const n of seq) sq.append(square(n)); row.append(el('span', '', label), sq); return row; };
+    box.append(head, el('p', '', 'Stacked cards are finished agents with the same role and parent. Click one to see them all.'), el('p', '', 'Squares are rounds of review, colored by how many objections each round found:'), key, example('Settling down', [6, 6, 6, 4, 4, 2, 2, 2, 0]), example('Going in circles', [4, 6, 4, 6, 4, 6, 4, 6, 4]));
+    return box;
+  }
   function drawQuestionPaths(tree, paths, parentByName) {
     if (!tree.isConnected) return;
     tree.querySelector('.agents-path-overlay')?.remove();
     const overlay = svg('svg',{class:'agents-path-overlay','aria-hidden':'true'}); tree.firstElementChild.append(overlay); const base = tree.firstElementChild.getBoundingClientRect(); overlay.setAttribute('width',base.width); overlay.setAttribute('height',base.height); const drawn = new Set();
-    const boxes = new Map([...tree.querySelectorAll('[data-session]')].map(e => [e.dataset.session,e]));
+    const boxes = new Map(); for (const e of tree.querySelectorAll('[data-session]')) { boxes.set(e.dataset.session,e); for (const m of (e.dataset.members || '').split(' ')) if (m) boxes.set(m,e); }
     for (const path of paths) for (let i=0; i<path.length-1; i++) {
       const hops = []; let child = path[i];
       while (child && child !== path[i+1]) { const parent = parentByName.get(child); if (!parent) break; hops.push([child,parent]); child = parent; }
       if (child !== path[i+1]) continue;
-      for (const [child,parent] of hops) { const key = `${child}|${parent}`; if (drawn.has(key)) continue; const box = boxes.get(child), parentBox = boxes.get(parent); if (!box || !parentBox) continue; const a = box.getBoundingClientRect(), b = parentBox.getBoundingClientRect(); let d;
+      for (const [child,parent] of hops) { const key = `${boxes.get(child)?.dataset.session}|${boxes.get(parent)?.dataset.session}`; if (drawn.has(key)) continue; const box = boxes.get(child), parentBox = boxes.get(parent); if (!box || !parentBox || box === parentBox) continue; const a = box.getBoundingClientRect(), b = parentBox.getBoundingClientRect(); let d;
         if (matchMedia('(max-width: 899px)').matches) { const list = box.parentElement.parentElement.getBoundingClientRect(); const x = list.left-base.left; d = `M ${x} ${list.top-base.top} V ${a.bottom-base.top}`; }
         else { const x1 = a.left+a.width/2-base.left, x2 = b.left+b.width/2-base.left, y1 = a.top-base.top, y2 = b.bottom-base.top, mid = (y1+y2)/2; d = `M ${x1} ${y1} V ${mid} H ${x2} V ${y2}`; }
         overlay.append(svg('path',{d})); drawn.add(key);
@@ -91,7 +134,7 @@
     const root = $('agents'), banners = $('unreachable'), oldSide = root.querySelector('.agents-side');
     // A refresh re-renders the whole page; keep the reader where they were if they are still on the same agent.
     const kept = { agent: oldSide?.dataset.agent, side: oldSide?.scrollTop || 0, page: scrollY, toggle: document.activeElement?.classList.contains('agents-finished-toggle') };
-    root.replaceChildren(); banners.replaceChildren();
+    root.replaceChildren(); banners.replaceChildren(); { const o = document.querySelector('.deck-pop'); if (o) { popKeep = { member: o.dataset.member, top: o.scrollTop }; o.remove(); } }
     for (const m of data.machines || []) if (!m.reachable) { const d = new Date(m.last_seen); banners.append(el('p', 'agent-unreachable', `${m.machine} unreachable, last seen ${m.last_seen && !isNaN(d) ? d.toLocaleString() : 'never'}`)); }
     const timestamps = new Map(threads.map(t => [t.id, t.collin_at || t.created_at || '']));
     const leads = [...(data.leads || [])].sort((a,b) => String(timestamps.get(b.thread_id) || '').localeCompare(String(timestamps.get(a.thread_id) || '')));
@@ -118,22 +161,91 @@
     const kidsOf = node => [...(node.children || []), ...(node === lead.session ? (lead.asides || []) : [])];
     const keeps = node => node.state !== 'finished' || node.name === selected?.name || kidsOf(node).some(keeps);
     const hidden = nodes(lead.session).concat(lead.asides || []).filter(n => n !== lead.session && !keeps(n)).length;
-    if (hidden || showFinished) main.append(toggle = button(showFinished ? 'Hide finished agents' : `Show ${hidden} finished ${hidden === 1 ? 'agent' : 'agents'}`, () => { showFinished = !showFinished; view = null; render(); document.querySelector('.agents-finished-toggle')?.focus(); }, 'agents-finished-toggle'));
+    const bar = el('div','agents-finished-bar'); main.append(bar);
+    if (hidden || showFinished) bar.append(toggle = button(showFinished ? 'Hide finished agents' : `Show ${hidden} finished ${hidden === 1 ? 'agent' : 'agents'}`, () => { showFinished = !showFinished; view = null; render(); document.querySelector('.agents-finished-toggle')?.focus(); }, 'agents-finished-toggle'));
+    bar.append(infoButton(), infoPopout());
     // A kept agent's ancestors are kept too, so a path whose asker shows is drawn whole.
     const shown = new Set(nodes(lead.session).filter(n => n === lead.session || showFinished || keeps(n)).map(n => n.name));
     const tree = el('div','agents-tree');
     const parents = new Map(); for (const n of nodes(lead.session)) for (const c of n.children || []) parents.set(c.name, n.name); const paths = []; for (const path of lead.question_paths || []) if (Array.isArray(path)) for (let i = 0; i < path.length - 1; i++) { let ancestor = parents.get(path[i]); while (ancestor && ancestor !== path[i+1]) ancestor = parents.get(ancestor); if (ancestor && shown.has(path[0])) paths.push([path[i], path[i+1]]); } const pathNames = new Set(paths.flat()); const pathChildren = new Set(); for (const [start, end] of paths) for (let child = start; child && child !== end; child = parents.get(child)) pathChildren.add(child);
-    function branch(node, aside = false) { const wrap = el('div','agents-branch'); const card = aside ? el('div','agents-box') : button('', () => go(lead.thread_id,node.name), `agents-box${selected?.name === node.name ? ' selected' : ''}`); card.classList.add(`state-${node.state || 'idle'}`); if (!aside && pathNames.has(node.name)) card.classList.add('question-path'); if (!aside) card.dataset.session = node.name; card.append(el('div','agents-role',aside ? 'Side conversation' : node.role || 'agent'),el('strong','agents-box-title',node.display_title || node.role || 'Agent')); const st = el('div','agents-status'); st.append(el('span','agents-dot'),document.createTextNode(status(node))); card.append(st); wrap.append(card); const children = kidsOf(node).filter(c => showFinished || keeps(c)); if (children.length) { const list = el('div','agents-children'); if (children.some(c => pathChildren.has(c.name))) list.classList.add('question-path-line'); children.forEach(c => list.append(branch(c,c.kind === 'aside'))); wrap.append(list); } return wrap; }
-    const content = branch(lead.session);
+    const kidsShown = node => kidsOf(node).filter(c => showFinished || keeps(c));
+    const byCreated = (a, b) => (Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0);
+    // Finished siblings of one role stack into a deck at the newest member's place; the deck is the parent of its members' children.
+    function arrange(list) {
+      if (!showFinished) return list.map(node => ({ node }));
+      const deckable = n => n.state === 'finished' && n.kind !== 'aside', groups = new Map();
+      for (const n of list) if (deckable(n)) groups.set(n.role, [...(groups.get(n.role) || []), n]);
+      const out = [];
+      for (const n of list) { const g = deckable(n) ? groups.get(n.role) : null; if (!g || g.length < 2) out.push({ node: n }); else if (n === g[g.length - 1]) out.push({ deck: true, members: g, kids: g.flatMap(m => kidsOf(m)).sort(byCreated) }); }
+      return out;
+    }
+    const itemNames = item => item.deck ? item.members.map(m => m.name) : [item.node.name];
+    function deckCard(item) {
+      const members = item.members, newest = members[members.length - 1], card = button('', () => { pop = pop && members.some(m => m.name === pop.member) ? null : { member: newest.name, round: null, all: false }; redrawPop(); }, `agents-box agents-deck state-finished${members.some(m => m.name === selected?.name) ? ' selected' : ''}`);
+      card.dataset.session = newest.name; card.dataset.members = members.map(m => m.name).join(' '); card.setAttribute('aria-expanded', 'false'); if (members.some(m => pathNames.has(m.name))) card.classList.add('question-path');
+      const head = el('div', 'agents-deck-head'); const full = deckTitle(lead, members), title = el('strong', 'agents-box-title', full); title.title = full; card.setAttribute('aria-label', `${newest.role || 'agent'} ×${members.length}: ${full}`); head.append(el('div', 'agents-role', newest.role || 'agent'), el('span', 'agents-deck-count', `×${members.length}`)); card.append(head, title);
+      if (newest.role === 'reviewer') { const rounds = memberRounds(members); if (rounds.length) card.append(squares(lead, rounds)); }
+      const latest = members.map(finishedAt).filter(t => Number.isFinite(Date.parse(t))).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+      const st = el('div', 'agents-status'); st.append(el('span', 'agents-dot'), document.createTextNode(latest ? `Finished ${clock(latest)}` : 'Finished')); card.append(st);
+      deckNow.push({ members, card }); return card;
+    }
+    function branch(item) {
+      const aside = !item.deck && item.node.kind === 'aside', node = item.node; const wrap = el('div', item.deck ? 'agents-branch agents-deck-branch' : 'agents-branch'); let card;
+      if (item.deck) card = deckCard(item);
+      else { card = aside ? el('div','agents-box') : button('', () => go(lead.thread_id,node.name), `agents-box${selected?.name === node.name ? ' selected' : ''}`); card.classList.add(`state-${node.state || 'idle'}`); if (!aside && pathNames.has(node.name)) card.classList.add('question-path'); if (!aside) card.dataset.session = node.name; card.append(el('div','agents-role',aside ? 'Side conversation' : node.role || 'agent'),el('strong','agents-box-title',node.display_title || node.role || 'Agent')); const st = el('div','agents-status'); st.append(el('span','agents-dot'),document.createTextNode(status(node))); card.append(st); }
+      wrap.append(card); const children = arrange(item.deck ? item.kids : kidsShown(node)); if (children.length) { const list = el('div','agents-children'); if (children.some(c => itemNames(c).some(n => pathChildren.has(n)))) list.classList.add('question-path-line'); children.forEach(c => list.append(branch(c))); wrap.append(list); } return wrap; }
+    deckNow = []; const content = branch({ node: lead.session });
     const toolbar = el('div', 'agents-toolbar'), label = el('span', 'agents-zoom');
     let controls;
     for (const [text, name, action] of [['−','Zoom out',() => controls.step(1/1.25)], ['+','Zoom in',() => controls.step(1.25)], ['Fit','Fit',() => controls.fit()], ['100%','Full size',() => controls.full()]]) { const b = button(text, action); b.setAttribute('aria-label',name); toolbar.append(b); if (name === 'Zoom out') toolbar.append(label); }
     const sizer = el('div','agents-sizer'); sizer.append(content); tree.append(sizer); main.append(toolbar,tree); if (paths.length) { main.append(el('div','agents-path-legend','Where a question went')); redrawPaths = () => drawQuestionPaths(tree, paths, parents); requestAnimationFrame(redrawPaths); pathObserver = new ResizeObserver(redrawPaths); pathObserver.observe(sizer); pathObserver.observe(main); } root.append(main);
     if (kept.toggle) toggle?.focus({ preventScroll: true });
     if (!phone()) controls = treeView(tree, main, lead.thread_id, content, sizer, label);
+
+    redrawPop = () => {
+      const old = document.querySelector('.deck-pop'), prev = old ? { member: old.dataset.member, top: old.scrollTop } : popKeep; popKeep = null; old?.remove();
+      const hit = pop && deckNow.find(d => d.members.some(m => m.name === pop.member)); if (!hit) pop = null;
+      for (const d of deckNow) d.card.setAttribute('aria-expanded', String(d === hit)); if (!hit) return;
+      const members = hit.members, newest = members[members.length - 1], box = el('div', 'deck-pop'); box.setAttribute('role', 'dialog'); box.dataset.member = pop.member;
+      const reviewer = newest.role === 'reviewer', rounds = reviewer ? memberRounds(members) : [];
+      const agentRow = m => { const b = button('', () => { pop = null; go(lead.thread_id, m.name); }, 'deck-agent'); b.dataset.agent = m.name; b.append(el('span', 'deck-agent-title', m.display_title || m.role || 'Agent'), el('span', 'agents-muted', finishedAt(m) ? `Finished ${clock(finishedAt(m))}` : 'Finished')); return b; };
+      const newestFirst = list => [...list].reverse(), CUT = 5;
+      const head = el('div', 'agents-pop-head'); const x = button('✕', () => { pop = null; redrawPop(); }, 'agents-pop-close'); x.setAttribute('aria-label', 'Close');
+      if (rounds.length) {
+        box.setAttribute('aria-label', `${members.length} reviewers by round`); head.append(el('strong', '', `Plan review · ${plural(members.length, 'reviewer', 'reviewers')}`), x);
+        box.append(head, el('p', 'agents-muted', 'Grouped by round, newest first. Open a round to see its reviewers.'));
+        const order = newestFirst(rounds); if (pop.round !== null && pop.round !== 'other') { const at = order.indexOf(pop.round); if (at < 0) pop.round = null; else if (at >= CUT) pop.all = true; }
+        const list = el('ul', 'deck-rows'); const shownRounds = pop.all ? order : order.slice(0, CUT);
+        const roundRow = (key, sq, name, text, ms) => { const li = el('li', 'deck-round'); const b = button('', () => { pop.round = pop.round === key ? null : key; redrawPop(); }, 'deck-round-btn'); b.dataset.round = String(key); b.setAttribute('aria-expanded', String(pop.round === key)); b.append(sq, el('span', 'deck-round-name', name), el('span', 'deck-round-text', text), el('span', 'agents-muted', pop.round === key ? '⌄' : '›')); li.append(b); if (pop.round === key) { const inner = el('div', 'deck-agents'); newestFirst(ms).forEach(m => inner.append(agentRow(m))); li.append(inner); } return li; };
+        for (const r of shownRounds) { const ms = members.filter(m => roundOf(m) === r); list.append(roundRow(r, square(lead.rounds?.review?.[String(r)]?.found), `Round ${r}`, `${plural(ms.length, 'reviewer', 'reviewers')} · ${roundText(lead, r, ms)}`, ms)); }
+        const other = members.filter(m => roundOf(m) === null); if (other.length) list.append(roundRow('other', el('span', 'agents-sq none'), 'Other', plural(other.length, 'agent', 'agents'), other));
+        box.append(list); if (!pop.all && order.length > CUT) box.append(button(`Show all ${order.length} rounds`, () => { pop.all = true; redrawPop(); }, 'deck-more'));
+      } else {
+        box.setAttribute('aria-label', `${members.length} ${newest.role || 'agent'}s`); head.append(el('strong', '', `${deckTitle(lead, members)}`), x);
+        box.append(head); const order = newestFirst(members); const list = el('div', 'deck-agents'); (pop.all ? order : order.slice(0, CUT)).forEach(m => list.append(agentRow(m))); box.append(list);
+        if (!pop.all && order.length > CUT) box.append(button(`Show all ${order.length} agents`, () => { pop.all = true; redrawPop(); }, 'deck-more'));
+      }
+      document.body.append(box); popTop = prev && prev.member === pop.member ? prev.top : null; placePop(popTop);
+    };
+    const placePop = (want) => {
+      const box = document.querySelector('.deck-pop'), hit = box && deckNow.find(d => d.members.some(m => m.name === pop?.member)); if (!hit) return;
+      const r = hit.card.getBoundingClientRect(), w = Math.min(360, innerWidth - 16), M = 8, GAP = 6, maxH = Math.max(40, innerHeight - 2 * M);
+      box.style.width = `${w}px`; box.style.left = `${Math.max(M, Math.min(r.left, innerWidth - w - M))}px`;
+      const saved = want ?? box.scrollTop, h = Math.min(maxH, box.scrollHeight + (box.offsetHeight - box.clientHeight));
+      // Room actually visible on each side of the deck; never more than the viewport, never negative.
+      const below = Math.max(0, innerHeight - M - Math.max(r.bottom + GAP, M)), above = Math.max(0, Math.min(r.top - GAP, innerHeight - M) - M);
+      let height = h, top;
+      if (h <= below) top = r.bottom + GAP;
+      else if (h <= above) top = Math.min(r.top - GAP, innerHeight - M) - h;
+      else if (Math.max(below, above) >= 160) { height = Math.max(below, above); top = below >= above ? r.bottom + GAP : Math.min(r.top - GAP, innerHeight - M) - height; }
+      else top = M;
+      top = Math.max(M, Math.min(top, innerHeight - M - height));
+      box.style.maxHeight = `${height}px`; box.style.top = `${top}px`; box.scrollTop = saved;
+    };
+    placePopNow = placePop; redrawPop();
     const side = el('aside','agents-side'); if (selected) { side.append(button(`‹ ${lead.lead_name || 'Lead'}`, () => go(lead.thread_id), 'agents-back'),el('div','agents-role',selected.role || 'agent'),el('h2','',selected.display_title || selected.role || 'Agent'),el('p','agents-muted',[selected.model,selected.effort].filter(Boolean).join(' · ')),el('p','agents-muted',lead.machine || ''),el('p','agents-muted',duration(selected)),el('p','agents-side-status',status(selected))); if (selected.result_summary) side.append(el('h3','agents-report-head','Report'),el('p','agents-report',selected.result_summary)); if (selected.live) side.append(button('Open terminal', () => openTerm(selected), 'primary')); if (selected.has_brief) side.append(button('Read its brief', async () => { try { const res = await fetch(`/wheelchair/api/sessions/${encodeURIComponent(selected.name)}/brief`); if (!res.ok) throw new Error(`HTTP ${res.status}`); $('brief-text').textContent = (await res.json()).brief; } catch (e) { $('brief-text').textContent = `Could not load brief: ${e.message}`; } $('brief-dialog').showModal(); })); side.append(activityPanel(selected, lead, nodes(lead.session))); } else side.append(el('p','agents-muted','Select an agent to see details.')); root.append(side);
-    if (selected) { side.dataset.agent = selected.name; if (kept.agent === selected.name) { side.scrollTop = kept.side; scrollTo(scrollX, kept.page); } }
+    if (selected) { side.dataset.agent = selected.name; if (kept.agent === selected.name) side.scrollTop = kept.side; } if (lead.thread_id === lastLead && selected?.name === kept.agent) scrollTo(scrollX, kept.page); lastLead = lead.thread_id; placePopNow?.(popTop); popTop = null;
   }
   async function refresh() { try { const [a,t] = await Promise.all([fetch('/wheelchair/api/agents'),fetch('/wheelchair/api/threads?view=list')]); if (!a.ok) throw new Error(`agents ${a.status}`); data = await a.json(); threads = t.ok ? (await t.json()).threads || [] : []; if (active.size) pending = true; else render(); $('error').hidden = true; } catch (e) { $('error').textContent = `Could not load agents: ${e.message}`; $('error').hidden = false; } }
-  refresh(); setInterval(refresh,5000); setInterval(() => { for (const n of document.querySelectorAll('.activity-now')) n.textContent = `now · ${timer(seconds(n.dataset.since))}`; },1000);
+  refresh(); window.wcPoller(refresh,5000); setInterval(() => { for (const n of document.querySelectorAll('.activity-now')) n.textContent = `now · ${timer(seconds(n.dataset.since))}`; },1000);
 })();

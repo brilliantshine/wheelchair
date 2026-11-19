@@ -36,6 +36,10 @@ Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; 
 - Git writes go through `node <root>/viewer/app/wc.js git commit --paths <a,b> --message
   "<message>"` and friends, naming the exact paths you commit. You never run `git commit` or `git push` yourself.
 
+## Seeing a desktop app
+
+When the task changes something visible in a desktop app or game, look at it on your own invisible screen. Launch it with `node <root>/viewer/app/wc.js screen run -- <command> [args...]`, never by setting `DISPLAY` yourself (an app you start yourself is not cleaned up, and in a Codex session it dies when your command ends). Pass environment changes with `--env KEY=VALUE`, or launch `sh -c '<setup>; exec <app>'`. Look with `wc.js screen shot` and open the PNG path it prints with your image-reading tool; drive the app with `click`, `type` and `key`, list its windows with `windows`, and run `wc.js screen stop` when you are done. Point the app at temporary data, never Collin's live data, and give each launch its own profile or data directory (for example Chromium's `--user-data-dir`) so it cannot hand off to another agent's copy of the same app. When a screenshot would help Collin see the result, put its absolute path in your report. If the command says tools are missing on this machine, report that to the lead; do not work around it.
+
 ## When the plan did not settle something
 
 If the brief and the plan leave a real question open (an interface, a behaviour, a case

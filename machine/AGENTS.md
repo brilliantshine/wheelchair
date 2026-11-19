@@ -7,12 +7,19 @@ agents own neither tmux nor the machine secret.
 | File | Role |
 |---|---|
 | `service.js` | Dependency-free Node HTTP service, session registry, tmux/git boundary, worktrees (each new one links the clone's installed `node_modules` and lists the links in git's exclude file; `from_remote_branch` builds one at an exact pushed commit), the hub-only `/v1/handoff` actions (claims, branch inspection, kill/running) and durable archive markers, readiness, transcript copies, and durable spools. |
-| `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`). |
+| `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`, `kimi.js`). |
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
 | `lib/aside-turns.js` | Durable headless aside turns, CLI spawning, parsing and restart recovery. |
 | `lib/sudo.js` | Durable sudo request registration, polling, outcome delivery and cancellation. |
+| `lib/screen.js` | Per-session invisible X screens for `POST /v1/agent/screen`: Xvfb with a per-screen cookie, app launch (sandboxed for Codex), screenshots, validated xdotool input, one systemd user slice per screen for teardown, the 60 s sweep and startup cleanup. `test/screen-live.sh` drives it against real Xvfb. |
+| `lib/screen-input.js` | X-tool layer for screens: window listing, screenshots, pointer, typing, key deadlines and releases, auto-focus. |
+| `lib/screen-args.js` | Pure validation of `wc.js screen` arguments (fixed key list, limits) and `xwininfo` output parsing. |
 | `lib/usage-probe.js` | Asynchronous, timed CLI usage probe runner. |
-| `lib/project-mcp.js` | Reads and validates project MCP servers for session adapters. |
+| `lib/project-mcp.js` | Reads project MCP servers and exposes shared document and entry validation. |
+| `lib/project-tools.js` | Reads and saves project tools and manages stored keys through GitHub PRs. |
+| `lib/project-keys.js` | Shared project key references, identity, storage and launch selection. |
+| `lib/env-launch.js` | Session key launcher: reads and deletes the mode-600 JSON env file, then execs the CLI; never prints values. |
+| `lib/project-programs.js` | Synchronous check that each project stdio server's program exists, for the thread's project-tools lines. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |
 | `lib/startup-warning.js` | Background startup-size check: ledger tail and kept-transcript first-call samples against `STARTUP_TYPICAL`, giving the approval card's `warnings` line. |
 | `hook.sh` | CLI hook entry point; turns Claude/Codex/Antigravity payloads into local events and spools while the service is down. |

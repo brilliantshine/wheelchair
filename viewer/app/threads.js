@@ -17,6 +17,7 @@ function newId() {
   return crypto.randomBytes(6).toString('hex');
 }
 
+function defaultProjectTools() { return { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] }; }
 function emptyThread(input) {
   return {
     id: newId(),
@@ -33,6 +34,7 @@ function emptyThread(input) {
     queues: {},
     sent: [],
     archived: false,
+    project_tools: defaultProjectTools(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -83,7 +85,7 @@ async function createThread(hub, input) {
 
 async function threadBySession(hub, name) {
   for (const thread of await hub.allThreads()) {
-    if (thread.sessions.some((session) => session.name === name)) return thread;
+    if (thread.sessions.some((session) => session.name === name)) return structuredClone(thread);
   }
   throw appError(404, 'calling session is unknown');
 }
@@ -214,6 +216,13 @@ async function archive(hub, id) {
   await hub.save(thread);
   const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id });
   thread.archive = result;
+  if (result.pending === true) {
+    const names = result.pending_sessions?.join(', ') || 'a session';
+    require('./cards.js').addCard(thread, { kind: 'needs', title: 'Archive waiting for a session to stop', body: `Waiting for ${names} to stop on ${thread.machine}. Archive again to retry.` }, { system: true });
+    thread.archived = false;
+    await hub.save(thread);
+    return result;
+  }
   const rebases = (result.kept || []).filter((item) => item.reason === 'rebase in progress');
   if (rebases.length || result.uploads_removed === false) {
     for (const kept of rebases) {
@@ -473,6 +482,7 @@ async function pollWaiting(hub) {
 }
 
 module.exports = {
+  defaultProjectTools,
   archive,
   archivedDocument,
   archivedGraph,

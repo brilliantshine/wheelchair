@@ -55,7 +55,8 @@ class Hub {
   async init() {
     await this.state.init();
     await handoff.sweepFiles(this);
-    for (const thread of await this.allThreads()) {
+    for (const listed of await this.allThreads()) {
+      const thread = structuredClone(listed);
       let changed = false;
       if (thread.imported) for (const session of thread.sessions || []) {
         if (session.role === 'lead' && session.live && session.status === 'starting' && !Object.hasOwn(session, 'first_message')) {
@@ -75,7 +76,7 @@ class Hub {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
     const existing = (await this.allThreads()).filter((t) => !t.archived && !t.lead_name && t.sessions?.some((s) => s.role === 'lead')).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
-    for (const thread of existing) await this.saveWithLeadName(thread);
+    for (const thread of existing) await this.saveWithLeadName(structuredClone(thread));
     this.asideTimer = setInterval(() => this.allThreads().then((threads) => Promise.all([...threads.filter(require('./asides.js').needsPump).map((t) => require('./asides.js').pump(this, t.id, { fromTimer: true })), ...threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id))])).catch(() => {}), 2000);
     this.asideTimer.unref();
     this.pollTimer = setInterval(() => this.pollDead().catch(() => {}), 10_000);
@@ -135,6 +136,11 @@ class Hub {
     return work;
   }
   allThreads() { return this.state.allThreads(); }
+  threadSnapshot(id) { return this.state.threadSnapshot(id); }
+  async readSnapshot(id) {
+    const thread = await this.threadSnapshot(id);
+    return !thread.provider && thread.cli && thread.sessions?.length ? this.thread(id) : thread;
+  }
   async call(machine, ...args) {
     const result = await this.client.call(machine, ...args);
     await this.markMachineSeen(machine);
@@ -245,7 +251,7 @@ class Hub {
     // Chat can save a discovered slug, so assemble it under the thread lock.
     const snapshot = await this.withThread(id, async () => {
       const result = await chat.chat(this, id);
-      const thread = await this.thread(id);
+      const thread = await this.readSnapshot(id);
       const last = this.handoffStatusAt.get(id);
       const refresh = !thread.archived && !thread.handed_off && thread.worktree && thread.slug && (last === undefined || Date.now() - last >= 60_000);
       if (refresh) this.handoffStatusAt.set(id, Date.now());
