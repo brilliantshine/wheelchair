@@ -38,3 +38,24 @@ Run twice; both must pass:
 ```
 npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js
 ```
+
+# Task R6-2 — page: two Log 50 leftovers in `buildEntry`
+
+Plan slug: project-tools-screen. Task id: R6-2. Decision Log 50 and the Spec's Editing section in PLAN.md: anything the user didn't edit is written back exactly as read. File: `viewer/pages/project-tools.js`, function `buildEntry` (~lines 590-640).
+
+1. **A touched field that ends equal to the original is copied from the original.** For each field the form rebuilds (`command`, `url`, `args`, `env`, `headers`): after building the new value from the form, if it deep-equals what `parseEntry` gave for the original entry (same rows/lines/strings, same presence), write the ORIGINAL raw value instead (keeping absent as absent, `{}` as `{}`, `[]` as `[]`). Only a field whose final value differs is replaced or removed. This covers "add a setting, then remove it" and "type in a field, then restore it".
+2. **No trimming of command or URL.** Write `command` and `url` exactly as typed (remove `.trim()` at ~:621 and ~:632). Keep refusing an empty command/URL (check `value.trim() === ''` for emptiness only).
+
+## Tests (append to `viewer/test/app-project-tools.spec.js`; one each)
+- A command tool `{ command: "run", env: {}, args: [] }`: open the editor, add a setting, remove it, type in Arguments and clear it, change the command to `run2`, Save: the entry is `{ command: "run2", env: {}, args: [] }`.
+- A web tool `{ type: "http", url: "https://a", headers: {} }`: change the URL to `" https://b "` → Save sends `url: " https://b "` (not trimmed) and `headers: {}`.
+- Typing in the URL field and restoring the original text sends the entry unchanged (deep-equal to the raw entry).
+
+## Ownership boundary
+`viewer/pages/project-tools.js` (`buildEntry` and the two `.trim()` sites only), `viewer/test/app-project-tools.spec.js` (append only).
+
+## Validation
+Run twice; both must pass:
+```
+npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js
+```
