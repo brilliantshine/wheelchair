@@ -1393,7 +1393,7 @@ class MachineService {
         // Only an unreachable or overloaded hub (502-504, or no answer) is worth retrying.
         if (response.status < 502 || response.status > 504) {
           let reason = 'hub refused the request';
-          try { reason = JSON.parse(response.body || '{}').error || reason; } catch { /* keep the generic reason */ }
+          try { const body = JSON.parse(response.body || '{}'); reason = (typeof body.detail === 'string' && body.detail ? body.detail : body.error) || reason; } catch { /* keep the generic reason */ }
           throw Object.assign(new Error(reason), { status: response.status, refused: true });
         }
       } catch (error) { if (error.refused) throw error; /* otherwise retry */ }

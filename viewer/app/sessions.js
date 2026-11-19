@@ -277,6 +277,7 @@ async function startSession(hub, thread, input) {
       token: crypto.randomBytes(32).toString('hex'), attempt_id: input.attempt_id || null,
       queue: [], ready: false, live: true, created_at: new Date().toISOString(),
     };
+    if (input.round !== undefined && waiting.round === undefined) waiting.round = input.round;
     if (title) waiting.title = title;
     if (typeof input.brief === 'string') waiting.brief = input.brief;
     const { _waiting, ...startInput } = input;
@@ -341,6 +342,7 @@ async function startSession(hub, thread, input) {
     template_id: layers.template?.id || null,
     ...(role === 'lead' ? { style_version: settings.style_version } : {}),
   };
+  if (input.round !== undefined && session.round === undefined) session.round = input.round;
   if (title) session.title = title;
   if (typeof input.brief === 'string') session.brief = input.brief;
   if (!input._waiting) thread.sessions.push(session);
@@ -657,6 +659,7 @@ async function sessionRequest(hub, payload) {
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
   if (payload.action === 'start') require('./handoff.js').refuseFrozen(hub, thread);
+  if (payload.action === 'start' && payload.round !== undefined && (payload.role !== 'reviewer' || !((typeof payload.round === 'number' && Number.isInteger(payload.round)) || (typeof payload.round === 'string' && /^[0-9]+$/.test(payload.round))) || !Number.isSafeInteger(Number(payload.round)) || Number(payload.round) < 1)) throw appError(400, '--round requires a positive integer and is only allowed for reviewers');
   if (payload.action === 'start' && payload.effort !== undefined && (caller.role !== 'sub-lead' || payload.role !== 'worker')) throw appError(400, 'effort can only be set for a worker');
   if (payload.action !== 'start' || !ALLOWED_START[caller.role]?.has(payload.role)) {
     throw appError(403, `${caller.role} may not start that session`);
@@ -678,6 +681,7 @@ async function sessionRequest(hub, payload) {
     not_provider: payload.not_provider,
     started_by: caller.name,
     attempt_id: payload.attempt_id,
+    ...(payload.round !== undefined ? { round: Number(payload.round) } : {}),
     brief: payload.brief,
     title: payload.title,
     tier: payload.tier,
