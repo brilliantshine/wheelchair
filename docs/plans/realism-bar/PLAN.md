@@ -57,6 +57,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 25 | The always-fixed list governs what agents may accept without asking; it does not remove Collin's existing choices on a gap that survives two fixes | Collin owns the decision; IDEA.md only says the bar does not class these as rare | review-round-3 |
 | 26 | Add "check once built": a review finding that only the built code can settle is noted for verification instead of reworking the plan | Collin asked for it in chat after seeing review loop on guesses about unwritten code | idea-change |
 | 27 | Simplified: no `RISK:` line. Verifiers report every problem as a `GAP:`, prefixing `Rare path:` when they think so; the sub-lead (builds) or the lead (its own verifiers) is the one judge | Collin picked "Simplify" after three unclean rounds; supersedes decisions 9 (verifier part), 14 and 19 | user |
+| 28 | Lighter-mode step 4a runs when the merged gap list is non-empty after rare-path judgment; rare gaps never count in verify found/fixed | Mixed pass/fail attempts had no defined route | review-round-4 |
+| 29 | Lead's own verifiers on a planned thread record rare gaps in Accepted Risks; Check Once Built gaps are named `Check once built #<n>`; Accepted Risks beats a check row | Keeps IDEA's "logged, not re-raised" and gives check gaps a key | review-round-4 |
 
 ## Spec
 
@@ -78,7 +80,8 @@ One short section, the single source of the bar:
   building the wrong thing, anything a Spec validation command checks, silent loss of
   Collin's work in normal use.
 - **Unsure**: treat as normal use (report it as a normal finding or GAP) and say why it
-  might be rare; the lead (review) or sub-lead (verification) decides.
+  might be rare. The judge decides: the lead for review findings and for its own verifiers
+  (small fix, after-done, repair); the sub-lead for build verification.
 - **Pulled-back items**: a finding or gap about an item Collin pulled back from Deferred
   is never treated as a rare path; it is fixed, or Collin is asked, as `lead.md` says.
 - **What happens to a rare path**: reported once, recorded in the plan's Accepted Risks
@@ -138,8 +141,10 @@ One short section, the single source of the bar:
   today (fix the setup, start a fresh verifier) and is never judged here. For a FAIL
   report, before acting on it, the lead judges every GAP line by `realism.md`, whether or
   not it starts `Rare path:`. A GAP judged a rare path is dropped (one-line reason in the
-  lead's reply); if no GAP remains, the check passed. Dropped gaps are not acted on and no
-  plan records them. A rare-only check never counts toward a retry, the repair
+  lead's reply); if no GAP remains, the check passed. Dropped gaps are not acted on. When
+  the thread has a PLAN.md (after-done and repair checks on a planned thread), the lead adds
+  each to Accepted Risks with round `after-done` and commits it with the fix; a small fix
+  has no plan and records nothing. A rare-only check never counts toward a retry, the repair
   budget or a question to Collin. The lead may mention a
   notable one in the done card `note`.
 - Pulled-back items follow S1: never accepted as rare. A pull-back pending during a review
@@ -150,7 +155,7 @@ One short section, the single source of the bar:
 
 ### S6. `protocol/app/sub-lead.md`
 
-- Verifier briefs include the plan's Accepted Risks table.
+- Verifier briefs include the plan's Accepted Risks table and the Check Once Built table.
 - After every verifier of an attempt has reported (BLOCKED handled as today first), the
   sub-lead merges all verifiers' GAP lines into one list (duplicates merged as today) and
   judges each by `realism.md`, whether or not it starts `Rare path:`. The attempt's outcome
@@ -161,10 +166,11 @@ One short section, the single source of the bar:
   cannot tell, it asks the lead with a `message` (`asks: true`).
 - Rare gaps are settled by the sub-lead before step 4a, in every mode, and never reach
   step 4a's list, the all-deferred re-check or Collin's "Fix them" / "Defer them and
-  finish" choice. Step 4a's list marks the remaining gaps `hardening` or `must-fix` as
-  today. If every gap of an attempt was accepted as rare, the attempt is a PASS (step 4).
-  If some were rare and the rest deferred, step 4a runs as today on the deferred ones
-  only. Accepted rare gaps never count toward the two-attempt rule.
+  finish" choice. In a lighter mode, step 4a's trigger becomes "the merged list is
+  non-empty after rare-path judgment" (replacing "after all verifiers report a failure");
+  its list marks the remaining gaps `hardening` or `must-fix` as today.
+- Rare gaps are not counted in the verify progress `found`/`fixed` (step 5 counts only the
+  gaps that go to remediation), like deferred gaps.
 - The build `result` summary names how many rare paths were accepted.
 
 ### S7. `protocol/templates/PLAN.md`
@@ -190,8 +196,10 @@ with round `review-round-N` or `verification-N`.
   Review Rounds note.
 - **Verification** (`sub-lead.md`, `verifier.md`): the sub-lead's verifier brief includes the
   Check Once Built table; the verifier checks each row against the built code like a Spec
-  item and reports a confirmed problem as a GAP, which then goes through the realism bar
-  like any other gap.
+  item and reports a confirmed problem as `GAP: Check once built #<n> — <what> — <evidence>`,
+  which then goes through the realism bar like any other gap. Accepted Risks wins: a row
+  whose problem is already in Accepted Risks is not reported again. The row itself stays as
+  review history.
 - **Template** (`protocol/templates/PLAN.md`): add the `## Check Once Built` section after
   Accepted Risks, with one line saying what it holds.
 
@@ -278,9 +286,25 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 4 — 2026-11-19
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** budget reset by Collin's decisions 26 and 27. Verifier `RISK:` lines removed; rare problems are `GAP:` lines prefixed `Rare path:`, judged by one reader (S4, S5, S6, decision 27). New "check once built" handling (S8, IDEA.md, decision 26). Round 3 fixes: lead's 4a "accept as rare" dropped (decision 22), BLOCKED untouched (23), merged multi-verifier outcome (24), Collin keeps his surviving-gap choices (25).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Rare gaps in verify found count | upheld | S6; decision 28 |
+| intent | minor | Rare-only PASS stated twice | upheld | Duplicate removed from S6 |
+| intent | minor | Lead's own verifiers record rare gaps nowhere | upheld | S5; decision 29 |
+| intent | minor | S1 names the wrong judge for the lead's own verifiers | upheld | S1 |
+| intent | minor | Check-once-built GAP has no spec-item key | upheld | S8; decision 29 |
+| mechanics | major | Step 4a trigger when one verifier passes and another fails | upheld | S6; decision 28 |
+| mechanics | major | Check row vs Accepted Risks precedence | upheld | S8; decision 29 |
+
+### Round 5 — 2026-11-19
+
+**Lanes:** pending.
+
+**Changed since Round 4:** S1 judge wording; S5 lead's own verifiers record rare gaps in Accepted Risks on a planned thread (decision 29); S6 step 4a trigger and verify counts, duplicate PASS sentence removed (decision 28); S8 check-once-built GAP key and Accepted Risks precedence (decision 29).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
