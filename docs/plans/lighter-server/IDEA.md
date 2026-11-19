@@ -41,6 +41,7 @@ cores. Leftover test processes have run for days.
 - Changing the machine service (its tmux checks and transcript handling): it is already light.
 - Stopping the server's memory from growing: it comes from the transcript copies the chat
   follow-up thread rewrites, so it is fixed there.
+- Stopping machine tests from leaving test sessions in the real tmux: its own thread.
 
 ## Constraints
 
