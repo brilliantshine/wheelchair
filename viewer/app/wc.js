@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Spec "Machine service on the hub": agent git and session requests via the local service.
+// Spec "Machine service on the hub": agent git, session, and screen requests via the local service.
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
@@ -95,6 +95,13 @@ function sessionRequest(operation, tail) {
   };
 }
 
+function screenRequest(operation, tail) {
+  if (!['start', 'run', 'shot', 'windows', 'move', 'click', 'drag', 'type', 'key', 'focus', 'stop', 'status'].includes(operation)) {
+    throw new Error('unsupported screen operation');
+  }
+  return { path: '/screen', body: { op: operation, args: tail } };
+}
+
 const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'title', 'branch', 'worktree'];
 function compact(session) {
   return Object.fromEntries(compactFields.filter(key => Object.hasOwn(session, key)).map(key => [key, session[key]]));
@@ -162,8 +169,10 @@ async function main(argv) {
     ? gitRequest(operation, tail)
     : group === 'session'
       ? sessionRequest(operation, requestTail)
+      : group === 'screen'
+        ? screenRequest(operation, tail)
       : null;
-  if (!input) throw new Error('usage: wc.js git|session …');
+  if (!input) throw new Error('usage: wc.js git|session|screen …');
   const result = group === 'session'
     ? await postSessionWithRetry(`${base}${input.path}`, token, input.body)
     : await request(`${base}${input.path}`, token, input.body);
@@ -191,4 +200,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { flags, gitRequest, sessionRequest };
+module.exports = { flags, gitRequest, sessionRequest, screenRequest };
