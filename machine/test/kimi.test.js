@@ -61,6 +61,20 @@ test('config reader rejects untrusted files and ignores service oauth', t => {
   } else t.diagnostic('chmod unreadable check skipped as root');
 });
 
+test('config reader skips multiline arrays before the managed oauth table', () => {
+  const dir = fixture(), file = path.join(dir, 'config.toml');
+  fs.writeFileSync(file, `default_model = "kimi-code/k3"\n[models."kimi-code/k3"]\nsupport_efforts = [\n  "low",\n  [x],\n  "max",\n]\n[providers."managed:kimi-code".oauth]\nkey = "oauth/dummy"\noauth_host = "https://auth.kimi.ai"\n`);
+  assert.deepEqual(kimi.readConfig(dir), { default_model: 'kimi-code/k3', key: 'oauth/dummy', oauth_host: 'https://auth.kimi.ai' });
+  assert.deepEqual(kimi.loginStatus(dir), { logged_in: true, authenticated: true });
+});
+
+test('config reader tracks nested brackets outside quoted strings and comments', () => {
+  const dir = fixture(), file = path.join(dir, 'config.toml');
+  fs.writeFileSync(file, `default_model = "kimi-code/k3"\nignored = [\n  "]",\n  [\n    [1, 2],\n    [3],\n  ],\n] # ] in comment\n[providers."managed:kimi-code".oauth]\noauth_host = "https://auth.kimi.ai"\nkey = "oauth/dummy"\n`);
+  assert.deepEqual(kimi.readConfig(dir), { default_model: 'kimi-code/k3', key: 'oauth/dummy', oauth_host: 'https://auth.kimi.ai' });
+  assert.deepEqual(kimi.loginStatus(dir), { logged_in: true, authenticated: true });
+});
+
 test('China or absent oauth host prevents eligibility despite authentication', () => {
   const dir = fixture(), file = path.join(dir, 'config.toml'), original = fs.readFileSync(file, 'utf8');
   for (const host of ['https://auth.kimi.com', null]) {
