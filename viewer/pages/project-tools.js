@@ -61,6 +61,8 @@
 
   // True when a single-line input could not show the string exactly: a C0 control character or DEL.
   function unshowable(s) { return /[\u0000-\u001f\u007f]/.test(s); }
+  // Display only: a read-only string a single line can't show exactly is shown in its JSON form.
+  const showText = (s) => (typeof s === 'string' && !unshowable(s) ? s : JSON.stringify(s));
   function classifyEnv(name, value) {
     if (typeof value !== 'string' || unshowable(name) || unshowable(value)) return { ro: true, name, raw: value };
     const m = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
@@ -354,8 +356,8 @@
     }
 
     function rowLine(row, kind) {
-      if (row.ro) return h('li', { class: 'pt-ro' }, h('span', { class: 'mono', text: row.name }), ' ',
-        h('span', { class: 'mono', text: typeof row.raw === 'string' ? row.raw : JSON.stringify(row.raw) }), ' ',
+      if (row.ro) return h('li', { class: 'pt-ro' }, h('span', { class: 'mono', text: showText(row.name) }), ' ',
+        h('span', { class: 'mono', text: showText(row.raw) }), ' ',
         h('span', { class: 'hint', text: row.env ? "(from the agent's own environment)" : '(edit in the file)' }));
       if (row.mode === 'key') {
         const key = rowKeyName(row, kind);
@@ -387,11 +389,11 @@
       const card = h('div', { class: 'pt-tool', 'data-tool': name });
       const v = viewEntry(raw);
       const editable = !!p && !unshowable(name);
-      card.append(h('div', { class: 'pt-tool-head' }, h('h3', { text: name }),
+      card.append(h('div', { class: 'pt-tool-head' }, h('h3', { text: showText(name) }),
         h('span', { class: 'pt-chip', text: v ? (v.kind === 'command' ? 'command' : 'web address') : 'edit in the file' })));
       if (v) {
         for (const [k, x] of v.extras) card.append(h('p', { class: 'hint' }, h('span', { class: 'mono', text: k + ': ' + JSON.stringify(x) }), ' (edit in the file)'));
-        card.append(h('p', { class: 'pt-runs mono', text: v.kind === 'command' ? [v.command, ...v.args.map((x) => (typeof x === 'string' ? x : JSON.stringify(x)))].join(' ') : v.url }));
+        card.append(h('p', { class: 'pt-runs mono', text: v.kind === 'command' ? [showText(v.command), ...v.args.map((x) => showText(x))].join(' ') : showText(v.url) }));
         if (v.rows.length) {
           card.append(h('p', { class: 'hint', text: v.kind === 'command' ? 'Settings' : 'Headers' }),
             h('ul', { class: 'pt-rows' }, v.rows.map((row) => rowLine(row, v.kind === 'command' ? 'env' : 'hdr'))));
@@ -471,7 +473,7 @@
       function rowEditor(row, rows, kind) {
         if (row.ro) {
           return h('div', { class: 'pt-row ro' },
-            h('span', { class: 'mono', text: row.name + ' = ' + (typeof row.raw === 'string' ? row.raw : JSON.stringify(row.raw)) }),
+            h('span', { class: 'mono', text: showText(row.name) + ' = ' + showText(row.raw) }),
             h('span', { class: 'hint', text: row.env ? "(from the agent's own environment)" : 'edit in the file (kept as is)' }));
         }
         const word = kind === 'env' ? 'Setting' : 'Header';
@@ -518,7 +520,7 @@
 
       const commandBox = h('div', { class: 'pt-fields' },
         f.commandRO
-          ? h('div', {}, h('span', { class: 'hint', text: 'Command' }), h('p', { class: 'mono pt-ro', text: f.p.command }), h('p', { class: 'hint', text: 'edit in the file (kept as is)' }))
+          ? h('div', {}, h('span', { class: 'hint', text: 'Command' }), h('p', { class: 'mono pt-ro', text: showText(f.p.command) }), h('p', { class: 'hint', text: 'edit in the file (kept as is)' }))
           : h('label', {}, h('span', { text: 'Command' }), commandIn),
         f.argsRO
           ? h('div', {}, h('span', { class: 'hint', text: 'Arguments' }), h('p', { class: 'mono pt-ro', text: JSON.stringify(f.p.args) }), h('p', { class: 'hint', text: 'edit in the file (kept as is)' }))
@@ -528,7 +530,7 @@
         h('p', { class: 'hint' }, h('span', { class: 'mono', text: k + ': ' + JSON.stringify(v) }), ' edit in the file (kept as is)')));
       const httpBox = h('div', { class: 'pt-fields' },
         f.urlRO
-          ? h('div', {}, h('span', { class: 'hint', text: 'URL' }), h('p', { class: 'mono pt-ro', text: f.p.url }), h('p', { class: 'hint', text: 'edit in the file (kept as is)' }))
+          ? h('div', {}, h('span', { class: 'hint', text: 'URL' }), h('p', { class: 'mono pt-ro', text: showText(f.p.url) }), h('p', { class: 'hint', text: 'edit in the file (kept as is)' }))
           : h('label', {}, h('span', { text: 'URL' }), urlIn),
         h('div', {}, h('span', { class: 'hint', text: 'Headers' }), hdrHost, headerNote));
       const syncKind = () => { commandBox.hidden = f.kind !== 'command'; httpBox.hidden = f.kind !== 'http'; headerNote.hidden = !(f.kind === 'http' && f.hdrRows.length > 0); };
