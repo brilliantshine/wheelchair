@@ -36,15 +36,16 @@ const readBody = (over = {}) => ({
 });
 
 // Stubs the picker and /project-tools/*; `replies` queues [status, body] for save/remove-key.
-async function stub(page, { read = readBody(), replies = [] } = {}) {
+async function stub(page, { read = readBody(), replies = [], gate = null } = {}) {
   const calls = { read: [], save: [], remove: [] };
   await page.route('**/wheelchair/api/new-thread*', (route) => route.fulfill({ json: {
-    machine: 'hub', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'alpha', path: '/tmp/proj-alpha' }], found: [], previous: [] } }));
+    machine: 'hub', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'alpha', path: '/tmp/proj-alpha' }, { name: 'beta', path: '/tmp/proj-beta' }], found: [], previous: [] } }));
   await page.route('**/wheelchair/api/project-tools/*', async (route) => {
     const kind = new URL(route.request().url()).pathname.split('/').pop();
     const body = JSON.parse(route.request().postData() || '{}');
-    if (kind === 'read') { calls.read.push(body); return route.fulfill({ json: typeof read === 'function' ? read(calls.read.length) : read }); }
+    if (kind === 'read') { calls.read.push(body); return route.fulfill({ json: typeof read === 'function' ? read(calls.read.length, body) : read }); }
     (kind === 'save' ? calls.save : calls.remove).push(body);
+    if (gate) await gate;
     const [status, json] = replies.shift() || [200, { outcome: 'saved', key_revision: 1, keys: ['API_KEY'], warnings: [] }];
     if (json === null) return route.abort();
     return route.fulfill({ status, json });
@@ -83,7 +84,6 @@ test('shows tools, key status, skip reasons, key warnings, waiting pull requests
   await expect(tool(page, 'web')).toContainText('https://x.example/mcp');
   await expect(tool(page, 'web')).toContainText('web address');
   await expect(tool(page, 'web').locator('.pt-chip.set')).toHaveText('set');
-  await expect(tool(page, 'web')).toContainText('shared with other-tool');
   await expect(tool(page, 'web')).toContainText('edit in the file');
   await expect(page.locator('.pt-warn').first()).toContainText('too large');
   await expect(page.locator('.pt-waiting a')).toHaveAttribute('href', 'https://github.com/o/n/pull/12');
@@ -367,4 +367,114 @@ test('an unsaved tool removal survives a Settings re-render', async ({ page }) =
   await expect(tool(page, 'db')).toBeVisible();
   await expect(page.locator('#pt-save')).toBeEnabled();
   expect(calls.read).toHaveLength(1);
+});
+
+const dbWith = (extra) => readBody({ source: { state: 'ok', reason: null, document: { mcpServers: { db: { command: 'npx', ...extra } } } }, keys: [], references: {}, checks: {} });
+const KIND_MSG = "Can't change the kind: this tool has parts the form can't edit. Edit in the file.";
+
+for (const [label, extra] of [
+  ['a read-only setting', { env: { PATH: '${PATH}' } }],
+  ['an argument with a newline', { args: ['a\nb'] }],
+  ['an unknown field', { timeout: 5 }],
+  ['a command with a variable', { command: '${BIN}' }],
+]) {
+  test(`changing kind is refused for ${label}`, async ({ page }) => {
+    await open(page, { read: dbWith(extra) });
+    await tool(page, 'db').getByRole('button', { name: 'Edit db' }).click();
+    await page.getByLabel('Kind', { exact: true }).selectOption('http');
+    await expect(page.getByRole('alert').filter({ hasText: KIND_MSG })).toBeVisible();
+    await expect(page.getByLabel('Kind', { exact: true })).toHaveValue('command');
+  });
+}
+
+test('a late save reply never lands on another project', async ({ page }) => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const calls = await open(page, {
+    gate,
+    read: (n, body) => (body.path === '/tmp/proj-beta'
+      ? readBody({ keys: ['BETA_K'], references: {}, token: { project: '/b', baseline: null, key_revision: 7 }, mode: 'keys-only', source: null })
+      : readBody()),
+    replies: [[200, { outcome: 'saved', key_revision: 99, keys: ['ALPHA_K'], warnings: [] }],
+      [200, { outcome: 'saved', key_revision: 8, keys: ['BETA_K', 'B2'], warnings: [] }]],
+  });
+  await page.getByLabel('Value for API_KEY').fill('v');
+  await page.getByRole('button', { name: 'Set API_KEY' }).click();
+  await expect.poll(() => calls.save.length).toBe(1);
+  await page.locator('#pt-project').selectOption('/tmp/proj-beta');
+  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  release();
+  await page.waitForTimeout(300);
+  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  await expect(keyRow(page, 'ALPHA_K')).toHaveCount(0);
+  await expect(page.locator('.pt-status')).not.toHaveText('Saved');
+  await page.getByLabel('New key name').fill('B2');
+  await page.getByLabel('New key value').fill('x');
+  await page.getByRole('button', { name: 'Add a key' }).click();
+  await expect(keyRow(page, 'B2')).toBeVisible();
+  expect(calls.save[1].token.key_revision).toBe(7);
+  expect(calls.save[1].path).toBe('/tmp/proj-beta');
+});
+
+test('arguments with a variable are read-only and kept as sent', async ({ page }) => {
+  const calls = await open(page, { read: dbWith({ args: ['--db', '${DB_URL}'] }) });
+  await tool(page, 'db').getByRole('button', { name: 'Edit db' }).click();
+  await expect(page.getByLabel('Arguments, one per line')).toHaveCount(0);
+  await expect(page.getByText('edit in the file (kept as is)')).toBeVisible();
+  await page.getByLabel('Name', { exact: true }).fill('db2');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect(page.locator('.pt-status')).toHaveText('Saved');
+  expect(calls.save[0].tools.db2.args).toEqual(['--db', '${DB_URL}']);
+});
+
+test('an unknown field is shown on the card and in the form', async ({ page }) => {
+  await open(page, { read: dbWith({ timeout: 5 }) });
+  await expect(tool(page, 'db')).toContainText('timeout: 5');
+  await expect(tool(page, 'db')).toContainText('edit in the file');
+  await tool(page, 'db').getByRole('button', { name: 'Edit db' }).click();
+  await expect(page.locator('.pt-form')).toContainText('timeout: 5');
+  await expect(page.locator('.pt-form')).toContainText('edit in the file');
+});
+
+test('key warnings follow the current key status', async ({ page }) => {
+  await open(page, { replies: [[200, { outcome: 'saved', key_revision: 2, keys: ['API_KEY', 'DB_TOKEN'], warnings: [] }]],
+    read: readBody({ checks: { db: { key_warnings: ['needs DB_TOKEN, not set on this machine', 'other warning'] } } }) });
+  await expect(tool(page, 'db')).toContainText('needs DB_TOKEN, not set on this machine');
+  await page.getByLabel('Value for DB_TOKEN').fill('s');
+  await page.getByRole('button', { name: 'Set DB_TOKEN' }).click();
+  await expect(tool(page, 'db').locator('.pt-chip.set')).toHaveText('set');
+  await expect(tool(page, 'db')).not.toContainText('not set on this machine');
+  await expect(tool(page, 'db')).toContainText('other warning');
+});
+
+test('shared with follows the draft, on cards and while typing in the editor', async ({ page }) => {
+  await open(page, { read: readBody({ source: { state: 'ok', reason: null, document: { mcpServers: {} } }, references: {}, keys: [] }) });
+  for (const name of ['one', 'two']) {
+    await page.locator('#pt-add').click();
+    await page.getByLabel('Name', { exact: true }).fill(name);
+    await page.getByLabel('Command', { exact: true }).fill('node');
+    await page.getByRole('button', { name: 'Add a setting' }).click();
+    await page.getByLabel('Setting name').fill('SHARED_K');
+    await page.getByLabel('Setting kind').selectOption('key');
+    if (name === 'two') await expect(page.locator('.pt-form')).toContainText('shared with one');
+    await page.getByRole('button', { name: 'Add to the list' }).click();
+  }
+  await expect(tool(page, 'one')).toContainText('shared with two (SHARED_K)');
+  await expect(tool(page, 'two')).toContainText('shared with one (SHARED_K)');
+  await page.locator('#pt-add').click();
+  await page.getByRole('button', { name: 'Add a setting' }).click();
+  await page.getByLabel('Setting kind').selectOption('key');
+  await expect(page.locator('.pt-shared')).toBeHidden();
+  await page.getByLabel('Setting name').fill('SHARED_K');
+  await expect(page.locator('.pt-shared')).toContainText('shared with one, two');
+});
+
+test('an unreadable source still shows waiting pull requests', async ({ page }) => {
+  await open(page, { read: readBody({
+    source: { state: 'unreadable', reason: 'broken', document: null }, keys: [], references: {},
+    waiting: [{ number: 5, url: 'https://github.com/o/n/pull/5', title: 'Old change', branch: 'b' }],
+  }) });
+  await expect(page.locator('.pt-waiting a')).toHaveAttribute('href', 'https://github.com/o/n/pull/5');
+  await expect(page.getByRole('button', { name: 'Start over' })).toBeVisible();
 });

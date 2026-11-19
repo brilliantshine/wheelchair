@@ -69,6 +69,7 @@
     if (value.includes('${')) return { ro: true, name, raw: value };
     return { name, mode: 'plain', value, secret: '' };
   }
+  const KNOWN_FIELDS = ['type', 'command', 'args', 'env', 'url', 'headers'];
   // null when the form can't represent the entry at all.
   function parseEntry(raw) {
     if (!isPlain(raw)) return null;
@@ -86,11 +87,15 @@
       command: kind === 'command' ? raw.command : '',
       url: kind === 'http' ? raw.url : '',
       args,
-      argsRO: args.some((a) => typeof a !== 'string' || a === '' || a.includes('\n')),
+      argsRO: args.some((a) => typeof a !== 'string' || a === '' || a.includes('\n') || a.includes('${')),
+      commandRO: kind === 'command' && raw.command.includes('${'),
+      urlRO: kind === 'http' && raw.url.includes('${'),
+      extras: Object.entries(raw).filter(([k]) => !KNOWN_FIELDS.includes(k)),
       envRows: kind === 'command' ? Object.entries(raw.env || {}).map(([k, v]) => classifyEnv(k, v)) : [],
       hdrRows: kind === 'http' ? Object.entries(raw.headers || {}).map(([k, v]) => classifyHeader(k, v)) : [],
     };
   }
+  const NEEDS_RE = /^needs [A-Za-z_][A-Za-z0-9_]*, not set on this machine$/;
   function rowKeyName(row, kind) {
     if (row.ro || row.mode !== 'key') return null;
     return kind === 'env' ? row.name : row.keyName;
@@ -220,21 +225,21 @@
       const toolsMode = r.mode === 'tools';
       if (r.notice) parts.push(h('p', { class: 'pt-notice', text: r.notice }));
       if (toolsMode) {
+        els.waiting = h('div', {});
         if (r.source?.state === 'unreadable') {
           parts.push(h('div', { class: 'pt-box' },
             h('p', { class: 'pt-notice', text: 'The tools file can\'t be read: ' + (r.source.reason || 'unknown reason') }),
             h('p', { class: 'hint', text: 'Tools can\'t be edited here until it is fixed in the file, or you start over with an empty list (this replaces whatever is there).' }),
-            button('Start over', startOver, { class: 'danger' })));
+            button('Start over', startOver, { class: 'danger' })), els.waiting);
         } else {
           for (const w of r.file_warnings || []) parts.push(h('p', { class: 'pt-warn', text: w }));
-          els.waiting = h('div', {});
           els.tools = h('div', { class: 'pt-tools' });
           els.form = h('div', {});
           els.save = h('div', { class: 'pt-savebar' });
           parts.push(els.waiting,
             h('section', {}, h('h2', { text: 'Tools' }), els.tools, els.form, els.save));
-          paintWaiting();
         }
+        paintWaiting();
       }
       els.keys = h('section', { class: 'pt-keys' });
       parts.push(els.keys);
@@ -281,6 +286,19 @@
       return h('li', {}, h('span', { class: 'mono', text: row.name }), ' = ', h('span', { class: 'mono', text: row.value }));
     }
 
+    // Other tools in the current draft that use the key `key`, leaving out `except`.
+    function toolsUsingKey(key, except) {
+      const out = [];
+      for (const [n, raw] of Object.entries(state.tools)) {
+        if (n === except) continue;
+        const p = parseEntry(raw);
+        if (!p) continue;
+        const kind = p.kind === 'command' ? 'env' : 'hdr';
+        if ((p.kind === 'command' ? p.envRows : p.hdrRows).some((row) => rowKeyName(row, kind) === key)) out.push(n);
+      }
+      return out;
+    }
+
     function toolCard(name) {
       const r = state.read;
       const raw = state.tools[name];
@@ -292,25 +310,22 @@
       if (!p) {
         card.append(h('p', { class: 'hint', text: "This entry's shape can't be shown here. Edit in the file." }));
       } else {
+        for (const [k, v] of p.extras) card.append(h('p', { class: 'hint' }, h('span', { class: 'mono', text: k + ': ' + JSON.stringify(v) }), ' (edit in the file)'));
         card.append(h('p', { class: 'pt-runs mono', text: p.kind === 'command' ? [p.command, ...p.args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))].join(' ') : p.url }));
         const rows = p.kind === 'command' ? p.envRows : p.hdrRows;
         if (rows.length) {
           card.append(h('p', { class: 'hint', text: p.kind === 'command' ? 'Settings' : 'Headers' }),
             h('ul', { class: 'pt-rows' }, rows.map((row) => rowLine(row, p.kind === 'command' ? 'env' : 'hdr'))));
         }
-        const shared = new Set();
-        for (const row of rows) {
-          const key = rowKeyName(row, p.kind === 'command' ? 'env' : 'hdr');
-          if (!key) continue;
-          for (const other of r.references?.[key] || []) if (other !== name) shared.add(key + '\u0000' + other);
+        const myKeys = [...new Set(rows.map((row) => rowKeyName(row, p.kind === 'command' ? 'env' : 'hdr')).filter(Boolean))];
+        for (const key of myKeys) {
+          for (const other of toolsUsingKey(key, name)) card.append(h('p', { class: 'hint', text: 'shared with ' + other + ' (' + key + ')' }));
         }
-        for (const s of shared) {
-          const [key, other] = s.split('\u0000');
-          card.append(h('p', { class: 'hint', text: 'shared with ' + other + ' (' + key + ')' }));
-        }
+        card.dataset.needs = myKeys.filter((k) => !state.keys.includes(k)).join(',');
       }
       for (const s of checks.skip || []) card.append(h('p', { class: 'pt-warn', text: s }));
-      for (const w of checks.key_warnings || []) card.append(h('p', { class: 'pt-warn', text: w }));
+      for (const key of (card.dataset.needs || '').split(',').filter(Boolean)) card.append(h('p', { class: 'pt-warn', text: 'needs ' + key + ', not set on this machine' }));
+      for (const w of checks.key_warnings || []) if (!NEEDS_RE.test(w)) card.append(h('p', { class: 'pt-warn', text: w }));
       const actions = h('div', { class: 'actions' });
       if (p) actions.append(button('Edit', () => openForm(name), { 'aria-label': 'Edit ' + name }));
       const confirmHost = h('div', { class: 'pt-confirm', hidden: true });
@@ -346,6 +361,7 @@
       const f = formState = {
         origName, raw, p, name: origName || '', kind: p ? p.kind : 'command',
         command: p?.command || '', url: p?.url || '', argsText: (p?.args || []).join('\n'), argsRO: !!p?.argsRO,
+        commandRO: !!p?.commandRO, urlRO: !!p?.urlRO,
         envRows: p ? p.envRows : [], hdrRows: p ? p.hdrRows : [],
       };
       const err = h('p', { class: 'inline-err', role: 'alert' });
@@ -382,6 +398,7 @@
         const prefixField = h('input', { type: 'text', value: row.prefix || '', autocomplete: 'off', 'aria-label': 'Text before the key', placeholder: 'Text before the key, e.g. "Bearer "', class: 'mono' });
         const keyField = h('input', { type: 'text', value: row.keyName || '', autocomplete: 'off', 'aria-label': 'Key name', placeholder: 'Key name' });
         const secretField = h('input', { type: 'password', value: row.secret || '', autocomplete: 'off', 'aria-label': 'Value for the new key', placeholder: 'Value for this key (optional)' });
+        const sharedHint = h('p', { class: 'hint pt-shared', hidden: true });
         const remove = button('Remove', () => { rows.splice(rows.indexOf(row), 1); paintRows(); }, { class: 'small', 'aria-label': 'Remove ' + word.toLowerCase() });
         const refresh = () => {
           const key = kind === 'env' ? row.name : row.keyName;
@@ -390,6 +407,9 @@
           prefixField.hidden = !(isKey && kind === 'hdr');
           keyField.hidden = !(isKey && kind === 'hdr');
           secretField.hidden = !(isKey && key && !state.keys.includes(key));
+          const users = isKey && key && key.trim() ? toolsUsingKey(key.trim(), origName) : [];
+          sharedHint.hidden = !users.length;
+          sharedHint.textContent = users.length ? 'shared with ' + users.join(', ') : '';
         };
         nameField.addEventListener('input', () => { row.name = nameField.value; refresh(); });
         modeSel.addEventListener('change', () => { row.mode = modeSel.value; if (row.mode === 'key' && kind === 'hdr' && row.keyName === undefined) row.keyName = ''; refresh(); });
@@ -398,7 +418,7 @@
         keyField.addEventListener('input', () => { row.keyName = keyField.value; refresh(); });
         secretField.addEventListener('input', () => { row.secret = secretField.value; });
         refresh();
-        return h('div', { class: 'pt-row' }, nameField, modeSel, valueField, prefixField, keyField, secretField, remove);
+        return h('div', { class: 'pt-row' }, nameField, modeSel, valueField, prefixField, keyField, secretField, remove, sharedHint);
       }
       function paintRows() {
         envHost.replaceChildren(...f.envRows.map((row) => rowEditor(row, f.envRows, 'env')),
@@ -409,20 +429,26 @@
       }
 
       const commandBox = h('div', { class: 'pt-fields' },
-        h('label', {}, h('span', { text: 'Command' }), commandIn),
+        f.commandRO
+          ? h('div', {}, h('span', { class: 'hint', text: 'Command' }), h('p', { class: 'mono pt-ro', text: f.p.command }), h('p', { class: 'hint', text: 'edit in the file (kept as is)' }))
+          : h('label', {}, h('span', { text: 'Command' }), commandIn),
         f.argsRO
           ? h('div', {}, h('span', { class: 'hint', text: 'Arguments' }), h('p', { class: 'mono pt-ro', text: JSON.stringify(f.p.args) }), h('p', { class: 'hint', text: 'edit in the file (kept as is)' }))
           : h('label', {}, h('span', { text: 'Arguments, one per line' }), argsIn),
         h('div', {}, h('span', { class: 'hint', text: 'Settings (environment)' }), envHost));
+      const extrasBox = h('div', { class: 'pt-fields' }, (p?.extras || []).map(([k, v]) =>
+        h('p', { class: 'hint' }, h('span', { class: 'mono', text: k + ': ' + JSON.stringify(v) }), ' edit in the file (kept as is)')));
       const httpBox = h('div', { class: 'pt-fields' },
-        h('label', {}, h('span', { text: 'URL' }), urlIn),
+        f.urlRO
+          ? h('div', {}, h('span', { class: 'hint', text: 'URL' }), h('p', { class: 'mono pt-ro', text: f.p.url }), h('p', { class: 'hint', text: 'edit in the file (kept as is)' }))
+          : h('label', {}, h('span', { text: 'URL' }), urlIn),
         h('div', {}, h('span', { class: 'hint', text: 'Headers' }), hdrHost, headerNote));
       const syncKind = () => { commandBox.hidden = f.kind !== 'command'; httpBox.hidden = f.kind !== 'http'; headerNote.hidden = !(f.kind === 'http' && f.hdrRows.length > 0); };
       kindSel.addEventListener('change', () => {
-        const hasRo = !!p && (p.envRows.some((x) => x.ro && !x.env) || p.hdrRows.some((x) => x.ro && !x.env));
+        const hasRo = !!p && (p.envRows.some((x) => x.ro) || p.hdrRows.some((x) => x.ro) || p.argsRO || p.commandRO || p.urlRO || p.extras.length > 0);
         if (p && hasRo && kindSel.value !== p.kind) {
           kindSel.value = f.kind;
-          showErr("Can't change the kind: this tool has a setting or header the form can't show. Edit in the file.");
+          showErr("Can't change the kind: this tool has parts the form can't edit. Edit in the file.");
           return;
         }
         showErr('');
@@ -477,7 +503,7 @@
         h('h3', { text: origName === null ? 'Add a tool' : 'Edit ' + origName }),
         h('label', {}, h('span', { text: 'Name' }), nameIn),
         h('label', {}, h('span', { text: 'Kind' }), kindSel),
-        commandBox, httpBox, err,
+        commandBox, httpBox, extrasBox, err,
         h('div', { class: 'actions' },
           h('button', { type: 'submit', class: 'primary', text: origName === null ? 'Add to the list' : 'Keep changes' }),
           button('Cancel', () => { formState = null; els.form.replaceChildren(); }))));
@@ -502,7 +528,7 @@
       if (f.kind === 'command') {
         delete e.url; delete e.headers;
         if (e.type !== undefined && e.type !== 'stdio') delete e.type;
-        e.command = f.command.trim();
+        if (!f.commandRO) e.command = f.command.trim();
         if (!f.argsRO) {
           const args = f.argsText.split('\n').map((s) => s.replace(/\r$/, '')).filter((s) => s !== '');
           if (args.length) e.args = args; else delete e.args;
@@ -512,7 +538,7 @@
       } else {
         delete e.command; delete e.args; delete e.env;
         e.type = 'http';
-        e.url = f.url.trim();
+        if (!f.urlRO) e.url = f.url.trim();
         const headers = rowsObj(f.hdrRows, 'hdr');
         if (Object.keys(headers).length) e.headers = headers; else delete e.headers;
       }
@@ -577,12 +603,17 @@
       if (els.tools) paintTools();
     }
 
+    const ctx = () => ({ machine: state.machine, path: state.path, seq: state.readSeq });
+    const stale = (c) => c.machine !== state.machine || c.path !== state.path || c.seq !== state.readSeq;
+
     async function send(extra) {
       setBusy(true);
       setStatus('Saving…');
       let out;
+      const c = ctx();
       try {
         const { status: code, body } = await post('/project-tools/save', { machine: state.machine, path: state.path, token: state.token, ...extra });
+        if (stale(c)) return false;
         out = await handle(code, body);
       } finally { setBusy(false); }
       return out;
@@ -694,8 +725,10 @@
             button('Yes, remove ' + name, async () => {
               if (state.busy) return;
               setBusy(true); setStatus('Removing…');
+              const c = ctx();
               try {
                 const { status: code, body } = await post('/project-tools/remove-key', { machine: state.machine, path: state.path, token: state.token, name });
+                if (stale(c)) return;
                 await handle(code, body);
               } finally { setBusy(false); }
             }, { class: 'danger' }),
