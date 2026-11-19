@@ -10,6 +10,11 @@
   const HEADER_NOTE = "Codex agents don't get tools with headers. Claude may read some credential-like names as empty in headers, so check the tool signs in.";
   const RESERVED_MSG = "can't be set here: it would change how the agent itself runs";
   const KNOWN_OUTCOMES = ['saved', 'opened', 'pr_failed', 'failed', 'refused', 'removed'];
+  let reservedLists = { exact: [], prefixes: [] };
+  function isReservedName(name) {
+    const lower = name.toLowerCase();
+    return (reservedLists.exact || []).some((e) => e.toLowerCase() === lower) || (reservedLists.prefixes || []).some((p) => name.startsWith(p));
+  }
 
   function h(tag, props, ...kids) {
     const node = document.createElement(tag);
@@ -51,6 +56,7 @@
   function classifyEnv(name, value) {
     if (typeof value !== 'string') return { ro: true, name, raw: value };
     const m = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+    if (m && m[1] === name && isReservedName(name)) return { ro: true, env: true, name, raw: value };
     if (m && m[1] === name) return { name, mode: 'key', value: '', secret: '' };
     if (value.includes('${')) return { ro: true, name, raw: value };
     return { name, mode: 'plain', value, secret: '' };
@@ -58,6 +64,7 @@
   function classifyHeader(name, value) {
     if (typeof value !== 'string') return { ro: true, name, raw: value };
     const m = /^([^$]*)\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+    if (m && isReservedName(m[2])) return { ro: true, env: true, name, raw: value };
     if (m) return { name, mode: 'key', prefix: m[1], keyName: m[2], value: '', secret: '' };
     if (value.includes('${')) return { ro: true, name, raw: value };
     return { name, mode: 'plain', value, secret: '' };
@@ -193,6 +200,7 @@
         return;
       }
       state.read = body;
+      reservedLists = body.reserved || { exact: [], prefixes: [] };
       state.token = { ...body.token };
       state.keys = [...(body.keys || [])];
       state.sourceTools = isPlain(body.source?.document?.mcpServers) ? body.source.document.mcpServers : {};
@@ -262,7 +270,7 @@
     function rowLine(row, kind) {
       if (row.ro) return h('li', { class: 'pt-ro' }, h('span', { class: 'mono', text: row.name }), ' ',
         h('span', { class: 'mono', text: typeof row.raw === 'string' ? row.raw : JSON.stringify(row.raw) }), ' ',
-        h('span', { class: 'hint', text: '(edit in the file)' }));
+        h('span', { class: 'hint', text: row.env ? "(from the agent's own environment)" : '(edit in the file)' }));
       if (row.mode === 'key') {
         const key = rowKeyName(row, kind);
         const set = state.keys.includes(key);
@@ -323,10 +331,7 @@
     // ---- tool form ---------------------------------------------------------------------
 
     function reservedProblem(name) {
-      const res = state.read?.reserved || {};
-      const lower = name.toLowerCase();
-      if ((res.exact || []).some((e) => e.toLowerCase() === lower)) return true;
-      return (res.prefixes || []).some((pre) => name.startsWith(pre));
+      return isReservedName(name);
     }
     function keyNameProblem(name) {
       if (!KEY_RE.test(name)) return 'A key name uses letters, digits and _, and does not start with a digit.';
@@ -366,7 +371,7 @@
         if (row.ro) {
           return h('div', { class: 'pt-row ro' },
             h('span', { class: 'mono', text: row.name + ' = ' + (typeof row.raw === 'string' ? row.raw : JSON.stringify(row.raw)) }),
-            h('span', { class: 'hint', text: 'edit in the file (kept as is)' }));
+            h('span', { class: 'hint', text: row.env ? "(from the agent's own environment)" : 'edit in the file (kept as is)' }));
         }
         const word = kind === 'env' ? 'Setting' : 'Header';
         const nameField = h('input', { type: 'text', value: row.name, autocomplete: 'off', 'aria-label': word + ' name', placeholder: 'Name' });
@@ -414,7 +419,7 @@
         h('div', {}, h('span', { class: 'hint', text: 'Headers' }), hdrHost, headerNote));
       const syncKind = () => { commandBox.hidden = f.kind !== 'command'; httpBox.hidden = f.kind !== 'http'; headerNote.hidden = !(f.kind === 'http' && f.hdrRows.length > 0); };
       kindSel.addEventListener('change', () => {
-        const hasRo = !!p && (p.envRows.some((x) => x.ro) || p.hdrRows.some((x) => x.ro));
+        const hasRo = !!p && (p.envRows.some((x) => x.ro && !x.env) || p.hdrRows.some((x) => x.ro && !x.env));
         if (p && hasRo && kindSel.value !== p.kind) {
           kindSel.value = f.kind;
           showErr("Can't change the kind: this tool has a setting or header the form can't show. Edit in the file.");
