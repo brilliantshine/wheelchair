@@ -322,6 +322,15 @@ Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
+### Round 2 — 2026-11-19
+
+**Lanes:** pending; cross-family: yes.
+
+**Changed since Round 1:** Terms (same machine via `resolveMachine`, reachable = not archived and not frozen, peers include threads with no live lead); §1 `lead: null`, `stage` values; §2 refusal order with frozen, locking split across two locks; §3 press-time checks, Needs you, retract text; §4 rules rewritten (reply only to `asks`, waiting at approval, agreements for both leads incl. during a build, two-way links, passing questions on, cards.md/cards-lead.md updates); Validation list; Decisions 14-16; two Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
