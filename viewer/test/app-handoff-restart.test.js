@@ -67,6 +67,34 @@ test('import restart saves context before launch, moves queues, and uses checkou
   assert.ok(registered.includes(`/tmp/${lead.name}/docs/plans/plan`));
 });
 
+test('import restart relabels owner tags in context without changing saved state', async (t) => {
+  const { setup, close, thread: makeThread } = require('./helpers/app.js');
+  const { Hub } = require('../app/hub.js');
+  const c = await setup(); t.after(() => close(c));
+  const made = await makeThread(c);
+  const hub = new Hub({ stateDir: c.state }); await hub.init();
+  t.after(() => { for (const key of ['asideTimer', 'pollTimer', 'queueRetryTimer', 'waitTimer', 'usageTimer', 'usageStartTimer']) clearTimeout(hub[key]); });
+  const thread = await hub.thread(made.id);
+  thread.sessions[0].live = false;
+  thread.sent = [{ source: 'collin', text: 'typed' }];
+  thread.cards = [{ id: 'needs', kind: 'needs', resolved_by: 'collin' }];
+  thread.pinned = { needs: { id: 'pinned', kind: 'needs', resolved_by: 'collin' }, other: 'card-id' };
+  thread.imported = { at: '2099-01-01', history: [{ who: 'collin', text: 'history' }] };
+  await hub.save(thread);
+  const lead = await hub.restartLead(made.id);
+  const state = JSON.parse(lead.queue[0].text.split('Thread state:\n')[1]);
+  assert.equal(state.recent_messages[0].source, 'user');
+  assert.equal(state.cards[0].resolved_by, 'user');
+  assert.equal(state.pinned.needs.resolved_by, 'user');
+  assert.equal(state.pinned.other, 'card-id');
+  assert.equal(state.import.history[0].who, 'user');
+  const saved = await hub.thread(made.id);
+  assert.equal(saved.sent[0].source, 'collin');
+  assert.equal(saved.cards[0].resolved_by, 'collin');
+  assert.equal(saved.pinned.needs.resolved_by, 'collin');
+  assert.equal(saved.imported.history[0].who, 'collin');
+});
+
 test('surviving orphan refuses restart without losing its queue', async (t) => {
   const { setup, close, thread: makeThread } = require('./helpers/app.js');
   const { Hub } = require('../app/hub.js');

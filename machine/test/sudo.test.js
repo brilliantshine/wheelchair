@@ -88,7 +88,7 @@ test('sudo registration, delivery, recovery and cancel preserve outcomes', async
     assert.deepEqual((await cancel()).body, { state: 'declined' }); assert.equal(cancelCalls, 1);
     assert.equal((await api(`/v1/sudo/${'b'.repeat(32)}/cancel`, {}, hubHeader)).status, 404);
     await close(helper);
-    assert.deepEqual(await post(), { status: 503, body: { error: `sudo helper not installed on ${os.hostname()}; Collin installs it once with: sudo ${path.resolve(__dirname, '../..')}/sudo-helper/install.sh` } });
+    assert.deepEqual(await post(), { status: 503, body: { error: `sudo helper not installed on ${os.hostname()}; the user installs it once with: sudo ${path.resolve(__dirname, '../..')}/sudo-helper/install.sh` } });
     for (const text of [...await files(stateDir), ...logs, JSON.stringify(calls), JSON.stringify(responses)]) assert.equal(text.includes(password), false);
   } finally { if (service?.server.listening) await close(service.server); if (helper.listening) await close(helper); await close(hub); }
 });
