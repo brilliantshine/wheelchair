@@ -56,6 +56,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 24 | An attempt's outcome is decided on the merged lines of all its verifiers after rare judgment | Avoids one verifier passing while another fails | review-round-3 |
 | 25 | The always-fixed list governs what agents may accept without asking; it does not remove Collin's existing choices on a gap that survives two fixes | Collin owns the decision; IDEA.md only says the bar does not class these as rare | review-round-3 |
 | 26 | Add "check once built": a review finding that only the built code can settle is noted for verification instead of reworking the plan | Collin asked for it in chat after seeing review loop on guesses about unwritten code | idea-change |
+| 27 | Simplified: no `RISK:` line. Verifiers report every problem as a `GAP:`, prefixing `Rare path:` when they think so; the sub-lead (builds) or the lead (its own verifiers) is the one judge | Collin picked "Simplify" after three unclean rounds; supersedes decisions 9 (verifier part), 14 and 19 | user |
 
 ## Spec
 
@@ -113,10 +114,10 @@ One short section, the single source of the bar:
 ### S4. `protocol/app/verifier.md`
 
 - Accepted Risks items are out of scope, like Deferred.
-- New line form after GAP lines: `RISK: <spec item> — <rare path> — <evidence>`.
-  A report whose only problems are RISK lines is `VERDICT: PASS` followed by its RISK
-  lines. RISK lines never appear in steps-only reports.
-- Anything on the "always fixed" list is a GAP even if rare.
+- Report formats unchanged: every problem is a `GAP:` line and any GAP makes the verdict
+  `FAIL`. A gap the verifier thinks is a rare path starts its description with
+  `Rare path:` (`GAP: <spec item> — Rare path: <what> — <evidence>`). Never on the
+  always-fixed list. Steps-only reports are unchanged.
 
 ### S5. `protocol/app/lead.md`
 
@@ -134,11 +135,11 @@ One short section, the single source of the bar:
 - Brief reviewers and verifiers with the Accepted Risks table (already true for
   reviewers; add for the sub-lead's verifier brief via S6).
 - Small-fix, after-done and repair verifiers: a `VERDICT: BLOCKED` report is handled as
-  today (fix the setup, start a fresh verifier) and is never judged here. For a PASS or FAIL
-  report, before acting on the verdict, the lead judges every RISK and GAP line by `realism.md`. A RISK judged normal use or on the always-fixed
-  list is a failed check; a GAP judged a rare path is not (with a one-line reason in the
-  lead's reply). If no failing lines remain, the check passed. Rare lines are not acted on
-  and no plan records them. A rare-only check never counts toward a retry, the repair
+  today (fix the setup, start a fresh verifier) and is never judged here. For a FAIL
+  report, before acting on it, the lead judges every GAP line by `realism.md`, whether or
+  not it starts `Rare path:`. A GAP judged a rare path is dropped (one-line reason in the
+  lead's reply); if no GAP remains, the check passed. Dropped gaps are not acted on and no
+  plan records them. A rare-only check never counts toward a retry, the repair
   budget or a question to Collin. The lead may mention a
   notable one in the done card `note`.
 - Pulled-back items follow S1: never accepted as rare. A pull-back pending during a review
@@ -151,11 +152,10 @@ One short section, the single source of the bar:
 
 - Verifier briefs include the plan's Accepted Risks table.
 - After every verifier of an attempt has reported (BLOCKED handled as today first), the
-  sub-lead merges all verifiers' RISK and GAP lines into one list and judges each by
-  `realism.md`. The attempt's outcome is decided on that merged list, not per verifier. A RISK
-  judged normal use or on the always-fixed list becomes a GAP (the attempt is a FAIL).
-  RISK lines judged rare, and any GAP the sub-lead judges a rare path by
-  `realism.md` (with a one-line reason), are written to PLAN.md Accepted Risks with round
+  sub-lead merges all verifiers' GAP lines into one list (duplicates merged as today) and
+  judges each by `realism.md`, whether or not it starts `Rare path:`. The attempt's outcome
+  is decided on that merged list, not per verifier. Each GAP the sub-lead judges a rare
+  path (with a one-line reason) is written to PLAN.md Accepted Risks with round
   `verification-N`, committed, and do not go to remediation or count toward the two-attempt
   rule. If no gap remains in the merged list, the attempt counts as PASS (step 4). When the sub-lead
   cannot tell, it asks the lead with a `message` (`asks: true`).
@@ -275,6 +275,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | blocking | Lead verifier BLOCKED report could read as a pass | downgraded to minor | lead.md's BLOCKED rule is explicit and unchanged; clarified anyway, S5, decision 23 |
 | mechanics | major | Multi-verifier attempt stuck when one verifier's gaps are all rare | upheld | S6; decision 24 |
 | mechanics | blocking | Collin could push a fix with a surviving always-fixed gap | declined | Collin owns that choice; the bar limits agents, not him (IDEA.md Not doing); decision 25 |
+
+### Round 4 — 2026-11-19
+
+**Lanes:** pending.
+
+**Changed since Round 3:** budget reset by Collin's decisions 26 and 27. Verifier `RISK:` lines removed; rare problems are `GAP:` lines prefixed `Rare path:`, judged by one reader (S4, S5, S6, decision 27). New "check once built" handling (S8, IDEA.md, decision 26). Round 3 fixes: lead's 4a "accept as rare" dropped (decision 22), BLOCKED untouched (23), merged multi-verifier outcome (24), Collin keeps his surviving-gap choices (25).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
