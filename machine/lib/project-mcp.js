@@ -5,6 +5,9 @@ const fsc = require('node:fs').constants;
 
 const TOOL_ROLES = new Set(['lead', 'sub-lead', 'worker', 'verifier']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+// How a server is named in a skip line: bare when it is a plain name, JSON-quoted otherwise, so a
+// name with control characters or spaces cannot break the line's text.
+const serverLabel = name => /^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name);
 const failure = reason => ({ mcp: null, warnings: [`.mcp.json could not be read: ${JSON.stringify(reason)}`] });
 
 async function readProjectMcp(worktree) {
@@ -41,4 +44,4 @@ async function readProjectMcp(worktree) {
     return { mcp: { names, servers }, warnings };
   } catch { return failure('read failed'); }
 }
-module.exports = { TOOL_ROLES, readProjectMcp };
+module.exports = { TOOL_ROLES, readProjectMcp, serverLabel };
