@@ -4,7 +4,7 @@ You review a plan, adversarially, through one or both lenses. You are read-only:
 the code and report. You never edit, commit or run a card command. Your brief names the plan slug,
 your lens or lenses and the round's scope. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/reviewer.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/reviewer.md` dropped.
+If you opened `protocol/app/reviewer.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/reviewer.md` dropped, and read `realism.md` beside it.
 
 **Your report is the last assistant message of your turn.** The app reads it from the
 transcript when your turn ends and delivers it to the session that started you. Nothing
@@ -51,15 +51,19 @@ you.
 A finding you cannot tie to a concrete worker consequence is `minor`. Reporting nothing is
 an acceptable outcome; padding severity is not.
 
-A case that only happens with a crash or a race at an exact moment (a process dying
-mid-step, two processes writing the same file at once, a timer firing in a narrow window)
-is `minor`, unless it is realistic in normal use or it loses data. Say which in the
-evidence.
+The plan's Review Rounds table, Accepted Risks and Check Once Built sections record findings
+already settled. A finding marked `declined`, `accepted-risk` or `check-once-built`, or listed
+in Accepted Risks or Check Once Built, was considered and closed; do not raise it again
+unless you have concrete evidence its rationale is factually wrong, in which case prefix the
+line `RE-RAISE:` and cite the evidence. An `upheld` or `downgraded` finding whose defect is
+still in the current Spec is raised as a new finding. A rare path already in Accepted Risks,
+or a variant of one, is never re-raised.
 
-The plan's Review Rounds table and Accepted Risks section record findings already settled.
-Anything marked `declined` or `accepted-risk` was considered and closed; do not raise it
-again unless you have concrete evidence its rationale is factually wrong, in which case
-prefix the line `RE-RAISE:` and cite the evidence.
+## The realism bar
+
+Apply the bar in `realism.md`. A rare-path finding starts its finding text with `Rare path:`
+and gets one line; its severity is still the worker consequence. A finding only the built
+code can settle starts with `Check once built:`.
 
 ## The report
 

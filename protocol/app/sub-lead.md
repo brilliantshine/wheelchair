@@ -6,7 +6,7 @@ bring back, integrate it, have it verified, and report to the lead. You talk onl
 lead, with `message` cards; you never post cards meant for Collin except the `progress`
 line. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/sub-lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/sub-lead.md` dropped, and read `cards.md` beside it.
+If you opened `protocol/app/sub-lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/sub-lead.md` dropped, and read `cards.md` and `realism.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
@@ -229,7 +229,8 @@ When every task is done and the full validation passes:
    start's output has a `note` saying its provider was not honoured, start no second verifier.
    If the second start's output has such a note (it landed on the first verifier's provider),
    stop the second verifier at once.
-   In a lighter mode its brief also names the mode and includes the Deferred table.
+   In a lighter mode its brief also names the mode and includes the Deferred table. Every
+   verifier brief includes the plan's Accepted Risks and Check Once Built tables.
    Its brief gives it the PLAN.md and COMPLETION.md paths (its role rules are already in its
    starting instructions, so the brief never tells it to read its role file), and says nothing
    of this conversation. Its report arrives as a `result`; stop it
@@ -237,14 +238,23 @@ When every task is done and the full validation passes:
    `pass: N`, `phase: checking` and the machines used during the build.
    A verifier that reports `VERDICT: BLOCKED` hit a problem with its setup, not a gap: fix
    it or raise it to the lead, then start a fresh verifier. It never starts remediation.
-4. **PASS**: once every verifier of the attempt passes, post `phase: clean`, then send the
-   lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md, `commit` the
+   Once every verifier has reported, merge all their GAP lines into one list (duplicates
+   merged) and judge each by `realism.md`, whether or not it starts `Rare path:`. Write each
+   rare path to PLAN.md Accepted Risks with round `verification-N` and a one-line reason,
+   and commit; that PLAN.md-only record commit needs no re-verification. The attempt's
+   outcome is decided on the merged list after that; rare gaps never go to remediation or
+   count toward the two-attempt rule. When you cannot tell,
+   `message` the lead with `asks: true` and decide the attempt's outcome after the answer.
+4. **PASS**: once the merged list is empty after rare-path judgment, post `phase: clean`,
+   then send the lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md,
+   `commit` the
    commit verified).
-4a. In a lighter mode, after all verifiers report a failure and before remediation, merge
-   duplicates and send the lead one `message` with `asks: true` listing every gap, each
+4a. In a lighter mode, when the merged list is non-empty after rare-path judgment and before
+   remediation, send the lead one `message` with `asks: true` listing every gap, each
    marked `hardening` or `must-fix`, any surviving two fix attempts, and the evidence.
    Apply the lead's per-gap defer/fix answers: never defer a failing Spec validation
-   command or a pulled-back item. Save deferred gaps in PLAN.md Deferred with source
+   command, a pulled-back item or any gap on the always-fixed list in `realism.md`; those
+   are `must-fix`. Save deferred gaps in PLAN.md Deferred with source
    `verification`, commit PLAN.md, then message the lead the commit and rows saved.
    If gaps remain, run step 5 only on those; count and list only those gaps. Deferred gaps
    never count toward the two-attempt rule.
@@ -261,8 +271,9 @@ When every task is done and the full validation passes:
    A surviving gap takes precedence: save other deferred hardening first, then stop and
    message the lead as in step 6. After Collin answers, act on his answer for that gap;
    other must-fix gaps go through step 5. Nothing else proceeds while he decides.
-5. **FAIL**: post `phase: fixing` with `found` equal to the distinct gaps in the attempt's
-   reports and `fixed: 0`; re-post as `fixed` rises with each accepted remediation task.
+5. **FAIL**: post `phase: fixing` with `found` equal to the distinct gaps that go to
+   remediation (never rare gaps) and `fixed: 0`; re-post as `fixed` rises with each
+   accepted remediation task.
    With two verifiers, merge duplicate gaps before counting them. Write
    `docs/plans/<slug>/REMEDIATION-N.md` (N is the verification attempt):
    the gap list verbatim, then one task per gap in the brief format. Route to the same
@@ -276,6 +287,8 @@ When every task is done and the full validation passes:
    defect.** Do not try a third. Send the lead a `message` naming the gap and its
    evidence; the lead brings it to Collin. Leave the line on `fixing`; the lead sets
    `choice_waiting` for the question. Stop your work and wait.
+
+The `result` summary names how many rare paths were accepted.
 
 You do not write `done`; the lead does, after your `result`. A `result` you send marks the
 build finished, and the worktree goes back to the lead.
