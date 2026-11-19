@@ -45,6 +45,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | Reviewer decks are titled "Plan review", verifier decks "Checks"; other decks take their newest agent's title | Agent titles vary per start; the proposal's example titles are role-based | defaulted |
 | 11 | Verification attempts numbered from the highest verifier round in session list | Durable across sub-lead crashes and the all-deferred re-check, which has no remediation file | review-round-2 |
 | 10 | Verifier deck title uses the newest verifier's title (supersedes the verifier half of #8) | Matches the proposal's "Checked parts 1–4" example | review-round-1 |
+| 12 | Deck titles end ", last round clean" from round H's progress line, not "then approved"/"passed" (supersedes the suffix rules in Spec §3) | Approval tracking kept breaking in review; the progress line is certain | user |
 | 9 | Popover shows the latest 5 rounds (or agents) before "Show all" | Proposal says "the latest few" | defaulted |
 
 ## Spec
@@ -71,10 +72,8 @@ Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> 
 - Among one parent's children, finished nodes with the same `role` form a deck when there are 2 or more. A single finished node stays a normal box. Live (working, waiting, idle) nodes are never in a deck. "Finished" is the existing page definition.
 - The deck replaces those boxes, placed at the position of its newest member in the existing creation order. The deck is a parent in its own right: the children of all its members are merged into one child list under the deck (sorted by creation), and grouping under it uses the deck as their parent. So the verifiers of two decked sub-leads can share one deck. This is the meaning of "same parent" for agents under a deck.
 - Deck card: role, count (`×40`), one-line title, and "finished <relative time>" from the newest member's `ended_at` (falling back to its last activity time when absent). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
-- Title: reviewer → "Plan review · N rounds" plus ", then approved" when *approved* (below); verifier → "<newest member's title> · N rounds" plus ", passed" (e.g. "Checked parts 1–4 · 3 rounds"; "Checks" when it has no title) when *passed*.
-  - *approved*: the thread has a review progress card for H with phase `clean`, the thread's current approval card (the newest `approval` card not marked `replaced`) posted after it and not retracted, and no review progress card for a higher pass. A later round starting (its `checking` card) or retracting that approval clears it. While a retracted approval is being discussed and no fresh one is posted yet, the suffix is absent; that is intended.
-  - *passed*: the thread has a verify progress card for H with phase `clean`, and no verify progress card for a higher pass.
-  - The API exposes what the page needs for this: `rounds.review[N].approved: true` and `rounds.verify[N].passed: true` on the qualifying entry only. N (the count shown) = number of distinct `round` values among members; H = the highest of them. The suffix reads the entry for H. Members with no `round` are not counted in N; if no member has a round, reviewer/verifier decks use the other-deck title. Other decks: the newest member's title (role when it has none).
+- Title: reviewer → "Plan review · N rounds"; verifier → "<newest member's title> · N rounds" (e.g. "Checked parts 1–4 · 3 rounds"; "Checks" when it has no title). Either gets the suffix ", last round clean" when the `rounds` entry for H (same stage) has `clean: true`. N (the count shown) = number of distinct `round` values among members; H = the highest of them. Members with no `round` are not counted in N; if no member has a round, reviewer/verifier decks use the other-deck title. Other decks: the newest member's title (role when it has none).
+  - No approval tracking: the suffix reports only what round H's progress line says.
 - Hide finished agents ON: behaviour unchanged (decks never shown; a selected finished agent and needed ancestors still shown as boxes).
 
 ### 4. Round squares
@@ -112,7 +111,7 @@ Changing Hide finished agents ON; decking live agents; closed asides; changing h
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | D1 | Full keyboard handling in the deck popover: arrow keys between rows, focus moved into the popover and returned to the deck on close | Mouse/tap, Enter/Space to open and Escape to close already work | planning | Follow the proposal's popover; check with Playwright keyboard tests on both browsers |
-| D3 | Threads mid-build when this change is installed: verification attempts may be numbered from 1 again after older unnumbered attempts, so early squares and "passed" can be wrong for that one build | Only affects builds that straddle the update; new threads number correctly | review-round-3 | Seed the next attempt from the highest verify progress `pass` as well as verifier rounds |
+| D3 | Threads mid-build when this change is installed: verification attempts may be numbered from 1 again after older unnumbered attempts, so early squares and "last round clean" can be wrong for that one build | Only affects builds that straddle the update; new threads number correctly | review-round-3 | Seed the next attempt from the highest verify progress `pass` as well as verifier rounds |
 | D2 | Deck squares for agents started before this change (backfilling round numbers from old cards and plans) | New threads get rounds from now on; old ones still deck, just without squares | planning | Membership can't be recovered reliably from timestamps (MAP.md); would need a best-effort match against progress `checking` cards |
 
 ## Accepted Risks
@@ -123,7 +122,6 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| After a Spec change during "Talk about it" (no retract), a reviewer deck still reads "then approved" until the next round's checking card | The lead starts the next round right away, so the window is minutes; the hub cannot read PLAN.md status | 3 |
 | After a lead restart mid-round, a stale report's single finding can be shown as the round's one objection | Rare (restart mid-round with exactly one leftover finding); only the text is wrong, the count and color are right | 2 |
 
 ## Review Rounds
@@ -199,6 +197,20 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Invalid `--round` vs dedupe order unclear | upheld | §1: validation runs before dedupe |
 | mechanics | minor | Parser skips `RE-RAISE:` findings | upheld | §2 counts and parses them |
 | mechanics | minor | Phone path highlight not mapped to decks | upheld | Edge cases extended to phone classes |
+
+### Round 4 — 2026-11-18
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 3:**
+- §3: title suffix is now ", last round clean" from round H's progress entry (Decision 12); all approval tracking and the API `approved`/`passed` flags removed; the related Accepted Risk removed.
+- §1: invalid `--round` refused before attempt dedupe.
+- §2: `RE-RAISE: SEVERITY:` lines counted and parsed.
+- Edge cases: phone path highlight maps members to decks.
+- Deferred D3 added (builds straddling the update).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
