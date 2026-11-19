@@ -82,6 +82,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 45 | Kimi light pin is kimi-code/kimi-for-coding; the highspeed model is refused by the subscription (403). Supersedes the light pin in 16 and 19 | A live turn on `kimi-code/kimi-for-coding-highspeed` ended with `provider.auth_error` 403; `kimi-for-coding` is the account's own `default_model` | verification |
 | 46 | Kimi has no effort control: KIMI_MODEL_THINKING_EFFORT applies only to env-defined models; tiers differ by model only. Supersedes 15 and 18 | The live check found the variable has no effect on an account login; the only other route is `[thinking]` in `config.toml`, which Decision 35 forbids editing | verification |
 | 47 | Kimi limit-hits use the hub's shared limit-hit handling unchanged (cooldown recorded, session resumes later); only a failed turn tells the starter. The Spec flowchart's "Rate limit, or turn failed: starter is told" was shorthand and is reworded | Verification attempt 2 read the flowchart as requiring a starter notice; changing shared handling would change Claude, Codex and Antigravity, which IDEA.md rules out | verification |
+| 48 | A Kimi permission prompt counts only when the input box (`│ >`) is gone and the approval title and choice lines sit together at the bottom of the pane; tested with output that merely mentions the words (no card) and with the real panel (card) | Permission-prompt detection survived two fix attempts (verification attempt 3: ordinary output mentioning the words raised a card every poll); Kimi's approval panel replaces the input box | user |
 
 ## Spec
 
@@ -953,6 +954,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Collin chose to fix permission-prompt detection once more (Decision 48); dispatched as A1 (gpt). Version-floor question still with him.
 
 - 2026-11-18 — Lead: Collin is being asked about the permission-prompt gap first, the version-floor gap after. Meanwhile remediation 3 gap 2 dispatched as P1 (gpt, `wc-01b8cb1bf051-worker-18`): a hub Stop that confirms a fatal kill keeps `end_reason` and sends the same notice as `pollDead`.
 
