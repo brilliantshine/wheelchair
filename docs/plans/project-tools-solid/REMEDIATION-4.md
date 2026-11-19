@@ -119,3 +119,47 @@ node --test viewer/test/*.test.js
 - Paste the full summary output (pass/fail counts) of every validation command into your report.
 - If the same gate fails twice, stop and report rather than iterating.
 - Close your report with: "List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none."
+
+### R8, attempt 2 (replaces the R8 brief above)
+
+Gap from verification attempt 4 (verbatim): "§4 Antigravity cleanup — A live session can keep an ended session's private tool file past the 60-second grace period. In isolated tmux, `wc-name.part-worker` ended and `wc-name_part-worker` started. Both appeared under the same tmux name, and the sweep kept the ended session's file. [machine/service.js:403]"
+
+Background: tmux rewrites `.` and `:` in session names to `_`, so two machine names can share one tmux name (never at once: tmux refuses a second session with the same name). The current code (base of your branch) keeps a dir when its machine name OR its tmux spelling is live, which protects both dirs.
+
+Why not "newest mtime": a start that tmux refuses still writes its dir with a fresh mtime (`startIn` writes the tool files before `tmux new-session`, and `this.sessions[name]` is set only after tmux succeeds, machine/service.js ~743), so the newest dir is not always the live one. Use the machine's session records instead.
+
+Ownership boundary: `machine/service.js` (only `sweepAgyTools`), `machine/test/project-tools-service.test.js`, your report `docs/plans/project-tools-solid/reports/R8.md`. Touch nothing else.
+
+## Exactly what to build
+Keep `sweepAgyTools` fully synchronous (no `await`; an existing test checks this), the same 60 s grace rule, the same removal path built only from directory entries, the `startingNames` check unchanged (machine spelling), and the early return when `liveTmux()` is null.
+1. Decode every entry as now. For each valid `wc-` name compute `tmuxName = name.replace(/[.:]/g, '_')`.
+2. Group entries by `tmuxName`. For each group whose `tmuxName` is in `live`, choose exactly ONE protected entry:
+   - among the group's entries whose decoded name has a record in `this.sessions` (any status other than `'stopped'`), the one whose record's `created_at` is newest (compare `Date.parse`); on a tie, the entry whose name equals `tmuxName` exactly, else the lexicographically smallest name;
+   - if no entry in the group has such a record (for example the record was lost and the session re-adopted from tmux under the tmux spelling), the entry whose name equals `tmuxName` exactly, if there is one; otherwise the entry with the newest mtime (tie: lexicographically smallest name).
+3. Every other entry follows the normal rule: kept if its name is in `starting`, or if its mtime is younger than 60 s (read with `lstatSync` as now; an lstat failure is logged and the entry left alone this round); otherwise removed. Invalid or non-`wc-` names behave as before.
+4. Replace the R5 comment with one saying why (tmux rewrites `.` and `:` to `_`, so several dirs can map to one live tmux name; the machine's own record says which session is running; a refused start has no record).
+
+## Tests (machine/test/project-tools-service.test.js), one `test(...)` per item, with `service.liveTmux` stubbed, `service.sessions` set directly, and dir mtimes set via `fs.utimesSync` to 10 minutes ago unless stated
+1. Live tmux `wc-name_part-worker`; dirs for `wc-name.part-worker` and `wc-name_part-worker`; records: `wc-name.part-worker` status `'stopped'`, `wc-name_part-worker` status `'ready'` → dot dir removed, underscore dir kept.
+2. Reverse: records `wc-name.part-worker` `'ready'`, `wc-name_part-worker` `'stopped'` → underscore removed, dot kept.
+3. Refused start: record only for `wc-name_part-worker` (`'ready'`, dir 10 min old); a `wc-name.part-worker` dir with mtime now and NO record → underscore dir kept; the dot dir kept only because it is under 60 s; after setting the dot dir's mtime to 10 min ago and sweeping again, the dot dir is removed and the underscore dir still kept.
+4. Both records non-stopped (an ended session the service did not notice): the newer `created_at` wins, the other is removed.
+5. No records at all: the exact-spelling dir is kept, the other removed; a lone dot-named dir with no record whose tmux spelling is live is kept (the existing R5 assertion stays true).
+6. A dir not live in any spelling, old mtime, is removed; one younger than 60 s is kept; `liveTmux` returning null removes nothing.
+
+## Validation
+```
+node --test machine/test/project-tools-service.test.js
+bash machine/test/run.sh
+```
+Your report must paste both commands' summary counts, and its Choices section must list every choice you made, including how you structured the code and any test you merged or changed.
+
+## Rules for this task
+- Plan slug `project-tools-solid`. The lead's session is `wc-b9ca1682b0fa-lead`; send it a `message` card if something this brief does not settle blocks you.
+- Never run `./install.sh` and never start a viewer server by hand (tests start their own isolated servers). Never run `sudo`.
+- Never delete files with `rm` (or any other delete) outside your own test temp folders.
+- Your own `wc.js` and `card.js` calls are always allowed.
+- Commit with `node /home/collin/projects/personal/wheelchair/viewer/app/wc.js git commit -m "<msg>" --paths <path>`, one path per call.
+- Paste the full summary output (pass/fail counts) of every validation command into your report.
+- If the same gate fails twice, stop and report rather than iterating.
+- Close your report with: "List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none."
