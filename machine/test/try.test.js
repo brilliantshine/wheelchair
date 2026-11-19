@@ -39,3 +39,19 @@ test('git runner uses a deadline and reports killed', async () => {
   const runner = new TryService({ stateDir: root, root, projects: null, gitExecutable: git, killGrace: 50 });
   const result = await runner.runGit(root, [], 80); assert.equal(result.code, 'killed');
 });
+test('outcome table honors only git removal warning lines', () => {
+  const from = { branch: 'refs/heads/main', sha: 'a' }, to = { branch: null, sha: 'b' };
+  const result = (code, stderr = '') => ({ code, stderr: Buffer.from(stderr) });
+  assert.equal(service.judge(from, to, to, [], result(0)), 'success');
+  assert.equal(service.judge(from, to, to, [], result(1, 'error: hook')), 'warning');
+  assert.equal(service.judge(from, to, to, [], result(0, "warning: unable to unlink 'file'")), 'interrupted');
+  assert.equal(service.judge(from, to, to, [], result(0, "subject warning: unable to unlink 'file'")), 'success');
+  assert.equal(service.judge(from, to, from, [], result('killed')), 'nothing-moved');
+});
+test('protected filter excludes exact untracked paths only', async () => {
+  const { makeTemp } = require('../../test-support/run-dir'); const root = await makeTemp('try-protected-');
+  const instance = new TryService({ stateDir: root, root, projects: null });
+  await instance.writeProtected(root, Buffer.from('ignored/a\0'));
+  const entries = [{ path: 'ignored/a', untracked: true }, { path: 'ignored/a', untracked: false }, { path: 'ignored/b', untracked: true }];
+  assert.deepEqual(await instance.filtered(root, entries), entries.slice(1));
+});

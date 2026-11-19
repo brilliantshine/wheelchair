@@ -45,6 +45,41 @@ class TryService {
       child.on('close', value => { code = value; closed = true; finish(); });
     });
   }
+  async scan(folder) {
+    const result = await this.runGit(folder, ['--no-optional-locks', 'status', '--porcelain=v2', '-z', '--no-renames', '--untracked-files=all', '--ignore-submodules=none'], this.scanTimeout);
+    if (result.code !== 0) throw new Error(result.code === 'killed' ? 'Git took too long to check your copy.' : (result.stderr.toString().trim().split('\n').pop() || 'Git could not check your copy.'));
+    const fields = result.stdout.toString('utf8').split('\0'); const entries = [];
+    for (let i = 0; i < fields.length; i++) {
+      const line = fields[i]; if (!line) continue;
+      const kind = line[0]; let file, submodule = false;
+      if (kind === '?' || kind === '!') file = line.slice(2);
+      else { const n = kind === '1' ? 8 : kind === '2' ? 9 : kind === 'u' ? 10 : 0; if (!n) continue;
+        let at = 0; for (let j = 0; j < n; j++) at = line.indexOf(' ', at) + 1;
+        file = line.slice(at); submodule = line.split(' ')[2]?.startsWith('S') || false;
+        if (kind === '2') i++;
+      }
+      entries.push({ path: file, untracked: kind === '?', submodule });
+    }
+    return entries;
+  }
+  async filtered(folder, entries) {
+    const protectedPaths = new Set((await fsp.readFile(this.protectedPath(folder)).catch(error => { if (error.code === 'ENOENT') return Buffer.alloc(0); throw error; })).toString().split('\0'));
+    return entries.filter(entry => !entry.untracked || !protectedPaths.has(entry.path));
+  }
+  head(folder) {
+    const sha = this.git(folder, ['rev-parse', '--verify', 'HEAD']); if (sha.status !== 0) return null;
+    const branch = this.git(folder, ['symbolic-ref', '-q', 'HEAD']); return { branch: branch.status === 0 ? branch.stdout.trim() : null, sha: sha.stdout.trim() };
+  }
+  sameHead(a, b) { return !!a && !!b && a.branch === b.branch && a.sha === b.sha; }
+  judge(from, to, head, entries, result) {
+    const target = this.sameHead(head, to), clean = entries && entries.length === 0;
+    if (target && /^warning: unable to (?:unlink|rmdir) '/m.test(result.stderr.toString())) return 'interrupted';
+    if (target && clean && result.code === 0) return 'success';
+    if (target && clean && result.code !== 0 && result.code !== 'killed') return 'warning';
+    if (target && entries && !clean && result.code === 0) return 'warning';
+    if (this.sameHead(head, from) && clean && result.code !== 0) return 'nothing-moved';
+    return 'interrupted';
+  }
   identity(folder) {
     const common = this.git(folder, ['rev-parse', '--git-common-dir']);
     if (common.status !== 0) return null;
