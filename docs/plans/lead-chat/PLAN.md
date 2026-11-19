@@ -51,6 +51,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | Supersedes 4: threads whose lead has ended are listed too, with `lead: null`; frozen (handed-off) threads are excluded | A dormant thread's branch can still overlap; a handed-off thread can't receive | review-round-1 |
 | 15 | Agreement rules apply to both leads; only messages with `asks: true` need a reply | One-sided agreements break IDEA; replies to every answer loop | review-round-1 |
 | 16 | Cross-thread writes take the second thread's lock only after the first is released | Avoids deadlock between two leads posting at once | review-round-1 |
+| 17 | Supersedes 16 for `reach`: Allow writes only the pressed thread; a link counts when either thread lists the other | One write can't leave a half-made link | review-round-2 |
+| 18 | Leads never wait on another lead; a late answer that changes the Spec retracts the approval and goes back to review | Waiting had no fallback when the peer never answers | review-round-2 |
 
 ## Spec
 
@@ -75,9 +77,10 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   is false).
 - **Peer thread** of thread T: a reachable thread other than T, on the same machine, in the
   same project, whose sessions include at least one `lead` (live or not).
-- **Linked thread** of T: a reachable thread on the same machine in another project whose id is
-  in T's `lead_links` array (set by an allowed `reach` card, section 3). Links are two-way:
-  Allow writes each thread's id into the other's `lead_links`.
+- **Linked thread** of T: a reachable thread U on the same machine in another project where
+  U's id is in T's `lead_links` **or** T's id is in U's `lead_links` (an Allow writes only the
+  pressed thread's `lead_links`, section 3; reading both sides makes the link two-way with
+  one write).
 - **Latest live lead** of a thread: `[...thread.sessions].reverse().find(s => s.role === 'lead' && s.live)`,
   the same rule user messages use (`viewer/app/threads.js:385`).
 
@@ -130,7 +133,9 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   `hub.withThread(sender)`. The cross-thread work is split so no thread lock is held while
   another is taken:
   1. Inside the sender's lock (in `cards.acceptCard`): run the refusal checks against a
-     fresh read of the target thread (`hub.thread(id)`), store the card in the sender's
+     fresh read of the target thread with `hub.state.thread(id)`, which never writes (not
+     `hub.thread(id)`, which may save a provider migration and so wait on the target's write
+     queue). Store the card in the sender's
      thread, and return the target thread id with the result. No queue write on the sender
      side.
   2. After `withThread(sender)` resolves (in `hub.js`): `hub.withThread(target, () =>
@@ -143,6 +148,10 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   `[wc:from <sender name>] [thread <sender thread id>: <sender thread title>] ` plus
   `[question <card id>] ` when `asks` is true, plus the text. It goes to the target's latest
   live lead, not necessarily the name in `to`.
+- The Agents screen's open-question finder (`questionFor` in `viewer/app/agents.js:44`)
+  ignores asking messages whose `to` is not a session of the same thread, so a question to
+  another thread's lead is never shown as outstanding.
+- Listing (section 1) also reads other threads only with non-writing reads.
 - The receiving turn is hidden by the existing `[wc:from` rule (`viewer/app/chat.js:127`);
   no chat change is needed. A test checks it in the receiving thread's view.
 
@@ -162,15 +171,14 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   styled like a question card. One answer only: a second press is refused
   `card is already answered`. It counts as an open card in "Needs you": add `reach` to the
   kinds in `addNeeds` (`viewer/app/views.js:141`).
-- **Allow press**, inside the pressed thread's lock: re-check the target is reachable and on
-  the same machine. If not, refuse the press (422, `that thread is archived` / `that thread
-  was handed off`) and leave the card open; the lead retracts it. If already linked, the press
-  succeeds without changing links. Otherwise add the target id to the pressed thread's
-  `lead_links`. In every success case mark the card answered and queue
-  `[card <id>] picked: allow` to the lead as other presses do. After the pressed thread's
-  lock is released (in `hub.js`), add the pressed thread's id to the target's `lead_links`
-  under `hub.withThread(target, ...)` + `updateThread`; if the target became unreachable in
-  between, skip it.
+- **Allow press**, inside the pressed thread's lock: re-check the target with
+  `hub.state.thread(id)`: it exists, is reachable and is on the same machine.
+  - If not: mark the card answered with no link, and queue
+    `[card <id>] allow failed: <reason>` to the lead (reason as in the post-time refusals).
+  - If already linked (either side): mark answered, change nothing, queue
+    `[card <id>] picked: allow`.
+  - Otherwise: add the target id to the pressed thread's `lead_links`, mark answered and queue
+    `[card <id>] picked: allow`. No write to the target thread.
 - **Don't allow press:** mark answered, queue `[card <id>] picked: don't allow`. Nothing else changes.
 - Retractable like a question card: add `reach` to the retract kinds and to the refusal text
   (`only a question, offer, approval, needs, sudo, deferred or reach card can be retracted`).
@@ -183,29 +191,39 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
 - **When to look:** run `wc.js session leads` (a) after the mapper's `result` arrives and
   you have read MAP.md, (b) right before posting the approval card, (c) whenever the user asks.
   For a small fix, once before making the edits. Show the user nothing unless something
-  overlaps.
+  overlaps; when something does, say so in one line in your reply.
 - **Overlap:** when a listed thread's title, idea or stage suggests it touches the same files
-  or behaviour, and it has a `lead`, message that lead once with `asks: true`: what you are
-  building and the areas you will touch, and what it is doing there. A listed thread with
-  `lead: null` cannot be messaged: tell your user in one line that it exists and may overlap.
+  or behaviour, and it has a `lead`, message that lead with `asks: true`: what you are
+  building, the areas you will touch, and what it is doing there. If that lead has already
+  asked you about this overlap, answer its question instead of sending your own. A listed
+  thread with `lead: null` cannot be messaged: tell your user in one line that it exists and
+  may overlap.
 - **Replies:** answer a cross-thread message only when it carries `[question <id>]`
-  (`asks: true`). Set `asks: true` on your own message only when you need an answer. A
-  message without a question is complete: read it and act on it; never send
+  (`asks: true`). Start the answer with `Re: ` and a few words of the question, so the asker
+  can tell which question it answers. Set `asks: true` on your own message only when you need
+  an answer. A message without a question is complete: read it and act on it; never send
   acknowledgements.
-- **Waiting at approval:** if you asked a peer at check (b), end your turn and post the
-  approval card when its answer arrives. If the user writes before it arrives, post the
-  approval card and say in one line that the other lead has not answered yet.
-- **Agreements, for both leads (asker and answerer):** an agreement that changes what your
-  user asked for, IDEA.md or the Spec goes to your user as a `question` card before you act
-  on it. Otherwise record it: in the PLAN.md Log when the worktree is yours; while a
-  sub-lead owns the worktree, send it to the sub-lead as a `message` if it affects the build
-  and add the Log line after the sub-lead's `result`; for a small fix, in your reply. Tell
-  your user in one line in your next reply either way.
+- **Never wait on another lead.** Asking another lead never holds up your own step: carry on
+  (at check (b), post the approval card as usual). An answer may arrive later:
+  - If it leads to an agreement that changes your Spec before Start building, retract the open
+    approval card, set `status: ready-for-review`, and put the change to your user as a
+    `question` card; then continue with review as for any Spec change.
+  - After Start building, handle it as below for "while a sub-lead owns the worktree".
+- **Agreements, for both leads (asker and answerer):**
+  - One that changes what your user asked for, IDEA.md or the Spec goes to your user as a
+    `question` card before you act on it. When your user answers, message the other lead with
+    the outcome (agreed, changed or rejected). A lead whose agreement waits on the other user's
+    OK does not act on it until that outcome message arrives.
+  - Otherwise record it: in the PLAN.md Log when the worktree is yours; before PLAN.md exists,
+    keep it and add the Log line when you create PLAN.md; while a sub-lead owns the worktree,
+    send it to the sub-lead as a `message` if it affects the build and add the Log line after
+    the sub-lead's `result`; for a small fix, in your reply.
+  - Tell your user in one line in your next reply either way.
 - **Another project:** only when the user names a thread or project. Find it with
-  `--all-projects`, post a `reach` card, and message only after `picked: allow`. On
-  `don't allow`, drop it and say so in a line. A link works both ways: when you receive a
-  message from a lead in another project, the link already exists and you reply to it
-  without a `reach` card.
+  `--all-projects`. If its entry shows `linked: true`, message its lead directly. Otherwise
+  post a `reach` card and message only after `picked: allow`. On `don't allow` or
+  `allow failed: <reason>`, drop it and say so in a line. A link works both ways: when you
+  receive a message from a lead in another project, reply without a `reach` card.
 - **Passing a question on:** a question from another thread's lead that only your user can
   answer becomes your own `question` card with no `passes_on` (the hub accepts `passes_on`
   only for your own thread's questions); send the answer back as a `message`.
@@ -220,7 +238,7 @@ Add `reach` to the kinds table (shown, lead, unpinned) and `wc.js session leads`
 commands list. In the markers table, add the `[thread ...]` part of `[wc:from ...]`.
 
 **`protocol/app/cards-lead.md`**: add a `reach` section with its fields, refusals, buttons
-and press forms (`[card <id>] picked: allow`, `[card <id>] picked: don't allow`), and add
+and press forms (`[card <id>] picked: allow`, `[card <id>] picked: don't allow`, `[card <id>] allow failed: <reason>`), and add
 `reach` to the retract kinds and refusal text.
 
 ### Non-goals
@@ -246,11 +264,13 @@ New tests in `viewer/test/` must cover:
 - Cross-thread `message`: each refusal in order, with nothing stored; success lands on the
   target's latest live lead (after a lead restart) with the `[thread ...]` marker and
   `[question <id>]` when `asks`; a non-lead naming another thread's session still gets 404;
-  two leads sending to each other at the same moment both succeed (no deadlock); the
+  two leads sending to each other at the same moment both succeed (no deadlock), including
+  between two legacy threads with no `provider` field; a cross-thread question never shows as
+  outstanding on the Agents screen; the
   receiving thread's chat view hides the delivered message and the reply.
-- `reach`: each post-time refusal; Allow links both threads both ways and the other lead
-  can then message back; Allow on a target archived after posting is refused and the card
-  stays open; Allow when already linked succeeds without change; Don't allow links
+- `reach`: each post-time refusal; Allow writes only the pressed thread and the other lead
+  can then message back; Allow on a target archived after posting answers the card, links
+  nothing and queues `allow failed: that thread is archived`; Allow when already linked succeeds without change; Don't allow links
   nothing; a second press refused; retract works; an open `reach` card appears in Needs you.
 - A browser test shows a `reach` card with its two buttons and its answered state.
 
@@ -324,12 +344,24 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 2 — 2026-11-19
 
-**Lanes:** pending; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:** Terms (same machine via `resolveMachine`, reachable = not archived and not frozen, peers include threads with no live lead); §1 `lead: null`, `stage` values; §2 refusal order with frozen, locking split across two locks; §3 press-time checks, Needs you, retract text; §4 rules rewritten (reply only to `asks`, waiting at approval, agreements for both leads incl. during a build, two-way links, passing questions on, cards.md/cards-lead.md updates); Validation list; Decisions 14-16; two Accepted Risks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | No rule to report an agreement's outcome back to the other lead | upheld | §4 Agreements: message the outcome; the other waits for it |
+| intent | minor | Crossed questions open two negotiations | upheld | §4 Overlap: answer its question instead of sending your own |
+| intent | minor | Waiting at approval says nothing to the user | upheld | Waiting removed (Decision 18); overlap told in one line |
+| mechanics | blocking | Allow can leave a one-way link | upheld | One write; link read from either side; Decision 17 |
+| mechanics | blocking | `hub.thread` read can write and deadlock | upheld | Use `hub.state.thread` |
+| mechanics | major | Approval wait has no fallback | upheld | Waiting removed; Decision 18 |
+| mechanics | major | Reply can't be matched to its question | upheld | Replies start `Re: <question words>` |
+| mechanics | major | Late answer while Start building is available | upheld | §4 Never wait: retract approval, back to review |
+| mechanics | major | Agreement before PLAN.md exists | upheld | Keep it and log when PLAN.md is created |
+| mechanics | major | Already-linked thread named again | upheld | `linked: true` → message directly |
+| mechanics | major | Refused Allow reaches no one | upheld | Press answers the card and queues `allow failed: <reason>` |
+| mechanics | major | Agents screen shows cross-thread question as outstanding | upheld | `questionFor` ignores cross-thread asks |
 
 ## Prior Work
 
