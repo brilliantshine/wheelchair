@@ -17,3 +17,5 @@ Verification attempt 8 at `9f4cc31`: `wc-01b8cb1bf051-verifier-15` (claude-opus-
 | S1 | 3 | claude (T2) | `viewer/pages/settings.js` caption, `viewer/test/app-settings.spec.js` |
 
 M1: bind on the joined text of the user prompt's text parts (starts with `[wc:role]`, has the `Session:` line). H1: only the open turn's own main-agent `turn.ended` closes it. S1: the caption names GPT, Antigravity and Kimi Code, "through a short first message".
+
+**Resolutions:** gap 1 fixed by M1, gap 2 by H1, gap 3 by S1.

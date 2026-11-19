@@ -963,6 +963,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: H1, `viewer/app/chat.js:243`: with no open turn, a `turn.ended` row is a no-op (scout-found). H1 accepted (band: scout): targeted 27/27 re-run by the sub-lead. Remediation 8 complete.
+
 - 2026-11-18 — S1 accepted (band: scout): caption text exactly as the brief; settings spec 66/66 re-run by the sub-lead. Remediation 8 gap 3 fixed.
 
 - 2026-11-18 — M1 accepted (band: scout): binding uses the joined text of the user prompt's text parts. Choice: M1 added `type: 'text'` to the shared `prompt()` fixture (`machine/test/kimi-turns.test.js:22`). The worker stopped at its guardrail on the pending-stop test, whose chat fixture (`:261`) lacked `type: 'text'` (real Kimi parts carry it, per `samples/wire.jsonl`); it failed 3/3 on the branch and passed on the base, so the sub-lead corrected that fixture. Machine 206/206. Remediation 8 gap 1 fixed.

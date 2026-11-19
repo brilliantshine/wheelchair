@@ -313,3 +313,24 @@ node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ### Remediation 7 — 2026-11-18
 
 Verification attempt 7 (`6b30111`): Claude verifier PASS; GPT verifier FAIL with 3 gaps (`REMEDIATION-7.md`). No code fix to the build: gap 1 (approval layouts beyond the tested ones) is an Accepted Risk by Collin's Decision 53; gap 2 (turn events carry `transcript_path`) is settled by the Spec's Events section; gap 3 (no live approval capture) is recorded as unverified, and the live sampler in `test-support/smoke/kimi-live.js:77` now calls the production `promptText`. Validation is unchanged from Remediation 6 apart from that script line (syntax check and `node --test test-support/test/*.test.js` 9/9).
+
+### Remediation 8 — 2026-11-18
+
+Verification attempt 8 (`9f4cc31`): Claude verifier PASS; GPT verifier FAIL with 3 new gaps (`REMEDIATION-8.md`).
+
+| Gap | Fix | Fixed at | Test |
+|-----|-----|----------|------|
+| 1. Binding checked each prompt text part separately | Binding uses the joined text of the user prompt's text parts (starts with `[wc:role]`, has the `Session:` line) | `machine/adapters/kimi.js:51-55,91-92` | `machine/test/kimi-turns.test.js:25-40` (quoted role message not bound; split role message bound); the chat fixture at `:261` now carries `type: 'text'` like real Kimi parts |
+| 2. A stray turn-0 end row cut off turn 1's report | Only the open turn's own main-agent `turn.ended` closes it | `viewer/app/chat.js:243` | `viewer/test/app-kimi-hub.test.js:40-56` |
+| 3. Settings prompt-preview caption omitted Kimi Code | Caption names GPT, Antigravity and Kimi Code, "through a short first message" | `viewer/pages/settings.js:653` | `viewer/test/app-settings.spec.js:222` |
+
+Validation on the merged branch at `1d6f6d4`:
+
+```
+bash machine/test/run.sh            # tests 206: first run 205 pass, 1 fail ("agent session forward retries then reports hub unavailable", load average 50; untouched by this build); re-run 206/206
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 191 passed, 1 failed — only "real wheelchair directory is byte-identical after suite"
+node --test viewer/test/*.test.js   # in two halves: 439/439 and 208/208
+npm --prefix viewer run test:browser   # 28 skipped, 774 passed (4.4m)
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```
