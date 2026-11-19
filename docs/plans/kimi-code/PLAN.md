@@ -963,6 +963,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 8: Claude PASS, GPT FAIL with 3 new gaps (REMEDIATION-8.md); M1 (gpt), H1 (gpt), S1 (claude) dispatched in parallel (disjoint files).
+
 - 2026-11-18 — Verification attempt 8 at `9f4cc31`: `wc-01b8cb1bf051-verifier-15` (claude) and `wc-01b8cb1bf051-verifier-16` (gpt).
 
 - 2026-11-18 — COMPLETION.md "Remediation 7" added. Verification attempt 8 next.
