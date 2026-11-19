@@ -60,6 +60,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 23 | Exit result recorded before judging; switches and scans run in a killable process group with deadlines; 30-second admission; Forget skips reconcile; Dismiss treats HEAD at a Try's target as success and never runs git on an identity mismatch; `last` outcome stored; protected list only in the side file | Round 7 findings | review-round-7 |
 | 24 | Try writes get their own lock, separate from agents' `inRepoQueue`; Status takes no lock; writes are acknowledged then finished in the background; switch process groups are tracked by `pgid` across restarts and terminated (SIGTERM, then SIGKILL) after their deadline; one outcome table; `pending` blocks Try and Back; Dismiss never reconciles or scans; a leftover `index.lock` is reported, never deleted | Round 8 findings | review-round-8 |
 | 25 | Rare broken switches (killed, service restarted mid-switch, half-switched, unexpected) are all shown as "interrupted" with files and his earlier branch, and he sorts them out at his computer then presses Done; Finish, process-group tracking across restarts and automatic re-judging are deferred (D3). Supersedes the parts of 22-24 about Finish, `pgid` and the full outcome table | Collin chose "Hand rare cases to me" | user |
+| 26 | Done, Try and Back refused while `index.lock` exists; git output reporting a failed removal counts as interrupted; Back judges and finalizes from one scan; Status checks a lock generation before showing an interruption; Done re-creates a missing return pin before keeping it | Round 9 findings | review-round-9 |
 
 ## Spec
 
@@ -80,8 +81,8 @@ Terms:
 - **The folder** is `thread.project` on `thread.machine` (`viewer/app/threads.js:20-25`).
 - **Identity**: the folder's real path plus the real path of `git rev-parse
   --git-common-dir`, stamped into the record at every first Try. Checked before
-  every write only while `active` or `pending` is set; a mismatch then is shown as
-  interrupted ("This folder is no longer the copy that was switched"), and only Dismiss is
+  every write only while `active` or `pending` is set; a mismatch then is shown with
+  Dismiss (3) ("This folder is no longer the copy that was switched"), and only Dismiss is
   allowed (it skips the identity check).
 - **HEAD identity** is `{branch: full refname or null if detached, sha}`. Comparisons
   compare both parts.
@@ -123,6 +124,9 @@ Terms:
   | source | clean | nonzero or killed | nothing moved (killed: "git took too long"; else git's message) |
   | anything else | | | **interrupted** |
 
+  Before the table: if git's output contains `unable to unlink` or a line starting
+  `error:`, the outcome is interrupted whatever the exit code (git can report a removal
+  it could not do and still exit 0).
   Interrupted (also: the scan failed, or the service finds `pending` set at start-up or
   on a later request, meaning it stopped mid-switch): `pending` is kept, with `files`
   from the scan when there was one. Wheelchair does not try to repair it (see Deferred
@@ -130,7 +134,11 @@ Terms:
   branch his copy was on before trying, and says: "Check your copy at your computer,
   then press Done." **Done** is Dismiss (4). If `<git-dir>/index.lock` exists, Status
   adds "Git left a lock file: <full path>. At your computer, check no git is running,
-  then delete it." It is never deleted automatically.
+  then delete it." It is never deleted automatically. The interrupted line also says
+  "Git may still be running in this folder" (the machine service unit uses
+  `KillMode=process`, `install.sh:401`, so a switch can outlive a service restart).
+  **Done is refused while `<git-dir>/index.lock` exists** ("Git may still be running in
+  this folder. Check at your computer."), as are Try and Switch back.
   While `pending` is set, Try and Switch back are refused; only Done (Dismiss) and
   Forget run.
 - **Switches** always run as `git -c submodule.recurse=false switch --no-guess
@@ -213,12 +221,16 @@ folder share it). Version checks happen under the lock before anything else.
    1. Resolve the return target now: a branch's current tip (it may have moved on), or
       the saved sha. If Moved, pin HEAD as `kept`.
    2. Write `pending {op: "back", from: HEAD, to: <resolved target>}`, switch (or Same
-      place), judge the outcome. Success: `active` and `pending` cleared, return pin
-      deleted. Nothing moved: `pending` cleared, still trying. Interrupted:
-      `pending` kept.
-   3. Scan again; any unprotected entries (files the trial's ignore rules hid) are
-      listed as "These files appeared after switching back", left in place.
-3. **Status** (GET, takes no lock and never waits). Reads only metadata: the record, HEAD
+      place), and judge the outcome from its one scan; the record is changed only after
+      that scan. Success: `active` and `pending` cleared, return pin deleted; any files
+      the scan found (for example ones the trial's ignore rules hid) are listed as
+      "These files appeared after switching back", left in place. Nothing moved:
+      `pending` cleared, still trying. Interrupted: `pending` kept.
+3. **Status** (GET, takes no lock and never waits). The machine keeps, per folder, an
+   in-memory lock generation that increases on every acquire and release. Status reads
+   the generation and lock state, then the record and HEAD, then the generation again;
+   if it changed or the lock is held, it answers "A switch is running" instead of
+   publishing an interruption. Reads only metadata: the record, HEAD
    identity, `wc/<id>` and pins (`rev-parse`, `symbolic-ref`, `for-each-ref`), plus the
    folder checks; never runs the status scan, never fetches, never writes. Returns
    `version`, `active_thread_id`, `target_available` (whether `wc/<this thread>` exists),
@@ -248,7 +260,8 @@ folder share it). Version checks happen under the lock before anything else.
    - Stale, or a first Try whose HEAD is not at its target: clears `active`. The return
      pin (`active.return_ref`, else `pending.return_ref`) is deleted if the return point
      was a branch that still contains its sha (`git merge-base --is-ancestor`); otherwise
-     it becomes a `kept` entry ("where your copy was before trying thread <id>", with
+     (after checking the ref exists, and re-creating it from the saved sha if the
+     service stopped before it was made) it becomes a `kept` entry ("where your copy was before trying thread <id>", with
      `branch`).
    - Otherwise `active` is left as it is, so Switch back still knows his return point.
    **Forget** (action `forget`, version-checked, with a `kept` ref from the record): under
@@ -322,7 +335,9 @@ submodule changes.
     with `pending` set (interrupted, no git run); a second write while one runs
     (refused at once); a long switch does not delay an agent worktree start in the same
     project; `try` answers `accepted` at once and the page shows `last` after polling;
-    Try and Back refused while `pending` is set;
+    Try and Back refused while `pending` is set; Done refused while `index.lock`
+    exists; a git switch that exits 0 after "unable to unlink" (interrupted); Status
+    polled across a switch finishing never shows "interrupted";
   - Done after an interrupted Try with HEAD at the target (Switch back kept); after an
     interrupted Back with HEAD at the return branch (counts as success, no "switched by
     hand"); after an interrupted move between threads (`active` kept);
@@ -601,6 +616,24 @@ files and his earlier branch, and he presses Done after checking at his computer
 (`recover`), process-group tracking across restarts, unknown-exit rules and reconcile
 removed; Deferred D3 added; start-up rule; outcome table cut down; validation updated.
 Budget reset after Collin's decision.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | A switch can outlive a service restart (`KillMode=process`) and Done then loses the trial | upheld (`install.sh:401`) | Done refused while `index.lock` exists; wording says git may still run |
+| intent | minor | Identity mismatch described two ways | upheld | Terms point to Status (3) |
+| mechanics | major | Git exits 0 after failing to remove a file | downgraded to minor: needs read-only directories | Removal errors in git's output count as interrupted |
+| mechanics | major | Back's second scan runs after the record is cleared | upheld | One scan, record changed after it |
+| mechanics | major | Status can publish a false interruption during a running switch | upheld | Lock generation check |
+| mechanics | minor | Return pin may not exist when Done keeps it | upheld | Checked and re-created from the saved sha |
+
+### Round 10 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 9:** Done, Try and Back refused while `index.lock` exists, and the
+interrupted line says git may still be running; git output reporting a failed removal
+counts as interrupted; Back judges and finalizes from one scan; Status lock-generation
+check; Done re-creates a missing return pin; identity-mismatch wording. Decision 26.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
