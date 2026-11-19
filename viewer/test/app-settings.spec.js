@@ -45,7 +45,7 @@ test.describe('desktop', () => {
   test('five sections, kept across a reload through the hash', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const nav = page.locator('#sections a');
-    await expect(nav).toHaveText(['Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style', 'Project tools']);
+    await expect(nav).toHaveText(['Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style', 'Project tools', 'Background Customization']);
     await nav.nth(3).click();
     await expect(page).toHaveURL(/#templates$/);
     await expect(page.locator('.tpl-list h1')).toHaveText('Behavior templates');
@@ -327,7 +327,7 @@ test.describe('phone', () => {
   test('the sections are tabs above the section and the page never scrolls sideways', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const tabs = page.locator('#sections a');
-    await expect(tabs).toHaveCount(6);
+    await expect(tabs).toHaveCount(7);
     const boxes = await tabs.evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().toJSON()));
     expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(1);
     const panel = await page.locator('#panel').boundingBox();
