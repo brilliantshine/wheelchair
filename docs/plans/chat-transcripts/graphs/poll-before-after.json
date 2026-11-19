@@ -1,0 +1,3 @@
+{"form":"before-after","explanation":"What happens on each 2-second chat check while nothing new has been written. Leaves out what happens when something did change: then the whole transcript is sent and read again, as today.",
+"before":{"title":"Today","items":["Machine re-reads and checks the whole saved transcript","Machine saves its session list","Whole transcript sent to the app server","App server reads through all of it again","App server keeps the text forever"]},
+"after":{"title":"After","items":["Machine looks at the file's size only","App server says which version it already has","Machine answers 'unchanged', no text sent","App server reuses what it already worked out","Dropped after 10 minutes nobody is looking"]}}
