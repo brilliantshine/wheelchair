@@ -287,3 +287,10 @@ $ npm --prefix viewer run test:browser
 $ npx playwright test test/app-threads.spec.js:340
   4 passed (14.5s)
 ```
+
+### Verification attempts 7 and 8 — 2026-11-19
+
+- **Attempt 7 (f6be1d5/a26fd34):** the Claude verifier passed. The GPT verifier found one rare gap: a refresh that adds a round above the visible rows shifts the list by one row. The lead deferred it as D3, and the All-deferred re-check was used.
+- **Attempt 8 (7db73c6):** the Claude verifier passed with all suites clean: Node 641/641, machine 170/170, browser 884 passed and 0 failed. The GPT verifier found one rare phone gap: the popover shrinks on refresh and clips rows that were visible. It was deferred as D4, at Collin's choice by his standing instruction on rare cases, and the build finished without further verification.
+
+Residual risk: D3 and D4 both come from restoring the popover's scroll by pixel offset rather than anchoring it on a visible row. In rare refresh timings a reader's place in a scrolled review history can move by a few rows. The popover always stays open and on screen.
