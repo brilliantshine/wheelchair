@@ -69,6 +69,7 @@ None.
 | 42 | Mode changed from thorough to two-part; rare-case hardening moved to Deferred rows 1-8 | Collin chose it after nine review rounds kept finding rarer cases | user |
 | 43 | Supersedes the deferred parts of 35, 36, 38, 39, 40 and 41 (all-URL checks, commit trailer, lock-held display, machine-bound token, field checks and 504 `transport`, read-only tools in keys-only mode): see Deferred | Two-part mode | review-round-10 |
 | 44 | `failed` outcome for errors after validation; Read falls back to keys when GitHub is unreachable; Save round-trips the raw document; key headers have a prefix field; key writes return `keys` | Close round 10 gaps | review-round-10 |
+| 45 | Tool edits patch the original raw entry; `keys` updates only set status; key store writes are atomic with `failed` on error | Close round 11 gaps | review-round-11 |
 
 ## Spec
 
@@ -136,9 +137,11 @@ project's tools and lets him add, change and remove them. Works at phone width.
   - **key revision**: a counter the machine bumps on every key write.
   The screen sends it back on Save and Remove.
 - The tool form stays bound to the baseline it was loaded with. A reply after a key write
-  returns the new key revision and a `keys` list (each name with set or not set); the screen
-  updates the revision and every key status and key warning from it, keeping the form and its
-  baseline. After a Save that pushed a branch, the form reloads from the default branch.
+  returns the key revision and a `keys` list (each stored name with set); the screen updates
+  the revision and the set / not set status of every key name it shows from that list (a name
+  missing from it is not set). Usage, "shared with" and held-back warnings stay as computed
+  from the loaded baseline; a removed key that the baseline still references stays listed as
+  not set. The form and its baseline are kept. After a Save that pushed a branch, the form reloads from the default branch.
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
   (env names; plain values shown, key values shown as "set" or "not set" on this machine).
 - Each tool shows any reason it would be skipped, by the machine's validator or by Codex, and
@@ -163,8 +166,11 @@ project's tools and lets him add, change and remove them. Works at phone width.
 
 - Remove (a tool) asks for confirmation.
 - Fields the form doesn't know, and entries it can't represent, are kept as they were and
-  shown read-only with "edit in the file". Save sends the whole `mcpServers` object built from
-  the raw entries (edited ones replaced, the rest untouched); the machine keeps every other
+  shown read-only with "edit in the file". Editing a tool applies the form's
+  fields onto that tool's original raw entry: fields the form knows are replaced or removed,
+  every other field in the entry is kept. An entry whose shape the form can't represent at
+  all (not a stdio or http entry) is read-only. Save sends the whole `mcpServers` object built
+  that way (untouched entries exactly as read); the machine keeps every other
   top-level field of the source document as it was.
 - A tool name already used is refused.
 
@@ -241,7 +247,9 @@ project's tools and lets him add, change and remove them. Works at phone width.
   2. For a tool change: serialize the candidate (2-space JSON, trailing newline) and run the
      reader's checks on it. A whole-file failure blocks Save (400) with the reason. Per-entry
      skip reasons and the Codex size result are warnings, for edited and untouched entries.
-  3. Store the keys being set. With no tool change, stop: reply `saved`.
+  3. Store the keys being set, all at once (write a temporary file, then rename). If that
+     fails, reply `failed` with the unchanged key revision. With no tool change, stop: reply
+     `saved`.
   4. In a temporary worktree (never Collin's checkout) at the default-branch head just
      fetched, replace `.mcp.json` with a regular file holding the candidate and commit
      "Update project tools".
@@ -255,8 +263,9 @@ project's tools and lets him add, change and remove them. Works at phone width.
   7. Remove the temporary worktree.
 - Any failure after step 3 and before a branch is pushed (fetch, temporary worktree, commit,
   push, a 60-second limit) replies `failed` with the current key revision, `keys` and the
-  error; keys stored in step 3 stay stored. A failure in step 1 or 2 replies `refused` or
-  `failed` before anything is written.
+  error; keys stored in step 3 stay stored. A failure in step 1 or 2 replies `refused`, or
+  `failed` (for example an offline fetch) with the unchanged key revision, before anything is
+  written.
 - Every Save makes its own branch and PR; two saves never share anything. Two waiting PRs may
   conflict; GitHub shows that and Collin closes one.
 - The section shows the PR link and that new threads get the change once it is merged. Keys
@@ -305,7 +314,8 @@ account-level tools; merging the PR; everything under Deferred.
   `gh` failure still lists tools; a dropped Save still runs to the end; command timeout kills
   the child; waiting tools PRs filtered by `wc-tools/` and same repository.
 - `node --test viewer/test/*.test.js`: hub routes forward keys without storing them, pass 4xx
-  bodies through, use the 120-second timeout; auth and origin checks on the new write routes.
+  bodies through, use the 120-second timeout, and pass a `failed` 502 through so the page shows its error and
+  applies its key revision and `keys`; auth and origin checks on the new write routes.
 - `npm --prefix viewer run test:browser`: add, edit, remove, key set/not set, skip reasons and
   key warnings, waiting PRs and PR link, at phone width.
 
@@ -326,6 +336,7 @@ account-level tools; merging the PR; everything under Deferred.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Integers beyond 2^53 in untouched `.mcp.json` fields can change when another tool is edited (JSON parse and re-serialize) | MCP configs don't use such numbers; a custom serializer isn't worth it | 11 |
 | Git `insteadOf` rewriting can send fetch and push somewhere other than the URL text that was validated | It is Collin's own git config and he set it on purpose; overriding it would break his setup | 8 |
 | An agent that edits its own worktree's `.mcp.json` after launch can make Claude expand a key into a tool's argv | The agent already holds the key in its environment; no extra exposure | 5 |
 | Removing a key a waiting PR or a pushed branch still needs leaves that tool without its key until re-entered | Removal is an explicit, warned action; every automatic check had a race | 4 |
@@ -594,12 +605,29 @@ lost-reply message) and Validation were simplified to match.
 
 ### Round 11 — 2026-11-18
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5 (no findings); mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 10:** Reading (GitHub-unreachable fallback, raw parsed document returned,
 `keys` refresh after key writes); Editing (key header prefix field, single header note, raw
 round-trip); Saving (`tools` is the `mcpServers` object, `failed` outcome replaces
 `push_failed`, hub passes JSON 502 through); Validation; Decision Log 43-44.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | major | RE-RAISE: editing an entry with unknown fields | upheld | Patch onto raw entry (Log 45) |
+| mechanics | major | RE-RAISE: merging `keys` into the form | upheld | Status-only merge (Log 45) |
+| mechanics | major | RE-RAISE: key write failure; offline step 1 | upheld | Atomic write, `failed` with unchanged revision |
+| mechanics | minor | RE-RAISE: large integers change on re-serialize | accepted-risk | Accepted Risks (round 11) |
+| mechanics | minor | Validation lacks the 502 path | upheld | Added |
+
+### Round 12 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 11:** Editing (form fields patched onto the original raw entry; only
+unrepresentable entries are read-only); Reading (`keys` merge updates set status only); Saving
+(atomic key write with `failed` on error, offline step 1 `failed` with unchanged revision);
+Validation (502 path through the hub); Accepted Risks (large integers); Decision Log 45.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
