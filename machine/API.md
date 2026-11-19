@@ -122,3 +122,5 @@ its session and worktree until the stop is confirmed.
 ## Project tools
 
 `POST /v1/project-tools/read`, `/v1/project-tools/save`, and `/v1/project-tools/remove-key` use machine-secret authentication. Request and response shapes are documented in [the project tools contract](../docs/plans/project-tools-screen/API.md#machine-http-routes-machine-secret-like-the-other-v1-routes).
+
+Transcript reads without `known` return the legacy `{offset, data}` response, with data starting at the requested byte offset. With `known=-` or `known=<gen>:<end>`, the response is `{status:"full", gen, end, data}`, `{status:"unchanged", gen, end}`, or `{status:"unavailable"}`. `gen` is the kept file inode and birth time joined by a hyphen (inode alone when birth time is zero); `end` is its byte size. Invalid `known` values return 400.
