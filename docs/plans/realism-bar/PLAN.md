@@ -12,11 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: What happens to a rare-path finding?
-- **Context:** In Kimi Code the GPT reviewer and verifier kept reporting new rare paths each round. With no record, the next round raised new variants.
-- **Options:** (A) reported, tagged rare, lead records it in Accepted Risks without asking; (B) not reported at all; (C) lead fixes it if the fix is tiny, else accepts.
-- **Recommendation:** A.
-
 ### Q2: In two-part mode, do rare paths go to Deferred (the follow-up thread) or Accepted Risks?
 - **Context:** Deferred feeds a follow-up thread, which would chase the same rare paths again.
 - **Options:** (A) Accepted Risks in every mode; Deferred keeps realistic hardening only; (B) Deferred as today.
@@ -45,6 +40,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | Always fixed regardless of how rare: security or secret leaks, permission bypass, building the wrong thing, anything a Spec validation command checks, and silent loss of Collin's work in normal use | IDEA.md Not doing; Collin's memory rules on leaks and wrong builds | defaulted |
 | 4 | When the lead cannot tell whether a finding is normal use, it asks Collin with a question card; otherwise it decides without asking | IDEA.md What good looks like | defaulted |
 | 5 | The clean test and review budget are unchanged: an accepted-risk finding already does not block a clean round | lead.md clean test counts only upheld blocking/major and open user-decisions | defaulted |
+| 6 | Rare-path findings are still reported, marked rare; the lead records each in Accepted Risks without asking Collin, and later rounds treat them as settled | Collin picked "Record it, don't ask": the record is what stops re-raising | user |
 
 ## Spec
 
