@@ -964,6 +964,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 10: Claude PASS, GPT FAIL with 2 gaps (REMEDIATION-10.md). Version-at-launch race survived V1: sent to the lead; the unreadable-transcript notice is new.
+
 - 2026-11-18 — Verification attempt 10 at `0f8b93f`: `wc-01b8cb1bf051-verifier-19` (claude) and `wc-01b8cb1bf051-verifier-20` (gpt).
 
 - 2026-11-18 — Choice: K1, `machine/test/kimi-turns.test.js:201-211`: a sentence-only Claude lookalike fixture `wc-j` and the kill-order expectation; the trust-screen fixture's rule lines are shorter than the recording (scout-found). K1 accepted (band: scout): machine 207/207 re-run by the sub-lead. Remediation 9 complete.
