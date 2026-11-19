@@ -954,6 +954,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Lead: Collin is being asked about the permission-prompt gap first, the version-floor gap after. Meanwhile remediation 3 gap 2 dispatched as P1 (gpt, `wc-01b8cb1bf051-worker-18`): a hub Stop that confirms a fatal kill keeps `end_reason` and sends the same notice as `pollDead`.
+
 - 2026-11-18 — Verification attempt 3: Claude PASS, GPT FAIL with 3 gaps (REMEDIATION-3.md). Permission-prompt detection and version-floor parsing each survived two fix attempts: sent to the lead as plan defects; work stopped pending Collin.
 
 - 2026-11-18 — Verification attempt 3 at `5ffc328`: `wc-01b8cb1bf051-verifier-5` (claude-opus-5-5) and `wc-01b8cb1bf051-verifier-6` (gpt-6.2-sol).
