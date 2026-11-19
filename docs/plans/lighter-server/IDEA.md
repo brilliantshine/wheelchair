@@ -9,8 +9,7 @@ created: 2026-11-18
 
 ## What we're building
 
-Make wheelchair's own background services (the app server and the machine service) use
-much less CPU and memory, so that with many agents running the machine's power goes to
+Make wheelchair's app server use much less CPU and memory, so that with many agents running the machine's power goes to
 the agents, not to wheelchair watching them. Also stop the project's browser test runs
 from flooding the machine with browsers when several agents test at once.
 
@@ -40,6 +39,7 @@ cores. Leftover test processes have run for days.
 - Deleting or moving archived threads or old transcripts.
 - Running fewer agents or changing how many may run at once.
 - Making chat fetch only transcripts that changed: split into its own follow-up thread.
+- Changing the machine service (its tmux checks and transcript handling): it is already light.
 
 ## Constraints
 
