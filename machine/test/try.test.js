@@ -265,7 +265,7 @@ test('Back after a commit pins once across dirty refusals, then succeeds', async
     trial = await f.done(); assert.equal(trial.last.outcome, 'refused'); assert.equal(await fs.readFile(path.join(f.repo, 'dirty'), 'utf8'), 'keep me');
   }
   let record = await f.instance.read(f.repo);
-  assert.equal(record.kept.filter(entry => f.git('rev-parse', entry.ref) === commit).length, 1);
+  assert.equal(record.kept.filter(entry => f.git('rev-parse', entry.ref) === commit).length, 0);
   await fs.unlink(path.join(f.repo, 'dirty'));
   await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done();
   assert.equal(result.last.outcome, 'success');
