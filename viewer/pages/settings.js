@@ -5,7 +5,7 @@
 // copy of its own beyond the unsaved editor drafts.
 (() => {
   const API = '/wheelchair/api';
-  const SECTIONS = [['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style']];
+  const SECTIONS = [['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools']];
   const TIERS = [
     ['light', 'Light', 'Spelled-out changes, few files'],
     ['standard', 'Standard', 'Most building'],
@@ -1383,9 +1383,16 @@
     }));
   }
 
+  function renderProjectTools() {
+    const host = h('div', {});
+    window.ProjectTools.render(host);
+    return host;
+  }
+
   function renderPanel() {
     if (!data) return;
-    const view = section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
+    const view = section === 'tools' ? renderProjectTools()
+      : section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
       : section === 'accounts' ? renderAccounts() : section === 'usage' ? renderUsage() : renderModels();
     const keep = document.getElementById('error');
     panel.replaceChildren(keep, view);
