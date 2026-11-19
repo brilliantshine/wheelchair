@@ -228,6 +228,15 @@ openbox is installed, it also passes with it.
 
 ## Review Rounds
 
+### Round 1 — 2026-11-18
+
+**Lanes:** intent lens and mechanics lens, families as started; cross-family: yes.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
