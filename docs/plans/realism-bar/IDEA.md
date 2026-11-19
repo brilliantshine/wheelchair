@@ -41,7 +41,8 @@ verifiers, the lead or the sub-lead.
 
 - Not lowering the bar for security: leaks, wrong builds and anything a Spec validation
   command checks are always fixed.
-- Not changing what the lighter modes defer, beyond sharing the same definition.
+- Not changing what the lighter modes defer, beyond sharing the same definition and
+  sending rare paths to accepted risks instead of the follow-up list.
 - Not adding settings or a dial for the bar in the app.
 
 ## Constraints
