@@ -857,3 +857,5 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-19 — Verification attempt 9: claude verifier-17 PASS (stopped). Sent the lead 1 gap marked must-fix (hub UTF-8 chunk decoding) and 5 hardening deferral proposals under Log 52.
 - 2026-11-19 — Lead on attempt 9: fix gap 1 (hub UTF-8 chunk decoding, rule (b)); defer 2-6 as Deferred rows 9-13, source verification. Remediation 9 covers gap 1 only.
 - 2026-11-19 — Remediation 9 dispatched: R9-1 (gap 1, hub UTF-8 decoding; light / gpt-6-luna, wc-406595075040-worker-24).
+- 2026-11-19 — Choice: R9-1, `viewer/test/app-project-tools.test.js`: the test requires `node:http` and the client inside its body, listens on 127.0.0.1, closes the server with `t.after`, and doesn't guard the split index (report said none; scout-listed).
+- 2026-11-19 — R9-1 accepted (band: scout): viewer node 642/642 and the Project tools hub tests 4/4 re-run by sub-lead; the report shows the new test failing with `Ol��` without the line. The scout found the one line before the data listener and no Buffer consumer of `requestJson`; streamed routes are untouched.
