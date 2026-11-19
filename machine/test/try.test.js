@@ -13,3 +13,14 @@ test('validates all actions and their fields', async () => {
     assert.equal(answer.reason, 'Not built yet');
   }
 });
+test('record and protected list use the real folder hash and version every write', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path');
+  const { makeTemp } = require('../../test-support/run-dir');
+  const root = await makeTemp('try-record-'); const instance = new TryService({ stateDir: root, root, projects: async () => ({ checked: { ok: true } }) });
+  const folder = path.join(root, 'copy'); await fs.mkdir(folder);
+  const record = await instance.read(folder); await instance.write(folder, record); const first = record.version;
+  await instance.write(folder, record); assert.notEqual(record.version, first);
+  await instance.writeProtected(folder, Buffer.from('ignored\0'));
+  assert.equal((await fs.readFile(instance.protectedPath(folder))).toString(), 'ignored\0');
+  assert.deepEqual(await instance.read(folder), record);
+});
