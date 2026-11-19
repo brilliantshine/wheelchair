@@ -67,6 +67,12 @@ function buildAgents(threads, stages = {}) {
     const lead = leads[0], leadNames = new Set(leads.map((s) => s.name));
     const visible = sessions.filter((s) => s.role !== 'lead' || s === lead);
     const cards = thread.cards || [];
+    const review = {};
+    for (const card of cards) {
+      if (card.kind === 'progress' && card.stage === 'review' && ['fixing', 'clean'].includes(card.phase)) {
+        review[card.pass] = { found: card.found ?? 0, ...(card.phase === 'clean' ? { clean: true } : {}) };
+      }
+    }
     const needs = []; addNeeds(needs, { ...thread, cards });
     const nodes = new Map(visible.map((s) => [s.name, { ...publicSession(s), context: s.context || null, activity: activity(s), children: [], has_brief: typeof s.brief === 'string' && !!s.brief }]));
     const root = nodes.get(lead.name);
@@ -108,11 +114,17 @@ function buildAgents(threads, stages = {}) {
       const result = [...cards].reverse().find((card) => card.kind === 'result' && card.session === s.name && card.summary);
       node.display_title = displayTitle(s, thread);
       if (s.role !== 'lead' && result) node.result_summary = result.summary;
+      if (s.role === 'reviewer' && result) {
+        const lines = result.summary.split(/\r?\n/).filter(line => /^(?:RE-RAISE: )?SEVERITY:/.test(line));
+        const fields = lines[0]?.replace(/^RE-RAISE: /, '').split(' — ');
+        node.report = { findings: lines.length, first: fields ? (fields.length >= 4 ? fields.slice(2, -1) : fields.slice(1)).join(' — ').trim() : null };
+      }
+      if (node.state === 'finished') node.finished_at = s.ended_at || result?.created_at || s.created_at;
       counts.total++; counts[node.state === 'needs-you' ? 'waiting' : node.state.replace('-', '_')]++;
     }
     const finished = !sessions.some((s) => s.live === true);
     const finishedAt = sessions.map((s) => s.ended_at).filter(Boolean).sort().pop();
-    return [{ thread_id: thread.id, thread_title: thread.title, lead_name: thread.lead_name, machine: thread.machine, project: path.basename(thread.project || ''), stage: stages[thread.id] || 'idea', finished, ...(finished && finishedAt ? { finished_at: finishedAt } : {}), question_paths, asides: (thread.asides || []).filter((a) => a.status === 'open').map((a) => ({ kind: 'aside', id: a.id, number: a.number, display_title: `Side conversation ${a.number}`, state: a.turn || a.pending?.length ? 'working' : 'idle' })), counts, session: root, children: root.children }];
+    return [{ thread_id: thread.id, thread_title: thread.title, lead_name: thread.lead_name, machine: thread.machine, project: path.basename(thread.project || ''), stage: stages[thread.id] || 'idea', finished, ...(finished && finishedAt ? { finished_at: finishedAt } : {}), question_paths, rounds: { review }, asides: (thread.asides || []).filter((a) => a.status === 'open').map((a) => ({ kind: 'aside', id: a.id, number: a.number, display_title: `Side conversation ${a.number}`, state: a.turn || a.pending?.length ? 'working' : 'idle' })), counts, session: root, children: root.children }];
   });
 }
 

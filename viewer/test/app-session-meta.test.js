@@ -118,3 +118,19 @@ test('archive records end times and preserves existing values on success and par
     assert.equal(record.sessions[1].ended_at, '2020-01-01T00:00:00.000Z');
   }
 });
+
+test('review round is validated before dedupe and retained on retry', async () => {
+  const args = ['--role', 'reviewer', '--attempt', 'a', '--brief-file', __filename];
+  assert.equal(sessionRequest('start', [...args, '--round', '2']).body.round, '2');
+  for (const suffix of [['--round'], ['--round', '--title', 'x']]) assert.throws(() => sessionRequest('start', [...args, ...suffix]), /--round/);
+  const context = await setup();
+  try {
+    const made = await thread(context); const lead = made.sessions[0];
+    const start = (extra) => machinePost(context, '/machine/session', { calling_session: lead.name, action: 'start', role: 'reviewer', attempt_id: 'round', ...extra });
+    const first = await start({ round: '2' });
+    assert.equal(first.status, 200); assert.equal(first.body.session.round, 2);
+    assert.equal((await start({ round: 3 })).body.session.round, 2);
+    for (const round of [0, -1, 1.5, 'abc', null]) { const res = await start({ round }); assert.equal(res.status, 400); assert.match(res.body.detail, /--round/); }
+    for (const role of ['verifier', 'worker']) { const res = await start({ role, round: 1 }); assert.equal(res.status, 400); assert.match(res.body.detail, /--round/); }
+  } finally { await close(context); }
+});
