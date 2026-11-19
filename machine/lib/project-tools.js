@@ -119,11 +119,11 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
         }
         const report = checksFor(input.tools, store), warnings = Object.entries(report.checks).flatMap(([name, check]) => check.skip.map(s => `${name}: ${s}`)).concat(report.file_warnings);
         try { await storeKeys(); } catch (e) { return failed(e); }
-        let worktree, added = false;
+        let worktree;
         try {
           await fs.mkdir(path.join(stateDir, 'project-tools'), { recursive: true, mode: 0o700 });
           worktree = path.join(stateDir, 'project-tools', `worktree-${crypto.randomUUID()}`);
-          await must(git(input.path, 'worktree', 'add', '--detach', worktree, ref)); added = true;
+          await must(git(input.path, 'worktree', 'add', '--detach', worktree, ref));
           if (source.mode && !['100644', '100755'].includes(source.mode)) { await must(git(worktree, 'rm', '-r', '-f', '--cached', '--', '.mcp.json')); await fs.rm(path.join(worktree, '.mcp.json'), { recursive: true, force: true }); }
           await fs.writeFile(path.join(worktree, '.mcp.json'), text);
           await must(git(worktree, 'add', '--', '.mcp.json'));
@@ -135,7 +135,12 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
           const pr = await run('gh', ['pr', 'create', '--repo', destination.repo, '--head', newBranch, '--base', branch, '--title', 'Update project tools', '--body', "Saved from the wheelchair app's Project tools screen."]);
           if (!pr.ok) return { status: 200, body: { outcome: 'pr_failed', key_revision: store.revision, keys: keys(store), branch: newBranch, compare_url: `https://github.com/${destination.repo}/compare/${branch}...${newBranch}?expand=1`, error: reason(pr) } };
           return { status: 200, body: { outcome: 'opened', key_revision: store.revision, keys: keys(store), pr_url: pr.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.startsWith('https://')).at(-1) || pr.stdout.trim(), warnings } };
-        } catch (e) { return failed(e); } finally { if (added) await git(input.path, 'worktree', 'remove', '--force', worktree); }
+        } catch (e) { return failed(e); } finally {
+          if (worktree) {
+            await git(input.path, 'worktree', 'remove', '--force', worktree);
+            await git(input.path, 'worktree', 'prune');
+          }
+        }
       });
     } catch (e) { return failed(e); }
   }
