@@ -59,6 +59,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 22 | Half-switched outcomes are recorded with their files and finished by Finish after he cleans up; Dismiss keeps `active` unless the trial is gone; a separate Forget for kept pins; protected paths are exact files; switches get a deadline, a busy flag and a long hub timeout; identity is real paths only | Round 6 findings | review-round-6 |
 | 23 | Exit result recorded before judging; switches and scans run in a killable process group with deadlines; 30-second admission; Forget skips reconcile; Dismiss treats HEAD at a Try's target as success and never runs git on an identity mismatch; `last` outcome stored; protected list only in the side file | Round 7 findings | review-round-7 |
 | 24 | Try writes get their own lock, separate from agents' `inRepoQueue`; Status takes no lock; writes are acknowledged then finished in the background; switch process groups are tracked by `pgid` across restarts and terminated (SIGTERM, then SIGKILL) after their deadline; one outcome table; `pending` blocks Try and Back; Dismiss never reconciles or scans; a leftover `index.lock` is reported, never deleted | Round 8 findings | review-round-8 |
+| 25 | Rare broken switches (killed, service restarted mid-switch, half-switched, unexpected) are all shown as "interrupted" with files and his earlier branch, and he sorts them out at his computer then presses Done; Finish, process-group tracking across restarts and automatic re-judging are deferred (D3). Supersedes the parts of 22-24 about Finish, `pgid` and the full outcome table | Collin chose "Hand rare cases to me" | user |
 
 ## Spec
 
@@ -79,8 +80,8 @@ Terms:
 - **The folder** is `thread.project` on `thread.machine` (`viewer/app/threads.js:20-25`).
 - **Identity**: the folder's real path plus the real path of `git rev-parse
   --git-common-dir`, stamped into the record at every first Try. Checked before
-  every write only while `active` or `pending` is set; a mismatch then is the unexpected
-  state ("This folder is no longer the copy that was switched"), and only Dismiss is
+  every write only while `active` or `pending` is set; a mismatch then is shown as
+  interrupted ("This folder is no longer the copy that was switched"), and only Dismiss is
   allowed (it skips the identity check).
 - **HEAD identity** is `{branch: full refname or null if detached, sha}`. Comparisons
   compare both parts.
@@ -97,49 +98,40 @@ Terms:
   look untracked). Tracked entries are never protected.
 - **Clean**: the status scan has no entries after protected untracked entries are
   removed. **Not clean** lists the remaining paths.
-- **The folder's own lock**: every Try write (try, back, recover, dismiss, forget) takes
-  a lock of its own, keyed by the folder's real path, separate from `inRepoQueue`
+- **The folder's own lock**: every Try write (try, back, dismiss, forget) takes a lock
+  of its own, keyed by the folder's real path, separate from `inRepoQueue`
   (`machine/service.js:547`), so a long switch never delays agents' worktree starts or
   handoffs (git's own lock files refuse a rare clash cleanly). A write that finds the
-  lock held, or a switch process group still alive (below), is refused at once ("A
-  switch is already running") and does nothing.
+  lock held is refused at once ("A switch is already running") and does nothing.
 - **Running git**: a switch or status scan runs in its own process group (`spawn` with
-  `detached: true`) with a deadline (15 minutes for a switch, 5 for a scan). Before
-  spawning a switch, the write records `pending.pgid` and `pending.started_at`. On the
-  deadline it sends SIGTERM to the group, waits 10 seconds, then SIGKILL, and waits
-  until the group is gone. **Group alive** (`kill(-pgid, 0)` succeeds): Status says "A
-  switch is running" and every write is refused; if it is past its deadline (for example
-  the service restarted mid-switch), the next write or Status first terminates it as
-  above. Nothing is judged while the group is alive.
-- **Acknowledged, then finished**: `try`, `back` and `recover` answer the hub as soon as
-  they hold the lock (`{accepted: true}`) and finish in the background; the hub keeps
-  its default 5-second timeout (`viewer/app/machine-client.js:10`). The page shows
-  "Switching…", re-reads Status every 3 seconds while it says running, then shows
-  `last`.
-- **Exit result**: when the group is gone, the write records git's exit code in
-  `pending.exit` (or `"killed"`). After a service restart the exit is **unknown**.
-- **Outcome of a switch** is judged only once the group is gone, by HEAD identity, a
-  status scan and the exit result, never by the exit code alone:
+  `detached: true`) with a deadline (15 minutes for a switch, 5 for a scan). On the
+  deadline the machine sends SIGTERM to the group, waits 10 seconds, sends SIGKILL, and
+  waits until the group is gone before going on. The exit code (or `killed`) is kept in
+  memory for judging the outcome.
+- **Acknowledged, then finished**: `try` and `back` answer the hub as soon as they hold
+  the lock (`{accepted: true}`) and finish in the background; the hub keeps its default
+  5-second timeout (`viewer/app/machine-client.js:10`). The page shows "Switching…",
+  re-reads Status every 3 seconds while it says running, then shows `last`.
+- **Outcome of a switch**, judged once git has exited, by HEAD identity, a status scan
+  and the exit code:
 
   | HEAD | Copy | Exit | Outcome |
   |---|---|---|---|
   | target | clean | 0 | success |
-  | target | clean | nonzero, killed or unknown | success with a warning (git's last line, or "git took too long") |
+  | target | clean | nonzero | success with a warning (git's last line) |
   | target | not clean | 0 | success with a warning listing the files |
-  | target | not clean | nonzero, killed or unknown | half-switched |
-  | source | clean | any | nothing moved (killed: "git took too long"; else git's message) |
-  | source | not clean | any | half-switched |
-  | elsewhere | any | any | unexpected state |
-  | any | scan failed | any | `pending` left as it is; reported |
+  | source | clean | nonzero or killed | nothing moved (killed: "git took too long"; else git's message) |
+  | anything else | | | **interrupted** |
 
-  Half-switched: `pending` kept with `half: true` and `files: [path]`. Status shows "A
-  switch stopped partway", the files, and says to sort them out at his computer (for
-  example re-run the LFS download, or undo them), then press Finish, which judges again
-  by this table. Nothing is deleted.
-  If `<git-dir>/index.lock` exists once the group is gone, Status adds "Git left a lock
-  file: <full path>. At your computer, check no git is running, then delete it." It is
-  never deleted automatically.
-  While `pending` is set, Try and Switch back are refused; only Finish, Dismiss and
+  Interrupted (also: the scan failed, or the service finds `pending` set at start-up or
+  on a later request, meaning it stopped mid-switch): `pending` is kept, with `files`
+  from the scan when there was one. Wheelchair does not try to repair it (see Deferred
+  D3). Status says "A switch was interrupted", lists the files if known, names the
+  branch his copy was on before trying, and says: "Check your copy at your computer,
+  then press Done." **Done** is Dismiss (4). If `<git-dir>/index.lock` exists, Status
+  adds "Git left a lock file: <full path>. At your computer, check no git is running,
+  then delete it." It is never deleted automatically.
+  While `pending` is set, Try and Switch back are refused; only Done (Dismiss) and
   Forget run.
 - **Switches** always run as `git -c submodule.recurse=false switch --no-guess
   --no-overwrite-ignore --no-recurse-submodules <short branch name>` or the same with
@@ -160,8 +152,8 @@ written atomically (temp file then rename):
   active: null | { thread_id, commit, return_point: {branch, sha}, return_ref,
                    },
   pending: null | { op: "try"|"back", first: bool, thread_id,
-                    from: HEADid, to: HEADid, half?: bool, files?: [path],
-                    exit?: int|"killed", return_point?, return_ref? },  // first Try only
+                    from: HEADid, to: HEADid, files?: [path],
+                    return_point?, return_ref? },  // first Try only
   last: null | { op, thread_id, at, warning?, files?, appeared? },
   kept: [ { ref, label, thread_id, branch?, at } ] }            // pinned commits
 ```
@@ -185,7 +177,7 @@ means `active` is set and HEAD is attached to a branch (he switched by hand).
   `rebase-merge`, `rebase-apply`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `BISECT_LOG` under
   `git rev-parse --git-dir`), or the index has unmerged entries;
 - identity mismatch (only while `active` or `pending` is set; Dismiss skips this).
-Then reconcile (5), then action checks:
+Then action checks (Try and Switch back are refused while `pending` is set):
 - a submodule has changes, or the source and target trees differ in any gitlink
   (`git diff --raw --ignore-submodules=none <source> <target>` with mode 160000 on either
   side): "This thread changes a submodule, which isn't supported.";
@@ -196,7 +188,7 @@ Then reconcile (5), then action checks:
 - Try when `refs/heads/wc/<thread-id>` does not exist;
 - Switch back when the return point is a branch that no longer exists or is checked out
   in another worktree (`git worktree list --porcelain`);
-- Switch back, Dismiss or Finish whose `version` differs from the record's: "Your copy
+- Switch back, Dismiss or Forget whose `version` differs from the record's: "Your copy
   changed since this page loaded", returning the current status.
 Every write holds the folder's own lock (keyed by real path, so two spellings of one
 folder share it). Version checks happen under the lock before anything else.
@@ -214,7 +206,7 @@ folder share it). Version checks happen under the lock before anything else.
    4. Switch detached to the target (or Same place) and judge the outcome. Success:
       `active` set (from `pending` on a first Try, else thread and commit updated),
       `pending` cleared. Nothing moved: `pending` cleared; on a first Try also delete the
-      return pin. Half-switched or unexpected: `pending` kept.
+      return pin. Interrupted: `pending` kept.
 2. **Switch back.** Carries the shown `version`; its confirmation suggests closing any
    app using the folder. Available from every thread page whose
    project is this folder, including archived threads and threads whose branch is gone.
@@ -222,8 +214,8 @@ folder share it). Version checks happen under the lock before anything else.
       the saved sha. If Moved, pin HEAD as `kept`.
    2. Write `pending {op: "back", from: HEAD, to: <resolved target>}`, switch (or Same
       place), judge the outcome. Success: `active` and `pending` cleared, return pin
-      deleted. Nothing moved: `pending` cleared, still trying. Half-switched or
-      unexpected: `pending` kept.
+      deleted. Nothing moved: `pending` cleared, still trying. Interrupted:
+      `pending` kept.
    3. Scan again; any unprotected entries (files the trial's ignore rules hid) are
       listed as "These files appeared after switching back", left in place.
 3. **Status** (GET, takes no lock and never waits). Reads only metadata: the record, HEAD
@@ -231,12 +223,10 @@ folder share it). Version checks happen under the lock before anything else.
    folder checks; never runs the status scan, never fetches, never writes. Returns
    `version`, `active_thread_id`, `target_available` (whether `wc/<this thread>` exists),
    `refused` (the first failing folder check's sentence, or null) and one of, checked in
-   this order: unexpected state (HEAD at neither side of `pending`, or identity
-   mismatch): "Your copy is in an unexpected state" with git's view of HEAD and Dismiss;
-   busy (lock held or group alive): "A switch is running"; `pending.half`: "A switch stopped partway" with
-   `pending.files`, Finish and Dismiss; other `pending`:
-   "An earlier switch was interrupted" with **Finish** (action `recover`, runs reconcile,
-   which scans, records `half`/`files` if half-switched, and returns status); Stale: "You switched your copy by hand" with Dismiss; Moved:
+   this order: identity mismatch: "This folder is no longer the copy that was switched"
+   with Dismiss;
+   busy (lock held): "A switch is running"; `pending` set: "A switch was interrupted"
+   with the files, the earlier branch and **Done**; Stale: "You switched your copy by hand" with Dismiss; Moved:
    "Your copy moved since you tried <thread>" with Switch back; trying this thread:
    "Your copy is showing this thread's merged work as of <short sha>" with Switch back
    (plus "Get newest" when `wc/<id>` moved on); trying another: "Your copy is showing
@@ -245,8 +235,8 @@ folder share it). Version checks happen under the lock before anything else.
    `refused` is null and the thread is not archived; with `refused` set the panel shows
    that sentence instead. The page fetches Status on load, after each action and on a
    refresh button, never on its poll timer (`viewer/pages/thread.js:1229`).
-4. **Dismiss** (version-checked; does not reconcile and runs no scan): refused while the
-   group is alive. It then checks identity read-only and clears `pending`.
+4. **Dismiss** (shown as **Done** for an interrupted switch; version-checked; runs no
+   scan and no switch). It checks identity read-only and clears `pending`.
    - Identity mismatch: clears `active` and `pending` without any git command; the return
      pin and every `kept` entry stay in the list, marked with the old identity and shown
      as "in the copy that used to be here".
@@ -261,15 +251,14 @@ folder share it). Version checks happen under the lock before anything else.
      it becomes a `kept` entry ("where your copy was before trying thread <id>", with
      `branch`).
    - Otherwise `active` is left as it is, so Switch back still knows his return point.
-   **Forget** (action `forget`, version-checked, with a `kept` ref from the record): does
-   not reconcile. Under the folder's queue it checks the version and that the ref is in
+   **Forget** (action `forget`, version-checked, with a `kept` ref from the record): under
+   the folder's lock it checks the version and that the ref is in
    `kept`, then deletes only that pin and entry (for an entry marked with an old
    identity, only the entry: no git command). `active`, `pending` and the return pin are
    untouched. Nothing else deletes a `kept` pin. Kept refs that no longer resolve show
    as missing.
-5. **Reconcile** (start of Try, Switch back and Finish, after the folder checks): if
-   `pending` is set and its group is gone, judge it by the outcome table. Unexpected or half-switched:
-   writes other than Finish, Dismiss and Forget are refused.
+5. **Start-up**: when the machine service starts, every record with `pending` set is
+   left as it is; Status shows it as interrupted. Nothing runs git for it.
 6. **Errors** reach Collin as one plain sentence under the control: machine
    unreachable, a check's sentence, or git's message. Every write's outcome (warning,
    files listed, files that appeared after Back) is also stored in `last` and shown by
@@ -284,15 +273,15 @@ folder share it). Version checks happen under the lock before anything else.
 
 - **Machine** (`machine/service.js`): new hub-secret-only endpoint `POST /v1/try`,
   authorised like `/v1/handoff` (`machine/service.js:403-420,1602-1604`). Body
-  `{action: "status"|"try"|"back"|"dismiss"|"recover"|"forget", thread_id, project,
+  `{action: "status"|"try"|"back"|"dismiss"|"forget", thread_id, project,
   version?, kept?}`. `thread_id` matches `^[0-9a-f]{12}$`; `project` validated with
   `projects({check})` (`machine/service.js:1198-1232`); `version` required for `back`,
-  `dismiss`, `recover` and `forget`; `kept` (a ref from the record) required for, and
+  `dismiss` and `forget`; `kept` (a ref from the record) required for, and
   only for, `forget`. Agents can
   never call it.
 - **Hub** (`viewer/app/routes.js`, `viewer/app/machine-client.js:53-108`):
   `GET /api/threads/<id>/try` and `POST /api/threads/<id>/try` with body
-  `{action: "try"|"back"|"dismiss"|"recover"|"forget", version?, kept?}`, under browser write auth
+  `{action: "try"|"back"|"dismiss"|"forget", version?, kept?}`, under browser write auth
   (`viewer/server.js:1292-1298`), allowed for archived threads; `thread.machine` and
   `thread.project` always come from the thread record. The hub forwards `version` and
   `kept` and returns the machine's status plus the active thread's title.
@@ -326,33 +315,26 @@ submodule changes.
   - folder under the worktrees dir, the service root, `git am` in progress (refused);
   - failing post-checkout hook (success with warning); a required smudge filter failing
     on a first Try, on a move between threads and on Back, and a delayed filter failing
-    after HEAD moved (each half-switched with files recorded; Status shows them after a
-    reload; Finish after cleanup completes; Dismiss after a failed Back keeps `active`;
-    no file deleted); a hanging filter subprocess outliving the deadline (group gets
-    SIGTERM then SIGKILL; judged by the outcome table: clean at source = nothing moved,
-    clean at target = success with warning); a leftover `index.lock` reported, not
-    deleted; the service restarted while git is blocked in a filter (Status says
-    running, writes refused, the group is terminated after its deadline, then judged);
-    a second write while one runs (refused at once); a long switch does not delay an
-    agent worktree start in the same project; `try` answers `accepted` at once and the
-    page shows `last` after polling; Try and Back refused while `pending` is set;
-    Dismiss after a half-switched Back at the return branch (counts as success, no
-    "switched by hand"); service stopped after git moved HEAD but before the exit
-    result was recorded, with a dirty copy (half-switched, not success); Dismiss after a
-    half-switched first Try at the target (Switch back kept); `last` shown after a
-    reload; Forget during a pending Back (pending untouched); Dismiss on an identity
-    mismatch (no git command, entries kept and marked);
-    Status during a running switch (answers "running" at once); a new file in an
-    originally ignored directory whose rule the thread removed (listed on Back);
-    Forget leaves the current trial and its return pin; interruption with
-    `pending` set before and after the switch (Finish reconciles);
+    after HEAD moved (each interrupted, files recorded, Status shows them after a
+    reload, no file deleted); a hanging filter subprocess outliving the deadline (group
+    gets SIGTERM then SIGKILL; clean at the source = nothing moved, otherwise
+    interrupted); a leftover `index.lock` reported, not deleted; the service restarted
+    with `pending` set (interrupted, no git run); a second write while one runs
+    (refused at once); a long switch does not delay an agent worktree start in the same
+    project; `try` answers `accepted` at once and the page shows `last` after polling;
+    Try and Back refused while `pending` is set;
+  - Done after an interrupted Try with HEAD at the target (Switch back kept); after an
+    interrupted Back with HEAD at the return branch (counts as success, no "switched by
+    hand"); after an interrupted move between threads (`active` kept);
   - commit made while trying (pinned and listed); return branch deleted or checked out
     elsewhere (refused); stale record (Try and Back refused; Dismiss clears; return pin
-    deleted when its branch contains it, else kept); folder replaced by another clone at
-    the same path during a trial (unexpected state, Dismiss works) — identity is real
-    paths only, so test by replacing the common dir path; re-cloning after a
-    completed Back (Try works); two symlink spellings pressed together (serialised);
-    stale `version` on back, dismiss and recover (refused);
+    deleted when its branch contains it, else kept); folder replaced by another clone
+    during a trial — test by replacing the common dir path (Status shows mismatch,
+    Dismiss runs no git, entries kept and marked); re-cloning after a completed Back
+    (Try works); two symlink spellings pressed together (serialised); Forget during an
+    interrupted switch leaves `pending`, `active` and the return pin; stale `version`
+    on back, dismiss and forget (refused); a new file in an originally ignored
+    directory whose rule the thread removed (listed on Back);
   - Status on a repo with an LFS filter runs no filter (shim records calls); Status for
     the wheelchair clone returns `refused`.
 - `node --test viewer/test/*.test.js`: routes resolve machine and project from the
@@ -367,7 +349,8 @@ submodule changes.
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | D1 | Back up and clear files changed while trying, so Switch back works from the phone even when an engine rewrote files | Switch back refuses and lists the files instead; nothing is lost, he sorts them out at his computer | planning | The full design reviewed over rounds 2-5 is in this PLAN.md at commit 45b21ec ("Back up the leftovers": byte-exact backup with `hash-object --no-filters`, index copy compared by `I^{tree}`, recorded before clearing, per-path re-check, `:(literal)` pathspecs, missing parents allowed). Round 2-5 Review Rounds rows list every edge case found |
-| D2 | Automatic recovery of a half-switched first Try (for example a failed Git LFS download) | Status lists the files and offers Dismiss; his branch was clean before, so nothing of his is lost | planning | Needs D1's back-up-and-clear to restore safely |
+| D2 | Automatic recovery of a half-switched first Try (for example a failed Git LFS download) | Status lists the files and offers Done; his branch was clean before, so nothing of his is lost | planning | Needs D1's back-up-and-clear to restore safely |
+| D3 | Automatic handling of interrupted switches: a Finish action that judges them again, tracking a switch's process group across service restarts, and finishing or undoing based on where HEAD ended | Status says the switch was interrupted, lists files and his earlier branch; he checks at his computer and presses Done; nothing is deleted | planning | The reviewed design is in this PLAN.md at commit ab0e5c7: full outcome table with exit `killed`/unknown, `pending.pgid`/`started_at`, Finish (`recover`), reconcile rules; Round 5-8 rows list the cases |
 
 ## Accepted Risks
 
@@ -607,6 +590,20 @@ protected list only in a side file with its lifecycle; validation additions. Dec
 | mechanics | major | Dismiss reruns reconcile and can hang | upheld | Dismiss skips reconcile and scans |
 | mechanics | major | Timeout budget omits scans; Status waits behind fetches | upheld (dup of intent 2 and 5) | Same fixes |
 | mechanics | major | A hard kill can leave `index.lock` | upheld | SIGTERM with grace; lock reported with path, never deleted |
+
+### Round 9 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 8:** Collin chose "Hand rare cases to me" (Decision 25): every
+broken switch other than a plain success or "nothing moved" is shown as interrupted, with
+files and his earlier branch, and he presses Done after checking at his computer. Finish
+(`recover`), process-group tracking across restarts, unknown-exit rules and reconcile
+removed; Deferred D3 added; start-up rule; outcome table cut down; validation updated.
+Budget reset after Collin's decision.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
