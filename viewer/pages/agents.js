@@ -80,7 +80,7 @@
 
   const SQUARE = n => n >= 5 ? '#d9645a' : n >= 3 ? '#e0904a' : n >= 1 ? '#d9c45a' : '#4ea87b', GREY = '#6b7280';
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const finishedAt = n => n.finished_at || n.ended_at || '';
+  const finishedAt = n => n.finished_at || '';
   const roundOf = n => Number.isInteger(n.round) && n.round >= 1 ? n.round : null;
   const memberRounds = members => [...new Set(members.map(roundOf).filter(r => r !== null))].sort((a, b) => a - b);
   function square(found, cls = '') { const q = el('span', `agents-sq ${cls}`.trim()); q.style.background = found === undefined ? GREY : SQUARE(found); return q; }

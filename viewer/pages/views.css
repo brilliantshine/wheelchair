@@ -141,7 +141,7 @@
 .agents-squares { display: flex; flex-wrap: wrap; gap: 3px; }
 .agents-sq { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .agents-sq.none { background: transparent; border: 1px dashed var(--dim); }
-.agents-deck { position: relative; margin: 0 10px 10px 0; background-color: var(--panel); }
+.agents-deck { position: relative; background-color: var(--panel); }
 .agents-deck.selected { background-color: var(--accent-soft); }
 .agents-deck .agents-box-title { display: block; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; -webkit-line-clamp: unset; line-clamp: unset; }
 .agents-deck-branch { isolation: isolate; }

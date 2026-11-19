@@ -188,5 +188,34 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(decks.filter({ hasText: 'sub-lead' })).toContainText('×2');
       await expect(decks.filter({ hasText: 'worker' })).toContainText('×3');
     });
+
+    test('desktop deck card is centred on its branch and sits on the outgoing connector', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      await open(page, () => lead([
+        node('sl1', 'sub-lead', 1, { children: [node('wa', 'worker', 2), node('wb', 'worker', 3)] }),
+        node('sl2', 'sub-lead', 5, { children: [node('wc', 'worker', 6)] }),
+      ]));
+      const deck = page.locator('.agents-deck').filter({ hasText: 'sub-lead' });
+      await expect(deck).toHaveCount(1);
+      const box = await deck.boundingBox();
+      const branch = await deck.locator('xpath=..').boundingBox();
+      expect(Math.abs(box.x - branch.x)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(box.x + box.width - (branch.x + branch.width))).toBeLessThanOrEqual(0.5);
+      const kids = await deck.locator('xpath=following-sibling::div[contains(@class,"agents-children")][1]').boundingBox();
+      const marginTop = await deck.locator('xpath=following-sibling::div[contains(@class,"agents-children")][1]').evaluate(e => parseFloat(getComputedStyle(e).marginTop));
+      expect(marginTop).toBe(30);
+      expect(Math.abs(box.y + box.height - (kids.y - marginTop))).toBeLessThanOrEqual(0.5);
+    });
+
+    test('finish time comes only from finished_at, so an ended_at-only member reads plain Finished', async ({ page }) => {
+      await open(page, () => lead([
+        node('wy', 'worker', 6),
+        node('wx', 'worker', 8, { finished_at: undefined, ended_at: at(9) }),
+      ]));
+      await page.locator('.agents-deck').click();
+      const pop = page.locator('.deck-pop');
+      await expect(pop.locator('[data-agent="wx"] .agents-muted')).toHaveText('Finished');
+      await expect(pop.locator('[data-agent="wy"] .agents-muted')).toHaveText(/^Finished \d\d:\d\d$/);
+    });
   });
 }
