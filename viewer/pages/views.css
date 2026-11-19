@@ -144,6 +144,7 @@
 .agents-deck { position: relative; margin: 0 10px 10px 0; background-color: var(--panel); }
 .agents-deck.selected { background-color: var(--accent-soft); }
 .agents-deck .agents-box-title { display: block; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; -webkit-line-clamp: unset; line-clamp: unset; }
+.agents-deck-branch { isolation: isolate; }
 .agents-deck::before, .agents-deck::after { content: ''; position: absolute; inset: 0; z-index: -1; border: 1px dashed var(--line-2); border-radius: 8px; background: var(--panel-3); pointer-events: none; }
 .agents-deck::before { transform: translate(5px, 5px); }
 .agents-deck::after { transform: translate(10px, 10px); z-index: -2; }
@@ -261,6 +262,7 @@
  .agents-tree { flex: 1; min-height: 160px; overflow: auto; display: block; cursor: grab; touch-action: none; }
  .agents-tree.dragging { cursor: grabbing; user-select: none; }
  .agents-sizer { position: relative; margin: 0 auto; }
+ .agents-box.agents-deck { width: max-content; min-width: 190px; max-width: 290px; }
  .agents-sizer > .agents-branch { width: max-content; transform-origin: 0 0; }
 }
 @media (max-width: 899px) {

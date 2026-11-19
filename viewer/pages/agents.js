@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const button = (text, fn, cls = '') => { const b = el('button', cls, text); b.type = 'button'; b.onclick = fn; return b; };
-  let data = { leads: [], machines: [] }, threads = [], term = null, termName = null, folded = true, showFinished = false, pathObserver = null, redrawPaths = null, pop = null, infoOpen = false, redrawPop = null, placePopNow = null, deckNow = [];
+  let data = { leads: [], machines: [] }, threads = [], term = null, termName = null, folded = true, showFinished = false, pathObserver = null, redrawPaths = null, pop = null, infoOpen = false, redrawPop = null, popKeep = null, placePopNow = null, deckNow = [];
   window.addEventListener('resize', () => redrawPaths?.());
   const panel = $('agents-terminal');
   const phone = () => matchMedia('(max-width: 899px)').matches;
@@ -41,7 +41,7 @@
   $('brief-close').onclick = () => $('brief-dialog').close();
   function go(lead, agent) { pending = false; const u = new URL(location.href); u.hash = ''; if (lead) u.searchParams.set('lead', lead); else u.searchParams.delete('lead'); if (agent) u.searchParams.set('agent', agent); else u.searchParams.delete('agent'); history.pushState(null, '', u); render(); }
   window.addEventListener('popstate', render);
-  window.addEventListener('scroll', () => placePopNow?.(), true); window.addEventListener('resize', () => placePopNow?.());
+  window.addEventListener('scroll', e => { if (e.target?.closest?.('.deck-pop')) return; placePopNow?.(); }, true); window.addEventListener('resize', () => placePopNow?.());
   document.addEventListener('click', e => {
     const inside = sel => e.composedPath().some(n => n.matches?.(sel));
     if (pop && !inside('.deck-pop, .agents-deck')) { pop = null; redrawPop?.(); }
@@ -134,7 +134,7 @@
     const root = $('agents'), banners = $('unreachable'), oldSide = root.querySelector('.agents-side');
     // A refresh re-renders the whole page; keep the reader where they were if they are still on the same agent.
     const kept = { agent: oldSide?.dataset.agent, side: oldSide?.scrollTop || 0, page: scrollY, toggle: document.activeElement?.classList.contains('agents-finished-toggle') };
-    root.replaceChildren(); banners.replaceChildren(); document.querySelector('.deck-pop')?.remove();
+    root.replaceChildren(); banners.replaceChildren(); { const o = document.querySelector('.deck-pop'); if (o) { popKeep = { member: o.dataset.member, top: o.scrollTop }; o.remove(); } }
     for (const m of data.machines || []) if (!m.reachable) { const d = new Date(m.last_seen); banners.append(el('p', 'agent-unreachable', `${m.machine} unreachable, last seen ${m.last_seen && !isNaN(d) ? d.toLocaleString() : 'never'}`)); }
     const timestamps = new Map(threads.map(t => [t.id, t.collin_at || t.created_at || '']));
     const leads = [...(data.leads || [])].sort((a,b) => String(timestamps.get(b.thread_id) || '').localeCompare(String(timestamps.get(a.thread_id) || '')));
@@ -190,7 +190,7 @@
       deckNow.push({ members, card }); return card;
     }
     function branch(item) {
-      const aside = !item.deck && item.node.kind === 'aside', node = item.node; const wrap = el('div','agents-branch'); let card;
+      const aside = !item.deck && item.node.kind === 'aside', node = item.node; const wrap = el('div', item.deck ? 'agents-branch agents-deck-branch' : 'agents-branch'); let card;
       if (item.deck) card = deckCard(item);
       else { card = aside ? el('div','agents-box') : button('', () => go(lead.thread_id,node.name), `agents-box${selected?.name === node.name ? ' selected' : ''}`); card.classList.add(`state-${node.state || 'idle'}`); if (!aside && pathNames.has(node.name)) card.classList.add('question-path'); if (!aside) card.dataset.session = node.name; card.append(el('div','agents-role',aside ? 'Side conversation' : node.role || 'agent'),el('strong','agents-box-title',node.display_title || node.role || 'Agent')); const st = el('div','agents-status'); st.append(el('span','agents-dot'),document.createTextNode(status(node))); card.append(st); }
       wrap.append(card); const children = arrange(item.deck ? item.kids : kidsShown(node)); if (children.length) { const list = el('div','agents-children'); if (children.some(c => itemNames(c).some(n => pathChildren.has(n)))) list.classList.add('question-path-line'); children.forEach(c => list.append(branch(c))); wrap.append(list); } return wrap; }
@@ -203,10 +203,10 @@
     if (!phone()) controls = treeView(tree, main, lead.thread_id, content, sizer, label);
 
     redrawPop = () => {
-      document.querySelector('.deck-pop')?.remove();
+      const old = document.querySelector('.deck-pop'), prev = old ? { member: old.dataset.member, top: old.scrollTop } : popKeep; popKeep = null; old?.remove();
       const hit = pop && deckNow.find(d => d.members.some(m => m.name === pop.member)); if (!hit) pop = null;
       for (const d of deckNow) d.card.setAttribute('aria-expanded', String(d === hit)); if (!hit) return;
-      const members = hit.members, newest = members[members.length - 1], box = el('div', 'deck-pop'); box.setAttribute('role', 'dialog');
+      const members = hit.members, newest = members[members.length - 1], box = el('div', 'deck-pop'); box.setAttribute('role', 'dialog'); box.dataset.member = pop.member;
       const reviewer = newest.role === 'reviewer', rounds = reviewer ? memberRounds(members) : [];
       const agentRow = m => { const b = button('', () => { pop = null; go(lead.thread_id, m.name); }, 'deck-agent'); b.dataset.agent = m.name; b.append(el('span', 'deck-agent-title', m.display_title || m.role || 'Agent'), el('span', 'agents-muted', finishedAt(m) ? `Finished ${clock(finishedAt(m))}` : 'Finished')); return b; };
       const newestFirst = list => [...list].reverse(), CUT = 5;
@@ -225,13 +225,13 @@
         box.append(head); const order = newestFirst(members); const list = el('div', 'deck-agents'); (pop.all ? order : order.slice(0, CUT)).forEach(m => list.append(agentRow(m))); box.append(list);
         if (!pop.all && order.length > CUT) box.append(button(`Show all ${order.length} agents`, () => { pop.all = true; redrawPop(); }, 'deck-more'));
       }
-      document.body.append(box); placePop();
+      document.body.append(box); placePop(); if (prev && prev.member === pop.member && prev.top) box.scrollTop = prev.top;
     };
     const placePop = () => {
       const box = document.querySelector('.deck-pop'), hit = box && deckNow.find(d => d.members.some(m => m.name === pop?.member)); if (!hit) return;
       const r = hit.card.getBoundingClientRect(), w = Math.min(360, innerWidth - 16), M = 8, GAP = 6;
-      box.style.width = `${w}px`; box.style.left = `${Math.max(M, Math.min(r.left, innerWidth - w - M))}px`; box.style.maxHeight = 'none';
-      const h = box.offsetHeight, below = innerHeight - M - (r.bottom + GAP), above = r.top - GAP - M;
+      box.style.width = `${w}px`; box.style.left = `${Math.max(M, Math.min(r.left, innerWidth - w - M))}px`;
+      const saved = box.scrollTop, h = box.scrollHeight + (box.offsetHeight - box.clientHeight), below = innerHeight - M - (r.bottom + GAP), above = r.top - GAP - M;
       let top, room;
       if (h <= below) { top = r.bottom + GAP; room = below; }
       else if (h <= above) { top = r.top - GAP - h; room = above; }
@@ -239,7 +239,7 @@
       else { top = M; room = above; }
       room = Math.max(40, room); box.style.maxHeight = `${room}px`;
       if (h > room) top = below >= above ? r.bottom + GAP : r.top - GAP - room;
-      box.style.top = `${Math.max(M, Math.min(top, innerHeight - M - Math.min(h, room)))}px`;
+      box.style.top = `${Math.max(M, Math.min(top, innerHeight - M - Math.min(h, room)))}px`; box.scrollTop = saved;
     };
     placePopNow = placePop; redrawPop();
     const side = el('aside','agents-side'); if (selected) { side.append(button(`‹ ${lead.lead_name || 'Lead'}`, () => go(lead.thread_id), 'agents-back'),el('div','agents-role',selected.role || 'agent'),el('h2','',selected.display_title || selected.role || 'Agent'),el('p','agents-muted',[selected.model,selected.effort].filter(Boolean).join(' · ')),el('p','agents-muted',lead.machine || ''),el('p','agents-muted',duration(selected)),el('p','agents-side-status',status(selected))); if (selected.result_summary) side.append(el('h3','agents-report-head','Report'),el('p','agents-report',selected.result_summary)); if (selected.live) side.append(button('Open terminal', () => openTerm(selected), 'primary')); if (selected.has_brief) side.append(button('Read its brief', async () => { try { const res = await fetch(`/wheelchair/api/sessions/${encodeURIComponent(selected.name)}/brief`); if (!res.ok) throw new Error(`HTTP ${res.status}`); $('brief-text').textContent = (await res.json()).brief; } catch (e) { $('brief-text').textContent = `Could not load brief: ${e.message}`; } $('brief-dialog').showModal(); })); side.append(activityPanel(selected, lead, nodes(lead.session))); } else side.append(el('p','agents-muted','Select an agent to see details.')); root.append(side);

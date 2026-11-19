@@ -140,6 +140,44 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await pop.locator('.deck-round-btn').first().click(); await inside();
     });
 
+    test('popover scrolls, keeps its scroll across a poll, and a bottom row is clickable', async ({ page }) => {
+      const rounds = { review: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [i + 1, { found: 1 }])) };
+      await open(page, () => lead(Array.from({ length: 20 }, (_, i) => reviewer(i + 1, 0)), rounds));
+      await page.locator('.agents-deck').click();
+      const pop = page.locator('.deck-pop');
+      await pop.getByRole('button', { name: 'Show all 20 rounds' }).click();
+      expect(await pop.evaluate(p => p.scrollHeight > p.clientHeight)).toBe(true);
+      const b = await pop.boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      await page.mouse.wheel(0, 300);
+      await expect.poll(() => pop.evaluate(p => p.scrollTop)).toBeGreaterThan(0);
+      await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      expect(await pop.evaluate(p => p.scrollTop)).toBeGreaterThan(0);
+      await page.waitForTimeout(5500);
+      await expect(pop).toBeVisible();
+      expect(await pop.evaluate(p => p.scrollTop)).toBeGreaterThan(0);
+      await pop.evaluate(p => { p.scrollTop = p.scrollHeight; });
+      await pop.locator('.deck-round-btn[data-round="1"]').click();
+      await expect(pop.locator('.deck-agent')).toHaveCount(1);
+    });
+
+    test('stacked outlines are painted outside the deck edge', async ({ page }) => {
+      await open(page, () => lead([reviewer(1), reviewer(2)]));
+      const r = await page.locator('.agents-deck').boundingBox();
+      const shot = (x, y) => page.screenshot({ clip: { x, y, width: 4, height: 4 } });
+      const outline = await shot(r.x + r.width + 7, r.y + 30);
+      const empty = await shot(r.x + r.width + 7, r.y - 8);
+      expect(outline.equals(empty)).toBe(false);
+    });
+
+    test('desktop deck title is not truncated for the full example', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      const rounds = { review: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [i + 1, i === 19 ? { found: 0, clean: true } : { found: 1 }])) };
+      await open(page, () => lead(Array.from({ length: 20 }, (_, i) => reviewer(i + 1, 0)), rounds));
+      const title = page.locator('.agents-deck .agents-box-title');
+      await expect(title).toHaveText('Plan review · 20 rounds, last round clean');
+      expect(await title.evaluate(t => t.scrollWidth <= t.clientWidth)).toBe(true);
+    });
+
     test('decked sub-leads share one deck of workers', async ({ page }) => {
       await open(page, () => lead([
         node('sl1', 'sub-lead', 1, { children: [node('wa', 'worker', 2), node('wb', 'worker', 3)] }),
