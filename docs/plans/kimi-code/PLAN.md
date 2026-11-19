@@ -84,6 +84,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 47 | Kimi limit-hits use the hub's shared limit-hit handling unchanged (cooldown recorded, session resumes later); only a failed turn tells the starter. The Spec flowchart's "Rate limit, or turn failed: starter is told" was shorthand and is reworded | Verification attempt 2 read the flowchart as requiring a starter notice; changing shared handling would change Claude, Codex and Antigravity, which IDEA.md rules out | verification |
 | 48 | A Kimi permission prompt counts only when the input box (`│ >`) is gone and the approval title and choice lines sit together at the bottom of the pane; tested with output that merely mentions the words (no card) and with the real panel (card) | Permission-prompt detection survived two fix attempts (verification attempt 3: ordinary output mentioning the words raised a card every poll); Kimi's approval panel replaces the input box | user |
 | 49 | Leave the version floor's handling of malformed SemVer as is; recorded as an Accepted Risk | Version-floor parsing survived two fix attempts (verification attempt 3: `02.6.3`, `2.6.3+abc..def`, `2.6.4-01` accepted); real `kimi --version` prints plain versions | user |
+| 50 | Live with the remaining permission-prompt false positive; recorded as an Accepted Risk | Permission-prompt detection failed verification attempt 4 after R1, Q1 and A1 (Decision 48): title and choice from separate blocks of ordinary output can still match | user |
 
 ## Spec
 
@@ -619,6 +620,7 @@ re-raise them.
 | If Collin types `/new` or `/sessions` in a Kimi session's terminal, the app keeps following the old conversation | Only Collin can do it, from the terminal; agents never type slash commands | 10 |
 | Placement can pick a Kimi account on a machine where the `kimi` binary was removed after login | Same for every CLI today; Ready reports the missing CLI | 4 |
 | Malformed SemVer strings such as 02.6.3 or 2.6.4-01 pass the version floor; only kimi --version output is parsed and it prints plain versions | Collin's decision after the version-floor gap survived two fix attempts (Decision 49) | verification |
+| Under the auto permission setting, ordinary Kimi output showing both approval phrases near the bottom while no input box shows can raise a stray permission card; it clears when the input box returns. Under bypass, Kimi runs Never Ask and shows no approval screen | Collin's decision after permission-prompt detection failed verification again (Decision 50) | verification |
 
 ## Review Rounds
 
@@ -956,6 +958,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Collin on remediation 4 gap 1: live with it (Decision 50, Accepted Risk). Gap 2 (duplicate notice on a retried Stop) is with him.
 
 - 2026-11-18 — Choice: C1, `viewer/app/usage.js:110`: the per-CLI Kimi problem is checked after `signed_in` and before the account's own problem, gated on `a.provider === 'kimi'`; `cliProblems` is recorded for every reachable machine.
 - 2026-11-18 — C1 accepted (band: scout): targeted 33/33 re-run by the sub-lead (worker's full viewer run 646/646). Remediation 4 gap 3 fixed.

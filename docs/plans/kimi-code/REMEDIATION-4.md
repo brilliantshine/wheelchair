@@ -14,3 +14,5 @@ Verification attempt 4 at `c29a95b`: `wc-01b8cb1bf051-verifier-7` (claude-opus-5
 - **Fatal-stop notification:** fixed in R3 and P1; fails again (duplicate notice on a retried Stop). Sent to the lead.
 
 Gap 3 is new. Per the sub-lead rules, work stops while the surviving gaps are with Collin.
+
+**Gap 1 settled by the plan (Collin, Decision 50):** live with it; Accepted Risk added. Gap 3 fixed by C1.
