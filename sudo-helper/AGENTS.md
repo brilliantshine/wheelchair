@@ -1,6 +1,6 @@
 # `sudo-helper/` — root sudo helper for cards
 
-The root sudo helper lets Collin run a lead's `sudo` card from his own device. It runs only from the installed root-owned copy in `/usr/local/lib/wheelchair-sudo/` as the `wheelchair-sudo.service` system unit, never from the clone. Collin installs or updates it himself with `sudo <clone>/sudo-helper/install.sh` from the canonical clone (refused from a worktree); `./install.sh` never touches it beyond a one-line hint.
+The root sudo helper lets the user run a lead's `sudo` card from their own device. It runs only from the installed root-owned copy in `/usr/local/lib/wheelchair-sudo/` as the `wheelchair-sudo.service` system unit, never from the clone. The user installs or updates it themselves with `sudo <clone>/sudo-helper/install.sh` from the canonical clone (refused from a worktree); `./install.sh` never touches it beyond a one-line hint.
 
 | File | Role |
 |---|---|
