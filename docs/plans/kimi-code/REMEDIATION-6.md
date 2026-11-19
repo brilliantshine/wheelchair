@@ -14,3 +14,5 @@ Verification attempt 6 at `3ee4fae`: `wc-01b8cb1bf051-verifier-12` (claude-opus-
 - **Permission-prompt detection** (R1, Q1, A1; Decision 50 accepted its false positive): now a false negative on the real `▶`-prefixed panel. Sent to the lead.
 
 Gaps 2–4 are remediable (at most one earlier fix each); asked the lead whether to proceed with them meanwhile.
+
+**Resolutions:** gap 1 fixed by A2 (Decision 52); gaps 2 and 3 by W1; gap 4 by L1.

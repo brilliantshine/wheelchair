@@ -961,6 +961,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — A2 accepted (band: scout): exactly the brief's matcher change; the renderer test omitted the Kimi footer under the panel, so the sub-lead added the footer and context lines to `kimiPanel` in `machine/test/kimi.test.js`; kimi tests 29/29. Remediation 6 complete.
+
 - 2026-11-18 — Collin on remediation 6 gap 1: fix it (Decision 52); dispatched as A2 (light, gpt).
 
 - 2026-11-18 — L1 accepted (band: scout): exactly the brief's helper (reads the isolated machine's name-keyed `sessions.json`); syntax and test-support 9/9 re-run by the sub-lead; the worker's live check 5 run: `5 pinned light model | PASS`, cleanup clean, `1 passed; 0 failed`. Remediation 6 gap 4 fixed; gap 1 with Collin.

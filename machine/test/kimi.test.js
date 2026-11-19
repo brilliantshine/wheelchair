@@ -358,7 +358,8 @@ test('approval panels require ordered bottom lines and no input box', () => {
   assert.equal(kimi.promptText('Earlier output\n│ Ready to build with this plan? │\n│ ❯ Approve │\n│ Reject │\n│ Revise plan │'), true);
   const kimiPanel = (title, choice = '1. Approve once', bordered = false) => {
     const rows = [`▶ ${title}`, 'command', `▶ ${choice}`, '  2. Approve for this session', '  3. Reject'];
-    return bordered ? rows.map(line => `│ ${line} │`).join('\n') : rows.join('\n');
+    const footer = ['Ask When Needed  K3 thinking: high  …/worktrees/clone/wc-x  wc-x', 'context: 7% (17.5k/256k)'];
+    return [...(bordered ? rows.map(line => `│ ${line} │`) : rows), ...footer].join('\n');
   };
   for (const title of ['Run this command?', 'Write this file?', 'Apply these edits?', 'Stop this task?', 'Approve SomeTool?']) {
     assert.equal(kimi.promptText(kimiPanel(title)), true, title);
