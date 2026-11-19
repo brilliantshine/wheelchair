@@ -72,6 +72,8 @@ None.
 | 45 | Tool edits patch the original raw entry; `keys` updates only set status; key store writes are atomic with `failed` on error | Close round 11 gaps | review-round-11 |
 | 46 | Unrepresentable settings/headers kept verbatim and read-only; Keys list rebuilt from full stored names plus baseline references; key-store temp file cleaned up | Close round 12 gaps | review-round-12 |
 | 47 | Args with a newline are read-only; kind change refused while an entry has read-only parts | Clarify round 13 edge rules | review-round-13 |
+| 48 | While a machine or project is loading (including the reload after a Save), the picker and every action are disabled until it answers; nothing from the previous selection can be sent or shown | Stale-switch gaps survived two fix attempts in verification | user |
+| 49 | The machine returns, per tool, the key names its warnings are about (including read-only references and held-back names); the page shows "needs X, not set on this machine" whenever X is unset in the current key list, from the loaded baseline's references (not unsaved draft edits); "shared with" uses the same per-tool names | Key-warning gaps survived two fix attempts in verification | user |
 
 ## Spec
 
@@ -166,7 +168,11 @@ project's tools and lets him add, change and remove them. Works at phone width.
   rebuilds the Keys list as: every name in `keys` (set) plus every key name the loaded baseline
   references (not set if absent from `keys`). So an added key appears, a removed key that the
   baseline still references stays as not set, and a removed unused key disappears. Usage,
-  "shared with" and held-back warnings stay as computed from the loaded baseline. The form and its baseline are kept. After a Save that pushed a branch, the form reloads from the default branch.
+  "shared with" and held-back warnings stay as computed from the loaded baseline; "needs <name>"
+  warnings follow the current key list at once (Log 49). The form and its baseline are kept. After a Save that pushed a branch, the form reloads from the default branch.
+- While a machine or project is loading (the picker list, a Read, or the reload after a Save),
+  the picker and every action are disabled until it answers; nothing from the previous
+  selection can be sent or shown (Log 48).
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
   (env names; plain values shown, key values shown as "set" or "not set" on this machine).
 - Each tool shows any reason it would be skipped, by the machine's validator or by Codex, and
@@ -208,7 +214,8 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - Keys belong to the project (identity above), by name. A key is written in `.mcp.json` as
   `${NAME}` (env value or header value); for env entries the setting name equals the key name
   so Codex passthrough works (`machine/adapters/codex.js:84-92`). Two tools using the same key
-  name share one value; the form shows "shared with <other tool>".
+  name share one value; the form shows "shared with <other tool>", from the per-tool key names
+  the machine returns for the loaded baseline (Log 49).
 - Keys live only in two places: an env value exactly `${NAME}` and a header value containing
   `${NAME}`. A reference in a command, args or URL, as `${NAME}` or `${NAME:-default}`, is not
   a managed key and is never injected, so a key value can't reach a tool's own argv through
@@ -221,7 +228,10 @@ project's tools and lets him add, change and remove them. Works at phone width.
   set, settable. A reference to a reserved name is left to the session's normal environment:
   not a key, no flag.
 - A key shown "not set" on this machine is shown as a key warning on the tool ("needs <name>,
-  not set on this machine"). Key warnings are separate from skip reasons: the adapters still
+  not set on this machine"). The read returns, per tool, every key name the tool references in
+  the loaded baseline, read-only references and held-back names included; the screen shows the
+  warning whenever that name is missing from the current key list, so it follows key writes at
+  once (Log 49). Key warnings are separate from skip reasons: the adapters still
   start the tool, which then runs without that value unless the session's normal
   environment has one.
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Reserved names, refused by form and machine
@@ -773,3 +783,4 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-18 — R2-3 accepted (band: scout): diff is exactly the briefed line, no other `boundingBox()` uses. Sub-lead ran app-settings + app-project-tools with `--repeat-each 3`: 379 passed, 1 failed in `app-settings.spec.js:61` (Firefox, table cell; a test this build didn't change); earlier the worker saw a hash-navigation failure there. Different tests each time: load flakes.
 - 2026-11-18 — Verification attempt 3 (96feb07): claude verifier PASS; gpt verifier FAIL with 7 gaps. Two families have survived two fix attempts (A: stale state across a machine/project switch; B: key warnings vs current key state), so they're plan defects and were sent to the lead for Collin. Work stopped pending the answer. Five new gaps were sent for fix or defer.
 - 2026-11-18 — Lead on attempt-3 gaps: fix 1 (refuse a header renamed onto a read-only header's name as a duplicate), 2 (args containing \r are read-only, like newline), 3 (`git add -f` in the temp worktree), 4 (fold into B's fix), 5 (failed replies carry the last known revision and keys; revision 0 and keys [] if the store can't be read). No Deferred rows. Remediation 3 is held until Collin answers A and B, so it runs in one pass.
+- 2026-11-18 — Collin answered A and B (Decision Log 48, 49; folded into Spec Reading and Keys). Remediation 3 covers A, B and attempt-3 gaps 1-5.
