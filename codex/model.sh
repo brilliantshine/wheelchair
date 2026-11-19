@@ -11,7 +11,7 @@ import re
 import sys
 import tempfile
 
-PROVIDERS = ("claude", "gpt", "gemini")
+PROVIDERS = ("claude", "gpt", "gemini", "kimi")
 SLOTS = ("light", "standard", "heavy", "critical", "lead", "sub-lead")
 WORK_TIERS = ("light", "standard", "heavy", "critical")
 DEFAULTS = {
@@ -30,15 +30,25 @@ DEFAULTS = {
         "heavy": ("gemini-3.8-flash-high", None), "critical": ("gemini-3.8-flash-high", None),
         "lead": ("gemini-3.8-flash-high", None),
     },
+    "kimi": {
+        "light": ("kimi-code/kimi-for-coding", None), "standard": ("kimi-code/k3", None),
+        "heavy": ("kimi-code/k3.1-pro", None), "critical": ("kimi-code/k3.1-pro", None),
+        "lead": ("kimi-code/k3.1-pro", None),
+    },
 }
 ALIASES = {"luna": "light", "terra": "standard", "sol": "heavy", "astra": "critical"}
 CLAUDE_ALIASES = {"haiku": "light", "sonnet": "standard", "opus": "heavy"}
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 GPT_EFFORTS = {"low", "medium", "high", "xhigh"}
 VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+KIMI_VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$")
+
+
+def value_ok(provider, model):
+    return (KIMI_VALUE if provider == "kimi" else VALUE).match(model) is not None
 MODEL = re.compile(r"^gpt-(\d+(?:\.\d+)*)-([a-z]+)$")
-USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt|gemini> <slot> | "
-         "effort <claude|gpt|gemini> <slot> | family claude <slot> | "
+USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt|gemini|kimi> <slot> | "
+         "effort <claude|gpt|gemini|kimi> <slot> | family claude <slot> | "
          "set [<provider> <slot> | <tier>] <model|none> [effort] | "
          "skip <model> | init | reset | check [--json] | show --json")
 
@@ -77,15 +87,17 @@ def parse_pins(text):
             skipped.append(skip.group(1))
             continue
         entry = re.fullmatch(
-            r"(claude|gpt|gemini)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._-]{0,63})(?:\s+@([a-z]+))?", line)
+            r"(claude|gpt|gemini|kimi)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._-]{0,63}(?:/[a-z0-9][a-z0-9._-]{0,63})?)(?:\s+@([a-z]+))?", line)
         if entry is not None:
             provider, raw_slot, model, effort = entry.groups()
             slot = slot_for(provider, raw_slot)
-            if slot is None:
+            if slot is None or not value_ok(provider, model):
                 return None
             if model == "none":
                 if effort is not None:
                     return None
+            elif effort is not None and provider == "kimi":
+                return None
             elif effort is not None and effort not in (GPT_EFFORTS if provider == "gpt" else EFFORTS):
                 return None
             key = provider, slot
@@ -218,6 +230,49 @@ def listed_models(cache_path):
         seen.add(model)
         (parsed if model_parts(model) is not None else other).append(model)
     return newer_first(parsed) + other
+
+
+def kimi_config(text):
+    """Model tables of Kimi Code's config: tomllib when present, else a plain scan (Python < 3.11)."""
+    try:
+        import tomllib
+    except ImportError:
+        models, current = {}, None
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("["):
+                match = re.fullmatch(r'\[\s*models\s*\.\s*"([^"\\]*)"\s*\]\s*(?:#.*)?', line)
+                current = match.group(1) if match else None
+                if current is not None:
+                    models.setdefault(current, {})
+            elif current is not None:
+                match = re.fullmatch(r'display_name\s*=\s*"([^"\\]*)"\s*(?:#.*)?', line)
+                if match:
+                    models[current]["display_name"] = match.group(1)
+        return {"models": models}
+    return tomllib.loads(text)
+
+
+def kimi_models():
+    """The model aliases in Kimi Code's config, as [{value, label}], or [] when unreadable."""
+    path = os.environ.get("WHEELCHAIR_KIMI_CONFIG") or os.path.expanduser("~/.kimi-code/config.toml")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            config = kimi_config(handle.read())
+    except Exception:
+        return []
+    models = config.get("models") if isinstance(config, dict) else None
+    if not isinstance(models, dict):
+        return []
+    listed = []
+    for alias, entry in models.items():
+        # Only aliases a pin can hold: fullmatch (no trailing newline), and never the "none" marker.
+        if not isinstance(alias, str) or alias == "none" or not KIMI_VALUE.fullmatch(alias):
+            continue
+        name = entry.get("display_name") if isinstance(entry, dict) else None
+        label = f"{name} ({alias})" if isinstance(name, str) and name.strip() else alias
+        listed.append({"value": alias, "label": label})
+    return listed
 
 
 def heads_up_events(pin_path, cache_path):
@@ -365,6 +420,7 @@ def main(root, argv):
                 result[provider][slot] = None if model == "none" else {
                     "model": model, "effort": effort}
         result["malformed"], result["visible"] = malformed, listed_models(cache_path)
+        result["kimi_visible"] = kimi_models()
         print(json.dumps(result, separators=(",", ":")))
         return
     if len(argv) == 3 and argv[0] == "set" and (slot := slot_for("gpt", argv[1])) in WORK_TIERS:
@@ -377,10 +433,13 @@ def main(root, argv):
         _, provider, raw_slot, model, *tail = argv
         slot = slot_for(provider, raw_slot)
         effort = tail[0] if tail else None
+        if provider == "kimi" and effort is not None:
+            print("Kimi Code has no effort setting", file=sys.stderr)
+            sys.exit(2)
         if provider == "gpt" and effort is not None and effort not in GPT_EFFORTS:
             print("GPT effort must be one of: low, medium, high, xhigh", file=sys.stderr)
             die_usage()
-        if (slot is None or not VALUE.match(model)
+        if (slot is None or not value_ok(provider, model)
                 or (model == "none" and effort is not None)
                 or (effort is not None and effort not in (GPT_EFFORTS if provider == "gpt" else EFFORTS))):
             die_usage()

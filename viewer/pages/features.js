@@ -195,5 +195,5 @@
   }
 
   refresh();
-  setInterval(refresh, 5000);
+  window.wcPoller(refresh, 5000);
 })();

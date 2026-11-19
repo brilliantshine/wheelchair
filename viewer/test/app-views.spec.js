@@ -305,8 +305,8 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       // The only question came from a hidden agent and was passed on; neither its path nor the legend shows.
       await expect(page.locator('.agents-path-legend')).toHaveCount(0);
       await page.getByRole('button', { name: 'Show 10 finished agents' }).focus();
-      await page.keyboard.press('Enter');
-      await expect(boxes).toHaveCount(13);
+      await page.keyboard.press('Enter'); // the 10 finished workers under the lead stack into one deck: lead, deck, running, old worker
+      await expect(boxes).toHaveCount(4);
       await expect(page.getByRole('button', { name: 'Hide finished agents' })).toBeFocused();
       await expect(page.locator('.agents-path-legend')).toHaveCount(1);
       if (label === 'desktop') {
@@ -314,7 +314,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
         expect(inside).toBe(true);
       }
       await page.waitForTimeout(5500); // a poll redraw keeps the choice and the focus
-      await expect(boxes).toHaveCount(13);
+      await expect(boxes).toHaveCount(4);
       await expect(page.getByRole('button', { name: 'Hide finished agents' })).toBeFocused();
       await page.getByRole('button', { name: 'Hide finished agents' }).click();
       await expect(boxes).toHaveCount(3);
@@ -587,7 +587,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await page.keyboard.type('l');
       await expect.poll(() => context.hub.calls.filter((call) => call.path.endsWith('/keys')).slice(before).some(call => call.body.keys === 'l')).toBe(true);
       await page.keyboard.type('s');
-      await page.keyboard.press('Enter');
+      await page.keyboard.press('Enter'); // the 8 finished workers stack into one deck
       await expect.poll(() => context.hub.calls.filter((call) => call.path.endsWith('/keys')).length)
         .toBe(before + 3);
       await page.waitForTimeout(700);

@@ -129,7 +129,39 @@
 .agents-heading h2 { font-size: 20px; }
 .agents-thread { color: var(--ink-2); margin-top: 5px; }
 .agents-count { margin: 8px 0 30px; }
-.agents-finished-toggle { margin: -18px 0 18px; font-size: 12px; }
+.agents-finished-bar { position: relative; display: flex; align-items: center; gap: 8px; margin: -18px 0 18px; }
+.agents-finished-toggle { font-size: 12px; }
+.agents-info-btn { width: 30px; font-size: 12px; font-weight: 700; padding: 6px 0; }
+.agents-info { position: absolute; z-index: 30; left: 0; top: calc(100% + 8px); width: min(330px, calc(100vw - 40px)); display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel); box-shadow: 0 12px 32px rgba(0,0,0,.5); font-size: 12.5px; color: var(--ink-2); }
+.agents-info p { margin: 0; }
+.agents-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink); }
+.agents-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--dim); }
+.agents-key-item { display: flex; align-items: center; gap: 6px; }
+.agents-example { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; font-size: 12px; color: var(--dim); }
+.agents-squares { display: flex; flex-wrap: wrap; gap: 3px; }
+.agents-sq { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.agents-sq.none { background: transparent; border: 1px dashed var(--dim); }
+.agents-deck { position: relative; background-color: var(--panel); }
+.agents-deck.selected { background-color: var(--accent-soft); }
+.agents-deck .agents-box-title { display: block; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; -webkit-line-clamp: unset; line-clamp: unset; }
+.agents-deck-branch { isolation: isolate; }
+.agents-deck::before, .agents-deck::after { content: ''; position: absolute; inset: 0; z-index: -1; border: 1px dashed var(--line-2); border-radius: 8px; background: var(--panel-3); pointer-events: none; }
+.agents-deck::before { transform: translate(5px, 5px); }
+.agents-deck::after { transform: translate(10px, 10px); z-index: -2; }
+.agents-deck[aria-expanded="true"] { border-color: var(--accent); }
+.agents-deck-head { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px; }
+.agents-deck-count { padding: 1px 7px; border-radius: 9px; background: var(--panel-2); font-family: var(--mono); font-size: 11px; color: var(--ink); }
+.deck-pop { position: fixed; z-index: 40; overflow: auto; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); box-shadow: 0 12px 32px rgba(0,0,0,.5); font-size: 13px; }
+.deck-pop p { margin: 0; }
+.deck-rows { list-style: none; margin: 4px 0 0; padding: 0; }
+.deck-round { border-top: 1px solid var(--line); }
+.deck-round-btn { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 7px 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; font-size: 12px; }
+.deck-round-name { width: 62px; flex: none; font-weight: 600; }
+.deck-round-text { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--ink-2); }
+.deck-agents { display: flex; flex-direction: column; gap: 4px; padding: 0 0 8px 18px; }
+.deck-agent { display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 6px 8px; text-align: left; font-size: 12px; }
+.deck-agent-title { overflow-wrap: anywhere; }
+.deck-more { align-self: flex-start; font-size: 12px; }
 .agents-tree { display: flex; min-width: 0; overflow-x: auto; padding: 10px 0 30px; }
 .agents-tree > .agents-branch { margin: 0 auto; flex-shrink: 0; }
 .agents-branch { display: flex; flex-direction: column; align-items: center; min-width: 190px; }
@@ -230,6 +262,7 @@
  .agents-tree { flex: 1; min-height: 160px; overflow: auto; display: block; cursor: grab; touch-action: none; }
  .agents-tree.dragging { cursor: grabbing; user-select: none; }
  .agents-sizer { position: relative; margin: 0 auto; }
+ .agents-box.agents-deck { width: max-content; min-width: 190px; max-width: 290px; }
  .agents-sizer > .agents-branch { width: max-content; transform-origin: 0 0; }
 }
 @media (max-width: 899px) {

@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity' };
+  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
   const API = '/wheelchair/api';
   const id = new URLSearchParams(location.search).get('id') || '';
   const T = API + '/threads/' + encodeURIComponent(id);
@@ -1226,5 +1226,5 @@
 
   poll();
   loadAccountNames();
-  setInterval(poll, POLL_MS);
+  window.wcPoller(poll, POLL_MS);
 })();

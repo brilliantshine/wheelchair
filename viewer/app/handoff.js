@@ -40,7 +40,7 @@ function historyText(card) {
     case 'approval': return lines((card.objections || []).map((item) => lines(item.finding, item.reason)), answer);
     case 'done': return lines(card.title, card.can_do || [], card.left_as_is || [], card.pr_url);
     case 'check': return lines(card.update, (card.steps || []).map((step, i) => lines(`${i + 1}. [${step.where}] ${step.do} — see: ${step.see}`, step.command, step.agent === 'not-tried' ? `(not tried: ${step.note})` : step.agent === 'broken' ? `(didn't work: ${step.note})` : '')));
-    case 'needs': return lines(card.title, card.body);
+    case 'needs': return lines(card.title, card.body, card.items || []);
     case 'offer': return lines(card.summary, answer);
     case 'stub': case 'diagram': case 'image': return card.title || '';
     case 'sudo': return lines(card.command, card.state, card.exit_code === undefined ? '' : `exit ${card.exit_code}`, card.reason);

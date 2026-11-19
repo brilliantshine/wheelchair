@@ -11,7 +11,7 @@
   const STAGE = {
     idea: 'Idea', planning: 'Planning', review: 'Review', building: 'Building', verifying: 'Verifying', done: 'Done',
   };
-  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity' };
+  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
   let threads = [];
   let notices = [];
   let titles = {};
@@ -146,5 +146,5 @@
   if (new URLSearchParams(location.search).get('new')) location.replace('/wheelchair/app/new');
 
   poll();
-  setInterval(poll, 5000);
+  window.wcPoller(poll, 5000);
 })();
