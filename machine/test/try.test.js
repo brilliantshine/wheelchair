@@ -457,10 +457,10 @@ test('hanging filter subprocess outlives deadline and its whole process group is
   f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=hang\n'); f.git('add', '.gitattributes'); f.git('commit', '-m', 'filter'); f.git('switch', 'main');
   const pidFile = path.join(f.root, 'child-pid'); const filter = path.join(f.root, 'filter');
   await fs.writeFile(filter, `#!/bin/sh\nsh -c 'trap "" TERM; exec sleep 30' &\necho $! > '${pidFile}'\nwait\n`, { mode: 0o755 }); f.git('config', 'filter.hang.smudge', filter); f.git('config', 'filter.hang.required', 'true');
-  f.instance.switchTimeout = 300; f.instance.killGrace = 100; await f.instance.handle(f.request); const result = await f.done();
+  const source = f.git('rev-parse', 'HEAD'); f.instance.switchTimeout = 300; f.instance.killGrace = 100; await f.instance.handle(f.request); const result = await f.done();
   const pid = Number((await fs.readFile(pidFile, 'utf8')).trim()); assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
-  assert.ok(['nothing-moved', 'interrupted'].includes(result.last.outcome));
-  if (result.last.outcome === 'nothing-moved') { assert.equal(f.git('branch', '--show-current'), 'main'); assert.equal(f.git('status', '--porcelain'), ''); }
+  const cleanSource = f.git('rev-parse', 'HEAD') === source && f.git('branch', '--show-current') === 'main' && f.git('status', '--porcelain') === '';
+  assert.equal(result.last.outcome, cleanSource ? 'nothing-moved' : 'interrupted');
 });
 test('delayed process filter failing after HEAD moved records files across reload', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
