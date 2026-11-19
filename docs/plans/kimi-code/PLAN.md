@@ -977,6 +977,7 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 - 2026-11-19 — Remediation 12 gap 1 fixed by the sub-lead at Collin's choice (Decision 58): `recoverFromTmux` no longer requires `thinking` in the Kimi footer (`machine/service.js:402`); recovery test adds a thinking-off Kimi pane (stopped) and a Claude pane mentioning the footer mid-line (left alone). Commit `569d4fe`.
 - 2026-11-19 — Decision 59 (Collin, via the lead): from attempt 13 on, fix only gaps that break normal use or fail a validation command; rare failure paths become Accepted Risks. Verifiers 25 and 26 told by message.
 - 2026-11-19 — Attempt 13: verifier-26 (gpt-6.2-sol) PASS at 858d46e; its two rare failure paths (archive during a double fatal stop; binary downgraded during checkout) added as Accepted Risks under Decision 59. Validation failures were the known installer snapshot check and load flakes that pass alone.
+- 2026-11-19 — Attempt 13: verifier-25 (claude-opus-5-5) PASS at 858d46e. Both verifiers passed; verification complete. Later commits (6c90094, 252bd93, this one) touch PLAN.md and COMPLETION.md only.
 
 - 2026-11-18 — Lead on remediation 12 gap 2: fix (regular file only); F1 (light, gpt) dispatched. Gap 1 with Collin.
 

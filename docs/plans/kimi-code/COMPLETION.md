@@ -415,3 +415,7 @@ node --test viewer/test/*.test.js   # in two halves: 439/439 and 207/208 (routes
 TZ=UTC npm --prefix viewer run test:browser   # 773 passed, 1 failed; re-run: no failures
 node --test test-support/test/*.test.js   # pass 9, fail 0
 ```
+
+## Verification attempt 13
+
+At `858d46e`: `wc-01b8cb1bf051-verifier-25` (claude-opus-5-5) PASS; `wc-01b8cb1bf051-verifier-26` (gpt-6.2-sol) PASS under Decision 59. Its two rare failure paths are Accepted Risks in PLAN.md. Remaining validation failures in both runs were the installer's live `~/.wheelchair` snapshot check (192/192 on a scratch home) and load flakes that passed when re-run alone.
