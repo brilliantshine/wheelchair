@@ -114,11 +114,11 @@ module.exports = {
     const lines = pane.split('\n').filter(line => line.trim()).slice(-15)
       .map(line => line.trim().replace(/^[│\s]+|[│\s]+$/g, ''));
     for (let i = 0; i < lines.length; i++) {
-      const title = lines[i];
+      const title = lines[i].replace(/^[▶❯]\s*/, '');
       const plan = title.startsWith('Ready to build with this plan?');
       if (!plan && !/^(?:Run this command\?|Write this file\?|Apply these edits\?|Stop this task\?)/.test(title) && !/^Approve [^\n?]+\?$/.test(title)) continue;
       const choice = plan ? /^Approve/ : /^Approve once/;
-      if (lines.slice(i + 1).some(line => choice.test(line.replace(/^(?:❯\s*)?(?:\d+\.\s*)?/, '')))) return true;
+      if (lines.slice(i + 1).some(line => choice.test(line.replace(/^(?:[▶❯]\s*)?(?:\d+\.\s*)?/, '')))) return true;
     }
     return false;
   },
