@@ -981,3 +981,8 @@ test('R7-1: a read-only web tool card shows its headers, key chip and unknown fi
   await expect(card.locator('.pt-chip.unset')).toHaveText('not set');
   await expect(card).toContainText('timeout: 5');
 });
+
+test('R7-2: a read-only value with a newline shows in its JSON form, not collapsed', async ({ page }) => {
+  await open(page, { read: withTools({ n: { command: 'a', env: { NOTE: 'first\nsecond' } } }) });
+  await expect(tool(page, 'n')).toContainText('"first\\nsecond"');
+});
