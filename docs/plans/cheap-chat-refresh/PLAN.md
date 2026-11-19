@@ -164,7 +164,7 @@ None.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | tricky. Machine: S1 cheap idle copy, S2 `known` on the transcript route, machine tests, API.md | `machine/service.js`, `machine/API.md`, `machine/AGENTS.md`, `machine/test/` | standard (gpt-6.1-terra) | wc-2e6dde9e5e6a-worker | `bash machine/test/run.sh` | done |
-| T2 | Hub: S3 transcript store and idle drop, S4 parsed reuse, S5, viewer tests | `viewer/app/`, `viewer/test/`, `viewer/AGENTS.md` | standard (gpt-6.1-terra) | wc-2e6dde9e5e6a-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
+| T2 | Hub: S3 transcript store and idle drop, S4 parsed reuse, S5, viewer tests | `viewer/app/`, `viewer/test/`, `viewer/AGENTS.md` | standard (gpt-6.1-terra) | wc-2e6dde9e5e6a-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done |
 
 ## Log
 
@@ -174,3 +174,8 @@ None.
 - 2026-11-19 — Choice: T1, `machine/service.js` `copyTranscript`: takes a follow-up callback so a request's copy and its stamped read share one queue entry.
 - 2026-11-19 — Also seen in the T1 diff, not in its Choices: the Kimi early return also checks path and inode; the partial-line cut runs only when new lines arrive; a kept file that shrinks mid-read throws; `persistSessions` drops `transcript_unsaved` with a JSON replacer.
 - 2026-11-19 — T1 accepted (band: self): machine suite re-run, 349/349 pass; diff matches S1/S2 and the machine half of S6.
+- 2026-11-19 — Choice: T2, `viewer/app/chat.js` parsedKey: the parsers read only `thread.parent_title` (via `renderTurn`), so the key is the CLI plus that field.
+- 2026-11-19 — Choice: T2, `viewer/app/hub.js`: `Hub` takes an injectable `now` for prune tests; tests call `pruneTranscripts` directly.
+- 2026-11-19 — Choice: T2, `viewer/app/chat.js`: parsing goes through `module.exports.transcriptItems` so tests can spy on it.
+- 2026-11-19 — Choice: T2, `viewer/app/hub.js`: the shared pending-and-lock helper is `withChatThread`, counts kept in `transcriptPending`.
+- 2026-11-19 — T2 accepted (band: scout): the worker hit its fails-twice gate on `app-quiet.test.js` "6 message clears debt" and two Chromium pending-bubble specs. The app-quiet test also fails 1 in 3 on the unchanged feature branch, and both browser specs pass 3/3 in isolation on the worker branch, so these are load flakes from two suites running at once, not regressions. The scout found no deviation from S3-S5.
