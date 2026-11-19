@@ -58,6 +58,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 31 | Archive: one 1 s-bounded kill on the thread slice and a non-blocking stop | Screens add at most ~1 s to archive | review-round-5 |
 | 32 | Generation reserved in `state.json` before spawn; sweep leaves `starting` screens; thread-slice kill bumps generations; kill + stop share 1 s | Closes sweep/start and restart generation races; one archive budget | review-round-6 |
 | 33 | One deadline per `key` op; releases always attempted; failed release blocks input until `screen stop`; focus failure is still a successful `run` | Bounds input ops; no stuck keys; no duplicate launches | review-round-6 |
+| 34 | One last review round; findings that only arise when two events coincide within about a second (concurrent stop/archive/restart/sweep/launch timing) go to Accepted Risks rather than rework; other findings are fixed as usual | Collin's pick ("One last round, timing cases accepted") after six rounds | user |
 
 ## Spec
 
@@ -505,6 +506,15 @@ manager, no video, no Ready-check change.
 | mechanics | major | RE-RAISE: archive race lasts while synchronous git runs | accepted-risk | Evidence correct (machine/service.js:817-843); Accepted Risk reworded; fix belongs to archive's git, outside this feature |
 | mechanics | major | Key op has no total deadline; failed keyup | upheld | Decision 33 |
 | mechanics | minor | Focus failure after launch returns 422 | upheld | Success with `focused: null`; Decision 33 |
+
+### Round 7 — 2026-11-18
+
+**Lanes:** claude / claude-opus-5-5 (intent); gpt (mechanics); cross-family: yes. Budget reset by Collin's decision 34.
+
+**Changed since Round 6:** generation reserved in `state.json` before spawn and `starting` screens held by the sweep; thread-slice kill bumps every generation of the thread; kill and stop submission share a 1 s deadline (32); one deadline per `key` op, releases always attempted, failed release blocks input until `screen stop`, focus failure still a successful `run` (33); archive-race Accepted Risk reworded; session stop keeps shots while archive removes them.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
