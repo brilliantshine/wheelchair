@@ -316,8 +316,12 @@ function shownPins(thread) {
 }
 
 async function chat(hub, id) {
-  const thread = await hub.thread(id);
-  await require('./views.js').findSlug(hub, thread);
+  let thread = await hub.readSnapshot(id);
+  const views = require('./views.js');
+  if (await views.discoverSlug(thread)) {
+    thread = await hub.thread(id);
+    await views.findSlug(hub, thread);
+  }
   const items = [];
   for (const session of thread.sessions.filter((item) => item.role === 'lead')) {
     const raw = await sessionTranscript(hub, thread, session, { keepLast: true });
@@ -330,7 +334,7 @@ async function chat(hub, id) {
   // The pull request each thread produced, from its latest done card, so the page can link it
   // and a stub can link the one it waits on.
   const prOf = (item) => item ? require('./handoff.js').donePr(item, { includeReplaced: true }) : null;
-  const parent = thread.parent ? await hub.thread(thread.parent).catch(() => null) : null;
+  const parent = thread.parent ? await hub.readSnapshot(thread.parent).catch(() => null) : null;
   const publicThread = {
     ...thread,
     sessions: thread.sessions.map(publicSession),

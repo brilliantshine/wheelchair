@@ -12,7 +12,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | File | Role |
 |---|---|
 | `server.js` | The whole server, with no runtime dependencies: routes, token and remember-cookie auth, graph validation, the layout pass, the app-hub glue, the agent-write contract, the lock and registry kept under the cache root. Its header comment is the route and error-code list |
-| `app/state.js` | Hub-state paths, atomic JSON writes, and thread persistence. |
+| `app/state.js` | Hub-state paths, atomic JSON writes, and thread persistence. `allThreads()` and `threadSnapshot(id)` serve shared, deep-frozen records from a stat-checked cache; code that mutates or saves reads with `thread(id)` (or clones the one record). |
 | `app/machine-client.js` | The authenticated client for machine-service routes, including JSON status and body pass-through. |
 | `app/cards.js`, `card.js` | Hub card handling, including hidden `resolve` and `retract` cards, and the agent-side card validator/CLI. |
 | `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js screen`, the invisible-screen commands). |
@@ -34,10 +34,10 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `doc.html`, `doc.js` | The plan document page, read from a plan's `docs/plans/<slug>/`; its Markdown renderer is the shared `pages/markdown.js` |
 | `pages/project-tools.js` | Settings' Project tools section: machine and project picker, tool list and form, keys list, save and remove-key calls. |
 | `pages/aside.js` | Thread-page aside selection, panel, marks and list. |
-| `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the lead sidebar, agent tree, side panel and bottom terminal panel. `term-view.js` is the terminal view (xterm, View only / Typing switch, mouse-report filter, scrollback history) that both the Agents panel and `terminal.html`/`terminal.js` mount. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
+| `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; page polls go through `window.wcPoller` (defined in `nav.js`), which pauses while the tab is hidden; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the lead sidebar, agent tree, side panel and bottom terminal panel. `term-view.js` is the terminal view (xterm, View only / Typing switch, mouse-report filter, scrollback history) that both the Agents panel and `terminal.html`/`terminal.js` mount. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
 | `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/`. The app's fonts are not here: `/wheelchair/assets/fonts/<name>.woff2` serves four allowlisted files from `node_modules/@fontsource` (`FONT_FILES` in `server.js`) |
 | `signin.html` | What a browser with no remember cookie gets before it is signed in |
-| `playwright.config.js` | The browser suite's two projects, Chromium and Firefox |
+| `playwright.config.js` | The browser suite's two projects, Chromium and Firefox; `workers: 2` so concurrent runs do not saturate the machine |
 | `test/` | The suites. See below |
 
 ## Boundaries

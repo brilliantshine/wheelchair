@@ -1,6 +1,6 @@
 # `protocol/app/` — the app's role protocol
 
-Owned by [`protocol/`](../AGENTS.md). The machine puts the role file and its card files into each session's starting instructions (Claude) or one composed file the session reads once (GPT, Antigravity, Kimi); asides keep their pointer. Reviewer and verifier get neither card file. Sessions do not need the slash-command stage files. Those stay untouched until a later feature retires them.
+Owned by [`protocol/`](../AGENTS.md). The machine puts the role file and its card files, and for the lead, sub-lead, reviewer and verifier `realism.md`, into each session's starting instructions (Claude) or one composed file the session reads once (GPT, Antigravity, Kimi); asides keep their pointer. Reviewer and verifier get neither card file. Sessions do not need the slash-command stage files. Those stay untouched until a later feature retires them.
 
 The organizing idea: **The user hears from the workflow only through cards and the lead's
 visible replies.** Every file here is written around that, and `cards.md` and `cards-lead.md` are the contract
@@ -14,6 +14,7 @@ that makes it checkable: `viewer/app/card.js` validates against it.
 | `worker.md` | a worker | Doing one briefed task inside its ownership boundary, asking the lead when the plan is silent, reporting |
 | `reviewer.md` | a plan reviewer | The two lenses, the severity ladder and the one-line finding format; read-only |
 | `verifier.md` | a verifier | Falsifying claims against the Spec or the reported problem; names the commit it checked |
+| `realism.md` | lead, sub-lead, reviewer, verifier | The realism bar: normal use vs rare path, the always-fixed list, check once built; the machine loads it into those four roles' starting instructions |
 | `aside.md` | an aside: one headless turn of a side conversation about part of a lead message | Who it is (a read-only copy of the lead's conversation), the `[wc:aside …]` message headers, the ask, simpler and draw actions, stepping up, and the one-line summary for the main thread |
 | `cards.md` | every card-posting role: lead, sub-lead, worker, mapper | Shared card rules, kinds, markers and commands |
 | `cards-lead.md` | lead only | Lead-only card kind sections and fields |

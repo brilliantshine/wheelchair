@@ -6,7 +6,10 @@
 // touch.spec.js — and leave viewer/test/*.test.js (node --test's unit suite) alone.
 const { defineConfig, devices } = require('@playwright/test');
 
+// workers: 2 caps one run at two browsers (docs/plans/lighter-server, S7); --workers on the
+// command line still overrides it.
 module.exports = defineConfig({
+  workers: 2,
   testDir: 'test',
   testMatch: '*.spec.js',
   projects: [

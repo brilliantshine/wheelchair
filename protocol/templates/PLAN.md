@@ -61,10 +61,20 @@ Optional; present only in the lighter modes.
 
 Real issues consciously not fixed, each with the reason. Part of the spec, not review
 scaffolding — an implementer should read these, and later review rounds must not
-re-raise them.
+re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode, with round
+`review-round-N`, `verification-N` or `lead-check`.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+
+## Check Once Built
+
+Review findings only the built code can settle, per `protocol/app/realism.md`. Verifiers
+check each row against the build; a listed row is settled for later review rounds and
+stays as review history.
+
+| # | What to check | Round |
+|---|---------------|-------|
 
 ## Review Rounds
 
@@ -84,7 +94,7 @@ round where knowing it matters most.
 |------|----------|---------|--------------|------------|
 
 Reported severity is the reviewer's opinion; the lead verdict
-(`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
+(`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
 ## Prior Work

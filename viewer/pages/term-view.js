@@ -174,11 +174,11 @@
       resize();
       observer = new ResizeObserver(resize); observer.observe(host);
       options.onStatus('connecting', false);
-      poll(); interval = setInterval(poll, 1000);
+      poll(); interval = window.wcPoller(poll, 1000);
     }
     function stop() {
       active = false; enabled = false; generation++;
-      clearInterval(interval); observer.disconnect(); dataSubscription.dispose(); term.dispose();
+      interval.stop(); observer.disconnect(); dataSubscription.dispose(); term.dispose();
       notice.remove(); host.remove(); keys.remove();
       container.classList.remove('tv-view', 'tv-typing');
     }

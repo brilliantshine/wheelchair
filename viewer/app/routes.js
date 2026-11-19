@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 // Spec "Security" and "Views": browser and machine callback HTTP routes.
 const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
-const { findSlug } = require('./views.js');
+const { discoverSlug, findSlug } = require('./views.js');
 const settings = require('./settings.js');
 const diagramSensitivity = require('./diagram-sensitivity.js');
 const usage = require('./usage.js');
@@ -438,11 +438,14 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
 
 async function handleThreads(hub, request, response, url, bits, body) {
   if (bits.length === 1 && request.method === 'GET') {
-    const all = await hub.allThreads();
-    await Promise.all(all.map((thread) => hub.withThread(thread.id, async () => {
-      const current = await hub.thread(thread.id);
-      await findSlug(hub, current);
-      Object.assign(thread, current);
+    const listed = await hub.allThreads();
+    const all = await Promise.all(listed.map((thread) => hub.withThread(thread.id, async () => {
+      let current = await hub.readSnapshot(thread.id);
+      if (await discoverSlug(current)) {
+        current = await hub.thread(thread.id);
+        await findSlug(hub, current);
+      }
+      return { ...thread, ...current };
     })));
     // `?view=list` is what the pages poll: each thread's summary without its history
     // (cards, sent messages, briefs), which is most of the bytes and none of the list.
