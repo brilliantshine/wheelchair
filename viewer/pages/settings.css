@@ -131,7 +131,7 @@
 }
 @media (max-width: 640px) {
   .settings { flex-direction: column; min-height: 0; }
-  .sections { flex: none; flex-direction: row; gap: 4px; padding: 8px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .sections { flex: none; flex-direction: row; gap: 4px; padding: 8px; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; min-width: 0; }
   .sections a { flex: 1 1 0; min-width: 0; text-align: center; padding: 8px 4px; font-size: 12px; line-height: 1.25; display: flex; align-items: center; justify-content: center; }
   .panel { padding: 16px; gap: 22px; }
   .tpl { margin: -16px; }
@@ -206,7 +206,7 @@ button.danger { color: var(--bad-text); }
   .usage-table td::before { content: attr(data-label); display: block; font-size: 11px; color: var(--dim); margin-bottom: 2px; }
   .usage-table th[scope="row"]::before { content: none; }
   .win .k { flex-basis: 100%; }
-  .sections a { font-size: 11px; padding: 8px 2px; overflow-wrap: anywhere; }
+  .sections a { flex: 0 0 auto; min-width: 88px; max-width: 144px; min-height: 44px; font-size: 11px; padding: 8px 10px; overflow-wrap: normal; }
 }
 
 .diagram-radios { display: flex; flex-direction: column; }

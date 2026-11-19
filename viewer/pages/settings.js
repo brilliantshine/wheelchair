@@ -1506,11 +1506,17 @@
 
   function renderSections() {
     const nav = document.getElementById('sections');
+    const changed = nav.dataset.section !== section;
+    const scroll = nav.scrollLeft;
+    nav.dataset.section = section;
     nav.replaceChildren(...SECTIONS.map(([key, label]) => {
       const a = h('a', { href: '#' + key, text: label, 'data-section': key });
       if (key === section) a.setAttribute('aria-current', 'page');
       return a;
     }));
+    if (changed && matchMedia('(max-width: 640px)').matches) {
+      nav.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    } else nav.scrollLeft = scroll;
   }
 
   let projectToolsHost = null;
