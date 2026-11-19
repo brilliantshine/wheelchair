@@ -399,7 +399,8 @@ class MachineService {
     for (const entry of entries) {
       let name;
       try { name = decodeURIComponent(entry); safeName(name, 'session name'); if (!name.startsWith('wc-')) name = null; } catch { name = null; }
-      if (name && (starting.has(name) || live.has(name))) continue;
+      // tmux rewrites `.` and `:` in session names to `_`.
+      if (name && (starting.has(name) || live.has(name) || live.has(name.replace(/[.:]/g, '_')))) continue;
       const file = path.join(dir, entry);
       try {
         if (Date.now() - fs.lstatSync(file).mtimeMs < 60000) continue;

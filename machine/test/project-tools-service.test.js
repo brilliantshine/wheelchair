@@ -36,12 +36,12 @@ test('project tools launch privately and stale Antigravity files are swept', asy
     const reviewer = await start('wc-reviewer', 'agy', 'reviewer'); assert.ok(!reviewer.command.includes('--add-dir')); assert.ok(!fs.existsSync(path.join(state, 'agy-tools', 'wc-reviewer')));
     assert.doesNotMatch(MachineService.prototype.sweepAgyTools.toString(), /await/);
     const base = path.join(state, 'agy-tools'), old = new Date(Date.now() - 120000);
-    for (const entry of ['wc-dead', 'wc-live', 'wc-starting', 'wc-young', '%broken', '%fresh']) fs.mkdirSync(path.join(base, entry));
-    for (const entry of ['wc-dead', 'wc-live', 'wc-starting', '%broken', encodeURIComponent(name)]) fs.utimesSync(path.join(base, entry), old, old);
+    for (const entry of ['wc-dead', 'wc-live', 'wc-starting', 'wc-young', '%broken', '%fresh', encodeURIComponent('wc-dot.name-worker'), encodeURIComponent('wc-other.name-worker')]) fs.mkdirSync(path.join(base, entry));
+    for (const entry of ['wc-dead', 'wc-live', 'wc-starting', '%broken', encodeURIComponent(name), encodeURIComponent('wc-dot.name-worker'), encodeURIComponent('wc-other.name-worker')]) fs.utimesSync(path.join(base, entry), old, old);
     service.startingNames.set('wc-starting', Promise.resolve()); service.liveTmux = () => null; service.sweepAgyTools(); assert.ok(fs.existsSync(path.join(base, 'wc-dead')));
-    service.liveTmux = () => new Set(['wc-live']); service.agyToolsTimer._onTimeout();
-    for (const entry of ['wc-dead', '%broken', encodeURIComponent(name)]) assert.ok(!fs.existsSync(path.join(base, entry)));
-    for (const entry of ['wc-live', 'wc-starting', 'wc-young', '%fresh']) assert.ok(fs.existsSync(path.join(base, entry)));
+    service.liveTmux = () => new Set(['wc-live', 'wc-dot_name-worker']); service.agyToolsTimer._onTimeout();
+    for (const entry of ['wc-dead', '%broken', encodeURIComponent(name), encodeURIComponent('wc-other.name-worker')]) assert.ok(!fs.existsSync(path.join(base, entry)));
+    for (const entry of ['wc-live', 'wc-starting', 'wc-young', '%fresh', encodeURIComponent('wc-dot.name-worker')]) assert.ok(fs.existsSync(path.join(base, entry)));
     assert.equal(agent.status, 'ready');
   } finally {
     for (const timer of [service.pollTimer, service.stepsTimer, service.trustTimer, service.agyToolsTimer]) clearInterval(timer);
