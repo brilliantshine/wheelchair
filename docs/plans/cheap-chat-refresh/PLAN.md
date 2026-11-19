@@ -163,6 +163,8 @@ None.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | tricky. Machine: S1 cheap idle copy, S2 `known` on the transcript route, machine tests, API.md | `machine/service.js`, `machine/API.md`, `machine/AGENTS.md`, `machine/test/` | standard (gpt-6.1-terra) | wc-2e6dde9e5e6a-worker | `bash machine/test/run.sh` | running |
+| T2 | Hub: S3 transcript store and idle drop, S4 parsed reuse, S5, viewer tests | `viewer/app/`, `viewer/test/`, `viewer/AGENTS.md` | standard (gpt-6.1-terra) | wc-2e6dde9e5e6a-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
 
 ## Log
 
