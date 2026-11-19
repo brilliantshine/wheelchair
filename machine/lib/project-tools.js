@@ -70,7 +70,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
   async function read(input) {
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
     let store, notice = null;
-    try { store = await readKeyStore(stateDir, projectId); } catch (e) { store = { revision: 0, keys: Object.create(null) }; notice = e.message; }
+    try { store = await readKeyStore(stateDir, projectId); } catch (e) { store = { revision: 0, keys: Object.create(null) }; notice = "the key store on this machine can't be read"; }
     const base = { mode: 'keys-only', notice: "Tools can't be shown or edited here: pull requests need a GitHub origin", repo: null, default_branch: null, token: { project: projectId, baseline: null, key_revision: store.revision }, source: null, checks: Object.create(null), file_warnings: [], keys: keys(store), references: Object.create(null), reserved: reservedNames(), waiting: [], waiting_error: null };
     const destination = await remote(input.path);
     if (!destination) { if (notice) base.notice += `; ${notice}`; return { status: 200, body: base }; }
@@ -88,7 +88,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
   function validateName(name) { if (!KEY_NAME.test(name)) return `invalid key name: ${name}`; if (isReserved(name)) return `${name} can't be set here: it would change how the agent itself runs`; return null; }
   async function save(input) {
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
-    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: 0, keys: [], error: e.message } }; }
+    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: 0, keys: [], error: "the key store on this machine can't be read" } }; }
     const failed = error => ({ status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: error.message || String(error) } });
     if (input.token?.project !== projectId || input.token?.key_revision !== store.revision) return changed();
     if (input.start_over && (!object(input.tools) || Object.getPrototypeOf(input.tools) !== Object.prototype || Reflect.ownKeys(input.tools).length !== 0)) return refused('start over replaces the file with an empty tool list');
@@ -103,7 +103,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
     if (input.start_over && (!toolsChanged || baseline?.source_state !== 'unreadable')) return refused('start over is only allowed for an unreadable file');
     if (!toolsChanged && !Object.keys(input.keys).length) return refused('nothing to save');
     const storeKeys = async () => { if (Object.keys(input.keys).length) store = await writeKeyStore(stateDir, projectId, { set: input.keys }); };
-    if (!toolsChanged) { try { await storeKeys(); return { status: 200, body: { outcome: 'saved', key_revision: store.revision, keys: keys(store), warnings: [] } }; } catch (e) { return failed(e); } }
+    if (!toolsChanged) { try { await storeKeys(); return { status: 200, body: { outcome: 'saved', key_revision: store.revision, keys: keys(store), warnings: [] } }; } catch (e) { return failed(new Error("the key store on this machine can't be written")); } }
     if (!baseline) return changed();
     if (baseline.source_state === 'unreadable' && !input.start_over) return refused('unreadable source requires Start over');
     const destination = await remote(input.path); if (!destination || destination.repo.toLowerCase() !== String(baseline.repo).toLowerCase()) return changed();
@@ -121,7 +121,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
           }
         }
         const report = checksFor(input.tools, store), warnings = Object.entries(report.checks).flatMap(([name, check]) => check.skip.map(s => `${name}: ${s}`)).concat(report.file_warnings);
-        try { await storeKeys(); } catch (e) { return failed(e); }
+        try { await storeKeys(); } catch (e) { return failed(new Error("the key store on this machine can't be written")); }
         let worktree;
         try {
           await fs.mkdir(path.join(stateDir, 'project-tools'), { recursive: true, mode: 0o700 });
@@ -149,12 +149,12 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
   }
   async function removeKey(input) {
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
-    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: 0, keys: [], error: e.message } }; }
+    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: 0, keys: [], error: "the key store on this machine can't be read" } }; }
     if (input.token?.project !== projectId || input.token?.key_revision !== store.revision) return changed();
     const error = typeof input.name === 'string' ? validateName(input.name) : 'invalid key name'; if (error) return refused(error);
     if (!Object.hasOwn(store.keys, input.name)) return refused('key is not stored');
     try { store = await writeKeyStore(stateDir, projectId, { remove: [input.name] }); return { status: 200, body: { outcome: 'removed', key_revision: store.revision, keys: keys(store) } }; }
-    catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: e.message } }; }
+    catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: "the key store on this machine can't be written" } }; }
   }
   return { read, save, removeKey, identity };
 }

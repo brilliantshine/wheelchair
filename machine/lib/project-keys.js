@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
+const { promisify, getSystemErrorMap } = require('node:util');
 const adapters = require('../adapters');
 const KEY_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const exact = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'TMPDIR', 'PWD', 'LANG', 'TZ', 'NODE_OPTIONS', 'NODE_PATH', 'NODE_EXTRA_CA_CERTS', 'PYTHONPATH', 'PYTHONHOME', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID'];
@@ -45,19 +45,27 @@ async function projectIdentity(dir, runner) {
   return fs.realpath(path.resolve(dir, output.trim()));
 }
 function storePath(stateDir, identity) { return path.join(stateDir, 'project-keys', `${crypto.createHash('sha256').update(identity).digest('hex')}.json`); }
+const fsCodes = new Set([...getSystemErrorMap().values()].map(([code]) => code));
+function storeError(message, error) {
+  const safe = new Error(message);
+  if (typeof error?.code === 'string' && fsCodes.has(error.code)) safe.code = error.code;
+  return safe;
+}
 async function readKeyStore(stateDir, identity) {
   try { const store = JSON.parse(await fs.readFile(storePath(stateDir, identity), 'utf8')); if (store.project !== identity || !Number.isSafeInteger(store.revision) || store.revision < 0 || !object(store.keys) || !Object.values(store.keys).every(v => typeof v === 'string')) throw new Error('invalid project key store'); store.keys = Object.assign(Object.create(null), store.keys); return store; }
-  catch (error) { if (error.code === 'ENOENT') return { project: identity, revision: 0, keys: Object.create(null) }; throw error; }
+  catch (error) { if (error.code === 'ENOENT') return { project: identity, revision: 0, keys: Object.create(null) }; throw storeError("the key store on this machine can't be read", error); }
 }
 async function writeKeyStore(stateDir, identity, changes) {
-  const old = await readKeyStore(stateDir, identity), keys = Object.assign(Object.create(null), old.keys, changes.set);
-  for (const name of changes.remove || []) delete keys[name];
-  const store = { project: identity, revision: old.revision + 1, keys }, file = storePath(stateDir, identity);
-  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temp = `${file}.${crypto.randomUUID()}.tmp`;
-  try { await fs.writeFile(temp, `${JSON.stringify(store)}\n`, { mode: 0o600, flag: 'wx' }); await fs.rename(temp, file); }
-  finally { await fs.unlink(temp).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
-  return store;
+  try {
+    const old = await readKeyStore(stateDir, identity), keys = Object.assign(Object.create(null), old.keys, changes.set);
+    for (const name of changes.remove || []) delete keys[name];
+    const store = { project: identity, revision: old.revision + 1, keys }, file = storePath(stateDir, identity);
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    const temp = `${file}.${crypto.randomUUID()}.tmp`;
+    try { await fs.writeFile(temp, `${JSON.stringify(store)}\n`, { mode: 0o600, flag: 'wx' }); await fs.rename(temp, file); }
+    finally { await fs.unlink(temp).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
+    return store;
+  } catch (error) { throw storeError("the key store on this machine can't be written", error); }
 }
 function launchKeys(mcpServers, store) {
   const { references, heldBack } = keyReferences(mcpServers), env = Object.create(null);

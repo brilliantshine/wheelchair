@@ -634,7 +634,7 @@ class MachineService {
           await fsp.chmod(file, 0o600);
           wrapper = ['sh', '-c', '. "$0" && rm -f -- "$0" && exec "$@"', file];
         }
-      } catch (error) { console.error(`${session.name}: project tools: could not load keys: ${error.message}`); }
+      } catch (error) { console.error("the key store on this machine can't be read"); }
     }
     const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
