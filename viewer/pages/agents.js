@@ -247,5 +247,5 @@
     if (selected) { side.dataset.agent = selected.name; if (kept.agent === selected.name) side.scrollTop = kept.side; } if (lead.thread_id === lastLead && selected?.name === kept.agent) scrollTo(scrollX, kept.page); lastLead = lead.thread_id; placePopNow?.(popTop); popTop = null;
   }
   async function refresh() { try { const [a,t] = await Promise.all([fetch('/wheelchair/api/agents'),fetch('/wheelchair/api/threads?view=list')]); if (!a.ok) throw new Error(`agents ${a.status}`); data = await a.json(); threads = t.ok ? (await t.json()).threads || [] : []; if (active.size) pending = true; else render(); $('error').hidden = true; } catch (e) { $('error').textContent = `Could not load agents: ${e.message}`; $('error').hidden = false; } }
-  refresh(); setInterval(refresh,5000); setInterval(() => { for (const n of document.querySelectorAll('.activity-now')) n.textContent = `now · ${timer(seconds(n.dataset.since))}`; },1000);
+  refresh(); window.wcPoller(refresh,5000); setInterval(() => { for (const n of document.querySelectorAll('.activity-now')) n.textContent = `now · ${timer(seconds(n.dataset.since))}`; },1000);
 })();

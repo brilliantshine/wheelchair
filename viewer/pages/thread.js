@@ -1226,5 +1226,5 @@
 
   poll();
   loadAccountNames();
-  setInterval(poll, POLL_MS);
+  window.wcPoller(poll, POLL_MS);
 })();
