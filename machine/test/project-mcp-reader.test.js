@@ -49,3 +49,12 @@ test('marks duplicate header keys from every header object without marking other
   }
   for (const name of ['clean', 'local']) assert.equal(mcp.servers[name][DUPLICATE_HEADERS], undefined, name);
 });
+
+test('deeply nested valid JSON still reads (duplicate scan gives up quietly)', async () => {
+  const dir = makeTempSync('reader-deep-');
+  const deep = '['.repeat(15000) + ']'.repeat(15000);
+  fs.writeFileSync(path.join(dir, '.mcp.json'), `{"mcpServers":{"a":{"command":"x"}},"deep":${deep}}`);
+  const result = await readProjectMcp(dir);
+  assert.ok(result.mcp, JSON.stringify(result.warnings));
+  assert.deepEqual(Object.keys(result.mcp.servers), ['a']);
+});
