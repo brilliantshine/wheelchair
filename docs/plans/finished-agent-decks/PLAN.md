@@ -72,7 +72,7 @@ Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> 
 ### 3. Decks on the tree (Hide finished agents OFF)
 - Among one parent's children, finished nodes with the same `role` form a deck when there are 2 or more. A single finished node stays a normal box. Live (working, waiting, idle) nodes are never in a deck. "Finished" is the existing page definition.
 - The deck replaces those boxes, placed at the position of its newest member in the existing creation order. The deck is a parent in its own right: the children of all its members are merged into one child list under the deck (sorted by creation), and grouping under it uses the deck as their parent. So the verifiers of two decked sub-leads can share one deck. This is the meaning of "same parent" for agents under a deck.
-- Deck card: role, count (`×40`), one-line title, and "finished <relative time>" from the latest `ended_at` across all members (a member without `ended_at` uses its last activity time). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
+- Deck card: role, count (`×40`), one-line title, and "Finished <clock time, HH:MM, same format as `clock()` in viewer/pages/agents.js>" from the latest `ended_at` across all members (a member without `ended_at` uses its last activity time). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
 - Title: reviewer → "Plan review · N rounds"; verifier → "<newest member's title> · N rounds" (e.g. "Checked parts 1–4 · 3 rounds"; "Checks" when it has no title). Either gets the suffix ", last round clean" when the `rounds` entry for H (same stage) has `clean: true`. N (the count shown) = number of distinct `round` values among members; H = the highest of them. Members with no `round` are not counted in N; if no member has a round, reviewer/verifier decks use the other-deck title. Other decks: the newest member's title (role when it has none).
   - No approval tracking: the suffix reports only what round H's progress line says.
 - Hide finished agents ON: behaviour unchanged (decks never shown; a selected finished agent and needed ancestors still shown as boxes).
@@ -239,7 +239,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 6 — 2026-11-18
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:**
 - §1: unreported attempt reused by a replacement sub-lead; sub-lead.md first-remediation wording.
@@ -249,6 +249,7 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Relative finish time differs from the screen's clock time | upheld | §3 uses clock time like the design |
 
 ## Prior Work
 
