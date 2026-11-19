@@ -747,6 +747,9 @@ Filled by Stage 3. One row per worker brief.
 | R4 | Remediation 2, gap 2: default project_tools on new threads | viewer/app/threads.js (emptyThread), viewer/test/app-project-tools.test.js | light / claude-haiku-5-5 | wc-b9ca1682b0fa-worker-10 | app-project-tools; viewer/test/*.test.js | done |
 | R5 | Remediation 3, gap 1: sweep matches tmux's `_` spelling of `.`/`:` | machine/service.js (sweepAgyTools), machine/test/project-tools-service.test.js | light / gpt-6-luna | wc-b9ca1682b0fa-worker-11 | project-tools-service; machine/test/run.sh | done |
 | R6 | Remediation 3, gap 2 (2nd attempt): default record on handoff-imported threads | viewer/app/threads.js, viewer/app/handoff-ops.js (createLocked), viewer/test/app-project-tools.test.js | standard / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-12 | handoff + project-tools tests; viewer/test/*.test.js | done |
+| R7 | Remediation 4, gap 2 (3rd and final attempt, Collin's choice A): duplicates only in the kept occurrence | machine/lib/project-mcp.js (duplicateHeaderServers), machine/test/project-mcp-reader.test.js | standard / gpt | — | reader/codex/agy tests; machine/test/run.sh | not started |
+| R8 | Remediation 4, gap 1 (2nd attempt): sweep protects only the newest dir per live tmux name | machine/service.js (sweepAgyTools), machine/test/project-tools-service.test.js | standard / gpt | — | project-tools-service; machine/test/run.sh | not started |
+| R9 | Remediation 4, gap 3: card problem lines in plain-text items | viewer/app/sessions.js (applyProjectTools), viewer/test/app-project-tools.test.js | standard (claude) | — | app-project-tools; viewer/test/*.test.js | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -808,3 +811,6 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — R5: worker reported no choices; I listed 1: the tmux-spelling match is one-way, so a live `wc-a_b` also protects a `wc-a.b` dir (only delays cleanup; accepted).
 - 2026-11-18 — R5 accepted (band: scout): sweep keeps dirs of live sessions under tmux's `_` spelling.
 - 2026-11-18 — Verification attempt 4 on 0e852e1: Claude PASS, GPT FAIL (3 gaps). Duplicate-header gap has survived two fix attempts (R1, R3) — now over-flagging when `mcpServers` is written twice; per the two-attempt rule, no third try: raised to the lead. Other gaps: sweep tmux-spelling collision keeps an ended session's file (1 attempt so far, R5); card Markdown eats underscores in names (new). Work stopped pending Collin.
+- 2026-11-19 — Collin chose A: fix all three attempt-4 gaps in one final remediation; if the duplicate-header gap survives, raise it again. REMEDIATION-4.md written; R7, R8 to GPT, R9 to Claude.
+- 2026-11-19 — Deviation from §8 wording (approved by Collin): the "Project tools problem" card's body is only the intro sentence; the problem lines (and "and N more") go in the needs card's plain-text `items` list, because the body renders as Markdown and changed tool names like `_tool_`.
+- 2026-11-19 — Sweep fix refined from the approved wording ("exact spelling wins") to "the newest dir among those sharing a live tmux name wins, exact spelling on a tie": exact-spelling-wins would delete a live `wc-a.b` session's file whenever an older `wc-a_b` dir was still waiting, the attempt-3 gap again.
