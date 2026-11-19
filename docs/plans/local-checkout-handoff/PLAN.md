@@ -58,6 +58,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 21 | Decision 19 also supersedes the back-up parts of 16 and 17 (byte-exact backups, index copy, per-path index check, temporary index copy, Dismiss keeping the return commit as a backup unconditionally) | Round 6 intent finding | review-round-6 |
 | 22 | Half-switched outcomes are recorded with their files and finished by Finish after he cleans up; Dismiss keeps `active` unless the trial is gone; a separate Forget for kept pins; protected paths are exact files; switches get a deadline, a busy flag and a long hub timeout; identity is real paths only | Round 6 findings | review-round-6 |
 | 23 | Exit result recorded before judging; switches and scans run in a killable process group with deadlines; 30-second admission; Forget skips reconcile; Dismiss treats HEAD at a Try's target as success and never runs git on an identity mismatch; `last` outcome stored; protected list only in the side file | Round 7 findings | review-round-7 |
+| 24 | Try writes get their own lock, separate from agents' `inRepoQueue`; Status takes no lock; writes are acknowledged then finished in the background; switch process groups are tracked by `pgid` across restarts and terminated (SIGTERM, then SIGKILL) after their deadline; one outcome table; `pending` blocks Try and Back; Dismiss never reconciles or scans; a leftover `index.lock` is reported, never deleted | Round 8 findings | review-round-8 |
 
 ## Spec
 
@@ -96,24 +97,50 @@ Terms:
   look untracked). Tracked entries are never protected.
 - **Clean**: the status scan has no entries after protected untracked entries are
   removed. **Not clean** lists the remaining paths.
-- **Running git for a switch or a status scan**: the machine runs it in its own process
-  group (`spawn` with `detached: true`) with a deadline (15 minutes for a switch, 5 for a
-  scan). On the deadline it kills the whole group, waits until the group has exited, and
-  only then continues. While a write is admitted, the machine marks the folder busy in
-  memory; Status does not wait then, it answers at once with "A switch is running".
-- **Admission**: a write waits at most 30 seconds to enter the folder's queue; if it has
-  not entered by then, it is refused ("Another switch is running") and does nothing.
-  Once admitted, it runs to the end even if the hub disconnects; the hub calls `try`,
-  `back` and `recover` with a 21-minute timeout instead of the default 5 seconds
-  (`viewer/app/machine-client.js:10`), and on a timeout or disconnect the page re-reads
-  Status.
-- **Exit result**: before judging an outcome, the write records git's exit code in
-  `pending.exit` (or `"killed"` on a deadline). An outcome is only "success" or "nothing
-  moved" with a recorded exit result and a successful clean scan. With no exit result
-  (the service stopped mid-switch), a killed process, or a failed scan: a dirty copy at
-  either endpoint is half-switched with its current files, a clean copy at the target
-  with no exit result stays `pending` as interrupted (Finish re-judges it as if the exit
-  was 0), and a failed scan leaves `pending` untouched.
+- **The folder's own lock**: every Try write (try, back, recover, dismiss, forget) takes
+  a lock of its own, keyed by the folder's real path, separate from `inRepoQueue`
+  (`machine/service.js:547`), so a long switch never delays agents' worktree starts or
+  handoffs (git's own lock files refuse a rare clash cleanly). A write that finds the
+  lock held, or a switch process group still alive (below), is refused at once ("A
+  switch is already running") and does nothing.
+- **Running git**: a switch or status scan runs in its own process group (`spawn` with
+  `detached: true`) with a deadline (15 minutes for a switch, 5 for a scan). Before
+  spawning a switch, the write records `pending.pgid` and `pending.started_at`. On the
+  deadline it sends SIGTERM to the group, waits 10 seconds, then SIGKILL, and waits
+  until the group is gone. **Group alive** (`kill(-pgid, 0)` succeeds): Status says "A
+  switch is running" and every write is refused; if it is past its deadline (for example
+  the service restarted mid-switch), the next write or Status first terminates it as
+  above. Nothing is judged while the group is alive.
+- **Acknowledged, then finished**: `try`, `back` and `recover` answer the hub as soon as
+  they hold the lock (`{accepted: true}`) and finish in the background; the hub keeps
+  its default 5-second timeout (`viewer/app/machine-client.js:10`). The page shows
+  "Switching…", re-reads Status every 3 seconds while it says running, then shows
+  `last`.
+- **Exit result**: when the group is gone, the write records git's exit code in
+  `pending.exit` (or `"killed"`). After a service restart the exit is **unknown**.
+- **Outcome of a switch** is judged only once the group is gone, by HEAD identity, a
+  status scan and the exit result, never by the exit code alone:
+
+  | HEAD | Copy | Exit | Outcome |
+  |---|---|---|---|
+  | target | clean | 0 | success |
+  | target | clean | nonzero, killed or unknown | success with a warning (git's last line, or "git took too long") |
+  | target | not clean | 0 | success with a warning listing the files |
+  | target | not clean | nonzero, killed or unknown | half-switched |
+  | source | clean | any | nothing moved (killed: "git took too long"; else git's message) |
+  | source | not clean | any | half-switched |
+  | elsewhere | any | any | unexpected state |
+  | any | scan failed | any | `pending` left as it is; reported |
+
+  Half-switched: `pending` kept with `half: true` and `files: [path]`. Status shows "A
+  switch stopped partway", the files, and says to sort them out at his computer (for
+  example re-run the LFS download, or undo them), then press Finish, which judges again
+  by this table. Nothing is deleted.
+  If `<git-dir>/index.lock` exists once the group is gone, Status adds "Git left a lock
+  file: <full path>. At your computer, check no git is running, then delete it." It is
+  never deleted automatically.
+  While `pending` is set, Try and Switch back are refused; only Finish, Dismiss and
+  Forget run.
 - **Switches** always run as `git -c submodule.recurse=false switch --no-guess
   --no-overwrite-ignore --no-recurse-submodules <short branch name>` or the same with
   `--detach <sha>`, and only when clean. Git refuses rather than overwrite an ignored
@@ -121,22 +148,6 @@ Terms:
 - **Same place**: if source and target HEAD identity are equal (another thread at the
   same commit, or a Back to a detached commit already in place), git is not run: after
   the usual checks, the record is updated as a success in one write.
-- **Outcome of a switch** is judged afterwards by HEAD identity plus a status scan, never
-  by the exit code:
-  - HEAD at the target and clean: success. A nonzero exit (for example a failing
-    post-checkout hook) becomes a warning with git's last line.
-  - HEAD at the target, git exited 0, but not clean: success with a warning listing the
-    files.
-  - HEAD at the target, git exited nonzero, and not clean (for example a delayed Git LFS
-    download failed after HEAD moved): **half-switched**.
-  - HEAD at the source and clean: nothing moved; git's message reported.
-  - HEAD at the source but not clean (for example a Git LFS download failed after git
-    had rewritten some files): **half-switched**.
-  - Half-switched: `pending` is kept with `half: true` and `files: [path]` written into
-    it. Status shows "A switch stopped partway", the files, and says to sort them out at
-    his computer (for example by re-running the LFS download or undoing them), then
-    press Finish, which judges the outcome again. Nothing is deleted.
-  - Anything else: the **unexpected state**; `pending` is kept.
 - **Pins**: `git update-ref refs/wheelchair/<return|kept>/<folder hash>/<nonce> <sha>`
   (nonce: 8 random hex chars). The full ref name is saved in the record before anything
   relies on it. Wheelchair never uses the stash list.
@@ -187,9 +198,8 @@ Then reconcile (5), then action checks:
   in another worktree (`git worktree list --porcelain`);
 - Switch back, Dismiss or Finish whose `version` differs from the record's: "Your copy
   changed since this page loaded", returning the current status.
-Every write and Status run inside `inRepoQueue(<real path of the folder>)`
-(`machine/service.js:547`), the same canonical key as the record, so two spellings of
-one folder share one queue. Version checks happen inside the queue before reconcile.
+Every write holds the folder's own lock (keyed by real path, so two spellings of one
+folder share it). Version checks happen under the lock before anything else.
 
 1. **Try it in my copy.** Confirmation names the folder and machine, suggests closing
    any app using the folder, and says it brings in
@@ -216,14 +226,14 @@ one folder share one queue. Version checks happen inside the queue before reconc
       unexpected: `pending` kept.
    3. Scan again; any unprotected entries (files the trial's ignore rules hid) are
       listed as "These files appeared after switching back", left in place.
-3. **Status** (GET, under the same queue). Reads only metadata: the record, HEAD
+3. **Status** (GET, takes no lock and never waits). Reads only metadata: the record, HEAD
    identity, `wc/<id>` and pins (`rev-parse`, `symbolic-ref`, `for-each-ref`), plus the
    folder checks; never runs the status scan, never fetches, never writes. Returns
    `version`, `active_thread_id`, `target_available` (whether `wc/<this thread>` exists),
    `refused` (the first failing folder check's sentence, or null) and one of, checked in
    this order: unexpected state (HEAD at neither side of `pending`, or identity
    mismatch): "Your copy is in an unexpected state" with git's view of HEAD and Dismiss;
-   busy: "A switch is running"; `pending.half`: "A switch stopped partway" with
+   busy (lock held or group alive): "A switch is running"; `pending.half`: "A switch stopped partway" with
    `pending.files`, Finish and Dismiss; other `pending`:
    "An earlier switch was interrupted" with **Finish** (action `recover`, runs reconcile,
    which scans, records `half`/`files` if half-switched, and returns status); Stale: "You switched your copy by hand" with Dismiss; Moved:
@@ -235,13 +245,16 @@ one folder share one queue. Version checks happen inside the queue before reconc
    `refused` is null and the thread is not archived; with `refused` set the panel shows
    that sentence instead. The page fetches Status on load, after each action and on a
    refresh button, never on its poll timer (`viewer/pages/thread.js:1229`).
-4. **Dismiss** (version-checked, skips identity): clears `pending`.
+4. **Dismiss** (version-checked; does not reconcile and runs no scan): refused while the
+   group is alive. It then checks identity read-only and clears `pending`.
    - Identity mismatch: clears `active` and `pending` without any git command; the return
      pin and every `kept` entry stay in the list, marked with the old identity and shown
      as "in the copy that used to be here".
    - HEAD detached at `pending.to` of a `try` (first or not): treated as that Try's
      success (`active` set or updated to the target, return pin kept), so Switch back
      still works.
+   - HEAD at `pending.to` of a `back`: treated as that Back's success (`active` cleared,
+     return pin deleted).
    - Stale, or a first Try whose HEAD is not at its target: clears `active`. The return
      pin (`active.return_ref`, else `pending.return_ref`) is deleted if the return point
      was a branch that still contains its sha (`git merge-base --is-ancestor`); otherwise
@@ -254,9 +267,8 @@ one folder share one queue. Version checks happen inside the queue before reconc
    identity, only the entry: no git command). `active`, `pending` and the return pin are
    untouched. Nothing else deletes a `kept` pin. Kept refs that no longer resolve show
    as missing.
-5. **Reconcile** (start of every write except Forget, after the folder checks): if
-   `pending` is set, judge the outcome against `pending.to` and `pending.from` by the
-   outcome and exit-result rules. Unexpected or half-switched:
+5. **Reconcile** (start of Try, Switch back and Finish, after the folder checks): if
+   `pending` is set and its group is gone, judge it by the outcome table. Unexpected or half-switched:
    writes other than Finish, Dismiss and Forget are refused.
 6. **Errors** reach Collin as one plain sentence under the control: machine
    unreachable, a check's sentence, or git's message. Every write's outcome (warning,
@@ -316,9 +328,16 @@ submodule changes.
     on a first Try, on a move between threads and on Back, and a delayed filter failing
     after HEAD moved (each half-switched with files recorded; Status shows them after a
     reload; Finish after cleanup completes; Dismiss after a failed Back keeps `active`;
-    no file deleted); a hanging filter subprocess outliving the deadline (whole group
-    killed, `pending` kept with `exit: "killed"`); a write queued past 30 seconds
-    (refused, nothing changed); service stopped after git moved HEAD but before the exit
+    no file deleted); a hanging filter subprocess outliving the deadline (group gets
+    SIGTERM then SIGKILL; judged by the outcome table: clean at source = nothing moved,
+    clean at target = success with warning); a leftover `index.lock` reported, not
+    deleted; the service restarted while git is blocked in a filter (Status says
+    running, writes refused, the group is terminated after its deadline, then judged);
+    a second write while one runs (refused at once); a long switch does not delay an
+    agent worktree start in the same project; `try` answers `accepted` at once and the
+    page shows `last` after polling; Try and Back refused while `pending` is set;
+    Dismiss after a half-switched Back at the return branch (counts as success, no
+    "switched by hand"); service stopped after git moved HEAD but before the exit
     result was recorded, with a dirty copy (half-switched, not success); Dismiss after a
     half-switched first Try at the target (Switch back kept); `last` shown after a
     reload; Forget during a pending Back (pending untouched); Dismiss on an identity
@@ -578,6 +597,16 @@ protected list only in a side file with its lifecycle; validation additions. Dec
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Try shares agents' repo queue and would stall their starts and handoffs | upheld (`machine/service.js:496,547,1286`; `viewer/app/sessions.js:171`) | Own lock per folder |
+| intent | major | Status and Try wait behind agent work and report it wrongly | upheld | Status takes no lock; refusal immediate |
+| intent | major | Killed switch with a clean copy has no defined outcome | upheld | Outcome table |
+| intent | minor | Dismiss after a half-switched Back says "switched by hand" | upheld | Back at `pending.to` counts as success |
+| intent | minor | Hub timeout shorter than the longest write | upheld | Acknowledge then finish; page polls |
+| mechanics | blocking | A restart leaves the old switch running while recovery judges it | upheld | `pgid` recorded; nothing judged while the group is alive; terminated after deadline |
+| mechanics | blocking | Outcome rules incomplete and `pending` not a gate for new Try | upheld | Outcome table; `pending` blocks Try and Back |
+| mechanics | major | Dismiss reruns reconcile and can hang | upheld | Dismiss skips reconcile and scans |
+| mechanics | major | Timeout budget omits scans; Status waits behind fetches | upheld (dup of intent 2 and 5) | Same fixes |
+| mechanics | major | A hard kill can leave `index.lock` | upheld | SIGTERM with grace; lock reported with path, never deleted |
 
 ## Prior Work
 
