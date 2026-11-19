@@ -15,6 +15,7 @@ async function fixture(t) {
 case "$(basename "$0"):$1" in
  systemd-run:*) exit 1;;
  tmux:show-environment) echo call >> "$TOOLS_CALLS"; if [ "$TOOLS_PATH" = hang ]; then exec sleep 30; fi; printf '%s\\n' "$TOOLS_PATH";;
+ tmux:load-buffer) cat >/dev/null;;
  tmux:capture-pane) printf 'Ask Codex to do anything\\n? for shortcuts\\n';;
  git:*) echo deadbeef;;
 esac
@@ -107,4 +108,36 @@ test('queued saves persist the latest state after overlapping updates', async t 
   await s.projectToolsWrites.get('thread');
   const state = JSON.parse(await fsp.readFile(path.join(f.state, 'project-tools/thread.json')));
   assert.equal(state.seq, 20); assert.equal(state.programs[0].text, '19');
+});
+
+
+test('invalid saved state falls back and valid saved state loads', async t => {
+  const f = await fixture(t);
+  const saved = path.join(f.state, 'project-tools', 'thread.json');
+  await fsp.mkdir(path.dirname(saved), { recursive: true });
+  const empty = { seq: 0, file: [], programs: [], clis: {} };
+  const cases = [null, {}, [], { ...empty, seq: -1 }, { ...empty, seq: '3' },
+    { ...empty, file: [{ names: [1], text: 'bad' }] },
+    { ...empty, programs: [{ names: [], text: 1 }] },
+    { ...empty, clis: { codex: { lines: [], thread: 'yes', hash: null } } },
+    { ...empty, clis: { codex: { lines: [], thread: true, hash: 3 } } }];
+  for (const value of cases) {
+    await fsp.writeFile(saved, JSON.stringify(value));
+    const s = await f.service();
+    const result = await f.start(s);
+    assert.equal(result.project_tools.seq, 1);
+    assert.deepEqual(result.project_tools.file, []);
+    assert.deepEqual(result.project_tools.programs, []);
+    assert.deepEqual(result.project_tools.clis, {});
+    assert.ok(s.sessions[result.name]);
+    await s.projectToolsWrites.get('thread');
+  }
+  const valid = { seq: 7, file: [{ names: [], text: 'saved' }], programs: [], clis: { codex: { lines: [], thread: true, hash: null } } };
+  await fsp.writeFile(saved, JSON.stringify(valid));
+  const s = await f.service();
+  const result = await f.start(s, { worktree: f.worker, role: 'worker' });
+  assert.equal(result.project_tools.seq, 8);
+  assert.deepEqual(result.project_tools.file, valid.file);
+  assert.deepEqual(result.project_tools.clis, valid.clis);
+  assert.ok(s.sessions[result.name]);
 });

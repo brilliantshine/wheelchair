@@ -613,12 +613,18 @@ class MachineService {
       child.on('close', code => finish(code === 0 && stdout.startsWith('PATH=') ? stdout.slice(5).replace(/\r?\n$/, '') : (process.env.PATH || '')));
     });
   }
+  validProjectToolsState(value) {
+    const plain = v => v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype;
+    const lines = v => Array.isArray(v) && v.every(line => plain(line) && Array.isArray(line.names) && line.names.every(name => typeof name === 'string') && typeof line.text === 'string');
+    return plain(value) && Number.isSafeInteger(value.seq) && value.seq >= 0 && lines(value.file) && lines(value.programs) && plain(value.clis) && Object.values(value.clis).every(cli => plain(cli) && lines(cli.lines) && typeof cli.thread === 'boolean' && (typeof cli.hash === 'string' || cli.hash === null));
+  }
   updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs) {
     const id = encodeURIComponent(safeName(input.thread_id, 'thread id'));
     let state = this.projectTools.get(id);
     if (!state) {
       try { state = JSON.parse(fs.readFileSync(path.join(this.stateDir, 'project-tools', `${id}.json`), 'utf8')); }
-      catch { state = { seq: 0, file: [], programs: [], clis: {} }; }
+      catch { state = null; }
+      if (!this.validProjectToolsState(state)) state = { seq: 0, file: [], programs: [], clis: {} };
       this.projectTools.set(id, state);
     }
     const { mcp, warnings, hash } = read;
