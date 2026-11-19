@@ -391,6 +391,11 @@ account-level tools; merging the PR; everything under Deferred.
 | 6 | Stopping hung git commands' child processes too | Only when a child process hangs holding the pipe | planning | Round 5: spawn in a process group, kill the group, settle without waiting for `close`. |
 | 7 | Warning when the tools change on main while you edit | The stale check already refuses the Save | planning | Round 9: on a read with a different baseline and unsaved edits, show a banner and keep the old baseline until reload. |
 | 8 | Clear message when a `wc-tools` branch blocks saving | Only if someone made a branch with that name | planning | Round 4: name the blocking ref; never touch it. |
+| 9 | Honouring git's `working-tree-encoding` on `.mcp.json` | Unusual git setup (Log 52) | verification | Attempt 9: git's working-tree-encoding attribute on .mcp.json isn't applied when the machine reads or writes the blob. |
+| 10 | A save branch name that collides at the identical commit | Needs a random 12-hex branch name to collide (Log 52) | verification | Attempt 9: a wc-tools branch name colliding with an existing branch at the identical commit. |
+| 11 | Exact display of unusual read-only field contents | Odd file contents; they're shown escaped (Log 52) | verification | Attempt 9: exact rendering of unusual read-only field contents beyond the escaped JSON form. |
+| 12 | Disabling a Save's PR link during a reload retry | Needs a failed reload after a Save (Log 52) | verification | Attempt 9: the PR link from a Save stays clickable while a failed reload is retried. |
+| 13 | Key values containing a NUL byte | Hard to type; fails safe with no leak (Log 52) | verification | Attempt 9: a key value containing a NUL byte stops the agent from starting (fixed message, exit 127, nothing leaked). |
 
 ## Accepted Risks
 
@@ -850,3 +855,4 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-19 — Collin's rule from the lead: Decision Log 52 (user). It applies to the gaps from verification attempt 9 on; R8-1 and R8-2 had already finished as dispatched.
 - 2026-11-19 — Verification attempt 9: gpt verifier-18 FAIL with 1 gap (the hub decodes each HTTP chunk separately, so a UTF-8 character split across chunks is corrupted and an ordinary Save pushes the corruption) and 4 hardening candidates it named under Log 52; verifier-18 stopped. Waiting for verifier-17.
 - 2026-11-19 — Verification attempt 9: claude verifier-17 PASS (stopped). Sent the lead 1 gap marked must-fix (hub UTF-8 chunk decoding) and 5 hardening deferral proposals under Log 52.
+- 2026-11-19 — Lead on attempt 9: fix gap 1 (hub UTF-8 chunk decoding, rule (b)); defer 2-6 as Deferred rows 9-13, source verification. Remediation 9 covers gap 1 only.
