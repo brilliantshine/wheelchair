@@ -581,3 +581,4 @@ manager, no video, no Ready-check change.
 ## Log
 
 - 2026-11-18: xdotool installed on hearth by Collin (sudo card, exit 0).
+- Build accepted: approval 4539cede-7a2f-4576-905c-0593dfb80fc6
