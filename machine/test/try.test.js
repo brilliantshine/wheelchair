@@ -254,3 +254,86 @@ test('Forget during an interrupted switch leaves pending, active and the return 
   const answer = await f.instance.handle({ ...f.request, action: 'forget', version: record.version, kept: ref }); assert.equal(answer.ok, true);
   const next = await f.instance.read(f.repo); assert.deepEqual(next.active, record.active); assert.deepEqual(next.pending, record.pending); assert.deepEqual(next.last, record.last); assert.equal(f.git('rev-parse', next.active.return_ref), next.active.return_point.sha); assert.equal(await f.instance.resolveRef(f.repo, ref), null);
 });
+test('try A then B then back to the original branch', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  f.git('switch', '-c', 'wc/abcdefabcdef'); await fs.writeFile(path.join(f.repo, 'file'), 'second'); f.git('commit', '-am', 'second'); f.git('switch', 'main');
+  await f.instance.handle(f.request); await f.done(); await f.instance.handle({ ...f.request, thread_id: 'abcdefabcdef' }); const trial = await f.done();
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); assert.equal((await f.done()).state, 'none'); assert.equal(f.git('branch', '--show-current'), 'main');
+});
+test('a thread that removes an ignore rule: file not counted, back succeeds, file intact', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await fs.writeFile(path.join(f.repo, '.gitignore'), 'ignored\n'); f.git('add', '.gitignore'); f.git('commit', '-m', 'ignore'); await fs.writeFile(path.join(f.repo, 'ignored'), 'mine');
+  await f.instance.handle(f.request); const trial = await f.done(); assert.equal(trial.state, 'trying-this');
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const back = await f.done(); assert.equal(back.last.outcome, 'success'); assert.equal(await fs.readFile(path.join(f.repo, 'ignored'), 'utf8'), 'mine');
+});
+test('files appearing after back are listed', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture(); await f.instance.handle(f.request); const trial = await f.done();
+  await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\necho hello > appeared\n', { mode: 0o755 });
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done(); assert.deepEqual(result.last.appeared, ['appeared']); assert.equal(result.last.appeared_count, 1); assert.equal(result.last.files, undefined);
+});
+test('a file untracked before and after Back is not in appeared', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await fs.writeFile(path.join(f.repo, '.gitignore'), 'ignored\n'); f.git('add', '.gitignore'); f.git('commit', '-m', 'ignore'); await fs.writeFile(path.join(f.repo, 'ignored'), 'mine');
+  await f.instance.handle(f.request); const trial = await f.done();
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done(); assert.deepEqual(result.last.appeared, []);
+});
+test('a new file in an originally ignored directory whose rule the thread removed is listed on Back', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await fs.writeFile(path.join(f.repo, '.gitignore'), 'ignored/\n'); f.git('add', '.gitignore'); f.git('commit', '-m', 'ignore'); await fs.mkdir(path.join(f.repo, 'ignored')); await fs.writeFile(path.join(f.repo, 'ignored', 'old'), 'old');
+  await f.instance.handle(f.request); const trial = await f.done(); await fs.writeFile(path.join(f.repo, 'ignored', 'new'), 'new');
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done(); assert.equal(result.last.outcome, 'refused'); assert.deepEqual(result.last.files, ['ignored/new']);
+});
+test('Back refused while pending is set', async () => {
+  const f = await tryFixture(); await f.instance.handle(f.request); await f.done(); const record = await f.instance.read(f.repo); record.pending = { op: 'back', from: await f.instance.head(f.repo) }; await f.instance.write(f.repo, record);
+  const answer = await f.instance.handle({ ...f.request, action: 'back', version: record.version }); assert.match(answer.reason, /interrupted/);
+});
+test('after an interrupted move between threads active is kept', async () => {
+  const f = await tryFixture(); await f.instance.handle(f.request); await f.done(); const record = await f.instance.read(f.repo); const original = record.active;
+  record.pending = { op: 'try', first: false, thread_id: 'abcdefabcdef', from: await f.instance.head(f.repo), to: { branch: null, sha: '0'.repeat(40) } }; await f.instance.write(f.repo, record);
+  const answer = await f.instance.handle({ ...f.request, action: 'dismiss', version: record.version }); assert.equal(answer.ok, true); assert.deepEqual((await f.instance.read(f.repo)).active, original);
+});
+test('return branch deleted or checked out elsewhere is refused', async () => {
+  for (const mode of ['deleted', 'checked out']) {
+    const path = require('node:path'); const f = await tryFixture(); await f.instance.handle(f.request); const trial = await f.done();
+    if (mode === 'deleted') f.git('branch', '-D', 'main'); else f.git('worktree', 'add', path.join(f.root, 'other'), 'main');
+    const answer = await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); assert.equal(answer.accepted, false); assert.match(answer.reason, mode === 'deleted' ? /no longer exists/ : /another worktree/);
+  }
+});
+test('stale record: Back refused; Dismiss deletes return pin when its branch contains it, else keeps it', async () => {
+  for (const contains of [true, false]) {
+    const f = await tryFixture(); await f.instance.handle(f.request); await f.done(); const record = await f.instance.read(f.repo);
+    f.git('switch', 'main'); if (!contains) { f.git('switch', '-c', 'other'); f.git('branch', '-D', 'main'); }
+    const status = await f.instance.handle({ ...f.request, action: 'status' }); assert.equal(status.state, 'stale');
+    assert.match((await f.instance.handle({ ...f.request, action: 'back', version: status.version })).reason, /by hand/);
+    const answer = await f.instance.handle({ ...f.request, action: 'dismiss', version: status.version }); assert.equal(answer.ok, true); assert.equal(answer.status.state, 'none'); assert.equal(answer.status.kept.length, contains ? 0 : 1);
+    assert.equal(!!await f.instance.resolveRef(f.repo, record.active.return_ref), !contains);
+  }
+});
+test('folder replaced by another clone during a trial: Dismiss keeps entries marked old identity', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture(); await f.instance.handle(f.request); await f.done(); const record = await f.instance.read(f.repo);
+  await fs.rename(path.join(f.repo, '.git'), path.join(f.repo, '.git-original')); const { spawnSync } = require('node:child_process'); const other = path.join(f.root, 'replacement'); assert.equal(spawnSync('git', ['init', other]).status, 0); await fs.writeFile(path.join(f.repo, '.git'), `gitdir: ${path.join(other, '.git')}\n`);
+  const calls = []; const git = f.instance.git.bind(f.instance); f.instance.git = (folder, args) => { calls.push(args); return git(folder, args); };
+  const answer = await f.instance.handle({ ...f.request, action: 'dismiss', version: record.version }); assert.equal(answer.ok, true); assert.equal(answer.status.kept[0].old_identity, true); assert.equal(answer.status.kept[0].ref, record.active.return_ref); assert.equal(calls.some(args => args[0] === 'update-ref'), false);
+});
+test('stale version on back, dismiss and forget is refused', async () => {
+  const f = await tryFixture(); await f.instance.handle(f.request); const status = await f.done();
+  for (const action of ['back', 'dismiss', 'forget']) {
+    const answer = await f.instance.handle({ ...f.request, action, version: 'old', ...(action === 'forget' ? { kept: 'ref' } : {}) }); assert.equal(answer.reason, 'Your copy changed since this page loaded'); assert.equal(answer.status.version, status.version);
+  }
+});
+test('required smudge filter failing on Back is interrupted, files recorded and no file deleted', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=broken\n'); f.git('add', '.gitattributes'); f.git('commit', '-m', 'require filter');
+  await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'precious\n'); await fs.writeFile(path.join(f.repo, 'precious'), 'mine');
+  await f.instance.handle(f.request); const trial = await f.done(); assert.equal(trial.state, 'trying-this');
+  f.git('config', 'filter.broken.smudge', 'exit 1'); f.git('config', 'filter.broken.required', 'true');
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done(); assert.equal(result.state, 'interrupted'); assert.equal(result.last.outcome, 'interrupted'); assert.ok(Array.isArray(result.files)); assert.equal(await fs.readFile(path.join(f.repo, 'precious'), 'utf8'), 'mine');
+});
+test('re-cloning after a completed Back allows Try', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const { spawnSync } = require('node:child_process'); const f = await tryFixture();
+  await f.instance.handle(f.request); const trial = await f.done(); await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); assert.equal((await f.done()).state, 'none');
+  await fs.rename(path.join(f.repo, '.git'), path.join(f.root, 'original.git')); const other = path.join(f.root, 'replacement'); assert.equal(spawnSync('git', ['clone', '-q', path.join(f.root, 'original.git'), other]).status, 0);
+  assert.equal(spawnSync('git', ['-C', other, 'branch', 'wc/0123456789ab', 'origin/wc/0123456789ab']).status, 0);
+  await fs.writeFile(path.join(f.repo, '.git'), `gitdir: ${path.join(other, '.git')}\n`);
+  const answer = await f.instance.handle(f.request); assert.equal(answer.accepted, true); assert.equal((await f.done()).state, 'trying-this');
+});

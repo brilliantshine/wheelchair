@@ -3,7 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
-const { spawn, execFile } = require('node:child_process');
+const { spawn } = require('node:child_process');
 
 class TryService {
   constructor({ stateDir, root, projects, switchTimeout = 900000, scanTimeout = 300000, killGrace = 10000, gitExecutable = 'git' }) { this.stateDir = stateDir; this.root = root; this.projects = projects; this.locks = new Map(); this.switchTimeout = switchTimeout; this.scanTimeout = scanTimeout; this.killGrace = killGrace; this.gitExecutable = gitExecutable; }
@@ -25,7 +25,15 @@ class TryService {
     await fsp.writeFile(temp, JSON.stringify(record), { mode: 0o600 }); await fsp.rename(temp, file);
   }
   git(folder, args) {
-    return new Promise(resolve => execFile(this.gitExecutable, ['-C', folder, ...args], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 1000 }, (error, stdout, stderr) => resolve({ status: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout: stdout || '', stderr: stderr || '', error })));
+    return new Promise(resolve => {
+      const child = spawn(this.gitExecutable, ['-C', folder, ...args], { detached: true, env: { ...process.env, LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '', stderr = '', finished = false;
+      const finish = (status, error) => { if (finished) return; finished = true; clearTimeout(timer); resolve({ status, stdout, stderr, error }); };
+      child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+      child.stdout.on('data', data => { stdout += data; }); child.stderr.on('data', data => { stderr += data; });
+      const timer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } finish(1, new Error('Git metadata timed out.')); }, 1000);
+      child.on('error', error => finish(1, error)); child.on('close', code => finish(code ?? 1));
+    });
   }
   runGit(folder, args, timeout) {
     return new Promise(resolve => {
@@ -304,8 +312,8 @@ class TryService {
           const prior = new Set(before.map(entry => entry.path)); const appeared = after.filter(entry => !prior.has(entry.path)).map(entry => entry.path);
           last.appeared = appeared.slice(0, 50); last.appeared_count = appeared.length;
           last.reason = outcome === 'success' ? 'Your copy is back where it was.' : message || 'Git reported a warning.';
+          if ((await this.git(folder, ['update-ref', '-d', active.return_ref])).status !== 0) throw new Error('Git could not delete the return pin.');
           record.active = null; record.pending = null;
-          await this.git(folder, ['update-ref', '-d', active.return_ref]);
           await fsp.unlink(this.protectedPath(folder)).catch(error => { if (error.code !== 'ENOENT') throw error; });
         } else if (outcome === 'nothing-moved') {
           record.pending = null;
