@@ -15,8 +15,21 @@ function readConfig(dir) {
   try { text = fs.readFileSync(path.join(home(dir), 'config.toml'), 'utf8'); }
   catch (e) { return e.code === 'ENOENT' ? {} : { problem: "Kimi Code's config.toml can't be read" }; }
   if (text.includes('"""') || text.includes("'''")) return { problem: "Kimi Code's config.toml has multi-line strings wheelchair can't read" };
-  const result = {}; let table = '';
+  const result = {}; let table = '', depth = 0;
+  const bracketDelta = raw => {
+    let delta = 0, quoted = false, escaped = false;
+    for (const char of raw) {
+      if (quoted && escaped) { escaped = false; continue; }
+      if (quoted && char === '\\') { escaped = true; continue; }
+      if (char === '"') quoted = !quoted;
+      else if (!quoted && char === '#') break;
+      else if (!quoted && char === '[') delta++;
+      else if (!quoted && char === ']') delta--;
+    }
+    return delta;
+  };
   for (const line of text.split(/\r?\n/)) {
+    if (depth > 0) { depth += bracketDelta(line); continue; }
     const header = line.match(/^\s*\[([^\[\]]+)\]\s*(?:#.*)?$/);
     if (header) { table = header[1].trim(); continue; }
     if (/^\s*\[\[/.test(line)) { table = null; continue; }
@@ -29,6 +42,8 @@ function readConfig(dir) {
       if (char === '"') quoted = !quoted;
       else if (char === '#' && !quoted) { raw = raw.slice(0, i); break; }
     }
+    const valueDepth = bracketDelta(raw);
+    if (valueDepth > 0) { depth = valueDepth; continue; }
     let value; try { value = JSON.parse(raw.trim()); } catch { continue; }
     if (!table && table !== null && kv[1] === 'default_model' && typeof value === 'string') result.default_model = value;
     if (table === 'providers."managed:kimi-code".oauth' && ['key', 'oauth_host'].includes(kv[1]) && typeof value === 'string') result[kv[1]] = value;
