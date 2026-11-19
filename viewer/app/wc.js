@@ -72,6 +72,7 @@ function sessionRequest(operation, tail) {
   if (!['start', 'stop', 'list'].includes(operation)) {
     throw new Error('unsupported session operation');
   }
+  if (operation === 'start' && tail.some((arg, i) => arg === '--round' && (!tail[i + 1] || tail[i + 1].startsWith('--')))) throw new Error('--round requires a value');
   const parsed = flags(tail);
   if (operation !== 'start') return { path: '/session', body: { action: operation, name: parsed._[0] } };
   if (!parsed.role || !parsed.attempt || !parsed['brief-file']) {
@@ -88,6 +89,7 @@ function sessionRequest(operation, tail) {
       tier: parsed.tier || 'top',
       ...(parsed.effort !== undefined ? { effort: parsed.effort } : {}),
       attempt_id: parsed.attempt,
+      ...(parsed.round !== undefined ? { round: parsed.round } : {}),
       ...(parsed.title !== undefined ? { title: parsed.title } : {}),
       brief: fs.readFileSync(parsed['brief-file'], 'utf8'),
       replaces: parsed.replaces,
@@ -95,7 +97,7 @@ function sessionRequest(operation, tail) {
   };
 }
 
-const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'title', 'branch', 'worktree'];
+const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'round', 'title', 'branch', 'worktree'];
 function compact(session) {
   return Object.fromEntries(compactFields.filter(key => Object.hasOwn(session, key)).map(key => [key, session[key]]));
 }
