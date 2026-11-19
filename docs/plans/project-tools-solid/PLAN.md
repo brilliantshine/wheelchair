@@ -73,6 +73,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 33 | Scope cut: the connection test and reading the agent's environment move to a follow-up thread, with Antigravity tools that need a value from a variable. Supersedes 2, 5, 9, 12-15, 17, 19-28, 31, 32 and the expansion part of 18. "Program exists" stays as a file check against the tmux global PATH (§5). Without long checks, starts are as fast as today, so the queue, check caching, digest and the cancel/restart checkout cleanup are dropped | Collin's pick "Move the test and Antigravity tokens out" after 20 rounds, nearly all findings in those parts | user |
 | 34 | IDEA.md What, Why, What good looks like and Not doing updated for Decision 33 | Collin agreed to the cut on the scope card | idea-change |
 | 35 | Accept both limits: a missing-program line clears only at a start in the thread's own checkout, and starts the hub does not serialize get no extra ordering (Accepted Risks, review-round-23) | Collin's pick "Accept, review again": both only delay a warning clearing | user |
+| 36 | The Antigravity private-file exception covers every literal value copied as written from `.mcp.json` (env, args, url, headers), not only headers | Decision 7: literal values are already in the project's file; the file is private and deleted when the agent ends | review-round-24 |
 
 ## Spec
 
@@ -117,7 +118,7 @@ For a tools-getting session with servers:
 - Variables (verified 2026-11-18 on agy 1.5.11: plugin `mcp_config.json` expands nothing — not env, args, url or headers; stdio servers inherit agy's whole environment):
   - A stdio `env` entry that passes through (same key, section 2) is left out of the file: the server inherits it from agy's environment.
   - Any other `${` anywhere in command, args, env, url or headers skips the server: "uses ${...} that Antigravity cannot pass through". (A tool whose token comes from a variable is in the follow-up.)
-  - Literal values are copied as is. A literal header may be a credential, which is why the file is private (0600, in 0700 dirs) and deleted when the session ends (IDEA constraint). Literal values never reach `session.command`, logs, lines or the card.
+  - Literal values are copied as is. A literal value (env, args, url or header) may be a credential, which is why the file is private (0600, in 0700 dirs) and deleted when the session ends (IDEA constraint). Literal values never reach `session.command`, logs, lines or the card.
 - Skips: `type: "sse"` ("uses sse, which Antigravity does not support here"); names not matching `[A-Za-z0-9_-]+` (same text as Codex); the same header twice ignoring case.
 - If every server is skipped: no plugin dir and no `--add-dir`.
 - Remove the old "aren't supported on Antigravity yet" warning.
@@ -134,7 +135,7 @@ For a tools-getting session with servers:
   - Otherwise searched in each directory of `path` in order; empty and relative entries are joined to `worktree` (the agent's working directory), as a shell would; no counting candidate in any → line.
   - Line: `{ names: [name], text: "<name>: its program can't be found" }`. The command itself is not printed.
 - A `command` containing `${` is not checked.
-- `path`: the start reads the tmux server's global `PATH` (`tmux show-environment -g PATH`, async, 2 s bound; `NAME=value` output used, `-NAME` or failure falls back to the service's own `process.env.PATH`), because an agent's pane gets the tmux global environment. Read once per tools-getting start whose reader returned servers, before section 6's update.
+- `path`: the start reads the tmux server's global `PATH` (`tmux show-environment -g PATH`, async, 2 s bound; `NAME=value` output used, `-NAME` or failure falls back to the service's own `process.env.PATH`), because an agent's pane gets the tmux global environment. Read, and `missingPrograms` run, only for tools-getting starts in the thread's worktree whose reader returned servers, before section 6's update; other checkouts skip both.
 
 ### 6. Machine project-tools state (`machine/service.js`)
 
@@ -151,7 +152,7 @@ For a tools-getting session with servers:
   2. Reset (reader confirmed no tools: no `.mcp.json`, or a valid file whose `mcpServers` is empty), in the thread's worktree only: `file` = [], `programs` = [], `clis` = {}. In another worktree a reset changes nothing.
   3. Otherwise:
      a. `clis[cli] = { hash: <this start's file hash>, thread: <in the thread's worktree>, lines: <this start's adapter skip lines> }`; in the thread's worktree also `file` = reader lines.
-     b. In the thread's worktree only: `programs` = this start's `missingPrograms` lines. Other checkouts never change `programs`: a missing program can be specific to one checkout (a program git ignores, such as `.venv/bin/python`, or one found through a relative PATH entry), and the thread's own checkout is the one the card describes. Workers still log their own missing-program lines.
+     b. In the thread's worktree only: `programs` = this start's `missingPrograms` lines. Other checkouts never change `programs`: a missing program can be specific to one checkout (a program git ignores, such as `.venv/bin/python`, or one found through a relative PATH entry), and the thread's own checkout is the one the card describes.
      c. Recompute other CLIs' lines: for every other CLI X with lines, if `clis[X].hash` equals this start's hash, or this start and `clis[X]` are both in the thread's worktree, call X's adapter `command()` with this start's file and worktree and a stand-in tools-getting session, keep only its skip lines (no files written, nothing launched) and store them with this start's `hash` and `thread`. Adapters read no environment values (section 2), so the result is X's real lines for that file. Lines from another checkout with a different file stay until that CLI starts again.
   4. `seq` += 1, queue a save, and set `session.project_tools = { boot, seq, file, programs, clis }` (a copy of the whole state), where `boot` is a random id chosen once per machine-service process start.
 - Saves go through one per-thread write chain, each write taking the latest in-memory state, so an older write never lands after a newer one. A save writes `<file>.tmp` then renames it over `<file>`; a failed write removes `<file>.tmp` and is logged, and the start goes on. At startup, leftover `*.tmp` files in `<stateDir>/project-tools/` are removed.
@@ -219,7 +220,7 @@ re-raise them.
 |------|--------------|-------|
 | A program found on the tmux global PATH may still be missing for the agent (or the reverse) when tmux's `update-environment` or the session's own setup changes PATH | The agent pane starts from the tmux global environment; a mismatch is rare and shows only as an extra or missing line | user (Decision 33) |
 | A missing program's line clears only at the next start in the thread's own checkout (lead or sub-lead), not at a worker start | Any checkout-wide rule kept flapping or clearing the card wrongly (rounds 21-23); the line is right for the thread's checkout | review-round-23 |
-| Two starts of one thread that the hub did not serialize could publish lines from an older read of `.mcp.json`; the next start corrects them | The hub serializes a thread's starts; per-group ordering added more rules than it removed (rounds 22-23) | review-round-23 |
+| Two starts of one thread that the hub did not serialize could publish lines from an older read of `.mcp.json`; they stay until the next start in the checkout that owns them (the thread's worktree for `file` and `programs`, that CLI for its lines) | The hub serializes a thread's starts; per-group ordering added more rules than it removed (rounds 22-23) | review-round-23 |
 | A tmux server started with verbose logging (`-v`) writes the full launch command, including literal `.mcp.json` values, to its own log | An opt-in debugging mode Collin would turn on himself | review-round-17 |
 | A skip line recomputed at a worker start on the same file loses its thread-checkout origin, so after the thread's file changes it can stay until that CLI starts again | Needs a specific sequence of CLIs and checkouts; the line clears at that CLI's next start | review-round-17 |
 | Literal header or env values in `.mcp.json` are visible to other local users in Codex's process arguments | Needs a second local user account on the machine (home is `drwx------`, so only `/proc` exposes them); literal secrets in a committed `.mcp.json` are already unusual, since `${VAR}` is the documented way; literal env values have been passed this way since PR #112. `${...}` values never reach argv | review-round-15 |
@@ -652,6 +653,19 @@ exit. Downgrades and declines cite evidence.
 ### Round 24 — 2026-11-19
 
 **Changed since Round 23:** §5 single line list again (no relative/shared split); §6 tickets and program groups removed: only the thread's worktree sets `programs`, concurrency left to the hub's serialization; Edge cases, Validation; two Accepted Risks (Decision 35).
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Program check runs on worker starts only to log | upheld | §5 runs only in the thread's worktree |
+| mechanics | blocking | Session records from before this change keep unredacted commands | declined | Before this change Codex skipped every server with headers (README "Project MCP tools"), so old records hold only literal env, args and url values copied from the committed file, stored that way by design since PR #112 (Decision 7) |
+| mechanics | major | Private-file exception covers headers only, §4 copies all literals | upheld | IDEA constraint and Decision 36: every literal value |
+| mechanics | minor | Concurrency risk says "next start" corrects it | upheld | Accepted Risk wording scoped to the owning checkout |
+
+### Round 25 — 2026-11-19
+
+**Changed since Round 24:** §5 program check and PATH read only in the thread's worktree; §4 and IDEA constraint: the private-file exception covers every literal value (Decision 36); Accepted Risk wording on unserialized starts.
 
 ## Prior Work
 

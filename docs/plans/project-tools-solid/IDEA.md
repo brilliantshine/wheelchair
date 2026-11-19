@@ -35,5 +35,5 @@ Agents already get the tools listed in a project's `.mcp.json` when they run on 
 ## Constraints
 
 - Builds on the merged local-projects work (PR #112); plan record in `docs/plans/local-projects/PLAN.md`.
-- Secrets in headers or tokens must not be written into stored session data or logs. One exception: an Antigravity agent's private tool file (readable only by Collin, deleted when the agent ends) may hold header values copied as written from `.mcp.json`.
+- Secrets in headers or tokens must not be written into stored session data or logs. One exception: an Antigravity agent's private tool file (readable only by Collin, deleted when the agent ends) may hold values copied as written from `.mcp.json` (env, arguments, addresses, headers).
 - Antigravity must keep its login and hooks working with whatever per-session setup is used.
