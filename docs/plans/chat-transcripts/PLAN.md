@@ -46,6 +46,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | Idle drops on both hub and machine run from an `unref`'d timer, not only on traffic | Otherwise closing the last tab leaves everything held (round-1 finding) | review-round-1 |
 | 15 | The machine's dedupe set holds only non-empty lines and is dropped after a failed append | Matches today's rebuild-from-disk results exactly, including blank lines across batches and partial appends | review-round-1 |
 | 16 | `machines.json`'s `last_seen` is written at most once a minute per machine; the in-memory value updates every call | It is read from disk only at hub start; otherwise every chat poll rewrites the file | review-round-1 |
+| 17 | An `unchanged` reply is matched against the entry before any empty-data check; empty data means fall back only for `full` and older-machine replies | Refines #5, which read as covering `unchanged` too | review-round-2 |
+| 18 | Pending protection for a thread's entries starts before joining the thread lock, both in `hub.chat` and the aside route | Supersedes the `chat()` part of S4.1 from round 1 | review-round-2 |
 
 ## Spec
 
@@ -72,8 +74,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
    - The session lookup, source binding and copy happen as today (`transcript()` lines
      ~1236-1241), including the archived-thread path that reads a kept file of a
      forgotten session.
-   - Then, still inside that session's copy queue (Decision #11; for the archived path,
-     no queue is needed since nothing appends), open the kept file once, `fstat` the
+   - Then, still inside that session's copy queue (Decision #11; the archived path also
+     waits on the queue entry for that session name, if one is running, so a copy that
+     started before the archive cannot be read half-written), open the kept file once, `fstat` the
      handle: `gen = ${ino}-${birthtimeMs}`, `end = size`.
    - Kept file missing, or `end` is 0 → `{ status: 'unavailable' }`.
    - `known` equals `${gen}:${end}` → `{ status: 'unchanged', gen, end }`, no data, and
@@ -121,13 +124,16 @@ under today's thread lock:
 1. Entry present and its parse key matches → request with `known=<entry.gen>:<entry.end>`
    (or `known=-` if the entry came from an older machine and has no `gen`). Otherwise →
    request with `known=-`.
-2. Reply handling:
-   - `unchanged` → use `entry.parsed`. Update `lastRead`.
+2. Reply handling, checked in this order:
+   - `status: 'unchanged'` (has no `data` by design) → if the reply's `gen`/`end` match
+     the entry, use `entry.parsed` and update `lastRead`; if they do not match (or no
+     entry), treat as unavailable below. The empty-data rule never applies to it.
    - `full` with non-empty `data`, or a reply with no `status` and non-empty `data` (older
      machine): parse with `transcriptItems` and store `{parsed, gen, end, parseKey,
      lastRead: now}` (`gen`/`end` absent for an older machine, which is then parsed on
      every poll, as today).
-   - `unavailable`, empty `data`, a thrown error or timeout → fallback: if an entry exists,
+   - `unavailable`, a `full` or no-`status` reply with empty `data`, an unknown
+     `status`, a thrown error or timeout → fallback: if an entry exists,
      use its `parsed` (whatever its parse key) and update `lastRead`; else read the local
      `session.transcript_path` as today and parse it without storing it; if that is empty
      too, the session contributes nothing, as today (`chat.js:325`), except that a
@@ -143,9 +149,10 @@ under today's thread lock:
 1. `hub.chat` (`viewer/app/hub.js:250`), when called and before waiting for the thread
    lock: increments a per-thread pending count, and sets `lastRead = now` on every entry
    held for that thread's lead sessions. It decrements the count when it returns or
-   throws. `chat()` itself (`viewer/app/chat.js:318`) does the same for its own duration,
-   because aside creation calls it directly while already holding the lock
-   (`viewer/app/asides.js:34`).
+   throws. The aside route does the same before it joins the thread lock
+   (`viewer/app/routes.js:480`, around its `hub.withThread` call), because aside creation
+   calls `chat()` directly inside that lock (`viewer/app/asides.js:34`). One helper does
+   this bookkeeping for both callers.
 2. A sweep drops entries whose `lastRead` is more than 10 minutes ago, unless their
    thread's pending count is above zero. It runs from an `unref`'d timer at least once a
    minute, so entries are dropped after the last tab closes with no further traffic; the
@@ -158,8 +165,11 @@ Every `hub.call` today rewrites `machines.json` through `markMachineSeen`
 (`viewer/app/hub.js:105`, `viewer/app/state.js:241`), so each chat poll writes a file per
 lead even when the transcript is unchanged. Change `hub.markMachineSeen`: always update
 the in-memory `lastSeen` (what every reader uses: `agents.js:140`, `views.js:164`), but
-write it to `machines.json` only when the last write for that machine was 60 seconds or
-more ago. `machines.json`'s `last_seen` is only read at hub start to seed `lastSeen`
+write it to `machines.json` only when the last write for that name was 60 seconds or
+more ago. The check and the reservation (recording "written now" for that name) happen
+synchronously before any `await`, so overlapping calls do not queue duplicate writes.
+Two names for the same machine (for example `hub` and its hostname) may each write once a
+minute; that is fine. `machines.json`'s `last_seen` is only read at hub start to seed `lastSeen`
 (`viewer/app/hub.js:76`), so it may lag by up to a minute.
 
 ### S5. Tests
@@ -189,9 +199,11 @@ New tests, at least:
   (fake clock) but not while a chat request for its thread is pending; report readers
   never send `known` and neither use nor fill entries (extend `app-chat.test.js:362`);
   entries are dropped by the timer with no further chat calls; an aside created at the
-  idle cutoff still finds its message; an unknown CLI still shows its notice; two
+  idle cutoff, queued behind a held thread lock, still finds its message; an unknown CLI still shows its notice; two
   `hub.call`s within a minute write `machines.json` once while `machineSeen` reflects
-  both.
+  both. Update `viewer/test/app-hub.test.js:898` ("persists its last-seen time"): with
+  throttling, the in-memory time can be newer than the persisted one; assert the
+  persisted value is a valid time no later than the reported one.
 
 ### S6. Validation
 
@@ -259,6 +271,12 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | blocking | `unchanged` has no data, so Decision #5's empty-data rule overlaps it | upheld | Decision #17, S3.2 reordered |
+| mechanics | major | Last-seen throttle must be atomic across overlapping calls and names | downgraded (minor) | At worst one extra small write a minute; no wrong result. Still specified: S4b |
+| mechanics | minor | Existing last-seen test expects equal times | upheld | S5 |
+| mechanics | minor | Aside queued behind the lock can lose its fallback | upheld | Decision #18, S4.1 |
+| mechanics | minor | Archived read can overlap a copy started before archive | upheld | S1.2 |
 
 ## Implementation Tasks
 
