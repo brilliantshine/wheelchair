@@ -1,0 +1,232 @@
+'use strict';
+const path = require('node:path');
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const crypto = require('node:crypto');
+const { spawnSync, spawn } = require('node:child_process');
+
+class TryService {
+  constructor({ stateDir, root, projects, switchTimeout = 900000, scanTimeout = 300000, killGrace = 10000, gitExecutable = 'git' }) { this.stateDir = stateDir; this.root = root; this.projects = projects; this.locks = new Map(); this.switchTimeout = switchTimeout; this.scanTimeout = scanTimeout; this.killGrace = killGrace; this.gitExecutable = gitExecutable; }
+  lockState(folder) { if (!this.locks.has(folder)) this.locks.set(folder, { held: false, generation: 0 }); return this.locks.get(folder); }
+  acquire(folder) { const lock = this.lockState(folder); if (lock.held) return false; lock.held = true; lock.generation++; return true; }
+  release(folder) { const lock = this.lockState(folder); lock.held = false; lock.generation++; }
+  folder(project) { return fs.realpathSync(project); }
+  hash(folder) { return crypto.createHash('sha256').update(folder).digest('hex'); }
+  recordPath(folder) { return path.join(this.stateDir, 'tries', `${this.hash(folder)}.json`); }
+  protectedPath(folder) { return this.recordPath(folder).replace(/\.json$/, '.protected'); }
+  async read(folder) {
+    try { return JSON.parse(await fsp.readFile(this.recordPath(folder), 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') return { folder, identity: null, version: null, active: null, pending: null, last: null, kept: [] }; throw error; }
+  }
+  async write(folder, record) {
+    const file = this.recordPath(folder); await fsp.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    record.version = crypto.randomBytes(16).toString('hex');
+    const temp = `${file}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+    await fsp.writeFile(temp, JSON.stringify(record), { mode: 0o600 }); await fsp.rename(temp, file);
+  }
+  git(folder, args) { return spawnSync(this.gitExecutable, ['-C', folder, ...args], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 4000 }); }
+  runGit(folder, args, timeout) {
+    return new Promise(resolve => {
+      const child = spawn(this.gitExecutable, ['-C', folder, ...args], { detached: true, env: { ...process.env, LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), killed = false, code = null, closed = false, failed = null;
+      child.stdout.on('data', b => { stdout = Buffer.concat([stdout, b]); });
+      child.stderr.on('data', b => { stderr = Buffer.concat([stderr, b]); });
+      const signal = sig => { try { process.kill(-child.pid, sig); } catch (error) { if (error.code !== 'ESRCH') throw error; } };
+      const groupAlive = () => { try { process.kill(-child.pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; } };
+      let deadline = setTimeout(() => { killed = true; signal('SIGTERM'); killer = setTimeout(() => signal('SIGKILL'), this.killGrace); }, timeout);
+      let killer;
+      const finish = () => {
+        if (!closed) return;
+        if (groupAlive()) { setTimeout(finish, 25); return; }
+        clearTimeout(deadline); clearTimeout(killer);
+        resolve({ code: killed ? 'killed' : code, stdout, stderr, error: failed });
+      };
+      child.on('error', error => { failed = error; });
+      child.on('close', value => { code = value; closed = true; finish(); });
+    });
+  }
+  async scan(folder) {
+    const result = await this.runGit(folder, ['--no-optional-locks', 'status', '--porcelain=v2', '-z', '--no-renames', '--untracked-files=all', '--ignore-submodules=none'], this.scanTimeout);
+    if (result.code !== 0) throw new Error(result.code === 'killed' ? 'Git took too long to check your copy.' : (result.stderr.toString().trim().split('\n').pop() || 'Git could not check your copy.'));
+    const fields = result.stdout.toString('utf8').split('\0'); const entries = [];
+    for (let i = 0; i < fields.length; i++) {
+      const line = fields[i]; if (!line) continue;
+      const kind = line[0]; let file, submodule = false;
+      if (kind === '?' || kind === '!') file = line.slice(2);
+      else { const n = kind === '1' ? 8 : kind === '2' ? 9 : kind === 'u' ? 10 : 0; if (!n) continue;
+        let at = 0; for (let j = 0; j < n; j++) at = line.indexOf(' ', at) + 1;
+        file = line.slice(at); submodule = line.split(' ')[2]?.startsWith('S') || false;
+        if (kind === '2') i++;
+      }
+      entries.push({ path: file, untracked: kind === '?', submodule });
+    }
+    return entries;
+  }
+  async filtered(folder, entries) {
+    const protectedPaths = new Set((await fsp.readFile(this.protectedPath(folder)).catch(error => { if (error.code === 'ENOENT') return Buffer.alloc(0); throw error; })).toString().split('\0'));
+    return entries.filter(entry => !entry.untracked || !protectedPaths.has(entry.path));
+  }
+  head(folder) {
+    const sha = this.git(folder, ['rev-parse', '--verify', 'HEAD']); if (sha.status !== 0) return null;
+    const branch = this.git(folder, ['symbolic-ref', '-q', 'HEAD']); return { branch: branch.status === 0 ? branch.stdout.trim() : null, sha: sha.stdout.trim() };
+  }
+  sameHead(a, b) { return !!a && !!b && a.branch === b.branch && a.sha === b.sha; }
+  judge(from, to, head, entries, result) {
+    const target = this.sameHead(head, to), clean = entries && entries.length === 0;
+    if (target && /^warning: unable to (?:unlink|rmdir) '/m.test(result.stderr.toString())) return 'interrupted';
+    if (target && clean && result.code === 0) return 'success';
+    if (target && clean && result.code !== 0 && result.code !== 'killed') return 'warning';
+    if (target && entries && !clean && result.code === 0) return 'warning';
+    if (this.sameHead(head, from) && clean && result.code !== 0) return 'nothing-moved';
+    return 'interrupted';
+  }
+  identity(folder) {
+    const common = this.git(folder, ['rev-parse', '--git-common-dir']);
+    if (common.status !== 0) return null;
+    try { return { folder, common_dir: fs.realpathSync(path.resolve(folder, common.stdout.trim())) }; } catch { return null; }
+  }
+  sameIdentity(a, b) { return !!a && !!b && a.folder === b.folder && a.common_dir === b.common_dir; }
+  async writeProtected(folder, paths) {
+    const file = this.protectedPath(folder); await fsp.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    const temp = `${file}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+    await fsp.writeFile(temp, paths, { mode: 0o600 }); await fsp.rename(temp, file);
+  }
+  gitDir(folder) {
+    const result = this.git(folder, ['rev-parse', '--absolute-git-dir']); return result.status === 0 ? result.stdout.trim() : null;
+  }
+  folderCheck(folder, record) {
+    const top = this.git(folder, ['rev-parse', '--show-toplevel']);
+    const bare = this.git(folder, ['rev-parse', '--is-bare-repository']);
+    if (top.status !== 0 || bare.stdout.trim() !== 'false' || (() => { try { return fs.realpathSync(top.stdout.trim()) !== folder; } catch { return true; } })()) return 'This folder is not the top level of a git working tree.';
+    const beneath = (child, parent) => child === parent || child.startsWith(parent + path.sep);
+    if (beneath(folder, path.join(this.stateDir, 'worktrees'))) return "This folder is an agent's copy.";
+    let root = this.root; try { root = fs.realpathSync(root); } catch { /* root may be absent in tests */ }
+    if (beneath(root, folder)) return 'This folder runs wheelchair itself; switching it would swap the running app for untested code.';
+    const dir = this.gitDir(folder);
+    if (!dir || ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG'].some(name => fs.existsSync(path.join(dir, name))) || this.git(folder, ['ls-files', '-u']).stdout.trim()) return 'Git has an operation in progress. Finish it at your computer first.';
+    if ((record.active || record.pending) && !this.sameIdentity(record.identity, this.identity(folder))) return 'This folder is no longer the copy that was switched';
+    return null;
+  }
+  resolveRef(folder, ref) { const result = this.git(folder, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]); return result.status === 0 ? result.stdout.trim() : null; }
+  indexLock(folder) { const dir = this.gitDir(folder); const file = dir && path.join(dir, 'index.lock'); return file && fs.existsSync(file) ? file : null; }
+  gitlinkChanged(folder, from, to) {
+    const result = this.git(folder, ['diff', '--raw', '--no-renames', '--ignore-submodules=none', from, to]);
+    if (result.status !== 0) throw new Error('Git could not compare the commits.');
+    return result.stdout.split('\n').some(line => /^:160000 |^:[0-7]{6} 160000 /.test(line));
+  }
+  async handle(input) {
+    const invalid = message => { throw Object.assign(new Error(message), { status: 422 }); };
+    if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('Invalid request.');
+    if (!['status', 'try', 'back', 'dismiss', 'forget'].includes(input.action)) invalid('Invalid action.');
+    if (typeof input.thread_id !== 'string' || !/^[0-9a-f]{12}$/.test(input.thread_id)) invalid('Invalid thread ID.');
+    if (typeof input.project !== 'string' || !path.isAbsolute(input.project)) invalid('Invalid project.');
+    const checked = await this.projects(new URLSearchParams({ check: input.project }));
+    if (!checked.checked.ok) invalid('Invalid project.');
+    if (['back', 'dismiss', 'forget'].includes(input.action) && (typeof input.version !== 'string' || !input.version)) invalid('Version is required.');
+    if (input.action === 'forget' ? typeof input.kept !== 'string' || !input.kept : Object.hasOwn(input, 'kept')) invalid('Invalid kept ref.');
+    const folder = this.folder(input.project);
+    if (input.action === 'status') return this.status(input, folder);
+    if (!this.acquire(folder)) return { accepted: false, reason: 'A switch is already running', status: await this.status(input, folder) };
+    let retained = false;
+    try {
+      if (input.action !== 'try') { this.release(folder); retained = true; return { accepted: false, reason: 'Not built yet', status: await this.status(input, folder) }; }
+      const record = await this.read(folder); const head = this.head(folder);
+      let reason = this.folderCheck(folder, record);
+      if (!reason && record.pending) reason = 'A switch was interrupted. Check your copy at your computer, then press Done.';
+      if (!reason && this.indexLock(folder)) reason = 'Git may still be running in this folder. Check at your computer.';
+      if (!reason && record.active && head?.branch) reason = 'You switched your copy by hand. Dismiss first.';
+      const target = this.resolveRef(folder, `refs/heads/wc/${input.thread_id}`);
+      if (!reason && !target) reason = 'This thread has no branch in this folder.';
+      if (!reason && record.active?.thread_id === input.thread_id && head?.sha === record.active.commit && target === record.active.commit) reason = 'Already showing the newest';
+      if (!reason && !head) reason = 'Git could not read the current commit.';
+      if (reason) { this.release(folder); retained = true; return { accepted: false, reason, status: await this.status(input, folder) }; }
+      const status = await this.status(input, folder);
+      retained = true;
+      setImmediate(() => this.performTry(input, folder, record, head, target).catch(error => console.error('try failed:', error)).finally(() => this.release(folder)));
+      return { accepted: true, status };
+    } finally { if (!retained) this.release(folder); }
+  }
+  listFields(entries) { const files = entries.map(entry => entry.path); return { files: files.slice(0, 50), files_count: files.length }; }
+  async performTry(input, folder, record, from, target) {
+    const last = { op: 'try', thread_id: input.thread_id, at: new Date().toISOString(), outcome: 'refused', reason: 'Git could not switch your copy.' };
+    let pendingWritten = false;
+    try {
+      const before = await this.scan(folder); const clean = await this.filtered(folder, before);
+      if (before.some(entry => entry.submodule) || this.gitlinkChanged(folder, from.sha, target)) {
+        last.reason = "This thread changes a submodule, which isn't supported.";
+      } else if (clean.length) {
+        last.reason = 'These files have changes. Commit, undo or delete them at your computer, then press again.';
+        Object.assign(last, this.listFields(clean));
+      } else {
+        const first = !record.active;
+        if (first) {
+          const ignored = this.git(folder, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard']);
+          if (ignored.status !== 0) throw new Error('Git could not list ignored files.');
+          await this.writeProtected(folder, ignored.stdout);
+          record.identity = this.identity(folder);
+        }
+        if (record.active && !from.branch && from.sha !== record.active.commit) {
+          const ref = `refs/wheelchair/kept/${this.hash(folder).slice(0, 16)}/${crypto.randomBytes(4).toString('hex')}`;
+          const entry = { ref, label: `commits made while trying thread ${record.active.thread_id}`, thread_id: record.active.thread_id, at: new Date().toISOString() };
+          record.kept.push(entry); await this.write(folder, record);
+          if (this.git(folder, ['update-ref', ref, from.sha]).status !== 0) throw new Error('Git could not keep your commits.');
+        }
+        const to = { branch: null, sha: target };
+        const returnRef = first ? `refs/wheelchair/return/${this.hash(folder).slice(0, 16)}/${crypto.randomBytes(4).toString('hex')}` : null;
+        record.pending = { op: 'try', first, thread_id: input.thread_id, from, to, ...(first ? { return_point: from, return_ref: returnRef } : {}) };
+        await this.write(folder, record); pendingWritten = true;
+        if (first && this.git(folder, ['update-ref', returnRef, from.sha]).status !== 0) throw new Error('Git could not remember your earlier commit.');
+        const result = this.sameHead(from, to) ? { code: 0, stderr: Buffer.alloc(0) } : await this.runGit(folder, ['-c', 'submodule.recurse=false', 'switch', '--no-guess', '--no-overwrite-ignore', '--no-recurse-submodules', '--detach', target], this.switchTimeout);
+        let after = null; try { after = await this.scan(folder); } catch { /* interrupted */ }
+        const filtered = after && await this.filtered(folder, after);
+        const outcome = this.judge(from, to, this.head(folder), filtered, result);
+        last.outcome = outcome;
+        const gitMessage = result.stderr.toString().trim().split('\n').filter(Boolean).pop();
+        if (outcome === 'success' || outcome === 'warning') {
+          record.active = first ? { thread_id: input.thread_id, commit: target, return_point: from, return_ref: returnRef } : { ...record.active, thread_id: input.thread_id, commit: target };
+          record.pending = null;
+          last.reason = outcome === 'success' ? 'Your copy is showing this thread.' : (filtered?.length ? 'These files have changes after switching.' : gitMessage || 'Git reported a warning.');
+          if (filtered?.length) Object.assign(last, this.listFields(filtered));
+        } else if (outcome === 'nothing-moved') {
+          record.pending = null;
+          if (first) { this.git(folder, ['update-ref', '-d', returnRef]); await fsp.unlink(this.protectedPath(folder)).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
+          const lines = result.stderr.toString().split('\n'); const marker = lines.findIndex(line => /would be overwritten by (?:checkout|switch)/.test(line));
+          const paths = marker < 0 ? [] : lines.slice(marker + 1).filter(line => /^\s+\S/.test(line)).map(line => line.trim());
+          last.reason = paths.length ? `These files in your copy are in the way: ${paths.join(', ')}` : result.code === 'killed' ? 'Git took too long.' : (gitMessage || 'Git did not switch your copy.');
+        } else {
+          last.reason = 'A switch was interrupted. Check your copy at your computer, then press Done.';
+          if (filtered) Object.assign(record.pending, this.listFields(filtered));
+        }
+      }
+    } catch (error) {
+      last.reason = error.message || 'Git could not switch your copy.';
+      if (pendingWritten) { last.outcome = 'interrupted'; last.reason = 'A switch was interrupted. Check your copy at your computer, then press Done.'; }
+    }
+    record.last = last; await this.write(folder, record);
+  }
+  async status(input, folder = this.folder(input.project)) {
+    const lock = this.lockState(folder), generation = lock.generation;
+    const record = await this.read(folder); const head = this.head(folder);
+    const refused = this.folderCheck(folder, record);
+    const target = this.resolveRef(folder, `refs/heads/wc/${input.thread_id}`);
+    const kept = (record.kept || []).map(entry => ({ ...entry, missing: !this.resolveRef(folder, entry.ref), old_identity: !!entry.old_identity }));
+    const busy = lock.held || generation !== lock.generation;
+    const mismatch = (record.active || record.pending) && !this.sameIdentity(record.identity, this.identity(folder));
+    let state = 'none';
+    if (mismatch) state = 'mismatch';
+    else if (busy) state = 'busy';
+    else if (record.pending) state = 'interrupted';
+    else if (record.active && head?.branch) state = 'stale';
+    else if (record.active && head?.sha !== record.active.commit) state = 'moved';
+    else if (record.active) state = record.active.thread_id === input.thread_id ? 'trying-this' : 'trying-other';
+    const pending = state === 'interrupted' ? record.pending : null;
+    const earlier = pending && (pending.return_point || record.active?.return_point || pending.from);
+    const files = pending?.files || [];
+    return { version: record.version, state, active_thread_id: record.active?.thread_id || null, active_commit: record.active?.commit || null,
+      target_available: !!target, newest: state === 'trying-this' && !!target && target !== record.active.commit,
+      refused, earlier_branch: earlier ? (earlier.branch ? earlier.branch.replace(/^refs\/heads\//, '') : earlier.sha.slice(0, 7)) : null,
+      files: files.slice(0, 50), files_count: pending ? (pending.files_count ?? files.length) : 0,
+      index_lock: busy ? null : this.indexLock(folder), last: record.last || null, kept };
+  }
+}
+module.exports = { TryService };
