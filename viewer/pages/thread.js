@@ -231,6 +231,143 @@
     if (t.imported) for (const entry of t.imported.history || []) history.appendChild(el('p', '', [entry.at, entry.who, entry.text].filter(Boolean).join(' · ')));
   }
 
+  // ---- "Your copy": this thread's work in Collin's own checkout of the folder ----
+  // Fetched on load, after each action and on its own button; never on the page's poll timer.
+  // While a switch runs it re-reads every 3 seconds on a timer of its own.
+  const copyEl = el('section', 'card copy-panel'); copyEl.id = 'copy'; copyEl.setAttribute('aria-label', 'Your copy');
+  $('head-files').after(copyEl);
+  const copy = { status: null, error: '', ask: null, sending: false, waiting: false, loading: false, started: false, timer: null, seq: 0 };
+  const plural = (list, total) => {
+    const ul = el('ul', 'copy-files');
+    for (const f of list) ul.appendChild(el('li', '', f));
+    if (total > list.length) ul.appendChild(el('li', 'dim', 'and ' + (total - list.length) + ' more'));
+    return ul;
+  };
+  function copyLines(S) {
+    const out = [];
+    const title = S.active_thread_title || 'another thread';
+    const line = (text, cls) => out.push(el('p', cls || '', text));
+    if (S.state === 'mismatch') line('This folder is no longer the copy that was switched.');
+    else if (S.state === 'busy') line('A switch is running.');
+    else if (S.state === 'interrupted') {
+      line('A switch was interrupted.');
+      if (S.files && S.files.length) out.push(plural(S.files, S.files_count || S.files.length));
+      if (S.earlier_branch) line('Your copy was on ' + S.earlier_branch + ' before trying.');
+      line('Git may still be running in this folder. Check your copy at your computer, then press Done.');
+    }
+    else if (S.state === 'stale') line('You switched your copy by hand.');
+    else if (S.state === 'moved') line('Your copy moved since you tried ' + title + '.');
+    else if (S.state === 'trying-this') line("Your copy is showing this thread's merged work as of " + String(S.active_commit || '').slice(0, 7) + '.');
+    else if (S.state === 'trying-other') line('Your copy is showing another thread: ' + (S.active_thread_title || 'another thread') + '.');
+    if (S.index_lock) line((S.state === 'interrupted' ? 'Git left a lock file: ' : 'A lock file exists: ') + S.index_lock + '. At your computer, check no git is running, then delete it.');
+    if (S.refused) line(S.refused);
+    if (S.last && S.last.reason) {
+      const L = S.last;
+      line(L.reason, L.outcome === 'success' ? '' : 'copy-note');
+      if (L.files && L.files.length) out.push(plural(L.files, L.files_count || L.files.length));
+      if (L.appeared && L.appeared.length) { line('These files appeared after switching back:'); out.push(plural(L.appeared, L.appeared_count || L.appeared.length)); }
+    }
+    return out;
+  }
+  function renderCopy() {
+    if (!data) return;
+    const t = thread(); const S = copy.status;
+    copyEl.textContent = '';
+    const head = el('div', 'copy-head');
+    head.appendChild(el('h3', '', 'Your copy'));
+    head.appendChild(button('Refresh', 'small', () => copyLoad(), copy.loading || copy.sending));
+    copyEl.appendChild(head);
+    copyEl.appendChild(el('p', 'dim copy-where', t.project + ' · ' + t.machine));
+    if (!S) copyEl.appendChild(el('p', 'dim', copy.loading ? 'Loading…' : ''));
+    else {
+      for (const n of copyLines(S)) copyEl.appendChild(n);
+    }
+    const lock = copy.sending || copy.waiting || (S && S.state === 'busy');
+    if (copy.sending || copy.waiting) copyEl.appendChild(el('p', 'copy-working', 'Switching…'));
+    if (S && !copy.ask) {
+      const actions = el('div', 'actions');
+      const st = S.state;
+      const tryOk = S.target_available && !S.refused && !t.archived && ['none', 'moved', 'trying-other'].includes(st);
+      if (tryOk) actions.appendChild(button('Try it in my copy', 'primary small', () => { copy.ask = { type: 'try' }; renderCopy(); }, lock));
+      if (S.newest && !S.refused && !t.archived) actions.appendChild(button('Get newest', 'primary small', () => { copy.ask = { type: 'try', newest: true }; renderCopy(); }, lock));
+      if (['moved', 'trying-this', 'trying-other'].includes(st)) actions.appendChild(button('Switch back', 'small', () => { copy.ask = { type: 'back' }; renderCopy(); }, lock));
+      if (st === 'mismatch' || st === 'stale') actions.appendChild(button('Dismiss', 'small', () => copyWrite({ action: 'dismiss', version: S.version }), lock));
+      if (st === 'interrupted') actions.appendChild(button('Done', 'primary small', () => copyWrite({ action: 'dismiss', version: S.version }), lock));
+      if (actions.children.length) copyEl.appendChild(actions);
+    }
+    if (S && copy.ask && copy.ask.type !== 'forget') {
+      const box = el('div', 'copy-ask'); const a = copy.ask;
+      if (a.type === 'try') {
+        box.appendChild(el('p', '', (a.newest ? 'Update ' : 'Switch ') + t.project + ' on ' + t.machine + (a.newest ? " to this thread's newest merged work?" : " to this thread's work?")));
+        box.appendChild(el('p', 'dim', "Close any app using the folder first. This brings in the thread's merged work so far; work agents have not yet merged into the thread is not included."));
+      } else {
+        box.appendChild(el('p', '', 'Switch ' + t.project + ' on ' + t.machine + ' back to what it had before?'));
+        box.appendChild(el('p', 'dim', 'Close any app using the folder first.'));
+      }
+      const row = el('div', 'actions');
+      row.appendChild(button('Confirm', 'primary small', () => { copy.ask = null; copyWrite(a.type === 'try' ? { action: 'try' } : { action: 'back', version: S.version }); }, lock));
+      row.appendChild(button('Cancel', 'small', () => { copy.ask = null; renderCopy(); }));
+      box.appendChild(row); copyEl.appendChild(box);
+    }
+    if (S && S.kept && S.kept.length) {
+      copyEl.appendChild(el('p', 'copy-kept-title', 'Saved commits'));
+      const ul = el('ul', 'copy-kept');
+      for (const k of S.kept) {
+        const li = el('li', 'copy-kept-item');
+        const info = el('div', 'copy-kept-info');
+        info.appendChild(el('span', '', k.label));
+        const flags = [k.at ? new Date(k.at).toLocaleDateString() : '', k.ref, k.missing ? 'missing' : '', k.old_identity ? 'in the copy that used to be here' : ''].filter(Boolean).join(' · ');
+        info.appendChild(el('span', 'dim copy-kept-meta', flags));
+        li.appendChild(info);
+        if (copy.ask && copy.ask.type === 'forget' && copy.ask.ref === k.ref) {
+          const row = el('div', 'actions');
+          row.appendChild(el('span', 'dim', 'Delete this saved commit?'));
+          row.appendChild(button('Confirm delete', 'danger small', () => { copy.ask = null; copyWrite({ action: 'forget', version: S.version, kept: k.ref }); }, lock));
+          row.appendChild(button('Cancel', 'small', () => { copy.ask = null; renderCopy(); }));
+          li.appendChild(row);
+        } else li.appendChild(button('Delete', 'danger small', () => { copy.ask = { type: 'forget', ref: k.ref }; renderCopy(); }, lock));
+        ul.appendChild(li);
+      }
+      copyEl.appendChild(ul);
+    }
+    if (copy.error) copyEl.appendChild(el('div', 'card-error', copy.error));
+  }
+  function copyTake(S) { if (S) copy.status = S; }
+  async function copyLoad(quiet) {
+    const seq = ++copy.seq;
+    copy.loading = true; renderCopy();
+    try {
+      const res = await fetch(T + '/try');
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || out.detail || 'http ' + res.status);
+      if (seq === copy.seq) { copy.status = out; if (!quiet) copy.error = ''; }
+    } catch (e) { if (seq === copy.seq) copy.error = e.message; }
+    finally { if (seq === copy.seq) copy.loading = false; renderCopy(); }
+    copySchedule();
+  }
+  // Re-read every 3 seconds while a switch runs, then show `last`.
+  function copySchedule() {
+    clearTimeout(copy.timer); copy.timer = null;
+    const running = copy.status && copy.status.state === 'busy';
+    if (!running) { if (copy.waiting) { copy.waiting = false; renderCopy(); } return; }
+    copy.timer = setTimeout(() => copyLoad(true), 3000);
+  }
+  async function copyWrite(body) {
+    if (copy.sending) return;
+    copy.sending = true; copy.error = ''; copy.ask = null; renderCopy();
+    let reread = false;
+    try {
+      const res = await fetch(T + '/try', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || out.detail || 'http ' + res.status);
+      copyTake(out.status);
+      if (out.accepted === false) { copy.error = out.reason || 'That did not work.'; }
+      else if (out.accepted === true) copy.waiting = true;
+    } catch (e) { copy.error = e.message === 'Failed to fetch' ? "Can't reach the hub." : e.message; reread = true; }
+    finally { copy.sending = false; renderCopy(); }
+    if (reread) { copy.waiting = false; await copyLoad(true); } else copySchedule();
+  }
+
   // ---- the right column: this thread's files ----
   function fileLinks(into, cls) {
     const t = thread(); const s = slug();
@@ -1110,6 +1247,8 @@
     if (!data) return;
     const t = thread();
     renderHandoff();
+    if (!copy.started) { copy.started = true; copyLoad(); }
+    sync('copy', [t.archived, t.project, t.machine], renderCopy);
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
     sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
     sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
