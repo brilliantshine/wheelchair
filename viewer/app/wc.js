@@ -41,7 +41,7 @@ function flags(args) {
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '-m') output.message = args[++index];
     else if (!args[index].startsWith('--')) output._.push(args[index]);
-    else output[args[index].slice(2)] = args[++index];
+    else { const name = args[index].slice(2), value = args[index + 1]; if (name === 'round' && (value === undefined || value.startsWith('--'))) throw new Error('--round requires a value'); output[name] = value; index += 1; }
   }
   return output;
 }
@@ -72,7 +72,6 @@ function sessionRequest(operation, tail) {
   if (!['start', 'stop', 'list'].includes(operation)) {
     throw new Error('unsupported session operation');
   }
-  if (operation === 'start' && tail.some((arg, i) => arg === '--round' && (!tail[i + 1] || tail[i + 1].startsWith('--')))) throw new Error('--round requires a value');
   const parsed = flags(tail);
   if (operation !== 'start') return { path: '/session', body: { action: operation, name: parsed._[0] } };
   if (!parsed.role || !parsed.attempt || !parsed['brief-file']) {

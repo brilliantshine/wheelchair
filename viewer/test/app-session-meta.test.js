@@ -122,6 +122,7 @@ test('archive records end times and preserves existing values on success and par
 test('review round is validated before dedupe and retained on retry', async () => {
   const args = ['--role', 'reviewer', '--attempt', 'a', '--brief-file', __filename];
   assert.equal(sessionRequest('start', [...args, '--round', '2']).body.round, '2');
+  assert.equal(sessionRequest('start', [...args, '--title', '--round']).body.title, '--round');
   for (const suffix of [['--round'], ['--round', '--title', 'x']]) assert.throws(() => sessionRequest('start', [...args, ...suffix]), /--round/);
   const context = await setup();
   try {
