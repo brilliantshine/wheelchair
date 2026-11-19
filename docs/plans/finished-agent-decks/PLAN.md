@@ -71,10 +71,12 @@ For each lead in `GET /wheelchair/api/agents`, add `rounds: { review: {<N>: R} }
 
 Per reviewer node add `report: { findings: <int>, first: <string|null> }` parsed from the newest result summary: reviewers count lines starting `SEVERITY:` or `RE-RAISE: SEVERITY:` (strip the `RE-RAISE: ` prefix before parsing) and take the finding text of the first: split on ` — `, drop the first two fields (severity, lens) and the last (evidence), and rejoin the rest with ` — `. A line with too few fields uses everything after the first field. No result → no `report`.
 
+Every node with `state === 'finished'` gets `finished_at`: its `ended_at`, else the `created_at` of its newest result card, else its own `created_at`. The page uses only `finished_at` for finish times.
+
 ### 3. Decks on the tree (Hide finished agents OFF)
-- Among one parent's children, finished nodes with the same `role` form a deck when there are 2 or more. A single finished node stays a normal box. Live (working, waiting, idle) nodes are never in a deck. "Finished" is the existing page definition.
+- Among one parent's children, finished nodes with the same `role` form a deck when there are 2 or more. A single finished node stays a normal box. Live (working, waiting, idle) nodes are never in a deck. Deck eligibility is exactly the node's `state === 'finished'` from the API (not `live`), the same test the page uses today.
 - The deck replaces those boxes, placed at the position of its newest member in the existing creation order. The deck is a parent in its own right: the children of all its members are merged into one child list under the deck (sorted by creation), and grouping under it uses the deck as their parent. So the workers of two decked sub-leads can share one deck. This is the meaning of "same parent" for agents under a deck.
-- Deck card: role, count (`×40`), one-line title, and "Finished <clock time, HH:MM, same format as `clock()` in viewer/pages/agents.js>" from the latest `ended_at` across all members (a member without `ended_at` uses the `created_at` of its newest result card, else its own `created_at`). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
+- Deck card: role, count (`×40`), one-line title, and "Finished <clock time, HH:MM, same format as `clock()` in viewer/pages/agents.js>" from the latest `finished_at` across all members (§2). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
 - Title: reviewer → "Plan review · N rounds", with the suffix ", last round clean" when `rounds.review[H]` has `clean: true`. N (the count shown) = number of distinct `round` values among members; H = the highest of them. Members with no `round` are not counted in N; if no member has a round, a reviewer deck uses the other-deck title. Other decks (including verifiers): the newest member's title (role when it has none).
   - No approval tracking: the suffix reports only what round H's progress line says.
 - Hide finished agents ON: behaviour unchanged (decks never shown; a selected finished agent and needed ancestors still shown as boxes).
@@ -86,7 +88,7 @@ Per reviewer node add `report: { findings: <int>, first: <string|null> }` parsed
 
 ### 5. Deck popover
 - Clicking a deck (button, keyboard-activatable) opens a popover anchored under it; Escape, clicking outside or clicking the deck again closes it. Only one open at a time. It survives the 5-second refresh (stays open, content updates). The open popover, and any expanded round, is remembered by the name of one member session (the newest at opening); after a refresh it reopens on whichever deck now contains that session (for example after two child decks merge), with the same round expanded if it still exists and "Show all" restored if it was pressed (if the remembered round would fall past the five-row cutoff, the list opens in Show all); if no deck contains it, the popover closes.
-- Reviewer decks with rounds list rounds newest first: square, "Round N", "<k> reviewers · <text>". <text> is "1 objection: <first>" when found is 1 and the round's members' reports total exactly one finding line; else "<found> objections" (singular for 1); "no objections" for 0; "not counted" with no entry. A round whose entry has `clean: true` and found > 0 appends " · round clean" (a clean round can still hold counted findings, minor or moved to Deferred, so its square may be yellow or worse while the title says "last round clean"; that is intended). Members without a round are listed as a final group "Other". Shows the latest 5 rounds, then a "Show all N rounds" button that expands in place.
+- Reviewer decks with rounds list rounds newest first: square, "Round N", "<k> reviewers · <text>". <text> is "1 objection: <first>" when found is 1 and the round's members' reports total exactly one finding line; else "<found> objections" (singular for 1); "no objections" for 0; "not counted" with no entry. A round whose entry has `clean: true` and found > 0 appends " · round clean" (a clean round can still hold counted findings, minor or moved to Deferred, so its square may be yellow or worse while the title says "last round clean"; that is intended). Shows the latest 5 rounds, then a "Show all N rounds" button that expands in place. Members without a round are listed after the rounds as a final group "Other", always shown regardless of the cutoff.
 - Opening a round lists its agents (title, finished time); each is selectable exactly like a box: sets `?agent=` and shows that agent in the right panel. The deck containing the selected agent is drawn selected.
 - Other decks (verifiers included) list their agents newest first, latest 5 then "Show all N agents", each selectable the same way.
 - Works at phone width (popover fits the viewport width).
@@ -268,6 +270,9 @@ exit. Downgrades and declines cite evidence.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | Decision 14 wording suggests verifier decks lost the newest-member title | upheld | Decision 16 clarifies |
+| mechanics | major | API lacks the per-member finish time the deck needs | downgraded (minor) | The Spec named the source (newest result card time) and `viewer/app/agents.js` and API.md are in scope, so a worker would add it without stopping; §2 now names `finished_at` explicitly |
+| mechanics | minor | Deck eligibility should be `state === 'finished'`, not `live` | upheld | §3 states it |
+| mechanics | minor | "Other" group could be hidden by the five-round cutoff | upheld | §5: always shown |
 
 ## Prior Work
 
