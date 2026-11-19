@@ -56,6 +56,7 @@ test('outcome table honors only git removal warning lines', () => {
 });
 test('wayPaths uses a plain fallback for Aborting-only stderr', () => {
   assert.equal(wayPaths('Aborting\n', 1), 'Git did not switch your copy.');
+  assert.equal(wayPaths("fatal: Unable to create '/x/.git/HEAD.lock': File exists.\n", 128), "Git did not switch your copy: Unable to create '/x/.git/HEAD.lock': File exists.");
 });
 test('protected filter excludes exact untracked paths only', async () => {
   const { makeTemp } = require('../../test-support/run-dir'); const root = await makeTemp('try-protected-');
@@ -150,6 +151,13 @@ test('Try refused while pending or index.lock exists; index.lock is reported and
   const refused = await f.instance.handle(f.request); assert.match(refused.reason, /Git may still be running/); assert.equal(refused.status.index_lock, lock); await fs.access(lock);
   const record = await f.instance.read(f.repo); record.identity = await f.instance.identity(f.repo); record.pending = { from: await f.instance.head(f.repo), thread_id: f.request.thread_id }; await f.instance.write(f.repo, record);
   assert.match((await f.instance.handle(f.request)).reason, /interrupted/);
+});
+test('HEAD.lock refusal is reported as interrupted and leaves HEAD.lock intact', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  const initial = f.git('rev-parse', 'HEAD'); const lock = path.join(f.repo, '.git', 'HEAD.lock'); await fs.writeFile(lock, '');
+  await f.instance.handle(f.request); const status = await f.done();
+  assert.equal(status.last.outcome, 'interrupted'); assert.equal(status.last.reason, 'A switch was interrupted. Check your copy at your computer, then press Done.');
+  assert.equal(f.git('rev-parse', 'HEAD'), initial); await fs.access(lock);
 });
 test('post-checkout hook exiting nonzero or printing error follows its exit code', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path');

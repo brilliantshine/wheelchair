@@ -20,7 +20,7 @@ function wayPaths(stderr, code) {
     return `These files in your copy are in the way: ${shown.join(', ')}`;
   }
   if (code === 'killed') return 'Git took too long.';
-  const first = errors[0]?.replace(/^error:\s*/, '');
+  const first = lines.split('\n').find(line => /^(?:error|fatal):/.test(line))?.replace(/^(?:error|fatal):\s*/, '');
   return first ? `Git did not switch your copy: ${first}` : 'Git did not switch your copy.';
 }
 
