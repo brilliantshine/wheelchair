@@ -1,6 +1,6 @@
 ---
 slug: cheap-chat-refresh
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -44,6 +44,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Only the pending count protects held entries; no `lastRead` refresh when chat starts. Aside creation counts as pending too | The refresh was redundant; asides reach the same assembler | review-round-1 |
 
 ## Spec
+
+In short: the app server tells the machine which version of a conversation it already holds; the machine answers "unchanged" without reading or sending it, or sends the whole conversation with its new version stamp (S2, S3). The machine's copy step does nothing when the source has no new complete line (S1). The app server reuses parsed chat for unchanged text (S4) and lets a conversation go after 10 minutes unread (S3).
+
+```mermaid
+flowchart TD
+  P[chat poll, every 2s] --> H{app server holds this conversation with a stamp?}
+  H -- yes --> K[ask machine with known=stamp]
+  H -- no --> W[ask machine with no stamp]
+  K --> C[machine: copy step, skipped when no new complete line]
+  W --> C
+  C --> S{kept file stamp equals known?}
+  S -- yes --> U[reply unchanged, no text]
+  S -- no --> F[reply whole text plus new stamp]
+  U --> R[reuse held text and parsed chat]
+  F --> N[store text and stamp, parse]
+  O[older machine: whole text, no stamp] --> N
+  T[every 60s] --> D[drop conversations unread for 10 minutes, unless a chat request for the thread is waiting]
+```
 
 ### S1. Machine: cheap idle copy (`machine/service.js` `copyTranscriptNow`)
 
@@ -147,3 +165,5 @@ None.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-19 Ready check at approval: hub and machine service answer (`wc.js session list`); Claude CLI 2.1.328 logged in; Codex preflight passed (token fresh, 115h).
