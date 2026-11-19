@@ -217,3 +217,15 @@ Gap 1 was declined (above). Gaps 2-4 were fixed in R5-1; R5-2 added the exact re
 The five earlier stale-reply tests became lock assertions: a user can no longer switch mid-request, so the reply-tag drop is backstop code.
 
 Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 208 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; `npm --prefix viewer run test:browser -- --project=chromium` 452 passed; Project tools browser spec 100 passed.
+
+### Remediation 6 (after verification attempt 6, commit 9dce856)
+
+Attempt 6: the claude verifier passed; the gpt verifier failed with 3 gaps. A (a tool name trimmed on an unrelated edit) survived two fixes and went to Collin; his answer is Decision Log 50, now in the Spec's Editing section. The lead decided gaps 1 and 2: fix both. Details are in `REMEDIATION-6.md`.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| A Untouched data altered (Log 50) | Tool names copied unless edited; edited tool and row names and "Add a key" names with leading or trailing spaces refused, not trimmed; page-wide audit (report R6-1); R6-2: a touched field that ends equal to the original is written as the original, and command/URL are no longer trimmed | `viewer/pages/project-tools.js:529-559,618-650,785` | " legacy " test; "x " and "K " refusal tests; env/args round-trip and untrimmed-URL tests |
+| 1 A removed tool's editor stayed live | Removing a tool closes its open editor and discards its edits | `viewer/pages/project-tools.js:404` | remove-while-editing test (also mid-rename) |
+| 2 Read-only cards hid kind and what they run | Kind and command+args or URL shown from the raw entry | `viewer/pages/project-tools.js:368-372` | read-only web tool test |
+
+Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 208 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` 176 passed, twice.
