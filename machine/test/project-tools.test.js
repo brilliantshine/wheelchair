@@ -17,7 +17,7 @@ async function fixture() {
   await fs.writeFile(config, `[url "${root}/"]\n insteadOf = https://github.com/\n`);
   await fs.writeFile(path.join(bin, 'gh'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_GH_LOG"\nif [ "$1 $2" = "pr list" ]; then printf "%s\\n" "${TEST_GH_LIST:-[]}"; else if [ "${TEST_GH_FAIL:-}" = 1 ]; then echo failed >&2; exit 1; fi; echo https://github.com/owner/name/pull/1; fi\n', { mode: 0o755 });
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, GIT_CONFIG_GLOBAL: config, TEST_GH_LOG: log };
-  const runner = (program, args, options) => commandAsync(program, args, { ...options, env: { ...options.env, ...env, ...(args.includes('get-url') ? { GIT_CONFIG_GLOBAL: '/dev/null' } : {}) } });
+  const runner = (program, args, options) => commandAsync(program, args, { ...options, env: { ...options.env, ...env } });
   return { root, repo, remote, log, env, runner, tools: createProjectTools({ commandAsync: runner, stateDir: path.join(root, 'state') }) };
 }
 test('reading from remote default branch via a private ref with FETCH_HEAD and tags untouched', async () => {
@@ -145,4 +145,65 @@ test('Start over replaces a symlink with a regular file', async () => {
   const read = (await f.tools.read({ path: f.repo })).body; assert.equal(read.source.state, 'unreadable'); assert.match(read.source.reason, /not a regular file/);
   assert.equal((await f.tools.save({ path: f.repo, token: read.token, tools: {}, keys: {}, start_over: true })).body.outcome, 'opened');
   assert.match(git('--git-dir', f.remote, 'ls-tree', 'refs/heads/' + git('--git-dir', f.remote, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/wc-tools/'), '.mcp.json'), /^100644 blob/);
+});
+test('raw configured fetch and push URLs select the GitHub repository while Git applies insteadOf', async () => {
+  const f = await fixture();
+  git('-C', f.repo, 'remote', 'set-url', '--push', 'origin', 'https://github.com/owner/name.git');
+  assert.equal((await f.tools.read({ path: f.repo })).body.mode, 'tools');
+  git('-C', f.repo, 'remote', 'set-url', '--push', 'origin', 'https://github.com/owner/other.git');
+  assert.equal((await f.tools.read({ path: f.repo })).body.mode, 'keys-only');
+});
+test('multiple configured push URLs use keys-only mode', async () => {
+  const f = await fixture();
+  git('-C', f.repo, 'config', '--add', 'remote.origin.pushurl', 'https://github.com/owner/name.git');
+  git('-C', f.repo, 'config', '--add', 'remote.origin.pushurl', 'https://github.com/owner/name.git');
+  assert.equal((await f.tools.read({ path: f.repo })).body.mode, 'keys-only');
+});
+test('multiple configured origin URLs use keys-only mode', async () => {
+  const f = await fixture();
+  git('-C', f.repo, 'config', '--add', 'remote.origin.url', 'https://github.com/owner/name.git');
+  assert.equal((await f.tools.read({ path: f.repo })).body.mode, 'keys-only');
+});
+test('PR URL is the last HTTPS line in gh output', async () => {
+  const f = await fixture();
+  await fs.writeFile(path.join(f.root, 'bin', 'gh'), '#!/bin/sh\nif [ "$1 $2" = "pr list" ]; then echo "[]"; else echo "Creating pull request"; echo "https://github.com/owner/name/pull/42"; fi\n', { mode: 0o755 });
+  const read = (await f.tools.read({ path: f.repo })).body;
+  const reply = await f.tools.save({ path: f.repo, token: read.token, tools: { x: { command: 'run' } }, keys: {} });
+  assert.equal(reply.body.pr_url, 'https://github.com/owner/name/pull/42');
+});
+test('changed default branch refuses a tool save', async () => {
+  const f = await fixture(), read = (await f.tools.read({ path: f.repo })).body;
+  git('-C', f.repo, 'push', '-q', f.remote, 'main:other'); git('--git-dir', f.remote, 'symbolic-ref', 'HEAD', 'refs/heads/other');
+  const reply = await f.tools.save({ path: f.repo, token: read.token, tools: { x: { command: 'run' } }, keys: {} });
+  assert.equal(reply.status, 409); assert.equal(reply.body.reason, 'changed since you opened it');
+});
+async function routeServer(f) {
+  const http = require('node:http'), { MachineService } = require('../service');
+  const service = new MachineService({ stateDir: path.join(f.root, 'state') }); service.projectTools = f.tools; service.authorize = async () => {};
+  const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const post = async (action, input) => { const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/project-tools/${action}`, { method: 'POST', body: JSON.stringify(input) }); return { status: response.status, body: await response.json() }; };
+  return { post, close: () => new Promise(resolve => server.close(resolve)) };
+}
+test('concurrent route saves on one project serialize PR creation', async () => {
+  const f = await fixture();
+  await fs.writeFile(path.join(f.root, 'bin', 'gh'), '#!/bin/sh\nif [ "$1 $2" = "pr list" ]; then echo "[]"; else echo start >> "$TEST_GH_LOG"; sleep 1; echo end >> "$TEST_GH_LOG"; echo https://github.com/owner/name/pull/1; fi\n', { mode: 0o755 });
+  const server = await routeServer(f);
+  try {
+    const read = (await server.post('read', { path: f.repo })).body;
+    const input = { path: f.repo, token: read.token, tools: { x: { command: 'run' } }, keys: {} };
+    const replies = await Promise.all([server.post('save', input), server.post('save', input)]);
+    assert.deepEqual(replies.map(r => r.body.outcome), ['opened', 'opened']);
+    assert.deepEqual((await fs.readFile(f.log, 'utf8')).trim().split('\n'), ['start', 'end', 'start', 'end']);
+  } finally { await server.close(); }
+});
+test('alias and thread worktree share keys through routes', async () => {
+  const f = await fixture(), alias = path.join(f.root, 'alias'), worktree = path.join(f.root, 'thread');
+  await fs.symlink(f.repo, alias); git('-C', f.repo, 'worktree', 'add', '--detach', worktree, 'HEAD');
+  const server = await routeServer(f);
+  try {
+    const read = (await server.post('read', { path: alias })).body;
+    const saved = await server.post('save', { path: alias, token: read.token, tools: null, keys: { TOKEN: 'secret' } });
+    assert.equal(saved.body.outcome, 'saved');
+    assert.deepEqual((await server.post('read', { path: worktree })).body.keys, ['TOKEN']);
+  } finally { await server.close(); }
 });
