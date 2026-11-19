@@ -744,7 +744,7 @@ Filled by Stage 3. One row per worker brief.
 | R1 | Remediation 1, gap 1: exact duplicate header keys | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/adapters/agy.js, their tests | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-7 | reader/codex/agy tests; machine/test/run.sh | done |
 | R2 | Remediation 1, gap 2: saved state shape check; flaky PATH test | machine/service.js (state loader), machine/test/project-tools-state.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-8 | project-tools-state test; machine/test/run.sh x3 | done |
 | R3 | Remediation 2, gap 1 (2nd attempt): iterative duplicate-header scan | machine/lib/project-mcp.js (duplicateHeaderServers), machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-9 | reader/codex/agy tests; machine/test/run.sh | done |
-| R4 | Remediation 2, gap 2: default project_tools on new threads | viewer/app/threads.js (emptyThread), viewer/test/app-project-tools.test.js | light / claude-haiku-5-5 | wc-b9ca1682b0fa-worker-10 | app-project-tools; viewer/test/*.test.js | running |
+| R4 | Remediation 2, gap 2: default project_tools on new threads | viewer/app/threads.js (emptyThread), viewer/test/app-project-tools.test.js | light / claude-haiku-5-5 | wc-b9ca1682b0fa-worker-10 | app-project-tools; viewer/test/*.test.js | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -796,3 +796,6 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: R3, machine/test/project-mcp-reader.test.js: 15,000-deep nested objects cannot fit in 32 KiB (≥5 bytes per level), so object cases use the deepest nesting that fits; array cases use 15,000 and the deepest that fits.
 - 2026-11-18 — Choice: R3, machine/lib/project-mcp.js: frames `{type, pathKey, key, expectingKey, seen}`, depth from stack length; the headers match also requires root and `mcpServers` to be objects; duplicates in occurrences JSON.parse overwrites still count (stricter, as logged for R1). Worker listed only the test choice; scout listed the rest.
 - 2026-11-18 — R3 accepted (band: scout): iterative scan, no catch; scout fuzzed ~200k random documents against an independent reference with 0 mismatches, plus max-depth cases before/after/inside servers and headers.
+- 2026-11-18 — Choice: R4, viewer/app/threads.js: `project_tools` default placed after `archived`; stub threads (also built by `emptyThread`) get it too.
+- 2026-11-18 — Choice: R4, viewer/test/app-project-tools.test.js: the no-snapshot precondition reads the fake machine's session map rather than injecting a custom answer.
+- 2026-11-18 — R4 accepted (band: scout): new threads carry the default record; first snapshot still applies (stored created_at null counts as older).
