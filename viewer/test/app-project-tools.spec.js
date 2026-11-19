@@ -973,11 +973,10 @@ test('R7-1: a tool name with a newline shows read-only with no Edit button', asy
   await expect(page.getByRole('button', { name: /^Edit / })).toHaveCount(0);
 });
 
-test('R7-1: a read-only web tool card shows its headers, key chip and unknown fields', async ({ page }) => {
-  await open(page, { read: withTools({ w: { type: 'http', url: 'https://x', env: {}, headers: { A: 'plain', B: 'Bearer ${TOK}' }, timeout: 5 } }) });
+test('R7-1: a read-only web tool card shows every raw field and its key chip', async ({ page }) => {
+  await open(page, { read: { ...withTools({ w: { type: 'http', url: 'https://x', env: {}, headers: { A: 'plain', B: 'Bearer ${TOK}' }, timeout: 5 } }), checks: { w: { keys: ['TOK'] } } } });
   const card = tool(page, 'w');
-  await expect(card).toContainText('A = plain');
-  await expect(card).toContainText('B');
+  await expect(card).toContainText('headers: {"A":"plain","B":"Bearer ${TOK}"}');
   await expect(card.locator('.pt-chip.unset')).toHaveText('not set');
   await expect(card).toContainText('timeout: 5');
 });
@@ -985,4 +984,47 @@ test('R7-1: a read-only web tool card shows its headers, key chip and unknown fi
 test('R7-2: a read-only value with a newline shows in its JSON form, not collapsed', async ({ page }) => {
   await open(page, { read: withTools({ n: { command: 'a', env: { NOTE: 'first\nsecond' } } }) });
   await expect(tool(page, 'n')).toContainText('"first\\nsecond"');
+});
+
+test('R8-2: a tool with both url and command shows every raw field in file order', async ({ page }) => {
+  await open(page, { read: withTools({ w: { type: 'http', url: 'https://x', command: 'run-me', headers: { A: 'b' } } }) });
+  const card = tool(page, 'w');
+  await expect(card.locator('.pt-chip').first()).toHaveText('web address');
+  const lines = await card.locator('.pt-field').allTextContents();
+  expect(lines).toEqual(['type: http', 'url: https://x', 'command: run-me', 'headers: {"A":"b"}']);
+  await expect(card.getByRole('button', { name: /^Edit / })).toHaveCount(0);
+});
+
+test('R8-2: an unknown type is shown as written with all its fields', async ({ page }) => {
+  await open(page, { read: withTools({ c: { type: 'custom', timeout: 5000 } }) });
+  const card = tool(page, 'c');
+  await expect(card.locator('.pt-chip').first()).toHaveText('custom');
+  await expect(card).toContainText('type: custom');
+  await expect(card).toContainText('timeout: 5000');
+});
+
+test('R8-2: an editable header row with a key and trailing text shows the key status', async ({ page }) => {
+  const mk = (keys) => ({ ...withTools({ h: { type: 'http', url: 'https://x', headers: { Authorization: 'Bearer ${TOKEN} trailing' } } }), keys, checks: { h: { keys: ['TOKEN'] } } });
+  await open(page, { read: mk(['TOKEN']) });
+  await expect(tool(page, 'h').locator('.pt-ro')).toContainText('‹key TOKEN›');
+  await expect(tool(page, 'h').locator('.pt-ro .pt-chip')).toHaveText('set');
+  await page.unroute('**/wheelchair/api/project-tools/*');
+  const page2 = await page.context().newPage();
+  await open(page2, { read: mk([]) });
+  await expect(tool(page2, 'h').locator('.pt-ro')).toContainText('‹key TOKEN›');
+  await expect(tool(page2, 'h').locator('.pt-ro .pt-chip')).toHaveText('not set');
+});
+
+test('R8-2: a tool the form cannot edit shows a key line from the machine checks', async ({ page }) => {
+  await open(page, { read: { ...withTools({ k: { command: 'a', env: 5 } }), keys: [], checks: { k: { keys: ['K'] } } } });
+  const card = tool(page, 'k');
+  await expect(card).toContainText('‹key K›');
+  await expect(card.locator('.pt-chip.unset')).toHaveText('not set');
+});
+
+test('R8-2: a field value with HTML is shown as text and creates no element', async ({ page }) => {
+  await open(page, { read: withTools({ x: { type: 'custom', note: '<b>x</b>' } }) });
+  const card = tool(page, 'x');
+  await expect(card).toContainText('note: <b>x</b>');
+  await expect(card.locator('b')).toHaveCount(0);
 });

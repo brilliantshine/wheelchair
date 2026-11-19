@@ -105,24 +105,6 @@
       hdrRows: kind === 'http' ? Object.entries(raw.headers || {}).map(([k, v]) => ({ ...classifyHeader(k, v), rawName: k, rawValue: v, dirty: false })) : [],
     };
   }
-  // What a card can show of any entry, including ones the form can't edit. Rows are classified the
-  // same way as for the form; whatever isn't shown as a field or rows is listed as an extra.
-  function viewEntry(raw) {
-    if (!isPlain(raw)) return null;
-    const kind = typeof raw.command === 'string' ? 'command' : typeof raw.url === 'string' ? 'http' : null;
-    if (!kind) return null;
-    const args = kind === 'command' && Array.isArray(raw.args) ? raw.args : [];
-    const rowsOf = (v, classify) => (isPlain(v) ? Object.entries(v).map(([k, x]) => ({ ...classify(k, x), rawName: k, rawValue: x, dirty: false })) : []);
-    const shown = new Set(['type']);
-    if (raw.type !== undefined && raw.type !== 'stdio' && raw.type !== 'http') shown.delete('type');
-    if (kind === 'command') { shown.add('command'); if (Array.isArray(raw.args)) shown.add('args'); if (isPlain(raw.env)) shown.add('env'); }
-    else { shown.add('url'); if (isPlain(raw.headers)) shown.add('headers'); }
-    return {
-      kind, command: kind === 'command' ? raw.command : '', url: kind === 'http' ? raw.url : '', args,
-      extras: Object.entries(raw).filter(([k]) => !shown.has(k)),
-      rows: kind === 'command' ? rowsOf(raw.env, classifyEnv) : rowsOf(raw.headers, classifyHeader),
-    };
-  }
   const NEEDS_RE = /^needs ([A-Za-z_][A-Za-z0-9_]*), not set on this machine$/;
   function rowKeyName(row, kind) {
     if (row.ro || row.mode !== 'key') return null;
@@ -355,10 +337,18 @@
       els.tools.replaceChildren(...kids);
     }
 
-    function rowLine(row, kind) {
-      if (row.ro) return h('li', { class: 'pt-ro' }, h('span', { class: 'mono', text: showText(row.name) }), ' ',
-        h('span', { class: 'mono', text: showText(row.raw) }), ' ',
-        h('span', { class: 'hint', text: row.env ? "(from the agent's own environment)" : '(edit in the file)' }));
+    const keyChip = (key) => {
+      const set = state.keys.includes(key);
+      return [h('span', { class: 'mono', text: '‹key ' + key + '›' }), ' ', h('span', { class: 'pt-chip ' + (set ? 'set' : 'unset'), text: set ? 'set' : 'not set' })];
+    };
+    function rowLine(row, kind, toolKeys) {
+      if (row.ro) {
+        const names = typeof row.raw === 'string' ? [...new Set([...row.raw.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]))].filter((n) => (toolKeys || []).includes(n)) : [];
+        return h('li', { class: 'pt-ro' }, h('span', { class: 'mono', text: showText(row.name) }), ' ',
+          h('span', { class: 'mono', text: showText(row.raw) }), ' ',
+          names.map((n) => [keyChip(n), ' ']),
+          h('span', { class: 'hint', text: row.env ? "(from the agent's own environment)" : '(edit in the file)' }));
+      }
       if (row.mode === 'key') {
         const key = rowKeyName(row, kind);
         const set = state.keys.includes(key);
@@ -387,25 +377,35 @@
       const p = parseEntry(raw);
       const checks = checksFor(name);
       const card = h('div', { class: 'pt-tool', 'data-tool': name });
-      const v = viewEntry(raw);
       const editable = !!p && !unshowable(name);
-      card.append(h('div', { class: 'pt-tool-head' }, h('h3', { text: showText(name) }),
-        h('span', { class: 'pt-chip', text: v ? (v.kind === 'command' ? 'command' : 'web address') : 'edit in the file' })));
-      if (v) {
-        for (const [k, x] of v.extras) card.append(h('p', { class: 'hint' }, h('span', { class: 'mono', text: k + ': ' + JSON.stringify(x) }), ' (edit in the file)'));
-        card.append(h('p', { class: 'pt-runs mono', text: v.kind === 'command' ? [showText(v.command), ...v.args.map((x) => showText(x))].join(' ') : showText(v.url) }));
-        if (v.rows.length) {
-          card.append(h('p', { class: 'hint', text: v.kind === 'command' ? 'Settings' : 'Headers' }),
-            h('ul', { class: 'pt-rows' }, v.rows.map((row) => rowLine(row, v.kind === 'command' ? 'env' : 'hdr'))));
+      const myKeys = Array.isArray(checks.keys) ? checks.keys : [];
+      const asText = (x) => (typeof x === 'string' ? showText(x) : JSON.stringify(x));
+      let chip;
+      if (editable) chip = p.kind === 'command' ? 'command' : 'web address';
+      else if (!isPlain(raw)) chip = 'edit in the file';
+      else if (raw.type === 'http') chip = 'web address';
+      else if (raw.type === undefined || raw.type === 'stdio') chip = 'command';
+      else chip = asText(raw.type);
+      card.append(h('div', { class: 'pt-tool-head' }, h('h3', { text: showText(name) }), h('span', { class: 'pt-chip', text: chip })));
+      if (editable) {
+        for (const [k, x] of p.extras) card.append(h('p', { class: 'hint' }, h('span', { class: 'mono', text: k + ': ' + JSON.stringify(x) }), ' (edit in the file)'));
+        card.append(h('p', { class: 'pt-runs mono', text: p.kind === 'command' ? [showText(p.command), ...p.args.map((x) => showText(x))].join(' ') : showText(p.url) }));
+        const rows = p.kind === 'command' ? p.envRows : p.hdrRows;
+        if (rows.length) {
+          card.append(h('p', { class: 'hint', text: p.kind === 'command' ? 'Settings' : 'Headers' }),
+            h('ul', { class: 'pt-rows' }, rows.map((row) => rowLine(row, p.kind === 'command' ? 'env' : 'hdr', myKeys))));
         }
+      } else {
+        const fields = isPlain(raw) ? Object.entries(raw).map(([k, x]) => showText(k) + ': ' + asText(x)) : [JSON.stringify(raw)];
+        card.append(h('div', { class: 'pt-fields-ro' }, fields.map((line) => h('p', { class: 'mono pt-field', text: line }))));
+        for (const key of myKeys) card.append(h('p', {}, keyChip(key)));
+        card.append(h('p', { class: 'hint', text: "The form can't edit this tool. Edit in the file." }));
       }
-      if (!editable) card.append(h('p', { class: 'hint', text: v ? 'The form can\'t edit this tool. Edit in the file.' : "This entry's shape can't be shown here. Edit in the file." }));
       for (const s of checks.skip || []) card.append(h('p', { class: 'pt-warn', text: s }));
       // The machine's own key warnings, except "needs" ones, which follow the key status here.
       for (const w of Array.isArray(checks.key_warnings) ? checks.key_warnings : []) {
         if (!NEEDS_RE.test(w)) card.append(h('p', { class: 'pt-warn', text: w }));
       }
-      const myKeys = Array.isArray(checks.keys) ? checks.keys : [];
       for (const key of myKeys) {
         for (const other of toolsUsingKey(key, name)) card.append(h('p', { class: 'hint', text: 'shared with ' + other + ' (' + key + ')' }));
       }
