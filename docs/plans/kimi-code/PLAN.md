@@ -960,6 +960,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 6: Claude PASS, GPT FAIL with 4 gaps (REMEDIATION-6.md). Permission-prompt detection survived again (now a false negative on the real `▶` panel): sent to the lead.
+
 - 2026-11-18 — Verification attempt 6 at `3ee4fae`: `wc-01b8cb1bf051-verifier-11` (gpt-6.2-sol) and `wc-01b8cb1bf051-verifier-12` (claude-opus-5-5).
 
 - 2026-11-18 — Remediation 5 complete at `60b09dc`; COMPLETION.md "Remediation 5" with a current known-gaps list. Verification attempt 6 next.
