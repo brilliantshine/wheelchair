@@ -222,7 +222,11 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   hidden, so carry it to the next visible reply): which thread, what it is doing, and what
   it might mean for this one. Your user decides in chat, and you handle what they say like
   anything else they say at that step under lead.md's existing rules. No new card or
-  timing rule applies; the formal handling is split off to its own thread (Decision 21).
+  timing rule applies, except one: if the check right before approval (b) finds an overlap,
+  do not post the approval card yet (that turn is usually hidden, so they would see Start
+  building without the overlap). Post a `question` card instead: what the other thread is
+  doing, with options "Build as planned" (then post the approval card) and "Talk about it
+  first" (then talk it through in chat and post the approval card once they are ready).
 - **Never wait on another lead.** Asking another lead never holds up your own step: carry
   on. A late answer gets the same one-line mention when it arrives.
 - **Another project:** only when the user names a thread or project. Find it with
@@ -283,6 +287,8 @@ New tests in `viewer/test/` must cover:
 - A `reach` press with no live lead is refused 409 and the card stays open; an open `reach`
   card's Needs you entry shows its title.
 - `viewer/test/protocol-rules.test.js`'s explicit list of lead card kinds includes `reach`.
+- `protocol/app/lead.md` gains the "Other leads on this machine" section with no reference
+  to this plan or its Decision Log.
 - A browser test shows a `reach` card with its two buttons and its answered state.
 
 ## Deferred
@@ -305,6 +311,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 |------|--------------|-------|
 | Two threads naming the same project through different paths (a symlink) are not treated as the same project | Users pick projects from the same list; needs an unusual setup | review-round-1 |
 | A target's lead dies or the target is archived in the sub-second gap between storing a cross-thread message and queuing it, so that message is dropped | Two unlikely events in a sub-second window; the sender can resend | review-round-1 |
+| A thread archived and then brought back by a newer handoff import keeps its old cross-project links | Needs an archive, a re-import of the same thread and a stale link together; IDEA.md asks for no extra security | review-round-7 |
 | A crash between saving a cross-thread message in the sender's thread and queuing it on the target loses that one delivery | Needs a hub crash inside a sub-second window; the sender can resend | planning |
 
 ## Check Once Built
@@ -441,9 +448,22 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 7 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 6:** Decision 21 (split): §4 "Leads inform; your user decides" cut to a one-line mention plus the user deciding in chat; "Never wait" shortened; old §5 (`card.js` prints ids) removed with its validation line and Accepted Risk; §4 linked threads may be messaged like peers; Validation adds the protocol-rules test kind list.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Rule text points at this plan's Decision Log | upheld | Pointer removed; Validation checks lead.md has none |
+| mechanics | blocking | Lead can't retract an open `reach` card without its id | declined | The user answers the card directly with Don't allow; learning card ids is a gap for every card kind, moved to the split-off thread |
+| mechanics | blocking | Overlap found at the pre-approval check is hidden when Start building appears | upheld | Overlap at (b) goes on a question card before the approval card |
+| mechanics | blocking | Handoff re-import revives an old link | accepted-risk | Rare path (archive + re-import + stale link); Accepted Risks |
+
+### Round 8 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 7:** §4 "Leads inform": the plan pointer removed; an overlap found at the pre-approval check goes on a question card before the approval card; Validation line for lead.md; one Accepted Risk (handoff re-import).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
