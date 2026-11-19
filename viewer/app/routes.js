@@ -479,7 +479,8 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (bits[2] === 'asides') {
     const asides = require('./asides.js');
-    const result = await hub.withThread(id, async () => {
+    const lock = bits.length === 3 && request.method === 'POST' ? hub.withChatThread.bind(hub) : hub.withThread.bind(hub);
+    const result = await lock(id, async () => {
       const thread = await hub.thread(id);
       if (request.method !== 'GET') require('./handoff.js').refuseFrozen(hub, thread);
       if (request.method !== 'GET' && thread.archived) throw appError(409, 'this thread is archived');

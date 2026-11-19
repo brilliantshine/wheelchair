@@ -24,3 +24,5 @@ Attachments stream via the hub to machine uploads; the composer sends their abso
 ## Not checked
 
 Provider selection internals, transcript reconstruction, every HTTP route and security edge, and behavior of remote machines beyond these calls were not traced.
+
+> Transcript-related paths rechecked at `899afb69395ed5dddc5828ae86bad1fd3e765947`; see [chat transcript refresh](chat-transcript-refresh.md). Other claims above retain their stated historical checks.

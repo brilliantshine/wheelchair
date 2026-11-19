@@ -336,3 +336,13 @@ test('fatal verifier stop and archive remove created worktrees, while worker sto
   const worker = make('wc-worker-worker', 'worker', 'worker');
   await machine.stop(worker.name); assert.ok(fs.existsSync(worker.worktree)); assert.ok(git('-C', repo, 'worktree', 'list', '--porcelain').includes(worker.worktree));
 });
+
+test('unchanged Kimi copy does not read source content or persist', async () => {
+  const { machine, session, log, metadata, prompt } = setup(); const file = log('idle', [metadata, prompt(session.name)]);
+  await machine.kimiBinding(session); await machine.copyTranscriptNow(session, file);
+  const promises = require('node:fs/promises'); const open = promises.open; const persist = machine.persistSessions;
+  promises.open = async (name, ...args) => { const handle = await open(name, ...args); if (name === file) handle.read = async () => { throw new Error('source read'); }; return handle; };
+  machine.persistSessions = async () => { throw new Error('registry write'); };
+  try { assert.deepEqual(await machine.copyTranscriptNow(session, file), { offset: session.transcript_source.offset, lines: [] }); }
+  finally { promises.open = open; machine.persistSessions = persist; }
+});

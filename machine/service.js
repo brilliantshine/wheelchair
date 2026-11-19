@@ -488,7 +488,7 @@ class MachineService {
     }
     if (changed) await this.persistSessions();
   }
-  async persistSessions() { await atomicWrite(this.sessionsPath, `${json(this.sessions)}\n`); }
+  async persistSessions() { await atomicWrite(this.sessionsPath, `${JSON.stringify(this.sessions, (key, value) => key === 'transcript_unsaved' ? undefined : value)}\n`); }
   log(error) { process.stderr.write(`machine: ${error.message || error}\n`); }
   async secret() {
     if (!this.config.secret_file) return '';
@@ -1195,10 +1195,10 @@ class MachineService {
   }
   // One copy at a time per session: two overlapping copies read the same offset and the
   // same copied file, so both would append the same new lines.
-  copyTranscript(session, source) {
+  copyTranscript(session, source, followup) {
     this.copying ??= new Map();
     const before = this.copying.get(session.name) || Promise.resolve();
-    const run = before.catch(() => {}).then(() => this.copyTranscriptNow(session, source));
+    const run = before.catch(() => {}).then(async () => { let result; try { result = await this.copyTranscriptNow(session, source); } catch (error) { if (!followup || error.code !== 'ENOENT') throw error; } return followup ? followup() : result; });
     const settled = run.catch(() => {});
     this.copying.set(session.name, settled);
     settled.then(() => { if (this.copying.get(session.name) === settled) this.copying.delete(session.name); });
@@ -1209,8 +1209,9 @@ class MachineService {
     let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
     const current = session.transcript_source;
     let begin = session.cli === 'kimi' ? (current?.offset || 0) : (current && (current.path !== source || stat.size < current.offset || stat.ino !== current.ino) ? 0 : (current?.offset || 0));
+    if (session.cli !== 'kimi' && current?.path === source && current.ino === stat.ino && stat.size === current.offset && session.transcript_path && !session.transcript_unsaved) return { offset: current.offset, lines: [] };
     const file = await fsp.open(source, 'r'); let text;
-    try { if (session.cli === 'kimi') { stat = await file.stat(); if (stat.dev !== session.kimi_log_id?.dev || stat.ino !== session.kimi_log_id?.ino || stat.size < begin || session.end_reason) return { offset: begin, lines: [] }; } const size = stat.size - begin; const buffer = Buffer.alloc(Math.max(size, 0)); await file.read(buffer, 0, buffer.length, begin); text = buffer.toString('utf8'); } finally { await file.close(); }
+    try { if (session.cli === 'kimi') { stat = await file.stat(); if (stat.dev !== session.kimi_log_id?.dev || stat.ino !== session.kimi_log_id?.ino || stat.size < begin || session.end_reason) return { offset: begin, lines: [] }; if (stat.size === begin && current?.path === source && current.ino === stat.ino && session.transcript_path && !session.transcript_unsaved) return { offset: begin, lines: [] }; } const size = stat.size - begin; const buffer = Buffer.alloc(Math.max(size, 0)); await file.read(buffer, 0, buffer.length, begin); text = buffer.toString('utf8'); } finally { await file.close(); }
     // A JSONL record isn't durable until its newline arrives.  Leave an unfinished
     // tail for the next read instead of copying a fragment and advancing past it.
     const newline = text.lastIndexOf('\n');
@@ -1218,34 +1219,48 @@ class MachineService {
     const lines = complete ? complete.slice(0, -1).split('\n') : [];
     const nextOffset = begin + Buffer.byteLength(complete);
     const target = path.join(this.stateDir, 'transcripts', session.thread_id, `${session.name}.jsonl`);
-    let copied = '';
-    try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const hashes = new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex')));
-    const additions = lines.filter(line => { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (hashes.has(hash)) return false; hashes.add(hash); return true; });
-    if (additions.length) { await mkdir(path.dirname(target)); await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+    let additions = [];
+    if (lines.length) {
+      let copied = '';
+      try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (copied && !copied.endsWith('\n')) { copied = copied.slice(0, copied.lastIndexOf('\n') + 1); await fsp.truncate(target, Buffer.byteLength(copied)); }
+      const hashes = new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex')));
+      additions = lines.filter(line => { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (hashes.has(hash)) return false; hashes.add(hash); return true; });
+      if (additions.length) { await mkdir(path.dirname(target)); await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+    }
+    const changed = session.transcript_path !== target || !current || current.path !== source || current.offset !== nextOffset || current.ino !== stat.ino;
     session.transcript_path = target;
     session.transcript_source = { path: source, offset: nextOffset, ino: stat.ino };
-    await this.persistSessions();
+    if (changed || session.transcript_unsaved) {
+      try { await this.persistSessions(); delete session.transcript_unsaved; }
+      catch (error) { session.transcript_unsaved = true; throw error; }
+    }
     return { offset: nextOffset, lines: additions };
   }
-  async transcript(name, offset = 0) {
+  async readTranscript(file, offset, known) {
+    if (!file) return { offset: 0, data: '' };
+    let handle;
+    try { handle = await fsp.open(file, 'r'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    try {
+      const stat = await handle.stat(); const gen = `${stat.dev}-${stat.ino}-${stat.birthtimeMs}`; const end = stat.size;
+      const split = typeof known === 'string' ? known.lastIndexOf(':') : -1;
+      if (split > 0 && /^(0|[1-9]\d*)$/.test(known.slice(split + 1)) && known === `${gen}:${end}`) return { unchanged: true, gen, end };
+      const buffer = Buffer.alloc(end); let read = 0;
+      while (read < end) { const result = await handle.read(buffer, read, end - read, read); if (!result.bytesRead) throw new Error('transcript truncated during read'); read += result.bytesRead; }
+      return { offset: end, data: buffer.subarray(Number(offset)).toString('utf8'), gen, end };
+    } finally { await handle.close(); }
+  }
+  async transcript(name, offset = 0, known) {
     let session;
     try { session = this.managed(name); } catch (error) {
-      // An archived thread's sessions are forgotten, but their transcript copies are kept so
-      // the thread's chat still opens (Spec "Archive").
+      // Forgotten archived sessions have no copier, but retain their transcript.
       const thread = /^wc-([A-Za-z0-9]+)-[a-z]/.exec(safeName(name, 'session name'))?.[1];
-      const kept = thread && await fsp.readFile(path.join(this.stateDir, 'transcripts', thread, `${name}.jsonl`), 'utf8').catch(() => null);
-      if (kept === null || kept === undefined || kept === false) throw error;
-      return { offset: Buffer.byteLength(kept), data: Buffer.from(kept).subarray(Number(offset)).toString('utf8') };
+      const kept = thread && await this.readTranscript(path.join(this.stateDir, 'transcripts', thread, `${name}.jsonl`), offset, known);
+      if (!kept) throw error;
+      return kept;
     }
     if (!session.source_transcript && !session.end_reason) { if (session.cli === 'kimi') await this.kimiBinding(session); else session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir); }
-    if (session.source_transcript) {
-      try { await this.copyTranscript(session, session.source_transcript); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
-    }
-    const data = session.transcript_path ? await fsp.readFile(session.transcript_path, 'utf8').catch(() => '') : '';
-    const byte = Buffer.byteLength(data);
-    return { offset: byte, data: Buffer.from(data).subarray(Number(offset)).toString('utf8') };
+    return this.copyTranscript(session, session.source_transcript, async () => await this.readTranscript(session.transcript_path, offset, known) || { offset: 0, data: '' });
   }
   async spool(kind, payload) {
     const dir = path.join(this.stateDir, 'spool', kind);
@@ -1929,7 +1944,7 @@ class MachineService {
           }
           return send(response, 200, { pane: this.pane(name, true, history) });
         }
-        if (request.method === 'GET' && pathBits[3] === 'transcript') return send(response, 200, await this.transcript(name, url.searchParams.get('offset') || 0));
+        if (request.method === 'GET' && pathBits[3] === 'transcript') return send(response, 200, await this.transcript(name, url.searchParams.get('offset') || 0, url.searchParams.get('known')));
         if (request.method === 'POST' && pathBits[3] === 'submit') { const input = await bodyOf(request); await this.submit(name, String(input.text || '')); return send(response, 200, { ok: true }); }
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); this.raw(name, String(input.keys || '')); return send(response, 200, { ok: true }); }
       }

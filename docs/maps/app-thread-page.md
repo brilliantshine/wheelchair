@@ -18,3 +18,5 @@ lead -> diagram card -> register and store -> chat -> graph iframe
 Other card behavior, transcript parsing, graph drawing internals and browser tests.
 
 > Agents-screen recheck at `3065046af16a1f6b2822d308b5c32431ca39a449`: the overlapping session, page and card paths were checked in [app-agents-screen.md](app-agents-screen.md). The rest of this older map was not rechecked.
+
+> Transcript-related paths rechecked at `899afb69395ed5dddc5828ae86bad1fd3e765947`; see [chat transcript refresh](chat-transcript-refresh.md). Other claims above retain their stated historical checks.

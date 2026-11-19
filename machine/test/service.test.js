@@ -1740,3 +1740,58 @@ test('approval warnings are machine owned and never await a refresh', async () =
     assert.equal('warnings' in last, false);
   } finally { await env.close(); }
 });
+
+test('idle and unfinished transcript copies avoid kept reads and registry writes; failed saves retry', async () => {
+  const env = await service(await temp()); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'idle.jsonl');
+    await write(source, '{"one":1}\n'); await env.instance.copyTranscript(session, source);
+    const readFile = fs.readFile; const persist = env.instance.persistSessions; let writes = 0;
+    fs.readFile = async (file, ...args) => { if (file === session.transcript_path) throw new Error('kept read'); return readFile(file, ...args); };
+    env.instance.persistSessions = async () => { writes++; return persist.call(env.instance); };
+    try {
+      await env.instance.copyTranscript(session, source); await fs.appendFile(source, '{"two":'); await env.instance.copyTranscript(session, source); assert.equal(writes, 0);
+      await fs.appendFile(source, '2}\n');
+    } finally { fs.readFile = readFile; }
+    env.instance.persistSessions = async () => { writes++; throw new Error('save failed'); };
+    await assert.rejects(env.instance.copyTranscript(session, source), /save failed/); assert.equal(session.transcript_unsaved, true);
+    await persist.call(env.instance); assert.equal(JSON.parse(await fs.readFile(env.instance.sessionsPath, 'utf8'))[session.name].transcript_unsaved, undefined);
+    env.instance.persistSessions = async () => { writes++; return persist.call(env.instance); };
+    await env.instance.copyTranscript(session, source); assert.equal(session.transcript_unsaved, undefined); assert.equal(writes, 2);
+  } finally { await env.close(); }
+});
+
+test('copier cuts a crash fragment before replaying a complete source row', async () => {
+  const env = await service(await temp()); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'crash.jsonl');
+    await write(source, '{"one":1}\n'); await env.instance.copyTranscript(session, source);
+    await fs.appendFile(session.transcript_path, '{"two":'); await fs.appendFile(source, '{"two":2}\n');
+    await env.instance.copyTranscript(session, source); assert.equal(await fs.readFile(session.transcript_path, 'utf8'), '{"one":1}\n{"two":2}\n');
+  } finally { await env.close(); }
+});
+
+test('transcript stamps avoid all content reads on a match and detect replacement', async () => {
+  const env = await service(await temp()); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'stamp.jsonl');
+    await write(source, '{"one":1}\n'); await env.instance.copyTranscript(session, source); session.source_transcript = source;
+    const route = `/v1/sessions/${session.name}/transcript`; const first = (await api(env, 'GET', route, undefined, hubHeader)).body;
+    assert.equal(first.data, '{"one":1}\n'); assert.equal(first.end, Buffer.byteLength(first.data));
+    const readFile = fs.readFile; const open = fs.open;
+    fs.readFile = async (file, ...args) => { if (file === session.transcript_path) throw new Error('kept readFile'); return readFile(file, ...args); };
+    fs.open = async (file, ...args) => { const handle = await open(file, ...args); if (file === session.transcript_path) handle.read = async () => { throw new Error('kept handle read'); }; return handle; };
+    try {
+      const match = (await api(env, 'GET', `${route}?known=${encodeURIComponent(`${first.gen}:${first.end}`)}`, undefined, hubHeader)).body;
+      assert.deepEqual(match, { unchanged: true, gen: first.gen, end: first.end });
+    } finally { fs.readFile = readFile; fs.open = open; }
+    for (const known of ['bad', `${first.gen}:999`, `stale:${first.end}`]) {
+      const result = (await api(env, 'GET', `${route}?known=${encodeURIComponent(known)}`, undefined, hubHeader)).body;
+      assert.equal(result.data, first.data); assert.equal(result.gen, first.gen); assert.equal(result.end, first.end);
+    }
+    const sliced = (await api(env, 'GET', `${route}?offset=2`, undefined, hubHeader)).body; assert.equal(sliced.data, first.data.slice(2));
+    await fs.rename(session.transcript_path, `${session.transcript_path}.old`); await write(session.transcript_path, first.data);
+    const replaced = (await api(env, 'GET', `${route}?known=${encodeURIComponent(`${first.gen}:${first.end}`)}`, undefined, hubHeader)).body;
+    assert.equal(replaced.data, first.data); assert.notEqual(replaced.gen, first.gen);
+    delete env.instance.sessions[session.name];
+    const archived = (await api(env, 'GET', `${route}?known=${encodeURIComponent(`${replaced.gen}:${replaced.end}`)}`, undefined, hubHeader)).body;
+    assert.deepEqual(archived, { unchanged: true, gen: replaced.gen, end: replaced.end });
+  } finally { await env.close(); }
+});
