@@ -363,6 +363,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Refused Allow reaches no one | upheld | Press answers the card and queues `allow failed: <reason>` |
 | mechanics | major | Agents screen shows cross-thread question as outstanding | upheld | `questionFor` ignores cross-thread asks |
 
+### Round 3 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 2:** Terms "Linked thread" (either side's `lead_links`); §2 non-writing target reads (`hub.state.thread`), Agents screen `questionFor` change; §3 Allow press rewritten (one write, `allow failed: <reason>`); §4 lead rules: overlap/crossed questions, `Re:` replies, "Never wait on another lead" (late answers retract approval), agreement outcomes reported back, agreements before PLAN.md, already-linked threads; Validation additions; Decisions 17-18.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
