@@ -365,9 +365,11 @@
       const p = parseEntry(raw);
       const checks = checksFor(name);
       const card = h('div', { class: 'pt-tool', 'data-tool': name });
+      const roKind = !p && isPlain(raw) ? (typeof raw.command === 'string' ? 'command' : typeof raw.url === 'string' ? 'web address' : '') : '';
       card.append(h('div', { class: 'pt-tool-head' }, h('h3', { text: name }),
-        h('span', { class: 'pt-chip', text: p ? (p.kind === 'command' ? 'command' : 'web address') : 'edit in the file' })));
+        h('span', { class: 'pt-chip', text: p ? (p.kind === 'command' ? 'command' : 'web address') : roKind || 'edit in the file' })));
       if (!p) {
+        if (roKind) card.append(h('p', { class: 'pt-runs mono', text: roKind === 'command' ? [raw.command, ...(Array.isArray(raw.args) ? raw.args.filter((a) => typeof a === 'string') : [])].join(' ') : raw.url }));
         card.append(h('p', { class: 'hint', text: "This entry's shape can't be shown here. Edit in the file." }));
       } else {
         for (const [k, v] of p.extras) card.append(h('p', { class: 'hint' }, h('span', { class: 'mono', text: k + ': ' + JSON.stringify(v) }), ' (edit in the file)'));
@@ -399,7 +401,7 @@
         confirmHost.replaceChildren(
           h('p', { text: 'Remove ' + name + '? It goes away when you Save.' }),
           h('div', { class: 'actions' },
-            button('Yes, remove ' + name, () => { if (state.loading) return; delete state.tools[name]; delete state.baseName[name]; paintTools(); paintSave(); }, { class: 'danger' }),
+            button('Yes, remove ' + name, () => { if (state.loading) return; delete state.tools[name]; delete state.baseName[name]; if (formState && formState.origName === name) { formState = null; els.form.replaceChildren(); } paintTools(); paintSave(); }, { class: 'danger' }),
             button('Cancel', () => { confirmHost.hidden = true; remove.hidden = false; })));
       }, { 'aria-label': 'Remove ' + name });
       actions.append(remove);
@@ -424,7 +426,7 @@
       const p = raw ? parseEntry(raw) : null;
       if (raw && !p) return;
       const f = formState = {
-        origName, raw, p, refreshers: [], touched: { command: false, url: false, args: false }, rowsTouched: { env: false, hdr: false }, name: origName || '', kind: p ? p.kind : 'command',
+        origName, raw, p, refreshers: [], touched: { name: false, command: false, url: false, args: false }, rowsTouched: { env: false, hdr: false }, name: origName || '', kind: p ? p.kind : 'command',
         command: p?.command || '', url: p?.url || '', argsText: (p?.args || []).join('\n'), argsRO: !!p?.argsRO,
         commandRO: !!p?.commandRO, urlRO: !!p?.urlRO,
         envRows: p ? p.envRows : [], hdrRows: p ? p.hdrRows : [],
@@ -433,7 +435,7 @@
       const showErr = (m) => { err.textContent = m || ''; };
 
       const nameIn = h('input', { type: 'text', value: f.name, autocomplete: 'off', 'aria-label': 'Name' });
-      nameIn.addEventListener('input', () => { f.name = nameIn.value; });
+      nameIn.addEventListener('input', () => { f.name = nameIn.value; f.touched.name = true; });
       const kindSel = h('select', { 'aria-label': 'Kind' },
         h('option', { value: 'command', text: 'Command' }), h('option', { value: 'http', text: 'Web address' }));
       kindSel.value = f.kind;
@@ -477,7 +479,7 @@
           sharedHint.textContent = users.length ? 'shared with ' + users.join(', ') : '';
         };
         const touch = () => { row.dirty = true; f.rowsTouched[kind] = true; };
-        nameField.addEventListener('input', () => { touch(); row.name = nameField.value; refresh(); });
+        nameField.addEventListener('input', () => { touch(); row.nameTouched = true; row.name = nameField.value; refresh(); });
         modeSel.addEventListener('change', () => { touch(); row.mode = modeSel.value; if (row.mode === 'key' && kind === 'hdr' && row.keyName === undefined) row.keyName = ''; refresh(); });
         valueField.addEventListener('input', () => { touch(); row.value = valueField.value; });
         prefixField.addEventListener('input', () => { touch(); row.prefix = prefixField.value; });
@@ -527,21 +529,28 @@
       function apply() {
         if (state.loading) return;
         showErr('');
-        const name = f.name.trim();
-        if (!name) return showErr('Give the tool a name.');
+        // An untouched name is kept exactly as read and not validated; an edited one is refused, not trimmed.
+        const name = origName !== null && !f.touched.name ? origName : f.name;
+        if (origName === null || f.touched.name) {
+          if (!name.trim()) return showErr('Give the tool a name.');
+          if (name !== name.trim()) return showErr('The name has a space at the start or end.');
+        }
         if (name !== origName && Object.hasOwn(state.tools, name)) return showErr('There is already a tool called ' + name + '.');
         const rows = f.kind === 'command' ? f.envRows : f.hdrRows;
         const rk = f.kind === 'command' ? 'env' : 'hdr';
-        if (f.kind === 'command' && !f.command.trim()) return showErr('Enter the command to run.');
-        if (f.kind === 'http' && !f.url.trim()) return showErr('Enter the web address.');
+        const kindNew = !f.p || f.p.kind !== f.kind;
+        if (f.kind === 'command' && !f.commandRO && (kindNew || f.touched.command) && !f.command.trim()) return showErr('Enter the command to run.');
+        if (f.kind === 'http' && !f.urlRO && (kindNew || f.touched.url) && !f.url.trim()) return showErr('Enter the web address.');
         const seen = new Set(rows.filter((row) => row.ro).map((row) => row.name));
         const isFresh = (row) => row.dirty || row.rawName === undefined;
         for (const row of rows) if (!row.ro && !isFresh(row)) seen.add(row.rawName);
         for (const row of rows) {
           if (row.ro || !isFresh(row)) continue;
           const nm = row.name;
-          if (!nm.trim()) return showErr('Every ' + (rk === 'env' ? 'setting' : 'header') + ' needs a name.');
-          if (nm !== nm.trim()) return showErr(nm + ' has a space at the start or end.');
+          if (row.nameTouched || row.rawName === undefined) {
+            if (!nm.trim()) return showErr('Every ' + (rk === 'env' ? 'setting' : 'header') + ' needs a name.');
+            if (nm !== nm.trim()) return showErr(nm + ' has a space at the start or end.');
+          }
           if (seen.has(nm)) return showErr(nm + ' is listed twice.');
           seen.add(nm);
           if (row.mode === 'key') {
@@ -772,8 +781,8 @@
       const addErr = h('p', { class: 'inline-err', role: 'alert' });
       const add = lockBtn('Add a key', async () => {
         addErr.textContent = '';
-        const name = newName.value.trim();
-        const bad = keyNameProblem(name);
+        const name = newName.value;
+        const bad = name !== name.trim() ? 'The name has a space at the start or end.' : keyNameProblem(name);
         if (bad) { addErr.textContent = bad; return; }
         if (!newValue.value) { addErr.textContent = 'Enter a value.'; return; }
         if (await setKey(name, newValue.value)) { newName.value = ''; newValue.value = ''; }
