@@ -76,7 +76,12 @@ async function commit(hub, revision, opacity, imageId, mediaType, bytes) {
       if (bytes) {
         await fs.mkdir(dir(hub), { recursive: true, mode: 0o700 });
         await fs.chmod(dir(hub), 0o700);
-        await atomicWrite(path.join(dir(hub), imageId), bytes);
+        const imagePath = path.join(dir(hub), imageId);
+        const reusable = imageId === current.image_id && await fs.access(imagePath).then(() => true, error => {
+          if (error.code === 'ENOENT') return false;
+          throw error;
+        });
+        if (!reusable) await atomicWrite(imagePath, bytes);
       }
       settings.background = {
         image_id: imageId, media_type: imageId ? (mediaType || current.media_type) : null,

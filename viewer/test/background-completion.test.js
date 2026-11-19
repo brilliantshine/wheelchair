@@ -89,6 +89,11 @@ test('API saves and serves all formats, validates metadata and preserves unrelat
       assert.equal(image.status, 200); assert.equal(image.headers.get('content-type'), type); assert.equal(image.headers.get('cache-control'), 'no-store'); assert.equal(image.headers.get('x-content-type-options'), 'nosniff');
       assert.deepEqual(Buffer.from(await image.arrayBuffer()), Buffer.from(normalize(bytes).bytes));
     }
+    const originalFile = await fs.stat(path.join(ctx.stateDir, 'backgrounds', saved.image_id));
+    const sameFile = await upload(ctx, gif, 'image/gif', revision, 0);
+    assert.equal(sameFile.status, 200);
+    saved = await sameFile.json(); revision++;
+    assert.equal((await fs.stat(path.join(ctx.stateDir, 'backgrounds', saved.image_id))).ino, originalFile.ino);
     for (const route of ['/image/bad', '/image/' + 'A'.repeat(64)]) assert.equal((await api(ctx, route)).status, 400);
     assert.equal((await api(ctx, '/image/' + '0'.repeat(64))).status, 404);
     for (const body of [{ revision, image_id: 'bad', opacity: 1 }, { revision, image_id: '0'.repeat(64), opacity: 1 }, { revision, image_id: saved.image_id, opacity: 1.2 }, { revision, image_id: null, opacity: 101 }, { revision, image_id: null, opacity: 1, extra: true }]) assert.equal((await put(ctx, body)).status, 400);
