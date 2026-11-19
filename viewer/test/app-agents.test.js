@@ -128,3 +128,32 @@ test('agents reads stage from worktree or saved status without one', async () =>
   const result = await require('../app/agents.js').agents(hub);
   assert.deepEqual(Object.fromEntries(result.leads.map((t) => [t.thread_id, t.stage])), { worktree: 'building', saved: 'verifying', 'no-slug': 'idea' });
 });
+
+test('review rounds use latest fixing or clean card including replaced cards', () => {
+  const cards = [
+    { kind: 'progress', stage: 'review', pass: 1, phase: 'fixing', found: 5, replaced: true },
+    { kind: 'progress', stage: 'review', pass: 1, phase: 'clean', found: 2 },
+    { kind: 'progress', stage: 'review', pass: 2, phase: 'clean' },
+    { kind: 'progress', stage: 'review', pass: 3, phase: 'checking' },
+    { kind: 'progress', stage: 'review', pass: 4, phase: 'fixing', found: 4 },
+    { kind: 'progress', stage: 'review', pass: 4, phase: 'checking' },
+  ];
+  assert.deepEqual(tree([lead()], { cards }).rounds, { review: { 1: { found: 2, clean: true }, 2: { found: 0, clean: true }, 4: { found: 4 } } });
+  assert.deepEqual(tree([lead()]).rounds, { review: {} });
+});
+
+test('review reports and finished timestamps use the newest result', () => {
+  const sessions = [lead(), worker('r', { role: 'reviewer', round: 2, live: false, created_at: 'created' }), worker('short', { role: 'reviewer', live: false, ended_at: 'ended', created_at: 'created' }), worker('empty', { role: 'reviewer', live: false, created_at: 'created' }), worker('live', { role: 'reviewer' })];
+  const cards = [
+    { kind: 'result', session: 'r', summary: 'Old', created_at: 'old' },
+    { kind: 'result', session: 'r', summary: 'SEVERITY: major — mechanics — finding — inside text — evidence\nRE-RAISE: SEVERITY: minor — intent — another — evidence', created_at: 'result' },
+    { kind: 'result', session: 'short', summary: 'RE-RAISE: SEVERITY: minor — short finding', created_at: 'result2' },
+    { kind: 'result', session: 'live', summary: 'No findings' },
+  ];
+  const root = tree(sessions, { cards }).session;
+  assert.deepEqual(node(root, 'r').report, { findings: 2, first: 'finding — inside text' });
+  assert.equal(node(root, 'r').round, 2); assert.equal(node(root, 'r').finished_at, 'result');
+  assert.deepEqual(node(root, 'short').report, { findings: 1, first: 'short finding' }); assert.equal(node(root, 'short').finished_at, 'ended');
+  assert.equal(node(root, 'empty').finished_at, 'created'); assert.equal('report' in node(root, 'empty'), false);
+  assert.deepEqual(node(root, 'live').report, { findings: 0, first: null }); assert.equal('finished_at' in node(root, 'live'), false);
+});

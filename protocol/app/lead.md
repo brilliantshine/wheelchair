@@ -250,6 +250,9 @@ later changes or queued pull-backs and change nothing.
 
 ### 5. Review, silent
 
+Start reviewers, including restarts within a round, with `--round <N>`, using the review
+round number (the progress `pass`). Never start verifiers with `--round`.
+
 Before each round, read `review_families` from `session list`. If it is `both`, start two
 reviewer sessions, each fresh, each given only the plan path and repo access, never
 this conversation. Start the intent-lens reviewer with `--provider claude` (a preference:

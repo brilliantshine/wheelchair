@@ -41,7 +41,7 @@ function flags(args) {
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '-m') output.message = args[++index];
     else if (!args[index].startsWith('--')) output._.push(args[index]);
-    else output[args[index].slice(2)] = args[++index];
+    else { const name = args[index].slice(2), value = args[index + 1]; if (name === 'round' && (value === undefined || value.startsWith('--'))) throw new Error('--round requires a value'); output[name] = value; index += 1; }
   }
   return output;
 }
@@ -88,6 +88,7 @@ function sessionRequest(operation, tail) {
       tier: parsed.tier || 'top',
       ...(parsed.effort !== undefined ? { effort: parsed.effort } : {}),
       attempt_id: parsed.attempt,
+      ...(parsed.round !== undefined ? { round: parsed.round } : {}),
       ...(parsed.title !== undefined ? { title: parsed.title } : {}),
       brief: fs.readFileSync(parsed['brief-file'], 'utf8'),
       replaces: parsed.replaces,
@@ -102,7 +103,7 @@ function screenRequest(operation, tail) {
   return { path: '/screen', body: { op: operation, args: tail } };
 }
 
-const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'title', 'branch', 'worktree'];
+const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'round', 'title', 'branch', 'worktree'];
 function compact(session) {
   return Object.fromEntries(compactFields.filter(key => Object.hasOwn(session, key)).map(key => [key, session[key]]));
 }
