@@ -218,6 +218,8 @@ function requestJson(urlText, method, headers, payload, timeout = 5000) {
 class MachineService {
   constructor(options) {
     this.stateDir = path.resolve(options.stateDir || DEFAULT_STATE);
+    this.transcriptSets = new Map();
+    this.transcriptNow = options.transcriptNow || Date.now;
     this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir });
     this.projectToolsLocks = new Map();
     this.configPath = path.join(this.stateDir, 'machine.json');
@@ -396,6 +398,8 @@ class MachineService {
     // worktree feel stalled. Stuck sessions and open prompts remain on pollTimer.
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
     this.trustTimer.unref();
+    this.transcriptTimer = setInterval(() => this.sweepTranscriptSets(), 60000);
+    this.transcriptTimer.unref();
     this.agyToolsTimer = setInterval(() => this.sweepAgyTools(), 60000);
     this.agyToolsTimer.unref();
   }
@@ -849,6 +853,7 @@ class MachineService {
     return this.stopFatal(session);
   }
   async stopFatal(session) {
+    this.transcriptSets?.delete(session.name);
     this.tmux(['kill-session', '-t', `=${session.name}`]);
     const live = this.liveTmux();
     if (!live || live.has(session.name)) return { pending: true, end_reason: session.end_reason };
@@ -1069,6 +1074,7 @@ class MachineService {
     if (!result.ok) throw Object.assign(new Error('tmux keys failed'), { status: 409 });
   }
   async stop(name) {
+    this.transcriptSets?.delete(name);
     const session = this.managed(name);
     if (session.end_reason) return this.stopFatal(session);
     this.tmux(['kill-session', '-t', name]);
@@ -1160,6 +1166,7 @@ class MachineService {
     }
     const keptWorktrees = new Set(kept.map(item => path.resolve(item.worktree)));
     for (const session of sessions) {
+      this.transcriptSets?.delete(session.name);
       const worktree = typeof session.worktree === 'string' ? path.resolve(session.worktree) : null;
       if (worktree && keptWorktrees.has(worktree)) {
         // A rebase cannot be safely archived. Keep enough ownership information for a later
@@ -1192,15 +1199,19 @@ class MachineService {
   }
   // One copy at a time per session: two overlapping copies read the same offset and the
   // same copied file, so both would append the same new lines.
-  copyTranscript(session, source) {
+  sweepTranscriptSets() {
+    for (const [name, entry] of this.transcriptSets) if (this.transcriptNow() - entry.used >= 600000) this.transcriptSets?.delete(name);
+  }
+  queueTranscript(name, work) {
     this.copying ??= new Map();
-    const before = this.copying.get(session.name) || Promise.resolve();
-    const run = before.catch(() => {}).then(() => this.copyTranscriptNow(session, source));
+    const before = this.copying.get(name) || Promise.resolve();
+    const run = before.catch(() => {}).then(work);
     const settled = run.catch(() => {});
-    this.copying.set(session.name, settled);
-    settled.then(() => { if (this.copying.get(session.name) === settled) this.copying.delete(session.name); });
+    this.copying.set(name, settled);
+    settled.then(() => { if (this.copying.get(name) === settled) this.copying.delete(name); });
     return run;
   }
+  copyTranscript(session, source) { return this.queueTranscript(session.name, () => this.copyTranscriptNow(session, source)); }
   async copyTranscriptNow(session, source) {
     if (!source || (session.cli === 'kimi' && session.end_reason)) return { offset: 0, lines: [] };
     let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
@@ -1215,34 +1226,65 @@ class MachineService {
     const lines = complete ? complete.slice(0, -1).split('\n') : [];
     const nextOffset = begin + Buffer.byteLength(complete);
     const target = path.join(this.stateDir, 'transcripts', session.thread_id, `${session.name}.jsonl`);
-    let copied = '';
-    try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const hashes = new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex')));
-    const additions = lines.filter(line => { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (hashes.has(hash)) return false; hashes.add(hash); return true; });
-    if (additions.length) { await mkdir(path.dirname(target)); await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+    let additions = [];
+    if (lines.length) {
+      this.transcriptSets ??= new Map();
+      let entry = this.transcriptSets.get(session.name);
+      let reusable = true;
+      if (!entry) {
+        let copied = '';
+        try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        reusable = !copied || copied.endsWith('\n');
+        entry = { hashes: new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex'))) };
+      }
+      const batch = new Set(entry.hashes);
+      additions = lines.filter(line => { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (batch.has(hash)) return false; batch.add(hash); return true; });
+      try {
+        if (additions.length) { await mkdir(path.dirname(target)); await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+      } catch (error) { this.transcriptSets?.delete(session.name); throw error; }
+      for (const line of additions) if (line) entry.hashes.add(crypto.createHash('sha256').update(line).digest('hex'));
+      entry.used = (this.transcriptNow || Date.now)();
+      if (reusable && session.status !== 'stopped' && this.sessions[session.name] === session) this.transcriptSets.set(session.name, entry);
+    }
+    const changed = session.transcript_path !== target || current?.path !== source || current?.offset !== nextOffset || current?.ino !== stat.ino;
     session.transcript_path = target;
     session.transcript_source = { path: source, offset: nextOffset, ino: stat.ino };
-    await this.persistSessions();
+    if (changed) await this.persistSessions();
     return { offset: nextOffset, lines: additions };
   }
-  async transcript(name, offset = 0) {
-    let session;
-    try { session = this.managed(name); } catch (error) {
-      // An archived thread's sessions are forgotten, but their transcript copies are kept so
-      // the thread's chat still opens (Spec "Archive").
-      const thread = /^wc-([A-Za-z0-9]+)-[a-z]/.exec(safeName(name, 'session name'))?.[1];
-      const kept = thread && await fsp.readFile(path.join(this.stateDir, 'transcripts', thread, `${name}.jsonl`), 'utf8').catch(() => null);
-      if (kept === null || kept === undefined || kept === false) throw error;
-      return { offset: Buffer.byteLength(kept), data: Buffer.from(kept).subarray(Number(offset)).toString('utf8') };
-    }
-    if (!session.source_transcript && !session.end_reason) { if (session.cli === 'kimi') await this.kimiBinding(session); else session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir); }
-    if (session.source_transcript) {
-      try { await this.copyTranscript(session, session.source_transcript); }
+  async transcript(name, offset = 0, known = null) {
+    if (known !== null && known !== '-' && !/^\d+(?:-\d+(?:\.\d+)?|):\d+$/.test(known)) throw Object.assign(new Error('invalid known'), { status: 400 });
+    let session, missing;
+    try { session = this.managed(name); } catch (error) { missing = error; }
+    if (session && !session.source_transcript && !session.end_reason) { if (session.cli === 'kimi') await this.kimiBinding(session); else session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir); }
+    return this.queueTranscript(name, async () => {
+      if (session?.source_transcript) {
+        try { await this.copyTranscriptNow(session, session.source_transcript); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+      }
+      const thread = !session && /^wc-([A-Za-z0-9]+)-[a-z]/.exec(safeName(name, 'session name'))?.[1];
+      const target = session ? session.transcript_path : thread && path.join(this.stateDir, 'transcripts', thread, `${name}.jsonl`);
+      if (known === null) {
+        const data = target ? await fsp.readFile(target, 'utf8').catch(() => session ? '' : null) : null;
+        if (!session && data === null) throw missing;
+        const text = data || '';
+        return { offset: Buffer.byteLength(text), data: Buffer.from(text).subarray(Number(offset)).toString('utf8') };
+      }
+      let handle;
+      try { if (target) handle = await fsp.open(target, 'r'); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
-    }
-    const data = session.transcript_path ? await fsp.readFile(session.transcript_path, 'utf8').catch(() => '') : '';
-    const byte = Buffer.byteLength(data);
-    return { offset: byte, data: Buffer.from(data).subarray(Number(offset)).toString('utf8') };
+      if (!handle) { if (!session) throw missing; return { status: 'unavailable' }; }
+      try {
+        const stat = await handle.stat();
+        const gen = stat.birthtimeMs ? `${stat.ino}-${stat.birthtimeMs}` : `${stat.ino}`;
+        const end = stat.size;
+        if (!end) return { status: 'unavailable' };
+        if (known === `${gen}:${end}`) return { status: 'unchanged', gen, end };
+        const buffer = Buffer.alloc(end); let pos = 0;
+        while (pos < end) { const { bytesRead } = await handle.read(buffer, pos, end - pos, pos); if (!bytesRead) break; pos += bytesRead; }
+        return { status: 'full', gen, end, data: buffer.subarray(0, pos).toString('utf8') };
+      } finally { await handle.close(); }
+    });
   }
   async spool(kind, payload) {
     const dir = path.join(this.stateDir, 'spool', kind);
@@ -1926,7 +1968,7 @@ class MachineService {
           }
           return send(response, 200, { pane: this.pane(name, true, history) });
         }
-        if (request.method === 'GET' && pathBits[3] === 'transcript') return send(response, 200, await this.transcript(name, url.searchParams.get('offset') || 0));
+        if (request.method === 'GET' && pathBits[3] === 'transcript') return send(response, 200, await this.transcript(name, url.searchParams.get('offset') || 0, url.searchParams.get('known')));
         if (request.method === 'POST' && pathBits[3] === 'submit') { const input = await bodyOf(request); await this.submit(name, String(input.text || '')); return send(response, 200, { ok: true }); }
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); this.raw(name, String(input.keys || '')); return send(response, 200, { ok: true }); }
       }
@@ -2000,7 +2042,7 @@ class MachineService {
     this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.agyToolsTimer); clearInterval(this.transcriptTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

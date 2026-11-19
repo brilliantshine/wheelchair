@@ -1734,3 +1734,52 @@ test('approval warnings are machine owned and never await a refresh', async () =
     assert.equal('warnings' in last, false);
   } finally { await env.close(); }
 });
+
+test('conditional transcripts and idle dedupe copies', async () => {
+  const root = await temp(); const env = await service(root); let now = 0;
+  try {
+    const s = await start(env, { thread_id: 'cond' });
+    const session = env.instance.sessions[s.name];
+    const source = path.join(root, 'source.jsonl'); await write(source, 'one\n\n\n'); session.source_transcript = source;
+    env.instance.transcriptNow = () => now;
+    const route = `/v1/sessions/${s.name}/transcript`;
+    assert.deepEqual((await api(env, 'GET', route, undefined, hubHeader)).body, { offset: 5, data: 'one\n\n' });
+    const full = (await api(env, 'GET', `${route}?known=-`, undefined, hubHeader)).body;
+    assert.equal(full.status, 'full'); assert.equal(full.data, 'one\n\n');
+    const oldRead = fs.readFile; const oldOpen = fs.open; const oldPersist = env.instance.persistSessions; let reads = 0; let saves = 0;
+    const mtime = (await fs.stat(env.instance.sessionsPath)).mtimeMs;
+    fs.open = async (...args) => { const handle = await oldOpen(...args); if (args[0] === session.transcript_path) { const read = handle.read.bind(handle); handle.read = (...readArgs) => { reads++; return read(...readArgs); }; } return handle; };
+    fs.readFile = async (...args) => { if (args[0] === session.transcript_path) reads++; return oldRead(...args); };
+    env.instance.persistSessions = async () => { saves++; return oldPersist.call(env.instance); };
+    try {
+      const unchanged = (await api(env, 'GET', `${route}?known=${full.gen}:${full.end}`, undefined, hubHeader)).body;
+      assert.deepEqual(unchanged, { status: 'unchanged', gen: full.gen, end: full.end });
+      assert.equal(reads, 0); assert.equal(saves, 0); assert.equal((await fs.stat(env.instance.sessionsPath)).mtimeMs, mtime);
+    } finally { fs.readFile = oldRead; fs.open = oldOpen; env.instance.persistSessions = oldPersist; }
+    await fs.appendFile(source, '\ntwo\n');
+    const next = (await api(env, 'GET', `${route}?known=${full.gen}:${full.end}`, undefined, hubHeader)).body;
+    assert.equal(next.data, 'one\n\n\ntwo\n'); assert.ok(next.end > full.end);
+    assert.equal((await api(env, 'GET', `${route}?known=bad`, undefined, hubHeader)).status, 400);
+    now = 600000; env.instance.sweepTranscriptSets(); assert.equal(env.instance.transcriptSets.has(s.name), false);
+    await fs.appendFile(source, 'two\nthree\n'); await env.instance.copyTranscript(session, source);
+    assert.equal(await fs.readFile(session.transcript_path, 'utf8'), 'one\n\n\ntwo\nthree\n');
+    delete env.instance.sessions[s.name];
+    assert.equal((await api(env, 'GET', `${route}?known=-`, undefined, hubHeader)).body.status, 'full');
+    const empty = await start(env, { thread_id: 'empty' });
+    assert.deepEqual((await api(env, 'GET', `/v1/sessions/${empty.name}/transcript?known=-`, undefined, hubHeader)).body, { status: 'unavailable' });
+  } finally { await env.close(); }
+});
+
+test('failed transcript append rebuilds dedupe from the kept file', async () => {
+  const root = await temp(); const env = await service(root);
+  try {
+    const s = await start(env, { thread_id: 'failcopy' }); const session = env.instance.sessions[s.name];
+    const source = path.join(root, 'source'); await write(source, 'one\n'); await env.instance.copyTranscript(session, source);
+    await fs.appendFile(source, 'two\nthree\n');
+    const append = fs.appendFile;
+    fs.appendFile = async (target, data, options) => { if (target === session.transcript_path) { await append(target, 'two\n', options); throw new Error('injected failure'); } return append(target, data, options); };
+    try { await assert.rejects(env.instance.copyTranscript(session, source), /injected failure/); } finally { fs.appendFile = append; }
+    await env.instance.copyTranscript(session, source);
+    assert.equal(await fs.readFile(session.transcript_path, 'utf8'), 'one\ntwo\nthree\n');
+  } finally { await env.close(); }
+});
