@@ -1,6 +1,6 @@
 ---
 slug: chat-transcripts
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -347,3 +347,4 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 - 2026-11-19 — Choice: T2, viewer/test/helpers/app-machine.js: fake-machine option `versionedTranscripts`, which answers empty data as `unavailable`.
 - 2026-11-19 — Choice: T2, viewer/app/hub.js: a failed `machines.json` write keeps the 60 s reservation (no retry within the minute).
 - 2026-11-19 — Choice: T2, tests: the held-lock aside test uses a manual `withThread` gate; machines.json write count is measured by spying on `state.markMachineSeen`.
+- 2026-11-19 — Full validation on f05c3cbb: machine 354/354, node 698/698, browser 1040 passed / 34 skipped. COMPLETION.md written; status verifying.
