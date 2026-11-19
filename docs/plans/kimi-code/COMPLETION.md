@@ -363,3 +363,14 @@ Verification attempt 10 (`0f8b93f`): Claude verifier PASS; GPT verifier FAIL wit
 |-----|------------|----------|------|
 | 1. A binary replaced during the final version check still launched | Collin: live with it (Decision 55); Accepted Risk added | — | — |
 | 2. A thinking-only Kimi log rendered an empty chat | Only user prompts, text parts, tool calls and tool results count as recognised rows | `viewer/app/chat.js:214` | `viewer/test/app-kimi-hub.test.js:27-29` |
+
+Validation on the merged branch at `e7d0f25`:
+
+```
+bash machine/test/run.sh            # tests 207, pass 207, fail 0
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 191 passed, 1 failed — only "real wheelchair directory is byte-identical after suite"
+node --test viewer/test/*.test.js   # in two halves: 439/439 and 208/208
+TZ=UTC npm --prefix viewer run test:browser   # 28 skipped, 774 passed (3.7m)
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```
