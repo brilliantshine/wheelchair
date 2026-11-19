@@ -84,7 +84,7 @@ Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> 
 
 ### 5. Deck popover
 - Clicking a deck (button, keyboard-activatable) opens a popover anchored under it; Escape, clicking outside or clicking the deck again closes it. Only one open at a time. It survives the 5-second refresh (stays open, content updates). The open popover, and any expanded round, is remembered by the name of one member session (the newest at opening); after a refresh it reopens on whichever deck now contains that session (for example after two child decks merge), with the same round expanded if it still exists; if no deck contains it, the popover closes.
-- Reviewer/verifier decks with rounds list rounds newest first: square, "Round N", "<k> reviewers · <text>" (verifiers: "<k> verifiers"). <text> is "1 objection: <first>" when found is 1 and the round's members' reports total exactly one finding line; else "<found> objections" (singular for 1; "problems" for verifiers); "no objections" for 0; "not counted" with no entry. Members without a round are listed as a final group "Other". Shows the latest 5 rounds, then a "Show all N rounds" button that expands in place.
+- Reviewer/verifier decks with rounds list rounds newest first: square, "Round N", "<k> reviewers · <text>" (verifiers: "<k> verifiers"). <text> is "1 objection: <first>" when found is 1 and the round's members' reports total exactly one finding line; else "<found> objections" (singular for 1; "problems" for verifiers); "no objections" for 0; "not counted" with no entry. A round whose entry has `clean: true` and found > 0 appends " · none serious" (a clean round can still hold minor objections, so its square may be yellow or worse while the title says "last round clean"; that is intended). Members without a round are listed as a final group "Other". Shows the latest 5 rounds, then a "Show all N rounds" button that expands in place.
 - Opening a round lists its agents (title, finished time); each is selectable exactly like a box: sets `?agent=` and shows that agent in the right panel. The deck containing the selected agent is drawn selected.
 - Other decks list their agents newest first, latest 5 then "Show all N agents", each selectable the same way.
 - Works at phone width (popover fits the viewport width).
@@ -220,7 +220,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 5 — 2026-11-18
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude; mechanics: (no provider constraint, intent start was waiting); cross-family: pending.
 
 **Changed since Round 4:**
 - IDEA.md example and Constraint now say "last round clean" (Decision 13).
@@ -230,6 +230,7 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | "last round clean" next to a yellow/orange square looks contradictory | upheld | §5 popover row appends " · none serious" for clean rounds with minor objections; stated as intended |
 
 ## Prior Work
 
