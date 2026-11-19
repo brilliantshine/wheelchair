@@ -1,6 +1,6 @@
 ---
 slug: lighter-server
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -605,3 +605,4 @@ Accepted then: a SIGKILL at the instant a tmux client is launching a server can 
 - 2026-11-19 — Supersedes the premise of #51: a cache entry is reused only when its file's mtime and ctime were more than 2 s older than the moment it was cached (`SETTLE_MS`), because timestamp ticks are coarse; a file changed within that window is re-read on the next call.
 - 2026-11-19 — R1-T1 accepted (band: scout): scout found no deviations; re-ran `node --test viewer/test/*.test.js` on the worker branch: 694 pass, 0 fail.
 - 2026-11-19 — Verification attempt 2 on 8c187a2: Claude verifier PASS, GPT verifier PASS. Installer suite's live `~/.wheelchair` comparison fails when an agent writes there mid-run (environment, not this branch).
+- 2026-11-19 fresh baseline before install (old code): hub up about 2 h, 23.3 CPU-seconds per 60 s, RSS 1.1 GB rising; about 7 agent CLIs live; Collin's open tabs not controlled (likely this thread on his phone).
