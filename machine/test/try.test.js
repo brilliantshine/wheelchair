@@ -143,3 +143,65 @@ test('a second write while one runs refuses at once and Status hides index.lock'
   assert.equal(second.reason, 'A switch is already running'); assert.equal(second.status.state, 'busy'); assert.equal(second.status.index_lock, null);
   const status = await f.done(); assert.equal(status.last.outcome, 'success');
 });
+test('ignored file in the way stays nothing moved with its path listed and file intact', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, 'collision'), 'thread'); f.git('add', 'collision'); f.git('commit', '-m', 'add collision'); f.git('switch', 'main');
+  await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'collision\n'); await fs.writeFile(path.join(f.repo, 'collision'), 'mine');
+  await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, 'nothing-moved'); assert.match(status.last.reason, /collision/); assert.equal(await fs.readFile(path.join(f.repo, 'collision'), 'utf8'), 'mine');
+});
+test('a pre-switch scan timing out writes refused in last with no pending', async () => {
+  const f = await tryFixture(); const original = f.instance.runGit.bind(f.instance);
+  f.instance.runGit = (folder, args, timeout) => args.includes('status') ? Promise.resolve({ code: 'killed', stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }) : original(folder, args, timeout);
+  await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, 'refused'); assert.match(status.last.reason, /too long/); assert.equal((await f.instance.read(f.repo)).pending, null);
+});
+test('Status lock generation check does not publish interruption across a switch', async () => {
+  const f = await tryFixture(); const record = await f.instance.read(f.repo); record.identity = f.instance.identity(f.repo); record.pending = { from: f.instance.head(f.repo) }; await f.instance.write(f.repo, record);
+  const read = f.instance.read.bind(f.instance); f.instance.read = async folder => { const value = await read(folder); f.instance.acquire(folder); f.instance.release(folder); return value; };
+  assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).state, 'busy');
+});
+test('tracked and staged rename changes are listed and untouched', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  f.git('mv', 'file', 'renamed'); await fs.writeFile(path.join(f.repo, 'renamed'), 'mine');
+  await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, 'refused'); assert.deepEqual(status.last.files.sort(), ['file', 'renamed']); assert.equal(await fs.readFile(path.join(f.repo, 'renamed'), 'utf8'), 'mine');
+});
+test('Status for the wheelchair clone returns refused', async () => {
+  const path = require('node:path'); const f = await tryFixture(); f.instance.root = path.join(f.repo, 'wheelchair');
+  const status = await f.instance.handle({ ...f.request, action: 'status' }); assert.match(status.refused, /runs wheelchair itself/);
+});
+test('POST /v1/try requires the hub secret and validates inputs', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const http = require('node:http'); const { MachineService } = require('../service');
+  const f = await tryFixture(); const secret = path.join(f.root, 'secret'); await fs.writeFile(secret, 'correct-secret');
+  const machine = new MachineService({ stateDir: path.join(f.root, 'state') }); machine.config.secret_file = secret;
+  const server = http.createServer((req, res) => machine.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const call = async (body, headers = {}) => fetch(`http://127.0.0.1:${server.address().port}/v1/try`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+    assert.equal((await call(f.request, { 'x-wheelchair-session-token': 'bad' })).status, 401);
+    const headers = { 'x-wheelchair-machine-secret': 'correct-secret' };
+    assert.equal((await call({ ...f.request, thread_id: 'bad' }, headers)).status, 422);
+    const response = await call({ ...f.request, action: 'status' }, headers); assert.equal(response.status, 200); assert.equal((await response.json()).target_available, true);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+test('required smudge filter failing on a first Try records interruption across reload', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=broken\n'); f.git('add', '.gitattributes'); f.git('commit', '-m', 'require filter'); f.git('switch', 'main');
+  f.git('config', 'filter.broken.smudge', 'exit 1'); f.git('config', 'filter.broken.required', 'true');
+  await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.state, 'interrupted'); assert.equal(status.last.outcome, 'interrupted');
+  const reload = new TryService({ stateDir: f.instance.stateDir, root: f.instance.root, projects: f.instance.projects });
+  const again = await reload.handle({ ...f.request, action: 'status' }); assert.equal(again.state, 'interrupted'); assert.ok(again.earlier_branch);
+});
+test('folder replaced during a trial shows identity mismatch', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await f.instance.handle(f.request); await f.done();
+  await fs.rename(path.join(f.repo, '.git'), path.join(f.repo, '.git-original'));
+  const { spawnSync } = require('node:child_process'); const other = path.join(f.root, 'replacement'); assert.equal(spawnSync('git', ['init', other]).status, 0);
+  await fs.writeFile(path.join(f.repo, '.git'), `gitdir: ${path.join(other, '.git')}\n`);
+  const status = await f.instance.handle({ ...f.request, action: 'status' }); assert.equal(status.state, 'mismatch'); assert.match(status.refused, /no longer the copy/);
+});
+test('same thread target advances and Status offers newest', async () => {
+  const f = await tryFixture(); await f.instance.handle(f.request); await f.done();
+  const target = f.git('rev-parse', 'wc/0123456789ab'); const tree = f.git('rev-parse', `${target}^{tree}`);
+  const { spawnSync } = require('node:child_process'); const commit = spawnSync('git', ['-C', f.repo, 'commit-tree', tree, '-p', target, '-m', 'newest'], { encoding: 'utf8' }); assert.equal(commit.status, 0, commit.stderr);
+  f.git('update-ref', 'refs/heads/wc/0123456789ab', commit.stdout.trim());
+  assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).newest, true);
+  await f.instance.handle(f.request); assert.equal((await f.done()).active_commit, commit.stdout.trim());
+});

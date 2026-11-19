@@ -12,6 +12,7 @@ The secret is never inherited by a tmux session.
 | `POST /v1/uploads?thread_id=<id>&name=<filename>` | hub | Streams a raw file up to 25 MiB into the writable lead thread’s uploads directory; returns `201 {path}`. Refuses a closed or unwritable thread with 409, and an oversized file with 413. `&vouched=1` (always sent by the hub, which has already checked the thread is open with a live lead) admits the thread even with no lead session here yet, as when its lead is waiting for room or starting. A thread whose archive this service finished (uploads removed) is refused either way; one whose archive was cut short by a rebase or a failed removal is not. |
 | `GET /v1/uploads/<thread-id>/<file>` | hub | Streams a stored file, with image MIME types for PNG, JPEG, GIF and WebP; other files are octet-stream attachments. Sends `X-Content-Type-Options: nosniff`. |
 | `POST /v1/archive` | hub | `{ "thread_id": "…" }`; stop the thread's sessions, locally commit or retain its service-created worktrees as appropriate, remove clean worktrees, and forget its sessions. A session whose worktree is retained stays as a non-running `archived_pending` record so a later archive can remove it after the problem is resolved. Returns `200 { "stopped": [names], "committed": [{ "worktree", "commit" }], "removed": [paths], "kept": [{ "worktree", "reason" }], "uploads_removed": true|false|null, "uploads_error"?: "…" }`. Uploads are removed unless a rebase is in progress (null); false and the error indicate removal failed. If a fatal stop is still unconfirmed, the response has `pending: true` and `pending_sessions: [names]` and omits `uploads_removed`; uploads, session records and worktrees remain for an archive retry. |
+| `POST /v1/try` | hub | Checkout trial actions; see [Try actions](#try-actions). |
 | `POST /v1/handoff` | hub | Handoff git, ownership and session operations; see [Handoff actions](#handoff-actions). |
 | `DELETE /v1/sessions/:name` | hub | Stop a managed session. A confirmed fatal stop replies `200 { ok: true, end_reason }`. |
 | `GET /v1/sessions/:name/pane` | hub | Current pane text, with its color escape codes. `?history=<n>` (0–2000) adds the last n lines of scrollback (`capture-pane -S -<n>`); anything else is 400. |
@@ -122,3 +123,11 @@ its session and worktree until the stop is confirmed.
 ## Project tools
 
 `POST /v1/project-tools/read`, `/v1/project-tools/save`, and `/v1/project-tools/remove-key` use machine-secret authentication. Request and response shapes are documented in [the project tools contract](../docs/plans/project-tools-screen/API.md#machine-http-routes-machine-secret-like-the-other-v1-routes).
+
+## Try actions
+
+`POST /v1/try` is hub-secret only. Its body is `{action, thread_id, project, version?, kept?}`; action is `status`, `try`, `back`, `dismiss`, or `forget`, and `thread_id` is twelve lowercase hex characters. The project must pass `/v1/projects?check=...`. Back, dismiss and forget require `version`; only forget accepts and requires `kept`. Invalid input returns `422 {error}`.
+
+Status returns `{version, state, active_thread_id, active_commit, target_available, newest, refused, earlier_branch, files, files_count, index_lock, last, kept}`. It reads metadata only; it never scans the working tree. States are `mismatch`, `busy`, `interrupted`, `stale`, `moved`, `trying-this`, `trying-other`, and `none`. File lists are capped at 50 with a total count. Each kept entry carries its ref, label, thread ID, date, `missing`, and `old_identity` (and optionally branch).
+
+Try returns `{accepted: true, status}` once its folder lock is held and finishes in the background; Status exposes its result in `last`. A refusal returns `{accepted: false, reason, status}`. Back, dismiss and forget are not built yet and return that refusal with reason `Not built yet`.
