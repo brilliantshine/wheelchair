@@ -19,6 +19,14 @@ test('Kimi transcript displays human, tool and reply while hiding role and think
   assert.deepEqual(transcriptItems('kimi', sample, {}, 'session'), []);
   assert.equal(lastAssistantText('kimi', sample, 0), 'done');
   assert.match(transcriptItems('kimi', '{"type":"other"}', {})[0].text, /Couldn't read this Kimi Code transcript/);
+  const thinkingOnly = lines([
+    {type:'metadata', sessionId:'s'},
+    {type:'context.append_loop_event', event:{type:'content.part', part:{type:'think', text:'thinking'}}},
+    {type:'context.append_loop_event', event:{type:'content.part', part:{type:'think', text:'more thinking'}}},
+  ]);
+  assert.deepEqual(transcriptItems('kimi', thinkingOnly, {}), [
+    {type:'notice', text:"Couldn't read this Kimi Code transcript", at:new Date(0).toISOString()},
+  ]);
 });
 
 test('Kimi report selects a turn and orders the last step parts by block', () => {

@@ -211,7 +211,7 @@ function parseKimi(raw, thread, sessionName) {
     } else if (row.type === 'context.append_loop_event') {
       const event = row.event || {};
       if (!['content.part', 'tool.call', 'tool.result'].includes(event.type)) continue;
-      recognised = true;
+      if (event.type !== 'content.part' || event.part?.type === 'text') recognised = true;
       if (!turns.length) continue;
       if (event.type === 'content.part' && event.part?.type === 'text') {
         let reply = steps.get(event.stepUuid);
