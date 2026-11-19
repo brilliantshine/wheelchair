@@ -794,7 +794,7 @@
           a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
           const actions = el('div', 'actions'); actions.appendChild(a); box.appendChild(actions);
         }
-        // A card a lead posted stays until it is settled. the user answers it with either
+        // A card a lead posted stays until it is settled. The user answers it with either
         // button, and the lead always replies, so nothing closes silently.
         if (!card.system && !card.answered) {
           const actions = el('div', 'actions');
