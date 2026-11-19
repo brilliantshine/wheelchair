@@ -969,6 +969,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Q2 (light, gpt) dispatched for remediation 11 gap 2 (Decision 57).
+
 - 2026-11-18 — Collin on remediation 11: gap 1 live with it (Decision 56, Accepted Risk); gap 2 fix it (Decision 57).
 
 - 2026-11-18 — Verification attempt 11: Claude PASS, GPT FAIL with 2 gaps (REMEDIATION-11.md), both in repeatedly-fixed areas: sent to the lead.
