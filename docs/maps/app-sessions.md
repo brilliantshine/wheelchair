@@ -3,6 +3,8 @@
 Checked against: `be198998f46768a07d03019a25d1d4fd6890bf71` (origin/main)
 Files covered: `viewer/app/sessions.js`, `viewer/app/threads.js`, `viewer/app/cards.js`, `machine/service.js`
 
+> Lead-chat paths rechecked against `1ee9ad1487d2a3f8b6ceda7f73cf7218657f52c2`; see [lead-chat/MAP.md](../plans/lead-chat/MAP.md). Other claims retain their historical checked commit.
+
 > Screen and archive paths were rechecked at `e4117bdcacf06f2a3c73dd22d8af8d8086cb00e3`; see [agent-screens.md](agent-screens.md). Other historical coverage keeps its original checked commit.
 
 > Local-project paths rechecked against `4cfa20cd5aafa0418afabb829c9a4c73430a435f` in [local-project-runtime](local-project-runtime.md); other contents retain the historical checked-against commit above.

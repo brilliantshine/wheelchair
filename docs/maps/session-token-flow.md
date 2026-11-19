@@ -3,6 +3,8 @@
 Checked against: `4251f4607c4565c6164227015baa8dbf7c22cee4` (origin/main)
 Files covered: `viewer/app/sessions.js`, `viewer/app/settings.js`, `viewer/app/wc.js`, `viewer/app/card.js`, `viewer/app/cards.js`, `machine/service.js`, `machine/adapters/claude.js`, `machine/adapters/codex.js`, `machine/adapters/agy.js`, `machine/adapters/common.js`, `protocol/app/AGENTS.md`, `protocol/app/cards.md`, `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/mapper.md`, `protocol/app/worker.md`, `protocol/app/reviewer.md`, `protocol/app/verifier.md`, `protocol/app/aside.md`.
 
+> Lead-chat paths rechecked against `1ee9ad1487d2a3f8b6ceda7f73cf7218657f52c2`; see [lead-chat/MAP.md](../plans/lead-chat/MAP.md). Other claims retain their historical checked commit.
+
 > Local-project paths rechecked against `4cfa20cd5aafa0418afabb829c9a4c73430a435f` in [local-project-runtime](local-project-runtime.md); other contents retain the historical checked-against commit above.
 
 > Historical map: covered files changed since the checked-against commit. The launch, ledger, hooks and approval paths relevant to startup growth were rechecked in `docs/plans/startup-growth-warning/MAP.md` against `c81c022e30a5d3fa11aaf2ed9fbe28b903eab011`; other parts below have not been revalidated for that commit.
