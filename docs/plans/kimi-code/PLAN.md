@@ -957,6 +957,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Remediation 3 complete at `4ad4237`; validation as in COMPLETION.md "Remediation 3" (one known app-quiet timing failure, passing alone; a full viewer re-run stalled under machine load average above 50 from other threads and was re-run in two halves, all passing). Verification attempt 4 next.
+
 - 2026-11-18 — Choice: A1, `machine/adapters/kimi.js:104-116`: box edges (`│`) stripped from each line; titles matched by prefix; an optional `❯` and `1.`-style number before a choice; the plan-review test pane is unframed (scout-found; report said none).
 - 2026-11-18 — A1 accepted (band: scout): machine 201/201 re-run by the sub-lead. Remediation 3 gap 1 fixed per Decision 48.
 

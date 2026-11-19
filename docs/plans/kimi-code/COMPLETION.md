@@ -214,3 +214,24 @@ node --test viewer/test/*.test.js   # tests 644, pass 644, fail 0
 npm --prefix viewer run test:browser   # 28 skipped, 774 passed (3.4m)
 node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ```
+
+### Remediation 3 — 2026-11-18
+
+Verification attempt 3 (`5ffc328`): Claude verifier PASS; GPT verifier FAIL with 3 gaps (`REMEDIATION-3.md`). Two had survived two fix attempts and went to Collin.
+
+| Gap | Resolution | Fixed at | Test |
+|-----|------------|----------|------|
+| 1. Ordinary output mentioning `Run this command?` and `Approve once` raised a permission hold every poll | Collin: fix once more (Decision 48). A prompt counts only when the input box (`│ >`) is gone and a title line is followed by its choice line within the bottom 15 non-empty lines | `machine/adapters/kimi.js:104-116` | `machine/test/kimi.test.js:355-372` (real panels true; mentions with input box false; three-poll service test: no hold for mentions, one hold for the panel, cleared when the input box returns) |
+| 2. A hub Stop confirming a fatal kill lost `end_reason` and the notice | Machine's confirmed fatal stop replies `{ ok: true, end_reason }`; hub Stop records it and sends the same notice as `pollDead` through one helper | `machine/service.js:658`; `viewer/app/sessions.js:683-711` | `machine/test/kimi-turns.test.js:256`; `viewer/test/app-kimi-hub.test.js` (worker, lead, no-reason, no double notice) |
+| 3. Malformed SemVer (`02.6.3`, `2.6.4-01`) passed the floor | Collin: leave it (Decision 49); Accepted Risk added | — | — |
+
+Validation on the merged branch at `4ad4237`:
+
+```
+bash machine/test/run.sh            # tests 201, pass 201, fail 0
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 191 passed, 1 failed — only "real wheelchair directory is byte-identical after suite" (live Codex account files)
+node --test viewer/test/*.test.js   # tests 645: first run 644 pass, 1 fail ("6 message clears debt", app-quiet timing; files untouched by this build); re-run in two halves under heavy machine load: 437/437 and 208/208; app-quiet.test.js alone 18/18 three times
+npm --prefix viewer run test:browser   # 28 skipped, 774 passed (5.2m)
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```
