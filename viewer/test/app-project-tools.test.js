@@ -181,3 +181,17 @@ test('with two lead sessions only the newest lead carries project_tools in the h
     assert.deepEqual(leads[1].project_tools, { problems: ['lead problem'] });
   } finally { await finish(f); }
 });
+
+test('a new thread gets the default project_tools record when the machine start answer has none', async () => {
+  const c = await setup();
+  try {
+    const res = await api(c, '/threads', { method: 'POST', body: { project: '/tmp/ptools-default' } });
+    assert.equal(res.status, 201);
+    // the fake machine's start answer carries no project_tools
+    assert.ok([...c.machine.sessions.values()].every((s) => s.project_tools === undefined));
+    const expected = { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] };
+    assert.deepEqual(res.body.project_tools, expected);
+    const saved = await new Hub({ stateDir: c.state }).thread(res.body.id);
+    assert.deepEqual(saved.project_tools, expected);
+  } finally { await close(c); }
+});
