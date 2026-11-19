@@ -400,3 +400,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-19 — Verification attempt 1 FAIL (claude-opus-5-5, gpt-6.2-sol): 3 distinct gaps, all judged normal use (none rare): RE-RAISE exception lost via T1b brief text, review fixed count can exceed found, lighter-mode plan review sends rare hardening to Deferred. R1 dispatched (light, claude-haiku-5-5).
 - 2026-11-19 — R1 accepted (band: scout): three edits verbatim; lines 286-288 and 319-322 of lead.md wrap raggedly (cosmetic, left).
 - 2026-11-19 — Choice: R1, lead.md:286-288 and 319-322: re-wrap only the touched lines, leaving short orphan lines.
+- 2026-11-19 — Verification attempt 2: claude PASS, gpt FAIL with 2 gaps, both judged normal use: closure sentence swept in upheld findings (T1b brief text), lead's own verifier briefs lacked Accepted Risks. R2 dispatched.
