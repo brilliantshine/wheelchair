@@ -963,6 +963,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 8 at `9f4cc31`: `wc-01b8cb1bf051-verifier-15` (claude) and `wc-01b8cb1bf051-verifier-16` (gpt).
+
 - 2026-11-18 — COMPLETION.md "Remediation 7" added. Verification attempt 8 next.
 
 - 2026-11-18 — Collin on remediation 7 gap 1: stop here (Decision 53, Accepted Risk). Remediation 7 settled.
