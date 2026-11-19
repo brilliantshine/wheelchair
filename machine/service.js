@@ -629,10 +629,10 @@ class MachineService {
         if (Object.keys(env).length) {
           const envDir = path.join(this.stateDir, 'session-env');
           await mkdir(envDir);
-          const file = path.join(envDir, `${name}.sh`);
-          await fsp.writeFile(file, Object.entries(env).map(([key, value]) => `export ${key}=${shellQuote(value)}\n`).join(''), { mode: 0o600 });
+          const file = path.join(envDir, `${name}.json`);
+          await fsp.writeFile(file, JSON.stringify(env), { mode: 0o600 });
           await fsp.chmod(file, 0o600);
-          wrapper = ['sh', '-c', '. "$0" && rm -f -- "$0" && exec "$@"', file];
+          wrapper = [process.execPath, path.join(__dirname, 'lib', 'env-launch.js'), file];
         }
       } catch (error) { console.error("the key store on this machine can't be read"); }
     }
