@@ -114,3 +114,12 @@ Second grep at `bbdf0fe5`, hit counts per file. Every hit is either a compatibil
 |------|------|-------|
 | T1 | standard | gpt-6.1-terra |
 | Post-merge wording fixes | sub-lead | claude-opus-5-5 |
+
+## Remediation 1
+
+Verification attempt 1 (claude-opus-5-5, commit `1877e9f6`) passed every suite and grep but found one gap. The comment at `test-support/smoke/live.js:44-46` (S5) still used "his" and "His" for the user, and a sentence started in lowercase. See `REMEDIATION-1.md`.
+
+- R1-1 (light, gpt-6-luna) replaced the three lines: "The user's choice …", "… even when the user's accounts …" and "The user's real Settings …". No other file changed.
+- Evidence: `node --check test-support/smoke/live.js` passes, and the scout confirmed the diff matches the brief character for character.
+- The sub-lead found no other owner pronouns in comments under `viewer/` or `test-support/`.
+- The suites were not re-run: the change touches only a comment in a smoke script that no suite loads.
