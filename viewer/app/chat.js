@@ -208,7 +208,61 @@ function parseAgy(raw, thread, sessionName) {
   if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
-const PARSERS = { claude: parseClaude, codex: parseCodex, agy: parseAgy };
+function parseKimi(raw, thread, sessionName) {
+  const turns = [], calls = new Map(), steps = new Map();
+  let recognised = false;
+  const at = (row) => Number.isFinite(row.time) ? new Date(row.time).toISOString() : new Date(0).toISOString();
+  for (const row of transcriptRows(raw)) {
+    if (row.type === 'turn.prompt' && row.origin?.kind === 'user') {
+      recognised = true;
+      turns.push({ human: unwrap(textOf(row.input)), replies: [], at: at(row) });
+    } else if (row.type === 'context.append_loop_event') {
+      const event = row.event || {};
+      if (!['content.part', 'tool.call', 'tool.result'].includes(event.type)) continue;
+      if (event.type !== 'content.part' || event.part?.type === 'text') recognised = true;
+      if (!turns.length) continue;
+      if (event.type === 'content.part' && event.part?.type === 'text') {
+        let reply = steps.get(event.stepUuid);
+        if (!reply) {
+          reply = { type: 'assistant', text: '', at: at(row) };
+          steps.set(event.stepUuid, reply);
+          turns.at(-1).replies.push(reply);
+        }
+        reply.text += event.part.text || '';
+      } else if (event.type === 'tool.call') {
+        const tool = { type: 'tool', text: event.name || 'tool call', at: at(row), detail: toolDetail(event.args) };
+        turns.at(-1).replies.push(tool);
+        if (event.toolCallId) calls.set(event.toolCallId, { item: tool, input: event.args });
+      } else if (event.type === 'tool.result') foldResults(calls, [[event.toolCallId, event.result?.output]]);
+    }
+  }
+  if (!recognised) return [{ type: 'notice', text: "Couldn't read this Kimi Code transcript", at: new Date(0).toISOString() }];
+  if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
+  return turns.flatMap((turn) => renderTurn(turn, thread));
+}
+
+function kimiReport(raw, turnId) {
+  const turns = [];
+  let turn;
+  for (const row of transcriptRows(raw)) {
+    if (row.type === 'turn.prompt' && row.origin?.kind === 'user') {
+      turn = { id: row.turnId, steps: new Map() };
+      turns.push(turn);
+    } else if (row.type === 'turn.ended' && row.turnId === turn?.id && (row.agentId === undefined || row.agentId === 'main')) {
+      turn = null;
+    } else if (turn && row.type === 'context.append_loop_event') {
+      const event = row.event || {};
+      if (event.type === 'step.begin' && !turn.steps.has(event.uuid)) turn.steps.set(event.uuid, []);
+      if (event.type === 'content.part' && event.part?.type === 'text' && turn.steps.has(event.stepUuid)) {
+        turn.steps.get(event.stepUuid).push({ block: event.block, text: event.part.text || '' });
+      }
+    }
+  }
+  const selected = turnId == null ? turns.at(-1) : turns.find((item) => item.id === turnId);
+  const parts = selected && [...selected.steps.values()].filter((step) => step.length).at(-1);
+  return parts ? parts.sort((a, b) => a.block - b.block).map((part) => part.text).join('') : '';
+}
+const PARSERS = { claude: parseClaude, codex: parseCodex, agy: parseAgy, kimi: parseKimi };
 function transcriptItems(cli, raw, thread, sessionName) {
   const parser = Object.hasOwn(PARSERS, cli) && PARSERS[cli];
   return parser ? parser(raw, thread, sessionName) : [{ type: 'notice', text: `This session's CLI (${cli}) has no transcript reader.`, at: new Date(0).toISOString() }];
@@ -239,7 +293,8 @@ const ASSISTANT_CONTENT = {
   codex: (row) => { const payload = row.payload || row; return row.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant' ? payload.content : null; },
   agy: (row) => row.type === 'PLANNER_RESPONSE' && typeof row.content === 'string' ? row.content : null,
 };
-function lastAssistantText(cli, raw) {
+function lastAssistantText(cli, raw, turnId) {
+  if (cli === 'kimi') return kimiReport(raw, turnId);
   const content = Object.hasOwn(ASSISTANT_CONTENT, cli) && ASSISTANT_CONTENT[cli];
   if (!content) return '';
   let last = '';

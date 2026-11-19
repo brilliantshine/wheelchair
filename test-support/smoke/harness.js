@@ -96,24 +96,25 @@ function assertIsolated(paths, ports, dir) {
   }
   for (const p of Object.values(ports)) assert(Number.isInteger(p) && p > 0 && p <= 65535 && p !== 7373 && p !== 7374, `unsafe port: ${p}`);
 }
-async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSettings = null } = {}) {
+async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSettings = null, recordEvents = false, modelPins = null } = {}) {
   assert(['smoke', 'live'].includes(mode));
   assert(Number.isInteger(slowOriginSeconds) && slowOriginSeconds >= 0);
   const dir = runDir();
   const paths = Object.fromEntries(['home', 'hub-state', 'hub-cache', 'machine-state', 'tmux', 'origin.git', 'seed', 'clone'].map(key => [key.replace(/-([a-z])/g, (_, c) => c.toUpperCase()).replace('.git', ''), path.join(dir, key)]));
   const secretFile = path.join(dir, 'secret');
   const ports = [];
-  while (ports.length < 3) { const p = await port(); if (![7373, 7374, ...ports].includes(p)) ports.push(p); }
-  const [hubPort, machinePort, proxyPort] = ports;
+  while (ports.length < 4) { const p = await port(); if (![7373, 7374, ...ports].includes(p)) ports.push(p); }
+  const [hubPort, machinePort, proxyPort, eventPort] = ports;
   const env = { ...process.env, TMUX_TMPDIR: paths.tmux };
   for (const key of Object.keys(env)) if (key.startsWith('WHEELCHAIR_') || key === 'TMUX' || key === 'TMUX_PANE' || (mode === 'smoke' && ['CLAUDE_CONFIG_DIR', 'CODEX_HOME'].includes(key))) delete env[key];
   if (mode === 'smoke') env.HOME = paths.home;
+  if (modelPins !== null) { env.WHEELCHAIR_MODELS = path.join(dir, 'models'); await fsp.writeFile(env.WHEELCHAIR_MODELS, modelPins); }
   const hubUrl = `http://127.0.0.1:${hubPort}/wheelchair`, machineUrl = `http://127.0.0.1:${machinePort}`;
   const hubArgv = ['viewer/server.js', '--port', String(hubPort), '--cache-root', paths.hubCache, '--state-dir', paths.hubState];
-  const machineArgv = ['machine/service.js', '--stateDir', paths.machineState, '--port', String(machinePort), '--host', '127.0.0.1', '--hubUrl', hubUrl, '--secretFile', secretFile];
+  const machineArgv = ['machine/service.js', '--stateDir', paths.machineState, '--port', String(machinePort), '--host', '127.0.0.1', '--hubUrl', recordEvents ? `http://127.0.0.1:${eventPort}/wheelchair` : hubUrl, '--secretFile', secretFile];
   const hubEnv = { ...env, WHEELCHAIR_NO_BROWSER: '1' };
   const resolved = effectivePaths({ hubArgv, machineArgv, env });
-  assertIsolated({ ...resolved.paths, tmux: paths.tmux, secretFile, ...(mode === 'smoke' ? { home: paths.home } : {}) }, { ...resolved.ports, proxy: proxyPort }, dir);
+  assertIsolated({ ...resolved.paths, tmux: paths.tmux, secretFile, ...(mode === 'smoke' ? { home: paths.home } : {}) }, { ...resolved.ports, proxy: proxyPort, events: eventPort }, dir);
   for (const key of ['hubState', 'hubCache', 'machineState']) assert.equal(resolved.paths[key], paths[key], `${key} differs from intended path`);
   for (const p of [paths.home, paths.hubState, paths.hubCache, paths.machineState, paths.tmux, paths.seed]) await fsp.mkdir(p, { recursive: true });
   await fsp.writeFile(secretFile, 'harness-machine-secret\n', { mode: 0o600 });
@@ -163,6 +164,19 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
       upstream.end(payload);
     });
   });
+  const events = [];
+  const eventProxy = http.createServer((req, res) => {
+    const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => {
+      const payload = Buffer.concat(chunks);
+      const upstream = http.request({ host: '127.0.0.1', port: hubPort, path: req.url, method: req.method, headers: req.headers }, response => {
+        if (req.url === '/wheelchair/api/machine/events' && response.statusCode >= 200 && response.statusCode < 300) {
+          try { events.push({ ...JSON.parse(payload), received_at: Date.now() }); } catch {}
+        }
+        res.writeHead(response.statusCode, response.headers); response.pipe(res);
+      });
+      upstream.on('error', error => { if (!res.headersSent) res.writeHead(502); res.end(error.message); }); upstream.end(payload);
+    });
+  });
   const children = [];
   function start(args, childEnv) {
     const child = spawn(process.execPath, args, { cwd: root, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -171,10 +185,11 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
   }
   const tmux = (...args) => spawnSync('tmux', args, { env, encoding: 'utf8' });
   const matchPaths = { tmux: paths.tmux, ...(mode === 'smoke' ? { home: paths.home } : {}) };
-  onCleanup(() => { tmux('kill-server'); proxy.close(); waitForRunProcesses(dir, matchPaths); });
+  onCleanup(() => { tmux('kill-server'); proxy.close(); eventProxy.close(); waitForRunProcesses(dir, matchPaths); });
   let teardown;
   try {
     await new Promise((resolve, reject) => { proxy.once('error', reject); proxy.listen(proxyPort, '127.0.0.1', resolve); });
+    if (recordEvents) await new Promise((resolve, reject) => { eventProxy.once('error', reject); eventProxy.listen(eventPort, '127.0.0.1', resolve); });
     const hub = start(hubArgv, hubEnv);
     const machine = start(machineArgv, env);
     await waitFor(async () => { if (hub.exitCode !== null || machine.exitCode !== null) throw new Error(`process exited: ${hub.output()} ${machine.output()}`); return (await fetch(`${hubUrl}/whoami`)).ok && (await request(`${machineUrl}/v1/sessions`, 'GET', undefined, { [header]: 'harness-machine-secret' })); });
@@ -187,6 +202,7 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
       tmux('kill-server');
       const privateTmuxGone = tmux('list-sessions').status !== 0;
       await new Promise(resolve => proxy.close(resolve));
+      if (recordEvents) await new Promise(resolve => eventProxy.close(resolve));
       for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       await Promise.all(children.map(child => child.exitCode !== null || child.signalCode !== null ? null : new Promise(resolve => child.once('exit', resolve))));
       const leftoverProcesses = waitForRunProcesses(dir, matchPaths);
@@ -195,12 +211,12 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
     }
     const config = JSON.parse(await fsp.readFile(path.join(resolved.paths.machineState, 'machine.json'), 'utf8'));
     assert.equal(config.port, resolved.ports.machine, `machine.json port: expected ${resolved.ports.machine}, got ${config.port}`);
-    assert.equal(config.hub_url, hubUrl, `machine.json hub_url: expected ${hubUrl}, got ${config.hub_url}`);
+    assert.equal(config.hub_url, recordEvents ? `http://127.0.0.1:${eventPort}/wheelchair` : hubUrl, `machine.json hub_url: expected ${hubUrl}, got ${config.hub_url}`);
     if (mode === 'live') {
       const list = await agent({ action: 'list' });
       assert(list.sessions.some(s => s.name === sublead && s.role === 'sub-lead' && s.live && s.status === 'ready'), `seeded sub-lead missing from agent list: ${JSON.stringify(list)}`);
     }
-    return { dir, paths, ports: { hub: hubPort, machine: machinePort, proxy: proxyPort }, env, threadId, sublead, token, counts, statuses, callHub, callMachine, agent, tmux, waitFor, teardown, git, setOriginSlow };
+    return { dir, paths, ports: { hub: hubPort, machine: machinePort, proxy: proxyPort }, env, threadId, sublead, token, counts, statuses, events, callHub, callMachine, agent, tmux, waitFor, teardown, git, setOriginSlow };
   } catch (error) { if (teardown) await teardown(); else cleanupNow(); throw error; }
 }
 module.exports = { createHarness, waitFor, effectivePaths, assertIsolated, runProcesses, waitForRunProcesses };

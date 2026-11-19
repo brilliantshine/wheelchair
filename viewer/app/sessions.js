@@ -157,6 +157,7 @@ function newSessionName(thread, role) {
 // Spec §2: a requested worker effort, checked once the provider is known and before preflight.
 function checkEffort(settings, role, cli, effort) {
   if (role !== 'worker' || effort === undefined) return;
+  if (PROVIDERS[providerOf(cli)]?.effort === false) return;
   if (cli === 'codex' && effort === 'max') throw appError(400, "GPT's highest effort is xhigh");
   const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
   const ceiling = settings.escalation.max_effort;
@@ -295,7 +296,9 @@ async function startSession(hub, thread, input) {
   if (title) session.title = title;
   if (typeof input.brief === 'string') session.brief = input.brief;
   if (!input._waiting) thread.sessions.push(session);
-  Object.assign(session, { live: true, model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
+  // A provider without an effort setting (Kimi) never carries one, even when the start request did.
+  const sessionEffort = PROVIDERS[selection.provider].effort ? (input.effort || resolved.effort || null) : null;
+  Object.assign(session, { live: true, model: resolved.model, effort: sessionEffort, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
   if (selection.note) session.note = selection.note;
   delete session.pending_start; delete session.waiting_until; delete session.waiting_reason; delete session.waiting_provider;
   if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
@@ -318,7 +321,7 @@ async function startSession(hub, thread, input) {
       branch: input.branch,
       brief: input.brief || '',
       model: resolved.model,
-      ...((input.effort || resolved.effort) ? { effort: input.effort || resolved.effort } : {}),
+      ...(sessionEffort ? { effort: sessionEffort } : {}),
       permission_mode: settings.permission_mode,
       codex_mode: settings.codex_mode,
       role_layers: layers.text,
@@ -342,7 +345,7 @@ async function startSession(hub, thread, input) {
   const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue };
   Object.assign(session, started, {
     ...identity,
-    model: resolved.model, effort: input.effort || resolved.effort || null,
+    model: resolved.model, effort: sessionEffort,
     token,
     provider: selection.provider,
     account: selection.account.id,
@@ -376,7 +379,7 @@ async function deliverReport(hub, thread, target, payload) {
   if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
   const chat = require('./chat.js');
   let text = String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
-  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target));
+  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target), payload.turn_id);
   if (!text) return;
   const commit = text.match(/^COMMIT:\s*([0-9a-f]{7,40})/m)?.[1];
   addCard(
@@ -509,6 +512,10 @@ async function event(hub, payload) {
   }
   const deliveryTargets = new Set();
   const type = payload.type;
+  if (['turn-ended', 'turn-failed', 'limit-hit'].includes(type) && payload.turn_id != null) {
+    if (target.last_turn_id != null && payload.turn_id <= target.last_turn_id) return { ok: true, duplicate: true };
+    target.last_turn_id = payload.turn_id;
+  }
   if (payload.reading) {
     await usage.record(hub, { ...payload.reading, machine: thread.machine });
   }
@@ -551,9 +558,9 @@ async function event(hub, payload) {
     target.turn_ended_at = new Date().toISOString();
     for (const key of ['cli_session_id', 'codex_thread_id', 'agy_conversation_id']) if (payload[key]) target[key] = payload[key];
     if (target.role === 'lead') for (const card of thread.cards) if (card.kind === 'needs' && card.title === "The lead's turn failed" && !card.answered) card.answered = true;
-    const reportTarget = limitEnded || Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
+    const reportTarget = payload.interrupted || limitEnded || Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
     if (reportTarget) deliveryTargets.add(reportTarget.name);
-    quiet.arm(hub, target);
+    if (!payload.interrupted) quiet.arm(hub, target);
   }
   const permission = type === 'prompt' && payload.notification_type === 'permission_prompt';
   if (type === 'stuck' || permission) {
@@ -674,12 +681,19 @@ async function stopSession(hub, thread, caller, name) {
 // The caller holds the thread lock. Authorization is checked by sessionRequest; export
 // stops its own sessions through the same lifecycle without needing a session caller.
 async function stopManagedSession(hub, thread, target) {
-  if (target.status !== 'waiting') await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
+  const wasLive = target.live === true;
+  let result;
+  if (target.status !== 'waiting') {
+    result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
+    if (result?.pending) return result;
+    if (result?.end_reason) target.end_reason = result.end_reason;
+  }
   target.ended_at = new Date().toISOString();
   endTurn(target, target.ended_at);
   target.live = false;
   target.status = 'stopped';
   quiet.reset(thread, target, true);
+  if (result?.end_reason && wasLive) await notifyEnded(hub, thread, target);
   await hub.save(thread);
   return { ok: true };
 }
@@ -693,6 +707,26 @@ function liveNames(listed) {
       .filter((item) => item.running === true || (item.running === undefined && item.status !== 'stopped'))
       .map((item) => item.name),
   );
+}
+
+async function notifyEnded(hub, thread, target) {
+  if (target.started_by) {
+    const text = `[wc:from app] your session ${target.name} ended${target.end_reason ? `: ${target.end_reason}` : ''}`;
+    await enqueue(hub, thread, target.started_by, text, 'app');
+    if (target.end_reason) {
+      addCard(thread, { kind: 'needs', title: 'Session ended', body: `${target.name} ended: ${target.end_reason}. Its starter has been told.` }, { system: true });
+    }
+  } else if (target.role === 'lead') {
+    addCard(
+      thread,
+      {
+        kind: 'needs',
+        title: 'Sessions ended',
+        body: `The lead session ended${target.end_reason ? `: ${target.end_reason}` : ''}. Restart it to continue.`,
+      },
+      { system: true },
+    );
+  }
 }
 
 async function pollDead(hub) {
@@ -728,34 +762,23 @@ async function pollDead(hub) {
         // The early listing was taken before this thread's lock, and the wait for the lock can
         // be long; a session started meanwhile is absent from it. Ask again under the lock, where
         // no start for this thread can be in flight, and act only on that answer.
-        let fresh;
+        let fresh, confirming;
         try {
-          fresh = liveNames(await hub.call(machine, '/v1/sessions', 'GET'));
+          confirming = await hub.call(machine, '/v1/sessions', 'GET');
+          fresh = liveNames(confirming);
         } catch {
           if (changed) await hub.save(thread);
           return;
         }
         for (const target of missing(thread, fresh)) {
+          target.end_reason = confirming.find((item) => item.name === target.name)?.end_reason;
           target.ended_at = new Date().toISOString();
           endTurn(target, target.ended_at);
           target.live = false;
           target.status = 'ended';
           quiet.reset(thread, target, true);
           changed = true;
-          if (target.started_by) {
-            const text = `[wc:from app] your session ${target.name} ended`;
-            await enqueue(hub, thread, target.started_by, text, 'app');
-          } else if (target.role === 'lead') {
-            addCard(
-              thread,
-              {
-                kind: 'needs',
-                title: 'Sessions ended',
-                body: 'The lead session ended. Restart it to continue.',
-              },
-              { system: true },
-            );
-          }
+          await notifyEnded(hub, thread, target);
         }
         if (changed) await hub.save(thread);
       });

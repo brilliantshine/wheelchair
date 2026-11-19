@@ -1,0 +1,147 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { spawnSync } = require('node:child_process');
+const c = require('./common');
+const home = dir => path.resolve(dir || c.home('KIMI_CODE_HOME', '.kimi-code'));
+function resolveCli() {
+  const found = spawnSync('sh', ['-c', 'command -v kimi'], { encoding: 'utf8' });
+  const candidate = found.status === 0 ? found.stdout.trim() : path.join(os.homedir(), '.kimi-code/bin/kimi');
+  try { fs.accessSync(candidate, fs.constants.X_OK); return path.resolve(candidate); } catch { return null; }
+}
+function readConfig(dir) {
+  let text;
+  try { text = fs.readFileSync(path.join(home(dir), 'config.toml'), 'utf8'); }
+  catch (e) { return e.code === 'ENOENT' ? {} : { problem: "Kimi Code's config.toml can't be read" }; }
+  if (text.includes('"""') || text.includes("'''")) return { problem: "Kimi Code's config.toml has multi-line strings wheelchair can't read" };
+  const result = {}; let table = '', depth = 0;
+  // TOML basic strings ("…", with \ escapes) and literal strings ('…', no escapes) hide brackets and #.
+  const scan = (raw, onChar) => {
+    let quote = '', escaped = false;
+    for (let i = 0; i < raw.length; i++) {
+      const char = raw[i];
+      if (quote === '"' && escaped) { escaped = false; continue; }
+      if (quote === '"' && char === '\\') { escaped = true; continue; }
+      if (quote) { if (char === quote) quote = ''; continue; }
+      if (char === '"' || char === "'") { quote = char; continue; }
+      if (onChar(char, i) === false) return;
+    }
+  };
+  const bracketDelta = raw => {
+    let delta = 0;
+    scan(raw, char => { if (char === '#') return false; if (char === '[') delta++; else if (char === ']') delta--; });
+    return delta;
+  };
+  for (const line of text.split(/\r?\n/)) {
+    if (depth > 0) { depth += bracketDelta(line); continue; }
+    const header = line.match(/^\s*\[([^\[\]]+)\]\s*(?:#.*)?$/);
+    if (header) { table = header[1].trim(); continue; }
+    if (/^\s*\[\[/.test(line)) { table = null; continue; }
+    const kv = line.match(/^\s*([\w-]+)\s*=\s*(.*)$/); if (!kv) continue;
+    let raw = kv[2];
+    scan(kv[2], (char, i) => { if (char === '#') { raw = kv[2].slice(0, i); return false; } });
+    const valueDepth = bracketDelta(raw);
+    if (valueDepth > 0) { depth = valueDepth; continue; }
+    let value; try { value = JSON.parse(raw.trim()); } catch { continue; }
+    if (!table && table !== null && kv[1] === 'default_model' && typeof value === 'string') result.default_model = value;
+    if (table === 'providers."managed:kimi-code".oauth' && ['key', 'oauth_host'].includes(kv[1]) && typeof value === 'string') result[kv[1]] = value;
+  }
+  return result;
+}
+function loginStatus(dir) {
+  const isFile = p => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+  const config = readConfig(dir), credentials = path.join(home(dir), 'credentials'); let authenticated = false;
+  if (config.problem) { try { authenticated = fs.readdirSync(credentials).some(f => f.endsWith('.json') && isFile(path.join(credentials, f))); } catch {} }
+  else if (/^oauth\/[A-Za-z0-9._-]+$/.test(config.key || '')) authenticated = isFile(path.join(credentials, `${config.key.slice(6)}.json`));
+  if (config.problem) return { logged_in: false, authenticated, problem: config.problem };
+  let global = false; try { global = new URL(config.oauth_host).hostname === 'auth.kimi.ai'; } catch {}
+  return { logged_in: authenticated && global, authenticated, ...(authenticated && !global ? { problem: "signed in to Kimi's China region; log in again" } : {}) };
+}
+const bindings = new Map();
+function marker(value, name) {
+  if (typeof value === 'string') return value.startsWith('[wc:role]') && value.split(/\r?\n/).includes(`Session: ${name}`);
+  return value && typeof value === 'object' && Object.values(value).some(v => marker(v, name));
+}
+function userPromptText(input) {
+  if (typeof input === 'string') return input;
+  if (Array.isArray(input)) return input.filter(part => part?.type === 'text').map(part => part.text).join('');
+  return '';
+}
+async function findTranscript(session, dir) {
+  if (session.source_transcript) return session.source_transcript;
+  if (bindings.has(session)) return bindings.get(session);
+  const run = (async () => {
+    const root = path.join(home(dir), 'sessions');
+    const dirs = async p => fs.promises.readdir(p, { withFileTypes: true }).catch(() => []);
+    for (const work of await dirs(root)) {
+      if (!work.isDirectory()) continue;
+      for (const id of await dirs(path.join(root, work.name))) {
+        if (!id.isDirectory()) continue;
+        const file = path.join(root, work.name, id.name, 'agents/main/wire.jsonl');
+        let handle;
+        try {
+          handle = await fs.promises.open(file, 'r');
+          const stat = await handle.stat();
+          if (stat.mtimeMs < Date.parse(session.created_at)) continue;
+          const text = await handle.readFile('utf8');
+          const rows = text.split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+          const meta = rows.find(row => row.type === 'metadata');
+          if (!meta) continue;
+          const parseVersion = value => typeof value === 'string' && /^\d+(?:\.\d+)*$/.test(value) ? value.split('.').map(BigInt) : null;
+          const parts = parseVersion(meta.protocol_version);
+          const min = meta.min_protocol_version === undefined ? [1n, 0n] : parseVersion(meta.min_protocol_version);
+          const ceiling = [1n, 5n];
+          let comparison = 0;
+          if (min) for (let i = 0; i < Math.max(min.length, ceiling.length); i++) {
+            const left = min[i] ?? 0n, right = ceiling[i] ?? 0n;
+            if (left !== right) { comparison = left < right ? -1 : 1; break; }
+          }
+          const compatible = parts && parts[0] === 1n && min && comparison <= 0;
+          if (!compatible) {
+            if (rows.some(row => marker(row, session.name))) throw Object.assign(new Error(`Kimi Code's log format changed (protocol ${meta.protocol_version}); update wheelchair`), { kimiFatal: true });
+            continue;
+          }
+          const prompt = rows.find(row => row.type === 'turn.prompt' && row.origin?.kind === 'user');
+          const userText = prompt && userPromptText(prompt.input);
+          if (prompt && userText.startsWith('[wc:role]') && userText.split(/\r?\n/).includes(`Session: ${session.name}`) && !session.source_transcript) {
+            Object.assign(session, { source_transcript: file, kimi_session_id: id.name, kimi_log_id: { dev: stat.dev, ino: stat.ino } });
+            return file;
+          }
+        } catch (error) { if (error.kimiFatal) throw error; }
+        finally { if (handle) await handle.close(); }
+      }
+    }
+    return session.source_transcript || null;
+  })();
+  bindings.set(session, run);
+  try { return await run; } finally { bindings.delete(session); }
+}
+module.exports = {
+  provider: 'kimi', resolveCli, readConfig, loginStatus,
+  loginEnv: dir => ({ KIMI_CODE_HOME: home(dir) }),
+  seed(dir, id) { c.seed(dir, home(), 'AGENTS.md', 'kimi', id); }, prepare() {},
+  loginCommand() { const cli = resolveCli(); if (!cli) throw new Error('Kimi Code is not installed'); return [cli, 'login', '--region', 'global']; }, loginPrompt: null,
+  parseLogin(pane) { const url = pane.match(/Opening browser for Kimi device login:\s*(https?:\/\/\S+)/)?.[1]; const code = pane.match(/paste the URL above and enter code:\s*(\S+)/i)?.[1]; return url && code ? { url, code, wantsCode: false } : null; },
+  loginDone() { return false; },
+  command(input, session, worktree, context) {
+    return { ...(context.tools && context.mcp?.names.length ? { warnings: ["project tools aren't supported on Kimi Code yet; this agent runs without them"] } : {}), argv: [context.kimiExecutable || resolveCli(), session.permission_mode === 'bypass' ? '--auto' : '--yolo', ...(input.model ? ['--model', input.model] : [])] };
+  },
+  firstMessage(input, promptPath, name) { return `[wc:role] Role: ${input.role}\nSession: ${name}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${input.brief || input.first_message || ''}`; },
+  readyText(session, pane) { return /│\s*>/.test(pane) && pane.includes('context:') && !pane.includes('Trust this folder?'); },
+  answerPrompts(session, pane) { if (!pane.includes('Trust this folder?')) return null; if (/❯\s*Trust and continue/.test(pane)) return { step: 'trust', keys: ['Enter'] }; if (/❯\s*Exit/.test(pane)) return { step: 'trust-select', keys: ['Up'] }; return null; },
+  promptText(pane) {
+    if (/│\s*>/.test(pane)) return false;
+    const lines = pane.split('\n').filter(line => line.trim()).slice(-15)
+      .map(line => line.trim().replace(/^[│\s]+|[│\s]+$/g, ''));
+    for (let i = 0; i < lines.length; i++) {
+      const title = lines[i].replace(/^[▶❯]\s*/, '');
+      const plan = title.startsWith('Ready to build with this plan?');
+      if (!plan && !/^(?:Run this command\?|Write this file\?|Apply these edits\?|Stop this task\?)/.test(title) && !/^Approve [^\n?]+\?$/.test(title)) continue;
+      const choice = plan ? /^Approve/ : /^Approve once/;
+      if (lines.slice(i + 1).some(line => choice.test(line.replace(/^(?:[▶❯]\s*)?(?:\d+\.\s*)?/, '')))) return true;
+    }
+    return false;
+  },
+  async findTranscript(session, dir) { return findTranscript(session, dir); }, hookEvent() { return null; }, usageFrom() { return null; },
+};

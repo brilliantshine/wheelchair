@@ -54,10 +54,21 @@ async function machineAccounts(hub) {
       try {
         const status = await Promise.race([hub.call(name, '/v1/status', 'GET', undefined, 3000), new Promise((_, reject) => { const t = setTimeout(() => reject(new Error('timeout')), 3000); t.unref(); })]);
         const accounts = {};
-        if (Array.isArray(status.accounts)) for (const row of status.accounts) accounts[row.id] = Boolean(row.logged_in);
-        else for (const [provider, info] of Object.entries(PROVIDERS)) accounts[`default-${provider}`] = Boolean(status[info.cli]?.logged_in);
-        return [name, { reachable: true, accounts }];
-      } catch { return [name, { reachable: false, accounts: {} }]; }
+        const problems = {};
+        const cliProblem = (cli) => (typeof status[cli]?.problem === 'string' && status[cli].problem ? status[cli].problem : null);
+        if (Array.isArray(status.accounts)) {
+          for (const row of status.accounts) {
+            accounts[row.id] = Boolean(row.logged_in);
+            const text = cliProblem('kimi') && row.cli === 'kimi' ? cliProblem('kimi') : (!row.logged_in && typeof row.problem === 'string' && row.problem ? row.problem : null);
+            if (text) problems[row.id] = text;
+          }
+        } else for (const [provider, info] of Object.entries(PROVIDERS)) {
+          accounts[`default-${provider}`] = Boolean(status[info.cli]?.logged_in);
+          if (provider === 'kimi' && cliProblem('kimi')) problems['default-kimi'] = cliProblem('kimi');
+        }
+        const cliProblems = cliProblem('kimi') ? { kimi: cliProblem('kimi') } : {};
+        return [name, { reachable: true, accounts, problems, cliProblems }];
+      } catch { return [name, { reachable: false, accounts: {}, problems: {}, cliProblems: {} }]; }
     }));
     return Object.fromEntries(entries);
   })();
@@ -96,7 +107,7 @@ async function summary(hub, includeMachines = true, now = Date.now()) {
     const f = forecast(accounts, data.readings || {}, now);
     const below_notify = f.left !== null && f.left < settings.notify_below / 100;
     const ranked = rank(accounts, data.readings || {}, machines, settings, localName, now, data.last_chosen);
-    providers[provider] = { label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
+    providers[provider] = { label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : a.provider === 'kimi' && m.cliProblems?.kimi ? { state: 'problem', text: m.cliProblems.kimi } : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
   }
   return { providers, seen: data.seen || {} };
 }
