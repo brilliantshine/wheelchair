@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const c = require('./common');
+const { serverLabel } = require('../lib/project-mcp');
 const onboarding = ['Choose your color scheme', 'Terms of Service & Data Use', 'Do you trust the contents of this project?', 'Requesting permission for:'];
 module.exports = {
   provider: 'gemini', loginEnv: () => ({}), sessionNameEnv: true,
@@ -29,7 +30,41 @@ module.exports = {
   },
   command(input, session, worktree, context) {
     const settingsPath = path.join(context.stateDir, 'settings', `${session.name}.json`);
-    return { ...(context.tools && context.mcp?.names.length ? { warnings: ["project tools aren't supported on Antigravity yet; this agent runs without them"] } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(session.permission_mode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--mode', 'auto']), ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
+    const servers = {}, warnings = [];
+    if (context.tools && context.mcp) {
+      for (const [name, entry] of Object.entries(context.mcp.servers)) {
+        let reason, translated;
+        if (!/^[A-Za-z0-9_-]+$/.test(name)) reason = 'its name must use only letters, digits, _ and -';
+        else if (entry.type === 'sse') reason = 'uses sse, which Antigravity does not support here';
+        else if (entry.type === 'http') {
+          const headers = entry.headers || {}, names = Object.keys(headers);
+          if (new Set(names.map(key => key.toLowerCase())).size !== names.length) reason = 'has the same header twice';
+          else if ([entry.url, ...names, ...Object.values(headers)].some(value => value.includes('${'))) reason = 'uses ${...} that Antigravity cannot pass through';
+          else translated = { type: 'http', url: entry.url, headers };
+        } else {
+          const env = {}, fields = [entry.command, ...(entry.args || [])];
+          for (const [key, value] of Object.entries(entry.env || {})) {
+            if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && value === '${' + key + '}') continue;
+            fields.push(key, value);
+            Object.defineProperty(env, key, { value, enumerable: true, writable: true, configurable: true });
+          }
+          if (fields.some(value => value.includes('${'))) reason = 'uses ${...} that Antigravity cannot pass through';
+          else translated = { command: entry.command, args: entry.args || [], env };
+        }
+        if (reason) warnings.push({ names: [name], text: `${serverLabel(name)}: skipped on Antigravity: ${reason}` });
+        else Object.defineProperty(servers, name, { value: translated, enumerable: true, writable: true, configurable: true });
+      }
+    }
+    let toolFiles;
+    if (Object.keys(servers).length) {
+      const dir = path.join(context.stateDir, 'agy-tools', encodeURIComponent(session.name));
+      const plugin = path.join(dir, '.agents', 'plugins', 'wheelchair-project');
+      toolFiles = { dir, files: [
+        { path: path.join(plugin, 'plugin.json'), text: JSON.stringify({ name: 'wheelchair-project', version: '1' }, null, 2) + '\n' },
+        { path: path.join(plugin, 'mcp_config.json'), text: JSON.stringify({ mcpServers: servers }, null, 2) + '\n' },
+      ] };
+    }
+    return { ...(warnings.length ? { warnings } : {}), ...(toolFiles ? { toolFiles } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(toolFiles ? ['--add-dir', toolFiles.dir] : []), ...(session.permission_mode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--mode', 'auto']), ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('? for shortcuts') && !onboarding.some(s => pane.includes(s)); },
