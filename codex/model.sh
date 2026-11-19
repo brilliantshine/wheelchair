@@ -232,6 +232,28 @@ def listed_models(cache_path):
     return newer_first(parsed) + other
 
 
+def kimi_models():
+    """The model aliases in Kimi Code's config, as [{value, label}], or [] when unreadable."""
+    path = os.environ.get("WHEELCHAIR_KIMI_CONFIG") or os.path.expanduser("~/.kimi-code/config.toml")
+    try:
+        import tomllib
+        with open(path, "rb") as handle:
+            config = tomllib.load(handle)
+    except Exception:
+        return []
+    models = config.get("models") if isinstance(config, dict) else None
+    if not isinstance(models, dict):
+        return []
+    listed = []
+    for alias, entry in models.items():
+        if not isinstance(alias, str) or not KIMI_VALUE.match(alias):
+            continue
+        name = entry.get("display_name") if isinstance(entry, dict) else None
+        label = f"{name} ({alias})" if isinstance(name, str) and name.strip() else alias
+        listed.append({"value": alias, "label": label})
+    return listed
+
+
 def heads_up_events(pin_path, cache_path):
     pins, skipped, malformed = read_pins(pin_path)
     events = []
@@ -377,6 +399,7 @@ def main(root, argv):
                 result[provider][slot] = None if model == "none" else {
                     "model": model, "effort": effort}
         result["malformed"], result["visible"] = malformed, listed_models(cache_path)
+        result["kimi_visible"] = kimi_models()
         print(json.dumps(result, separators=(",", ":")))
         return
     if len(argv) == 3 and argv[0] == "set" and (slot := slot_for("gpt", argv[1])) in WORK_TIERS:
