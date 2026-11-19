@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: When does a lead look at what the other leads are doing?
-- **Context:** Without a trigger in the lead rules, leads will rarely think to look. Each look costs a lead turn.
-- **Options:** (A) at set points: once mapping finishes, before Start building, and whenever the user asks; (B) only when the user asks; (C) the hub tells every lead in the project whenever a thread starts or changes plan status.
-- **Recommendation:** A.
-
 ### Q2: How does the user allow a message to a lead in another project?
 - **Context:** The user wants cross-project messages only with their OK; no extra security.
 - **Options:** (A) the lead asks with a question card naming the other thread; a yes lets this lead message that thread for the rest of this thread; (B) a yes covers one message only; (C) a Settings switch per project pair.
@@ -51,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Cross-thread messages stay hidden in both threads, like in-thread messages; the receiving lead answers with its own `message` back | IDEA.md constraint; reuses existing delivery | defaulted |
 | 7 | `asks` works across threads; `passes_on` still only references a question from the poster's own thread | A lead that needs its user's decision posts its own question card | defaulted |
 | 8 | If two leads agree on a split that changes what either user-facing plan promises, each lead takes it to its user as a card before acting | Leads may not change scope without the user (lead.md, IDEA.md stability) | defaulted |
+| 9 | Leads check other leads at set points: once mapping finishes, before Start building, and whenever the user asks | User's pick | user |
 
 ## Spec
 
