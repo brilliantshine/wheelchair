@@ -276,7 +276,10 @@ function options(models) {
   const visible = Array.isArray(models.visible) ? models.visible : [];
   const current = Object.values(models.gpt || {}).map((cell) => cell?.model).filter(Boolean);
   const gpt = [...new Set([...visible, ...current])].map((value) => ({ value, label: value }));
-  return { claude, gpt };
+  const kimiListed = (Array.isArray(models.kimi_visible) ? models.kimi_visible : []).filter((o) => o && typeof o.value === 'string' && typeof o.label === 'string');
+  const kimiCurrent = Object.values(models.kimi || {}).map((cell) => cell?.model).filter((value) => value && !kimiListed.some((o) => o.value === value));
+  const kimi = [...kimiListed.map(({ value, label }) => ({ value, label })), ...[...new Set(kimiCurrent)].map((value) => ({ value, label: value }))];
+  return { claude, gpt, kimi };
 }
 
 async function describe(hub) {

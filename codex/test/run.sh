@@ -274,6 +274,14 @@ assert 'show JSON includes listed unparsed models after parsed models' json_asse
 run_model check
 assert 'check heads-up stays filtered for the same cache' equals "$output" "heads-up: gpt-7-nova is available and matches no tier. Pin it: $repo/codex/model.sh set gpt <tier> gpt-7-nova (or $repo/codex/model.sh skip gpt-7-nova)"
 
+# show lists Kimi Code's configured model aliases, with display names, and [] when the config is missing.
+new_case
+printf '%s\n' 'default_model = "kimi-code/k3"' '[models."kimi-code/k3"]  # the usual one' 'model = "k3"' 'display_name = "K3" # shown name' '[models."kimi-code/k3.1-pro"]' 'model = "k3.1-pro"' '[models."Bad Alias"]' 'display_name = "x"' '[models.none]' '[models."kimi-code/k3\n"]' > "$case_dir/kimi.toml"
+output=$(WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" WHEELCHAIR_KIMI_CONFIG="$case_dir/kimi.toml" "$model" show --json)
+assert 'show JSON lists Kimi aliases from the Kimi config' json_assert 'import json,sys; assert json.load(sys.stdin)["kimi_visible"] == [{"value":"kimi-code/k3","label":"K3 (kimi-code/k3)"},{"value":"kimi-code/k3.1-pro","label":"kimi-code/k3.1-pro"}]'
+output=$(WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" WHEELCHAIR_KIMI_CONFIG="$case_dir/missing.toml" "$model" show --json)
+assert 'show JSON gives no Kimi aliases without a Kimi config' json_assert 'import json,sys; assert json.load(sys.stdin)["kimi_visible"] == []'
+
 # Legacy behavior coverage ported to the new tier names and models-file format.
 new_case
 run_model light
