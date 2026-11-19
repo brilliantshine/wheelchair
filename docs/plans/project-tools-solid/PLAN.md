@@ -742,7 +742,7 @@ Filled by Stage 3. One row per worker brief.
 | T5 | tricky — Thread project-tools state, PATH read, program check call (§5 service part, §6) | machine/service.js, machine/test (new state test file) | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-6 | machine/test/run.sh | done |
 | T6 | Hub card, session list field, README (§8, README) | viewer/app/sessions.js, viewer/app/wc.js, viewer/test/app-project-tools.test.js, README.md section | standard (claude) / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-4 | node --test viewer/test/*.test.js | done |
 | R1 | Remediation 1, gap 1: exact duplicate header keys | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/adapters/agy.js, their tests | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-7 | reader/codex/agy tests; machine/test/run.sh | done |
-| R2 | Remediation 1, gap 2: saved state shape check; flaky PATH test | machine/service.js (state loader), machine/test/project-tools-state.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-8 | project-tools-state test; machine/test/run.sh x3 | running |
+| R2 | Remediation 1, gap 2: saved state shape check; flaky PATH test | machine/service.js (state loader), machine/test/project-tools-state.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-8 | project-tools-state test; machine/test/run.sh x3 | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -787,3 +787,6 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: R1, machine/lib/project-mcp.js: the marker is a plain symbol assignment (copied by spread, absent from Object.keys and JSON).
 - 2026-11-18 — Choice: R1, adapter tests set the symbol directly; reader tests parse files.
 - 2026-11-18 — R1 accepted (band: scout): exact duplicate headers now skip on Codex and Antigravity. Scout found that very deep nesting (~6,500 levels, valid JSON) overflowed the recursive scan and turned the file into "read failed"; I added a catch in `duplicateHeaderServers` (scan gives up, read succeeds) and a 15,000-deep test that fails without it.
+- 2026-11-18 — Choice: R2, machine/service.js: `validProjectToolsState` is a method beside `updateProjectTools`; extra unlisted keys are tolerated.
+- 2026-11-18 — Choice: R2, machine/test/project-tools-state.test.js: the fake tmux drains stdin on `load-buffer` (cause of the `tmux buffer failed` flake: the fake exited without reading the piped message, giving an EPIPE under load; not reproduced on demand); extra invalid cases for program lines and cli `thread`/`hash`; the valid-state case starts a worker in the worker checkout.
+- 2026-11-18 — R2 accepted (band: scout): saved state shape validated, invalid → empty; worker pasted three full machine runs at 191/191.
