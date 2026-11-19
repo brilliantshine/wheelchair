@@ -141,7 +141,9 @@
 .agents-squares { display: flex; flex-wrap: wrap; gap: 3px; }
 .agents-sq { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .agents-sq.none { background: transparent; border: 1px dashed var(--dim); }
-.agents-deck { position: relative; isolation: isolate; margin: 0 10px 10px 0; }
+.agents-deck { position: relative; margin: 0 10px 10px 0; background-color: var(--panel); }
+.agents-deck.selected { background-color: var(--accent-soft); }
+.agents-deck .agents-box-title { display: block; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; -webkit-line-clamp: unset; line-clamp: unset; }
 .agents-deck::before, .agents-deck::after { content: ''; position: absolute; inset: 0; z-index: -1; border: 1px dashed var(--line-2); border-radius: 8px; background: var(--panel-3); pointer-events: none; }
 .agents-deck::before { transform: translate(5px, 5px); }
 .agents-deck::after { transform: translate(10px, 10px); z-index: -2; }

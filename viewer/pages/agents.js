@@ -183,7 +183,7 @@
     function deckCard(item) {
       const members = item.members, newest = members[members.length - 1], card = button('', () => { pop = pop && members.some(m => m.name === pop.member) ? null : { member: newest.name, round: null, all: false }; redrawPop(); }, `agents-box agents-deck state-finished${members.some(m => m.name === selected?.name) ? ' selected' : ''}`);
       card.dataset.session = newest.name; card.dataset.members = members.map(m => m.name).join(' '); card.setAttribute('aria-expanded', 'false'); if (members.some(m => pathNames.has(m.name))) card.classList.add('question-path');
-      const head = el('div', 'agents-deck-head'); head.append(el('div', 'agents-role', newest.role || 'agent'), el('span', 'agents-deck-count', `×${members.length}`)); card.append(head, el('strong', 'agents-box-title', deckTitle(lead, members)));
+      const head = el('div', 'agents-deck-head'); const full = deckTitle(lead, members), title = el('strong', 'agents-box-title', full); title.title = full; card.setAttribute('aria-label', `${newest.role || 'agent'} ×${members.length}: ${full}`); head.append(el('div', 'agents-role', newest.role || 'agent'), el('span', 'agents-deck-count', `×${members.length}`)); card.append(head, title);
       if (newest.role === 'reviewer') { const rounds = memberRounds(members); if (rounds.length) card.append(squares(lead, rounds)); }
       const latest = members.map(finishedAt).filter(t => Number.isFinite(Date.parse(t))).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
       const st = el('div', 'agents-status'); st.append(el('span', 'agents-dot'), document.createTextNode(latest ? `Finished ${clock(latest)}` : 'Finished')); card.append(st);
@@ -227,7 +227,20 @@
       }
       document.body.append(box); placePop();
     };
-    const placePop = () => { const box = document.querySelector('.deck-pop'), hit = box && deckNow.find(d => d.members.some(m => m.name === pop?.member)); if (!hit) return; const r = hit.card.getBoundingClientRect(), w = Math.min(360, innerWidth - 16); box.style.width = `${w}px`; box.style.left = `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`; box.style.top = `${r.bottom + 6}px`; box.style.maxHeight = `${Math.max(160, innerHeight - r.bottom - 22)}px`; };
+    const placePop = () => {
+      const box = document.querySelector('.deck-pop'), hit = box && deckNow.find(d => d.members.some(m => m.name === pop?.member)); if (!hit) return;
+      const r = hit.card.getBoundingClientRect(), w = Math.min(360, innerWidth - 16), M = 8, GAP = 6;
+      box.style.width = `${w}px`; box.style.left = `${Math.max(M, Math.min(r.left, innerWidth - w - M))}px`; box.style.maxHeight = 'none';
+      const h = box.offsetHeight, below = innerHeight - M - (r.bottom + GAP), above = r.top - GAP - M;
+      let top, room;
+      if (h <= below) { top = r.bottom + GAP; room = below; }
+      else if (h <= above) { top = r.top - GAP - h; room = above; }
+      else if (below >= above) { top = r.bottom + GAP; room = below; }
+      else { top = M; room = above; }
+      room = Math.max(40, room); box.style.maxHeight = `${room}px`;
+      if (h > room) top = below >= above ? r.bottom + GAP : r.top - GAP - room;
+      box.style.top = `${Math.max(M, Math.min(top, innerHeight - M - Math.min(h, room)))}px`;
+    };
     placePopNow = placePop; redrawPop();
     const side = el('aside','agents-side'); if (selected) { side.append(button(`‹ ${lead.lead_name || 'Lead'}`, () => go(lead.thread_id), 'agents-back'),el('div','agents-role',selected.role || 'agent'),el('h2','',selected.display_title || selected.role || 'Agent'),el('p','agents-muted',[selected.model,selected.effort].filter(Boolean).join(' · ')),el('p','agents-muted',lead.machine || ''),el('p','agents-muted',duration(selected)),el('p','agents-side-status',status(selected))); if (selected.result_summary) side.append(el('h3','agents-report-head','Report'),el('p','agents-report',selected.result_summary)); if (selected.live) side.append(button('Open terminal', () => openTerm(selected), 'primary')); if (selected.has_brief) side.append(button('Read its brief', async () => { try { const res = await fetch(`/wheelchair/api/sessions/${encodeURIComponent(selected.name)}/brief`); if (!res.ok) throw new Error(`HTTP ${res.status}`); $('brief-text').textContent = (await res.json()).brief; } catch (e) { $('brief-text').textContent = `Could not load brief: ${e.message}`; } $('brief-dialog').showModal(); })); side.append(activityPanel(selected, lead, nodes(lead.session))); } else side.append(el('p','agents-muted','Select an agent to see details.')); root.append(side);
     if (selected) { side.dataset.agent = selected.name; if (kept.agent === selected.name) { side.scrollTop = kept.side; scrollTo(scrollX, kept.page); } }
