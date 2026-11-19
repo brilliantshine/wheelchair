@@ -957,6 +957,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 4 at `7aab07f`: `wc-01b8cb1bf051-verifier-7` (claude) and `wc-01b8cb1bf051-verifier-8` (gpt), both waiting for account room when started.
+
 - 2026-11-18 — Remediation 3 complete at `4ad4237`; validation as in COMPLETION.md "Remediation 3" (one known app-quiet timing failure, passing alone; a full viewer re-run stalled under machine load average above 50 from other threads and was re-run in two halves, all passing). Verification attempt 4 next.
 
 - 2026-11-18 — Choice: A1, `machine/adapters/kimi.js:104-116`: box edges (`│`) stripped from each line; titles matched by prefix; an optional `❯` and `1.`-style number before a choice; the plan-review test pane is unframed (scout-found; report said none).
