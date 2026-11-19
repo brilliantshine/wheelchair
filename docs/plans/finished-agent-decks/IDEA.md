@@ -29,7 +29,7 @@ working agents are hard to find and the review history is unreadable.
   disappear into a deck.
 - A reviewer deck shows one square per round, oldest to newest, colored by how many
   objections that round had (5+ red, 3–4 orange, 1–2 yellow, none green), and a title such
-  as "Plan review · 20 rounds, then approved".
+  as "Plan review · 20 rounds, last round clean".
 - A verifier deck does the same with problems found per attempt.
 - Clicking a deck opens a popover under it: rounds newest first (square, "Round 18",
   reviewers and objections) for reviewers and verifiers, agents newest first for the rest.
@@ -47,4 +47,4 @@ working agents are hard to find and the review history is unreadable.
 ## Constraints
 
 - Follows Collin's proposal `docs/proposals/app-shell/finished-agents.md` and its screen
-  `design/AgentsFinishedDecks.dc.html` (an addendum to `agents-screen.md`).
+  `design/AgentsFinishedDecks.dc.html` (an addendum to `agents-screen.md`), except that its "approved" / "passed" wording (titles, "Finished · approved", "no objections · approved") is replaced by "last round clean" (Collin's decision, PLAN.md Decision 12).
