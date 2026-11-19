@@ -3,6 +3,8 @@
 Checked against: `f3d3409471d4949874004f629b4c989cd15de0e4` (origin/main)
 Files covered: `machine/adapters/`, `machine/service.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `machine/lib/aside-turns.js`, `machine/test/accounts.test.js`, `machine/test/fixtures/login/`, `viewer/app/providers.js`, `viewer/app/sessions.js`, `viewer/app/balancer.js`, `viewer/app/settings.js`, `viewer/app/ready.js`, `viewer/app/routes.js`, `viewer/app/chat.js`, `viewer/app/asides.js`, `viewer/app/usage.js`, `viewer/pages/settings.js`, `codex/model.sh`, `codex/preflight.sh`, `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/reviewer.md`.
 
+> Local-project paths rechecked against `4cfa20cd5aafa0418afabb829c9a4c73430a435f` in [local-project-runtime](local-project-runtime.md); other contents retain the historical checked-against commit above.
+
 ```text
 Settings and account -> placement and model pin -> machine adapter -> tmux CLI
   -> initial prompt -> hook -> transcript copy -> chat and report

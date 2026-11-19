@@ -3,6 +3,8 @@
 Checked against: `40a1d23eea7961e8de747b3b1c3bef294789115a` (worktree HEAD; fetched origin/main is `165009e7fbb3fe66bb20b6fb7fd880e50c19bf69`).
 Files covered: `install.sh`, `install/guard.sh`, `install/test/run.sh`, `machine/service.js`, `machine/lib/aside-turns.js`, `machine/lib/sudo.js`, `machine/adapters/claude.js`, `machine/adapters/common.js`, `codex/preflight.sh`, `viewer/app/sessions.js`, `viewer/app/providers.js`, `viewer/app/routes.js`, `viewer/app/diagram-sensitivity.js`, `viewer/pages/settings.js`, `sensitivity/set.sh`, `sudo-helper/install.sh`, `sudo-helper/helper.py`, `sensitivity/test/run.sh`, `machine/test/aside-probe.sh`, `machine/test/sudo.test.js`, `sudo-helper/test/install-test.sh`, `test-support/run-dir.js`.
 
+> Local-project paths rechecked against `4cfa20cd5aafa0418afabb829c9a4c73430a435f` in [local-project-runtime](local-project-runtime.md); other contents retain the historical checked-against commit above.
+
 ## Install to running services
 
 ```text

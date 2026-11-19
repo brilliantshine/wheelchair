@@ -362,9 +362,40 @@ for (const [label, size] of SIZES) {
       const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${made.id}/send-now`));
       await bubble.locator('button.send-now').click();
       expect((await request).postDataJSON()).toEqual({ at });
-      await expect(bubble).toHaveCount(0);
+      // It left the queue but stays on screen until the lead's transcript shows it.
+      await expect(bubble.locator('button.send-now')).toHaveCount(0);
+      await expect(bubble).toHaveCount(1);
+      await expect(bubble.locator('.tag')).toHaveText('sent');
+      await expect(page.locator('#queued-note')).toBeHidden();
       expect(ctx.machine.sessions.get(made.sessions[0].name).submits).toEqual(['do this now']);
       await noSideScroll(page);
+    });
+
+    test('send now keeps a repeated message on screen, marked sent, until the transcript shows it again', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const file = path.join(ctx.state, `${made.id}-repeat.jsonl`);
+      const row = (r) => JSON.stringify(r) + '\n';
+      await fs.writeFile(file, row({ type: 'user', origin: { kind: 'human' }, timestamp: '2026-11-14T10:00:00.000Z', message: { role: 'user', content: 'yes' } }));
+      const at = new Date().toISOString();
+      const later = new Date(Date.now() + 1000).toISOString();
+      await ctx.patch(made.id, (t) => {
+        Object.assign(t.sessions[0], { transcript_path: file, cli: 'claude', ready: true, turn_ended: false,
+          queue: [{ text: 'yes', source: 'collin', at }, { text: 'yes', source: 'collin', at: later }] });
+        t.queues = { [t.sessions[0].name]: t.sessions[0].queue };
+      });
+      await open(page, made.id);
+      const pendingYes = page.locator('#chat .bubble.pending', { hasText: 'yes' });
+      await expect(pendingYes).toHaveCount(2);
+      await pendingYes.first().locator('button.send-now').click();
+      // One left the queue, one is still queued: both stay, and only one counts as queued.
+      await expect(page.locator('#chat .bubble.pending .tag', { hasText: 'sent' })).toHaveCount(1);
+      await expect(page.locator('#chat .bubble.pending .tag', { hasText: 'queued' })).toHaveCount(1);
+      await expect(page.locator('#queued-note')).toContainText('1 queued');
+      // The lead reads it mid-turn: the sent bubble gives way to the transcript's.
+      await fs.appendFile(file, row({ type: 'attachment', timestamp: '2026-11-14T10:00:05.000Z', attachment: { type: 'queued_command', prompt: 'yes', commandMode: 'prompt', origin: { kind: 'human' } } }));
+      await expect(page.locator('#chat .bubble.pending .tag', { hasText: 'sent' })).toHaveCount(0);
+      await expect(page.locator('#chat .bubble.human:not(.pending)', { hasText: 'yes' })).toHaveCount(2);
+      await expect(pendingYes).toHaveCount(1);
     });
 
     test('queued bubbles keep the queue order across tabs', async ({ page }) => {

@@ -33,7 +33,7 @@ case "$(basename \"$0\"):$1" in
   codex:--version) echo codex-test ;;
 esac
 `;
-  for (const name of ['tmux', 'systemd-run', ...(realGit ? [] : ['git']), 'gh', 'claude', 'codex', 'agy', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
+  for (const name of ['tmux', 'systemd-run', 'systemctl', ...(realGit ? [] : ['git']), 'gh', 'claude', 'codex', 'agy', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
   await write(pane, paneText);
   return { bin, log, pane };
 }
@@ -883,7 +883,9 @@ test('composed prompts, provider pointers, and ledger', async () => {
   } finally { await env.close(); }
 });
 test('Codex and Antigravity first messages point to prompt files', async () => {
-  for (const cli of ['codex', 'agy']) {
+  // Antigravity's prepare writes ~/.gemini/config/hooks.json; keep it off the real home.
+  const home = await temp(); const oldHome = process.env.HOME; process.env.HOME = home;
+  try { for (const cli of ['codex', 'agy']) {
     const env = await service(await temp(), { pane: cli === 'codex' ? readyCodex : '? for shortcuts' }); try {
       const brief = 'x'.repeat(100000);
       const session = await start(env, { cli, role: 'worker', brief });
@@ -891,7 +893,7 @@ test('Codex and Antigravity first messages point to prompt files', async () => {
       const pointer = `[wc:role] Role: worker\nRead ${path.join(env.state, 'prompts', `${session.name}.md`)} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${brief}`;
       assert.ok(message.includes(pointer)); assert.ok(pointer.length - brief.length < 1000);
     } finally { await env.close(); }
-  }
+  } } finally { process.env.HOME = oldHome; }
 });
 test('prompt failures precede worktree creation and permit retry', async () => {
   const root = await temp(), env = await service(root, { realGit: true }); try {

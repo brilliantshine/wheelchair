@@ -369,11 +369,15 @@
     const cutoffNow = thread().imported ? thread().imported.at : null;
     if (seenCutoff !== undefined && seenCutoff !== cutoffNow) pending = [];
     seenCutoff = cutoffNow;
-    const humans = items.filter((i) => i.type === 'human' && !i.card).map((i) => i.text);
-    pending = pending.filter((p) => {
-      const at = humans.indexOf(p.text);
-      if (at >= 0) { humans.splice(at, 1); return false; }
-      return true;
+    // A pending bubble goes once the transcript has more of its words than just before it was
+    // sent, so an earlier message with the same words never stands in for it. The row that
+    // clears one is its own: later bubbles with the same words count it as already seen.
+    const counts = new Map();
+    for (const i of items) if (i.type === 'human' && !i.card) counts.set(i.text, (counts.get(i.text) || 0) + 1);
+    pending = pending.filter((p, index) => {
+      if ((counts.get(p.text) || 0) <= (p.seen || 0)) return true;
+      for (const later of pending.slice(index + 1)) if (later.text === p.text) later.seen = (later.seen || 0) + 1;
+      return false;
     });
     const cards = data.cards.filter((c) => sinceImport(c.created_at || c.at));
     const pinned = pinnedIds();
@@ -434,18 +438,19 @@
     // order, whichever tab each message was sent from.
     const left = waiting.slice();
     const delivered = pending.filter((p) => {
+      if (p.sent) return true;
       const at = left.findIndex((q) => q.text === p.text);
       if (at < 0) return true;
       left.splice(at, 1);
       return false;
     });
-    const shown = [...delivered.map((p) => ({ text: p.text, queued: null })), ...waiting.map((q) => ({ text: q.text, queued: q }))];
+    const shown = [...delivered.map((p) => ({ text: p.text, queued: null, sent: p.sent })), ...waiting.map((q) => ({ text: q.text, queued: q }))];
     const canSendNow = lead && lead.live && lead.ready && !lead.permission_open && !lead.needs_open
       && !(lead.limited_until && Date.parse(lead.limited_until) > Date.now()) && !thread().archived;
     for (const p of shown) {
       const parts = splitAttached(p.text);
       const b = el('div', 'bubble human pending', parts.text);
-      b.appendChild(el('span', 'tag', 'queued'));
+      b.appendChild(el('span', 'tag', p.sent ? 'sent' : 'queued'));
       if (p.queued && canSendNow) {
         const at = p.queued.at;
         b.appendChild(button(sendingNow[at] ? 'Sending…' : 'Send now', 'send-now', () => sendNow(at), Boolean(sendingNow[at])));
@@ -487,10 +492,30 @@
     return row;
   }
 
+  // How many times the transcript (since any import) already shows these words from Collin.
+  function humanCount(text) {
+    return data.items.filter((i) => sinceImport(i.at) && i.type === 'human' && !i.card && i.text === text).length;
+  }
+
   // Hand one queued message to the lead mid-turn instead of waiting for the turn to end.
   async function sendNow(at) {
     sendingNow[at] = true; sigs.chat = null; render();
-    try { await post(T + '/send-now', { at }); showError(''); }
+    const lead = leadSession();
+    const item = ((lead && lead.queue) || []).find((q) => q.source === 'collin' && q.at === at);
+    const seen = item ? humanCount(item.text) : 0;   // counted before sending: the reply may lag the transcript
+    try {
+      const out = await post(T + '/send-now', { at });
+      // Not handed over: it stays first in the queue and goes when the turn ends.
+      if (!out || !out.sent) { showError('Could not send it now; it will go when the lead finishes its turn.'); return; }
+      showError('');
+      // Keep its bubble, marked sent, until the transcript shows it. This tab's own bubble for
+      // it, if any, becomes that bubble; otherwise a new one is added.
+      if (item) {
+        const mine = pending.find((p) => !p.sent && p.text === item.text);
+        if (mine) mine.sent = true;
+        else pending.push({ text: item.text, seen, sent: true });
+      }
+    }
     catch (e) { showError('Could not send it now: ' + e.message); }
     finally { delete sendingNow[at]; sigs.chat = null; await poll(); }
   }
@@ -516,6 +541,7 @@
   // One press at a time per card: a question or offer greys out the moment it is tapped, so a
   // double tap sends nothing twice. A card answered elsewhere (another tab) just shows as answered.
   const pressing = {};
+  const copied = {};         // check card step key -> true for ~2s after a successful Copy
   async function press(card, action, value, node) {
     if (pressing[card.id]) return;
     const once = card.kind === 'question' || card.kind === 'offer';
@@ -833,6 +859,50 @@
         box.appendChild(inset);
         break;
       }
+      case 'check': {
+        box.appendChild(el('h3', '', 'Check it yourself'));
+        box.appendChild(el('div', 'check-update', card.update));
+        const steps = card.steps || [];
+        const ol = el('ol', 'check-steps');
+        steps.forEach((s, i) => {
+          const li = el('li', 'check-step');
+          li.appendChild(el('span', 'check-where', s.where === 'machine' ? 'On the machine' : 'In the app'));
+          li.appendChild(el('div', 'check-do', s.do));
+          if (s.command) {
+            const wrap = el('div', 'check-cmd');
+            wrap.appendChild(el('pre', 'check-pre', s.command));
+            const clip = typeof navigator !== 'undefined' && navigator.clipboard;
+            if (clip && typeof clip.writeText === 'function') {
+              const key = card.id + ':' + i;
+              wrap.appendChild(button(copied[key] ? 'Copied' : 'Copy', 'small', async () => {
+                try { await navigator.clipboard.writeText(s.command); } catch (e) { return; }
+                copied[key] = true; sigs.chat = null; render();
+                setTimeout(() => { delete copied[key]; sigs.chat = null; render(); }, 2000);
+              }));
+            }
+            li.appendChild(wrap);
+          }
+          const see = el('div', 'check-see');
+          see.appendChild(el('span', 'check-see-label', 'You should see:'));
+          see.appendChild(document.createTextNode(' ' + s.see));
+          li.appendChild(see);
+          if (s.agent === 'not-tried') li.appendChild(el('div', 'dim check-note', 'Not tried by an agent: ' + s.note));
+          else if (s.agent === 'broken') li.appendChild(el('div', 'check-note check-broken', "An agent tried this and it didn't work: " + s.note));
+          ol.appendChild(li);
+        });
+        box.appendChild(ol);
+        // Same rule as the hub's currentDone: not retracted, and strictly after the import cutoff.
+        const cutoff = thread().imported && thread().imported.at;
+        const curDone = [...data.cards].reverse().find((c) => c.kind === 'done' && !c.retracted_at
+          && (!cutoff || Date.parse(c.created_at || c.at) > Date.parse(cutoff)));
+        if (steps.some((s) => s.agent === 'broken') && !off && curDone && curDone.head === card.head) {
+          const a = el('div', 'actions');
+          a.appendChild(button('Fix it now', 'primary', () => press(card, 'fix')));
+          a.appendChild(button('Leave it', '', () => press(card, 'leave')));
+          box.appendChild(a);
+        }
+        break;
+      }
       case 'diagram': {
         const bar = el('div', 'diagram-bar');
         bar.appendChild(el('h3', '', card.title));
@@ -1065,7 +1135,7 @@
     placeIds();
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
-    const queuedTotal = Math.max(data.queued, pending.length);
+    const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
     queuedNote.hidden = queuedTotal === 0;
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
     const canSend = liveLead() && !t.archived && !frozen();
@@ -1146,8 +1216,9 @@
         } catch (e) { throw new Error('Upload failed: ' + e.message); }
       }
       const message = [text, paths.map((path) => '[attached: ' + path + ']').join('\n')].filter(Boolean).join('\n\n');
+      const seen = humanCount(message);   // counted before sending: the reply may lag the transcript
       await post(T + '/messages', { text: message });
-      pending.push({ text: message }); msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
+      pending.push({ text: message, seen }); msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
       sigs.chat = null; await poll(); render();
     } catch (e) { showError(e.message.startsWith('Upload failed:') ? e.message : 'Message not sent: ' + e.message); }
     finally { uploading = false; renderAttachments(); render(); }

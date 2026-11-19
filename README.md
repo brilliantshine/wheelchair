@@ -165,6 +165,12 @@ Each feature lives in `docs/plans/<slug>/` in the project:
 `status:` in `PLAN.md` is the state machine: `planning → ready-for-review → approved →
 implementing → verifying → done`.
 
+### Project MCP tools
+
+Put project tools in `.mcp.json` at the repository root in Claude Code's format, committed on the branch threads start from. Leads, sub-leads, workers and verifiers get them; reviewers and the mapper do not. Codex sees each server as `project_<name>`, so project instructions naming a tool should give both names.
+
+Codex skips servers with `headers`, dotted names, or `${...}` except an `env` value exactly equal to `${KEY}` for that key. Antigravity does not get project tools yet. Problems are logged only in the machine service's log for now. On Codex, project tools are pre-approved, so agents can call them without an approval prompt.
+
 ## Pictures
 
 ![The viewer: an explanation panel above a flow](docs/viewer.png)

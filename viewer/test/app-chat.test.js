@@ -78,6 +78,21 @@ test('renders a Claude human turn after unwrapping pasted content', () => {
   ]);
 });
 
+test('renders a Claude message sent mid-turn as a Collin bubble, and skips task notices', () => {
+  const transcript = lines([
+    { type: 'user', origin: { kind: 'human' }, timestamp: '2026-11-14T10:00:00.000Z', message: { role: 'user', content: 'Start' } },
+    { type: 'assistant', timestamp: '2026-11-14T10:00:01.000Z', message: { role: 'assistant', content: [{ type: 'text', text: 'Working.' }] } },
+    { type: 'attachment', timestamp: '2026-11-14T10:00:02.000Z', attachment: { type: 'queued_command', prompt: 'Also this', commandMode: 'prompt', origin: { kind: 'human' } } },
+    { type: 'attachment', timestamp: '2026-11-14T10:00:03.000Z', attachment: { type: 'queued_command', prompt: '<task-notification>x</task-notification>', commandMode: 'task-notification', origin: { kind: 'task-notification' } } },
+    { type: 'assistant', timestamp: '2026-11-14T10:00:04.000Z', message: { role: 'assistant', content: [{ type: 'text', text: 'Got it.' }] } },
+  ]);
+  const items = transcriptItems('claude', transcript, {});
+  assert.deepEqual(items.map((item) => [item.type, item.text]), [
+    ['human', 'Start'], ['assistant', 'Working.'], ['human', 'Also this'], ['assistant', 'Got it.'],
+  ]);
+  assert.equal(items[2].at, '2026-11-14T10:00:02.000Z');
+});
+
 test('hides a Claude role turn and its reply', () => {
   const transcript = lines([
     {

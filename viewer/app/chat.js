@@ -144,11 +144,19 @@ function renderTurn(turn, thread) {
   return [human, ...turn.replies];
 }
 
+// A message typed while the lead is mid-turn ("Send now") is recorded only as a queued_command
+// attachment, never as a user row; it opens a turn like any other message from Collin.
+function isClaudeMidTurnHuman(row) {
+  const item = row.type === 'attachment' ? row.attachment : null;
+  return Boolean(item && item.type === 'queued_command' && item.commandMode === 'prompt' && item.origin?.kind === 'human');
+}
+
 function parseClaude(raw, thread, sessionName) {
   lastAt = null;
   const turns = [], calls = new Map();
   for (const row of transcriptRows(raw)) {
     if (row.type === 'user' && row.origin?.kind === 'human') turns.push({ human: unwrap(textOf(row.message?.content)), replies: [], at: itemAt(row) });
+    else if (isClaudeMidTurnHuman(row)) turns.push({ human: unwrap(textOf(row.attachment.prompt)), replies: [], at: itemAt(row) });
     else claudeReply(turns, row, calls);
   }
   if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
