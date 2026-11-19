@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 
 class TryService {
-  constructor({ stateDir, root, projects, switchTimeout = 900000, scanTimeout = 300000, killGrace = 10000, gitExecutable = 'git' }) { this.stateDir = stateDir; this.root = root; this.projects = projects; this.locks = new Map(); this.switchTimeout = switchTimeout; this.scanTimeout = scanTimeout; this.killGrace = killGrace; this.gitExecutable = gitExecutable; }
+  constructor({ stateDir, root, projects, switchTimeout = 900000, scanTimeout = 300000, metadataTimeout = 4000, killGrace = 10000, gitExecutable = 'git' }) { this.stateDir = stateDir; this.root = root; this.projects = projects; this.locks = new Map(); this.switchTimeout = switchTimeout; this.scanTimeout = scanTimeout; this.metadataTimeout = metadataTimeout; this.killGrace = killGrace; this.gitExecutable = gitExecutable; }
   lockState(folder) { if (!this.locks.has(folder)) this.locks.set(folder, { held: false, generation: 0 }); return this.locks.get(folder); }
   acquire(folder) { const lock = this.lockState(folder); if (lock.held) return false; lock.held = true; lock.generation++; return true; }
   release(folder) { const lock = this.lockState(folder); lock.held = false; lock.generation++; }
@@ -31,7 +31,7 @@ class TryService {
       const finish = (status, error) => { if (finished) return; finished = true; clearTimeout(timer); resolve({ status, stdout, stderr, error }); };
       child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
       child.stdout.on('data', data => { stdout += data; }); child.stderr.on('data', data => { stderr += data; });
-      const timer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } finish(1, new Error('Git metadata timed out.')); }, 1000);
+      const timer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } finish(1, Object.assign(new Error('Git metadata timed out.'), { code: 'ETIMEDOUT' })); }, this.metadataTimeout);
       child.on('error', error => finish(1, error)); child.on('close', code => finish(code ?? 1));
     });
   }
@@ -92,6 +92,7 @@ class TryService {
   }
   async identity(folder) {
     const common = await this.git(folder, ['rev-parse', '--git-common-dir']);
+    if (common.error?.code === 'ETIMEDOUT') return { timedOut: true };
     if (common.status !== 0) return null;
     try { return { folder, common_dir: fs.realpathSync(path.resolve(folder, common.stdout.trim())) }; } catch { return null; }
   }
@@ -106,22 +107,32 @@ class TryService {
   }
   async folderCheck(folder, record) {
     const [top, bare] = await Promise.all([this.git(folder, ['rev-parse', '--show-toplevel']), this.git(folder, ['rev-parse', '--is-bare-repository'])]);
+    if ([top, bare].some(result => result.error?.code === 'ETIMEDOUT')) return 'Git did not answer in time. Try again.';
     if (top.status !== 0 || bare.stdout.trim() !== 'false' || (() => { try { return fs.realpathSync(top.stdout.trim()) !== folder; } catch { return true; } })()) return 'This folder is not the top level of a git working tree.';
     const beneath = (child, parent) => child === parent || child.startsWith(parent + path.sep);
     if (beneath(folder, path.join(this.stateDir, 'worktrees'))) return "This folder is an agent's copy.";
     let root = this.root; try { root = fs.realpathSync(root); } catch { /* root may be absent in tests */ }
     if (beneath(root, folder)) return 'This folder runs wheelchair itself; switching it would swap the running app for untested code.';
-    const dir = await this.gitDir(folder);
-    if (!dir || ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG'].some(name => fs.existsSync(path.join(dir, name))) || (await this.git(folder, ['ls-files', '-u'])).stdout.trim()) return 'Git has an operation in progress. Finish it at your computer first.';
-    if ((record.active || record.pending) && !this.sameIdentity(record.identity, await this.identity(folder))) return 'This folder is no longer the copy that was switched';
+    const dirResult = await this.git(folder, ['rev-parse', '--absolute-git-dir']);
+    if (dirResult.error?.code === 'ETIMEDOUT') return 'Git did not answer in time. Try again.';
+    const dir = dirResult.status === 0 ? dirResult.stdout.trim() : null;
+    if (!dir || ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG'].some(name => fs.existsSync(path.join(dir, name)))) return 'Git has an operation in progress. Finish it at your computer first.';
+    const unmerged = await this.git(folder, ['ls-files', '-u']);
+    if (unmerged.error?.code === 'ETIMEDOUT') return 'Git did not answer in time. Try again.';
+    if (unmerged.stdout.trim()) return 'Git has an operation in progress. Finish it at your computer first.';
+    if (record.active || record.pending) {
+      const identity = await this.identity(folder);
+      if (identity?.timedOut) return 'Git did not answer in time. Try again.';
+      if (!this.sameIdentity(record.identity, identity)) return 'This folder is no longer the copy that was switched';
+    }
     return null;
   }
   async resolveRef(folder, ref) { const result = await this.git(folder, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]); return result.status === 0 ? result.stdout.trim() : null; }
   async indexLock(folder) { const dir = await this.gitDir(folder); const file = dir && path.join(dir, 'index.lock'); return file && fs.existsSync(file) ? file : null; }
   async gitlinkChanged(folder, from, to) {
-    const result = await this.git(folder, ['diff', '--raw', '--no-renames', '--ignore-submodules=none', from, to]);
-    if (result.status !== 0) throw new Error('Git could not compare the commits.');
-    return result.stdout.split('\n').some(line => /^:160000 |^:[0-7]{6} 160000 /.test(line));
+    const result = await this.runGit(folder, ['diff', '--raw', '--no-renames', '--ignore-submodules=none', from, to], this.scanTimeout);
+    if (result.code !== 0) throw new Error('Git could not compare the commits.');
+    return result.stdout.toString().split('\n').some(line => /^:160000 |^:[0-7]{6} 160000 /.test(line));
   }
   async handle(input) {
     const invalid = message => { throw Object.assign(new Error(message), { status: 422 }); };
@@ -199,8 +210,8 @@ class TryService {
       } else {
         const first = !record.active;
         if (first) {
-          const ignored = await this.git(folder, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard']);
-          if (ignored.status !== 0) throw new Error('Git could not list ignored files.');
+          const ignored = await this.runGit(folder, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard'], this.scanTimeout);
+          if (ignored.code !== 0) throw new Error('Git could not list ignored files.');
           await this.writeProtected(folder, ignored.stdout);
           record.identity = await this.identity(folder);
         }
@@ -249,7 +260,9 @@ class TryService {
     const point = active?.return_point || pending?.return_point;
     const ref = active?.return_ref || pending?.return_ref;
     const owner = active?.thread_id || pending?.thread_id;
-    const mismatch = (active || pending) && !this.sameIdentity(record.identity, await this.identity(folder));
+    const identity = (active || pending) && await this.identity(folder);
+    if (identity?.timedOut) return 'Git did not answer in time. Try again.';
+    const mismatch = (active || pending) && !this.sameIdentity(record.identity, identity);
     const keepReturn = () => {
       if (ref && !record.kept.some(entry => entry.ref === ref)) record.kept.push({ ref, label: `where your copy was before trying thread ${owner}`, thread_id: owner, ...(point?.branch ? { branch: point.branch.replace(/^refs\/heads\//, '') } : {}), at: new Date().toISOString(), ...(mismatch ? { old_identity: true } : {}) });
     };
@@ -265,7 +278,7 @@ class TryService {
         record.active = null;
       } else if ((active && head?.branch) || (pending?.op === 'try' && pending.first)) {
         let contains = false;
-        if (point?.branch && await this.resolveRef(folder, point.branch)) contains = (await this.git(folder, ['merge-base', '--is-ancestor', point.sha, point.branch])).status === 0;
+        if (point?.branch && await this.resolveRef(folder, point.branch)) contains = (await this.runGit(folder, ['merge-base', '--is-ancestor', point.sha, point.branch], this.scanTimeout)).code === 0;
         if (ref && contains) {
           if ((await this.git(folder, ['update-ref', '-d', ref])).status !== 0) return 'Git could not delete the return pin.';
         } else if (ref) {
@@ -340,7 +353,7 @@ class TryService {
       record.active || record.pending ? this.identity(folder) : null, this.indexLock(folder)
     ]);
     const busy = lock.held || generation !== lock.generation;
-    const mismatch = (record.active || record.pending) && !this.sameIdentity(record.identity, identity);
+    const mismatch = (record.active || record.pending) && !identity?.timedOut && !this.sameIdentity(record.identity, identity);
     let state = 'none';
     if (mismatch) state = 'mismatch';
     else if (busy) state = 'busy';

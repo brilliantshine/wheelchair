@@ -86,6 +86,22 @@ async function tryFixture() {
   const done = async () => { for (let i = 0; i < 200; i++) { const status = await instance.handle({ ...request, action: 'status' }); if (status.state !== 'busy') return status; await new Promise(resolve => setTimeout(resolve, 20)); } throw new Error('switch did not finish'); };
   return { root, repo, git, instance, request, done };
 }
+test('first Try allows a slow ignored-files scan beyond the metadata deadline', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  const wrapper = path.join(f.root, 'git-wrapper');
+  await fs.writeFile(wrapper, '#!/bin/sh\ncase "$*" in *"ls-files -z --others --ignored"*) sleep 2;; esac\nexec git "$@"\n', { mode: 0o755 });
+  f.instance.gitExecutable = wrapper; f.instance.metadataTimeout = 1000;
+  assert.equal((await f.instance.handle(f.request)).accepted, true);
+  const result = await f.done(); assert.equal(result.state, 'trying-this'); assert.equal(result.last.outcome, 'success');
+});
+test('metadata timeout in folder check is reported as a timeout', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  const wrapper = path.join(f.root, 'git-wrapper');
+  await fs.writeFile(wrapper, '#!/bin/sh\ncase "$*" in *"ls-files -u"*) sleep 2;; esac\nexec git "$@"\n', { mode: 0o755 });
+  f.instance.gitExecutable = wrapper; f.instance.metadataTimeout = 100;
+  const status = await f.instance.handle({ ...f.request, action: 'status' }); assert.equal(status.refused, 'Git did not answer in time. Try again.');
+  const reply = await f.instance.handle(f.request); assert.equal(reply.accepted, false); assert.equal(reply.reason, status.refused);
+});
 test('try from a clean branch acknowledges, switches and remembers the return point', async () => {
   const f = await tryFixture(); const initial = f.git('rev-parse', 'HEAD');
   const answer = await f.instance.handle(f.request); assert.equal(answer.accepted, true); assert.equal(answer.status.state, 'busy');
@@ -135,16 +151,19 @@ test('gitlink change with diff.ignoreSubmodules=all is refused', async () => {
 });
 test('a second write while one runs refuses at once and Status hides index.lock', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
-  await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nsleep 1\n', { mode: 0o755 });
-  assert.equal((await f.instance.handle(f.request)).accepted, true); const second = await f.instance.handle(f.request);
+  const marker = path.join(f.root, 'hook-started'); await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), `#!/bin/sh\ntouch '${marker}'\nsleep 1\n`, { mode: 0o755 });
+  assert.equal((await f.instance.handle(f.request)).accepted, true);
+  for (let i = 0; i < 200 && !require('node:fs').existsSync(marker); i++) await new Promise(resolve => setTimeout(resolve, 10)); await fs.access(marker);
+  const lock = path.join(f.repo, '.git', 'index.lock'); await fs.writeFile(lock, ''); const second = await f.instance.handle(f.request);
   assert.equal(second.reason, 'A switch is already running'); assert.equal(second.status.state, 'busy'); assert.equal(second.status.index_lock, null);
+  await fs.unlink(lock);
   const status = await f.done(); assert.equal(status.last.outcome, 'success');
 });
 test('ignored file in the way stays nothing moved with its path listed and file intact', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
   f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, 'collision'), 'thread'); f.git('add', 'collision'); f.git('commit', '-m', 'add collision'); f.git('switch', 'main');
   await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'collision\n'); await fs.writeFile(path.join(f.repo, 'collision'), 'mine');
-  await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, 'nothing-moved'); assert.match(status.last.reason, /collision/); assert.equal(await fs.readFile(path.join(f.repo, 'collision'), 'utf8'), 'mine');
+  await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, 'nothing-moved'); assert.equal(status.last.reason, 'These files in your copy are in the way: collision'); assert.equal(await fs.readFile(path.join(f.repo, 'collision'), 'utf8'), 'mine');
 });
 test('a pre-switch scan timing out writes refused in last with no pending', async () => {
   const f = await tryFixture(); const original = f.instance.runGit.bind(f.instance);
@@ -257,7 +276,8 @@ test('Forget during an interrupted switch leaves pending, active and the return 
 test('try A then B then back to the original branch', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
   f.git('switch', '-c', 'wc/abcdefabcdef'); await fs.writeFile(path.join(f.repo, 'file'), 'second'); f.git('commit', '-am', 'second'); f.git('switch', 'main');
-  await f.instance.handle(f.request); await f.done(); await f.instance.handle({ ...f.request, thread_id: 'abcdefabcdef' }); const trial = await f.done();
+  const a = f.git('rev-parse', 'wc/0123456789ab'), b = f.git('rev-parse', 'wc/abcdefabcdef'); assert.notEqual(a, b);
+  await f.instance.handle(f.request); await f.done(); await f.instance.handle({ ...f.request, thread_id: 'abcdefabcdef' }); const trial = await f.done(); assert.equal(trial.active_commit, b);
   await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); assert.equal((await f.done()).state, 'none'); assert.equal(f.git('branch', '--show-current'), 'main');
 });
 test('a thread that removes an ignore rule: file not counted, back succeeds, file intact', async () => {
@@ -273,9 +293,10 @@ test('files appearing after back are listed', async () => {
 });
 test('a file untracked before and after Back is not in appeared', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
-  await fs.writeFile(path.join(f.repo, '.gitignore'), 'ignored\n'); f.git('add', '.gitignore'); f.git('commit', '-m', 'ignore'); await fs.writeFile(path.join(f.repo, 'ignored'), 'mine');
+  await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'ignored\n'); await fs.writeFile(path.join(f.repo, 'ignored'), 'mine');
   await f.instance.handle(f.request); const trial = await f.done();
-  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done(); assert.deepEqual(result.last.appeared, []);
+  await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), ''); assert.match(f.git('status', '--porcelain'), /\?\? ignored/);
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done(); assert.deepEqual(result.last.appeared, []); assert.match(f.git('status', '--porcelain'), /\?\? ignored/);
 });
 test('a new file in an originally ignored directory whose rule the thread removed is listed on Back', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
@@ -312,8 +333,10 @@ test('stale record: Back refused; Dismiss deletes return pin when its branch con
 test('folder replaced by another clone during a trial: Dismiss keeps entries marked old identity', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture(); await f.instance.handle(f.request); await f.done(); const record = await f.instance.read(f.repo);
   await fs.rename(path.join(f.repo, '.git'), path.join(f.repo, '.git-original')); const { spawnSync } = require('node:child_process'); const other = path.join(f.root, 'replacement'); assert.equal(spawnSync('git', ['init', other]).status, 0); await fs.writeFile(path.join(f.repo, '.git'), `gitdir: ${path.join(other, '.git')}\n`);
-  const calls = []; const git = f.instance.git.bind(f.instance); f.instance.git = (folder, args) => { calls.push(args); return git(folder, args); };
-  const answer = await f.instance.handle({ ...f.request, action: 'dismiss', version: record.version }); assert.equal(answer.ok, true); assert.equal(answer.status.kept[0].old_identity, true); assert.equal(answer.status.kept[0].ref, record.active.return_ref); assert.equal(calls.some(args => args[0] === 'update-ref'), false);
+  const existing = 'refs/wheelchair/kept/existing'; record.kept.push({ ref: existing, label: 'existing' }); await f.instance.write(f.repo, record);
+  const log = path.join(f.root, 'git-calls'); const wrapper = path.join(f.root, 'git-wrapper'); await fs.writeFile(wrapper, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec git "$@"\n`, { mode: 0o755 }); f.instance.gitExecutable = wrapper;
+  const answer = await f.instance.handle({ ...f.request, action: 'dismiss', version: record.version }); assert.equal(answer.ok, true); assert.deepEqual(answer.status.kept.map(entry => entry.ref).sort(), [existing, record.active.return_ref].sort()); assert.ok(answer.status.kept.every(entry => entry.old_identity && entry.missing));
+  const calls = await fs.readFile(log, 'utf8'); assert.doesNotMatch(calls, /(?:update-ref|merge-base)/);
 });
 test('stale version on back, dismiss and forget is refused', async () => {
   const f = await tryFixture(); await f.instance.handle(f.request); const status = await f.done();
@@ -336,4 +359,149 @@ test('re-cloning after a completed Back allows Try', async () => {
   assert.equal(spawnSync('git', ['-C', other, 'branch', 'wc/0123456789ab', 'origin/wc/0123456789ab']).status, 0);
   await fs.writeFile(path.join(f.repo, '.git'), `gitdir: ${path.join(other, '.git')}\n`);
   const answer = await f.instance.handle(f.request); assert.equal(answer.accepted, true); assert.equal((await f.done()).state, 'trying-this');
+});
+test('tracked path colliding with an ignored file on Back is refused with the file intact', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await fs.writeFile(path.join(f.repo, 'collision'), 'original'); f.git('add', 'collision'); f.git('commit', '-m', 'track collision');
+  await f.instance.handle(f.request); const trial = await f.done();
+  await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'collision\n'); await fs.writeFile(path.join(f.repo, 'collision'), 'mine');
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done();
+  assert.equal(result.last.outcome, 'nothing-moved'); assert.equal(result.last.reason, 'These files in your copy are in the way: collision'); assert.equal(await fs.readFile(path.join(f.repo, 'collision'), 'utf8'), 'mine');
+});
+test('folder under state worktrees is refused', async () => {
+  const path = require('node:path'); const f = await tryFixture(); f.instance.stateDir = f.root;
+  const fs = require('node:fs/promises'); await fs.mkdir(path.join(f.root, 'worktrees')); const folder = path.join(f.root, 'worktrees', 'copy'); await fs.rename(f.repo, folder);
+  const reply = await f.instance.handle({ ...f.request, project: folder }); assert.match(reply.reason, /agent's copy/);
+});
+test('real git am in progress is refused', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const { spawnSync } = require('node:child_process'); const f = await tryFixture();
+  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, 'file'), 'patch\n'); f.git('commit', '-am', 'patch');
+  const patchText = f.git('format-patch', '-1', '--stdout'); f.git('switch', 'main'); await fs.writeFile(path.join(f.repo, 'file'), 'conflict\n'); f.git('commit', '-am', 'conflict');
+  const patchFile = path.join(f.root, 'change.patch'); await fs.writeFile(patchFile, patchText + '\n'); assert.notEqual(spawnSync('git', ['-C', f.repo, 'am', patchFile]).status, 0);
+  assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).refused, 'Git has an operation in progress. Finish it at your computer first.');
+  assert.match((await f.instance.handle(f.request)).reason, /operation in progress/);
+});
+test('a long switch does not delay the same project agent worktree queue', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const { MachineService } = require('../service'); const f = await tryFixture();
+  const marker = path.join(f.root, 'hook-started'); await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), `#!/bin/sh\ntouch '${marker}'\nsleep 2\n`, { mode: 0o755 });
+  const machine = new MachineService({ stateDir: path.join(f.root, 'machine') }); machine.tryService = f.instance; await machine.tryService.handle(f.request);
+  for (let i = 0; i < 200 && !require('node:fs').existsSync(marker); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  await fs.access(marker); let ran = false; await Promise.race([machine.inRepoQueue(f.repo, async () => { ran = true; }), new Promise((_, reject) => setTimeout(() => reject(new Error('queue delayed')), 500))]);
+  assert.equal(ran, true); assert.equal((await f.done()).last.outcome, 'success');
+});
+test('two symlink spellings of one folder pressed together are refused', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  const one = path.join(f.root, 'one'), two = path.join(f.root, 'two'); await fs.symlink(f.repo, one); await fs.symlink(f.repo, two);
+  await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nsleep 1\n', { mode: 0o755 });
+  const first = f.instance.handle({ ...f.request, project: one }); const second = f.instance.handle({ ...f.request, project: two });
+  const replies = await Promise.all([first, second]); assert.equal(replies.filter(reply => reply.accepted).length, 1); assert.equal(replies.find(reply => !reply.accepted).reason, 'A switch is already running'); await f.done();
+});
+test('index.lock is shown after nothing moved and hidden while a switch runs', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, 'collision'), 'thread'); f.git('add', 'collision'); f.git('commit', '-m', 'collision'); f.git('switch', 'main');
+  await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'collision\n'); await fs.writeFile(path.join(f.repo, 'collision'), 'mine');
+  await f.instance.handle(f.request); assert.equal((await f.done()).last.outcome, 'nothing-moved');
+  const lock = path.join(f.repo, '.git', 'index.lock'); await fs.writeFile(lock, ''); const status = await f.instance.handle({ ...f.request, action: 'status' }); assert.equal(status.index_lock, lock); await fs.access(lock);
+  f.instance.acquire(f.repo); assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).index_lock, null); f.instance.release(f.repo);
+});
+test('Status for stale, moved, trying-other and mismatch includes the right fields', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const { spawnSync } = require('node:child_process'); const f = await tryFixture();
+  await f.instance.handle(f.request); const trial = await f.done(); const other = await f.instance.handle({ ...f.request, thread_id: 'abcdefabcdef', action: 'status' });
+  assert.equal(other.state, 'trying-other'); assert.equal(other.active_thread_id, f.request.thread_id); assert.equal(other.active_commit, trial.active_commit);
+  await fs.writeFile(path.join(f.repo, 'file'), 'local commit'); f.git('commit', '-am', 'local'); const moved = await f.instance.handle({ ...f.request, action: 'status' }); assert.equal(moved.state, 'moved'); assert.equal(moved.active_commit, trial.active_commit);
+  f.git('switch', 'main'); const stale = await f.instance.handle({ ...f.request, action: 'status' }); assert.equal(stale.state, 'stale'); assert.equal(stale.active_thread_id, f.request.thread_id);
+  await fs.rename(path.join(f.repo, '.git'), path.join(f.root, 'old.git')); const replacement = path.join(f.root, 'replacement'); assert.equal(spawnSync('git', ['init', replacement]).status, 0); await fs.writeFile(path.join(f.repo, '.git'), `gitdir: ${path.join(replacement, '.git')}\n`);
+  const mismatch = await f.instance.handle({ ...f.request, action: 'status' }); assert.equal(mismatch.state, 'mismatch'); assert.match(mismatch.refused, /no longer the copy/); assert.equal(mismatch.active_thread_id, f.request.thread_id);
+});
+test('capped file lists retain full files_count and appeared_count', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  for (let i = 0; i < 55; i++) await fs.writeFile(path.join(f.repo, `file-${i}`), 'mine');
+  await f.instance.handle(f.request); const refused = await f.done(); assert.equal(refused.last.files_count, 55); assert.equal(refused.last.files.length, 50);
+  for (let i = 0; i < 55; i++) await fs.unlink(path.join(f.repo, `file-${i}`));
+  await f.instance.handle(f.request); const trial = await f.done();
+  await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\ni=0; while [ "$i" -lt 55 ]; do touch "appeared-$i"; i=$((i+1)); done\n', { mode: 0o755 });
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done(); assert.equal(result.last.appeared_count, 55); assert.equal(result.last.appeared.length, 50);
+});
+test('kept entries show missing and old_identity flags', async () => {
+  const f = await tryFixture(); const record = await f.instance.read(f.repo); record.kept = [{ ref: 'refs/wheelchair/kept/missing', label: 'missing' }, { ref: 'refs/wheelchair/kept/old', label: 'old', old_identity: true }]; await f.instance.write(f.repo, record);
+  const status = await f.instance.handle({ ...f.request, action: 'status' }); assert.deepEqual(status.kept.map(({ missing, old_identity }) => ({ missing, old_identity })), [{ missing: true, old_identity: false }, { missing: true, old_identity: true }]);
+});
+test('Status runs no content filter while active', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await f.instance.handle(f.request); await f.done(); const log = path.join(f.root, 'filter-log');
+  await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=lfs\n'); f.git('config', 'filter.lfs.clean', `echo clean >> '${log}'; cat`); f.git('config', 'filter.lfs.smudge', `echo smudge >> '${log}'; cat`);
+  for (let i = 0; i < 3; i++) assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).state, 'trying-this'); await assert.rejects(fs.access(log));
+});
+test('required smudge filter failing on a move between threads records exact interrupted paths', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  f.git('switch', '-c', 'wc/abcdefabcdef'); await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=broken\n'); await fs.writeFile(path.join(f.repo, 'file'), 'second\n'); f.git('add', '.gitattributes', 'file'); f.git('commit', '-m', 'second'); f.git('switch', 'main');
+  await f.instance.handle(f.request); await f.done(); f.git('config', 'filter.broken.smudge', 'exit 1'); f.git('config', 'filter.broken.required', 'true');
+  await f.instance.handle({ ...f.request, thread_id: 'abcdefabcdef' }); const interrupted = await f.done(); assert.equal(interrupted.state, 'interrupted'); assert.deepEqual(interrupted.files, ['file', '.gitattributes']);
+  const reload = new TryService({ stateDir: f.instance.stateDir, root: f.instance.root, projects: f.instance.projects }); const again = await reload.handle({ ...f.request, action: 'status' }); assert.deepEqual(again.files, ['file', '.gitattributes']);
+});
+test('real git switch unable to unlink warning is interrupted', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  const dir = path.join(f.repo, 'locked'); await fs.mkdir(dir); await fs.writeFile(path.join(dir, 'tracked'), 'mine'); f.git('add', 'locked/tracked'); f.git('commit', '-m', 'add tracked');
+  const runGit = f.instance.runGit.bind(f.instance); let switched;
+  f.instance.runGit = async (folder, args, timeout) => { const result = await runGit(folder, args, timeout); if (args.includes('switch')) switched = result; return result; };
+  await fs.chmod(dir, 0o555);
+  try { await f.instance.handle(f.request); const status = await f.done(); assert.equal(switched.code, 0); assert.match(switched.stderr.toString(), /^warning: unable to unlink 'locked\/tracked'/m); assert.equal(status.state, 'interrupted'); assert.equal(status.last.outcome, 'interrupted'); assert.equal(await fs.readFile(path.join(dir, 'tracked'), 'utf8'), 'mine'); }
+  finally { await fs.chmod(dir, 0o755); }
+});
+test('commit subject containing unable to unlink gives plain success', async () => {
+  const f = await tryFixture(); f.git('switch', 'wc/0123456789ab'); f.git('commit', '--allow-empty', '-m', "warning: unable to unlink 'file'"); f.git('switch', 'main');
+  await f.instance.handle(f.request); assert.equal((await f.done()).last.outcome, 'success');
+});
+test('hanging filter subprocess outlives deadline and its whole process group is killed', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=hang\n'); f.git('add', '.gitattributes'); f.git('commit', '-m', 'filter'); f.git('switch', 'main');
+  const pidFile = path.join(f.root, 'child-pid'); const filter = path.join(f.root, 'filter');
+  await fs.writeFile(filter, `#!/bin/sh\nsh -c 'trap "" TERM; exec sleep 30' &\necho $! > '${pidFile}'\nwait\n`, { mode: 0o755 }); f.git('config', 'filter.hang.smudge', filter); f.git('config', 'filter.hang.required', 'true');
+  const source = f.git('rev-parse', 'HEAD'); f.instance.switchTimeout = 300; f.instance.killGrace = 100; await f.instance.handle(f.request); const result = await f.done();
+  const pid = Number((await fs.readFile(pidFile, 'utf8')).trim()); assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  const cleanSource = f.git('rev-parse', 'HEAD') === source && f.git('branch', '--show-current') === 'main' && f.git('status', '--porcelain') === '';
+  assert.equal(result.last.outcome, cleanSource ? 'nothing-moved' : 'interrupted');
+});
+test('delayed process filter failing after HEAD moved records files across reload', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=delay\n'); f.git('add', '.gitattributes'); f.git('commit', '-m', 'delayed filter'); f.git('switch', 'main');
+  const filter = path.join(f.root, 'filter.py'); const target = f.git('rev-parse', 'wc/0123456789ab');
+  await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'precious\n'); await fs.writeFile(path.join(f.repo, 'precious'), 'mine');
+  await fs.writeFile(filter, `#!/usr/bin/env python3
+import sys, subprocess
+r = sys.stdin.buffer
+w = sys.stdout.buffer
+def read():
+    size = r.read(4)
+    if not size: return None
+    n = int(size, 16)
+    return b'' if n == 0 else r.read(n - 4)
+def group():
+    result = []
+    while True:
+        item = read()
+        if not item: return result
+        result.append(item)
+def send(*items):
+    for item in items:
+        w.write(('%04x' % (len(item) + 4)).encode() + item)
+    w.write(b'0000'); w.flush()
+group(); send(b'git-filter-server\\n', b'version=2\\n')
+group(); send(b'capability=smudge\\n', b'capability=delay\\n')
+while True:
+    headers = group()
+    if not headers: break
+    if b'command=list_available_blobs\\n' in headers:
+        send(b'pathname=file\\n'); send(b'status=success\\n')
+    else:
+        group()
+        if b'can-delay=1\\n' in headers:
+            send(b'status=delayed\\n')
+            subprocess.run(['git', '-C', ${JSON.stringify(f.repo)}, 'update-ref', '--no-deref', 'HEAD', ${JSON.stringify(target)}], check=True)
+        else: send(b'status=error\\n')
+`, { mode: 0o755 });
+  f.git('config', 'filter.delay.process', filter); f.git('config', 'filter.delay.required', 'true');
+  await f.instance.handle(f.request); const result = await f.done();
+  assert.equal(f.git('rev-parse', 'HEAD'), target); assert.equal(result.state, 'interrupted'); assert.ok(result.files.includes('file'));
+  const reload = new TryService({ stateDir: f.instance.stateDir, root: f.instance.root, projects: f.instance.projects }); assert.deepEqual((await reload.handle({ ...f.request, action: 'status' })).files, result.files); assert.equal(await fs.readFile(path.join(f.repo, 'precious'), 'utf8'), 'mine');
 });
