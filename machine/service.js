@@ -74,6 +74,11 @@ async function readJson(file, fallback) {
   try { return JSON.parse(await fsp.readFile(file, 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return fallback; throw error; }
 }
+function publicSession(record) {
+  const copy = { ...record };
+  for (const key of ['kimi_session_id', 'source_transcript', 'kimi_log_id', 'kimi_offset', 'kimi_last_turn', 'kimi_missing_since']) delete copy[key];
+  return copy;
+}
 function command(program, args, options = {}) {
   const result = spawnSync(program, args, { encoding: 'utf8', ...options });
   // Optional commands (notably systemd-run and tailscale) may be absent.  Their
@@ -573,13 +578,13 @@ class MachineService {
     const name = input.name || this.sessionName(input.thread_id, input.role);
     safeName(name, 'session name');
     if (!name.startsWith('wc-') || name.startsWith('wc-login-')) die('invalid session name');
-    if (this.sessions[name]) return this.sessions[name];
+    if (this.sessions[name]) return publicSession(this.sessions[name]);
     // The hub repeats a start it got no answer to, under the same name. Join the one still
     // running rather than create a second worktree and tmux session for it.
-    if (this.startingNames.has(name)) return this.startingNames.get(name);
+    if (this.startingNames.has(name)) return publicSession(await this.startingNames.get(name));
     const starting = this.startNamed(input, name);
     this.startingNames.set(name, starting);
-    try { return await starting; } finally { this.startingNames.delete(name); this.cancelledStarts.delete(name); }
+    try { return publicSession(await starting); } finally { this.startingNames.delete(name); this.cancelledStarts.delete(name); }
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
@@ -655,6 +660,7 @@ class MachineService {
     if (!live || live.has(session.name)) return { pending: true, end_reason: session.end_reason };
     session.status = 'stopped'; session.prompt_open = false; session.stopped_at = new Date().toISOString();
     await this.persistSessions();
+    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
     return { ok: true, end_reason: session.end_reason };
   }
   async kimiBinding(session) {
@@ -1272,7 +1278,7 @@ class MachineService {
   sessionList() {
     const live = this.liveTmux();
     const others = [...(live || [])].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
-    return [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others];
+    return [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...publicSession(s), codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others];
   }
   status() {
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));

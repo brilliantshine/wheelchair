@@ -20,8 +20,16 @@ function readConfig(dir) {
     const header = line.match(/^\s*\[([^\[\]]+)\]\s*(?:#.*)?$/);
     if (header) { table = header[1].trim(); continue; }
     if (/^\s*\[\[/.test(line)) { table = null; continue; }
-    const kv = line.match(/^\s*([\w-]+)\s*=\s*(.*?)\s*(?:#.*)?$/); if (!kv) continue;
-    let value; try { value = JSON.parse(kv[2]); } catch { continue; }
+    const kv = line.match(/^\s*([\w-]+)\s*=\s*(.*)$/); if (!kv) continue;
+    let raw = kv[2], quoted = false, escaped = false;
+    for (let i = 0; i < raw.length; i++) {
+      const char = raw[i];
+      if (quoted && escaped) { escaped = false; continue; }
+      if (quoted && char === '\\') { escaped = true; continue; }
+      if (char === '"') quoted = !quoted;
+      else if (char === '#' && !quoted) { raw = raw.slice(0, i); break; }
+    }
+    let value; try { value = JSON.parse(raw.trim()); } catch { continue; }
     if (!table && table !== null && kv[1] === 'default_model' && typeof value === 'string') result.default_model = value;
     if (table === 'providers."managed:kimi-code".oauth' && ['key', 'oauth_host'].includes(kv[1]) && typeof value === 'string') result[kv[1]] = value;
   }

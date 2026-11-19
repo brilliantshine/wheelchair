@@ -419,3 +419,17 @@ test('HTTP status stays responsive while a slow version check runs and launch aw
     await new Promise(resolve => machine.server.close(resolve)); process.env.HOME = old.HOME; process.env.PATH = old.PATH; if (old.KIMI_CODE_HOME === undefined) delete process.env.KIMI_CODE_HOME; else process.env.KIMI_CODE_HOME = old.KIMI_CODE_HOME;
   }
 });
+
+test('config comments preserve hashes and escapes inside quoted values', () => {
+  const dir = fixture(), file = path.join(dir, 'config.toml');
+  fs.writeFileSync(file, 'default_model = "kimi-code/k3" # model\nignored = ["a#b", "c"] # array\n[providers."managed:kimi-code".oauth]\noauth_host = "https://auth.kimi.ai/#device"\nkey = "oauth/dummy" # note\n');
+  const parse = JSON.parse, arrays = [];
+  try {
+    JSON.parse = value => { const parsed = parse(value); if (Array.isArray(parsed)) arrays.push(parsed); return parsed; };
+    assert.deepEqual(kimi.readConfig(dir), { default_model: 'kimi-code/k3', oauth_host: 'https://auth.kimi.ai/#device', key: 'oauth/dummy' });
+  } finally { JSON.parse = parse; }
+  assert.deepEqual(arrays, [['a#b', 'c']]);
+  assert.deepEqual(kimi.loginStatus(dir), { logged_in: true, authenticated: true });
+  fs.writeFileSync(file, '[providers."managed:kimi-code".oauth]\nkey = "oauth/x" # note\noauth_host = "https://auth.kimi.ai/\\\"#device" # comment\n');
+  assert.deepEqual(kimi.readConfig(dir), { key: 'oauth/x', oauth_host: 'https://auth.kimi.ai/"#device' });
+});

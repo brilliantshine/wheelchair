@@ -276,3 +276,45 @@ test('duplicate turn ends in one read hand off once', async () => {
   log('duplicate', [metadata, prompt(session.name), ...[0, 0, 1].map(turnId => ({ type: 'turn.ended', agentId: 'main', turnId, reason: 'completed' }))]);
   await machine.pollKimiTurns(); assert.deepEqual(machine.events.map(event => event.turn_id), [0, 1]);
 });
+
+test('HTTP start retry and listing keep Kimi binding state private', async () => {
+  const { machine: source, session, log, metadata, prompt } = setup();
+  log('bound', [metadata, prompt(session.name), { type:'turn.ended', agentId:'main', turnId:0, reason:'completed' }]);
+  await source.pollKimiTurns(); session.kimi_missing_since = 123; session.end_reason = 'lost';
+  const fields = ['kimi_session_id', 'source_transcript', 'kimi_log_id', 'kimi_offset', 'kimi_last_turn', 'kimi_missing_since'];
+  const root = makeTempSync('kimi-public-'), secret = path.join(root, 'secret'); fs.writeFileSync(secret, 'secret');
+  const http = require('node:http'), probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
+  const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
+  const machine = new MachineService({ stateDir:root, host:'127.0.0.1', port, secretFile:secret });
+  machine.liveTmux = () => new Set();
+  const other = { name:'wc-abc-worker-2', role:'worker', cli:'claude', thread_id:'abc', token:'token', status:'ready' };
+  await machine.listen(); machine.sessions[session.name] = session; machine.sessions[other.name] = other;
+  try {
+    const headers = { 'x-wheelchair-machine-secret':'secret', 'content-type':'application/json' };
+    const start = async s => { const response = await fetch(`http://127.0.0.1:${port}/v1/sessions`, { method:'POST', headers, body:JSON.stringify({ name:s.name, role:s.role || 'worker', cli:s.cli, thread_id:'abc', token:'token' }) }); assert.equal(response.status, 201); return response.json(); };
+    const retried = await start(session), otherReply = await start(other);
+    const listed = await (await fetch(`http://127.0.0.1:${port}/v1/sessions`, { headers })).json();
+    for (const field of fields) { assert.ok(Object.hasOwn(session, field), field); assert.ok(!Object.hasOwn(retried, field), field); assert.ok(!Object.hasOwn(listed.find(s => s.name === session.name), field), field); }
+    assert.equal(retried.end_reason, 'lost'); assert.equal(listed.find(s => s.name === session.name).end_reason, 'lost');
+    assert.deepEqual(otherReply, other); assert.deepEqual(listed.find(s => s.name === other.name), { ...other, codex_thread_id:null, managed:true, running:false });
+    let finish; machine.startNamed = () => new Promise(resolve => { finish = resolve; });
+    const input = { name:'wc-abc-worker-3', role:'worker', cli:'kimi', thread_id:'abc', token:'token' };
+    const first = machine.start(input), joined = machine.start(input); finish({ ...session, name:input.name });
+    for (const reply of await Promise.all([first, joined])) for (const field of fields) assert.ok(!Object.hasOwn(reply, field), field);
+  } finally { await new Promise(resolve => machine.server.close(resolve)); }
+});
+
+test('fatal verifier stop and archive remove created worktrees, while worker stop keeps its checkout', async () => {
+  const { execFileSync } = require('node:child_process');
+  const root = makeTempSync('kimi-git-'), repo = path.join(root, 'repo'); fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { encoding:'utf8', stdio:['ignore','pipe','pipe'] });
+  git('init', repo); git('-C', repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
+  const machine = new MachineService({ stateDir:path.join(root, 'state') }); machine.tmux = () => ({ok:true}); machine.liveTmux = () => new Set();
+  const make = (name, role, thread) => { const worktree = path.join(root, name); git('-C', repo, 'worktree', 'add', '--detach', worktree); const session = { name, role, thread_id:thread, cli:'kimi', end_reason:'lost', status:'ready', created_worktree:true, worktree }; machine.sessions[name] = session; return session; };
+  const stopped = make('wc-stop-verifier', 'verifier', 'stop');
+  await machine.stop(stopped.name); assert.equal(fs.existsSync(stopped.worktree), false); assert.ok(!git('-C', repo, 'worktree', 'list', '--porcelain').includes(stopped.worktree));
+  const archived = make('wc-archive-verifier', 'verifier', 'archive');
+  await machine.archive('archive'); assert.equal(fs.existsSync(archived.worktree), false); assert.ok(!git('-C', repo, 'worktree', 'list', '--porcelain').includes(archived.worktree));
+  const worker = make('wc-worker-worker', 'worker', 'worker');
+  await machine.stop(worker.name); assert.ok(fs.existsSync(worker.worktree)); assert.ok(git('-C', repo, 'worktree', 'list', '--porcelain').includes(worker.worktree));
+});
