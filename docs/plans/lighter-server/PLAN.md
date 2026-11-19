@@ -561,6 +561,8 @@ Collin chose "Keep going" (budget reset).
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | S1 + S2: stat-checked thread snapshot cache, `threadSnapshot`, caller audit, `discoverSlug`, `/threads` and chat on snapshots, timers list from cache (tricky) | `viewer/app/*.js`, `viewer/test/*.test.js`, new `viewer/test/` files | standard / gpt-6.1-terra | wc-f42d7a5b5e2f-worker | `node --test viewer/test/*.test.js` | in progress |
+| T2 | S6 + S7: shared hidden-tab poller in `nav.js` used by the listed page polls; `workers: 2`; hidden-tab browser spec; two-runs check | `viewer/pages/*.js`, `viewer/playwright.config.js`, new `viewer/test/*.spec.js` | standard / claude-sonnet-5-5 | wc-f42d7a5b5e2f-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser`; two concurrent runs check | in progress |
 
 ## Moved to the chat follow-up
 
