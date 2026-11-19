@@ -1,6 +1,6 @@
 ---
 slug: project-tools-screen
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -71,10 +71,34 @@ None.
 | 44 | `failed` outcome for errors after validation; Read falls back to keys when GitHub is unreachable; Save round-trips the raw document; key headers have a prefix field; key writes return `keys` | Close round 10 gaps | review-round-10 |
 | 45 | Tool edits patch the original raw entry; `keys` updates only set status; key store writes are atomic with `failed` on error | Close round 11 gaps | review-round-11 |
 | 46 | Unrepresentable settings/headers kept verbatim and read-only; Keys list rebuilt from full stored names plus baseline references; key-store temp file cleaned up | Close round 12 gaps | review-round-12 |
+| 47 | Args with a newline are read-only; kind change refused while an entry has read-only parts | Clarify round 13 edge rules | review-round-13 |
 
 ## Spec
 
 Mode is two-part: rare-case hardening is listed under Deferred and is not built here.
+
+### Flow
+
+```mermaid
+flowchart TD
+  A[Collin picks machine and project in Settings] --> B[Machine fetches the default branch from GitHub]
+  B -->|can't reach GitHub or no GitHub origin| K[Keys list only]
+  B --> C[Show tools, skip reasons, key status, waiting pull requests]
+  C --> D[Collin edits tools and/or sets keys, taps Save]
+  D --> E{Anything changed since he opened it?}
+  E -->|yes| R[Refuse: changed since you opened it, reload]
+  E -->|no| F[Store keys on the machine]
+  F -->|keys only| G[Done: saved]
+  F -->|tools changed| H[Commit .mcp.json in a temporary copy]
+  H --> I[Push a new wc-tools branch]
+  I -->|fails| X[Show the error; keys stay saved]
+  I --> J[Open a pull request]
+  J -->|fails| Y[Show the branch and a link to open it by hand]
+  J --> L[Show the pull request link; new threads get it once merged]
+```
+
+Session start (separate): tool-role sessions on Claude or Codex get only the keys their
+worktree's `.mcp.json` references, outside argv and saved session data.
 
 ### What it is
 A "Project tools" section on the Settings page (`viewer/pages/settings.*`). Collin picks a
@@ -171,7 +195,10 @@ project's tools and lets him add, change and remove them. Works at phone width.
   fields onto that tool's original raw entry: fields the form knows are replaced or removed,
   every other field in the entry is kept. A single setting or header the form can't represent
   (for example a header with two `${...}` references, or text after the key) is shown
-  read-only and kept verbatim through any edit of that entry's other fields. An entry whose
+  read-only and kept verbatim through any edit of that entry's other fields. The same holds
+  for an `args` list containing an argument with a newline: the arguments field is then
+  read-only and kept as is. Changing a tool's kind is refused ("edit in the file") while the
+  entry has any read-only setting or header. An entry whose
   shape the form can't represent at all (not a stdio or http entry) is read-only. Save sends the whole `mcpServers` object built
   that way (untouched entries exactly as read); the machine keeps every other
   top-level field of the source document as it was.
@@ -324,7 +351,9 @@ account-level tools; merging the PR; everything under Deferred.
 - `node --test viewer/test/*.test.js`: hub routes forward keys without storing them, pass 4xx
   bodies through, use the 120-second timeout, and pass a `failed` 502 through so the page shows its error and
   applies its key revision and `keys`; auth and origin checks on the new write routes.
-- `npm --prefix viewer run test:browser`: add, edit, remove, key set/not set, skip reasons and
+- `npm --prefix viewer run test:browser`: editing a URL keeps an unrepresentable header in
+  the outgoing Save; adding and removing keys rebuilds the Keys list while an unsaved tool edit
+  stays; add, edit, remove, key set/not set, skip reasons and
   key warnings, waiting PRs and PR link, at phone width.
 
 ## Deferred
@@ -646,7 +675,9 @@ Validation (502 path through the hub); Accepted Risks (large integers); Decision
 
 ### Round 13 — 2026-11-18
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5 (no findings); mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+Clean: no blocking or major finding upheld, no open user decision.
 
 **Changed since Round 12:** Editing (unrepresentable settings and headers kept verbatim and
 read-only); Reading (Keys list rebuilt from the full stored names plus baseline references);
@@ -655,6 +686,9 @@ Saving step 3 (temporary key file cleaned up, `atomicWrite` not reused as is); V
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | RE-RAISE: kind change with read-only headers | downgraded to minor: the Spec already keeps read-only parts verbatim and the Codex skip shows on screen, so a worker wouldn't build something wrong; rule made explicit | Log 47 |
+| mechanics | major | Args containing newlines in a line editor | downgraded to minor: rare, and the existing "can't represent, keep read-only" rule covers it; made explicit | Log 47 |
+| mechanics | minor | Browser tests for round 13 behaviors | upheld | Added to Validation |
 
 ## Implementation Tasks
 
