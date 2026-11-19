@@ -805,3 +805,4 @@ Build accepted: approval 299bc31c-a6e3-48d7-ad41-a29f94b6a272
 - 2026-11-19 — Choice: R1b, `viewer/test/app-try.spec.js`: test name and a 500 ms settle wait showing no second re-read follows.
 - 2026-11-19 — Choice: R1b, `viewer/test/app-try.spec.js`: re-checks the reason text after the re-read.
 - 2026-11-19 — R1b accepted (band: scout): one-line fix as briefed (G2). My re-run: app-try.spec 20/20, viewer node 695/695. The worker made an empty folder `/home/collin/.local/state/scratch-r1b` outside the worktree (disclosed; left in place).
+- 2026-11-19 — R1a attempt 1 (light, gpt-6-luna, worker-7): try.js changes for G1 and G7 correct as briefed; its new test failed because REMEDIATION-1.md's test (a) expected one pin after refused Backs, while the fix pins nothing until the clean check passes (sub-lead's brief error, not the worker's). Attempt 2 (worker-9, `--replaces worker-7`, same branch) fixes only that assertion to 0 then 1. Not an escalation.
