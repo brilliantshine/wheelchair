@@ -903,7 +903,8 @@ test('returns every machine session and persists its last-seen time', async () =
     assert.equal(result.body[0].sessions[0].name, made.sessions[0].name);
     assert.match(result.body[0].last_seen, /^\d{4}-\d{2}-\d{2}T/);
     const machines = JSON.parse(await fs.readFile(path.join(context.state, 'machines.json'), 'utf8'));
-    assert.equal(machines.hub.last_seen, result.body[0].last_seen);
+    assert.ok(Number.isFinite(Date.parse(machines.hub.last_seen)));
+    assert.ok(Date.parse(machines.hub.last_seen) <= Date.parse(result.body[0].last_seen));
   });
 });
 

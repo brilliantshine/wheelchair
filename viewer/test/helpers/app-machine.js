@@ -126,6 +126,11 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
       const found = sessions.get(decodeURIComponent(url.pathname.split('/')[3]));
       if (!found) return send(response, 404, { error: 'unknown session' });
       const data = found.transcript || '';
+      if (options.versionedTranscripts && url.searchParams.has('known')) {
+        if (!data) return send(response, 200, { status: 'unavailable' });
+        const gen = '1234-1700000000000.5', end = Buffer.byteLength(data);
+        return send(response, 200, url.searchParams.get('known') === `${gen}:${end}` ? { status: 'unchanged', gen, end } : { status: 'full', gen, end, data });
+      }
       return send(response, 200, { offset: Buffer.byteLength(data), data });
     }
     if (request.method === 'GET' && /\/pane$/.test(url.pathname)) {

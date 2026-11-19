@@ -359,13 +359,110 @@ test('GET /threads/:id/graph reads an archived thread graph from its branch, and
   }
 });
 
-test('a failed transcript read keeps the last copy for the chat, not for a report', async () => {
-  const { sessionTranscript } = require('../app/chat.js');
-  let fail = false;
-  const hub = { call: async () => { if (fail) throw new Error('machine timeout'); return { data: '{"a":1}\n' }; } };
-  const thread = { machine: 'm' }; const session = { name: 'wc-t-lead' };
-  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), '{"a":1}\n');
-  fail = true;
-  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), '{"a":1}\n');
-  assert.equal(await sessionTranscript(hub, thread, session), '');
+test('chat versions, fallback and independent fresh report reads', async () => {
+  const fs = require('node:fs/promises');
+  const { chatTranscript, sessionTranscript } = require('../app/chat.js');
+  const dir = await makeTemp('wc-chat-');
+  const local = path.join(dir, 'local');
+  const raw = lines([{ type: 'USER_INPUT', content: '[wc:context stub]' }, { type: 'PLANNER_RESPONSE', content: 'answer' }]);
+  await fs.writeFile(local, lines([{ type: 'USER_INPUT', content: 'local' }]));
+  let now = 1, result = { status: 'full', gen: '1-2', end: 10, data: raw }; const routes = [];
+  const hub = { now: () => now, call: async (_, route) => { routes.push(route); if (result instanceof Error) throw result; return result; } };
+  const thread = { id: 't', machine: 'm', parent_title: 'First' }, session = { name: 'lead', cli: 'agy', transcript_path: local };
+  const first = await chatTranscript(hub, thread, session);
+  assert.equal(first[0].text, 'Started from First');
+  result = { status: 'unchanged', gen: '1-2', end: 10 }; now++;
+  assert.strictEqual(await chatTranscript(hub, thread, session), first, 'unchanged reuses the parsed array');
+  assert.equal(new URL(routes.at(-1), 'http://test').searchParams.get('known'), '1-2:10');
+  result = { status: 'unchanged', gen: 'other', end: 10 };
+  assert.strictEqual(await chatTranscript(hub, thread, session), first);
+  hub.transcriptCache.clear();
+  assert.equal((await chatTranscript(hub, thread, session))[0].text, 'local');
+  result = { status: 'full', gen: '1-2', end: 11, data: raw };
+  assert.notStrictEqual(await chatTranscript(hub, thread, session), first);
+  thread.parent_title = 'Second';
+  assert.equal((await chatTranscript(hub, thread, session))[0].text, 'Started from Second');
+  assert.equal(new URL(routes.at(-1), 'http://test').searchParams.get('known'), '-');
+  result = { data: raw }; const old = await chatTranscript(hub, thread, session);
+  assert.notStrictEqual(await chatTranscript(hub, thread, session), old);
+  assert.equal(new URL(routes.at(-1), 'http://test').searchParams.get('known'), '-');
+  for (const reply of [{ status: 'unavailable' }, { status: 'full', data: '' }, { data: '' }, { status: 'other' }, new Error('timeout')]) {
+    result = reply; assert.deepEqual(await chatTranscript(hub, thread, session), old);
+    assert.equal(await sessionTranscript(hub, thread, session), await fs.readFile(local, 'utf8'));
+    assert.ok(!routes.at(-1).includes('?'));
+    hub.transcriptCache.clear();
+    assert.equal((await chatTranscript(hub, thread, session))[0].text, 'local');
+    assert.equal(hub.transcriptCache.size, 0);
+    result = { data: raw }; await chatTranscript(hub, thread, session);
+  }
+  hub.transcriptCache.clear(); result = { data: raw };
+  assert.equal(await sessionTranscript(hub, thread, session), raw);
+  assert.equal(hub.transcriptCache.size, 0);
+  result = { status: 'unavailable' }; session.cli = 'unknown'; session.transcript_path = null;
+  assert.match((await chatTranscript(hub, thread, session))[0].text, /no transcript reader/);
+  session.cli = 'claude'; result = { status: 'full', gen: '1-2', end: 4, data: 'null' };
+  await assert.rejects(() => chatTranscript(hub, thread, session), TypeError);
+});
+
+test('idle sweep protects queued aside and timer drops idle entries', async () => {
+  const { Hub, sweepTranscripts } = require('../app/hub.js'); const asides = require('../app/asides.js'); const settings = require('../app/settings.js');
+  const dir = await makeTemp('wc-chat-sweep-'); let now = 0;
+  const hub = new Hub({ stateDir: dir, now: () => now, transcriptSweepInterval: 10 }); await hub.init();
+  const thread = { id: 'cutoff', machine: 'm', project: '/tmp', sessions: [{ role: 'lead', name: 'lead', cli: 'claude', live: true, cli_session_id: 'parent' }], cards: [], pinned: {}, queues: {}, asides: [] };
+  await hub.save(thread);
+  const raw = lines([{ type: 'user', origin: { kind: 'human' }, message: { content: 'hello' } }, { type: 'assistant', message: { role: 'assistant', content: 'answer' } }]);
+  let available = true; hub.call = async () => available ? { status: 'full', gen: '1-2', end: 10, data: raw } : { status: 'unavailable' };
+  await hub.chat(thread.id); available = false;
+  let release; const gate = new Promise((resolve) => { release = resolve; });
+  const held = hub.withThread(thread.id, () => gate);
+  const original = settings.modelCommand; settings.modelCommand = async () => ({ stdout: 'model' });
+  try {
+    const queued = hub.withThread(thread.id, async () => asides.create(hub, await hub.thread(thread.id), { message_id: 'lead#0', start: 0, end: 1, quote: 'a', action: 'ask' }));
+    now = 600001; sweepTranscripts(hub);
+    release(); await held; assert.equal((await queued).anchor.message_id, 'lead#0');
+    await new Promise((resolve) => setImmediate(resolve));
+    now += 600001;
+    await new Promise((resolve) => setTimeout(resolve, 40)); assert.equal(hub.transcriptCache.size, 0);
+  } finally { release(); clearInterval(hub.transcriptTimer); settings.modelCommand = original; }
+});
+
+test('a queued chat protects its thread entry from idle sweep', async () => {
+  const { Hub, sweepTranscripts } = require('../app/hub.js');
+  const dir = await makeTemp('wc-chat-pending-'); let now = 0;
+  const hub = new Hub({ stateDir: dir, now: () => now }); await hub.state.init();
+  const thread = { id: 'pending', machine: 'm', project: '/tmp', sessions: [{ role: 'lead', name: 'lead', cli: 'agy' }], cards: [], pinned: {}, queues: {}, asides: [] };
+  await hub.save(thread);
+  const raw = lines([{ type: 'USER_INPUT', content: 'hello' }]);
+  let available = true; hub.call = async () => available ? { status: 'full', gen: '1-2', end: 10, data: raw } : { status: 'unavailable' };
+  await hub.chat(thread.id); available = false;
+  let release; const gate = new Promise((resolve) => { release = resolve; });
+  const held = hub.withThread(thread.id, () => gate);
+  try {
+    const pending = hub.chat(thread.id);
+    now = 600001; sweepTranscripts(hub);
+    release(); await held;
+    assert.equal((await pending).items[0].text, 'hello');
+  } finally { release(); }
+});
+
+test('machine seen writes are reserved synchronously and throttled', async () => {
+  const { Hub } = require('../app/hub.js'); let now = 0, writes = 0;
+  const hub = new Hub({ now: () => now });
+  hub.client.call = async () => ({}); hub.state.markMachineSeen = async () => { writes++; await new Promise((resolve) => setImmediate(resolve)); };
+  await hub.call('m', '/'); assert.equal(hub.machineSeen('m'), new Date(0).toISOString());
+  now = 1000; await hub.call('m', '/');
+  assert.equal(writes, 1); assert.equal(hub.machineSeen('m'), new Date(1000).toISOString());
+  now = 61000; await Promise.all([hub.call('m', '/'), hub.call('m', '/')]); assert.equal(writes, 2);
+});
+
+test('versioned fake machine serves full and unchanged transcripts', async () => {
+  const { startMachine } = require('./helpers/app-machine.js');
+  const machine = await startMachine('secret', { versionedTranscripts: true });
+  try {
+    machine.sessions.set('lead', { transcript: 'hello' });
+    const get = async (query) => (await fetch(`http://127.0.0.1:${machine.port}/v1/sessions/lead/transcript${query}`, { headers: { 'x-wheelchair-machine-secret': 'secret' } })).json();
+    const full = await get('?known=-'); assert.equal(full.status, 'full'); assert.equal(full.data, 'hello');
+    assert.deepEqual(await get(`?known=${full.gen}:${full.end}`), { status: 'unchanged', gen: full.gen, end: full.end });
+    assert.deepEqual(await get(''), { offset: 5, data: 'hello' });
+  } finally { await machine.stop(); }
 });
