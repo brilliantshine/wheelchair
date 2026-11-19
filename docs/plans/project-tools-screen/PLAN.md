@@ -861,3 +861,4 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-19 — R9-1 accepted (band: scout): viewer node 642/642 and the Project tools hub tests 4/4 re-run by sub-lead; the report shows the new test failing with `Ol��` without the line. The scout found the one line before the data listener and no Buffer consumer of `requestJson`; streamed routes are untouched.
 - 2026-11-19 — Verification attempt 10 started on 7fefd39: verifier-19 (claude-opus-5-5) and verifier-20 (gpt-6.2-sol); the brief carries Log 52's gap bar and Deferred rows 1-13.
 - 2026-11-19 — Verification attempt 10: gpt verifier-20 PASS (stopped); one hardening candidate (an edit applied while a tool Save is pending can be dropped by the reload after the PR opens; the sent payload was correct). Waiting for verifier-19.
+- 2026-11-19 — Verification attempt 10 (7fefd39): claude verifier-19 PASS (stopped). Both verifiers passed. One hardening candidate (gpt) proposed to the lead for Deferred.
