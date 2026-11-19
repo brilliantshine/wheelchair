@@ -113,3 +113,28 @@ $ node --test test-support/test/*.test.js
 # pass 9
 # fail 0
 ```
+
+### Remediation 2 (after verification attempt 2 on `f37b1b8`)
+
+Attempt 2: Claude verifier PASS; GPT verifier FAIL with two gaps (`REMEDIATION-2.md`).
+
+| Gap | Fix | Implemented at | Validated by |
+|-----|-----|----------------|--------------|
+| §§3–4 (second attempt): a deeply nested ignored field before `mcpServers` stopped the duplicate-header scan early (the recursive scan overflowed and the give-up catch added in Remediation 1 hid it) | `duplicateHeaderServers` rewritten as an iterative scanner with an explicit stack; no recursion, no catch | machine/lib/project-mcp.js (`duplicateHeaderServers`) | machine/test/project-mcp-reader.test.js (15,000-deep arrays and deepest-fitting objects before and after `mcpServers`, deepest-fitting file); scout fuzz of ~200k random documents against an independent reference, 0 mismatches |
+| §8: new threads lacked the default `project_tools` record until a snapshot arrived | `emptyThread` sets the default record | viewer/app/threads.js (`emptyThread`) | viewer/test/app-project-tools.test.js (POST /api/threads response and saved record) |
+
+Note: 15,000-deep nested objects cannot fit in the reader's 32 KiB limit (≥5 bytes per level); object cases use the deepest nesting that fits.
+
+Validation after remediation 2 (feature branch):
+
+```
+$ bash machine/test/run.sh
+# pass 195
+# fail 0
+$ node --test viewer/test/*.test.js
+# pass 647
+# fail 0
+$ node --test test-support/test/*.test.js
+# pass 9
+# fail 0
+```
