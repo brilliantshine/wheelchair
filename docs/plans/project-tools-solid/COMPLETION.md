@@ -46,6 +46,7 @@ Written for a hostile reviewer: every claim checkable, no claim without evidence
 ## Deviations from plan
 
 - §8 does not say which lead entry gets `project_tools` when a thread holds several lead sessions (after a lead restart); the newest lead gets it.
+- §8 card (Remediation 4, approved by Collin): the "Project tools problem" card's body is only the intro sentence; the problem lines and "and N more" are the needs card's plain-text `items` (viewer/app/sessions.js `applyProjectTools`), because the body renders as Markdown and changed names like `_tool_`. Exported handoff history includes the items (viewer/app/handoff.js:43).
 - Codex header names are not scanned for `${` (they become literal TOML keys; nothing is expanded). §3 speaks only of values.
 
 ## Routers
@@ -163,3 +164,33 @@ $ node --test test-support/test/*.test.js
 # pass 9
 # fail 0
 ```
+
+### Remediation 4 (after verification attempt 4 on `0e852e1`)
+
+Attempt 4: Claude verifier PASS; GPT verifier FAIL with three gaps (`REMEDIATION-4.md`). Collin chose to fix all three in one final remediation; the lead then set the rule that rare-setup gaps go to Accepted Risks after this round.
+
+| Gap | Fix | Implemented at | Validated by |
+|-----|-----|----------------|--------------|
+| §§1, 3–4 (third attempt): duplicate headers in an overwritten occurrence (repeated `mcpServers`, server name or `headers`) marked the kept entry | Findings follow JSON.parse's last-wins rule at each key on the path; only the kept `headers` object counts | machine/lib/project-mcp.js (`duplicateHeaderServers`) | machine/test/project-mcp-reader.test.js (overwritten vs kept at each level, case-insensitive); scout differential fuzz, 180,000 cases, 0 mismatches |
+| §4 (second attempt): look-alike names (`.`/`:` vs `_`) let an ended session's plugin dir be kept under the live tmux name | One dir protected per live tmux name: the one whose machine session record is not stopped and newest; with no record, exact spelling, then newest mtime. Attempt 1 (newest mtime) was sent back: a refused start could take protection | machine/service.js (`sweepAgyTools`) | machine/test/project-tools-service.test.js (six cases incl. refused start, unnoticed end, no records, null tmux) |
+| §§7–8: the card's Markdown body changed tool names (`_tool_` → "tool") | Body is the intro sentence; lines go in the needs card's plain-text `items`; handoff history includes items (R10) | viewer/app/sessions.js (`applyProjectTools`); viewer/app/handoff.js:43 | viewer/test/app-project-tools.test.js (`_tool_` byte-for-byte, cap, in-place update); viewer/test/app-handoff.test.js (items row) |
+
+New Accepted Risk (PLAN.md, source verification): the sweep can still pick the wrong dir with overlapping starts of look-alike names, an unnoticed end, or a lost record (`created_at` is stamped when a start begins).
+
+Validation after remediation 4 (feature branch, before R10's one-line merge; R10's focused run 34/34 after):
+
+```
+$ bash machine/test/run.sh
+# tests 202
+# pass 202
+# fail 0
+$ node --test viewer/test/*.test.js
+# tests 649
+# pass 648
+# fail 1   (not ok 358 - 6 message clears debt: known flaky; passes alone: # pass 1 # fail 0)
+$ node --test test-support/test/*.test.js
+# tests 9
+# pass 9
+# fail 0
+```
+
