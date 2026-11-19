@@ -17,7 +17,7 @@ const S = (changes = {}) => ({
 // `fake.abortGet` / `fake.abortPost` make the browser's request fail at the network level (no response).
 async function setup(page, status, extra = {}) {
   const made = await ctx.make({ cli: 'claude' });
-  const fake = { status, gets: 0, posts: [], write: null, getFail: null, abortGet: !!extra.abortGet, abortPost: false };
+  const fake = { status, gets: 0, posts: [], write: null, getFail: null, abortGet: !!extra.abortGet, abortPost: false, threadId: made.id };
   await page.route('**/api/threads/*/try', async (route) => {
     const req = route.request();
     if (req.method() === 'GET') {
@@ -124,6 +124,26 @@ test('Back success lists files that appeared', async ({ page }) => {
   await setup(page, S({ last: { op: 'back', thread_id: 'x', at: 'now', outcome: 'success', reason: 'Switched back.', appeared: ['z.bin'], appeared_count: 1 } }));
   await expect(panel(page)).toContainText('These files appeared after switching back');
   await expect(panel(page)).toContainText('z.bin');
+});
+
+test('last success says what happened, not the machine reason, while another thread is showing', async ({ page }) => {
+  await setup(page, S({ state: 'trying-other', active_thread_title: 'Other work', last: { op: 'try', thread_id: 'some-other-thread', at: 'now', outcome: 'success', reason: 'Your copy is showing this thread.' } }));
+  await expect(panel(page)).toContainText('Switched your copy to another thread.');
+  await expect(panel(page)).not.toContainText('Your copy is showing this thread.');
+});
+
+test('last success names this thread after Dismiss, in state none', async ({ page }) => {
+  const fake = await setup(page, S());
+  fake.status = S({ state: 'none', last: { op: 'try', thread_id: fake.threadId, at: 'now', outcome: 'success', reason: 'Your copy is showing this thread.' } });
+  await panel(page).getByRole('button', { name: 'Refresh' }).click();
+  await expect(panel(page)).toContainText('Switched your copy to this thread.');
+  await expect(panel(page)).not.toContainText('Your copy is showing this thread.');
+});
+
+test('Back success says Switched your copy back.', async ({ page }) => {
+  await setup(page, S({ state: 'none', last: { op: 'back', thread_id: 'x', at: 'now', outcome: 'success', reason: 'Your copy is back where it was.' } }));
+  await expect(panel(page)).toContainText('Switched your copy back.');
+  await expect(panel(page)).not.toContainText('Your copy is back where it was.');
 });
 
 test('errors: refusal reason, machine unreachable, with a re-read', async ({ page }) => {

@@ -263,7 +263,14 @@
     if (S.refused) line(S.refused);
     if (S.last && S.last.reason) {
       const L = S.last;
-      line(L.reason, L.outcome === 'success' ? '' : 'copy-note');
+      if (L.outcome === 'success' || L.outcome === 'warning') {
+        // The page words what happened itself; the machine's success reason is not shown.
+        const first = L.op === 'back' ? 'Switched your copy back.'
+          : (L.thread_id === id ? 'Switched your copy to this thread.' : 'Switched your copy to another thread.');
+        line(L.outcome === 'warning' ? first + ' ' + L.reason : first, L.outcome === 'success' ? '' : 'copy-note');
+      } else {
+        line(L.reason, 'copy-note');
+      }
       if (L.files && L.files.length) out.push(plural(L.files, L.files_count || L.files.length));
       if (L.appeared && L.appeared.length) { line('These files appeared after switching back:'); out.push(plural(L.appeared, L.appeared_count || L.appeared.length)); }
     }
