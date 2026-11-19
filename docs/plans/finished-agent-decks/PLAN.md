@@ -317,7 +317,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T0 | Add Collin's proposal files unchanged (done by sub-lead: c8a9c9d, 792e07f) | `docs/proposals/app-shell/finished-agents.md`, `design/AgentsFinishedDecks.dc.html` | sub-lead | — | `cmp` against the zip | done |
-| T1 | `--round` on reviewer starts; Agents API `rounds`, `report`, `finished_at`; API.md; lead.md step 5 (Spec §1, §2) | `viewer/app/{wc,sessions,routes,agents}.js`, `viewer/app/API.md`, `protocol/app/lead.md`, `viewer/test/*.test.js` | standard · gpt-6.1-terra | wc-d268e3df9c50-worker (t1-a1) | `node --test viewer/test/*.test.js` | in progress |
+| T1 | `--round` on reviewer starts; Agents API `rounds`, `report`, `finished_at`; API.md; lead.md step 5 (Spec §1, §2) | `viewer/app/{wc,sessions,routes,agents}.js`, `viewer/app/API.md`, `protocol/app/lead.md`, `viewer/test/*.test.js` | standard · gpt-6.1-terra | wc-d268e3df9c50-worker (t1-a1) | `node --test viewer/test/*.test.js` | done |
 | T2 | tricky — decks, squares, deck popover, `?` popout on the Agents page (Spec §3–§6, edge cases) | `viewer/pages/{agents.js,views.css,agents.html}`, `viewer/test/*.spec.js` | standard · claude-sonnet-5-5 | wc-d268e3df9c50-worker-2 (t2-a1) | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -329,3 +329,9 @@ anything a future session needs that fits nowhere above.
 
 Build accepted: approval 408048b5-0427-443e-9d5e-4fc6d2b09c7d
 - 2026-11-18 — Proposal files added unchanged from the upload; not added to `design/canvas.json` (the proposal only says where the screen lives, and the other Agents screens are not in canvas.json either).
+- 2026-11-18 — Choice: T1, `viewer/app/sessions.js` round validation: accepts decimal digit strings (CLI) and JSON integers, stores an integer; refuses unsafe integers; the round check runs before the role-permission check.
+- 2026-11-18 — Choice: T1, `viewer/app/wc.js`: a value starting with `--` counts as a missing `--round` value, so `--round -1` reaches the hub and is refused there.
+- 2026-11-18 — Choice: T1, `viewer/app/agents.js` `finished_at`: the result-card fallback uses the newest result card with a summary (the same card `result_summary` uses).
+- 2026-11-18 — Choice: T1, `viewer/app/agents.js` `report`: a reviewer with a result but no finding lines gets `{ findings: 0, first: null }`.
+- 2026-11-18 — Choice: T1, `viewer/app/API.md` and `protocol/app/lead.md`: doc wording and placement (round sentence opens step 5).
+- 2026-11-18 — T1 accepted (band: scout): diff matches Spec §1-§2 and the brief's test list. The worker's gate failures (`app-quiet` "6 message clears debt", `app-uploads-archive` stalled upload, a held port) are intermittent on the feature branch without T1 as well; re-run here: `app-uploads-archive` 3/3 pass on both branches, `app-quiet` fails 1 of 2 runs on both. Sub-lead fix after merge: empty first-finding text is `null`, not `''` (contract `string|null`); lead.md step 5 line rewrapped.
