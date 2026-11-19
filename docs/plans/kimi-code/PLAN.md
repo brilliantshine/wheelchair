@@ -963,6 +963,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — COMPLETION.md "Remediation 7" added. Verification attempt 8 next.
+
 - 2026-11-18 — Collin on remediation 7 gap 1: stop here (Decision 53, Accepted Risk). Remediation 7 settled.
 
 - 2026-11-18 — Lead on remediation 7: gap 2 settled by the plan (shared `transcript_path`); gap 3 settled as unverified, and the sub-lead changed the live sampler in `test-support/smoke/kimi-live.js` to call the production `promptText` (syntax check and test-support 9/9). Gap 1 with Collin.

@@ -309,3 +309,7 @@ node --test viewer/test/*.test.js   # run in two halves: 438/438 and 208/208
 npm --prefix viewer run test:browser   # 28 skipped, 774 passed (4.6m)
 node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ```
+
+### Remediation 7 — 2026-11-18
+
+Verification attempt 7 (`6b30111`): Claude verifier PASS; GPT verifier FAIL with 3 gaps (`REMEDIATION-7.md`). No code fix to the build: gap 1 (approval layouts beyond the tested ones) is an Accepted Risk by Collin's Decision 53; gap 2 (turn events carry `transcript_path`) is settled by the Spec's Events section; gap 3 (no live approval capture) is recorded as unverified, and the live sampler in `test-support/smoke/kimi-live.js:77` now calls the production `promptText`. Validation is unchanged from Remediation 6 apart from that script line (syntax check and `node --test test-support/test/*.test.js` 9/9).
