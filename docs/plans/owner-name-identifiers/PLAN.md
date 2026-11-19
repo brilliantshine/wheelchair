@@ -183,7 +183,7 @@ grep -rni collin viewer machine test-support codex install sensitivity sudo-help
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Implement S1–S6: normaliser, new writers/readers, handoff v2, API.md, comments, tests | viewer/app, viewer/pages, viewer/server.js, viewer/index.html, viewer/playwright.config.js, viewer/test, test-support/smoke/live.js, docs/maps/owner-name-state.md | standard / gpt-6.1-terra | wc-9b2a60752bc2-worker | Spec Validation block | done |
-| R1-1 | Remediation 1: reword the `test-support/smoke/live.js:44-46` comment (owner pronouns) | test-support/smoke/live.js | light / gpt-6-luna | wc-9b2a60752bc2-worker-2 | `node --check` + read | in progress |
+| R1-1 | Remediation 1: reword the `test-support/smoke/live.js:44-46` comment (owner pronouns) | test-support/smoke/live.js | light / gpt-6-luna | wc-9b2a60752bc2-worker-2 | `node --check` + read | done |
 
 ## Log
 
@@ -200,3 +200,4 @@ grep -rni collin viewer machine test-support codex install sensitivity sudo-help
 - 2026-11-19 — Choice: T1, app-send-now.spec.js: the `open()` helper gained a `source` parameter.
 - 2026-11-19 — Choice: T1, interrupted-import test: Retry is exercised by re-importing over a saved `create` handoff_op (the `handoff-import.js:26` path), not through the Retry route.
 - 2026-11-19 — Verification attempt 1 (claude-opus-5-5): FAIL, one gap (S5 smoke comment still says "his"); no rare paths. REMEDIATION-1.md written; R1-1 dispatched at the light tier, to GPT as the original build provider.
+- 2026-11-19 — R1-1 accepted (band: scout): the three comment lines match the brief exactly and nothing else changed; `node --check` passes. The worker reported its choices as "none", and the scout agreed.
