@@ -754,3 +754,8 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-18 — Verification attempt 1 (515a36f): FAIL from both verifiers; 8 distinct gaps (REMEDIATION-1.md). Lead chose fix all, defer none. Dispatched R1-1 (gaps 1-7, page; standard / claude-sonnet-5-5, wc-406595075040-worker-7) and R1-2 (gap 8, machine; light / gpt-6-luna, wc-406595075040-worker-8).
 - 2026-11-18 — Choice: R1-2, `machine/lib/project-tools.js`: `worktree prune` runs after `worktree remove --force` even when the remove fails; the regression test uses a minimal tool payload (report said none; scout-listed).
 - 2026-11-18 — R1-2 accepted (band: scout): machine suite 202/202 re-run by sub-lead; scout found no deviation (test doesn't assert the failure came from the hook; minor).
+- 2026-11-18 — Choice: R1-1, `viewer/pages/project-tools.js`: the machine's "needs X, not set" warnings are recognised by their exact wording and replaced by ones computed from current keys; computed lines render before the other key warnings.
+- 2026-11-18 — Choice: R1-1, unknown fields also block a kind change.
+- 2026-11-18 — Choice: R1-1, "shared with" in the editor is a hint line under each key row, excluding the tool being edited; sharing matches key names across env and header rows (scout-listed).
+- 2026-11-18 — Choice: R1-1, waiting PRs sit inside the unreadable-file box; unknown fields are listed above the "runs" line on the card (scout-listed).
+- 2026-11-18 — R1-1 accepted (band: scout): browser 120/120 and viewer node 641/641 re-run by sub-lead; scout found all seven fixes as briefed. Thin tests, accepted: read-only command/URL kept by `buildEntry` and Remove's stale-reply drop are untested; the late-reply test uses a 300 ms wait.
