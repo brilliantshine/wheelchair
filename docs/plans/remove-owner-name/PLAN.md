@@ -172,7 +172,7 @@ comments, other test and fixture mentions, and everything under `docs/`.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Rewrite `protocol/app/lead.md` per Rewriting rules 1-4 | `protocol/app/lead.md` | standard, claude / claude-sonnet-5-5 | wc-d4f6b0a949c2-worker | Validation 1, 2 on lead.md | done |
 | T2 | Rewrite the other protocol files and routers per Rewriting rules 1-5, incl. sudo message quote and legacy marker | `protocol/app/{sub-lead,worker,verifier,aside,cards,cards-lead,AGENTS}.md`, `protocol/{graphs,diagrams,sensitivity}.md`, `AGENTS.md`, `sudo-helper/AGENTS.md` | standard, claude / claude-sonnet-5-5 | wc-d4f6b0a949c2-worker-2 | Validation 1, 2, 3 | done |
-| T3 | Code: settings prompt lines, sudo message, history "You", lead-context relabel; tests | `viewer/app/settings.js`, `machine/service.js`, `viewer/pages/thread.js`, `viewer/app/threads.js`, `machine/test/sudo.test.js`, `viewer/test/*` | standard, gpt / gpt-6.1-terra | wc-d4f6b0a949c2-worker-3 | Validation 1 (code files), 4, 5, 6 | running |
+| T3 | Code: settings prompt lines, sudo message, history "You", lead-context relabel; tests | `viewer/app/settings.js`, `machine/service.js`, `viewer/pages/thread.js`, `viewer/app/threads.js`, `machine/test/sudo.test.js`, `viewer/test/*` | standard, gpt / gpt-6.1-terra | wc-d4f6b0a949c2-worker-3 | Validation 1 (code files), 4, 5, 6 | done |
 
 ## Log
 
@@ -185,3 +185,7 @@ comments, other test and fixture mentions, and everything under `docs/`.
 - 2026-11-19 — Choice: T2, aside.md: "answer him" became "answer the user", to avoid ambiguity with the lead.
 - 2026-11-19 — Choice: T2, sub-lead.md step 1a: the reader sentence reflowed over lines 32-35 so the older phrase sits on one line.
 - 2026-11-19 — T2 accepted (band: scout): scout flagged four ambiguous "they/them" (sub-lead.md:264, aside.md:22, cards-lead.md:118, :277); the worker changed each to "the user".
+- 2026-11-19 — Choice: T3, viewer/app/threads.js: imported history entries that are not objects, and pinned values that are ids rather than card objects, pass through unchanged; only card objects are relabelled.
+- 2026-11-19 — Choice: T3, viewer/app/threads.js:139,150: an object without `resolved_by`/`who` is passed by reference rather than copied (nothing mutates it; the context is only serialised).
+- 2026-11-19 — Choice: T3, viewer/test/app-handoff.spec.js: the existing handoff spec gained a second history entry and asserts the whole rendered line.
+- 2026-11-19 — T3 accepted (band: scout): worker stopped on its fails-twice guardrail; the failures were the app-hub context assertion (fixed in the commit), app-quiet "6 message clears debt" and server.test "global write lock" — both pass on re-run, server.test fails 1 in 4 runs on the worker branch with no server code touched. The new template-label wording (settings.js:158) has no direct test.
