@@ -681,6 +681,7 @@ async function stopSession(hub, thread, caller, name) {
 // The caller holds the thread lock. Authorization is checked by sessionRequest; export
 // stops its own sessions through the same lifecycle without needing a session caller.
 async function stopManagedSession(hub, thread, target) {
+  const wasLive = target.live === true;
   let result;
   if (target.status !== 'waiting') {
     result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
@@ -692,7 +693,7 @@ async function stopManagedSession(hub, thread, target) {
   target.live = false;
   target.status = 'stopped';
   quiet.reset(thread, target, true);
-  if (result?.end_reason) await notifyEnded(hub, thread, target);
+  if (result?.end_reason && wasLive) await notifyEnded(hub, thread, target);
   await hub.save(thread);
   return { ok: true };
 }

@@ -104,6 +104,9 @@ test('confirmed fatal stops notify once while ordinary stops stay silent', async
   assert.equal(thread.cards.length,1);
   assert.equal(thread.cards[0].title,'Session ended');
   assert.match(thread.cards[0].body,/worker ended: lost/);
+  await sessions.stopManagedSession(hub,thread,worker);
+  assert.equal(starter.queue.length,1);
+  assert.equal(thread.cards.length,1);
   await sessions.stopManagedSession(hub,thread,lead);
   assert.equal(lead.end_reason,'lost');
   assert.equal(thread.cards.length,2);
