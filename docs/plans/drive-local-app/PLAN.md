@@ -1,6 +1,6 @@
 ---
 slug: drive-local-app
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -83,6 +83,22 @@ Playwright's Chromium launched on the screen in `--app` mode received a `xdotool
 sandbox_workspace_write.network_access=true -- ...`) connected to an Xvfb display; that
 sandbox runs commands in their own process namespace, so a background process started by a
 Codex agent's own shell does not outlive the command. Apps run without a window manager.
+
+In short: an agent asks for a screen, launches its app there, looks and pokes at it, and the
+screen goes away when the agent is done, stops, or wheelchair restarts.
+
+```mermaid
+flowchart TD
+  A[agent runs wc.js screen start or run] --> B{agent allowed and still running?}
+  B -- no --> C[refused with a reason]
+  B -- yes --> D[invisible screen made, with its own key, in its own cleanup group]
+  D --> E[app launched there, inside the agent's own limits]
+  E --> F[agent takes screenshots, clicks, types and presses keys]
+  F --> G[screenshot file the agent reads, or the lead posts to the thread]
+  F --> H{agent done, stopped, thread archived, or wheelchair restarted?}
+  H -- yes --> I[whole cleanup group killed: screen and every app on it]
+  H -- missed by a race --> J[sweep every minute kills anything not in use]
+```
 
 ### Command surface (`wc.js screen <op> ...`)
 
