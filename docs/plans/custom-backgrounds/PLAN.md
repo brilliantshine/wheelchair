@@ -187,8 +187,8 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 | T4 | tricky: complete renderer/editor lifecycle and surfaces; T2 hit twice-failed incomplete gate | pages source excluding format helper, legacy doc; report T4.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | wc-7108adfdf9ea-worker-5 | JS syntax, diff check, focused both browsers | done (6/6 root baseline) |
 | T5 | tricky: complete representative browser checks | test/background*.spec.js, fixtures/background-browser, app-settings.spec.js section expectation only; report T5.md | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker-3 | private TMPDIR focused Chromium then integrated both browsers | partial integrated; superseded by T6/T7 |
 
-| T6 | tricky: native GIF timing and representative signed-in page/interaction coverage | test/background-rendering.spec.js, fixtures/background-browser; report T6.md | standard gpt/gpt-6.1-terra, xhigh (T5 completion effort step) | pending | isolated both-browser background-rendering.spec.js | dispatched |
-| T7 | tricky: real delayed polling, timeouts/fallback and native decode lifecycle | test/background-network.spec.js and background-editor.spec.js; report T7.md | standard gpt/gpt-6.1-terra, xhigh (T5 completion effort step) | pending | isolated both-browser background-editor.spec.js background-network.spec.js | dispatched |
+| T6 | tricky: native GIF timing and representative signed-in page/interaction coverage | test/background-rendering.spec.js, fixtures/background-browser; report T6.md | standard gpt/gpt-6.1-terra, xhigh (T5 completion effort step) | wc-7108adfdf9ea-worker-6 | isolated both-browser background-rendering.spec.js | dispatched |
+| T7 | tricky: real delayed polling, timeouts/fallback and native decode lifecycle | test/background-network.spec.js and background-editor.spec.js; report T7.md | standard gpt/gpt-6.1-terra, xhigh (T5 completion effort step) | wc-7108adfdf9ea-worker-7 | isolated both-browser background-editor.spec.js background-network.spec.js | dispatched |
 
 ## Log
 
@@ -222,3 +222,5 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 
 - 2026-11-19 — T5 integrated editor cases independently pass20/20 across Chromium/Firefox (16.7s). Initial screenshot paths retained at /tmp/backgrounds-T5-artifacts/{chromium,firefox}-settings-{1280,390}.png; forwarded to lead.
 - 2026-11-19 — Choice: integration, phone Settings navigation: seven tabs made words split into unreadable fragments. Preserve the existing single-row tab navigation with readable native horizontal scrolling inside its width-bound bar, reveal selected tab on section entry, and preserve its scroll on same-section rebuild. Existing Settings+editor suites pass86/86 in both browsers (47.6s).
+
+- 2026-11-19 — Validation correction: original tiny PNG fixture had a bad IDAT CRC. Corrected fixture CRCs (not product parser behavior); old fixture drew white in Chromium but transparent in Firefox despite onload. Corrected editor fixtures pass20/20 both browsers (25.6s); real pixel/readability evidence is required from T6. No new malformed-input recovery behavior was added.

@@ -13,7 +13,7 @@ const { State } = require('../app/state');
 const background = require('../app/background');
 const { normalize } = require('../pages/background-format');
 
-const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7XQAAAAASUVORK5CYII=', 'base64');
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
 // Small structural containers exercise the server's bounded header checks, not pixel decoding.
 const jpeg = Buffer.from('ffd8ffc0000b080001000101011100ffda0008010100003f0001ffd9', 'hex');
 const webp = Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA', 'base64');
