@@ -759,7 +759,7 @@ restart of the imported thread; if Collin asks for it, post it then.
 ## Diagrams
 
 See the `diagram` section of `cards-lead.md` for the forms and how to pick one. Show an image
-with an `image` card.
+with an `image` card. To show Collin what an agent saw on its invisible screen, post the screenshot path from its report with an `image` card.
 
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a
 picture, write the graph with `<root>/protocol/graphs.md`: its schema, where graph files
