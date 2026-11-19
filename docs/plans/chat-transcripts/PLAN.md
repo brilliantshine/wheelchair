@@ -329,3 +329,4 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 
 ## Log
 - 2026-11-19 Ready check at approval: hub and machine service answer (`wc.js session list`); Claude CLI installed; Codex preflight passed (token fresh).
+- 2026-11-19 Build accepted: approval fc33ce31-cebd-4f1a-a656-d9741c8d9707
