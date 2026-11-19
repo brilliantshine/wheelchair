@@ -561,7 +561,7 @@ Collin chose "Keep going" (budget reset).
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S1 + S2: stat-checked thread snapshot cache, `threadSnapshot`, caller audit, `discoverSlug`, `/threads` and chat on snapshots, timers list from cache (tricky) | `viewer/app/*.js`, `viewer/test/*.test.js`, new `viewer/test/` files | standard / gpt-6.1-terra | wc-f42d7a5b5e2f-worker | `node --test viewer/test/*.test.js` | in progress |
+| T1 | S1 + S2: stat-checked thread snapshot cache, `threadSnapshot`, caller audit, `discoverSlug`, `/threads` and chat on snapshots, timers list from cache (tricky) | `viewer/app/*.js`, `viewer/test/*.test.js`, new `viewer/test/` files | standard / gpt-6.1-terra | wc-f42d7a5b5e2f-worker | `node --test viewer/test/*.test.js` | done |
 | T2 | S6 + S7: shared hidden-tab poller in `nav.js` used by the listed page polls; `workers: 2`; hidden-tab browser spec; two-runs check | `viewer/pages/*.js`, `viewer/playwright.config.js`, new `viewer/test/*.spec.js` | standard / claude-sonnet-5-5 | wc-f42d7a5b5e2f-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser`; two concurrent runs check | in progress |
 
 ## Moved to the chat follow-up
@@ -585,3 +585,7 @@ Accepted then: a SIGKILL at the instant a tmux client is launching a server can 
 
 - 2026-11-18 live baseline (before any change): hub `viewer/server.js --service` up 47 min, RSS 1.7 GB (730 MB at 10 min), 30.8 CPU-seconds per 60 s (51% of a core); machine service RSS 128 MB, 77 CPU-seconds over 48 min; 21 agent CLIs live; 117 thread files, 19 MB.
 - 2026-11-19 Ready check at approval: hub and machine service answer (`wc.js session list`); Claude CLI logged in; Codex preflight passed (token fresh).
+- 2026-11-19 — S1 caller audit (T1): mutating callers fixed by cloning the one record: `hub.js:init` imported-session repair and lead-name assignment (structuredClone), `routes.js:handleThreads` (new `{ ...listed, ...fresh }` overlay instead of Object.assign), `views.js:features` slug recording (clone before `recordSlug`), `threads.js:threadBySession` (clone; its session start/stop and `balancer.choose` mutate it). Read-only, no fix: `saveWithLeadName` name scan, plan registration, aside/cancel timers, `pollMerged`, `pollWaiting`, `pollDead`, `retryWaiting`, `releaseLimits`, `retryQueues`, `checkQuiet`, `newThread` history, `views.sessions`, `handoff.sweepFiles`, `cards` sudo outcome, `settings.describe`, `usage.summary`, `usage-poll.pollIdle`, `balancer.choose` listing, `agents`. Cross-checked by a scout.
+- 2026-11-19 — Choice: T1, `hub.js:readSnapshot`: one helper returns the snapshot, or `hub.thread()` (which saves the provider migration) when the record needs it; used by `/threads`, chat and its parent.
+- 2026-11-19 — Choice: T1, `threads.js:threadBySession`: clones the matching record at lookup, since session operations mutate it.
+- 2026-11-19 — T1 accepted (band: self): diff read in full; `node --test viewer/test/*.test.js` re-run on the worker branch, 693 pass, 0 fail.
