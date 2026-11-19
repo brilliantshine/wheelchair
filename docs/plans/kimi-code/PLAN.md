@@ -954,6 +954,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 3 at `5ffc328`: `wc-01b8cb1bf051-verifier-5` (claude-opus-5-5) and `wc-01b8cb1bf051-verifier-6` (gpt-6.2-sol).
+
 - 2026-11-18 — Remediation 2 complete at `1ed4d45`; validation as in COMPLETION.md "Remediation 2". Verification attempt 3 next.
 
 - 2026-11-18 — Choice: Q1, `machine/service.js:1313`: the version line may read `<name> [version] <x.y.z>` (an optional `version` word after the name).
