@@ -186,3 +186,16 @@ Attempt 3: the claude verifier passed; the gpt verifier failed. Two gap families
 | 5 `failed` replies without revision/keys | Every `failed` path carries them (0/[] if the store is unreadable) | `machine/lib/project-tools.js:91,152` | unreadable-store test |
 
 Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 207 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` 144 passed, twice.
+
+### Remediation 4 (after verification attempt 4, commit cccad56)
+
+Both verifiers failed with 4 distinct gaps; all Remediation 3 items were confirmed. Lead: fix all four, defer none. Details are in `REMEDIATION-4.md`.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| 1 A draft rename lost baseline checks (Log 49) | Draft tool → baseline name map; cards and "shared with" look up checks by baseline name and show current draft names | `viewer/pages/project-tools.js:250-251,343-352,394,467-469,549-559` | rename/remove test |
+| 2 Key-store errors could quote stored values | Fixed messages for every key-store error, in replies and the launch log | `machine/lib/project-keys.js:48-68`; `machine/lib/project-tools.js:73,91,106,124,152,157`; `machine/service.js:637` | malformed / wrong-shape store test (Read, Save, Remove, launch) |
+| 3 `headers: {}` dropped on a URL edit | Every untouched field is sent exactly as read on same-kind edits | `viewer/pages/project-tools.js:592-620` | untouched-fields test |
+| 4 Failed post-save reload hidden | Save message + "Couldn't reload the project: <reason>" + Reload button | `viewer/pages/project-tools.js:260-269,719,725,737` | 409+504 and opened+failed-read tests |
+
+Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 208 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` 152 passed, twice.
