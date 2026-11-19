@@ -43,6 +43,10 @@ function duplicateHeaderServers(text) {
       if (frame?.type === 'object' && frame.expectingKey) {
         frame.key = token;
         frame.expectingKey = false;
+        if (stack.length === 1 && token === 'mcpServers') duplicates.clear();
+        if (stack.length === 2 && stack[0].type === 'object' && frame.pathKey === 'mcpServers') duplicates.delete(token);
+        if (stack.length === 3 && stack[0].type === 'object' && stack[1].type === 'object' &&
+            stack[1].pathKey === 'mcpServers' && token === 'headers') duplicates.delete(frame.pathKey);
         if (frame.seen) {
           const lower = token.toLowerCase();
           if (frame.seen.has(lower)) duplicates.add(stack[2].pathKey);
