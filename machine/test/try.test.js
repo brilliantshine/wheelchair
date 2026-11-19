@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { TryService } = require('../lib/try');
 const service = new TryService({ stateDir: '/tmp/state', root: '/tmp/root', projects: async () => ({ checked: { ok: true } }) });
 test('validates all actions and their fields', async () => {
-  const base = { thread_id: '0123456789ab', project: '/tmp/repo' };
+  const base = { thread_id: '0123456789ab', project: '/tmp' };
   for (const input of [{ ...base, action: 'bad' }, { ...base, action: 'try', thread_id: 'bad' }, { ...base, action: 'back' }, { ...base, action: 'forget', version: 'v' }, { ...base, action: 'try', kept: 'x' }]) {
     await assert.rejects(service.handle(input), { status: 422 });
   }
@@ -23,4 +23,12 @@ test('record and protected list use the real folder hash and version every write
   await instance.writeProtected(folder, Buffer.from('ignored\0'));
   assert.equal((await fs.readFile(instance.protectedPath(folder))).toString(), 'ignored\0');
   assert.deepEqual(await instance.read(folder), record);
+});
+test('lock is keyed by real folder path and advances its generation', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const { makeTemp } = require('../../test-support/run-dir');
+  const root = await makeTemp('try-lock-'); const folder = path.join(root, 'copy'); const alias = path.join(root, 'alias');
+  await fs.mkdir(folder); await fs.symlink(folder, alias);
+  assert.equal(service.folder(alias), service.folder(folder));
+  assert.equal(service.acquire(folder), true); assert.equal(service.acquire(service.folder(alias)), false);
+  assert.equal(service.lockState(folder).generation, 1); service.release(folder); assert.equal(service.lockState(folder).generation, 2);
 });

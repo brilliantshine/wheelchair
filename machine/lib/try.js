@@ -6,7 +6,10 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 class TryService {
-  constructor({ stateDir, root, projects }) { this.stateDir = stateDir; this.root = root; this.projects = projects; }
+  constructor({ stateDir, root, projects }) { this.stateDir = stateDir; this.root = root; this.projects = projects; this.locks = new Map(); }
+  lockState(folder) { if (!this.locks.has(folder)) this.locks.set(folder, { held: false, generation: 0 }); return this.locks.get(folder); }
+  acquire(folder) { const lock = this.lockState(folder); if (lock.held) return false; lock.held = true; lock.generation++; return true; }
+  release(folder) { const lock = this.lockState(folder); lock.held = false; lock.generation++; }
   folder(project) { return fs.realpathSync(project); }
   hash(folder) { return crypto.createHash('sha256').update(folder).digest('hex'); }
   recordPath(folder) { return path.join(this.stateDir, 'tries', `${this.hash(folder)}.json`); }
@@ -43,8 +46,11 @@ class TryService {
     if (!checked.checked.ok) invalid('Invalid project.');
     if (['back', 'dismiss', 'forget'].includes(input.action) && (typeof input.version !== 'string' || !input.version)) invalid('Version is required.');
     if (input.action === 'forget' ? typeof input.kept !== 'string' || !input.kept : Object.hasOwn(input, 'kept')) invalid('Invalid kept ref.');
-    const status = await this.status(input);
-    return input.action === 'status' ? status : { accepted: false, reason: 'Not built yet', status };
+    const folder = this.folder(input.project);
+    if (input.action === 'status') return this.status(input, folder);
+    if (!this.acquire(folder)) return { accepted: false, reason: 'A switch is already running', status: await this.status(input, folder) };
+    try { return { accepted: false, reason: 'Not built yet', status: await this.status(input, folder) }; }
+    finally { this.release(folder); }
   }
   async status() {
     return { version: null, state: 'none', active_thread_id: null, active_commit: null, target_available: false, newest: false, refused: null, earlier_branch: null, files: [], files_count: 0, index_lock: null, last: null, kept: [] };
