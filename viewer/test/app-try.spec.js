@@ -138,6 +138,19 @@ test('errors: refusal reason, machine unreachable, with a re-read', async ({ pag
   await expect(panel(page).getByRole('button', { name: 'Try it in my copy' })).toBeEnabled();
 });
 
+test('a refused write shows the reason and re-reads Status once', async ({ page }) => {
+  const fake = await setup(page, S());
+  fake.write = async () => ({ status: 200, json: { accepted: false, reason: 'Your copy changed since this page loaded.', status: fake.status } });
+  await panel(page).getByRole('button', { name: 'Try it in my copy' }).click();
+  const gets = fake.gets;
+  await panel(page).getByRole('button', { name: 'Confirm' }).click();
+  await expect(panel(page).locator('.card-error')).toHaveText('Your copy changed since this page loaded.');
+  await expect.poll(() => fake.gets).toBe(gets + 1);
+  await page.waitForTimeout(500);
+  expect(fake.gets).toBe(gets + 1);
+  await expect(panel(page).locator('.card-error')).toHaveText('Your copy changed since this page loaded.');
+});
+
 test('refused is shown instead of Try; Done and Dismiss send the version', async ({ page }) => {
   const fake = await setup(page, S({ refused: 'This folder runs wheelchair itself; switching it would swap the running app for untested code.' }));
   await expect(panel(page)).toContainText('This folder runs wheelchair itself');
