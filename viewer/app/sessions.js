@@ -138,6 +138,51 @@ const ALLOWED_START = {
   'sub-lead': new Set(['worker', 'verifier']),
 };
 
+// Spec §8: the machine's project-tool problems for a thread, shown as one "Project tools problem"
+// card. The caller holds the thread lock; this never takes it.
+const PROJECT_TOOLS_TITLE = 'Project tools problem';
+function projectToolProblems(state) {
+  if (!state) return [];
+  const lines = [...(state.file || []), ...(state.programs || [])];
+  for (const key of Object.keys(state.clis || {}).sort()) lines.push(...(state.clis[key].lines || []));
+  const seen = new Set();
+  return lines.filter((line) => !seen.has(line.text) && seen.add(line.text));
+}
+function applyProjectTools(thread, started) {
+  const incoming = started && started.project_tools;
+  if (!incoming) return;
+  if (!thread.project_tools) thread.project_tools = { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] };
+  const stored = thread.project_tools;
+  const same = incoming.boot === stored.boot;
+  const newer = same
+    ? incoming.seq > stored.seq
+    : !stored.created_at || (started.created_at && Date.parse(started.created_at) >= Date.parse(stored.created_at));
+  if (!newer) return;
+  stored.boot = incoming.boot;
+  stored.seq = incoming.seq;
+  stored.created_at = started.created_at || stored.created_at;
+  stored.state = { file: incoming.file || [], programs: incoming.programs || [], clis: incoming.clis || {} };
+  const lines = projectToolProblems(stored.state);
+  const open = stored.card ? thread.cards.find((item) => item.id === stored.card && !item.answered) : null;
+  if (!lines.length) {
+    if (open) open.answered = true;
+    stored.card = null;
+    stored.card_names = [];
+    return;
+  }
+  const names = [...new Set(lines.flatMap((line) => (line.names.length ? line.names : ['file'])))].sort();
+  const shown = lines.slice(0, 20).map((line) => `• ${line.text}`);
+  if (lines.length > 20) shown.push(`and ${lines.length - 20} more`);
+  const body = ["Some project tools won't work for agents in this thread:", ...shown].join('\n');
+  if (open && JSON.stringify(names) === JSON.stringify(stored.card_names)) {
+    if (open.body !== body) open.body = body;
+    return;
+  }
+  if (open) open.answered = true;
+  stored.card = addCard(thread, { kind: 'needs', title: PROJECT_TOOLS_TITLE, body }, { system: true }).id;
+  stored.card_names = names;
+}
+
 function publicSession(session) {
   const { token, brief, pending_initial, pending_start, unanswered_start: unanswered, ...value } = session;
   return value;
@@ -195,6 +240,7 @@ async function resumeUnanswered(hub, thread, session) {
   }
   delete session.unanswered_start;
   delete session.error;
+  applyProjectTools(thread, started);
   const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue || [] };
   Object.assign(session, started, identity, {
     token: pending.body.token,
@@ -202,6 +248,7 @@ async function resumeUnanswered(hub, thread, session) {
     live: true,
     first_message: pending.first_message,
   });
+  delete session.project_tools;
   if (session.first_message) { session.turn_started_at = new Date().toISOString(); beginTurn(session, session.turn_started_at); }
   delete session.ended_at;
   if (quiet.watched(session) && session.first_message) session.owes_reply = true;
@@ -339,6 +386,7 @@ async function startSession(hub, thread, input) {
     await hub.save(thread);
     throw error;
   }
+  applyProjectTools(thread, started);
   const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue };
   Object.assign(session, started, {
     ...identity,
@@ -353,6 +401,7 @@ async function startSession(hub, thread, input) {
     // session is ready; without one, a ready session is idle and may take the queue at once.
     first_message: PROVIDERS[selection.provider].typesRoleMessage || Boolean(input.brief),
   });
+  delete session.project_tools;
   if (session.first_message) { session.turn_started_at = new Date().toISOString(); beginTurn(session, session.turn_started_at); }
   delete session.ended_at;
   if (quiet.watched(session) && session.first_message) session.owes_reply = true;
@@ -593,7 +642,10 @@ async function sessionRequest(hub, payload) {
   const thread = await hub.threadBySession(payload.calling_session);
   const caller = session(thread, payload.calling_session);
   if (payload.action === 'list') {
-    return { sessions: thread.sessions.map(publicSession), review_families: (await settingsStore.load(hub)).review_families };
+    const problems = projectToolProblems(thread.project_tools && thread.project_tools.state).map((line) => line.text);
+    const leadEntry = thread.sessions.find((item) => item.role === 'lead');
+    const listed = thread.sessions.map((item) => (item === leadEntry ? { ...publicSession(item), project_tools: { problems } } : publicSession(item)));
+    return { sessions: listed, review_families: (await settingsStore.load(hub)).review_families };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
   if (payload.action === 'start') require('./handoff.js').refuseFrozen(hub, thread);
@@ -814,6 +866,7 @@ module.exports = {
   pollDead,
   retryQueues,
   retryWaiting,
+  applyProjectTools,
   sendNow,
   releaseLimits,
   publicSession,
