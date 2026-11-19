@@ -219,6 +219,7 @@ test.describe('desktop', () => {
     await expect(page.locator('#full-prompt')).toContainText('Role: worker');
     await expect(page.locator('#full-prompt')).toContainText('Save your work after every step.');
     await expect(page.locator('#full-prompt-caption')).toContainText('starting instructions');
+    await expect(page.locator('#full-prompt-caption')).toContainText('Kimi Code');
     await page.locator('#see-full').click();
     await expect(page.locator('#full-prompt-caption')).toHaveCount(1);
     await expect(page.locator('#full-prompt')).toHaveCount(1);
