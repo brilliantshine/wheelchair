@@ -849,3 +849,4 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-19 — Verification attempt 9 started on 0bf6b62: verifier-17 (claude-opus-5-5) and verifier-18 (gpt-6.2-sol).
 - 2026-11-19 — Collin's rule from the lead: Decision Log 52 (user). It applies to the gaps from verification attempt 9 on; R8-1 and R8-2 had already finished as dispatched.
 - 2026-11-19 — Verification attempt 9: gpt verifier-18 FAIL with 1 gap (the hub decodes each HTTP chunk separately, so a UTF-8 character split across chunks is corrupted and an ordinary Save pushes the corruption) and 4 hardening candidates it named under Log 52; verifier-18 stopped. Waiting for verifier-17.
+- 2026-11-19 — Verification attempt 9: claude verifier-17 PASS (stopped). Sent the lead 1 gap marked must-fix (hub UTF-8 chunk decoding) and 5 hardening deferral proposals under Log 52.
