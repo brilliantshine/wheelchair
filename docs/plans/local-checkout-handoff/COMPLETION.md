@@ -153,3 +153,22 @@ bash machine/test/run.sh               # tests 411, pass 411, fail 0
 npm --prefix viewer run test:browser   # 34 skipped, 1064 passed (11.1m), exit 0
 node --test viewer/test/*.test.js      # tests 695, pass 694, fail 1: run.test.js "run validation refuses each new schema violation" (file untouched by this branch; alone: pass 8, fail 0, twice). The same suite passed 695/695 on this branch after R2b, before R2a, which changed only machine tests.
 ```
+
+### Remediation 3 — 2026-11-19
+
+Verification attempt 3 (`e77eb32f`): both verifiers FAIL. The lead's per-gap answer fixed J1 and J2 and deferred J3 as PLAN.md D16. Details in `REMEDIATION-3.md`.
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| J1: the stored success text "Your copy is showing this thread." showed on every page and after Dismiss | The page words a success or warning `last` itself: "Switched your copy to this thread." / "…to another thread." / "Switched your copy back."; warnings append the machine's reason | `viewer/pages/thread.js` `copyLines` | `viewer/test/app-try.spec.js`: trying-other with another thread's `last`; state none with this thread's `last`; Back success |
+| J2: a tracked file at an ignored directory's path gave a bare "Aborting" | One `wayPaths` helper reads the indented paths after any git `error:` line ending in `:`, caps at 50, and falls back to "Git did not switch your copy: <error line>" or "Git did not switch your copy." | `machine/lib/try.js` `wayPaths`, used in `performTry` and `performBack` | `machine/test/try.test.js`: wayPaths unit test; Try and Back with ignored `cache/save` versus a tracked `cache` |
+
+Validation after the fixes, on the feature branch:
+
+```text
+bash machine/test/run.sh               # tests 414, pass 414, fail 0
+node --test viewer/test/*.test.js      # tests 695, pass 695, fail 0
+npm --prefix viewer run test:browser   # 34 skipped, 1070 passed (11.4m), exit 0
+```
+
+Residual, seen on read: a refusal where git prints only a `fatal:` line now shows the plain fallback without git's line.
