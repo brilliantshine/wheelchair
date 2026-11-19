@@ -352,10 +352,42 @@ test('missing executable refuses Kimi login', async () => {
   finally { process.env.PATH = oldPath; process.env.HOME = oldHome; }
 });
 
-test('actual approval screens require both title and option', () => {
-  for (const title of ['Run this command?', 'Write this file?', 'Apply these edits?', 'Stop this task?', 'Approve SomeTool?']) assert.equal(kimi.promptText(`${title}\n  Approve once\n  Reject`), true, title);
-  assert.equal(kimi.promptText('Ready to build with this plan?\n❯ Approve\n  Reject\n  Revise plan'), true);
-  for (const text of ['I approve', 'Reject', 'Run this command', 'Run this command?', 'The assistant asks: Ready to build with this plan?']) assert.equal(kimi.promptText(text), false, text);
+test('approval panels require ordered bottom lines and no input box', () => {
+  const panel = (title, choice = 'Approve once') => `Earlier output\nMore output\n╭────────────╮\n│ ${title} │\n│ command │\n│ ❯ ${choice} │\n│   Approve for this session │\n│   Reject │\n╰────────────╯`;
+  for (const title of ['Run this command?', 'Write this file?', 'Apply these edits?', 'Stop this task?', 'Approve SomeTool?']) assert.equal(kimi.promptText(panel(title)), true, title);
+  assert.equal(kimi.promptText('Earlier output\n│ Ready to build with this plan? │\n│ ❯ Approve │\n│ Reject │\n│ Revise plan │'), true);
+  assert.equal(kimi.promptText('Run this command?\n  1. Approve once'), true);
+  for (const text of [
+    'The tool asks "Run this command?" and offers Approve once.\n│ >\ncontext: 10%',
+    'Run this command?\nApprove once\n│ >\ncontext: 10%',
+    'Run this command?\nReject',
+    `Approve once\n${Array(15).fill('output').join('\n')}\nRun this command?`,
+    'Run this command?\nThe choice is Approve once.',
+    'The assistant asks: Run this command?\nApprove once',
+    'Approve once\nRun this command?',
+    'Ready to build with this plan?\nThe choice is Approve',
+  ]) assert.equal(kimi.promptText(text), false, text);
+});
+
+test('readiness polling opens one Kimi permission hold and clears it on input', async () => {
+  const root = makeTempSync('kimi-prompt-tmux-'), bin = path.join(root, 'bin'), pane = path.join(root, 'pane'), old = process.env.PATH;
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\ncat '${pane}'\n`, { mode: 0o755 });
+  const machine = Object.create(MachineService.prototype), events = [];
+  const session = { name: 'wc-test-worker', cli: 'kimi', status: 'ready', thread_id: 'test', prompt_open: false };
+  machine.sessions = { [session.name]: session }; machine.persistSessions = async () => {}; machine.emitEvent = async event => events.push(event);
+  try {
+    process.env.PATH = `${bin}:${old}`;
+    const ready = 'The tool asks "Run this command?" and offers Approve once.\n│ >\ncontext: 10%';
+    fs.writeFileSync(pane, ready);
+    for (let i = 0; i < 3; i++) await machine.pollReadiness();
+    assert.equal(events.filter(event => event.type === 'prompt').length, 0); assert.equal(session.prompt_open, false);
+    fs.writeFileSync(pane, '│ Run this command? │\n│ command │\n│ ❯ Approve once │\n│ Reject │');
+    for (let i = 0; i < 3; i++) await machine.pollReadiness();
+    assert.equal(events.filter(event => event.type === 'prompt').length, 1); assert.equal(session.prompt_open, true);
+    fs.writeFileSync(pane, ready); await machine.checkPrompt(session);
+    assert.equal(session.prompt_open, false); assert.equal(events.filter(event => event.type === 'prompt-cleared').length, 1);
+  } finally { process.env.PATH = old; }
 });
 test('recovery prioritizes anchored Kimi markers over reply text', async () => {
   const machine = Object.create(MachineService.prototype); machine.sessions = {}; machine.persistSessions = async () => {};
