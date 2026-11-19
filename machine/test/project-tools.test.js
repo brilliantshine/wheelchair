@@ -230,3 +230,37 @@ test('special names work in checks and keys, and Start over requires an empty li
   const rejected = await f.tools.save({ path: f.repo, token: unreadable.token, tools: { x: { command: 'run' } }, keys: {}, start_over: true });
   assert.equal(rejected.status, 400); assert.equal(rejected.body.reason, 'start over replaces the file with an empty tool list');
 });
+
+
+test('checks expose per-tool eligible and held-back key names', async () => {
+  const f = await fixture();
+  const servers = { a: { command: 'run', env: { TOKEN: '${TOKEN}' } }, b: { command: 'run', env: { ALIAS: '${TOKEN}' } }, c: { type: 'http', url: 'https://example.test', headers: { X: '${H1}${H2}' } }, d: { command: 'run', args: ['${TOKEN}'], env: { TOKEN: '${TOKEN}' } } };
+  await fs.writeFile(path.join(f.repo, '.mcp.json'), JSON.stringify({ mcpServers: servers }));
+  git('-C', f.repo, 'add', '.mcp.json'); git('-C', f.repo, 'commit', '-qm', 'references'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const { checks } = (await f.tools.read({ path: f.repo })).body;
+  assert.deepEqual(checks.a.keys, ['TOKEN']); assert.deepEqual(checks.b.keys, ['TOKEN']);
+  assert.deepEqual(checks.c.keys, ['H1', 'H2']); assert.deepEqual(checks.d.held_back, ['TOKEN']);
+});
+
+test('save stages an ignored, untracked .mcp.json', async () => {
+  const f = await fixture();
+  git('-C', f.repo, 'rm', '--cached', '--', '.mcp.json');
+  await fs.writeFile(path.join(f.repo, '.gitignore'), '.mcp.json\n');
+  git('-C', f.repo, 'add', '.gitignore'); git('-C', f.repo, 'commit', '-qm', 'ignore tools'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const read = (await f.tools.read({ path: f.repo })).body; assert.equal(read.source.state, 'missing');
+  const reply = await f.tools.save({ path: f.repo, token: read.token, tools: { x: { command: 'run' } }, keys: {} });
+  assert.equal(reply.body.outcome, 'opened', JSON.stringify(reply));
+  const branch = git('--git-dir', f.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/wc-tools/');
+  assert.equal(JSON.parse(git('--git-dir', f.remote, 'show', `${branch}:.mcp.json`)).mcpServers.x.command, 'run');
+});
+
+test('unreadable key store gives complete failed save and remove replies', async () => {
+  const f = await fixture(), read = (await f.tools.read({ path: f.repo })).body;
+  await f.tools.save({ path: f.repo, token: read.token, tools: null, keys: { TOKEN: 'secret' } });
+  const dir = path.join(f.root, 'state', 'project-keys'), [file] = await fs.readdir(dir);
+  await fs.writeFile(path.join(dir, file), '{invalid');
+  for (const reply of [await f.tools.save({ path: f.repo, token: read.token, tools: null, keys: { TOKEN: 'new' } }), await f.tools.removeKey({ path: f.repo, token: read.token, name: 'TOKEN' })]) {
+    assert.equal(reply.status, 502); assert.equal(reply.body.outcome, 'failed');
+    assert.equal(reply.body.key_revision, 0); assert.deepEqual(reply.body.keys, []);
+  }
+});

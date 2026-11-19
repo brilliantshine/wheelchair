@@ -39,7 +39,7 @@ All three are `POST` with a JSON body and answer JSON. `path` is the picked proj
     "document": "the parsed .mcp.json object, or null when missing/unreadable"
   },
   "checks": {
-    "<tool name>": { "skip": ["reason", "..."], "key_warnings": ["needs X, not set on this machine", "X is held back: also used in args"] }
+    "<tool name>": { "skip": ["reason", "..."], "key_warnings": ["needs X, not set on this machine", "X is held back: also used in args"], "keys": ["X"], "held_back": ["X"] }
   },
   "file_warnings": ["project tools skipped on Codex: .mcp.json is too large to pass on the command line"],
   "keys": ["STORED_NAME", "..."],
@@ -56,6 +56,7 @@ All three are `POST` with a JSON body and answer JSON. `path` is the picked proj
   `file_warnings`/`waiting` are `[]` and `references` is `{}`.
 - `references` lists every key (eligible, valid, non-reserved name) the source references,
   with the tools using it, including held-back ones.
+- Each check’s `keys` and `held_back` list sorted unique names referenced in eligible places and held back by that tool, respectively.
 - `keys` is always the full list of stored key names (never values).
 - A path that is not a git checkout answers `400 { "outcome": "refused", "reason": "..." }`.
 
