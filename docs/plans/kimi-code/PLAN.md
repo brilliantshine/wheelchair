@@ -633,6 +633,8 @@ re-raise them.
 | Under the auto permission setting, Kimi approval panels whose title scrolls above the detection window (long write previews) or plan reviews with custom choices raise no card; the agent waits until someone looks at its terminal. Under bypass Kimi runs Never Ask and shows no approvals | Collin's decision to stop refining approval detection after verification attempt 7 (Decision 53) | verification |
 | A kimi binary replaced by an older one during the final version check (under a second, right before launch) can still launch | Collin's decision after the version-at-launch gap survived V1 (Decision 55) | verification |
 | Archiving a thread in the second or so between a Kimi fatal stop and the hub's next dead-session check drops that session's ended notice; the thread is archived and every session in it is ended anyway | Collin's decision after the fatal-stop notice gap recurred in verification attempt 11 (Decision 56) | verification |
+| If a second Kimi session loses its log while Archive is confirming the first session's fatal stop, and killing the second fails, Archive can forget the second session and remove its worktree while tmux still lists its pane | Rare failure path under Decision 59 (verification attempt 13, verifier-26) | verification |
+| If the kimi binary is downgraded while a worker's checkout is being created, the final version check refuses the launch but leaves the new branch and worktree behind, so a retry with the same name fails with "branch already exists" | Rare failure path under Decision 59 (verification attempt 13, verifier-26) | verification |
 
 ## Review Rounds
 
@@ -974,6 +976,7 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 - 2026-11-18 — F1 accepted (band: scout): `loginStatus` counts only regular files as credentials, trusted and untrusted paths; machine 211/211 re-run by the sub-lead. Remediation 12 gap 2 fixed; gap 1 with Collin.
 - 2026-11-19 — Remediation 12 gap 1 fixed by the sub-lead at Collin's choice (Decision 58): `recoverFromTmux` no longer requires `thinking` in the Kimi footer (`machine/service.js:402`); recovery test adds a thinking-off Kimi pane (stopped) and a Claude pane mentioning the footer mid-line (left alone). Commit `569d4fe`.
 - 2026-11-19 — Decision 59 (Collin, via the lead): from attempt 13 on, fix only gaps that break normal use or fail a validation command; rare failure paths become Accepted Risks. Verifiers 25 and 26 told by message.
+- 2026-11-19 — Attempt 13: verifier-26 (gpt-6.2-sol) PASS at 858d46e; its two rare failure paths (archive during a double fatal stop; binary downgraded during checkout) added as Accepted Risks under Decision 59. Validation failures were the known installer snapshot check and load flakes that pass alone.
 
 - 2026-11-18 — Lead on remediation 12 gap 2: fix (regular file only); F1 (light, gpt) dispatched. Gap 1 with Collin.
 
