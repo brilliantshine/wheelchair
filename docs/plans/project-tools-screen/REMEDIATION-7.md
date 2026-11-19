@@ -39,3 +39,24 @@ Plan slug: project-tools-screen. Task id: R7-1. Gaps in `docs/plans/project-tool
 npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js   # run twice; both must pass
 bash machine/test/run.sh
 ```
+
+# Task R7-2 — page: show read-only strings with control characters visibly
+
+Plan slug: project-tools-screen. Task id: R7-2. File: `viewer/pages/project-tools.js`.
+
+Read-only values containing control characters (newline, tab and so on; the `unshowable(s)` helper at ~line 63 detects them) are displayed as raw text, so HTML collapses `first\nsecond` to `first second`.
+
+## Change (exactly this)
+1. Add, next to `unshowable`: `const showText = (s) => (typeof s === 'string' && !unshowable(s) ? s : JSON.stringify(s));`
+2. Use `showText(...)` for every DISPLAYED read-only string: in `rowLine` (~356-368) for a read-only row's name and value; in the form's read-only row branch of `rowEditor` (~471-476); for the read-only command and URL text (~521, ~531); and for the tool name in the card's `h3` (~390). Where the code already uses `JSON.stringify` for non-string values, replace that with `showText` so both cases go through one function. Display only: never change what is saved.
+
+## Test (append to `viewer/test/app-project-tools.spec.js`)
+A tool with env `{ NOTE: "first\nsecond" }`: its card shows the text `"first\nsecond"` (the JSON form, with a visible `\n`).
+
+## Ownership boundary
+`viewer/pages/project-tools.js` (display call sites only), `viewer/test/app-project-tools.spec.js` (append only).
+
+## Validation
+```
+npm --prefix viewer run test:browser -- app-project-tools.spec.js
+```
