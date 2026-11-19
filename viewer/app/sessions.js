@@ -171,15 +171,16 @@ function applyProjectTools(thread, started) {
     return;
   }
   const names = [...new Set(lines.flatMap((line) => (line.names.length ? line.names : ['file'])))].sort();
-  const shown = lines.slice(0, 20).map((line) => `• ${line.text}`);
-  if (lines.length > 20) shown.push(`and ${lines.length - 20} more`);
-  const body = ["Some project tools won't work for agents in this thread:", ...shown].join('\n');
+  const items = lines.slice(0, 20).map((line) => line.text);
+  if (lines.length > 20) items.push(`and ${lines.length - 20} more`);
+  const body = "Some project tools won't work for agents in this thread:";
   if (open && JSON.stringify(names) === JSON.stringify(stored.card_names)) {
     if (open.body !== body) open.body = body;
+    if (JSON.stringify(open.items) !== JSON.stringify(items)) open.items = items;
     return;
   }
   if (open) open.answered = true;
-  stored.card = addCard(thread, { kind: 'needs', title: PROJECT_TOOLS_TITLE, body }, { system: true }).id;
+  stored.card = addCard(thread, { kind: 'needs', title: PROJECT_TOOLS_TITLE, body, items }, { system: true }).id;
   stored.card_names = names;
 }
 
