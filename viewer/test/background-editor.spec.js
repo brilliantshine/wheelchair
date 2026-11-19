@@ -84,7 +84,14 @@ test('clean editor follows shared save and reset; stale draft conflicts then Can
 test('draft survives rebuild and invalid file, but navigation, reload and pageshow discard it', async ({ page }) => {
   await open(page); await choose(page);
   const image = page.locator('.background-layer img'); await expect(image).toHaveCount(1);
-  await page.evaluate(() => { window.draftImage = document.querySelector('.background-layer img'); window.dispatchEvent(new Event('resize')); });
+  await page.evaluate(() => {
+    window.draftImage = document.querySelector('.background-layer img');
+    window.oldEditor = document.querySelector('.background-editor');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  });
+  expect(await page.evaluate(() => document.querySelector('.background-editor') !== window.oldEditor)).toBe(true);
+  await expect(page.getByText(/sample.png/)).toBeVisible();
+  expect(await page.evaluate(() => document.querySelector('.background-layer img') === window.draftImage)).toBe(true);
   await choose(page, 'bad.png', Buffer.from('not an image'));
   await expect(page.getByRole('alert')).toBeVisible();
   expect(await page.evaluate(() => document.querySelector('.background-layer img') === window.draftImage)).toBe(true);
