@@ -703,3 +703,5 @@ Round 9 was the third round without a clean result since that decision (rounds 7
 Round 12 was the third round without a clean result since that decision (rounds 10-12); budget stop. Intent lens clean in rounds 11 and 12; mechanics findings are now precise edge rules in the form and key list. All fixed before asking. Collin pressed Keep going; budget reset.
 
 Watch List items 1-6 (Antigravity note, Codex flags, project identity, unknown fields, key values in argv, second save) were settled as Decision Log 4-9.
+
+Ready check 2026-11-18: hub and machine service answer (session list ok); claude, codex and gh installed; gh logged in to github.com; Codex preflight passed (token fresh). Ready.
