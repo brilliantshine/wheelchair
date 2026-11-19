@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 // Spec "Security" and "Views": browser and machine callback HTTP routes.
 const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
@@ -466,6 +468,48 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (!bits[1]) throw appError(404, 'route not found');
   const id = bits[1];
+  if (bits[2] === 'try' && bits.length === 3 && ['GET', 'POST'].includes(request.method)) {
+    const thread = await hub.thread(id);
+    const machines = await hub.state.machines();
+    const local = await hub.state.resolveMachine(machines, 'hub');
+    const target = await hub.state.resolveMachine(machines, thread.machine);
+    let ownRoot = false;
+    if (local && target && local === target) {
+      try {
+        const [project, root] = await Promise.all([fs.realpath(thread.project), fs.realpath(hub.root)]);
+        const relative = path.relative(project, root);
+        ownRoot = relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+      } catch { /* The machine reports invalid folders. */ }
+    }
+    const refusal = 'This folder runs wheelchair itself; switching it would swap the running app for untested code.';
+    const statusWithTitle = async (status) => ({
+      ...status,
+      ...(ownRoot ? { refused: refusal } : {}),
+      active_thread_title: (await hub.allThreads()).find((item) => item.id === status.active_thread_id)?.title ?? null,
+    });
+    const base = { thread_id: id, project: thread.project };
+    const call = async (input) => {
+      try { return await hub.client.tryCheckout(thread.machine, input); }
+      catch (error) {
+        if (error.status === 422 || error.status === 502) {
+          send(response, error.status, { error: error.message });
+          return null;
+        }
+        throw error;
+      }
+    };
+    if (request.method === 'GET' || (ownRoot && ['try', 'back'].includes(body.action))) {
+      const result = await call({ action: 'status', ...base });
+      if (!result) return;
+      const status = await statusWithTitle(result);
+      return send(response, 200, request.method === 'GET' ? status : { accepted: false, reason: refusal, status });
+    }
+    const input = { action: body.action, ...base };
+    for (const field of ['version', 'kept']) if (Object.hasOwn(body, field)) input[field] = body[field];
+    const answer = await call(input);
+    if (!answer) return;
+    return send(response, 200, { ...answer, status: await statusWithTitle(answer.status) });
+  }
   if (request.method === 'GET' && bits[2] === 'handoff' && bits.length === 3) return send(response, 200, await hub.handoffBanner(id));
   if (request.method === 'GET' && bits[2] === 'handoff-file' && bits.length === 3) {
     const file = await hub.handoffFile(id);
