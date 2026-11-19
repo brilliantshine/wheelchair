@@ -163,3 +163,30 @@ Your report must paste both commands' summary counts, and its Choices section mu
 - Paste the full summary output (pass/fail counts) of every validation command into your report.
 - If the same gate fails twice, stop and report rather than iterating.
 - Close your report with: "List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none."
+
+### R10 (follow-up to R9)
+
+R9 moved the "Project tools problem" card's lines from `body` into the needs card's `items` list. The handoff history text for a needs card reads only `title` and `body`, so those lines would now be dropped from an exported handoff.
+
+Ownership boundary: `viewer/app/handoff.js` (only the `case 'needs'` line in `historyText`), `viewer/test/app-handoff.test.js` (only the case table in the test "history renders shown cards and skips hidden and progress cards"), your report `docs/plans/project-tools-solid/reports/R10.md`. Touch nothing else.
+
+## Exactly what to change
+1. `viewer/app/handoff.js`, in `historyText`: change `case 'needs': return lines(card.title, card.body);` to `case 'needs': return lines(card.title, card.body, card.items || []);` (the `lines` helper already flattens arrays, as the `done` case does with `card.can_do || []`).
+2. `viewer/test/app-handoff.test.js` around line 28: keep the existing `[{ kind: 'needs', title: 'N', body: 'B' }, ['N', 'B']]` row and add `[{ kind: 'needs', title: 'N', body: 'B', items: ['_tool_: x', 'and 3 more'] }, ['N', 'B', '_tool_: x', 'and 3 more']],` in the same table (match how the table compares rows to text; read the loop below the table first).
+
+## Validation
+```
+node --test viewer/test/app-handoff.test.js viewer/test/app-project-tools.test.js
+node --test viewer/test/*.test.js
+```
+(leave the glob unquoted; known flaky unrelated tests: app-quiet "6 message clears debt", app-uploads-archive "stalled upload", port collisions — re-run those alone and paste both runs)
+
+## Rules for this task
+- Plan slug `project-tools-solid`. The lead's session is `wc-b9ca1682b0fa-lead`; send it a `message` card if something this brief does not settle blocks you.
+- Never run `./install.sh` and never start a viewer server by hand (tests start their own isolated servers). Never run `sudo`.
+- Never delete files with `rm` (or any other delete) outside your own test temp folders.
+- Your own `wc.js` and `card.js` calls are always allowed.
+- Commit with `node /home/collin/projects/personal/wheelchair/viewer/app/wc.js git commit -m "<msg>" --paths <path>`, one path per call.
+- Paste the full summary output (pass/fail counts) of every validation command into your report.
+- If the same gate fails twice, stop and report rather than iterating.
+- Close your report with: "List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none."
