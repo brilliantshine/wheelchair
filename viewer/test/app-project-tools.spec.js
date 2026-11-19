@@ -338,3 +338,33 @@ test.describe('phone', () => {
     expect(box.x + box.width).toBeLessThanOrEqual(390);
   });
 });
+
+test("a reserved name referenced in a setting is read as the agent's own environment, not a key", async ({ page }) => {
+  const calls = await open(page, { read: readBody({
+    source: { state: 'ok', reason: null, document: { mcpServers: { app: { command: 'node', env: { PATH: '${PATH}', API_KEY: '${API_KEY}' } } } } },
+    checks: {}, references: { API_KEY: ['app'] }, keys: ['API_KEY'],
+  }) });
+  await expect(tool(page, 'app').locator('li.pt-ro')).toContainText("(from the agent's own environment)");
+  await expect(tool(page, 'app').locator('li.pt-ro .pt-chip')).toHaveCount(0);
+  await expect(tool(page, 'app').locator('.pt-chip.set')).toHaveCount(1);   // API_KEY only
+  await tool(page, 'app').getByRole('button', { name: 'Edit app' }).click();
+  await page.getByLabel('Command', { exact: true }).fill('node2');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: "can't be set here" })).toHaveCount(0);
+  await page.locator('#pt-save').click();
+  await expect(page.locator('.pt-status')).toHaveText('Saved');
+  expect(calls.save).toHaveLength(1);
+  expect(calls.save[0].tools.app).toEqual({ command: 'node2', env: { PATH: '${PATH}', API_KEY: '${API_KEY}' } });
+});
+
+test('an unsaved tool removal survives a Settings re-render', async ({ page }) => {
+  const calls = await open(page);
+  await tool(page, 'web').getByRole('button', { name: 'Remove web' }).click();
+  await page.getByRole('button', { name: 'Yes, remove web' }).click();
+  await expect(tool(page, 'web')).toHaveCount(0);
+  await page.evaluate(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
+  await expect(tool(page, 'web')).toHaveCount(0);
+  await expect(tool(page, 'db')).toBeVisible();
+  await expect(page.locator('#pt-save')).toBeEnabled();
+  expect(calls.read).toHaveLength(1);
+});

@@ -1383,10 +1383,10 @@
     }));
   }
 
+  let projectToolsHost = null;
   function renderProjectTools() {
-    const host = h('div', {});
-    window.ProjectTools.render(host);
-    return host;
+    if (!projectToolsHost) { projectToolsHost = h('div', {}); window.ProjectTools.render(projectToolsHost); }
+    return projectToolsHost;
   }
 
   function renderPanel() {
