@@ -210,3 +210,9 @@ cancelled-claim revocations. `POST /handoff-revokes/dismiss` accepts
 `{thread_id, sha}` and removes a matching failed notice.
 
 `POST /threads/import?machine=<machine>&project=<project>` accepts a raw handoff file (at most 10 MB). It returns `{outcome, id, note?}` with outcome `created`, `advanced`, or `opened`; invalid files return 422, conflicts return 409, and oversized bodies return 413.
+
+### Background preferences
+
+`GET /settings/background` returns `image_id`, `media_type`, `opacity`, `revision`, `image_url`, and `missing_image`. `GET /settings/background/image/<id>` serves only the current image. `POST /settings/background/upload?revision=<n>&opacity=<n>` accepts a raw PNG, JPEG, WEBP, or GIF (at most 25 MiB) with its matching Content-Type. `PUT /settings/background` accepts `{revision,image_id,opacity}`; null image_id removes the image. Writes compare revisions and return 409 with current metadata on conflict. JSON writes are limited to 4 KiB. All routes use normal browser authentication and origin checks.
+
+A state directory supports one running hub writer. Tests must use independent state directories except for sequential restart tests, which stop the first server before reusing its directory.

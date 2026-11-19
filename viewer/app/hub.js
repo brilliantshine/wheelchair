@@ -57,6 +57,7 @@ class Hub {
 
   async init() {
     await this.state.init();
+    await require('./background.js').sweep(this);
     await handoff.sweepFiles(this);
     for (const listed of await this.allThreads()) {
       const thread = structuredClone(listed);

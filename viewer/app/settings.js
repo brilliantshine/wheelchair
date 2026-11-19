@@ -35,7 +35,7 @@ const DEFAULT_STYLE = Object.freeze({
 const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 }, gemini: { unknown: 1, pro: 1, ultra: 4 }, kimi: { unknown: 1 } };
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
 function defaults() {
-  return { lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini', 'kimi'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
+  return { background: { image_id: null, media_type: null, opacity: 35, revision: 0 }, lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini', 'kimi'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -209,6 +209,7 @@ function normalize(saved) {
   balancing.worker_order = [...balancing.worker_order, ...Object.keys(PROVIDERS).filter((provider) => !balancing.worker_order.includes(provider) && !orderSeen.includes(provider))];
   if (!validBalancing('save_for_leads', saved.save_for_leads) && typeof saved.save_claude_for_leads === 'boolean') balancing.save_for_leads = saved.save_claude_for_leads;
   return {
+    background: require('./background.js').normalizeMetadata(saved.background),
     lead_names: Array.isArray(saved.lead_names) ? saved.lead_names : [],
     lead_name_list: LIST_KEYS.includes(saved.lead_name_list) ? saved.lead_name_list : (Array.isArray(saved.lead_names) && saved.lead_names.length ? 'custom' : 'greek'),
     worker_order_seen: Object.keys(PROVIDERS),
