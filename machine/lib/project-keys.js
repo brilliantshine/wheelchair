@@ -12,10 +12,22 @@ function reservedNames() { return { exact: [...new Set([...exact, ...Object.valu
 function isReserved(name) { const rules = reservedNames(); return rules.exact.some(key => key.toUpperCase() === name.toUpperCase()) || rules.prefixes.some(prefix => name.startsWith(prefix)); }
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 function keyReferences(mcpServers) {
-  const references = {}, heldBack = {};
+  const references = Object.create(null), heldBack = Object.create(null);
   const add = (map, name, value) => { if (!Object.hasOwn(map, name)) Object.defineProperty(map, name, { value: [], enumerable: true }); if (!map[name].some(item => JSON.stringify(item) === JSON.stringify(value))) map[name].push(value); };
-  // Defaults may contain any characters except the closing brace.
-  const scan = (value, tool, field) => { if (typeof value !== 'string') return; for (const match of value.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}/g)) add(heldBack, match[1], { tool, field }); };
+  const scan = (value, tool, field) => {
+    if (typeof value !== 'string') return;
+    const names = text => { for (const match of text.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)/g)) add(heldBack, match[1], { tool, field }); };
+    for (let i = 0; i < value.length; i++) {
+      if (value[i] !== '$' || value[i + 1] !== '{') continue;
+      const start = i; let depth = 1; i += 2;
+      for (; i < value.length && depth; i++) {
+        if (value[i] === '{') depth++;
+        else if (value[i] === '}') depth--;
+      }
+      if (depth) { names(value); return; }
+      names(value.slice(start, i)); i--;
+    }
+  };
   if (!object(mcpServers)) return { references, heldBack };
   for (const [tool, entry] of Object.entries(mcpServers)) {
     if (!object(entry)) continue;
@@ -34,11 +46,11 @@ async function projectIdentity(dir, runner) {
 }
 function storePath(stateDir, identity) { return path.join(stateDir, 'project-keys', `${crypto.createHash('sha256').update(identity).digest('hex')}.json`); }
 async function readKeyStore(stateDir, identity) {
-  try { const store = JSON.parse(await fs.readFile(storePath(stateDir, identity), 'utf8')); if (store.project !== identity || !Number.isSafeInteger(store.revision) || store.revision < 0 || !object(store.keys) || !Object.values(store.keys).every(v => typeof v === 'string')) throw new Error('invalid project key store'); return store; }
-  catch (error) { if (error.code === 'ENOENT') return { project: identity, revision: 0, keys: {} }; throw error; }
+  try { const store = JSON.parse(await fs.readFile(storePath(stateDir, identity), 'utf8')); if (store.project !== identity || !Number.isSafeInteger(store.revision) || store.revision < 0 || !object(store.keys) || !Object.values(store.keys).every(v => typeof v === 'string')) throw new Error('invalid project key store'); store.keys = Object.assign(Object.create(null), store.keys); return store; }
+  catch (error) { if (error.code === 'ENOENT') return { project: identity, revision: 0, keys: Object.create(null) }; throw error; }
 }
 async function writeKeyStore(stateDir, identity, changes) {
-  const old = await readKeyStore(stateDir, identity), keys = { ...old.keys, ...changes.set };
+  const old = await readKeyStore(stateDir, identity), keys = Object.assign(Object.create(null), old.keys, changes.set);
   for (const name of changes.remove || []) delete keys[name];
   const store = { project: identity, revision: old.revision + 1, keys }, file = storePath(stateDir, identity);
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -48,7 +60,7 @@ async function writeKeyStore(stateDir, identity, changes) {
   return store;
 }
 function launchKeys(mcpServers, store) {
-  const { references, heldBack } = keyReferences(mcpServers), env = {};
+  const { references, heldBack } = keyReferences(mcpServers), env = Object.create(null);
   for (const name of Object.keys(references)) if (!Object.hasOwn(heldBack, name) && Object.hasOwn(store.keys, name)) Object.defineProperty(env, name, { value: store.keys[name], enumerable: true });
   return { env, heldBack: Object.keys(references).filter(name => Object.hasOwn(heldBack, name) && Object.hasOwn(store.keys, name)) };
 }

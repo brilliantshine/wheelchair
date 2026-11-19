@@ -17,7 +17,7 @@ function repoName(url) {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 function checksFor(servers, store) {
-  const checks = {}, valid = {}, { references, heldBack } = keyReferences(servers);
+  const checks = Object.create(null), valid = Object.create(null), { references, heldBack } = keyReferences(servers);
   for (const [name, entry] of Object.entries(servers)) {
     const skip = [], key_warnings = [], why = entryReason(name, entry);
     if (why) skip.push(why);
@@ -68,8 +68,8 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
   async function read(input) {
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
     let store, notice = null;
-    try { store = await readKeyStore(stateDir, projectId); } catch (e) { store = { revision: 0, keys: {} }; notice = e.message; }
-    const base = { mode: 'keys-only', notice: "Tools can't be shown or edited here: pull requests need a GitHub origin", repo: null, default_branch: null, token: { project: projectId, baseline: null, key_revision: store.revision }, source: null, checks: {}, file_warnings: [], keys: keys(store), references: {}, reserved: reservedNames(), waiting: [], waiting_error: null };
+    try { store = await readKeyStore(stateDir, projectId); } catch (e) { store = { revision: 0, keys: Object.create(null) }; notice = e.message; }
+    const base = { mode: 'keys-only', notice: "Tools can't be shown or edited here: pull requests need a GitHub origin", repo: null, default_branch: null, token: { project: projectId, baseline: null, key_revision: store.revision }, source: null, checks: Object.create(null), file_warnings: [], keys: keys(store), references: Object.create(null), reserved: reservedNames(), waiting: [], waiting_error: null };
     const destination = await remote(input.path);
     if (!destination) { if (notice) base.notice += `; ${notice}`; return { status: 200, body: base }; }
     try {
@@ -89,6 +89,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
     let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', error: e.message } }; }
     const failed = error => ({ status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: error.message || String(error) } });
     if (input.token?.project !== projectId || input.token?.key_revision !== store.revision) return changed();
+    if (input.start_over && (!object(input.tools) || Object.getPrototypeOf(input.tools) !== Object.prototype || Reflect.ownKeys(input.tools).length !== 0)) return refused('start over replaces the file with an empty tool list');
     if (!object(input.keys) || !(input.tools === null || object(input.tools))) return refused('invalid save request');
     for (const [name, value] of Object.entries(input.keys)) { const error = validateName(name); if (error) return refused(error); if (typeof value !== 'string') return refused('invalid key value'); }
     const baseline = input.token.baseline;
@@ -114,7 +115,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
         for (const [name, users] of Object.entries(refs.references)) for (const held of refs.heldBack[name] || []) {
           for (const tool of users) {
             const existed = (oldRefs.references[name] || []).includes(tool) && (oldRefs.heldBack[name] || []).some(item => item.tool === held.tool && item.field === held.field);
-            if (!existed && (!isDeepStrictEqual(input.tools[tool], old[tool]) || !isDeepStrictEqual(input.tools[held.tool], old[held.tool]))) return refused(`${name} is also used in ${held.field}`);
+            if (!existed && (!isDeepStrictEqual(input.tools[tool], Object.hasOwn(old, tool) ? old[tool] : undefined) || !isDeepStrictEqual(input.tools[held.tool], Object.hasOwn(old, held.tool) ? old[held.tool] : undefined))) return refused(`${name} is also used in ${held.field}`);
           }
         }
         const report = checksFor(input.tools, store), warnings = Object.entries(report.checks).flatMap(([name, check]) => check.skip.map(s => `${name}: ${s}`)).concat(report.file_warnings);

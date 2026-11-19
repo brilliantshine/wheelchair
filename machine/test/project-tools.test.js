@@ -215,3 +215,18 @@ test('failed worktree add after registration removes and prunes the temporary wo
   assert.equal(reply.body.outcome, 'failed');
   assert.deepEqual(git('-C', f.repo, 'worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ')), [`worktree ${f.repo}`]);
 });
+
+test('special names work in checks and keys, and Start over requires an empty list', async () => {
+  const f = await fixture();
+  await fs.writeFile(path.join(f.repo, '.mcp.json'), JSON.stringify({ mcpServers: { constructor: { command: 'run', env: { constructor: '${constructor}' } } } }));
+  git('-C', f.repo, 'add', '.mcp.json'); git('-C', f.repo, 'commit', '-qm', 'special names'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const read = (await f.tools.read({ path: f.repo })).body;
+  assert.equal(read.mode, 'tools'); assert.deepEqual(read.checks.constructor.key_warnings, ['needs constructor, not set on this machine']);
+  const saved = await f.tools.save({ path: f.repo, token: read.token, tools: null, keys: { toString: 'secret' } });
+  assert.deepEqual(saved.body.keys, ['toString']);
+  await fs.writeFile(path.join(f.repo, '.mcp.json'), 'invalid');
+  git('-C', f.repo, 'add', '.mcp.json'); git('-C', f.repo, 'commit', '-qm', 'unreadable'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const unreadable = (await f.tools.read({ path: f.repo })).body; assert.equal(unreadable.source.state, 'unreadable');
+  const rejected = await f.tools.save({ path: f.repo, token: unreadable.token, tools: { x: { command: 'run' } }, keys: {}, start_over: true });
+  assert.equal(rejected.status, 400); assert.equal(rejected.body.reason, 'start over replaces the file with an empty tool list');
+});
