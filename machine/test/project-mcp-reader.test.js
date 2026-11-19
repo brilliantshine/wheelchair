@@ -25,7 +25,7 @@ test('missing file has null hash', async () => {
   assert.deepEqual(await readProjectMcp(makeTempSync()), { mcp: null, warnings: [], hash: null });
 });
 
-test('marks duplicate header keys from every header object without marking other paths', async () => {
+test('marks duplicate header keys in kept header objects without marking other paths', async () => {
   const { DUPLICATE_HEADERS } = require('../lib/project-mcp');
   const dir = makeTempSync();
   fs.writeFileSync(path.join(dir, '.mcp.json'), String.raw`{
@@ -41,13 +41,33 @@ test('marks duplicate header keys from every header object without marking other
   }`);
   const { mcp, warnings } = await readProjectMcp(dir);
   assert.deepEqual(warnings, []);
-  for (const name of ['exact', 'case', 'escaped', 'repeated']) {
+  for (const name of ['exact', 'case', 'escaped']) {
     const entry = mcp.servers[name];
     assert.equal(entry[DUPLICATE_HEADERS], true, name);
     assert.deepEqual(Object.keys(entry), Object.keys(JSON.parse(JSON.stringify(entry))));
     assert.ok(!JSON.stringify(entry).includes('duplicate headers'));
   }
-  for (const name of ['clean', 'local']) assert.equal(mcp.servers[name][DUPLICATE_HEADERS], undefined, name);
+  for (const name of ['repeated', 'clean', 'local']) assert.equal(mcp.servers[name][DUPLICATE_HEADERS], undefined, name);
+});
+
+test('only duplicate headers in the last occurrence at each level count', async () => {
+  const { DUPLICATE_HEADERS } = require('../lib/project-mcp');
+  const dir = makeTempSync();
+  const clean = '"headers":{"Authorization":"1"}';
+  const duplicate = '"headers":{"Authorization":"1","authorization":"2"}';
+  const server = headers => `{"type":"http","url":"x",${headers}}`;
+  for (const [label, text, expected] of [
+    ['mcpServers overwritten', `{"mcpServers":{"web":${server(duplicate)}},"mcpServers":{"web":${server(clean)}}}`, undefined],
+    ['mcpServers kept', `{"mcpServers":{"web":${server(clean)}},"mcpServers":{"web":${server(duplicate)}}}`, true],
+    ['server overwritten', `{"mcpServers":{"web":${server(duplicate)},"web":${server(clean)}}}`, undefined],
+    ['server kept', `{"mcpServers":{"web":${server(clean)},"web":${server(duplicate)}}}`, true],
+    ['headers overwritten', `{"mcpServers":{"web":${server(`${duplicate},${clean}`)}}}`, undefined],
+    ['headers kept', `{"mcpServers":{"web":${server(`${clean},${duplicate}`)}}}`, true],
+  ]) {
+    fs.writeFileSync(path.join(dir, '.mcp.json'), text);
+    const result = await readProjectMcp(dir);
+    assert.equal(result.mcp.servers.web[DUPLICATE_HEADERS], expected, label);
+  }
 });
 
 test('deep nesting before or after servers does not stop duplicate detection', async () => {
