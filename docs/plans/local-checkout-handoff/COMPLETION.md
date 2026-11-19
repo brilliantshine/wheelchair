@@ -118,3 +118,21 @@ The one failure is in a spec this change does not touch (`git diff 16036dd1 -- v
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-19
+
+Verification attempt 1 (`61a04ea9`): Claude PASS, GPT FAIL. 13 gaps after merging duplicates; the lead's per-gap answer fixed G1, G2 and G7 and deferred the rest as PLAN.md D4-D13. Details in `REMEDIATION-1.md`.
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| G1: refused Switch back pinned the same commit again on each press | Pin a commit made while trying only after the clean and submodule checks, and skip it when a kept entry already resolves to that sha (Try and Back) | `machine/lib/try.js` `performTry` and `performBack` (pin blocks inside the clean `else` branch) | `machine/test/try.test.js` "Back after a commit pins once across dirty refusals, then succeeds" |
+| G2: the panel did not re-read Status after a refusal | `accepted: false` sets `reread` | `viewer/pages/thread.js:364` | `viewer/test/app-try.spec.js` "a refused write shows the reason and re-reads Status once" |
+| G7: git failing to spawn crashed the machine service | `runGit` resolves at once on a spawn error; `signal`, `groupAlive` and the metadata timer skip a missing pid | `machine/lib/try.js:27-60` | `machine/test/try.test.js` "git runner spawn failure resolves and Try refuses without crashing" |
+
+Validation after the fixes, on the feature branch:
+
+```text
+bash machine/test/run.sh            # tests 411, pass 411, fail 0
+node --test viewer/test/*.test.js   # tests 695, pass 694, fail 1: routes.test.js "wrong cookies and cookies from before a rotation are refused" (file untouched by this branch; alone: pass 22, fail 0, twice)
+npm --prefix viewer run test:browser   # 34 skipped, 1060 passed (11.6m), exit 0
+```
