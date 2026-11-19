@@ -614,6 +614,10 @@ exit. Downgrades and declines cite evidence.
 | mechanics | blocking | Directory passes `X_OK`; relative PATH entries undefined | downgraded (minor) | A false "found" only misses a warning; §5 requires a regular file and resolves relative entries against the worktree |
 | mechanics | minor | README still describes the old behaviour | upheld | Validation: README section rewritten |
 
+### Round 22 — 2026-11-19
+
+**Changed since Round 21:** §5 candidates must be regular executable files, relative PATH entries resolved against the worktree; §6 `realpath` failure means not the thread's worktree, per-start ticket so an older read never overwrites a newer one, `programs` set only from the thread's worktree; Edge cases (worker-only reader errors, program fix timing); Validation (README rewrite, manual Codex token and Antigravity http checks, new state tests).
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
