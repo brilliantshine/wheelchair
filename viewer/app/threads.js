@@ -135,17 +135,19 @@ async function restartLead(hub, id) {
       if (inspected.worktree_exists === false) { thread.worktree = null; await hub.save(thread); }
     } catch {}
   }
+  const asUser = (value) => value === 'collin' ? 'user' : value;
+  const relabelCard = (card) => card && typeof card === 'object' && Object.hasOwn(card, 'resolved_by') ? { ...card, resolved_by: asUser(card.resolved_by) } : card;
   const state = {
     slug: thread.slug,
-    cards: thread.cards.filter((card) => !card.replaced),
-    pinned: thread.pinned,
+    cards: thread.cards.filter((card) => !card.replaced).map(relabelCard),
+    pinned: Object.fromEntries(Object.entries(thread.pinned).map(([kind, card]) => [kind, relabelCard(card)])),
     card_kinds: Object.fromEntries(thread.cards.map((card) => [card.id, card.kind])),
     ...(thread.context ? { stub_summary: thread.context } : {}),
     recent_messages: (thread.sent || [])
       .filter((message) => message.source === 'collin' || message.source === 'card')
-      .slice(-20),
+      .slice(-20).map((message) => ({ ...message, source: asUser(message.source) })),
   };
-  if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50) };
+  if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50).map((entry) => entry && typeof entry === 'object' && Object.hasOwn(entry, 'who') ? { ...entry, who: asUser(entry.who) } : entry) };
   const firstImport = thread.imported && !thread.sessions.some((session) => session.role === 'lead' && Object.hasOwn(session, 'first_message') && Date.parse(session.created_at) > Date.parse(thread.imported.at));
   const context = `[wc:context ${firstImport ? 'import' : 'restart'}] Thread state:\n${JSON.stringify(state)}`;
   if (thread.imported) {
