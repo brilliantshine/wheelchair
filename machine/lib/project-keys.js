@@ -34,7 +34,7 @@ function keyReferences(mcpServers) {
     scan(entry.command, tool, 'command'); if (Array.isArray(entry.args)) for (const arg of entry.args) scan(arg, tool, 'args'); scan(entry.url, tool, 'url');
     const eligible = value => { if (KEY_NAME.test(value) && !isReserved(value)) add(references, value, tool); };
     if ((entry.type === undefined || entry.type === 'stdio') && object(entry.env)) for (const value of Object.values(entry.env)) { if (typeof value !== 'string') continue; const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value); if (match) eligible(match[1]); }
-    if (entry.type === 'http' && object(entry.headers)) for (const value of Object.values(entry.headers)) { if (typeof value !== 'string') continue; for (const match of value.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) eligible(match[1]); }
+    if ((entry.type === 'http' || entry.type === 'sse') && object(entry.headers)) for (const value of Object.values(entry.headers)) { if (typeof value !== 'string') continue; for (const match of value.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) eligible(match[1]); }
   }
   return { references, heldBack };
 }

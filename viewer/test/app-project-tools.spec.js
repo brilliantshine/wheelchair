@@ -93,7 +93,7 @@ test('shows tools, key status, skip reasons, key warnings, waiting pull requests
   await expect(page.locator('.pt-waiting a')).toHaveAttribute('href', 'https://github.com/o/n/pull/12');
   await expect(page.getByText('Waiting to merge')).toBeVisible();
   await expect(page.getByText("don't include these")).toBeVisible();
-  await expect(page.getByText("Antigravity agents don't get project tools")).toBeVisible();
+  await expect(page.getByText("Antigravity agents don't get tools that use ${...}")).toBeVisible();
   await expect(page.getByText('another machine running this project needs its own keys')).toBeVisible();
   await expect(keyRow(page, 'API_KEY')).toContainText('used by web, other-tool');
   await expect(keyRow(page, 'DB_TOKEN')).toContainText('not set');

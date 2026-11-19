@@ -309,7 +309,7 @@
       els.keys = h('section', { class: 'pt-keys' });
       parts.push(els.keys);
       parts.push(h('div', { class: 'pt-notes' },
-        h('p', { class: 'hint', text: "Antigravity agents don't get project tools." }),
+        h('p', { class: 'hint', text: "Antigravity agents don't get tools that use ${...}, except an env value exactly ${KEY} for that key, and don't get sse tools." }),
         h('p', { class: 'hint', text: 'Keys are kept on this machine only, so another machine running this project needs its own keys entered.' })));
       view.replaceChildren(...parts);
       if (els.tools) { paintTools(); paintSave(); }
