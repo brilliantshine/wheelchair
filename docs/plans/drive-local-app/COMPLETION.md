@@ -66,7 +66,9 @@ row's origin is `this run`.
    fails, and the live check saw Chromium's `run` return `focused: null` after 960 ms. A
    per-window probe that **fails without timing out** now skips that window, the same way
    `windows` already skips it; a timed-out probe or a failed root listing still ends the
-   phase with `null`, so the 1 s probe and 6 s phase bounds hold. `machine/lib/screen-input.js:22-24`, `:32-45`;
+   phase with `null`, so the 1 s probe and 6 s phase bounds hold. Narrowed in Remediation 1:
+   only a failure whose stderr says the window is gone (`Bad Window`, `Bad Drawable`, `No such
+   window`) is skipped; any other probe failure ends the phase with `null`. `machine/lib/screen-input.js:22-24`, `:32-45`;
    tests `screen-input.test.js:37`, `:46`. Logged in PLAN.md (T1f).
 2. **Fake-tool test split.** The Spec lists all fake-tool cases under `bash machine/test/run.sh`;
    they are spread across three files by module (`screen.test.js` for the manager and route,
@@ -80,8 +82,8 @@ row's origin is `this run`.
 ## Routers
 
 - `machine/AGENTS.md`: new row for `lib/screen.js` (screens, slices, launch, teardown) naming
-  `test/screen-live.sh`. `lib/screen-input.js` and `lib/screen-args.js` are not named there
-  (residual, below).
+  `test/screen-live.sh`; Remediation 1 added rows for `lib/screen-input.js` and
+  `lib/screen-args.js` (`machine/AGENTS.md:15-16`).
 - `viewer/AGENTS.md`: the `wc.js` row names `wc.js screen`.
 - `machine/API.md`: route row for `POST /v1/agent/screen`.
 
@@ -154,8 +156,7 @@ Earlier, at `8bc5daf` before the auto-focus fix (T1f), one of two live runs fail
 
 - Accepted Risks in PLAN.md stand (3D on software rendering, run racing archive, stray state dir
   after archive, deliberate cookie reads).
-- The machine router names `lib/screen.js` but not its two helper modules
-  (`lib/screen-input.js`, `lib/screen-args.js`).
+- (Resolved in Remediation 1) The machine router now names `lib/screen-input.js` and `lib/screen-args.js`.
 - `viewer/test/*.test.js` is load-sensitive on hearth: on the feature branch before any screen
   code, under load averages of 28–78, `app-settings.test.js:329` (EADDRINUSE) and
   `app-uploads-archive.test.js:65` failed intermittently and the suite once stalled past 400 s.
@@ -171,3 +172,69 @@ Earlier, at `8bc5daf` before the auto-focus fix (T1f), one of two live runs fail
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 (after verification attempt 1 at `2bce723`)
+
+Gaps and tasks: `docs/plans/drive-local-app/REMEDIATION-1.md`. The lead deferred gap 6 (app pid/pgid in `state.json`, PLAN.md Deferred row 6). Four other findings were not counted, with the lead's agreement.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| 1. One window lists none (`1 child:`) | `parseRootChildren` matches `N child(ren)?:` | `machine/lib/screen-args.js:89` | `machine/test/screen-args.test.js:61-69` |
+| 2. Archive deleted the screens dir when it kept uploads | `removeThreadDir` only after uploads were removed | `machine/service.js:876` | `machine/test/screen.test.js:195-201` |
+| 3. Baseline scan outside the 6 s auto-focus phase | `windowIds` deadline and `autoFocus` `startedAt` share one phase from before the baseline | `machine/lib/screen-input.js:46-48`, `:115-117`; `machine/lib/screen.js:183`, `:194` | `screen-input.test.js` (deadline and startedAt tests) |
+| 4. Any non-timeout probe failure skipped | Skip only stderr `Bad ?Window`/`Bad ?Drawable`/`No such window`; any other failure ends the phase with null | `machine/lib/screen-input.js:24`, `:39` | `screen-input.test.js` (vanished-window and unexpected-error tests) |
+| 5. Router missing two files | Rows added | `machine/AGENTS.md:15-16` | read |
+
+Validation at `53f56f8` (load average about 47–53):
+
+```text
+$ bash machine/test/run.sh
+machine exit 0
+# tests 209
+# pass 209
+# fail 0
+
+$ node --test viewer/test/*.test.js
+viewer exit 1
+# tests 653
+# pass 651
+# fail 2
+not ok 347 - 6 message clears debt
+not ok 413 - archive through the hub cancels a stalled upload to the real machine
+
+$ node --test viewer/test/app-quiet.test.js viewer/test/app-uploads-archive.test.js   # rerun
+exit 0
+# pass 21
+# fail 0
+```
+
+Both viewer failures are load-sensitive tests that predate this feature. `app-uploads-archive.test.js:65` failed the same way on the feature branch before any screen code (PLAN.md Log), and `app-quiet.test.js:38` never reaches the screen route. Both passed on rerun.
+
+Live check, 3 runs on R3's branch plus 1 run at `53f56f8`, all `22 ok, 0 failed`. No `wcscreen-*` unit was left and the Xvfb set was unchanged. The run at `53f56f8`:
+
+```text
+ok - start succeeds
+ok - run chromium succeeds
+ok - run chromium reports focused as its own window
+ok - run xmessage succeeds
+ok - run xmessage reports focused as its own window, not the first
+ok - xdotool clears the xmessage window name
+ok - windows lists exactly the two top-level windows by id
+ok - the second window has name ""
+ok - xmessage argument with $HOME arrived unexpanded
+ok - click on the button changes the first window title
+ok - type of 400 characters arrives whole
+ok - shot PNG exists, is non-empty and is a PNG
+screenshot: /tmp/claude-1000/-home-collin--local-state-wheelchair-worktrees-wheelchair-wc-940599e3df66/6bafc310-b65d-46f4-83f4-bd164f805df4/scratchpad/live5.png
+ok - an X client without the cookie is refused
+ok - the same client with the cookie is accepted
+ok - run of the env-clearing child launcher succeeds
+ok - the env-clearing child is alive before stop
+ok - the screen slice has a readable cgroup with processes before stop
+ok - stop succeeds
+ok - the env-clearing child is gone after stop (polled up to 10 s)
+ok - after stop the screen slice is gone or its cgroup is empty (polled up to 10 s)
+ok - no process from the screen survives stop (polled up to 10 s)
+ok - no wcscreen unit of this test is left
+live: 22 ok, 0 failed
+```
