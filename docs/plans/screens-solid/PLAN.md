@@ -50,6 +50,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 20 | Test settings `maxScreens` and `allowOpenbox` are instance properties on `service.screens`; supersedes Decision 13's constructor option | The fixture builds `MachineService`, which constructs the manager itself | review-round-4 |
 | 21 | openbox runs with a fixed config with no key or mouse bindings | Default bindings open menus with `Execute` actions, which would run commands outside the Codex sandbox | review-round-5 |
 | 22 | openbox mode ends when the openbox process exits (child `exit` listener); supersedes Decision 16's scope check and the per-op `systemctl` query | A leftover process can keep the scope active; openbox can exit after setting its property | review-round-5 |
+| 23 | openbox's config allows only click-to-focus (`Focus`, `Raise`) in `Client`/`Frame`; its config lookup is isolated to the screen directory; supersedes Decision 21's empty bindings | No bindings would break clicking into a dialog; openbox falls back to the desktop `rc.xml` if ours fails to load | review-round-6 |
 ## Spec
 
 Builds on the merged screens work (`wc.js screen`, PR #113). Everything in
@@ -149,14 +150,21 @@ The installer never installs anything and its exit status is unchanged.
   screen's slice (`scopeArgs(screen, 'wm')`), with `DISPLAY` and `XAUTHORITY` set to the
   screen's, and stdio to `wm.log` in the screen directory.
 - **No way to run commands through openbox.** Before spawning, write
-  `<dir>/openbox-rc.xml` (mode `0600`), a fixed config with empty `<keyboard/>` and
-  `<mouse/>` sections:
-  `<?xml version="1.0"?><openbox_config xmlns="http://openbox.org/3.4/rc"><keyboard/><mouse/></openbox_config>`.
-  - With no key or mouse bindings, no menu can be opened and no `Execute` action exists.
+  `<dir>/openbox/rc.xml` (directory `0700`, file `0600`). It is a fixed config: an empty
+  `<keyboard/>`, and a `<mouse>` section whose only bindings are click-to-focus. For each
+  of contexts `Client` and `Frame`, and each of buttons `Left`, `Middle` and `Right`, one
+  `Press` binding runs `Focus` then `Raise`. There are no other bindings or actions, no
+  `<menu>` section, and the `Root` context has no bindings.
+  - Clicking into a dialog or a second window therefore focuses and raises it, so typing
+    goes there.
+  - No menu can be opened, and no `Execute` or `ShowMenu` action exists.
   - Plain `openbox` (not `openbox-session`) runs no autostart.
   - So nothing an agent clicks or types can start a process outside the Codex sandbox.
-  - Agents drive apps, not the window manager, so no bindings are needed. Placement,
-    full screen and dialog handling don't depend on bindings.
+- **No fallback to the desktop config.** openbox's environment sets both
+  `XDG_CONFIG_HOME` and `XDG_CONFIG_DIRS` to the screen directory (so its only `rc.xml`
+  lookup is `<dir>/openbox/rc.xml`), and `HOME` to the screen directory. It is also
+  passed `--config-file <dir>/openbox/rc.xml`. If our file can't be loaded, openbox finds
+  no other `rc.xml`: no user or system desktop config is ever used.
 - **openbox's own exit is the source of truth.** `systemd-run --scope` execs openbox in
   place, so the spawned child is openbox.
   - Attach its `exit` and `error` listeners right after spawn. The child is not
@@ -164,7 +172,8 @@ The installer never installs anything and its exit status is unchanged.
   - When either fires, if this screen is still the current one at the same generation:
     set `state.window_manager` to `null` and `trySave`. From then on, window ops use
     today's behaviour; openbox is not restarted.
-  - This replaces any per-op scope query: no `systemctl` call is made before window ops.
+  - This replaces any query of the `wm` scope: nothing checks the `wm` scope before
+    window ops. Existing checks of the Xvfb scope are unchanged.
     A process outliving openbox in its scope therefore doesn't matter.
   - A service restart tears all screens down (existing startup cleanup), so the
     in-memory listener is enough.
@@ -183,6 +192,9 @@ The installer never installs anything and its exit status is unchanged.
   generation fence runs again before the state is saved as `running`. If the session
   stopped or the thread was archived meanwhile, the existing catch path runs: stop the
   `x` and `wm` scopes at once, and return 409. A cancelled start is never saved as running.
+- **Display still alive.** After that fence, and only when openbox was attempted, check
+  the Xvfb scope with the existing `scopeActive(unit(screen, 'x'))`. If it is not active,
+  tear the screen down and fail with 422 `screen did not start`.
 - Failing to start openbox is never fatal. The screen runs without it, the failure is
   logged with `service.log`, and `state.window_manager` is `null`. On success
   `state.window_manager` is `"openbox"`. `load()` defaults it to `null`, and `reset()`
@@ -200,8 +212,12 @@ The installer never installs anything and its exit status is unchanged.
     current focus command, but keeps its own timings: 1 s probe timeout and the 6 s phase
     deadline.
   - Without openbox, both behave exactly as today.
-  - `screen-input.js` gets the mode from `ctx.openbox` (true when this op runs in openbox
-    mode), set by `screen.js` where it builds `ctx` from `state.window_manager`.
+  - `screen-input.js` gets the mode from `ctx.openbox`, which `screen.js` defines as a
+    getter returning `screen.state.window_manager === "openbox"`. Each call reads the
+    current value, so a launch's autofocus switches mode as soon as openbox exits.
+  - A baseline taken in openbox mode stays valid after a switch: app windows are root
+    children once no window manager reparents them, so baseline ids are still present,
+    and new ids are still new.
 - Window ids reported are app (client) windows in both modes, so `shot --window`,
   `focus` and `windows` keep working on the same ids.
 
@@ -253,13 +269,15 @@ directory. `exec` keeps the pid (S5 unchanged).
     - The deadline passes with neither: SIGKILL the child, stop the app scope at once
       (`immediate(unit)`), and fail with 422
       `app did not start: no hand-over within 5 s`.
-  - The `<reason>` for a failed launch:
-    the last non-empty line of the log bytes written since spawn, preferring the last line
-    starting `Failed to`. If there is none, it is the error message or
-    `systemd-run exited <code|signal>`.
+  - The `<reason>` for a failed launch is worked out only after the fence (below):
+    - the last non-empty line of the log bytes written since spawn, preferring the last
+      line starting `Failed to`;
+    - if there is none, or the log can't be read (any read error is caught), the error
+      message or `systemd-run exited <code|signal>`.
   - In every failure case, in this order: stop the app scope at once (`immediate(unit)`),
     run the generation fence (see Cancellation first; a fenced launch writes nothing and
-    returns 409), then set `failed: true` on the in-memory record, `trySave`, and skip
+    returns 409), then read the reason, set `failed: true` on the in-memory record,
+    `trySave`, and skip
     autofocus. A failed write never
     changes the 422 or the cleanup. `status` reports a record
     with `failed: true` as `exited` without querying its scope.
@@ -331,14 +349,18 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
     switches the next `windows` call to `null` and today's calls. The same holds when
     that state write fails.
   - A fake openbox that exits right after the property appears ends up with `null`.
-  - openbox is invoked with `--config-file` naming a `0600` file whose `<keyboard>` and
-    `<mouse>` sections are empty and that contains no `<action`.
+  - openbox is invoked with `--config-file <dir>/openbox/rc.xml` and with
+    `XDG_CONFIG_HOME`, `XDG_CONFIG_DIRS` and `HOME` set to the screen directory. The file
+    is `0600`, has an empty `<keyboard/>` and no `<menu>`, and has no `Execute` or
+    `ShowMenu`. Its only actions are `Focus` and `Raise`, in `Client` and `Frame`
+    contexts.
+  - Xvfb exiting during the readiness wait gives 422 `screen did not start`, and nothing
+    is saved as running.
+  - A launch whose autofocus runs while openbox exits uses today's calls after the exit.
   - Fixture: the shared fake-tool fixture sets `service.screens.allowOpenbox = false`, so
     a host with openbox installed never starts it in other tests. S4 tests set it `true`
     and shim `openbox` and `xprop`.
     `screenTools(searchPath)` is unit-tested with temp PATHs for presence and absence.
-  - A `wm` scope that goes inactive after start: the next `windows` call switches to
-    `null` and today's calls.
 - S5: `state.json` app record has numeric `pid` equal to `pgid`, and `status` shows `pid`.
 - S6:
   - A fake `systemd-run` that writes `Failed to start transient scope unit: boom` to
@@ -359,7 +381,8 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   - Failed launches show `exited` in `status` even while the fake scope still reports
     active.
   - A session stopped while hand-over is pending gets 409, not 422, and the app scope is
-    stopped. When the thread is archived during a failing launch, the screen directory is
+    stopped. A failed launch whose log was removed gets the fallback reason, or 409 if
+    fenced, never 500. When the thread is archived during a failing launch, the screen directory is
     still absent afterwards.
   - A failing state write right after spawn, or when recording `failed`, still gives the
     hand-over outcome (`ok` or the 422), not 500.
@@ -384,7 +407,7 @@ node --test viewer/test/*.test.js
 ```
 
 On hearth with the real tools, `bash machine/test/screen-live.sh` still passes. When
-openbox is installed, the live test also asserts `status` shows `window_manager:
+both `openbox` and `xprop` are installed, the live test also asserts `status` shows `window_manager:
 "openbox"`, and that `windows` lists the launched app's window.
 
 ## Accepted Risks
@@ -516,7 +539,7 @@ Collin chose Keep going after round 3; review budget reset.
 
 ### Round 6 — 2026-11-18
 
-**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since Round 5:**
 - S4: a fixed openbox config with no bindings; openbox mode ends on openbox's own exit (no per-op `systemctl` query); readiness also needs the child alive.
@@ -526,6 +549,14 @@ Collin chose Keep going after round 3; review budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Validation still has the replaced scope-inactive test | upheld | Removed; covered by the exit test |
+| intent | major | No bindings breaks click-to-focus for dialogs | upheld | Focus/Raise bindings only (Decision 23) |
+| mechanics | major | openbox falls back to the desktop config if ours fails | upheld | XDG and HOME isolated to the screen directory |
+| mechanics | major | Xvfb dying during the openbox wait still saves running | upheld | Xvfb scope check after the fence |
+| mechanics | major | Log read before the fence can 500 | upheld | Reason read after the fence; read errors caught |
+| mechanics | minor | The `systemctl` ban reads as covering the Xvfb probe | upheld | Scoped to the `wm` scope |
+| mechanics | minor | Stale `ctx.openbox` in autofocus | upheld | Getter; baseline reasoning stated |
+| mechanics | minor | The live test should need both `openbox` and `xprop` | upheld | Reworded |
 
 ## Prior Work
 
