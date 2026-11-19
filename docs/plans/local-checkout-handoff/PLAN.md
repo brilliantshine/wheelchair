@@ -747,6 +747,9 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Machine `POST /v1/try`: record, lock, checks, switches, outcomes, all actions, tests (tricky) | `machine/lib/try.js` (new), `/v1/try` route in `machine/service.js`, `machine/test/try.test.js` (new), `machine/API.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | | `node --test machine/test/try.test.js`; `bash machine/test/run.sh` | not started |
+| T2 | Hub `GET`/`POST /api/threads/<id>/try`, machine-client method, own-root check, tests | `viewer/app/routes.js`, `viewer/app/machine-client.js`, `viewer/server.js` (auth only), `viewer/test/app-try.test.js` (new), viewer router docs | standard / gpt-6.1-terra | | `node --test viewer/test/app-try.test.js`; `node --test viewer/test/*.test.js` | not started |
+| T3 | Thread page "Your copy" panel and browser tests (after T2) | `viewer/pages/thread.js` (+ its CSS), new browser spec | standard / claude-sonnet-5-5 | | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
