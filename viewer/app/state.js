@@ -46,6 +46,7 @@ class State {
     this.projectsPath = path.join(this.dir, 'projects.json');
     this.settingsPath = path.join(this.dir, 'settings.json');
     this.writes = new Map();
+    this.threadCache = new Map();
   }
 
   // Atomic replacement protects a single write; this queue protects the read-modify-write
@@ -115,6 +116,7 @@ class State {
     return this.queued(file, async () => {
       thread.updated_at = new Date().toISOString();
       await atomicWrite(file, json(thread));
+      this.threadCache.delete(file);
       return thread;
     });
   }
@@ -127,20 +129,48 @@ class State {
       const result = await operation(thread);
       thread.updated_at = new Date().toISOString();
       await atomicWrite(file, json(thread));
+      this.threadCache.delete(file);
       return result;
     });
   }
 
+  async cachedThread(file) {
+    try {
+      const stat = await fs.stat(file);
+      const cached = this.threadCache.get(file);
+      if (cached && ['mtimeMs', 'ctimeMs', 'size', 'ino'].every((key) => cached[key] === stat[key])) return cached.record;
+      this.threadCache.delete(file);
+      const record = JSON.parse(await fs.readFile(file, 'utf8'));
+      const freeze = (value) => {
+        if (value && typeof value === 'object') {
+          for (const child of Object.values(value)) freeze(child);
+          Object.freeze(value);
+        }
+        return value;
+      };
+      freeze(record);
+      this.threadCache.set(file, { mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, size: stat.size, ino: stat.ino, record });
+      return record;
+    } catch (error) {
+      this.threadCache.delete(file);
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+
+  async threadSnapshot(id) {
+    const thread = await this.cachedThread(this.threadPath(id));
+    if (!thread) throw appError(404, 'thread not found');
+    return thread;
+  }
+
   async allThreads() {
     const names = await fs.readdir(this.threadsDir).catch(() => []);
-    const threads = await Promise.all(
-      names
-        .filter((name) => name.endsWith('.json'))
-        .map((name) => readJson(path.join(this.threadsDir, name), null)),
-    );
-    return threads
-      .filter(Boolean)
-      .sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at)));
+    const files = names.filter((name) => name.endsWith('.json')).map((name) => path.join(this.threadsDir, name));
+    const present = new Set(files);
+    for (const file of this.threadCache.keys()) if (!present.has(file)) this.threadCache.delete(file);
+    const threads = await Promise.all(files.map((file) => this.cachedThread(file)));
+    return threads.filter(Boolean).sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at)));
   }
 
   async machines() {
