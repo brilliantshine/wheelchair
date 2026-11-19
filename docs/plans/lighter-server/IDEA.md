@@ -39,6 +39,7 @@ cores. Leftover test processes have run for days.
 - Changing what the app shows or how it looks.
 - Deleting or moving archived threads or old transcripts.
 - Running fewer agents or changing how many may run at once.
+- Making chat fetch only transcripts that changed: split into its own follow-up thread.
 
 ## Constraints
 
