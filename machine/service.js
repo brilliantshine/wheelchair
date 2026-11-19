@@ -25,6 +25,7 @@ const { limitedUntil } = require('./lib/limits');
 const { readLines: readCodexSteps } = require('./lib/codex-steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
+const { ScreenManager } = require('./lib/screen');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
@@ -243,6 +244,7 @@ class MachineService {
     this.uploadRequests = new Map();
     this.options = options;
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
+    this.screens = new ScreenManager(this);
   }
 
   async refreshStartupWarning() {
@@ -361,6 +363,9 @@ class MachineService {
     this.archivingThreads = new Set(markers.archiving || []);
     this.archivedThreads = new Set(markers.archived || []);
     await this.recoverFromTmux();
+    await this.screens.startup();
+    this.screenTimer = setInterval(() => this.screens.sweep().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SCREEN_SWEEP_MS || 60000));
+    this.screenTimer.unref();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
     await mkdir(path.join(this.stateDir, 'spool', 'events'));
     this.pollTimer = setInterval(() => this.pollReadiness().catch(error => this.log(error)), 2000);
@@ -603,6 +608,9 @@ class MachineService {
       if (created?.branch && input.role === 'worker') this.startingBranches.delete(created.branch);
     }
   }
+  launchEnv(session, adapter) {
+    return [['WHEELCHAIR_LANE', '1'], ...(adapter.sessionNameEnv ? [['WHEELCHAIR_SESSION_NAME', session.name]] : []), ['WHEELCHAIR_STATE_DIR', this.stateDir], ['WHEELCHAIR_MACHINE_ORIGIN', `http://${this.config.host}:${this.config.port}`], ...Object.entries(adapter.loginEnv(session.account_dir))];
+  }
   async startIn(input, name, adapter, account, dir, options, createdWorktree, created, promptPath, rolePrompt) {
     const worktree = created.worktree;
     const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
@@ -613,7 +621,9 @@ class MachineService {
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning}`);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
-    const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
+    const env = this.launchEnv(session, adapter);
+    env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
+    const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
     session.pending_initial = adapter.firstMessage(input, promptPath);
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
@@ -769,6 +779,7 @@ class MachineService {
     this.tmux(['kill-session', '-t', name]);
     session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
+    this.screens.killSession(name);
     await this.persistSessions();
     if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
   }
@@ -803,6 +814,7 @@ class MachineService {
     this.archivingThreads.add(threadId);
     try {
     await this.persistArchiveMarkers();
+    this.screens.killThread(threadId);
     const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
     const stopped = [];
     for (const session of sessions) {
@@ -863,6 +875,7 @@ class MachineService {
       // so an upload queued behind it sees this.
       try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); }
       catch (error) { uploads_removed = false; uploads_error = error.message; }
+      await this.screens.removeThreadDir(threadId);
     }
     return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
     } finally {
@@ -1600,6 +1613,7 @@ class MachineService {
         }
       }
       if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, await this.hook(agent.name, input)); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
       throw Object.assign(new Error('not found'), { status: 404 });
@@ -1617,7 +1631,7 @@ class MachineService {
     this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }
