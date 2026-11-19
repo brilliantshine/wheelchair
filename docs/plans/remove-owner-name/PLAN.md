@@ -1,6 +1,6 @@
 ---
 slug: remove-owner-name
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -41,6 +41,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 No text that reaches an agent, and no text shown in the app, hard-codes the owner's name
 "Collin". The person using wheelchair is called "the user" (capitalised "The user" at the
 start of a sentence) and referred to with they/them/their. Behaviour is otherwise unchanged.
+
+```mermaid
+flowchart LR
+  A[Agent rules and router files] -->|reworded: "the user", they/them| P[Agent prompt]
+  B[Prompt lines built in Settings] -->|reworded| P
+  C[Saved thread data, still tagged collin] -->|copy relabelled to user| X[Restart or import context] --> P
+  C -->|shown as You| UI[Thread page]
+  M[Missing sudo helper message] -->|reworded| UI
+```
 
 ### Files in scope (all case-insensitive "collin" matches in them)
 - Role and card rules: `protocol/app/lead.md`, `sub-lead.md`, `worker.md`, `verifier.md`,
