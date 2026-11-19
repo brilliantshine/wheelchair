@@ -563,6 +563,7 @@ Collin chose "Keep going" (budget reset).
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S1 + S2: stat-checked thread snapshot cache, `threadSnapshot`, caller audit, `discoverSlug`, `/threads` and chat on snapshots, timers list from cache (tricky) | `viewer/app/*.js`, `viewer/test/*.test.js`, new `viewer/test/` files | standard / gpt-6.1-terra | wc-f42d7a5b5e2f-worker | `node --test viewer/test/*.test.js` | done |
 | T2 | S6 + S7: shared hidden-tab poller in `nav.js` used by the listed page polls; `workers: 2`; hidden-tab browser spec; two-runs check | `viewer/pages/*.js`, `viewer/playwright.config.js`, new `viewer/test/*.spec.js` | standard / claude-sonnet-5-5 | wc-f42d7a5b5e2f-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser`; two concurrent runs check | done |
+| R1-T1 | Remediation 1: cache entry reused only once its file had settled for 2 s before it was cached (coarse timestamps) | `viewer/app/state.js`, `viewer/test/app-snapshot.test.js` | light / gpt-6-luna | wc-f42d7a5b5e2f-worker-3 | `node --test viewer/test/*.test.js` | in progress |
 
 ## Moved to the chat follow-up
 
@@ -595,3 +596,4 @@ Accepted then: a SIGKILL at the instant a tmux client is launching a server can 
 - 2026-11-19 — Choice: T2, `viewer/test/app-hidden-tabs.spec.js`: overrides `document.visibilityState` and uses Playwright's clock paused after load (`pauseAt`/`runFor`).
 - 2026-11-19 — T2 accepted (band: bigger-scout): scout found no deviations; one flagged risk (term-view `stop()` before `start()`) checked and not reachable, `start()` runs synchronously at creation. Re-ran `app-hidden-tabs.spec.js`: 12 passed. Worker's two-runs check: max 2 browsers per run, 1074 traces each in its own output folder, both 1040 passed.
 - 2026-11-19 — Full validation on the feature branch after both merges: `node --test viewer/test/*.test.js` 693 pass; `npm --prefix viewer run test:browser` 1040 passed, 34 skipped; `bash install/test/run.sh` 192 passed. `viewer/AGENTS.md` router rows updated (state.js cache, wcPoller, workers: 2).
+- 2026-11-19 — Verification attempt 1: Claude verifier PASS; GPT verifier stopped by its provider's content filter after a probe showed a stale cached thread. Gap reproduced by the sub-lead (coarse timestamp ticks defeat the stat key for same-size in-place rewrites, contrary to #51's premise). REMEDIATION-1.md written; R1-T1 dispatched.
