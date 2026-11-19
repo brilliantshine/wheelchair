@@ -1773,6 +1773,32 @@ test('copier cuts a crash fragment before replaying a complete source row', asyn
   } finally { await env.close(); }
 });
 
+test('busy transcript copies reuse in-memory hashes and rebuild after a failed append or idle drop', async () => {
+  const env = await service(await temp()); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'busy-hashes.jsonl');
+    await write(source, '{"one":1}\n'); await env.instance.copyTranscript(session, source);
+    const readFile = fs.readFile; let keptReads = 0;
+    fs.readFile = async (file, ...args) => { if (file === session.transcript_path) keptReads++; return readFile(file, ...args); };
+    try {
+      await fs.appendFile(source, '{"two":2}\n'); await env.instance.copyTranscript(session, source);
+      await fs.appendFile(source, '{"three":3}\n{"three":3}\n'); await env.instance.copyTranscript(session, source);
+      assert.equal(keptReads, 0);
+      assert.equal(await readFile(session.transcript_path, 'utf8'), '{"one":1}\n{"two":2}\n{"three":3}\n');
+      const appendFile = fs.appendFile; fs.appendFile = async (file, ...args) => { if (file === session.transcript_path) { await appendFile(file, '{"fo'); throw new Error('disk full'); } return appendFile(file, ...args); };
+      await fs.appendFile(source, '{"four":4}\n');
+      try { await assert.rejects(env.instance.copyTranscript(session, source), /disk full/); } finally { fs.appendFile = appendFile; }
+      assert.equal(env.instance.copyHashes.has(session.name), false);
+      session.transcript_source.offset = 0; await env.instance.copyTranscript(session, source);
+      assert.equal(keptReads, 1);
+      assert.equal(await readFile(session.transcript_path, 'utf8'), '{"one":1}\n{"two":2}\n{"three":3}\n{"four":4}\n');
+      env.instance.copyHashes.get(session.name).used -= 11 * 60_000;
+      const other = path.join(path.dirname(env.state), 'other.jsonl'); await write(other, '{"x":1}\n');
+      await env.instance.copyTranscript({ ...session, name: 'wc-t-other', transcript_path: undefined, transcript_source: undefined }, other);
+      assert.equal(env.instance.copyHashes.has(session.name), false);
+    } finally { fs.readFile = readFile; }
+  } finally { await env.close(); }
+});
+
 test('transcript stamps avoid all content reads on a match and detect replacement', async () => {
   const env = await service(await temp()); try {
     await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'stamp.jsonl');
