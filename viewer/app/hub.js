@@ -15,8 +15,11 @@ const handoff = require('./handoff.js');
 const { handle } = require('./routes.js');
 
 class Hub {
-  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval, quietGraceMs, quietEscalateMs, usagePollInterval } = {}) {
+  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval, quietGraceMs, quietEscalateMs, usagePollInterval, now = Date.now } = {}) {
     this.usagePollInterval = usagePollInterval;
+    this.now = now;
+    this.transcripts = new Map();
+    this.transcriptPending = new Map();
     this.root = root || path.resolve(__dirname, '..', '..');
     // The server supplies the commit it read at its own boot.  Direct Hub tests still read
     // their supplied root once, but a pull under a running viewer never changes this value.
@@ -89,6 +92,8 @@ class Hub {
     // wait short for someone watching, at one gh call per waiting stub.
     this.waitTimer = setInterval(() => Promise.all([this.pollWaiting(), this.pollMerged(), sessions.retryWaiting(this), sessions.releaseLimits(this)]).catch(() => {}), 60_000);
     this.waitTimer.unref();
+    this.transcriptTimer = setInterval(() => this.pruneTranscripts(), 60_000);
+    this.transcriptTimer.unref();
     this.usageTimer = setInterval(() => this.pollIdle().catch(() => {}), this.usagePollInterval ?? 60_000);
     this.usageTimer.unref();
     this.usageStartTimer = setTimeout(() => this.pollIdle().catch(() => {}), 30_000);
@@ -123,6 +128,17 @@ class Hub {
     });
     this.threadLocks.set(id, retained);
     return work;
+  }
+  async withChatThread(id, operation) {
+    this.transcriptPending.set(id, (this.transcriptPending.get(id) || 0) + 1);
+    try { return await this.withThread(id, operation); }
+    finally {
+      const remaining = this.transcriptPending.get(id) - 1;
+      if (remaining) this.transcriptPending.set(id, remaining); else this.transcriptPending.delete(id);
+    }
+  }
+  pruneTranscripts() {
+    for (const [key, entry] of this.transcripts) if (this.now() - entry.lastRead > 600_000 && !this.transcriptPending.get(entry.thread)) this.transcripts.delete(key);
   }
   saveWithLeadName(thread) {
     const work = this.nameQueue.catch(() => {}).then(async () => {
@@ -249,7 +265,7 @@ class Hub {
   }
   async chat(id) {
     // Chat can save a discovered slug, so assemble it under the thread lock.
-    const snapshot = await this.withThread(id, async () => {
+    const snapshot = await this.withChatThread(id, async () => {
       const result = await chat.chat(this, id);
       const thread = await this.readSnapshot(id);
       const last = this.handoffStatusAt.get(id);
