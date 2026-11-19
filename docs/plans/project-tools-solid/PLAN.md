@@ -751,7 +751,7 @@ Filled by Stage 3. One row per worker brief.
 | R7 | Remediation 4, gap 2 (3rd and final attempt, Collin's choice A): duplicates only in the kept occurrence | machine/lib/project-mcp.js (duplicateHeaderServers), machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-13 | reader/codex/agy tests; machine/test/run.sh | done |
 | R8 | Remediation 4, gap 1 (2nd attempt): sweep protects only the dir of the session the machine records as running (attempt 2; attempt 1 worker-14 sent back: newest-mtime rule broken by refused starts) | machine/service.js (sweepAgyTools), machine/test/project-tools-service.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-16 | project-tools-service; machine/test/run.sh | done |
 | R9 | Remediation 4, gap 3: card problem lines in plain-text items | viewer/app/sessions.js (applyProjectTools), viewer/test/app-project-tools.test.js | standard (claude) / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-15 | app-project-tools; viewer/test/*.test.js | done |
-| R10 | Remediation 4, follow-up to R9: handoff history includes a needs card's items | viewer/app/handoff.js (historyText needs case), viewer/test/app-handoff.test.js | light (claude) / claude-haiku-5-5 | wc-b9ca1682b0fa-worker-17 | app-handoff + app-project-tools; viewer/test/*.test.js | in progress |
+| R10 | Remediation 4, follow-up to R9: handoff history includes a needs card's items | viewer/app/handoff.js (historyText needs case), viewer/test/app-handoff.test.js | light (claude) / claude-haiku-5-5 | wc-b9ca1682b0fa-worker-17 | app-handoff + app-project-tools; viewer/test/*.test.js | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -832,3 +832,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-19 — Choice: R8, machine/service.js: entries whose decoded names are identical (different encodings) tie-break by encoded entry, so only one is protected; an invalid `created_at` (NaN) counts as a tie.
 - 2026-11-19 — Choice: R8, machine/test/project-tools-service.test.js: a shared `sweepFixture` (default live name, default record `created_at` 2025-01-01) with six separate tests; the existing integration test untouched. Worker listed 3; scout added the defaults and NaN handling.
 - 2026-11-19 — R8 accepted (band: scout): 7/7 focused re-run; scout confirmed a refused start (no record) can no longer take protection. Its residual holes (overlapping look-alike starts, unnoticed end, lost record) go to Accepted Risks under the lead's rare-setup rule.
+- 2026-11-19 — R10: worker reported "none"; scout listed 0 beyond the brief (the change and test row are verbatim from it).
+- 2026-11-19 — R10 accepted (band: scout): 34/34 handoff + project-tools re-run; `historyText` on the new card gives title, body, then each item.
