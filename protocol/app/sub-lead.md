@@ -171,7 +171,7 @@ A worker's `result` card is a claim, not a fact. When one arrives:
    not accepted as "none": list the choices you can see in the diff against the brief, and
    log "worker didn't report its choices; I listed N" (including when N is 0). When a scout
    read the diff, check its list (3) against the report's choices section; if the report has
-   no choices section, use list (3) as the list you log instead.
+   no choices section, use list (3) as the list you log instead. When a worker's or verifier's report names screenshot paths, pass them on to the lead in your `result` summary or a `message`.
 3. If it passes, record `- <date> — T<n> accepted (band: scout): ...` in the Log, using the actual band. Merge the worker's branch into the feature branch with
    `wc.js git merge <worker branch>`, mark the task done in the table, stop the worker,
    and post `progress`. Then remove its worktree with `wc.js git worktree-remove <worker
