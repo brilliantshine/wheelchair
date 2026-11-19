@@ -90,10 +90,12 @@ async function tryFixture() {
   git('init', '-b', 'main'); git('config', 'user.email', 'test@example.com'); git('config', 'user.name', 'Test');
   await fs.writeFile(path.join(repo, 'file'), 'base\n'); git('add', 'file'); git('commit', '-m', 'base');
   git('switch', '-c', 'wc/0123456789ab'); await fs.writeFile(path.join(repo, 'file'), 'thread\n'); git('commit', '-am', 'thread'); git('switch', 'main');
+  const agent = path.join(root, 'agent'); git('worktree', 'add', agent, 'wc/0123456789ab');
+  const agentGit = (...args) => { const r = spawnSync('git', ['-C', agent, ...args], { encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
   const instance = new TryService({ stateDir: path.join(root, 'state'), root: path.join(root, 'wheelchair'), projects: async () => ({ checked: { ok: true } }) });
   const request = { action: 'try', project: repo, thread_id: '0123456789ab' };
   const done = async () => { for (let i = 0; i < 200; i++) { const status = await instance.handle({ ...request, action: 'status' }); if (status.state !== 'busy') return status; await new Promise(resolve => setTimeout(resolve, 20)); } throw new Error('switch did not finish'); };
-  return { root, repo, git, instance, request, done };
+  return { root, repo, agent, git, agentGit, instance, request, done };
 }
 test('first Try allows a slow ignored-files scan beyond the metadata deadline', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
@@ -155,7 +157,7 @@ test('post-checkout hook exiting nonzero or printing error follows its exit code
 });
 test('gitlink change with diff.ignoreSubmodules=all is refused', async () => {
   const f = await tryFixture(); const sha = f.git('rev-parse', 'wc/0123456789ab');
-  f.git('switch', 'wc/0123456789ab'); f.git('update-index', '--add', '--cacheinfo', `160000,${sha},sub`); f.git('commit', '-m', 'gitlink'); f.git('switch', 'main'); f.git('config', 'diff.ignoreSubmodules', 'all');
+  f.agentGit('update-index', '--add', '--cacheinfo', `160000,${sha},sub`); f.agentGit('commit', '-m', 'gitlink'); f.git('config', 'diff.ignoreSubmodules', 'all');
   await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, 'refused'); assert.match(status.last.reason, /submodule/);
 });
 test('a second write while one runs refuses at once and Status hides index.lock', async () => {
@@ -170,7 +172,7 @@ test('a second write while one runs refuses at once and Status hides index.lock'
 });
 test('ignored file in the way stays nothing moved with its path listed and file intact', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
-  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, 'collision'), 'thread'); f.git('add', 'collision'); f.git('commit', '-m', 'add collision'); f.git('switch', 'main');
+  await fs.writeFile(path.join(f.agent, 'collision'), 'thread'); f.agentGit('add', 'collision'); f.agentGit('commit', '-m', 'add collision');
   await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'collision\n'); await fs.writeFile(path.join(f.repo, 'collision'), 'mine');
   await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, 'nothing-moved'); assert.equal(status.last.reason, 'These files in your copy are in the way: collision'); assert.equal(await fs.readFile(path.join(f.repo, 'collision'), 'utf8'), 'mine');
 });
@@ -208,7 +210,7 @@ test('POST /v1/try requires the hub secret and validates inputs', async () => {
 });
 test('required smudge filter failing on a first Try records interruption across reload', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
-  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=broken\n'); f.git('add', '.gitattributes'); f.git('commit', '-m', 'require filter'); f.git('switch', 'main');
+  await fs.writeFile(path.join(f.agent, '.gitattributes'), 'file filter=broken\n'); f.agentGit('add', '.gitattributes'); f.agentGit('commit', '-m', 'require filter');
   f.git('config', 'filter.broken.smudge', 'exit 1'); f.git('config', 'filter.broken.required', 'true');
   await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.state, 'interrupted'); assert.equal(status.last.outcome, 'interrupted');
   const reload = new TryService({ stateDir: f.instance.stateDir, root: f.instance.root, projects: f.instance.projects });
@@ -401,8 +403,8 @@ test('folder under state worktrees is refused', async () => {
 });
 test('real git am in progress is refused', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const { spawnSync } = require('node:child_process'); const f = await tryFixture();
-  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, 'file'), 'patch\n'); f.git('commit', '-am', 'patch');
-  const patchText = f.git('format-patch', '-1', '--stdout'); f.git('switch', 'main'); await fs.writeFile(path.join(f.repo, 'file'), 'conflict\n'); f.git('commit', '-am', 'conflict');
+  await fs.writeFile(path.join(f.agent, 'file'), 'patch\n'); f.agentGit('commit', '-am', 'patch');
+  const patchText = f.agentGit('format-patch', '-1', '--stdout'); await fs.writeFile(path.join(f.repo, 'file'), 'conflict\n'); f.git('commit', '-am', 'conflict');
   const patchFile = path.join(f.root, 'change.patch'); await fs.writeFile(patchFile, patchText + '\n'); assert.notEqual(spawnSync('git', ['-C', f.repo, 'am', patchFile]).status, 0);
   assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).refused, 'Git has an operation in progress. Finish it at your computer first.');
   assert.match((await f.instance.handle(f.request)).reason, /operation in progress/);
@@ -424,7 +426,7 @@ test('two symlink spellings of one folder pressed together are refused', async (
 });
 test('index.lock is shown after nothing moved and hidden while a switch runs', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
-  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, 'collision'), 'thread'); f.git('add', 'collision'); f.git('commit', '-m', 'collision'); f.git('switch', 'main');
+  await fs.writeFile(path.join(f.agent, 'collision'), 'thread'); f.agentGit('add', 'collision'); f.agentGit('commit', '-m', 'collision');
   await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'collision\n'); await fs.writeFile(path.join(f.repo, 'collision'), 'mine');
   await f.instance.handle(f.request); assert.equal((await f.done()).last.outcome, 'nothing-moved');
   const lock = path.join(f.repo, '.git', 'index.lock'); await fs.writeFile(lock, ''); const status = await f.instance.handle({ ...f.request, action: 'status' }); assert.equal(status.index_lock, lock); await fs.access(lock);
@@ -475,12 +477,12 @@ test('real git switch unable to unlink warning is interrupted', async () => {
   finally { await fs.chmod(dir, 0o755); }
 });
 test('commit subject containing unable to unlink gives plain success', async () => {
-  const f = await tryFixture(); f.git('switch', 'wc/0123456789ab'); f.git('commit', '--allow-empty', '-m', "warning: unable to unlink 'file'"); f.git('switch', 'main');
+  const f = await tryFixture(); f.agentGit('commit', '--allow-empty', '-m', "warning: unable to unlink 'file'");
   await f.instance.handle(f.request); assert.equal((await f.done()).last.outcome, 'success');
 });
 test('hanging filter subprocess outlives deadline and its whole process group is killed', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
-  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=hang\n'); f.git('add', '.gitattributes'); f.git('commit', '-m', 'filter'); f.git('switch', 'main');
+  await fs.writeFile(path.join(f.agent, '.gitattributes'), 'file filter=hang\n'); f.agentGit('add', '.gitattributes'); f.agentGit('commit', '-m', 'filter');
   const pidFile = path.join(f.root, 'child-pid'); const filter = path.join(f.root, 'filter');
   await fs.writeFile(filter, `#!/bin/sh\nsh -c 'trap "" TERM; exec sleep 30' &\necho $! > '${pidFile}'\nwait\n`, { mode: 0o755 }); f.git('config', 'filter.hang.smudge', filter); f.git('config', 'filter.hang.required', 'true');
   const source = f.git('rev-parse', 'HEAD'); f.instance.switchTimeout = 300; f.instance.killGrace = 100; await f.instance.handle(f.request); const result = await f.done();
@@ -490,7 +492,7 @@ test('hanging filter subprocess outlives deadline and its whole process group is
 });
 test('delayed process filter failing after HEAD moved records files across reload', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
-  f.git('switch', 'wc/0123456789ab'); await fs.writeFile(path.join(f.repo, '.gitattributes'), 'file filter=delay\n'); f.git('add', '.gitattributes'); f.git('commit', '-m', 'delayed filter'); f.git('switch', 'main');
+  await fs.writeFile(path.join(f.agent, '.gitattributes'), 'file filter=delay\n'); f.agentGit('add', '.gitattributes'); f.agentGit('commit', '-m', 'delayed filter');
   const filter = path.join(f.root, 'filter.py'); const target = f.git('rev-parse', 'wc/0123456789ab');
   await fs.writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'precious\n'); await fs.writeFile(path.join(f.repo, 'precious'), 'mine');
   await fs.writeFile(filter, `#!/usr/bin/env python3
