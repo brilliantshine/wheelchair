@@ -396,3 +396,4 @@ Build accepted: approval 408048b5-0427-443e-9d5e-4fc6d2b09c7d
 - 2026-11-19 — Choice: R8, visible-row check: only top and bottom are checked, not left and right (found by the scout, not reported).
 - 2026-11-19 — Choice: R8, test output: a `console.log` line prints the before and after scrollTop and clientHeight (found by the scout, not reported).
 - 2026-11-19 — R8 accepted (band: scout): one new test, 36 lines, no source change, and the existing scenarios are unchanged. I re-ran the deck spec: 78 passed, 6 skipped, in both browsers and both widths. The new case showed phone 997→850 and desktop 1211→894 with the box growing, and the visible rows stayed visible. The worker's full-suite run failed only on app-threads:538 in Firefox, a known-intermittent chat test.
+- 2026-11-19 — Verification attempt 7 started on f6be1d5: wc-d268e3df9c50-verifier-13 (Claude) and wc-d268e3df9c50-verifier-14 (GPT).
