@@ -613,12 +613,24 @@
         return out;
       };
       const kindChanged = !f.p || f.p.kind !== f.kind;
+      // A field that ends equal to the original (an empty list or object counts as absent) is
+      // written back as read.
+      const restore = (field, emptyOk) => {
+        if (kindChanged || !f.raw) return;
+        const had = Object.prototype.hasOwnProperty.call(f.raw, field);
+        const has = Object.prototype.hasOwnProperty.call(e, field);
+        const empty = (v) => v === undefined || (Array.isArray(v) ? v.length === 0 : isPlain(v) && Object.keys(v).length === 0);
+        const same = emptyOk && empty(had ? f.raw[field] : undefined) && empty(has ? e[field] : undefined)
+          ? true : had === has && (!had || deepEqual(e[field], f.raw[field]));
+        if (!same) return;
+        if (had) e[field] = structuredClone(f.raw[field]); else delete e[field];
+      };
       if (f.kind === 'command') {
         if (kindChanged) {
           delete e.url; delete e.headers;
           if (e.type !== undefined && e.type !== 'stdio') delete e.type;
         }
-        if (!f.commandRO && (kindChanged || f.touched.command)) e.command = f.command.trim();
+        if (!f.commandRO && (kindChanged || f.touched.command)) e.command = f.command;
         if (!f.argsRO && (kindChanged || f.touched.args)) {
           const args = f.argsText.split('\n').map((s) => s.replace(/\r$/, '')).filter((s) => s !== '');
           if (args.length) e.args = args; else delete e.args;
@@ -627,13 +639,15 @@
           const env = rowsObj(f.envRows, 'env');
           if (Object.keys(env).length) e.env = env; else delete e.env;
         }
+        restore('command', false); restore('args', true); restore('env', true);
       } else {
         if (kindChanged) { delete e.command; delete e.args; delete e.env; e.type = 'http'; }
-        if (!f.urlRO && (kindChanged || f.touched.url)) e.url = f.url.trim();
+        if (!f.urlRO && (kindChanged || f.touched.url)) e.url = f.url;
         if (kindChanged || f.rowsTouched.hdr) {
           const headers = rowsObj(f.hdrRows, 'hdr');
           if (Object.keys(headers).length) e.headers = headers; else delete e.headers;
         }
+        restore('url', false); restore('headers', true);
       }
       return e;
     }
