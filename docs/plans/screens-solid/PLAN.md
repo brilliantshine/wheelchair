@@ -59,8 +59,8 @@ runs or warns on macOS.
 **Tool list.** The required tools are `TOOLS` in `machine/lib/screen.js:10`
 (`Xvfb, xauth, mcookie, ffmpeg, xdotool, xwininfo, systemd-run, systemctl`). Export a
 function from `machine/lib/screen.js`, `screenTools(searchPath = process.env.PATH)`,
-returning `{ missing: [names in TOOLS order], windowManager: boolean }`, where
-`windowManager` is true when both `openbox` and `xprop` are found (S4). It uses the same
+returning `{ missing: [names in TOOLS order], openboxInstalled: boolean }`, where
+`openboxInstalled` is true when both `openbox` and `xprop` are found (S4). It uses the same
 `findCommand` check `start()` uses, so the two never disagree. `start()` uses it for its
 existing missing-tools 422 (message unchanged).
 
@@ -69,7 +69,7 @@ existing missing-tools 422 (message unchanged).
 warning:
 
 - when `missing` is non-empty: `Screens won't work on <hostname>: missing <a, b>. Builds that don't use a screen are unaffected.`
-- when `missing` is empty and `windowManager` is false: `Screens on <hostname> have no window manager, so apps that need one may misbehave. Optional: sudo apt install openbox.`
+- when `missing` is empty and `openboxInstalled` is false: `Screens on <hostname> have no window manager, so apps that need one may misbehave. Optional: sudo apt install openbox.`
 
 `<hostname>` is `os.hostname()`. `warnings` is present only when it has at least one
 entry, and holds at most 10 (the card validator's limit, `viewer/app/card.js:171`). These
@@ -93,8 +93,9 @@ The installer never installs anything and its exit status is unchanged.
 
 - A machine-wide cap on screens held by the service: every entry in
   `ScreenManager.screens` (starting or running) counts.
-- The cap is 8. `ScreenManager` takes an optional constructor option `maxScreens`
-  (positive integer, default 8) so tests can set it; there is no environment variable.
+- The cap is 8, held in the instance property `maxScreens` (set to 8 in the
+  `ScreenManager` constructor). Tests set it on `service.screens` after construction, as
+  the fixture already overrides `service.liveTmux`. There is no environment variable.
 - Checked in `start()` only when a new screen would be created (a reused running screen
   never counts against the cap). The check and `this.screens.set(...)` happen with no
   `await` between them, so two sessions starting at once cannot both slip under the cap.
@@ -102,13 +103,20 @@ The installer never installs anything and its exit status is unchanged.
   `screen limit reached: <n> screens running on this machine (limit <cap>); try again later`. Nothing is created and no state file changes.
 - The cap counts map entries. A screen leaves the count exactly when it leaves `screens`
   today (teardown, reset, stop, archive, sweep). A screen being torn down can overlap a
-  new one for up to the existing 3 s SIGTERM-to-SIGKILL window; this is accepted (see
+  new one for about 4 s: up to 1 s for the SIGTERM command (`ctl`'s timeout), then the
+  existing 3 s grace before SIGKILL. This is accepted (see
   Accepted Risks).
 - **No stranded slots.** If the first `save()` after `this.screens.set(...)` in `start()`
   throws, the entry is deleted from `screens` (if it is still that screen) before the
   error propagates. `reset()` deletes the entry in a `finally`, so a failing `save()` there
   still frees the slot. A failed start therefore never holds a slot, and the same session
   can retry.
+- **One rule for new state writes.** Every state write this plan adds uses a
+  `trySave(screen)` helper: it calls `save()`, and if that throws, logs the error with
+  `service.log` and returns. The in-memory state stays authoritative, and the operation
+  carries on as if the write succeeded. The writes are: the openbox fallback (S4), the
+  post-spawn pid write (S5), the `failed` flag (S6) and `reset()`. Existing writes keep
+  their current behaviour, except the first write in `start()` (above).
 - **Cleanup survives a failed write.** In `reset()`, a failing `save()` is logged and does
   not stop the rest: the `xauth` cookie is still removed and the map entry still deleted.
   So `reset()` no longer throws, and `teardown()` (unchanged) always goes on to signal the
@@ -132,19 +140,23 @@ The installer never installs anything and its exit status is unchanged.
 ### S4. Window manager (openbox)
 
 - In `start()`, after the display number is known and its xauth entry is written, and
-  before the state is saved as `running`: if `screenTools().windowManager` is true, start
+  before the state is saved as `running`: if `this.allowOpenbox` (an instance property,
+`true` by default; tests set it) and `screenTools().openboxInstalled` are both true, start
   `openbox --sm-disable` in its own scope in the screen's slice
   (`scopeArgs(screen, 'wm')`), with `DISPLAY` and `XAUTHORITY` set to the screen's, stdio
   to `wm.log` in the screen directory.
-- **Readiness, one deadline.** A single deadline of 5 s from spawning openbox covers both
-  waits. First registration (`registered()`, given an optional `deadline` argument so it
-  stops at the time left; its return value stays unused), then polling
+- **Readiness.** No registration wait (`registered()` is unchanged and not called for
+  openbox). Within a single 5 s deadline from spawning openbox, poll
   `xprop -root _NET_SUPPORTING_WM_CHECK` (screen's `DISPLAY`/`XAUTHORITY`) every 100 ms.
   Each probe's timeout is `min(1000, time left)`. openbox counts as ready when that
   returns a window id.
 - If the deadline passes first, or the spawn fails: SIGKILL the spawned `systemd-run`
   child if it is still running (so a late-registering openbox cannot start), stop the
   `wm` scope at once (`immediate(unit(screen, 'wm'))`), and carry on without it.
+- **Fence after the wait.** After the readiness wait ends either way, the existing
+  generation fence runs again before the state is saved as `running`. If the session
+  stopped or the thread was archived meanwhile, the existing catch path runs: stop the
+  `x` and `wm` scopes at once, and return 409. A cancelled start is never saved as running.
 - Failing to start openbox is never fatal. The screen runs without it, the failure is
   logged with `service.log`, and `state.window_manager` is `null`. On success
   `state.window_manager` is `"openbox"`. `load()` defaults it to `null`, and `reset()`
@@ -155,7 +167,7 @@ The installer never installs anything and its exit status is unchanged.
   and `run`'s autofocus), when `state.window_manager` is `"openbox"`, query the `wm`
   scope with `systemctl --user show --property=ActiveState --value`. Only a confirmed
   inactive result clears the mode: the command succeeded and its trimmed output is exactly
-  `inactive` or `failed`. Then set `state.window_manager` to `null`, save, and use
+  `inactive` or `failed`. Then set `state.window_manager` to `null`, `trySave`, and use
   today's behaviour for that op and after; openbox is not restarted. Any other result
   changes nothing, and the op runs in openbox mode: a failed or timed-out query, or empty
   or unrecognised output.
@@ -170,8 +182,8 @@ The installer never installs anything and its exit status is unchanged.
     current focus command, but keeps its own timings: 1 s probe timeout and the 6 s phase
     deadline.
   - Without openbox, both behave exactly as today.
-  - `screen-input.js` gets the mode from `ctx.windowManager`, set by `screen.js` where it
-    builds `ctx`.
+  - `screen-input.js` gets the mode from `ctx.openbox` (true when this op runs in openbox
+    mode), set by `screen.js` where it builds `ctx` from `state.window_manager`.
 - Window ids reported are app (client) windows in both modes, so `shot --window`,
   `focus` and `windows` keep working on the same ids.
 
@@ -186,12 +198,11 @@ The installer never installs anything and its exit status is unchanged.
   as `spawn` returns, so it is recorded even when the app exits before registration is
   seen.
 - **Order after spawn.** First attach the child's `exit` and `error` listeners (the ones
-  S6's wait reads), then set `pid`/`pgid` to `child.pid ?? null`, then `save()`. An
+  S6's wait reads), then set `pid`/`pgid` to `child.pid ?? null`, then `trySave`. An
   asynchronous spawn failure leaves `child.pid` undefined, so both are stored as `null`.
   They are never omitted. If `spawn` throws, the record keeps `pid: null, pgid: null`.
-- If this `save()` throws, the error is logged with `service.log` and launch carries on
-  with the hand-over wait: the in-memory record is complete, and the next successful save
-  writes it. The app is never left running behind an error response.
+- If that write fails, launch carries on with the hand-over wait (the `trySave` rule). The
+  app is never left running behind an error response.
 - Teardown does not read them; teardown stays by slice (parent Decision 21).
   `status` adds `pid` to each app entry.
 
@@ -228,8 +239,9 @@ directory. `exec` keeps the pid (S5 unchanged).
     the last non-empty line of the log bytes written since spawn, preferring the last line
     starting `Failed to`. If there is none, it is the error message or
     `systemd-run exited <code|signal>`.
-  - In every failure case the app record stays with `failed: true`, autofocus is skipped,
-    and the app scope is stopped at once (`immediate(unit)`). `status` reports a record
+  - In every failure case: set `failed: true` on the in-memory record, stop the app scope
+    at once (`immediate(unit)`), `trySave`, and skip autofocus. A failed write never
+    changes the 422 or the cleanup. `status` reports a record
     with `failed: true` as `exited` without querying its scope.
 - **Cancellation first.** After every post-spawn outcome (hand-over, any failure, or
   timeout), the existing generation fence runs before anything is returned. If the
@@ -274,7 +286,7 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   is not Linux, if the service has a platform seam; otherwise the test is skipped off
   Linux. Installer prints each message in a temp home with a shimmed PATH, and prints
   nothing on Darwin.
-- S2, with `maxScreens: 1` (stop and failed-write cases also check the slice was signalled):
+- S2, with `service.screens.maxScreens = 1` (stop and failed-write cases also check the slice was signalled):
   - A second session's `start` gets the 422, and the first's screen is unaffected.
   - After stopping the first, the second starts.
   - Two simultaneous starts yield exactly one screen.
@@ -289,14 +301,18 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   - A `wm` scope is started, and `status` shows `window_manager: "openbox"`.
   - `windows` uses `_NET_CLIENT_LIST`, and `focus` calls `windowactivate --sync`.
   - Without them: no `wm` scope, `null`, and today's calls.
-  - A fake `xprop` that never reports `_NET_SUPPORTING_WM_CHECK`: the `wm` scope is
-    stopped, the value is `null`, today's calls are used, and the screen is running by 5 s
-    plus overhead.
+  - A fake `xprop` that never reports `_NET_SUPPORTING_WM_CHECK`, with the fake WM scope
+    slow to register (2 s): the `wm` scope is stopped, the value is `null`, today's calls
+    are used, and the screen is running within 5 s of the openbox spawn plus 300 ms.
+  - A session stopped during the readiness wait gets 409, the screen is not saved as
+    running, and both scopes are stopped.
+  - A failing state write when openbox is found gone still runs that op the old way and
+    returns its result.
   - A `systemctl show` that fails once, or succeeds with empty or unrecognised output,
     during a window op leaves the mode as openbox.
-  - Fixture: `ScreenManager` takes a constructor option `windowManager` (default `true`).
-    The shared fake-tool fixture passes `false`, so a host with openbox installed never
-    starts it in other tests. S4 tests pass `true` and shim `openbox` and `xprop`.
+  - Fixture: the shared fake-tool fixture sets `service.screens.allowOpenbox = false`, so
+    a host with openbox installed never starts it in other tests. S4 tests set it `true`
+    and shim `openbox` and `xprop`.
     `screenTools(searchPath)` is unit-tested with temp PATHs for presence and absence.
   - A `wm` scope that goes inactive after start: the next `windows` call switches to
     `null` and today's calls.
@@ -321,7 +337,8 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
     active.
   - A session stopped while hand-over is pending gets 409, not 422, and the app scope is
     stopped.
-  - A failing state write right after spawn still gives the hand-over outcome, not 500.
+  - A failing state write right after spawn, or when recording `failed`, still gives the
+    hand-over outcome (`ok` or the 422), not 500.
 - S7, `runTool`: a fake tool that starts a background `sleep 5` holding its stdout and
   exits at once, then a tool that hangs, called with a 100 ms timeout, resolves within
   300 ms with `timedOut: true`.
@@ -350,7 +367,7 @@ openbox is installed, the live test also asserts `status` shows `window_manager:
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| A screen being torn down can overlap a newly started one for up to 3 s, so briefly more than the cap run | The cap guards against runaway use, not a hard memory limit; holding slots through teardown would add state for a 3 s window | 3 |
+| A screen being torn down can overlap a newly started one for about 4 s, so briefly more than the cap run | The cap guards against runaway use, not a hard memory limit; holding slots through teardown would add state for a 3 s window | 3 |
 | A thread keeps up to 50 screenshots per screen-using session until it is archived | Deleting on session stop would break posting a stopped agent's screenshot; growth is bounded per session | 1 |
 
 ## Review Rounds
@@ -432,7 +449,7 @@ openbox is installed, the live test also asserts `status` shows `window_manager:
 
 Collin chose Keep going after round 3; review budget reset.
 
-**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since Round 3:**
 - S2: cap counts map entries, with a 3 s teardown overlap accepted; `reset()` no longer throws, and the teardown guard is dropped.
@@ -441,6 +458,27 @@ Collin chose Keep going after round 3; review budget reset.
 - S6: `launch()` drops `registered()`; failed records carry `failed: true` and show `exited`; the cancellation fence comes first.
 - S7: `runTool()` resolves at once on timeout.
 - Validation additions; one new Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | openbox start doesn't need `registered()` | upheld | Poll `xprop` alone; `registered()` unchanged |
+| intent | minor | Constructor options don't reach the manager the fixture builds | upheld | Instance properties set on `service.screens` |
+| intent | minor | "windowManager" names four things | upheld | `openboxInstalled`, `allowOpenbox`, `ctx.openbox`, `state.window_manager` |
+| mechanics | blocking | No fence after the openbox wait; a stopped session's start can be saved as running | upheld | Fence again before saving running; stop both scopes |
+| mechanics | major | openbox fallback save can 500 | upheld | `trySave` rule |
+| mechanics | major | `failed` flag write unspecified | upheld | Set in memory, stop scope, `trySave` |
+| mechanics | minor | Readiness test can't catch split budgets | upheld | Slow-registering fake scope |
+| mechanics | minor (RE-RAISE) | Overlap bound is about 4 s, not 3 s | upheld | Wording and Accepted Risk corrected |
+
+### Round 5 — 2026-11-18
+
+**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+
+**Changed since Round 4:**
+- S2: test settings are instance properties (`maxScreens`, `allowOpenbox`); one `trySave` rule for new writes; overlap bound about 4 s.
+- S4: readiness polls `xprop` only (no `registered()`); fence again after the wait; names `openboxInstalled`, `allowOpenbox`, `ctx.openbox`.
+- S5 and S6: post-spawn and `failed` writes use `trySave`; the failure order is set, stop, save.
+- Validation additions.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
