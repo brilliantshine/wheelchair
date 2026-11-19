@@ -83,3 +83,33 @@ Manual hearth checks (Antigravity stdio and http tool, Antigravity reviewer with
 - Accepted Risks in PLAN.md stand as written.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1 on `23cfa5f`)
+
+Attempt 1: Claude verifier PASS; GPT verifier FAIL with two gaps (`REMEDIATION-1.md`). Manual hearth checks passed under both verifiers.
+
+| Gap | Fix | Implemented at | Validated by |
+|-----|-----|----------------|--------------|
+| §§3–4: an exact duplicate header key was lost by `JSON.parse`, so the server was enabled | The reader scans the raw text for `mcpServers.<name>.headers` objects with keys equal ignoring case and marks such http/sse entries with the `DUPLICATE_HEADERS` symbol; both adapters skip with "has the same header twice". A scan that overflows on extremely deep (valid) nesting gives up quietly; the file still reads | machine/lib/project-mcp.js (`duplicateHeaderServers`, `DUPLICATE_HEADERS`); machine/adapters/codex.js:73; machine/adapters/agy.js:41 | machine/test/project-mcp-reader.test.js (exact, case, escaped, other paths, 15,000-deep); project-mcp-codex.test.js; project-mcp-agy.test.js |
+| §6: saved state with a wrong shape (`null`, `{}`) aborted the start or gave `seq: null` | `validProjectToolsState` checks the loaded shape; anything else is the empty state, as for a missing file | machine/service.js (`validProjectToolsState`, `updateProjectTools` loader) | machine/test/project-tools-state.test.js (null, {}, [], bad seq, malformed lines, valid state) |
+
+Also hardened: the fake tmux in `project-tools-state.test.js` now drains stdin on `load-buffer` (the `tmux buffer failed` flake both verifiers saw once).
+
+Known stricter-than-needed behaviour: a server whose `headers` key itself appears twice, or whose name repeats, is skipped if any occurrence has a duplicate header.
+
+Validation after remediation (feature branch):
+
+```
+$ bash machine/test/run.sh     # run 1
+# pass 195
+# fail 0
+$ bash machine/test/run.sh     # run 2
+# pass 195
+# fail 0
+$ node --test viewer/test/*.test.js
+# pass 646
+# fail 0
+$ node --test test-support/test/*.test.js
+# pass 9
+# fail 0
+```
