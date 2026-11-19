@@ -530,10 +530,15 @@ Collin moved the window manager to its own thread; review budget reset.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S7: drag reserve for mouseup; runTool resolves at once on timeout; tests | `machine/lib/screen-input.js`, `machine/test/screen-input.test.js` | standard | | `node --test machine/test/screen-input.test.js`; `bash machine/test/run.sh` | dispatched |
-| T2 | tricky — S2 cap, S3 pruning, S5 pids, S6 hand-over marker, plus `screenTools` export (S1 part); tests | `machine/lib/screen.js`, `machine/test/screen.test.js` (+ optional `machine/test/screen-hardening.test.js`) | standard | | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh` | dispatched |
+| T1 | S7: drag reserve for mouseup; runTool resolves at once on timeout; tests | `machine/lib/screen-input.js`, `machine/test/screen-input.test.js` | standard · gpt-6.1-terra | wc-2aac26176dff-worker | `node --test machine/test/screen-input.test.js`; `bash machine/test/run.sh` | done |
+| T2 | tricky — S2 cap, S3 pruning, S5 pids, S6 hand-over marker, plus `screenTools` export (S1 part); tests | `machine/lib/screen.js`, `machine/test/screen.test.js` (+ optional `machine/test/screen-hardening.test.js`) | standard · gpt-6.1-terra | wc-2aac26176dff-worker-2 | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh` | dispatched |
 | T3 | S1: approval-card warning and installer warning; tests (after T2, needs `screenTools`) | `machine/service.js` (approval block), `install.sh`, `install/test/run.sh`, a new machine test file | standard | | `bash machine/test/run.sh`; `bash install/test/run.sh` | not started |
 
 ## Log
 
 - 2026-11-19 — Build started. S4 (openbox) excluded per the lead: moved to its own thread. T1 and T2 run in parallel (disjoint files); T3 waits for T2's `screenTools`. S3 pruning lives in `screen.js` `execute()` so T1 owns `screen-input.js` alone.
+- 2026-11-19 — Choice: T1, `machine/test/screen-input.test.js`: a space-delimited `HANG` variable in the bash fake stalls named subcommands until killed (`exec sleep 30`), leaving `STALL` as it was.
+- 2026-11-19 — Choice: T1, `machine/test/screen-input.test.js` runTool test: a standalone `hang` script (backgrounds `sleep 5` on stdout, then `exec sleep 5`) instead of the shared bash fake; one fake per the brief rather than the Spec's two tools.
+- 2026-11-19 — Choice: T1, `machine/lib/screen-input.js` drag: a `dragRun` helper applies the reserved deadline to the first move, mousedown and second move.
+- 2026-11-19 — T1 accepted (band: scout): validation re-run passed (screen-input 19/19; machine suite 349/349 on a second run, the first failed one test under load from the parallel T2 run).
+- 2026-11-19 — Deviation (sub-lead): the existing drag test uses `baseDeadlineMs: 600, mouseupReserveMs: 400` instead of the Spec's `100`/`25`. With 25 ms, a bash `xdotool` fake for mouseup was killed before logging in 3 of 6 parallel runs; with 400 ms, 8 of 8 parallel runs passed. The test still checks the same thing: a stalled second move is cut by the deadline and mouseup still runs.
