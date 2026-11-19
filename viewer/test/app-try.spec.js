@@ -14,16 +14,19 @@ const S = (changes = {}) => ({
 });
 
 // A fake /try: `fake.status` is what GET answers; `fake.write(body)` answers a POST.
+// `fake.abortGet` / `fake.abortPost` make the browser's request fail at the network level (no response).
 async function setup(page, status, extra = {}) {
   const made = await ctx.make({ cli: 'claude' });
-  const fake = { status, gets: 0, posts: [], write: null, getFail: null };
+  const fake = { status, gets: 0, posts: [], write: null, getFail: null, abortGet: !!extra.abortGet, abortPost: false };
   await page.route('**/api/threads/*/try', async (route) => {
     const req = route.request();
     if (req.method() === 'GET') {
       fake.gets += 1;
+      if (fake.abortGet) return route.abort('failed');
       if (fake.getFail) return route.fulfill({ status: 502, json: { error: fake.getFail } });
       return route.fulfill({ json: fake.status });
     }
+    if (fake.abortPost) { fake.posts.push(JSON.parse(req.postData() || '{}')); return route.abort('failed'); }
     const body = JSON.parse(req.postData() || '{}'); fake.posts.push(body);
     const answer = fake.write ? await fake.write(body) : { status: 200, json: { ok: true, status: fake.status } };
     return route.fulfill(answer);
@@ -136,6 +139,22 @@ test('errors: refusal reason, machine unreachable, with a re-read', async ({ pag
   await expect(panel(page).locator('.card-error')).toHaveText("Can't reach hub.");
   await expect.poll(() => fake.gets).toBeGreaterThan(gets);
   await expect(panel(page).getByRole('button', { name: 'Try it in my copy' })).toBeEnabled();
+});
+
+test('network failure on a write and the re-read shows the hub sentence, not browser text', async ({ page }) => {
+  const fake = await setup(page, S());
+  await panel(page).getByRole('button', { name: 'Try it in my copy' }).click();
+  const gets = fake.gets;
+  fake.abortPost = true; fake.abortGet = true;
+  await panel(page).getByRole('button', { name: 'Confirm' }).click();
+  await expect(panel(page).locator('.card-error')).toHaveText("Can't reach the hub.");
+  await expect.poll(() => fake.gets).toBeGreaterThan(gets);
+  expect(fake.posts.length).toBe(1);
+});
+
+test('a page load with the hub unreachable shows the hub sentence', async ({ page }) => {
+  await setup(page, S(), { abortGet: true });
+  await expect(panel(page).locator('.card-error')).toHaveText("Can't reach the hub.");
 });
 
 test('a refused write shows the reason and re-reads Status once', async ({ page }) => {

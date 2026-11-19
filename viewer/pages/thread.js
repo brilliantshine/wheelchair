@@ -333,6 +333,8 @@
     if (copy.error) copyEl.appendChild(el('div', 'card-error', copy.error));
   }
   function copyTake(S) { if (S) copy.status = S; }
+  // fetch throws a TypeError on a network failure in every browser; show our sentence, not the browser's text.
+  function copyErrorText(e) { return e instanceof TypeError ? "Can't reach the hub." : e.message; }
   async function copyLoad(quiet) {
     const seq = ++copy.seq;
     copy.loading = true; renderCopy();
@@ -341,7 +343,7 @@
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || out.detail || 'http ' + res.status);
       if (seq === copy.seq) { copy.status = out; if (!quiet) copy.error = ''; }
-    } catch (e) { if (seq === copy.seq) copy.error = e.message; }
+    } catch (e) { if (seq === copy.seq) copy.error = copyErrorText(e); }
     finally { if (seq === copy.seq) copy.loading = false; renderCopy(); }
     copySchedule();
   }
@@ -363,7 +365,7 @@
       copyTake(out.status);
       if (out.accepted === false) { copy.error = out.reason || 'That did not work.'; reread = true; }
       else if (out.accepted === true) copy.waiting = true;
-    } catch (e) { copy.error = e.message === 'Failed to fetch' ? "Can't reach the hub." : e.message; reread = true; }
+    } catch (e) { copy.error = copyErrorText(e); reread = true; }
     finally { copy.sending = false; renderCopy(); }
     if (reread) { copy.waiting = false; await copyLoad(true); } else copySchedule();
   }
