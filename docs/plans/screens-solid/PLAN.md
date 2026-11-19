@@ -531,7 +531,7 @@ Collin moved the window manager to its own thread; review budget reset.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S7: drag reserve for mouseup; runTool resolves at once on timeout; tests | `machine/lib/screen-input.js`, `machine/test/screen-input.test.js` | standard · gpt-6.1-terra | wc-2aac26176dff-worker | `node --test machine/test/screen-input.test.js`; `bash machine/test/run.sh` | done |
-| T2 | tricky — S2 cap, S3 pruning, S5 pids, S6 hand-over marker, plus `screenTools` export (S1 part); tests | `machine/lib/screen.js`, `machine/test/screen.test.js` (+ optional `machine/test/screen-hardening.test.js`) | standard · gpt-6.1-terra | wc-2aac26176dff-worker-2 | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh` | dispatched |
+| T2 | tricky — S2 cap, S3 pruning, S5 pids, S6 hand-over marker, plus `screenTools` export (S1 part); tests | `machine/lib/screen.js`, `machine/test/screen.test.js` (+ optional `machine/test/screen-hardening.test.js`) | standard · gpt-6.1-terra | wc-2aac26176dff-worker-2 | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh` | done |
 | T3 | S1: approval-card warning and installer warning; tests (after T2, needs `screenTools`) | `machine/service.js` (approval block), `install.sh`, `install/test/run.sh`, a new machine test file | standard | | `bash machine/test/run.sh`; `bash install/test/run.sh` | not started |
 
 ## Log
@@ -542,3 +542,9 @@ Collin moved the window manager to its own thread; review budget reset.
 - 2026-11-19 — Choice: T1, `machine/lib/screen-input.js` drag: a `dragRun` helper applies the reserved deadline to the first move, mousedown and second move.
 - 2026-11-19 — T1 accepted (band: scout): validation re-run passed (screen-input 19/19; machine suite 349/349 on a second run, the first failed one test under load from the parallel T2 run).
 - 2026-11-19 — Deviation (sub-lead): the existing drag test uses `baseDeadlineMs: 600, mouseupReserveMs: 400` instead of the Spec's `100`/`25`. With 25 ms, a bash `xdotool` fake for mouseup was killed before logging in 3 of 6 parallel runs; with 400 ms, 8 of 8 parallel runs passed. The test still checks the same thing: a stalled second move is cut by the deadline and mouseup still runs.
+- 2026-11-19 — Choice: T2, `machine/lib/screen.js`: the hand-over deadline is an instance property `handoverMs` (5000), and the timeout reason derives its seconds from it.
+- 2026-11-19 — Choice: T2, `machine/test/screen.test.js`: write failures are simulated by overriding the manager's `save`, not by read-only directories (privileged users ignore permissions).
+- 2026-11-19 — Choice: T2, `machine/test/screen.test.js`: fixture `systemd-run` gained `launch` knobs (`fail`, `signal`, `hang`); the fake wrapper propagates the logger's exit status and kills itself on 137; the spawn-error test isolates the launch PATH from the host `systemd-run`.
+- 2026-11-19 — Choice: T2, `machine/lib/screen.js`: `TOOLS` is exported alongside `screenTools`; pruning sorts `shot-<n>.png` by numeric n and unlinks synchronously.
+- 2026-11-19 — T2 accepted (band: self): diff read against S2, S3, S5, S6; merged-tree machine suite 368/368.
+- 2026-11-19 — Deviation fix (sub-lead): T2's timeout test ran at `handoverMs = 1000` and asserted `1 s`; changed it to the production 5 s deadline and the exact Spec message plus status 422.
