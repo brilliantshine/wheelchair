@@ -1,6 +1,6 @@
 ---
 slug: owner-name-identifiers
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -30,6 +30,17 @@ created: 2026-11-19
 
 ## Spec
 
+```mermaid
+flowchart LR
+  F[(thread JSON<br/>old or new labels)] --> N[normalizeThread<br/>collin → user]
+  N --> R[every reader:<br/>pages, restart, send-now, export]
+  W[writers] -->|user, user_at| F
+  V1[v1 file, who: collin] --> VAL[validate<br/>v1 or v2]
+  V2[v2 file, who: user] --> VAL
+  VAL -->|collin → user| I[imported history]
+  R --> X[export: v2, who: user]
+```
+
 Nothing changes on screen or in how threads behave. Only stored labels, the handoff file
 format, comments and tests change. Line numbers are from `93da28f4` and may drift.
 
@@ -38,7 +49,7 @@ format, comments and tests change. Line numbers are from `93da28f4` and may drif
 | Old | New | Where written |
 |---|---|---|
 | thread field `collin_at` | `user_at` | `viewer/app/sessions.js:477`, `viewer/app/threads.js:327`, `:423` |
-| message / queue / sent `source: 'collin'` | `source: 'user'` | `viewer/app/threads.js:79`, `viewer/app/routes.js:534`, `viewer/app/asides.js:62`, the default and checks in `viewer/app/sessions.js` (`:477`, `:542`) |
+| message / queue / sent `source: 'collin'` | `source: 'user'` | `viewer/app/threads.js:79`, `viewer/app/routes.js:534`, `viewer/app/asides.js:62`, and the checks in `viewer/app/sessions.js` (`:477`, `:542`). `enqueue`'s default source stays `'app'` (`viewer/app/sessions.js:470`) |
 | card `resolved_by: 'collin'` | `resolved_by: 'user'` | `viewer/app/threads.js:246`, `:331`, `:404`, `:422` (via `resolveCard`, `viewer/app/cards.js:37`) |
 | imported history `who: 'collin'` | `who: 'user'` | handoff import (S3) |
 
@@ -61,6 +72,7 @@ parsed thread record in place and returns it:
 - In `queues[*][]`, `sessions[*].queue[]`, `sent[]`: `source === 'collin'` → `'user'`.
 - In `cards[]` and every value of `pinned`: `resolved_by === 'collin'` → `'user'`.
 - In `imported.history[]`: `who === 'collin'` → `'user'`.
+- In `handoff_op.carried.history[]` (a saved import interrupted before the upgrade; Retry copies it into `imported` at `viewer/app/handoff-ops.js:102`): `who === 'collin'` → `'user'`.
 - Missing or non-array containers are skipped; any other value is left alone. Converting an
   already converted record changes nothing.
 
@@ -110,7 +122,7 @@ only if its statements become false; do not touch other maps or older plans.
 ### S6. New tests
 
 - `normalizeThread`: a record with every old field (both queue copies, sent, cards, pinned,
-  imported history, `collin_at`) comes out with only new values; idempotent; `user_at`
+  imported history, `handoff_op.carried.history`, `collin_at`) comes out with only new values; idempotent; `user_at`
   later than `collin_at` is kept.
 - A thread file on disk with old values: listing orders by its old timestamp, its old queued
   message shows as pending and can be sent now, its old resolved card shows "Dismissed",
@@ -118,6 +130,7 @@ only if its statements become false; do not touch other maps or older plans.
 - Handoff: export writes v2 with `who: 'user'`; a v1 file with `collin` imports and stores
   `'user'`; a v2 file imports; v2 with `collin`, v1 with `user`, and version 3 are refused
   with the existing 422 messages; a thread imported from v1 re-exports as v2 with `'user'`.
+- A thread saved with an interrupted v1 import operation (`handoff_op` with `carried.history` holding `collin`) is retried, then exported: the export is v2 with only `'user'`.
 
 ### Non-goals
 
@@ -142,6 +155,7 @@ grep -rni collin viewer machine test-support codex install sensitivity sudo-help
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Browser tabs open while the app updates keep running the old page script until refreshed: queued-message bubbles and Send now disappear, lists sort by creation time and imported history shows `user` instead of You. A freshly loaded list page may draw its cached old list for a moment before the first fetch | Fixed by a refresh, nothing saved is affected, and updates are occasional | review-round-1 |
 | Rolling the app back to a version before this change after threads were converted: old code sees `user` values it doesn't know (sort falls back to creation time, old queued messages not shown as pending) | Rollback is not a normal path; nothing is lost, and updating again restores it | planning |
 
 ## Check Once Built
@@ -153,12 +167,16 @@ grep -rni collin viewer machine test-support codex install sensitivity sudo-help
 
 ### Round 1 — 2026-11-19
 
-**Lanes:** (filled at start)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | S2 misses `handoff_op.carried.history`; a v1 import interrupted before the upgrade, retried after, stores `collin` and breaks the next export | downgraded (minor) | Needs an import interrupted before an upgrade (realism: a crash at an exact moment). Cheap to cover: added to S2's containers and an S6 test |
+| mechanics | blocking | Open browser tabs cross the upgrade with the old script; bubbles, Send now, sort and history labels misbehave until refresh; cached list drawn briefly | accepted-risk | Transient, fixed by refresh, no data affected; moved to Accepted Risks |
+| mechanics | minor | Renaming "the default" in sessions.js would make sourceless enqueues count as user messages | upheld | S1 now says `enqueue`'s default stays `'app'` |
+| intent | minor | S2's keep-later-`user_at` rule only serves the rollback path; simpler copy-if-missing suffices | declined | One comparison; after rollback-then-update it keeps the newer activity time so list order stays right, at no real cost |
 
 ## Implementation Tasks
 
