@@ -59,6 +59,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 32 | Generation reserved in `state.json` before spawn; sweep leaves `starting` screens; thread-slice kill bumps generations; kill + stop share 1 s | Closes sweep/start and restart generation races; one archive budget | review-round-6 |
 | 33 | One deadline per `key` op; releases always attempted; failed release blocks input until `screen stop`; focus failure is still a successful `run` | Bounds input ops; no stuck keys; no duplicate launches | review-round-6 |
 | 34 | One last review round; findings that only arise when two events coincide within about a second (concurrent stop/archive/restart/sweep/launch timing) go to Accepted Risks rather than rework; other findings are fixed as usual | Collin's pick ("One last round, timing cases accepted") after six rounds | user |
+| 35 | Cut-off taps released too; releases in parallel, 500 ms each; `env --` always, `-` refused; command resolved before launch (422 if missing); auto-focus probes 1 s each, phase ≤ 6 s; archive keeps the screens dir when it keeps uploads; screen-dir removal failure doesn't fail archive | Round 7 findings | review-round-7 |
+| 36 | Approve after round 7 even though it upheld three non-timing findings (env option parsing, missing command, unbounded focus probes); they are fixed in the Spec without another round | Collin's decision 34 ended review with this round; the fixes are small and the builder's tests and the verifier cover them | defaulted |
 
 ## Spec
 
@@ -129,8 +131,11 @@ tokens are checked before any key is sent, then each is sent as its own `xdotool
 <token>` for each in order, one wait of the hold time, then `xdotool keyup -- <token>` for
 each in reverse order (keyups are also sent if the wait is interrupted or a keydown fails).
 **Key op deadline:** one `key` op has a single deadline of 10 s plus the hold time, covering
-all its xdotool calls; when it expires no further keydown or tap is sent. Releases are always
-attempted afterwards, with their own 2 s budget outside that deadline. If any keyup fails or
+all its xdotool calls; when it expires no further keydown or tap is sent. Every key that may
+be down is released afterwards: all held keys, and for a tap whose `xdotool key` call was cut
+off, that tap's key (a tap sends press and release separately). Each release is its own
+`xdotool keyup` call with its own 500 ms timeout, all started together, so one stalled
+release cannot starve the others. If any keyup fails or
 times out, the op returns `422 keys may still be held; run wc.js screen stop` and every later
 input op on that screen is refused with the same message until `screen stop`.
 `type` sends `xdotool type --delay 20 -- <text>` as a single argument; text is 1–400
@@ -151,7 +156,9 @@ focuses the first one that appears. It does not try to prove which app owns the 
 X apps publish no pid, and a sandboxed app's pid is not the service's), so on a screen where
 an earlier app opens a window at the same moment, the wrong one may be focused. `run` returns
 `focused: {id, name}` or `focused: null`, so the agent can see what got focus and `focus`
-another window if needed. If the new window vanishes or `xdotool windowfocus` fails, `run`
+another window if needed. Every probe in this phase (the baseline listing, each `xwininfo`
+call and the focus call) has a 1 s timeout and the whole phase ends by 6 s; a failed or timed
+out probe ends it with `focused: null`. If the new window vanishes or `xdotool windowfocus` fails, `run`
 still succeeds with `focused: null` (the app did launch; a retry would start a second copy).
 
 ### Launching apps
@@ -172,8 +179,16 @@ not torn down). `start` returns the display for information only.
   `XAUTHORITY` and `WHEELCHAIR_SESSION_TOKEN` refused with `400`) apply
   only to the app itself: the service runs `env KEY=VALUE ... <command> [args...]` (as argv,
   no shell) as the launched command, so for a sandboxed Codex session they take effect inside
-  the sandbox and never on the sandbox launcher. A command whose first word contains `=` is
-  refused with `400` (`env` would read it as another assignment). The agent's shell-local changes (an activated
+  the sandbox and never on the sandbox launcher. The argv is `env -- KEY=VALUE ... <command>
+  [args...]` (with `--` even when there are no overrides, so a command like `--help` is run as
+  a command, not read as an `env` option). A command whose first word contains `=` or is
+  exactly `-` is refused with `400` (`env` would read it as an assignment, or as "clear the
+  environment").
+- **Command must exist:** before launching, the service resolves the first word against the
+  `PATH` of the app's environment (or, if it contains `/`, relative to the worktree), and
+  refuses with `422 command not found: <word>` if it is not an executable file. A command that
+  starts and exits quickly is a successful `run`; `status` then shows that app as `exited`,
+  and its log holds its output. The agent's shell-local changes (an activated
   toolchain, an edited `PATH`) are not carried: pass them with `--env`, or launch
   `sh -c '<activate>; exec <app>'`.
 - **Permissions:** the app runs with the caller's own execution limits. For a Codex session
@@ -253,8 +268,10 @@ not torn down). `start` returns the display for information only.
   an agent can open it with its image-reading tool.
 - **Screenshot:** `ffmpeg -loglevel error -y -f x11grab -video_size WxH -i :N[+x,y]
   -frames:v 1 <tmp>` with `DISPLAY` and `XAUTHORITY` set, 15 s timeout.
-- **Input:** each op runs `xdotool` with `DISPLAY` and `XAUTHORITY` set, 10 s timeout; a
-  non-zero exit returns `422` with the last stderr line.
+- **Input:** each op runs `xdotool` with `DISPLAY` and `XAUTHORITY` set; a non-zero exit returns
+  `422` with the last stderr line. Timeouts: 10 s per op for `move`, `click`, `drag` and
+  `focus`; the `type` and `key` rules above (scaled `type` timeout; one deadline per `key` op
+  plus separate releases) take precedence over this default.
 - **Teardown:** two strengths, both on the screen slice. *Graceful* (the `screen stop` op,
   and the sweep): `systemctl --user kill --signal=SIGTERM <screen slice>`, then after 3 s
   `systemctl --user kill --signal=SIGKILL <screen slice>` and `systemctl --user stop <screen
@@ -267,13 +284,16 @@ not torn down). `start` returns the display for information only.
   screen of that thread: it bumps each one's generation (persisted) and drops it from memory,
   so a launch fenced on any of them kills itself. In both paths the kill and the
   `stop --no-block` submission share one 1 s deadline; on timeout or failure the service logs
-  it and carries on, and the sweep retries the slice. Screens therefore add at most about 1 s
-  to session stop and archive; the rest of archive's time is as today. Both delete the cookie
-  file. Session stop keeps shots and logs; archive removes them with the thread's screens
-  directory. The sweep runs every 60 s and tears down screens whose
+  it and carries on, and the sweep retries the slice. The 1 s covers only those `systemctl`
+  calls; the local file work (persisting generations, deleting cookies, removing the screens
+  directory) is small and comes on top. Every teardown, graceful or immediate, deletes the
+  screen's cookie file. Session stop keeps shots and logs. Archive removes
+  `<stateDir>/screens/<thread>/` whenever it removes the thread's uploads, and keeps it
+  whenever it keeps them (a worktree kept mid-rebase, so the thread can reopen with its
+  counters and generations intact); a failure removing it is logged and does not fail the
+  archive (the hub's archive outcome is unchanged). The sweep runs every 60 s and tears down screens whose
   session tmux is confirmed gone (`liveTmux()` returned a set without it; a `null` answer
-  skips that sweep). `archive()` also removes `<stateDir>/screens/<thread>/` alongside the
-  uploads it removes. A screen whose Xvfb died is treated as no screen (its slice is torn
+  skips that sweep). A screen whose Xvfb died is treated as no screen (its slice is torn
   down; the next `start` makes a new one).
 - **Service restart:** the service runs with `KillMode=process` (`install.sh:401`) and
   `./install.sh` restarts it, so screens would outlive a restart. At startup the service tears
@@ -348,7 +368,12 @@ manager, no video, no Ready-check change.
   generation in `state.json` before spawning and the sweep leaves a `starting` screen alone;
   a `key` op with a stalled xdotool stops sending at its deadline, still releases held keys,
   and a failed release refuses later input until `screen stop`; a `run` whose focus fails
-  returns success with `focused: null`; missing-tool error naming each
+  returns success with `focused: null`; a tap cut off by the key deadline is released and a
+  failed release locks input; a stalled first release still lets the others run; `run --
+  --help` runs a command named `--help` (not `env --help`) and `run -- -` is refused; a
+  missing command gives `422 command not found`, a command that exits at once gives success
+  and `exited` in `status`; an auto-focus probe that stalls ends the phase with `focused:
+  null` within 6 s; archive keeps the screens directory when it keeps uploads; missing-tool error naming each
   missing tool, status 422; op without a screen; one session cannot reach another's screen;
   `start` after session stop refused 409, `start` after `screen stop` allowed; `start` when
   tmux shows the session gone refused 409 with the slice killed, when tmux cannot be asked
@@ -383,6 +408,7 @@ manager, no video, no Ready-check change.
 |------|--------------|-------|
 | Heavy 3D may be slow or fail on the invisible screen (software rendering, no graphics card) | Accepted in IDEA.md constraints | planning |
 | A `run` that races an archive can start an app before the fence kills it, inside a worktree being archived; it can run until archive's synchronous git steps finish and the service runs the fence (seconds, not an instant) | The agent's own processes are equally unfenced then; fixing it means reworking archive's synchronous git, outside this feature | 5, 6 |
+| An op in flight during archive (a `shot`, or `run` in auto-focus) can write its state file after archive removed the screens directory, leaving a stray directory | Two events in the same moment; Decision 34; harmless leftover | 7 |
 | An agent that deliberately reads another session's screen cookie can connect to that screen | All sessions run as the same user; the cookie stops mistakes, not a determined agent | 1 |
 
 ## Review Rounds
@@ -515,6 +541,16 @@ manager, no video, no Ready-check change.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Screens dir vs uploads kept mid-rebase | upheld | Kept together; Decision 35 |
+| intent | minor | "Both delete the cookie" unclear | upheld | Every teardown deletes it |
+| intent | minor | Input timeout rule vs type/key rules | upheld | Specific rules take precedence |
+| mechanics | blocking | Cut-off tap can leave a key down | downgraded (minor) | Only on a stalled xdotool; fixed anyway: tap released too; Decision 35 |
+| mechanics | major | One stalled keyup starves the rest | downgraded (minor) | Same stall case; releases in parallel; Decision 35 |
+| mechanics | blocking | `env` reads `--help` as its own option; `-` clears env | upheld | `env --`, `-` refused; Decision 35 |
+| mechanics | major | Missing executable vs success undefined | upheld | Resolved before launch; Decision 35 |
+| mechanics | major | Auto-focus probes unbounded | upheld | 1 s probes, ≤ 6 s; Decision 35 |
+| mechanics | major | Late state write after archive recreates dir | accepted-risk | Same-moment timing case per Decision 34; Accepted Risks |
+| mechanics | major | 1 s archive claim leaves out file work; removal failure | downgraded (minor) | Wording: 1 s covers systemctl only; failure logged, archive outcome unchanged |
 
 ## Prior Work
 
