@@ -180,6 +180,11 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   - Otherwise: add the target id to the pressed thread's `lead_links`, mark answered and queue
     `[card <id>] picked: allow`. No write to the target thread.
 - **Don't allow press:** mark answered, queue `[card <id>] picked: don't allow`. Nothing else changes.
+- A press while the thread has no live lead is refused with the existing
+  `no live lead` (409) before any change, like every other card; the card stays open and
+  the user can press again after the lead restarts.
+- Its Needs you title (`addNeeds` uses `card.title`): the hub stores
+  `title: "Let this lead talk to <target_title>?"` on the card at post time.
 - Retractable like a question card: add `reach` to the retract kinds and to the refusal text
   (`only a question, offer, approval, needs, sudo, deferred or reach card can be retracted`).
 - A link lasts until either thread is archived; unreachable threads are never listed or
@@ -193,7 +198,8 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   For a small fix, once before making the edits. Show the user nothing unless something
   overlaps; when something does, say so in one line in your reply.
 - **Overlap:** when a listed thread's title, idea or stage suggests it touches the same files
-  or behaviour, and it has a `lead`, message that lead with `asks: true`: what you are
+  or behaviour, it has a `lead`, and you have not already raised this overlap with that
+  lead, message that lead with `asks: true`: what you are
   building, the areas you will touch, and what it is doing there. If that lead has already
   asked you about this overlap, answer its question instead of sending your own. A listed
   thread with `lead: null` cannot be messaged: tell your user in one line that it exists and
@@ -208,12 +214,22 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   - If it leads to an agreement that changes your Spec before Start building, retract the open
     approval card, set `status: ready-for-review`, and put the change to your user as a
     `question` card; then continue with review as for any Spec change.
+    To retract you need the approval card's id: `card.js` prints it (section 5). If a
+    `[card <id>] start building` press arrives first, or the retract is refused because the card
+    is already answered, the build goes ahead on the approved plan: handle the agreement as
+    after Start building.
   - After Start building, handle it as below for "while a sub-lead owns the worktree".
+  - For a small fix whose edits are already made or done: message the other lead what has
+    already landed (with the pull request link), and treat any change it needs as a problem
+    reported after done (lead.md step 9) or a `stub`.
 - **Agreements, for both leads (asker and answerer):**
   - One that changes what your user asked for, IDEA.md or the Spec goes to your user as a
     `question` card before you act on it. When your user answers, message the other lead with
-    the outcome (agreed, changed or rejected). A lead whose agreement waits on the other user's
-    OK does not act on it until that outcome message arrives.
+    the outcome: agreed, rejected, or changed. "Changed" cancels the original agreement and
+    states the new terms as a fresh proposal (with `asks: true`), which the other lead handles
+    by these same rules, including its own user when the new terms change its scope. A lead
+    whose agreement waits on the other user's OK does not act on it until that outcome
+    message arrives.
   - Otherwise record it: in the PLAN.md Log when the worktree is yours; before PLAN.md exists,
     keep it and add the Log line when you create PLAN.md; while a sub-lead owns the worktree,
     send it to the sub-lead as a `message` if it affects the build and add the Log line after
@@ -240,6 +256,14 @@ commands list. In the markers table, add the `[thread ...]` part of `[wc:from ..
 **`protocol/app/cards-lead.md`**: add a `reach` section with its fields, refusals, buttons
 and press forms (`[card <id>] picked: allow`, `[card <id>] picked: don't allow`, `[card <id>] allow failed: <reason>`), and add
 `reach` to the retract kinds and refusal text.
+
+### 5. `card.js` prints the posted card's id
+
+On success `card.js` prints the machine's response body as one JSON line. When the hub
+accepted the card directly this is the stored card, including its `id`; when the machine
+spooled it, it is `{"ok":true,"spooled":true}` (no id yet). Leads use the printed `id` when
+they later need to retract or resolve a card. The exit code and every refusal path are
+unchanged. Update `cards.md` "Posting a card" to say so.
 
 ### Non-goals
 
@@ -272,6 +296,9 @@ New tests in `viewer/test/` must cover:
   can then message back; Allow on a target archived after posting answers the card, links
   nothing and queues `allow failed: that thread is archived`; Allow when already linked succeeds without change; Don't allow links
   nothing; a second press refused; retract works; an open `reach` card appears in Needs you.
+- `card.js` prints the stored card (with `id`) on a direct accept and `{"ok":true,"spooled":true}` when spooled.
+- A `reach` press with no live lead is refused 409 and the card stays open; an open `reach`
+  card's Needs you entry shows its title.
 - A browser test shows a `reach` card with its two buttons and its answered state.
 
 ## Deferred
@@ -294,6 +321,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 |------|--------------|-------|
 | Two threads naming the same project through different paths (a symlink) are not treated as the same project | Users pick projects from the same list; needs an unusual setup | review-round-1 |
 | A target's lead dies or the target is archived in the sub-second gap between storing a cross-thread message and queuing it, so that message is dropped | Two unlikely events in a sub-second window; the sender can resend | review-round-1 |
+| An approval card posted while the hub was unreachable has no printed id, so a late peer answer cannot retract it | Needs the hub down at that exact post and a late Spec-changing answer | review-round-3 |
 | A crash between saving a cross-thread message in the sender's thread and queuing it on the target loses that one delivery | Needs a hub crash inside a sub-second window; the sender can resend | planning |
 
 ## Check Once Built
@@ -365,12 +393,19 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 3 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:** Terms "Linked thread" (either side's `lead_links`); §2 non-writing target reads (`hub.state.thread`), Agents screen `questionFor` change; §3 Allow press rewritten (one write, `allow failed: <reason>`); §4 lead rules: overlap/crossed questions, `Re:` replies, "Never wait on another lead" (late answers retract approval), agreement outcomes reported back, agreements before PLAN.md, already-linked threads; Validation additions; Decisions 17-18.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Overlap re-raised at every check | upheld | "unless already raised with that lead" |
+| intent | minor | Late answer after a small fix lands | upheld | §4: tell the other lead what landed; changes go via step 9 or a stub |
+| mechanics | blocking | Lead has no approval id to retract | upheld | §5 `card.js` prints the card; spooled case in Accepted Risks |
+| mechanics | major | Start building pressed during a late answer | upheld | Build goes ahead; agreement handled as during a build |
+| mechanics | major | `reach` press with no live lead | upheld | Existing 409 refusal, card stays open |
+| mechanics | major | Counterproposal terms unsettled | upheld | "Changed" cancels and becomes a fresh proposal |
+| mechanics | minor | Needs you labels `reach` as Approval | upheld | Hub stores a `title` on the card |
 
 ## Prior Work
 
