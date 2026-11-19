@@ -52,6 +52,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | Supersedes the `refs/wheelchair/kept/` part of 11: pins are `refs/wheelchair/<return|backup>/...`. Supersedes 10's location rule: the panel shows on every thread page for the folder, including archived threads; Try needs the thread's branch, Switch back does not | Round 3 intent findings | review-round-3 |
 | 16 | Backups are byte-exact (no filters, modes and symlinks kept) and include the index; they are recorded before anything is cleared; outcomes also need a status scan; folder identity checked; Switch back returns to the branch's current tip; first Try state lives in `pending` until success | Round 3 mechanics findings | review-round-3 |
 | 17 | HEAD unmoved always means "nothing moved"; Status reads metadata only and reports folder refusals; a Finish (`recover`) action; Dismiss keeps the return commit as a backup; queue keyed by the folder's real path; identity includes device and inode; per-path index check before clearing; `--no-renames`, `--` and a temporary index copy | Round 4 findings | review-round-4 |
+| 18 | Identity checked only during a trial and re-stamped on first Try; half-switched first Try recovered by Finish; same-place switches skip git; Dismiss deletes a return pin its branch still contains; Status not polled; plain "files in the way" message | Round 5 findings | review-round-5 |
 
 ## Spec
 
@@ -67,9 +68,10 @@ Spec is still churning. See `protocol/diagrams.md`.
 Terms:
 - **The folder** is `thread.project` on `thread.machine` (`viewer/app/threads.js:20-25`).
 - **Identity**: the folder's real path, device and inode, plus the same three for `git
-  rev-parse --git-common-dir`, saved in the record at the first Try and checked before every write;
-  a mismatch is the unexpected state ("This folder is no longer the copy that was
-  switched") and nothing is changed.
+  rev-parse --git-common-dir`, stamped into the record at every first Try. Checked before
+  every write only while `active` or `pending` is set; a mismatch then is the unexpected
+  state ("This folder is no longer the copy that was switched"), and only Dismiss is
+  allowed (it skips the identity check). With neither set, identity is not checked.
 - **HEAD identity** is `{branch: full refname or null if detached, sha}`. Comparisons
   compare both parts.
 - **Status scan**: `git --no-optional-locks status --porcelain=v2 -z --no-renames
@@ -86,14 +88,23 @@ Terms:
 - **Switches** always run as `git -c submodule.recurse=false switch --no-guess
   --no-overwrite-ignore --no-recurse-submodules <short branch name>` or the same with
   `--detach <sha>`. Git refuses rather than overwrite an ignored file.
+- **Same place**: if source and target HEAD identity are equal (another thread at the
+  same commit, or a Back to a detached commit already in place), git is not run: after
+  the usual preflight and any backup, the record is updated as a success in one write.
 - **Outcome of a switch** is judged afterwards by HEAD identity plus a status scan, never
   by the exit code:
   - HEAD at the target and clean: success. A nonzero exit (for example a failing
     post-checkout hook) becomes a warning with git's last line.
   - HEAD at the target but not clean: success with a warning listing the files; they are
     treated as leftovers (backed up on the next move).
-  - HEAD at the source: nothing moved, whether or not the copy is clean. Any new
-    changes count as leftovers while trying, or as his own edits on a first Try.
+  - HEAD at the source while trying (Back, or Try from one thread to another): nothing
+    moved, whether or not the copy is clean; any new changes count as leftovers.
+  - HEAD at the source on a first Try and clean: nothing moved.
+  - HEAD at the source on a first Try but not clean (for example a Git LFS download
+    failed after git had already rewritten some files): **half-switched**. `pending` is
+    kept; status lists the changed files; Finish puts his copy back by backing up those
+    files and clearing them (Back up the leftovers), then drops `pending` and the return
+    pin. Nothing is cleared until he presses Finish.
   - Anything else: the **unexpected state**; `pending` is kept and nothing is cleared
     automatically.
 - **Pins**: `git update-ref refs/wheelchair/<return|backup>/<folder hash>/<nonce> <sha>`
@@ -119,14 +130,16 @@ Terms:
      exactly. `git write-tree`, then `git commit-tree <tree> -p HEAD -p I -m
      "wheelchair backup: changes while trying thread <id>"` gives B.
   4. Verify: recompute each path's type, mode and blob as in 3 and compare with B, and
-     re-run the index copy (on a fresh temporary copy) and compare with I. On a mismatch
+     re-run `git write-tree` on a fresh temporary copy of the index and compare with
+     `I^{tree}` (not the commit id, which carries a timestamp). On a mismatch
      (something is still writing), retry from 1, at most three times, then stop with
      "Your copy keeps changing; close the app using it and try again". Nothing is pinned
      or cleared until verify passes.
   5. Pin B as `backup`, append `{ref, label, thread_id, files, at}` to `backups`, and
      write the record, all before clearing.
   6. Clear, path by path, only paths whose type, mode and blob still match B and whose
-     index entry (`git ls-files -s -- <path>`) still matches I: tracked paths with `git
+     index entry (`git ls-files -s -z -- ":(literal)<path>"`, exact path compared) still
+     matches I: tracked paths with `git
      restore --source=HEAD --staged --worktree -- ":(literal)<path>"`; untracked paths by
      unlinking that one file or link. Any path that no longer matches is left alone and
      reported.
@@ -144,7 +157,7 @@ written atomically (temp file then rename):
   pending: null | { op: "try"|"back", first: bool, thread_id,
                     from: HEADid, to: HEADid,
                     return_point?, return_ref?, protected? },   // first Try only
-  backups: [ { ref, label, thread_id, files: [path], at } ] }
+  backups: [ { ref, label, thread_id, files: [path], at, branch? } ] }
 ```
 
 `active` is only ever written by a successful switch. A first Try keeps everything it
@@ -186,8 +199,8 @@ current status.
 
 1. **Try it in my copy.** Confirmation names the folder and machine and says it brings in
    the thread's merged work so far (work agents have not yet merged into the thread is
-   not included); when already trying with leftovers, it also says they will be backed up
-   first.
+   not included); while a trial is active it also says anything changed while trying is
+   backed up first.
    1. Target is the sha of `wc/<thread-id>`. If Trying this same thread at this sha:
       "Already showing the newest", no change. (Another thread at the same sha goes
       through the steps below.)
@@ -200,7 +213,7 @@ current status.
    4. Switch detached to the target and judge the outcome. Success: `active` set (from
       `pending` on a first Try, else thread and commit updated), `pending` cleared.
       Nothing moved: `pending` cleared; on a first Try also delete the return pin; git's
-      line reported. Unexpected: `pending` kept.
+      line reported. Half-switched or unexpected: `pending` kept.
    5. Reports what was backed up, if anything, and any success warning.
 2. **Switch back.** Carries the shown `version`. Confirmation says anything changed while
    trying is backed up first, and suggests closing the app using the folder. Available
@@ -226,26 +239,31 @@ current status.
    thread's merged work as of <short sha>" (plus "Get newest" when `wc/<id>` moved on);
    "Your copy is showing another thread: <title>" with Switch back; "Your copy moved
    since you tried <thread>" with Switch back; Stale: "You switched your copy by hand"
-   with Dismiss; `pending` set: "An earlier switch was interrupted" with **Finish**
-   (action `recover`, version-checked, runs reconcile only and returns status);
-   unexpected state: "Your copy is in an unexpected state" with git's view of HEAD and
-   Dismiss. Plus every backup: label, date, ref and file names, each with "Delete
+   with Dismiss; unexpected state (checked first: HEAD at neither side of `pending`, or
+   an identity mismatch): "Your copy is in an unexpected state" with git's view of HEAD
+   and Dismiss only; otherwise `pending` set: "An earlier switch was interrupted" with
+   **Finish** (action `recover`, version-checked, runs reconcile, which for a
+   half-switched first Try puts his copy back as above, and returns status). Plus every backup: label, date, ref and file names, each with "Delete
    backup". The Try button shows only when `target_available`, `refused` is null and the
    thread is not archived; with `refused` set the panel shows that sentence instead.
    The panel shows on every thread page for this folder; Switch back, Finish and Dismiss
-   work from any of them.
+   work from any of them. The page fetches Status on load, after each action and on a
+   refresh button, never on the page's poll timer (`viewer/pages/thread.js:1229`).
 4. **Dismiss** (version-checked): with Stale or unexpected state, clears `active` and
-   `pending`; the return pin is not deleted but turned into a backup entry ("where your
-   copy was before trying thread <id>", its ref and the return branch name), so that
-   commit stays reachable. With a backup named, after a confirmation,
+   `pending`. The return pin (`active.return_ref`, else `pending.return_ref`) is deleted
+   if the return point was a branch that still contains its sha (`git merge-base
+   --is-ancestor`); otherwise it becomes a backup entry `{ref, label: "where your copy
+   was before trying thread <id>", thread_id, branch, files: [], at}`, so that commit
+   stays reachable. Backups whose refs no longer resolve are shown as missing. With a backup named, after a confirmation,
    deletes that backup's pin and list entry. Nothing else deletes a backup.
 5. **Reconcile** (start of every write, after the folder checks): if `pending` is set,
    judge the outcome against `pending.to` (finish as success) and `pending.from`
-   ("nothing moved", including clearing a first Try's return pin and `active` staying
-   null). Anything else is the unexpected state: writes other than Dismiss are refused
+   ("nothing moved" or half-switched, by the outcome rules above). Anything else is the unexpected state: writes other than Dismiss are refused
    until it is resolved. Backups are never touched by reconcile.
 6. **Errors** reach Collin as one plain sentence under the control: machine
-   unreachable, a refusal, or git's last line. After any write error or timeout, the page
+   unreachable, a refusal, or git's message. When git refuses a switch because files are
+   in the way, the sentence is "These files in your copy are in the way: <paths>", using
+   the paths git listed, not git's last line ("Aborting"). After any write error or timeout, the page
    re-reads status rather than assuming the outcome.
 
 ### Where it lives
@@ -310,7 +328,11 @@ app (status shows its ref and files); submodule changes.
     moved, still trying, Switch back offered again); interrupted switch finished with
     Finish from an archived thread's page; stale `version` on back, dismiss and recover
     (refused); Status on a repo with an LFS filter runs no filter (shim records calls);
-    Status for the wheelchair clone returns `refused`.
+    Status for the wheelchair clone returns `refused`; a required smudge filter
+    failing on a first Try (half-switched; Finish backs up and restores); Try for
+    another thread at the same sha (record updated, git not run); index verify across
+    a clock tick; a file named `Sprite[1].png` next to `Sprite1.png`; re-cloning the
+    folder after a completed Back (Try works); Dismiss on an identity mismatch.
 - `node --test viewer/test/*.test.js`: routes resolve machine and project from the
   record; `version` and `backup` forwarded; archived threads allowed;
   unauthenticated writes refused.
@@ -474,6 +496,18 @@ validation list. Decision 17.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | An identity mismatch can never be cleared and disables the folder for good | upheld | Identity only during a trial; Dismiss skips it |
+| intent | minor | Try confirmation needs dirt info Status no longer has | upheld | Unconditional wording |
+| intent | minor | Dismiss's return pin source and backup shape undefined | upheld | Source named; `branch`, `files: []` |
+| intent | minor | Every Dismiss after a hand switch leaves a backup | upheld | Pin deleted when its branch contains it |
+| intent | minor | "Aborting" shown instead of the files in the way | upheld | Plain sentence with git's listed paths |
+| intent | minor | Status polling cost | upheld (`viewer/pages/thread.js:1229`) | Fetched on load, action, refresh |
+| mechanics | blocking | Failed smudge filter (Git LFS) leaves a first Try half-switched with no journal | upheld | Half-switched state with Finish |
+| mechanics | blocking | Same source and target identity is ambiguous | upheld | Same place rule |
+| mechanics | blocking | Index verify compares commit ids with timestamps | upheld | Compare `I^{tree}` |
+| mechanics | major | Finish offered in the unexpected state | upheld | Unexpected checked first, Dismiss only |
+| mechanics | major | Try confirmation depends on dirt (dup of intent 2) | upheld | Same fix |
+| mechanics | minor | Per-path index check uses a glob pathspec | upheld | `:(literal)`, exact path |
 
 ## Prior Work
 
