@@ -203,3 +203,29 @@ $ node --test viewer/test/*.test.js         # merged
 # pass 641
 # fail 0
 ```
+
+### Remediation 4 — 2026-11-18
+
+Verification attempt 4 ran on 8f4a9e0. The Claude verifier passed it. The GPT verifier failed it with one gap: on a phone, the 5-second refresh scrolled the page to the top when no agent was selected, which left an open popover off screen. That scroll reset predates this build (`viewer/pages/agents.js:246`). Because it was tied to G5, which had already had two fix attempts, it went to Collin. He chose to fix it now (PLAN.md Decision 17), which changes how the Agents page behaves on refresh beyond decks. See `REMEDIATION-4.md`.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| Phone page jumps to the top on refresh, and the popover is left off screen | The page scroll is restored whenever the refresh shows the same lead with the same selection (none or the same agent). The open popover is then placed again. | `viewer/pages/agents.js` (the `lastLead` declaration on line 6; the restore at the end of `render`) | `viewer/test/app-agents-decks.spec.js` "page scroll and an open popover survive a refresh with no agent selected" (phone). It fails on the old code with a 1230px jump. |
+
+Lane: R5, light, claude-haiku-5-5.
+
+Validation on the merged branch (187260f, plus this report):
+
+```text
+$ node --test viewer/test/*.test.js
+# tests 641
+# pass 641
+# fail 0
+
+$ npm --prefix viewer run test:browser      # while another session's suites loaded the machine
+  6 failed      # app-handoff:205, app-threads:401/340/538, pages:360, browser:875; none on the Agents page
+  34 skipped
+  858 passed (8.9m)
+$ npx playwright test test/app-handoff.spec.js test/app-threads.spec.js test/pages.spec.js test/browser.spec.js
+  338 passed (2.5m)
+```
