@@ -138,3 +138,28 @@ $ node --test test-support/test/*.test.js
 # pass 9
 # fail 0
 ```
+
+### Remediation 3 (after verification attempt 3 on `a856aa8`)
+
+Attempt 3: Claude verifier PASS; GPT verifier FAIL with two gaps (`REMEDIATION-3.md`). The Remediation 2 duplicate-header fix held under both.
+
+| Gap | Fix | Implemented at | Validated by |
+|-----|-----|----------------|--------------|
+| §4: the sweep could delete a live session's plugin dir when the name contains `.` or `:` (tmux lists them as `_`) | A decoded name also counts as live under tmux's spelling (`.`/`:` → `_`) | machine/service.js (`sweepAgyTools`) | machine/test/project-tools-service.test.js (`wc-dot.name-worker` kept when tmux lists `wc-dot_name-worker`; `wc-other.name-worker` removed) |
+| §8 (second attempt): a handoff import created threads without the default record | Shared `defaultProjectTools()` in viewer/app/threads.js, used by `emptyThread` and by `createLocked` in viewer/app/handoff-ops.js (the only two thread constructors) | viewer/app/threads.js; viewer/app/handoff-ops.js (`createLocked`) | viewer/test/app-project-tools.test.js (imported thread's saved record) |
+
+Residual risk to watch: `viewer/test/app-uploads-archive.test.js` "archive through the hub cancels a stalled upload" failed in 2 of 5 full viewer runs in one verifier's environment (0 of 30 isolated; untouched by this branch).
+
+Validation after remediation 3 (feature branch):
+
+```
+$ bash machine/test/run.sh
+# pass 195
+# fail 0
+$ node --test viewer/test/*.test.js
+# pass 648
+# fail 0
+$ node --test test-support/test/*.test.js
+# pass 9
+# fail 0
+```
