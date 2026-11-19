@@ -74,6 +74,7 @@ None.
 | 47 | Args with a newline are read-only; kind change refused while an entry has read-only parts | Clarify round 13 edge rules | review-round-13 |
 | 48 | While a machine or project is loading (including the reload after a Save), the picker and every action are disabled until it answers; nothing from the previous selection can be sent or shown | Stale-switch gaps survived two fix attempts in verification | user |
 | 49 | The machine returns, per tool, the key names its warnings are about (including read-only references and held-back names); the page shows "needs X, not set on this machine" whenever X is unset in the current key list, from the loaded baseline's references (not unsaved draft edits); "shared with" uses the same per-tool names | Key-warning gaps survived two fix attempts in verification | user |
+| 50 | Anything the user didn't edit (tool names, row names, values, whole fields, empty objects) is written back byte-for-byte in meaning as read, and only what the user edited is validated; an edited name with leading or trailing spaces is refused rather than trimmed | Untouched-data gaps survived two fix attempts in verification | user |
 
 ## Spec
 
@@ -209,6 +210,9 @@ project's tools and lets him add, change and remove them. Works at phone width.
   that way (untouched entries exactly as read); the machine keeps every other
   top-level field of the source document as it was.
 - A tool name already used is refused.
+- Anything the user didn't edit (tool names, row names, values, whole fields, empty objects) is
+  written back byte-for-byte in meaning as read, and only what the user edited is validated; an
+  edited name with leading or trailing spaces is refused rather than trimmed (Log 50).
 
 ### Keys
 - Keys belong to the project (identity above), by name. A key is written in `.mcp.json` as
@@ -808,3 +812,4 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-18 — R5-2 accepted (band: scout): Project tools browser 100/100 re-run by sub-lead; the test is exactly as briefed.
 - 2026-11-18 — Verification attempt 6 (9dce856): claude verifier PASS; gpt verifier FAIL with 3 gaps. A (a tool name trimmed on an unrelated edit) is the untouched-data family surviving R4 and R5, so it went to the lead as a plan defect. Two new gaps (a removed tool's open editor restores it; read-only web tools hide kind and URL) went for fix or defer.
 - 2026-11-18 — Lead on attempt 6: A goes to Collin (it survived two fixes); fix gap 1 (removing a tool closes its open editor and discards its edits) and gap 2 (read-only cards show kind and command+args or URL from the raw entry when they're strings); no Deferred rows; remediation 6 held until Collin answers, so it runs in one pass.
+- 2026-11-18 — Collin answered A: Decision Log 50, folded into the Spec's Editing section. Remediation 6 covers A (tool names plus a page-wide audit) and attempt-6 gaps 1 and 2.
