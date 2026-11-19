@@ -7,7 +7,7 @@ const http = require('node:http');
 const https = require('node:https');
 const { appError } = require('./state.js');
 
-function requestJson(urlText, method, headers = {}, body, timeout = 5000) {
+function requestJson(urlText, method, headers = {}, body, timeout = 5000, strict = false) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlText);
     const payload = body === undefined ? '' : JSON.stringify(body);
@@ -29,11 +29,13 @@ function requestJson(urlText, method, headers = {}, body, timeout = 5000) {
       },
       (response) => {
         let output = '';
+        if (strict) response.on('aborted', () => reject(new Error('machine connection dropped')));
         response.on('data', (chunk) => { output += chunk; });
         response.on('end', () => {
           try {
-            resolve({ status: response.statusCode, body: output ? JSON.parse(output) : {} });
+            resolve({ status: response.statusCode, body: strict ? JSON.parse(output) : (output ? JSON.parse(output) : {}) });
           } catch {
+            if (strict) return reject(new Error('machine returned invalid JSON'));
             resolve({ status: response.statusCode, body: { raw: output } });
           }
         });
@@ -75,6 +77,13 @@ class MachineClient {
       throw appError(result.status || 502, result.body.error || 'machine refused request');
     }
     return result.body;
+  }
+
+  async passThrough(machineName, suffix, method, body, timeout = 5000) {
+    const machine = await this.state.machine(machineName);
+    const secret = await this.secret(machine);
+    return requestJson(this.url(machine, suffix), method,
+      { 'x-wheelchair-machine-secret': secret }, body, timeout, true);
   }
 
   // Spec "Decline": one synchronous call, ten seconds overall (not merely idle) before the hub
