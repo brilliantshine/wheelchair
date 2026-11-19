@@ -577,7 +577,7 @@ manager, no video, no Ready-check change.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1a | Pure argument validation and xwininfo parsing (`parseOp`, key grammar, window parsing) | `machine/lib/screen-args.js`, `machine/test/screen-args.test.js` | gpt standard / gpt-6.1-terra | wc-940599e3df66-worker-3 | `node --test machine/test/screen-args.test.js`; `bash machine/test/run.sh` | in progress |
+| T1a | Pure argument validation and xwininfo parsing (`parseOp`, key grammar, window parsing) | `machine/lib/screen-args.js`, `machine/test/screen-args.test.js` | gpt standard / gpt-6.1-terra | wc-940599e3df66-worker-3 | `node --test machine/test/screen-args.test.js`; `bash machine/test/run.sh` | done |
 | T1b | tricky — Screen manager, route, stop/archive/startup/sweep wiring, fake-tool tests | `machine/lib/screen.js`, `machine/service.js` (wiring only), `machine/test/screen.test.js`, `machine/test/fixtures/screen/`, one line in `machine/test/service.test.js` | gpt standard / gpt-6.1-terra | wc-940599e3df66-worker-4 | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | in progress |
 | T2 | `wc.js screen <op>` thin client and its test | `viewer/app/wc.js`, `viewer/test/wc-screen.test.js` | gpt light / gpt-6-luna | wc-940599e3df66-worker-2 | `node --test viewer/test/*.test.js` | in progress |
 | T3 | Live check script against real Xvfb (after T1a, T1b, T2) | `machine/test/screen-live.sh` and helpers under `machine/test/` | not started | — | `bash machine/test/screen-live.sh` | not started |
@@ -589,3 +589,7 @@ manager, no video, no Ready-check change.
 - Build accepted: approval 4539cede-7a2f-4576-905c-0593dfb80fc6
 - 2026-11-18 — Choice: T4, line wrapping: appended text left unwrapped in worker.md, verifier.md, sub-lead.md and lead.md (report said none; scout listed this one).
 - 2026-11-18 — T4 accepted (band: scout): all seven doc changes present with the brief's text; greps re-run.
+- 2026-11-18 — Choice: T1a, `click` parsing: a repeated `--button` or `--double` is refused as ambiguous.
+- 2026-11-18 — Choice: T1a, `key --hold`: the hold value is capped at 4 digits (not reported; scout found it).
+- 2026-11-18 — Choice: T1a, `run` parsing: `--` is accepted as a command word (not reported; scout found it).
+- 2026-11-18 — T1a accepted (band: scout): interface matches; machine suite re-run 174 pass, 0 fail. parseWindowInfo throws a plain TypeError on malformed output; T1b told to turn that into 422.
