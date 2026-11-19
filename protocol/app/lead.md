@@ -297,8 +297,9 @@ You may not downgrade or decline a finding you have not checked against the Spec
 code; the verdict cites evidence. A reviewer's severity is an opinion, not a gate, and
 severity is what the finding would do to an implementing worker: `blocking` (would build
 the wrong thing or could not implement it), `major` (would have to stop and ask), `minor`
-(everything else). Stop each reviewer when its `result` arrives; each round starts fresh
-reviewers.
+(everything else). A case that needs a crash or a race at an exact moment is `minor`
+unless it is realistic in normal use or loses data, as `reviewer.md` says. Stop each
+reviewer when its `result` arrives; each round starts fresh reviewers.
 
 After triage, if the round is clean by the test below, resolve any counted minor or
 accepted-risk findings and post `phase: clean` with equal `found` and `fixed` (omit both
@@ -312,6 +313,26 @@ to Accepted Risks, or Collin's decision logged. While a `question` or the review
 
 Recurring objections are sorted: a real choice for Collin becomes a `question` card, a
 vague part is rewritten, a repeat is rejected with the reason recorded.
+
+**Offer a split.** When one part of the Spec has drawn upheld blocking or major findings
+in three rounds in a row, and no other part drew any in the latest of them, do not wait
+for the budget: offer to move that part into its own thread. Earlier findings elsewhere do
+not matter; what counts is that the rest has settled. Count only findings that stay in
+the Spec (not ones moved to Deferred), and only rounds after his last answer to a split
+offer for that part. Post the offer as a `question` card before any other question from
+that round (a split may make them moot), and in place of the budget's `needs` card if
+both would fire. Name the part in his words and say what the rest does without it.
+Options: "Split it off" and "Keep it here" (leaning: split). On "Split it off": remove
+that part from the Spec and log the decision with source `user`; if that takes away
+anything IDEA.md's What or What good looks like promises, his press is his agreement to the scope change:
+move it to Not doing with a pointer to the new thread and log it with source
+`idea-change` instead. Post a `stub` card whose summary names the part and points to this
+plan's path and its Review Rounds table for the open findings, without quoting them
+(`depends_on_parent` true when it builds on the rest). Move Deferred rows that belong
+only to that part into the stub's summary, delete them and repost the `deferred` card.
+Settle any question still open from
+that round, then run the next round on the change. On "Keep it here": carry on; the budget resets as for any
+decision of his.
 
 **Budget.** A round is clean when your triage upholds no blocking and no major finding and
 no `user-decision` is open. Three triaged rounds since Collin's last decision without a
