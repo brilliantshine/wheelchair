@@ -24,7 +24,12 @@ let ctx = null; // { root, stateDir, service, server, env, slicePrefix }
 // The service runs in this process, so every call that waits on it must be async.
 function client(args, timeout = 60000) {
   return new Promise(resolve => {
-    const child = spawn('node', [wc, 'screen', ...args], { env: ctx.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Never spawn without the test service's env: a null env makes Node inherit the caller's environment, which
+    // inside a wheelchair agent session carries its real machine URL and session token.
+    if (!ctx || !ctx.env) { resolve({ status: null, out: '', err: 'test service env not set; nothing spawned', body: null }); return; }
+    // Set both explicitly from the test service so the child can never fall back to the caller's own session.
+    const env = { ...ctx.env, WHEELCHAIR_MACHINE_URL: ctx.env.WHEELCHAIR_MACHINE_URL, WHEELCHAIR_SESSION_TOKEN: ctx.env.WHEELCHAIR_SESSION_TOKEN };
+    const child = spawn('node', [wc, 'screen', ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
     const timer = setTimeout(() => child.kill('SIGKILL'), timeout);
     child.stdout.on('data', c => { out += c; }); child.stderr.on('data', c => { err += c; });
@@ -70,7 +75,8 @@ function leftovers() { return ctl('list-units', '--all', '--no-legend', `${ctx.s
 let cleaned = false;
 async function cleanup() {
   if (cleaned || !ctx) return; cleaned = true;
-  try { await client(['stop'], 15000); } catch { /* backstop below */ }
+  // Without the test env, `screen stop` would go to whatever machine the caller's environment names: skip it.
+  if (ctx.env) { try { await client(['stop'], 15000); } catch { /* backstop below */ } }
   try { ctx.service.screens.stopTimers(); await new Promise(resolve => ctx.server.close(resolve)); } catch { /* backstop below */ }
   cleanupSync();
 }
@@ -111,12 +117,11 @@ exit 0
   // because the parent slice does not exist yet on a fresh state dir.
   await service.listen();
   const slicePrefix = `wcscreen-${crypto.createHash('sha256').update(service.stateDir).digest('hex').slice(0, 12)}`;
-  ctx = { root, stateDir, service, server: service.server, slicePrefix, env: null };
   const base = `http://127.0.0.1:${listen}`;
+  ctx = { root, stateDir, service, server: service.server, slicePrefix, env: { ...process.env, WHEELCHAIR_MACHINE_URL: `${base}/v1/agent`, WHEELCHAIR_SESSION_TOKEN: 'live-token' } };
   const res = await fetch(`${base}/v1/sessions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-wheelchair-machine-secret': 'live-secret' }, body: JSON.stringify({ role: 'worker', cli: 'claude', thread_id: 'live', token: 'live-token', worktree }) });
   const made = await res.json(); if (res.status !== 201) throw new Error(`session start ${res.status} ${JSON.stringify(made)}`);
   await fsp.writeFile(sessions, `${made.name || made.session?.name || 'wc-live-worker'}\n`);
-  ctx.env = { ...process.env, WHEELCHAIR_MACHINE_URL: `${base}/v1/agent`, WHEELCHAIR_SESSION_TOKEN: 'live-token' };
   console.log(`# state dir ${stateDir}; slice prefix ${slicePrefix}`);
 
   const page = '<title>clicks=0 len=0</title><body style="margin:0"><button id=b style="position:fixed;left:0;top:0;width:100%;height:70%;font-size:40px">go</button><input id=t autofocus style="position:fixed;left:0;bottom:0;width:100%;height:20%"><script>var c=0;function u(){document.title="clicks="+c+" len="+document.getElementById("t").value.length}document.getElementById("b").onclick=function(){c++;u();document.getElementById("t").focus()};document.getElementById("t").oninput=u</script></body>';
