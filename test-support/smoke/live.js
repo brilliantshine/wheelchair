@@ -41,9 +41,9 @@ function transcriptModel(h, provider, id) {
 (async () => {
   let h;
   try {
-    // Collin's choice (PLAN.md D10): this private hub alone turns off the usage protections, so each
-    // requested provider and tier is honoured even when his accounts are below their reserve.
-    // His real Settings are never touched: the harness hub has its own state folder.
+    // The user's choice (PLAN.md D10): this private hub alone turns off the usage protections, so each
+    // requested provider and tier is honoured even when the user's accounts are below their reserve.
+    // The user's real Settings are never touched: the harness hub has its own state folder.
     h = await createHarness({ mode: 'live', slowOriginSeconds: 8, hubSettings: UNPROTECTED });
     const seeded = await h.callHub('/api/settings');
     assert(seeded.held_back.worker === false && seeded.margin === 0 && seeded.leave === 0, `harness hub settings not seeded: ${JSON.stringify({ held_back: seeded.held_back, margin: seeded.margin, leave: seeded.leave })}`);

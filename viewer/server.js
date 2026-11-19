@@ -496,7 +496,7 @@ async function hasContainmentCycle(rootPath, incoming, config) {
   return walk(rootPath);
 }
 
-// The first render is the one Collin reads before he has dragged anything, so the layout is worth
+// The first render is the one the user reads before they have dragged anything, so the layout is worth
 // more than a grid: it is a small Sugiyama pass over units, whose rows grow for the tallest thing
 // standing on them. A drawn group first lays out its members, then takes one slot among the other
 // units, then lets those members reorder within their settled rows by the arrows that cross its

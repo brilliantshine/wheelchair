@@ -173,7 +173,7 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
     const full = await request('GET', `/asides/${id}`); assert.equal(full.body.history.length, 3); assert.deepEqual(registered, ['/tmp/a.json']);
     assert.equal((await request('GET', '/chat')).body.asides[0].history, undefined);
     const closed = await request('POST', `/asides/${id}/close`, { outcome: 'changed', line: 'Use this' }); assert.equal(closed.status, 200);
-    await asides.pump(hub, 'routes'); t = await hub.thread('routes'); assert.equal(t.asides[0].outcome, 'changed'); assert.equal(t.queues.lead[0].source, 'collin'); assert.match(t.queues.lead[0].text, /from aside 1 on: "Hello"/);
+    await asides.pump(hub, 'routes'); t = await hub.thread('routes'); assert.equal(t.asides[0].outcome, 'changed'); assert.equal(t.queues.lead[0].source, 'user'); assert.match(t.queues.lead[0].text, /from aside 1 on: "Hello"/);
     t.asides[0].status = 'open'; t.asides[0].turn = { id: 'turn1', state: 'running', message: { kind: 'ask', text: 'test' } }; await hub.save(t);
     assert.equal((await request('POST', '/archive', {})).status, 200); assert.ok(calls.some((c) => c.route === '/v1/aside-turns/turn1' && c.method === 'DELETE'));
     const archived = await request('GET', `/asides/${id}`); assert.equal(archived.status, 200); assert.equal(archived.body.status, 'closed'); assert.equal(archived.body.history.at(-1).reply, 'better answer');

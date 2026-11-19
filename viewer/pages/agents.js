@@ -136,7 +136,7 @@
     const kept = { agent: oldSide?.dataset.agent, side: oldSide?.scrollTop || 0, page: scrollY, toggle: document.activeElement?.classList.contains('agents-finished-toggle') };
     root.replaceChildren(); banners.replaceChildren(); { const o = document.querySelector('.deck-pop'); if (o) { popKeep = { member: o.dataset.member, top: o.scrollTop }; o.remove(); } }
     for (const m of data.machines || []) if (!m.reachable) { const d = new Date(m.last_seen); banners.append(el('p', 'agent-unreachable', `${m.machine} unreachable, last seen ${m.last_seen && !isNaN(d) ? d.toLocaleString() : 'never'}`)); }
-    const timestamps = new Map(threads.map(t => [t.id, t.collin_at || t.created_at || '']));
+    const timestamps = new Map(threads.map(t => [t.id, t.user_at || t.created_at || '']));
     const leads = [...(data.leads || [])].sort((a,b) => String(timestamps.get(b.thread_id) || '').localeCompare(String(timestamps.get(a.thread_id) || '')));
     const live = leads.filter(l => !l.finished), midnight = new Date(); midnight.setHours(0,0,0,0);
     const finished = leads.filter(l => l.finished && Date.parse(l.finished_at) >= midnight.getTime());

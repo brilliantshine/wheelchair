@@ -35,7 +35,7 @@
     return Math.floor(s / 86400) + 'd ago';
   }
   // Your last message in the thread; agent activity does not move it. Older threads fall back to creation.
-  function stamp(t) { return Date.parse(t.collin_at || t.created_at) || 0; }
+  function stamp(t) { return Date.parse(t.user_at || t.created_at) || 0; }
   function nameOf(t) { return t.title || t.slug || base(t.project); }
 
   function row(t) {
@@ -71,7 +71,7 @@
     if (t.archived) top.appendChild(el('span', 'badge', 'archived'));
     li.appendChild(top);
     li.appendChild(el('div', 'sub', [
-      stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.collin_at || t.created_at),
+      stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.user_at || t.created_at),
     ].filter(Boolean).join(' · ')));
     return li;
   }

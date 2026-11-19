@@ -145,7 +145,7 @@ function renderTurn(turn, thread) {
 }
 
 // A message typed while the lead is mid-turn ("Send now") is recorded only as a queued_command
-// attachment, never as a user row; it opens a turn like any other message from Collin.
+// attachment, never as a user row; it opens a turn like any other message from the user.
 function isClaudeMidTurnHuman(row) {
   const item = row.type === 'attachment' ? row.attachment : null;
   return Boolean(item && item.type === 'queued_command' && item.commandMode === 'prompt' && item.origin?.kind === 'human');

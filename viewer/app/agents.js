@@ -60,7 +60,7 @@ function questionFor(session, cards, sessions) {
 }
 
 function buildAgents(threads, stages = {}) {
-  return threads.filter((thread) => !thread.archived).sort((a, b) => String(b.collin_at || b.created_at || '').localeCompare(String(a.collin_at || a.created_at || ''))).flatMap((thread) => {
+  return threads.filter((thread) => !thread.archived).sort((a, b) => String(b.user_at || b.created_at || '').localeCompare(String(a.user_at || a.created_at || ''))).flatMap((thread) => {
     const sessions = thread.sessions || [];
     const leads = sessions.filter((s) => s.role === 'lead').sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
     if (!leads.length) return [];
