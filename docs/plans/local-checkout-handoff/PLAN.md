@@ -754,3 +754,7 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+
+Build accepted: approval 299bc31c-a6e3-48d7-ad41-a29f94b6a272
+
+2026-11-19: main merged in before the build (merge 6ff3eb7c, about 745 commits). No conflicts; the plan is unchanged, but file:line references in the Spec predate the merge and may point a few lines off. Find the code by name.
