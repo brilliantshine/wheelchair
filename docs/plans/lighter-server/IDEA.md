@@ -25,9 +25,8 @@ cores. Leftover test processes have run for days.
 
 ## What good looks like
 
-- With the same number of agents and an open thread page, the app server's idle CPU and
-  memory are clearly lower than today, measured before and after.
-- The server's memory stays flat over a day of use instead of growing.
+- With the same number of agents and an open thread page, the app server's idle CPU is
+  clearly lower than today, measured before and after.
 - Everything in the app behaves the same: lists, chat, agents, cards, dead-session
   detection and message delivery update as quickly as now.
 - Two agents running browser tests at the same time no longer saturate the machine.
@@ -40,6 +39,8 @@ cores. Leftover test processes have run for days.
 - Running fewer agents or changing how many may run at once.
 - Making chat fetch only transcripts that changed: split into its own follow-up thread.
 - Changing the machine service (its tmux checks and transcript handling): it is already light.
+- Stopping the server's memory from growing: it comes from the transcript copies the chat
+  follow-up thread rewrites, so it is fixed there.
 
 ## Constraints
 

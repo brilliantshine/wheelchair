@@ -84,6 +84,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 57 | Supersedes #5, #48 and #54: `/threads` keeps today's per-thread loop (after the listing, join each thread's lock queue in turn) but inside it reads `threadSnapshot` (stat-checked) instead of `hub.thread()`; a record needing provider migration or a slug save takes `hub.thread()` as today | Mirrors today's ordering exactly, so no write can slip between listing and response; the only change is that an unchanged file is not parsed again | review-round-13 |
 | 58 | Refines #52/#53: an entry is never evicted while a chat request for its thread is pending (a per-thread pending count, set when `hub.chat` is called and cleared when it returns) | A request can wait longer than 10 minutes behind a lock; the browser skips polls meanwhile | review-round-13 |
 | 59 | A machine reply with empty `data` is treated like a failed read for fallback, as today (`viewer/app/chat.js:229` stores only non-empty replies) | The machine returns 200 with empty data for a missing copy | review-round-13 |
+| 60 | The hub transcript memory fix (S3: replacing `transcriptCache`, idle eviction, parsed reuse, and decisions #50, #52, #53, #58, #59) moves to the chat follow-up thread; the content is kept below under "Moved to the chat follow-up" | Collin's pick: the follow-up rewrites the same transcript code; every round since the split re-raised this part | user |
+| 61 | IDEA.md: "memory stays flat" and the memory half of "CPU and memory clearly lower" move to "Not doing" (handled by the chat follow-up) | Follows from #60 | idea-change |
 
 ## Spec
 
@@ -107,14 +109,9 @@ Current code is described in `MAP.md` (file:line). Decision numbers refer to the
 - Chat (`hub.chat`, `viewer/app/hub.js:244`) keeps its lock through assembly (#33). Inside it, `chat.chat` and `hub.chat` read the thread and its parent with `threadSnapshot`, except that a record needing the provider migration (as for `/threads`) is read with `hub.thread()`, which saves it, as today. They use `discoverSlug`, and only when a slug is found take `hub.thread()`, set the slug, save and register as above; the rest of the assembly then uses that fresh record. Response objects built from snapshots are new objects; snapshots are never mutated.
 - Timers keep their intervals and their logic exactly as today, including every locked re-read; the only change is that their initial listing comes from `allThreads()`'s cache (#49). Timers that already skip archived threads in their listing therefore stop parsing archived files. `pollWaiting` and `releaseLimits` still lock and re-read every thread, archived included, once a minute (`viewer/app/threads.js:450`, `viewer/app/sessions.js:777`); that stays as today (Accepted Risks).
 
-### S3. Hub transcript memory (`viewer/app/chat.js`, `viewer/app/sessions.js`)
+### S3. Hub transcript memory
 
-The hub keeps calling the machine's transcript route exactly as today (no new parameters, #36).
-
-- Replace the unbounded `hub.transcriptCache` with `transcripts: key(machine/session) -> { text, parsed, parsedKey, lastRead }`. It is filled and used exactly as `transcriptCache` is today: set from each successful non-empty reply, used by chat (`keepLast`) only when a read fails, times out or returns empty `data` (#59), never by a report reader (`viewer/app/sessions.js:373`).
-- Parsed reuse: the entry stores `parsed` with `parsedKey` = `session.cli` plus every thread field the parser reads (today `thread.parent_title`, `viewer/app/chat.js:130`; the worker lists all of them in the Log); `parsed` always belongs to the entry's current `text` (no second copy of the text is kept). On each successful fetch, compare the new text with the stored `text` before storing it: if identical and `parsedKey` matches, reuse `parsed`; otherwise store the new text, drop `parsed`, parse and store the new result. Chat output equals parsing the whole transcript today.
-- Fallbacks stay as today: when a chat read fails and no entry is held (never read, or evicted), and whenever a report read fails or returns empty `data`, the code falls through to today's local `session.transcript_path` read (`viewer/app/chat.js:232-233`); eviction never turns into an empty transcript while the machine or the local file can supply it (see Accepted Risks for the case where neither can).
-- Memory (#50): an entry (with its `parsed`) not read for 10 minutes is dropped. `lastRead` is set for all held entries of a thread's lead sessions when `hub.chat` is called (before it waits for the lock), when a fetch succeeds, and when the entry is served as chat's fallback (#52, #53). An entry is never dropped while a chat request for its thread is pending (#58). There is no size cap. The check runs in the 60s wait timer (and may also run on reads). After eviction a read behaves exactly as a first read does today.
+Moved to the chat follow-up thread (#60); see "Moved to the chat follow-up" at the end of this file. Chat's transcript fetching, `hub.transcriptCache` and fallbacks are not changed by this plan.
 
 ### S4. Machine transcript reads
 
@@ -134,22 +131,22 @@ Dropped (#27). The machine service's tmux, readiness, trust, Codex step and `sta
 
 - `viewer/playwright.config.js` sets `workers: 2` (#11). `--workers` on the command line still overrides.
 - Find why a machine-test Claude session under `/tmp/wheelchair-machine-test-*` outlived its run, record the cause in the Log, and fix it. Both runners (`bash machine/test/run.sh` and `npm --prefix viewer run test:browser`) export a unique `WHEELCHAIR_TEST_RUN=<id>` that every descendant inherits. When a run ends normally, fails, or receives SIGINT or SIGTERM, no process whose `/proc/<pid>/environ` carries that id remains 10 seconds later.
-- Add `test-support/bench/hub-idle.js` (#19, #30). It creates a temp state directory and passes it with `--state-dir`, plus `--port` and `--cache-root` as in `viewer/test/helpers/server.js:66-74`, so the real hub state is never opened. Fixture: 120 thread files totalling about 19 MB, sized like the live state: the 8 non-archived threads hold about 7.5 MB together (largest about 2.7 MB), the archived ones the rest; 8 non-archived threads, 6 with one lead session and 2 with two (10 lead sessions), plus 20 archived threads with two lead sessions each (40 sessions); every transcript 3 MB. The script runs a fake machine: an HTTP server answering `/v1/sessions` and `/v1/sessions/<name>/transcript` as today's machine does. Only the newest lead session of 2 non-archived threads grows, by a few lines every 2s; the rest are idle, as most leads are while Collin reads. Every 3s it rewrites 3 non-archived thread files (atomic replace, new `updated_at`). Phase 1 (CPU, first 4 minutes): two "tabs" poll `/threads?view=list`, `/features` and `/agents` every 5s; no chat. Phase 2 (memory, 20 minutes): the same, plus one tab's chat for one non-archived thread every 2s, moving to the next non-archived thread every 30s, while the other tab opens the next archived thread's chat every 60s (cycling through all 20). Archived reads add about 6 MB a minute, so after 10 minutes idle eviction starts and the store levels off. Before measuring it checks that the API returns the fixture thread ids, that chat replies succeed with items from the fake transcripts, that a revisited growing thread's chat shows more items than on the previous visit; it aborts otherwise. It runs 24 minutes by default (`--scale` shortens both phases for a quick smoke run that prints the samples falling within it, `skipped` for the rest, and no pass or fail; only a default-length run counts for the acceptance numbers), and prints phase 1 CPU seconds, phase 2 CPU seconds, RSS 12 minutes into phase 2 (after idle eviction has started) and at the end, peak RSS, and the hub's transcript entry count, text bytes and oldest entry's last-read age at both RSS points (from a debug field or log line the bench can read; printed as `n/a` on the unchanged code, which has no such field). Run it on unchanged code first and record the numbers in the Log, with a heap snapshot summary of what holds memory at the end.
+- Add `test-support/bench/hub-idle.js` (#19, #30). It creates a temp state directory and passes it with `--state-dir`, plus `--port` and `--cache-root` as in `viewer/test/helpers/server.js:66-74`, so the real hub state is never opened. Fixture: 120 thread files totalling about 19 MB, sized like the live state: the 8 non-archived threads hold about 7.5 MB together (largest about 2.7 MB), the archived ones the rest; 8 non-archived threads, 6 with one lead session and 2 with two (10 lead sessions), plus 20 archived threads with two lead sessions each (40 sessions); every transcript 3 MB. The script runs a fake machine: an HTTP server answering `/v1/sessions` and `/v1/sessions/<name>/transcript` as today's machine does. Only the newest lead session of 2 non-archived threads grows, by a few lines every 2s; the rest are idle, as most leads are while Collin reads. Every 3s it rewrites 3 non-archived thread files (atomic replace, new `updated_at`). Phase 1 (CPU, first 4 minutes): two "tabs" poll `/threads?view=list`, `/features` and `/agents` every 5s; no chat. Phase 2 (open chat, 4 minutes): the same, plus one tab's chat for one non-archived thread every 2s, moving to the next non-archived thread every 30s. Before measuring it checks that the API returns the fixture thread ids, that chat replies succeed with items from the fake transcripts, that a revisited growing thread's chat shows more items than on the previous visit; it aborts otherwise. It runs 8 minutes by default (`--scale` shortens both phases for a quick smoke run with no pass or fail; only a default-length run counts), and prints phase 1 CPU seconds, phase 2 CPU seconds and peak RSS. Run it on unchanged code first and record the numbers in the Log.
 
 ### Non-goals
 
-Agent CLIs' own usage; fetching chat transcripts only when changed and any machine transcript change (follow-up thread, #36); machine-service polling and subprocess calls (#27); poll intervals; server push; ETags; moving or deleting archived threads or transcripts; changes to what any page shows.
+Agent CLIs' own usage; fetching chat transcripts only when changed, the hub's transcript memory, and any machine transcript change (chat follow-up thread, #36, #60); machine-service polling and subprocess calls (#27); poll intervals; server push; ETags; moving or deleting archived threads or transcripts; changes to what any page shows.
 
 ### Validation
 
 New tests (in the existing suites):
 - `viewer/test`: with N unchanged thread files, a second `allThreads()` parses no file (spy on the read/parse path); an atomic outside replace, an in-place outside write with a new size, a new file and a deleted file are each reflected on the next call; mutating a returned record throws; `save` then `allThreads` returns the saved content.
-- `viewer/test`: `discoverSlug` never mutates or saves; a `/threads` fixture includes a record without `provider`, and its migration is saved with the same response as today; a thread whose slug is discovered appears in that same response with the slug and new `updated_at`; `GET /threads?view=list` makes no per-thread locked re-read when nothing needs persisting, and its JSON equals the pre-change output for the fixture set.
-- `viewer/test`: identical fetched text re-uses the parsed result without parsing; changed text re-parses; a different `session.cli` re-parses; a failed chat read with an evicted entry and a failed report read both fall back to the local `transcript_path`; a timeout after a successful read still shows the last chat; a change in `parent_title` alone re-renders; the chat route parses no thread file when nothing changed; the handoff lock test (`viewer/test/app-handoff.test.js:372`) still passes; chat for a legacy thread without `provider` still saves the migration and returns `provider`; the chat result equals a whole-file parse; an entry unread for 10 minutes (fake clock) is evicted.
+- `viewer/test`: `discoverSlug` never mutates or saves; a `/threads` fixture includes a record without `provider`, and its migration is saved with the same response as today; a thread whose slug is discovered appears in that same response with the slug and new `updated_at`; `GET /threads?view=list` parses no thread file (no `hub.thread()` call) when nothing changed and nothing needs persisting, and its JSON equals the pre-change output for the fixture set.
+- `viewer/test`: the chat route parses no thread file when nothing changed; the handoff lock test (`viewer/test/app-handoff.test.js:372`) still passes; chat for a legacy thread without `provider` still saves the migration and returns `provider`; chat output is unchanged for the existing chat fixtures.
 - Browser test (`viewer/test/*.spec.js`): while hidden, no new paused poll starts (a poll already running when the tab was hidden may finish; the `/usage/alert` check and sign-in are not paused); when shown it polls once immediately and the next tick comes a full interval later; a stopped aside or terminal poller is not called on show; sign-in keeps polling while hidden.
 - Leftovers: for each runner, a normal run, and runs killed after 20s with SIGINT and with SIGTERM, leave no process carrying that run's `WHEELCHAIR_TEST_RUN` 10 seconds later (scan `/proc/*/environ`).
-- `viewer/test`: a report read never returns a stored entry after a failed fetch; an entry read within 10 minutes is kept and its parsed result reused; an entry whose chat read started 9 minutes ago and is still waiting is not dropped at the 10-minute check; an equal-length in-place write with a restored mtime (the test asserts `mtimeMs`, `size` and `ino` are identical afterwards) is picked up on the next listing; a chat request queued behind a held lock for more than 10 minutes, whose machine read then fails, returns the cached transcript; an empty machine reply keeps the last chat and sends a report read to the local file; a `/threads` request whose listing overlaps an operation taking a lock waits for it, and a save that finishes during the listing shows in the response; a `/threads` request during a locked operation returns the saved result; each timer's existing tests pass unchanged.
-- `node test-support/bench/hub-idle.js` after the change: phase 1 CPU seconds at most a quarter of the pre-change phase 1; phase 2 CPU seconds lower than the pre-change phase 2; the oldest entry's last-read age at both RSS points at most 11 minutes; RSS at the end at most 110% of RSS 12 minutes into phase 2; peak RSS below the pre-change peak. If the pre-change heap summary shows a large holder not covered by S1–S3, the implementer reports it to the lead before building.
+- `viewer/test`: an equal-length in-place write with a restored mtime (the test asserts `mtimeMs`, `size` and `ino` are identical afterwards) is picked up on the next listing; a `/threads` request whose listing overlaps an operation taking a lock waits for it, and a save that finishes during the listing shows in the response; a `/threads` request during a locked operation returns the saved result; each timer's existing tests pass unchanged.
+- `node test-support/bench/hub-idle.js` after the change: phase 1 CPU seconds at most a quarter of the pre-change phase 1; phase 2 CPU seconds lower than the pre-change phase 2; peak RSS no higher than the pre-change peak.
 
 Commands (all must pass):
 ```bash
@@ -165,10 +162,10 @@ bash install/test/run.sh
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Live thread files are large (one is 2.7 MB, mostly per-session briefs) and rewritten on every event, so busy threads are still re-parsed often | The cache still removes all idle and archived re-reads (most of the bytes); shrinking stored session records changes what is kept and is a separate piece of work | 1 |
-| A thread page not opened for over 10 minutes, whose sessions live on a machine that is unreachable and have no local transcript file, shows an empty chat until the machine is back (today it shows the last copy the hub read) | Rare (remote machine down, thread not viewed recently), the machine already shows as unreachable, and it is what happens after any hub restart today; keeping copies forever is the memory growth being fixed | 6 |
 | A hidden thread tab's browser-tab title does not update when the thread is renamed until the tab is shown again | Only the tab strip text; it updates the moment the tab is opened, and pausing hidden tabs is the point of S6 | 8 |
 | Right after returning to a tab, a page may briefly show a reply that was in flight before it was hidden, or a page that skips polls while busy may wait up to one interval for its next refresh | Corrected by the next tick (1-10s); pages without a guard can already show out-of-order replies today when requests are slow; tracking in-flight requests drew findings in four rounds (#39) | 9 |
 | Timers keep re-reading under lock as today (#49): `retryQueues` and `checkQuiet` re-read every non-archived thread every 5s (about 180 MB a minute on the live state, about 7.5 MB of non-archived files), `pollDead` every 10s, and `pollWaiting` and `releaseLimits` every thread, archived included, once a minute (about 40 MB a minute) | Collin chose to keep timer logic unchanged (#49); once a minute is small next to the several-times-a-second reads removed | 11 |
+| The server's memory keeps growing (it keeps every transcript it has shown) until the chat follow-up lands | Collin moved that fix there (#60); restarting the app clears it meanwhile | 13 |
 
 ## Review Rounds
 
@@ -411,6 +408,17 @@ Collin chose "Simplify both" (budget reset).
 
 **Budget:** third round since Collin's last decision without a clean one; stopped and asked Collin.
 
+### Round 14 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+Collin chose "Move it" (budget reset).
+
+**Changed since Round 13:** S3 moved to the chat follow-up (#60), with its content kept under "Moved to the chat follow-up"; S2 `/threads` keeps today's per-thread lock loop with stat-checked reads (#57); S7 benchmark shortened to CPU only (8 minutes, two phases); Validation updated; Accepted Risks (removed the eviction outage row, added memory growth until the follow-up); IDEA.md memory goals moved to "Not doing" (#61).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
@@ -420,6 +428,15 @@ Collin chose "Simplify both" (budget reset).
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+
+## Moved to the chat follow-up
+
+For the lead of the "Chat fetches only changed transcripts" thread (#60). Settled in review rounds 5-13 here; treat as a starting design, not a decision:
+
+- Replace the unbounded `hub.transcriptCache` (`viewer/app/chat.js:225`) with entries `{ text, parsed, parsedKey, lastRead }`, filled and used as today: set from each successful non-empty reply; chat (`keepLast`) uses it only when a read fails, times out or returns empty `data`; report readers (`viewer/app/sessions.js:373`) never use it and fall through to the local `session.transcript_path` on failure or empty data.
+- Reuse parsed chat when the fetched text is identical and `parsedKey` (`session.cli` plus thread fields the parser reads, such as `parent_title`) matches.
+- Drop an entry only after 10 minutes unread, no size cap; `lastRead` is set when `hub.chat` is called (before the lock), on success and when served as fallback; never drop while a chat request for its thread is pending.
+- Measured on the live server (Log below): 730 MB at 10 minutes, 1.7 GB at 47 minutes.
 
 ## Log
 
