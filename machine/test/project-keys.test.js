@@ -10,10 +10,10 @@ const { commandAsync } = require('../service');
 test('references, reservations and held-back names', () => {
   const servers = { a: { command: 'run', args: ['${A:-x}'], env: { A: '${A}', X: 'x${X}', HOME: '${HOME}', B: '${B}', TOKEN: '${TOKEN}' } }, b: { type: 'http', url: 'https://x/${B}', headers: { Authorization: 'Bearer ${TOKEN}' } }, malformed: { command: '${TOKEN}' } };
   const { references, heldBack } = keyReferences(servers);
-  assert.deepEqual(references, { A: ['a'], B: ['a'], TOKEN: ['a', 'b'] });
-  assert.deepEqual(heldBack, { A: [{ tool: 'a', field: 'args' }], B: [{ tool: 'b', field: 'url' }], TOKEN: [{ tool: 'malformed', field: 'command' }] });
+  assert.deepEqual({ ...references }, { A: ['a'], B: ['a'], TOKEN: ['a', 'b'] });
+  assert.deepEqual({ ...heldBack }, { A: [{ tool: 'a', field: 'args' }], B: [{ tool: 'b', field: 'url' }], TOKEN: [{ tool: 'malformed', field: 'command' }] });
   for (const name of ['HOME', 'OPENAI_API_KEY', 'LD_PRELOAD', 'WHEELCHAIR_X', 'CLAUDE_CONFIG_DIR', 'path']) assert.equal(isReserved(name), true, name);
-  assert.deepEqual(launchKeys(servers, { keys: { A: 'a', B: 'b', TOKEN: 't' } }).env, {});
+  assert.deepEqual({ ...launchKeys(servers, { keys: { A: 'a', B: 'b', TOKEN: 't' } }).env }, {});
 });
 test('key store is private, revisioned and cleans failed temporary writes', async () => {
   const dir = await makeTemp('keys-'); const identity = '/project';
@@ -61,4 +61,12 @@ test('session launcher passes only selected keys outside recorded commands', asy
     for (const line of lines.slice(2)) assert.match(line, /^unset\|unset\|unset\|/);
     for (const file of [log, path.join(state, 'sessions.json')]) assert.doesNotMatch(await fs.readFile(file, 'utf8'), /value'quoted|held-secret|unused-secret|reserved-secret/);
   } finally { agy.prepare = prepare; for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } }
+});
+
+test('nested and unbalanced substitutions hold back every referenced name', () => {
+  const servers = { x: { command: 'run', args: ['${PRIMARY:-${FALLBACK}}', '${BROKEN:-${INNER}'], env: { FALLBACK: '${FALLBACK}' } }, web: { type: 'http', url: 'https://x/${A:-x${B:-${C}}}' } };
+  const { heldBack } = keyReferences(servers);
+  for (const name of ['PRIMARY', 'FALLBACK', 'BROKEN', 'INNER']) assert.deepEqual(heldBack[name], [{ tool: 'x', field: 'args' }]);
+  for (const name of ['A', 'B', 'C']) assert.deepEqual(heldBack[name], [{ tool: 'web', field: 'url' }]);
+  assert.equal(Object.hasOwn(launchKeys(servers, { keys: { FALLBACK: 'secret' } }).env, 'FALLBACK'), false);
 });
