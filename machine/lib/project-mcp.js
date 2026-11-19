@@ -16,7 +16,6 @@ const failure = (reason, hash = null) => ({ mcp: null, warnings: [{ names: [], t
 function duplicateHeaderServers(text) {
   const duplicates = new Set();
   let i = 0;
-  const whitespace = () => { while (' \t\r\n'.includes(text[i]) && i < text.length) i++; };
   function string() {
     const start = i++;
     while (text[i] !== '"') {
@@ -25,42 +24,40 @@ function duplicateHeaderServers(text) {
     }
     return JSON.parse(text.slice(start, ++i));
   }
-  function value(path) {
-    whitespace();
-    if (text[i] === '{') {
+  const stack = [];
+  while (i < text.length) {
+    const char = text[i];
+    const frame = stack[stack.length - 1];
+    if (char === '{' || char === '[') {
+      const key = frame?.type === 'object' ? frame.key : null;
+      const headers = char === '{' && stack.length === 3 &&
+        stack[0].type === 'object' && stack[1].type === 'object' &&
+        stack[1].pathKey === 'mcpServers' && stack[2].type === 'object' && key === 'headers';
+      stack.push({ type: char === '{' ? 'object' : 'array', pathKey: key, key: null, expectingKey: char === '{', seen: headers ? new Set() : null });
       i++;
-      const headers = path.length === 3 && path[0] === 'mcpServers' && path[2] === 'headers';
-      const seen = new Set();
-      whitespace();
-      while (text[i] !== '}') {
-        const key = string();
-        if (headers) {
-          const lower = key.toLowerCase();
-          if (seen.has(lower)) duplicates.add(path[1]);
-          seen.add(lower);
+    } else if (char === '}' || char === ']') {
+      stack.pop();
+      i++;
+    } else if (char === '"') {
+      const token = string();
+      if (frame?.type === 'object' && frame.expectingKey) {
+        frame.key = token;
+        frame.expectingKey = false;
+        if (frame.seen) {
+          const lower = token.toLowerCase();
+          if (frame.seen.has(lower)) duplicates.add(stack[2].pathKey);
+          frame.seen.add(lower);
         }
-        whitespace(); i++; // colon
-        value([...path, key]);
-        whitespace();
-        if (text[i] !== ',') break;
-        i++; whitespace();
       }
+    } else if (char === ',') {
+      if (frame?.type === 'object') frame.expectingKey = true;
       i++;
-    } else if (text[i] === '[') {
-      i++; whitespace();
-      while (text[i] !== ']') {
-        value([...path, null]);
-        whitespace();
-        if (text[i] !== ',') break;
-        i++; whitespace();
-      }
+    } else if (char === ':' || ' \t\r\n'.includes(char)) {
       i++;
-    } else if (text[i] === '"') string();
-    else while (i < text.length && !' \t\r\n,]}'.includes(text[i])) i++;
+    } else {
+      while (i < text.length && !' \t\r\n,]}'.includes(text[i])) i++;
+    }
   }
-  // A file JSON.parse accepted is never turned into a failure here: nesting deep enough to
-  // overflow this recursive scan gives up on duplicate detection instead.
-  try { value([]); } catch { /* keep what was found */ }
   return duplicates;
 }
 

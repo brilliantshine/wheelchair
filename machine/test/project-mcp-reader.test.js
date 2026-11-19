@@ -50,11 +50,25 @@ test('marks duplicate header keys from every header object without marking other
   for (const name of ['clean', 'local']) assert.equal(mcp.servers[name][DUPLICATE_HEADERS], undefined, name);
 });
 
-test('deeply nested valid JSON still reads (duplicate scan gives up quietly)', async () => {
+test('deep nesting before or after servers does not stop duplicate detection', async () => {
+  const { DUPLICATE_HEADERS } = require('../lib/project-mcp');
   const dir = makeTempSync('reader-deep-');
-  const deep = '['.repeat(15000) + ']'.repeat(15000);
-  fs.writeFileSync(path.join(dir, '.mcp.json'), `{"mcpServers":{"a":{"command":"x"}},"deep":${deep}}`);
-  const result = await readProjectMcp(dir);
-  assert.ok(result.mcp, JSON.stringify(result.warnings));
-  assert.deepEqual(Object.keys(result.mcp.servers), ['a']);
+  const server = '"mcpServers":{"a":{"type":"http","url":"x","headers":{"X-Fixture":"1","X-Fixture":"2"}}}';
+  const arrays = '['.repeat(15000) + ']'.repeat(15000);
+  const objectDepth = Math.floor((32768 - Buffer.byteLength(`{"deep":0,${server}}`)) / 5);
+  const objects = '{"":'.repeat(objectDepth) + '0' + '}'.repeat(objectDepth);
+  const arrayDepth = Math.floor((32768 - Buffer.byteLength(`{"deep":,${server}}`)) / 2);
+  const maxArrays = '['.repeat(arrayDepth) + ']'.repeat(arrayDepth);
+  for (const [label, text] of [
+    ['arrays before', `{"deep":${arrays},${server}}`],
+    ['objects before', `{"deep":${objects},${server}}`],
+    ['arrays after', `{${server},"deep":${arrays}}`],
+    ['objects after', `{${server},"deep":${objects}}`],
+    ['maximum arrays before', `{"deep":${maxArrays},${server}}`],
+  ]) {
+    fs.writeFileSync(path.join(dir, '.mcp.json'), text);
+    const result = await readProjectMcp(dir);
+    assert.ok(result.mcp, `${label}: ${JSON.stringify(result.warnings)}`);
+    assert.equal(result.mcp.servers.a[DUPLICATE_HEADERS], true, label);
+  }
 });
