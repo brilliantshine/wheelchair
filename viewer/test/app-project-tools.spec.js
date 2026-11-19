@@ -849,3 +849,55 @@ test('editing one header value keeps an untouched sibling header name exactly', 
   expect(sent).toEqual({ type: 'http', url: 'https://a', headers: { ' X-Legacy ': 'a', Other: 'c' }, timeout: 5 });
   expect(Object.keys(sent.headers)).toEqual([' X-Legacy ', 'Other']);
 });
+
+const withTools = (mcpServers) => readBody({ source: { state: 'ok', reason: null, document: { mcpServers } }, keys: [], references: {}, checks: {} });
+
+test('R6-1: an untouched tool name is kept exactly; an edited name with a space is refused', async ({ page }) => {
+  const raw = { command: 'npx', args: ['-y', 'x'], env: {}, timeout: 5 };
+  const calls = await open(page, { read: withTools({ ' legacy ': structuredClone(raw) }) });
+  await page.getByRole('button', { name: 'Edit  legacy ' }).click();
+  await page.getByLabel('Command', { exact: true }).fill('node');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect.poll(() => calls.save.length).toBe(1);
+  expect(calls.save[0].tools).toEqual({ ' legacy ': { ...raw, command: 'node' } });
+  expect(Object.keys(calls.save[0].tools)).toEqual([' legacy ']);
+  await page.getByRole('button', { name: 'Edit  legacy ' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('x ');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await expect(page.locator('.inline-err').first()).toContainText('space at the start or end');
+});
+
+test('R6-1: "Add a key" with a trailing space is refused, not trimmed', async ({ page }) => {
+  const calls = await open(page);
+  await page.getByLabel('New key name').fill('K ');
+  await page.getByLabel('New key value').fill('v');
+  await page.getByRole('button', { name: 'Add a key' }).click();
+  await expect(page.locator('.pt-addkey + .inline-err')).toContainText('space at the start or end');
+  expect(calls.save).toHaveLength(0);
+});
+
+test('R6-1: removing a tool closes its open editor and the tool does not come back', async ({ page }) => {
+  const calls = await open(page, { read: withTools({ a: { command: 'x' }, b: { command: 'y' } }) });
+  await page.getByRole('button', { name: 'Edit a' }).click();
+  await page.getByRole('button', { name: 'Remove a' }).click();
+  await page.getByRole('button', { name: 'Yes, remove a' }).click();
+  await expect(page.locator('form.pt-form')).toHaveCount(0);
+  await page.locator('#pt-save').click();
+  await expect.poll(() => calls.save.length).toBe(1);
+  expect(calls.save[0].tools).toEqual({ b: { command: 'y' } });
+  // a rename in progress
+  await page.getByRole('button', { name: 'Edit b' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('c');
+  await page.getByRole('button', { name: 'Remove b' }).click();
+  await page.getByRole('button', { name: 'Yes, remove b' }).click();
+  await expect(page.locator('form.pt-form')).toHaveCount(0);
+  await expect(page.locator('.pt-tool')).toHaveCount(0);
+});
+
+test('R6-1: a tool the form cannot edit still shows its kind and what it runs', async ({ page }) => {
+  await open(page, { read: withTools({ w: { type: 'http', url: 'https://x', env: {} } }) });
+  await expect(tool(page, 'w').locator('.pt-chip')).toHaveText('web address');
+  await expect(tool(page, 'w')).toContainText('https://x');
+  await expect(tool(page, 'w')).toContainText('Edit in the file');
+});
