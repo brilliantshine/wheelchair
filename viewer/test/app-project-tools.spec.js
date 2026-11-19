@@ -43,7 +43,11 @@ async function stub(page, { read = readBody(), replies = [], gate = null } = {})
   await page.route('**/wheelchair/api/project-tools/*', async (route) => {
     const kind = new URL(route.request().url()).pathname.split('/').pop();
     const body = JSON.parse(route.request().postData() || '{}');
-    if (kind === 'read') { calls.read.push(body); return route.fulfill({ json: typeof read === 'function' ? await read(calls.read.length, body) : read }); }
+    if (kind === 'read') {
+      calls.read.push(body);
+      const out = typeof read === 'function' ? await read(calls.read.length, body) : read;
+      return Array.isArray(out) ? route.fulfill({ status: out[0], json: out[1] }) : route.fulfill({ json: out });
+    }
     (kind === 'save' ? calls.save : calls.remove).push(body);
     if (gate) await gate;
     const [status, json] = replies.shift() || [200, { outcome: 'saved', key_revision: 1, keys: ['API_KEY'], warnings: [] }];
@@ -742,4 +746,77 @@ test('arguments with a carriage return are read-only and kept on a rename', asyn
   await page.locator('#pt-save').click();
   await expect(page.locator('.pt-status')).toHaveText('Saved');
   expect(calls.save[0].tools.db2.args).toEqual(args);
+});
+
+test('cards use the baseline name across a rename and a removal', async ({ page }) => {
+  const mcpServers = { db: { command: 'node', env: { DB_TOKEN: '${DB_TOKEN}' } }, other: { command: 'node', env: { X: '${DB_TOKEN}' } } };
+  await open(page, { read: readBody({
+    source: { state: 'ok', reason: null, document: { mcpServers } }, keys: [], references: {},
+    checks: { db: { skip: ['Codex: skipped db'], keys: ['DB_TOKEN'] }, other: { keys: ['DB_TOKEN'] } },
+  }) });
+  await tool(page, 'db').getByRole('button', { name: 'Edit db' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('db2');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await expect(tool(page, 'db2')).toContainText('Codex: skipped db');
+  await expect(tool(page, 'db2')).toContainText('needs DB_TOKEN, not set on this machine');
+  await expect(tool(page, 'db2')).toContainText('shared with other (DB_TOKEN)');
+  await expect(tool(page, 'other')).toContainText('shared with db2 (DB_TOKEN)');
+  await tool(page, 'db2').getByRole('button', { name: 'Remove db2' }).click();
+  await page.getByRole('button', { name: 'Yes, remove db2' }).click();
+  await expect(tool(page, 'other')).not.toContainText('shared with');
+});
+
+test('fields the user did not change are sent exactly as read', async ({ page }) => {
+  const mcpServers = {
+    w: { type: 'http', url: 'https://a', headers: {} },
+    c: { command: 'old' },
+    d: { command: 'old', args: ['x', 'y'] },
+  };
+  const calls = await open(page, { read: readBody({ source: { state: 'ok', reason: null, document: { mcpServers } }, keys: [], references: {}, checks: {} }) });
+  await tool(page, 'w').getByRole('button', { name: 'Edit w' }).click();
+  await page.getByLabel('URL', { exact: true }).fill('https://b');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await tool(page, 'c').getByRole('button', { name: 'Edit c' }).click();
+  await page.getByLabel('Command', { exact: true }).fill('new');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await tool(page, 'd').getByRole('button', { name: 'Edit d' }).click();
+  await page.getByLabel('Command', { exact: true }).fill('new');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect(page.locator('.pt-status')).toContainText('Saved');
+  const sent = calls.save[0].tools;
+  expect(sent.w).toEqual({ type: 'http', url: 'https://b', headers: {} });
+  expect(sent.c).toEqual({ command: 'new' });
+  expect(Object.keys(sent.c)).toEqual(['command']);
+  expect(sent.d).toEqual({ command: 'new', args: ['x', 'y'] });
+});
+
+test('a failed reload after a 409 is shown with a Reload button', async ({ page }) => {
+  const calls = await open(page, {
+    read: (n) => (n === 1 ? readBody() : [504, { error: 'hub timeout' }]),
+    replies: [[409, { outcome: 'refused', reason: 'changed since you opened it' }]],
+  });
+  await tool(page, 'db').getByRole('button', { name: 'Remove db' }).click();
+  await page.getByRole('button', { name: 'Yes, remove db' }).click();
+  await page.locator('#pt-save').click();
+  const st = page.locator('.pt-status');
+  await expect(st).toContainText('changed since you opened it');
+  await expect(st).toContainText("Couldn't reload the project: hub timeout");
+  await expect(st.getByRole('button', { name: 'Reload' })).toBeVisible();
+  await expect(st).not.toContainText('reloaded');
+  expect(calls.read).toHaveLength(2);
+});
+
+test('a failed reload after opened shows the pull request link and the reload error', async ({ page }) => {
+  await open(page, {
+    read: (n) => (n === 1 ? readBody() : [504, { error: 'hub timeout' }]),
+    replies: [[200, { outcome: 'opened', key_revision: 1, keys: ['API_KEY'], pr_url: 'https://github.com/o/n/pull/7', warnings: [] }]],
+  });
+  await tool(page, 'db').getByRole('button', { name: 'Remove db' }).click();
+  await page.getByRole('button', { name: 'Yes, remove db' }).click();
+  await page.locator('#pt-save').click();
+  const st = page.locator('.pt-status');
+  await expect(st.locator('a')).toHaveAttribute('href', 'https://github.com/o/n/pull/7');
+  await expect(st).toContainText("Couldn't reload the project: hub timeout");
+  await expect(st.getByRole('button', { name: 'Reload' })).toBeVisible();
 });
