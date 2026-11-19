@@ -26,7 +26,9 @@ function checksFor(servers, store) {
       if (!Object.hasOwn(store.keys, key)) key_warnings.push(`needs ${key}, not set on this machine`);
       for (const item of heldBack[key] || []) key_warnings.push(`${key} is held back: also used in ${item.field}`);
     }
-    Object.defineProperty(checks, name, { value: { skip, key_warnings }, enumerable: true });
+    const keys = Object.keys(references).filter(key => references[key].includes(name)).sort();
+    const held_back = Object.keys(heldBack).filter(key => heldBack[key].some(item => item.tool === name)).sort();
+    Object.defineProperty(checks, name, { value: { skip, key_warnings, keys, held_back }, enumerable: true });
   }
   return { checks, references, file_warnings: codexOverrides({ servers: valid }).tooLarge ? [tooLarge] : [] };
 }
@@ -86,7 +88,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
   function validateName(name) { if (!KEY_NAME.test(name)) return `invalid key name: ${name}`; if (isReserved(name)) return `${name} can't be set here: it would change how the agent itself runs`; return null; }
   async function save(input) {
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
-    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', error: e.message } }; }
+    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: 0, keys: [], error: e.message } }; }
     const failed = error => ({ status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: error.message || String(error) } });
     if (input.token?.project !== projectId || input.token?.key_revision !== store.revision) return changed();
     if (input.start_over && (!object(input.tools) || Object.getPrototypeOf(input.tools) !== Object.prototype || Reflect.ownKeys(input.tools).length !== 0)) return refused('start over replaces the file with an empty tool list');
@@ -127,7 +129,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
           await must(git(input.path, 'worktree', 'add', '--detach', worktree, ref));
           if (source.mode && !['100644', '100755'].includes(source.mode)) { await must(git(worktree, 'rm', '-r', '-f', '--cached', '--', '.mcp.json')); await fs.rm(path.join(worktree, '.mcp.json'), { recursive: true, force: true }); }
           await fs.writeFile(path.join(worktree, '.mcp.json'), text);
-          await must(git(worktree, 'add', '--', '.mcp.json'));
+          await must(git(worktree, 'add', '-f', '--', '.mcp.json'));
           const authorName = await git(worktree, 'config', 'user.name'), authorEmail = await git(worktree, 'config', 'user.email');
           const config = authorName.ok && authorName.stdout.trim() && authorEmail.ok && authorEmail.stdout.trim() ? [] : ['-c', 'user.name=wheelchair', '-c', 'user.email=wheelchair@localhost'];
           await must(git(worktree, ...config, 'commit', '-m', 'Update project tools'));
@@ -147,7 +149,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
   }
   async function removeKey(input) {
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
-    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', error: e.message } }; }
+    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: 0, keys: [], error: e.message } }; }
     if (input.token?.project !== projectId || input.token?.key_revision !== store.revision) return changed();
     const error = typeof input.name === 'string' ? validateName(input.name) : 'invalid key name'; if (error) return refused(error);
     if (!Object.hasOwn(store.keys, input.name)) return refused('key is not stored');
