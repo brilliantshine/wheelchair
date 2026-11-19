@@ -37,11 +37,11 @@ esac
   await write(pane, paneText);
   return { bin, log, pane };
 }
-async function hubServer(status = 200, { failAfterStore = false, delay = 0 } = {}) {
+async function hubServer(status = 200, { failAfterStore = false, delay = 0, answer: initialAnswer = {} } = {}) {
   const calls = []; let current = status; const delivered = new Set();
   const allowed = { idea: ['lead'], done: ['lead'], message: ['lead', 'sub-lead', 'worker', 'mapper'], result: ['worker', 'mapper', 'sub-lead'] };
   const server = http.createServer((request, response) => { let body = ''; request.on('data', c => { body += c; }); request.on('end', () => {
-    let code = current; let answer = {};
+    let code = current; let answer = initialAnswer;
     let payload = {}; try { payload = JSON.parse(body || '{}'); } catch { /* test server records malformed payloads too */ }
     if (code >= 200 && code < 300 && request.url.endsWith('/events') && !payload.thread_id) { code = 404; answer = { error: 'thread not found' }; }
     if (code >= 200 && code < 300 && request.url.endsWith('/cards')) {
@@ -499,6 +499,11 @@ test('stopping a verifier removes its throwaway worktree even with untracked fil
 });
 test('a hub refusal reaches the agent at once, without retries', async () => {
   const hub = await hubServer(400); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); env.instance.retryWindow = 2000; env.instance.retryDelay = 5; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), (error) => error.status === 400); assert.equal(hub.calls.filter(call => call.path.endsWith('/session')).length, 1); } finally { await env.close(); await hub.close(); }
+});
+test('a hub refusal detail reaches the agent', async () => {
+  const detail = '--round requires a positive integer and is only allowed for reviewers';
+  const hub = await hubServer(400, { answer: { error: 'app-error', detail } }); const env = await service(await temp(), { config: { hub_url: hub.url } });
+  try { await start(env); await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), (error) => error.message === detail); } finally { await env.close(); await hub.close(); }
 });
 test('a commit with no message is refused rather than titled for the agent', async () => {
   const root = await temp(); const env = await service(root, { realGit: true }); try {
@@ -963,7 +968,7 @@ test('account starts bind the CLI environment, validate directories, and report 
     const invalid = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'x', worktree: root, account: { id: 'bad', dir: '~/elsewhere/bad' } }, hubHeader);
     assert.equal(invalid.status, 400);
     const status = await api(env, 'GET', '/v1/status', undefined, hubHeader);
-    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'one', 'two']);
+    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'default-kimi', 'one', 'two']);
     const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/elsewhere/bad' }, hubHeader); assert.equal(preflight.status, 400);
   } finally { await env.close(); process.env.HOME = oldHome; }
 });

@@ -1,0 +1,844 @@
+---
+slug: project-tools-solid
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
+created: 2026-11-18
+---
+
+# Make project tools solid
+
+**Idea:** `IDEA.md` — what this is for and why, in plain language. Read it first; it is
+the north star this plan serves. Goal and Constraints live there, not here, so they don't
+get buried as this file grows.
+
+## Open Questions
+
+Ordered by leverage; discussed one at a time. A settled question moves to the Decision
+Log and is deleted from here.
+
+None.
+
+## Watch List
+
+Things noticed that need looking into — not yet decisions for the user. Written down the
+moment they're spotted so they can't be forgotten, surfaced to the user one line at a
+time as they appear, and emptied before Stage 1 exits.
+
+Each item ends up settled by the agent (noted in the Log), promoted to an Open Question,
+promoted to a Constraint or Accepted Risk, or waved off by the user.
+
+| # | Noticed | What needs looking into | Raised to user? | Outcome |
+|---|---------|-------------------------|-----------------|---------|
+| 1 | Codex research | Header keys Codex accepts | no | Folded into Spec (Decision 6) |
+| 2 | Codex research | Literal header values land in the stored argv | no | Settled (Decision 7): a literal is already committed in `.mcp.json`, so copying it exposes nothing new |
+| 3 | Codex budget | 64 KiB budget counts UTF-16 units | no | Folded into Spec (Decision 8) |
+
+## Decision Log
+
+Append-only. A reversal is a new entry superseding the old, never an edit.
+
+| # | Decision | Rationale | Source |
+|---|----------|-----------|--------|
+| 1 | Mode thorough | Collin's pick; this thread is already the follow-up | user |
+| 2 | Connection check: wheelchair itself connects to each project tool (MCP handshake + tool list), once per thread when a tools-getting agent first starts and again whenever `.mcp.json` changes; one result shared by every CLI | Collin's pick: catches bad tokens and URLs without slowing every agent start. No CLI offers a reliable check (research 2026-11-18) | user |
+| 3 | Problems reach Collin as one system `needs` card per thread listing plain-language lines, closed by the hub when a later check or start leaves no lines (design carried from local-projects review rounds 1-3 / D4) | Already worked through three review rounds; system cards close themselves | defaulted |
+| 4 | Antigravity gets project tools through a per-session plugin directory outside the worktree, passed with `--add-dir`; sessions that must not get tools do not pass it | Verified 2026-11-18 on agy 1.5.11: `--add-dir <dir>` discovers `<dir>/.agents/plugins/<name>/` and a model turn reached the tool; no HOME change, home hooks still fire. A plugin in the shared worktree would reach reviewers; `--settings` cannot disable plugins; a fake HOME isolates login and history | defaulted |
+| 5 | The connection check also covers "program exists": a stdio server whose program cannot be started is reported as such. No separate PATH check. The check uses the tmux server's global environment, as the agent would | One launch answers both; avoids a second PATH guess | defaulted |
+| 6 | Codex headers: `Authorization: Bearer ${NAME}` → `bearer_token_env_var`; a header whose whole value is `${NAME}` → `env_http_headers`; a literal header → `http_headers`; any other `${...}` skips the server with a line; `type: "sse"` skips on Codex and Antigravity | Verified keys on codex-cli 0.169.0; secrets stay out of argv; Codex silently treats sse as HTTP | defaulted |
+| 7 | Literal values in `.mcp.json` (env, headers) are copied as is | They are already committed in the project's file; copying exposes nothing new | defaulted |
+| 8 | The Codex 64 KiB budget counts UTF-8 bytes | Fixes the known undercount | defaulted |
+| 9 | "Whenever `.mcp.json` changes" is detected at the next tools-getting agent start; the check also reruns while the last one found a problem, so a fix clears the card at the next start | The machine sees the file only at starts; rerunning while broken lets a fixed token clear without editing the file | defaulted |
+| 10 | No card when every tool is fine; `session list` shows each tool's last result so a lead can answer "did it connect" | A card that needs nothing would sit under "Needs you" | defaulted |
+| 11 | Supersedes 7 for headers: literal header values are copied into what the CLI gets but redacted in `session.command`; reader/check exceptions are never echoed | IDEA constraint: no secrets in stored session data; the worktree file may be uncommitted | review-round-1 |
+| 12 | Supersedes 9's timing: the check runs in the background after the start and reports through the machine event spool with an increasing `seq`; the start never waits | A hanging tool must not slow later starts; ordering by `seq` makes replays harmless | review-round-1 |
+| 13 | The check runs only in the thread's own worktree; a confirmed empty or missing `.mcp.json` resets every line | One checkout owns the result; deleting the file must close the card | review-round-1 |
+| 14 | `needs login` on a server with no configured auth header is shown as information ("needs a login inside the agent's CLI"), never a problem | Such a tool can work for Claude after an OAuth login wheelchair cannot see | review-round-1 |
+| 15 | The card's identity is the set of affected tools, not the reason text; it lists working tools too; `session list` shows the last check by default | One card per set of problems; the lead can answer "did it connect" | review-round-1 |
+| 16 | Antigravity variable rules are fixed by research, not left to the worker: agy expands nothing in plugin config and stdio servers inherit its environment | Verified 2026-11-18 on agy 1.5.11 | review-round-2 |
+| 17 | Supersedes 12's ordering: check state per thread carries a generation bumped at each qualifying start under a per-thread serial queue; only the current generation publishes; publication is spooled before it is marked done and republished after a restart; agents cannot send the event | Rounds 2 findings on races, restart and spoofing | review-round-2 |
+| 18 | Antigravity http header tokens are expanded into the agent's private plugin file (owner-only, deleted when the agent ends); IDEA's no-secrets constraint gains this one exception | Collin's pick "Write it, privately": otherwise token web tools never work on Antigravity | user |
+| 19 | Decision 18 covers every `${NAME}` / `${NAME:-default}` in an Antigravity agent's private file (env aliases, args, url, headers), not only headers | Same reason as Collin's pick: Antigravity cannot rename or read a variable itself; the file is the private exception either way | review-round-3 |
+| 20 | Supersedes 17: no event. The hub pulls check results from a hub-only machine route, by generation; only starts in the thread's own worktree (by path) touch check state or the hub's lines | Removes spoofing, spool replay and restart recovery problems; one checkout owns the result | review-round-3 |
+| 21 | Supersedes 20 where they differ: the machine owns one ordered state per thread (lines and check); the hub pulls it by `seq`; start answers carry none. Any tools-getting start in the thread sets its CLI's lines and may run the check; only thread-worktree starts set `file` or reset | Workers are where Codex and Antigravity run; pulling an ordered state removes snapshot-ordering and hub-restart gaps | review-round-4 |
+| 22 | The check is keyed by the file's hash only; any checkout with the same file reuses it | Honours Decision 2 ("once per change"); avoids rerunning tools on every worker start | review-round-5 |
+| 23 | A server that rejects the 2025-06-18 handshake is "not checked", not a problem | Antigravity's newer client may reach servers the check cannot; avoid false cards | review-round-5 |
+| 24 | Supersedes 12, 17, 20, 21 where they differ: the check runs during the agent start (bounded ~11 s, only after a change or while a tool has a problem) and its result returns with the start answer as a whole-state snapshot ordered by `seq`. No background check, no hub pulling, no new route | Collin's pick after three review rounds kept finding race and recovery problems in the background design | user |
+| 25 | The check runs before the tmux launch, not alongside it; starts queued behind a check that began after they arrived reuse its result even with problems | Nothing to roll back on cancel, restart or write failure; a burst of starts never runs a hanging check more than once | review-round-6 |
+| 26 | Supersedes 25's reuse rule: a result with problems is reused for 2 minutes after it finished | The hub sends a thread's starts one at a time, so arrival-time reuse never fires | review-round-7 |
+| 27 | Rare timing cases around the connection check (a start, cancel, handoff or service restart landing mid-check; two near-simultaneous starts) are accepted as known limits when their worst effect is a stale problem card or result until the next tools-getting start. Still fixed: anything that would build the wrong thing, leave a tool or card wrong permanently, leak a secret, or leave processes or files behind | Collin's pick "Accept as known limits" after rounds 6-8 | user |
+| 28 | Supersedes 22: a check result is reused only when both the file's hash and the in-memory environment digest match (§6) | Round 9: a removed or changed token must rerun the check | review-round-10 |
+| 29 | Clutter left by a machine service restart during a connection test (an empty checkout, an unused branch, a stray test program) is a known limit; the cleanup already in §6 stays as best effort. Token-bearing files (Antigravity plugin dirs) must still always be cleaned up | Collin's pick "Accept the clutter" after rounds 9-11 | user |
+| 30 | Final review round with a strict filter: only findings that would build the wrong thing, leak a token or secret, or leave a tool missing for good are fixed; everything else is recorded as an accepted risk. A clean result goes to approval | Collin's pick "Final round, then approve" after 14 rounds | user |
+| 31 | The check and Antigravity's file use the environment captured from a throwaway tmux session started exactly like the agent, read through a FIFO; supersedes the rule-built environment (tmux globals, `update-environment`, `PATH`, `PWD` rules) | Collin's pick "Ask tmux directly": removes the class of environment-mismatch findings from rounds 13-17 | user |
+| 32 | Supersedes 31's FIFO: the throwaway tmux pane runs a small Node probe that sends its environment over a Unix socket the service listens on | A shell redirect can create a file and a FIFO open cannot be cancelled; connecting to a socket does neither | review-round-20 |
+| 33 | Scope cut: the connection test and reading the agent's environment move to a follow-up thread, with Antigravity tools that need a value from a variable. Supersedes 2, 5, 9, 12-15, 17, 19-28, 31, 32 and the expansion part of 18. "Program exists" stays as a file check against the tmux global PATH (§5). Without long checks, starts are as fast as today, so the queue, check caching, digest and the cancel/restart checkout cleanup are dropped | Collin's pick "Move the test and Antigravity tokens out" after 20 rounds, nearly all findings in those parts | user |
+| 34 | IDEA.md What, Why, What good looks like and Not doing updated for Decision 33 | Collin agreed to the cut on the scope card | idea-change |
+| 35 | Accept both limits: a missing-program line clears only at a start in the thread's own checkout, and starts the hub does not serialize get no extra ordering (Accepted Risks, review-round-23) | Collin's pick "Accept, review again": both only delay a warning clearing | user |
+| 36 | The Antigravity private-file exception covers every literal value copied as written from `.mcp.json` (env, args, url, headers), not only headers | Decision 7: literal values are already in the project's file; the file is private and deleted when the agent ends | review-round-24 |
+| 37 | Confirms 36: the private Antigravity file may hold any value written in `.mcp.json` (env, args, url, headers); the IDEA constraint wording stands | Collin's pick "Yes, any written value" | user |
+
+## Spec
+
+Builds on local-projects (PR #112, `docs/plans/local-projects/PLAN.md`). Everything there stays unless changed here. Reader: `machine/lib/project-mcp.js`; adapters: `machine/adapters/{claude,codex,agy}.js`; start path: `machine/service.js` `startIn` (~606-634); hub start: `viewer/app/sessions.js` `startSession` (~213-350) and `resumeUnanswered` (~185-210).
+
+Scope (Decision 33): no connection test and no reading of the agent's environment. wheelchair never expands a variable anywhere. Those move to a follow-up thread.
+
+```mermaid
+flowchart TD
+  A[An agent that gets project tools starts] --> B[Read the project's .mcp.json]
+  B --> C{Agent's CLI}
+  C -->|Claude| D[Claude reads the file itself]
+  C -->|Codex| E[Turn each tool into Codex settings;<br>skip what Codex can't take, with a line]
+  C -->|Antigravity| F[Write a private tool file for this agent;<br>skip what it can't take, with a line]
+  D --> G{In the thread's own folder?}
+  E --> G
+  F --> G
+  G -->|yes| H[Look for each tool's program;<br>missing ones get a line]
+  G -->|no| I[Keep the folder-specific lines as they were]
+  H --> J[Save the thread's lines and hand them back with the start]
+  I --> J
+  J --> K{Any lines?}
+  K -->|yes| L[Thread shows one 'Project tools problem' card]
+  K -->|no| M[Close the card if open]
+  F -.-> N[Private file deleted when the agent ends]
+```
+
+### 1. Reader (`machine/lib/project-mcp.js`)
+
+- Accept `type: "sse"` (with a non-empty string `url`) as valid. Claude reads `.mcp.json` itself and handles sse; Codex and Antigravity skip it (sections 3, 4).
+- `http` and `sse` entries: `headers`, when present, must be an object of string values; otherwise the entry is invalid (existing "not a valid ..." line, text updated to "not a valid stdio, http or sse entry").
+- Return also `hash`: SHA-256 hex of the file's bytes (null when there is no file). Unchanged otherwise.
+
+### 2. `${...}` rule (shared by Codex and Antigravity)
+
+- An **env** value passes through when it is exactly `${NAME}` and its key is `NAME` (`[A-Za-z_][A-Za-z0-9_]*`). An env alias (`CHILD: ${PARENT}`) does not pass through.
+- A **header** value passes through (Codex only) when it is exactly `${NAME}` (any header name).
+- wheelchair never expands a variable into anything: argv, `session.command`, files, logs, card text.
+
+### 3. Codex (`machine/adapters/codex.js` `command`)
+
+For each tools-getting server, in addition to today's rules:
+- `type: "sse"` → skip: "uses sse, which Codex does not support".
+- Two header names that are equal ignoring case → skip: "has the same header twice".
+- `http` with `headers`, for each header:
+  - name `Authorization` (any case) with value exactly `Bearer ${NAME}` (`Bearer` case-sensitive, one space) → `bearer_token_env_var="NAME"`;
+  - value passes through (section 2) → entry in `env_http_headers={"<Header>"="NAME"}`;
+  - value contains no `${` → entry in `http_headers={"<Header>"="<value>"}`;
+  - anything else → skip: "a header uses ${...} that Codex cannot pass through".
+  - Header names are TOML-quoted with `tomlString`. Emit `http_headers` / `env_http_headers` only when non-empty. Never emit `bearer_token`.
+- `startIn` passes `--description=wheelchair <session name>` to `systemd-run` (`machine/service.js:623`) so the journal never logs the command line (which may hold literal header or env values).
+- `command` returns, besides `argv`, `redactions`: the argv indexes of every project override (`mcp_servers.project_<name>.<key>=…`). `startIn` stores `session.command` as argv with each such element replaced by `mcp_servers.project_<name>.<key>=<redacted>` (command, args, url, env, headers alike); tmux gets the real argv.
+- Budget: `quotedLength` measures `Buffer.byteLength(..., 'utf8')`; budget stays 64 KiB, still dropped as a whole with the same line, which names every server whose overrides were dropped.
+- Every skip line an adapter returns is `{ names: [server names], text }` (section 7); the machine log prints `text`.
+
+### 4. Antigravity (`machine/adapters/agy.js` `command`)
+
+For a tools-getting session with servers:
+- Plugin dir: `<stateDir>/agy-tools/<encodeURIComponent(session name)>/.agents/plugins/wheelchair-project/`, directories mode 0700, holding `plugin.json` = `{"name":"wheelchair-project","version":"1"}` and `mcp_config.json` = `{"mcpServers":{...}}`, files mode 0600, written atomically. argv gains `--add-dir <stateDir>/agy-tools/<encodeURIComponent(session name)>`. The sweep maps each directory entry back with `decodeURIComponent` before comparing it with `startingNames` and `liveTmux()`; entries that do not decode to a valid session name are removed only if older than 60 s.
+- `command` returns the files to write (like `settingsPath`/`settings`); `startIn` writes them before tmux starts. No writes inside `command`.
+- Translation: name kept (agy namespaces it `wheelchair-project_<name>`); stdio → `{command, args, env}`; http → `{type: "http", url, headers}` (`type` is required: verified format). Only these fields, as the reader validated them for that transport, are read or scanned; any other key on the entry (for example `args` on an http entry or `headers` on a stdio entry) is ignored and never inspected.
+- Variables (verified 2026-11-18 on agy 1.5.11: plugin `mcp_config.json` expands nothing — not env, args, url or headers; stdio servers inherit agy's whole environment):
+  - A stdio `env` entry that passes through (same key, section 2) is left out of the file: the server inherits it from agy's environment.
+  - Any other `${` in a translated field (stdio: command, args, env; http: url, headers) skips the server: "uses ${...} that Antigravity cannot pass through". (A tool whose token comes from a variable is in the follow-up.)
+  - Literal values are copied as is. A literal value (env, args, url or header) may be a credential, which is why the file is private (0600, in 0700 dirs) and deleted when the session ends (IDEA constraint). Literal values never reach `session.command`, logs, lines or the card.
+- Skips: `type: "sse"` ("uses sse, which Antigravity does not support here"); names not matching `[A-Za-z0-9_-]+` (same text as Codex); the same header twice ignoring case.
+- If every server is skipped: no plugin dir and no `--add-dir`.
+- Remove the old "aren't supported on Antigravity yet" warning.
+- Non-tool roles (reviewer, mapper, asides, probes) never get `--add-dir` for this dir.
+- Cleanup, by `sweepAgyTools()` in `machine/service.js`: removes `<stateDir>/agy-tools/<name>` for every `<name>` that is not in `startingNames` (read first) and not in `liveTmux()` (read second; a start that finishes in between has already launched its pane). Registered status is not consulted: a pane that exited on its own still has its record at `ready`. The sweep is fully synchronous (`liveTmux()` is synchronous; use `readdirSync` and `rmSync`) with no `await` from reading `startingNames` to the last removal, so no start can begin in between. If `liveTmux()` returns null (unknown), removes nothing. Called after `stop(name)`, from `start()`'s `finally` after the name leaves `startingNames` (covers failed and cancelled starts), and every 60 seconds on a timer like the others at `machine/service.js:366-372` (covers panes that exit on their own and handoff kills). Whoever calls it, the sweep never removes a dir modified in the last 60 s, so a start that just wrote its files is safe. The removal path is built only from directory entries of `<stateDir>/agy-tools` matching the session-name pattern, never from input.
+
+### 5. Program check (new `machine/lib/project-programs.js`)
+
+`missingPrograms({ worktree, mcp, path })` → lines (section 7). Synchronous file checks only; never launches anything.
+- For each valid stdio server whose `command` contains no `${`:
+  - A candidate counts only when `fs.statSync` (following symlinks) says it is a regular file and `fs.accessSync(..., X_OK)` succeeds; a directory never counts.
+  - Candidates are built by plain string joining (`<worktree>/<command>`, `<dir>/<command>`), never normalized with `path.resolve` or `path.normalize`, so `..` after a symlink is resolved by the filesystem, as the CLI's own launch would.
+  - `command` containing `/`: joined to `worktree` unless absolute; not a counting candidate → line.
+  - Otherwise searched in each directory of `path` in order; empty and relative entries are joined to `worktree` (the agent's working directory), as a shell would; no counting candidate in any → line.
+  - Line: `{ names: [name], text: "<name>: its program can't be found" }`. The command itself is not printed.
+- A `command` containing `${` is not checked.
+- A thread-worktree start whose reader returned a file with no valid servers (all invalid) sets `programs` = [] (§6 step 3b with no lines).
+- `path`: the start reads the tmux server's global `PATH` (`tmux show-environment -g PATH`, async, with a 2 s deadline: on expiry the child is killed and the start goes on with the fallback. The deadline covers only this read; a tmux server that stops answering altogether still stalls the launch that follows, as it does today, and is out of scope; `NAME=value` output used, `-NAME` or failure falls back to the service's own `process.env.PATH`), because an agent's pane gets the tmux global environment. Read, and `missingPrograms` run, only for tools-getting starts in the thread's worktree whose reader returned servers, before section 6's update; other checkouts skip both.
+
+### 6. Machine project-tools state (`machine/service.js`)
+
+- **Thread worktree:** a start is in the thread's worktree when `realpath(worktree)` equals `realpath(<stateDir>/worktrees/<project>/wc/<thread_id>)` (the path `createWorktree` gives the thread branch; `machine/service.js:490-492`). If either `realpath` fails (for example the thread directory does not exist), the start is not in the thread's worktree; the failure never aborts the start.
+- State per thread, in memory and in `<stateDir>/project-tools/<thread_id>.json`:
+  ```
+  { seq, file: [{names, text}], programs: [{names, text}],
+    clis: { <cli>: { hash, thread: bool, lines: [{names, text}] } } }
+  ```
+  Loaded from disk on first use after a service start (a missing or unreadable file means empty state with `seq` 0).
+- Concurrency: the hub sends a thread's starts one at a time (`viewer/app/hub.js:153-155`), so a thread's starts do not overlap in practice. No ordering beyond the synchronous block below (Accepted Risks).
+- At every tools-getting start of the thread (any worktree), after the reader, the PATH read and the adapter ran and before the tmux launch, the service updates the state in one synchronous block (no `await` inside it):
+  1. Reader failure (`mcp: null`, not a reset): if in the thread's worktree, `file` = reader lines. Nothing else changes.
+  2. Reset (reader confirmed no tools: no `.mcp.json`, or a valid file whose `mcpServers` is empty), in the thread's worktree only: `file` = [], `programs` = [], `clis` = {}. In another worktree a reset changes nothing.
+  3. Otherwise:
+     a. `clis[cli] = { hash: <this start's file hash>, thread: <in the thread's worktree>, lines: <this start's adapter skip lines> }`; in the thread's worktree also `file` = reader lines.
+     b. In the thread's worktree only: `programs` = this start's `missingPrograms` lines. Other checkouts never change `programs`: a missing program can be specific to one checkout (a program git ignores, such as `.venv/bin/python`, or one found through a relative PATH entry), and the thread's own checkout is the one the card describes.
+     c. Recompute other CLIs' lines: for every other CLI X with lines, if `clis[X].hash` equals this start's hash, or this start and `clis[X]` are both in the thread's worktree, call X's adapter `command()` with this start's file and worktree and a stand-in tools-getting session, keep only its skip lines (no files written, nothing launched) and store them with this start's `hash` and `thread`. Adapters read no environment values (section 2), so the result is X's real lines for that file. Lines from another checkout with a different file stay until that CLI starts again.
+  4. `seq` += 1, queue a save, and set `session.project_tools = { boot, seq, file, programs, clis }` (a copy of the whole state), where `boot` is a random id chosen once per machine-service process start.
+- Saves go through one per-thread write chain, each write taking the latest in-memory state, so an older write never lands after a newer one. A save writes `<file>.tmp` then renames it over `<file>`; a failed write removes `<file>.tmp` and is logged, and the start goes on. At startup, leftover `*.tmp` files in `<stateDir>/project-tools/` are removed.
+- A start cancelled before the tmux launch may already have updated the state; that is harmless (the lines describe the file, not the session).
+- A retried start that returns the registered session (or joins the starting one via `startingNames`) carries the same `project_tools`; it changes no state.
+- No new route, no event: the start answer is the only way the state leaves the machine. `project_tools` is stored on the machine session (so a retried start returns it) but omitted from the machine's session-list and status responses (`machine/service.js:1149-1165`, `:1476`, `:1511-1512`).
+
+### 7. Skip lines
+
+- A line is `{ names, text }`: `names` the server names it is about (empty only for whole-file reader lines, which the card keys as `file`); `text` a plain sentence, e.g. `github: skipped on Codex: a header uses ${...} that Codex cannot pass through`.
+- The reader's lines go to `file`; each adapter's to `clis[cli]`; the program check's to `programs`.
+- Machine log lines stay as today (`text`).
+
+### 8. Hub (`viewer/app/sessions.js`)
+
+- Thread record gains `project_tools = { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] }`.
+- `applyProjectTools(thread, started)` after a successful machine answer in `startSession` (covers queued promotion via `retryWaiting`) and in `resumeUnanswered`, before `hub.save`, inside the lock those already hold: when `started.project_tools` exists and either its `seq` > stored `seq` with the same `boot`, or its `boot` differs from the stored `boot` (the machine service restarted; its counter may have gone back) and its session's `created_at` is not older than the stored `created_at` (a retried start of an older session must not win), store `boot`, `seq`, `created_at` and `state` (`{file, programs, clis}`) and reconcile the card. Anything else changes nothing. Delete `project_tools` from the object merged into the session record.
+- Card reconcile:
+  - Problem lines = `file` lines + `programs` lines + each `clis[*].lines`, deduplicated by text, in that order.
+  - Card identity is the sorted set of names in the problem lines (`file` for whole-file lines), not the text.
+  - Lines present and identity differs from `card_names` (or no open card): mark the open card answered, add a system `needs` card `{ title: "Project tools problem", body }`, store its id and names. Body: "Some project tools won't work for agents in this thread:" then `• text` per line (first 20, then "and N more").
+  - Same identity: keep the card and its id; update its body in place if it changed.
+  - No lines: mark the open card answered.
+- `session list`: the hub adds `project_tools: { problems: [text] }` (the current problem lines; `[]` when none or never started) to the thread's lead session entry, and `viewer/app/wc.js`'s compact field allowlist keeps `project_tools`, so the default `wc.js session list` shows it.
+
+### Edge cases
+
+- `.mcp.json` deleted or emptied: the next tools-getting start in the thread's worktree resets; the card closes. Worker checkouts never reset or change `file`.
+- `.mcp.json` unreadable or invalid in the thread's worktree: its line shows; CLI and program lines stay until the file is fixed.
+- A program installed after a failure: its line clears at the next tools-getting start in the thread's worktree (a lead or sub-lead start).
+- A reader failure or invalid entry seen only in a worker checkout is logged, not shown: workers check out the thread branch, so the same file in the thread's worktree shows it (Decision 21's ownership rule).
+- A worker on Codex or Antigravity: its skip lines replace that CLI's lines and show on the card.
+- A hub restart between the machine starting a session and the hub saving its answer loses that snapshot; the next tools-getting start brings the whole state again.
+- Lines never contain variable values, header values or commands.
+
+### Non-goals
+
+- Checking that tools connect (handshake, login, protocol); reading the agent's environment; Antigravity tools that need a value from a variable other than same-key env pass-through. All in the follow-up thread (Decision 33).
+- Live watching of `.mcp.json`; checks between starts.
+- On Codex, `${...}` forms beyond section 2 (`${NAME:-default}`, env aliases, `${}` in command, args or url): skipped, with a line on the card.
+- Fixing tools; editing `.mcp.json`; a settings screen.
+- OAuth flows for tools that need login.
+
+### Validation
+
+- `bash machine/test/run.sh`, new tests:
+  - Codex: bearer, env header, every project override (real in argv, `<redacted>` in `session.command`, including args and url query strings), mixed `${}` header skip, duplicate header skip, sse skip, non-ASCII budget (under 64 Ki UTF-16 units, over 64 KiB bytes → dropped; line names every dropped server); `systemd-run` gets `--description`.
+  - Antigravity: an http entry with a stray `args` and a stdio entry with a stray `headers` translate normally; plugin files and `--add-dir` for tool roles, none for reviewer; http entry written with `type: "http"`; same-key env left out of the file; any other `${` skips the server with its line; literal header copied into the file and absent from `session.command` and logs; files 0600 and dirs 0700; sweep removes dirs of sessions not live, keeps live and starting ones and any dir younger than 60 s, removes nothing when tmux state is unknown, has no await between its checks and removals; dir removed by the timer after its pane exits even with the record at `ready`; a session name containing `/` maps to one encoded directory; no old warning.
+  - Program check: absolute, worktree-relative and PATH programs found; missing or non-executable reported without printing the command; `${` command not checked; PATH from `tmux set-environment -g PATH` is used; a `show-environment` that never answers (only that call hung, the rest of tmux normal) falls back after 2 s; fallback to the service PATH when tmux has none.
+  - State: after a missing-program line is recorded, a thread-worktree start with a nonempty file whose entries are all invalid keeps the reader lines in `file`, sets `programs` = [] and does not read PATH; `realpath` of a missing thread directory does not abort a worker start; `programs` changes only from the thread's worktree;
+  - Program check: a directory named like the program does not count; a relative PATH entry is searched under the worktree; `bin/link/../runner` with `link` a symlink is checked through the symlink.
+  - State (cont.): `seq` increases per start; `boot` changes per service start; worker start replaces its CLI's lines but never `file` or `programs`, and never resets; reset only from the thread's worktree (by path; a verifier checkout on the same branch does not qualify); reader failure keeps other lines; a fixed or removed server loses its skip lines on every CLI whose lines came from the same file hash or the thread's checkout (a worker checkout's line with another file survives a thread start); repeated start returns the same `project_tools`; writes land in order; `.tmp` leftovers swept at startup; a failed state write still starts the agent; `project_tools` absent from machine session-list and status responses; no state change for non-tool roles.
+- `node --test viewer/test/*.test.js`, new tests: card opens; same names with different text keep the card and update its body; different names replace it; reset closes it; per-CLI lines kept apart; program lines shown; an older `seq` snapshot ignored; a new `boot` with a lower `seq` applied, but not from an older session; applied in `startSession`, a queued promotion and `resumeUnanswered` without re-taking the thread lock; `project_tools` not left on the session record; default `wc.js session list` shows `project_tools`.
+- `node --test test-support/test/*.test.js` still passes.
+- `README.md` "Project MCP tools" section rewritten for the new behaviour: Codex header forms and what is skipped, Antigravity support and its `${...}` limit, the "Project tools problem" card and `session list`'s `project_tools`.
+- Manual (hearth only, one model turn each): an Antigravity worker in a project with a stdio tool can call it, and one with an http tool carrying a literal header can call that; an Antigravity reviewer in the same thread cannot; a Codex worker can call an http tool whose token comes through `bearer_token_env_var`.
+
+## Accepted Risks
+
+Real issues consciously not fixed, each with the reason. Part of the spec, not review
+scaffolding — an implementer should read these, and later review rounds must not
+re-raise them.
+
+| Risk | Why accepted | Round |
+|------|--------------|-------|
+| A program found on the tmux global PATH may still be missing for the agent (or the reverse) when tmux's `update-environment` or the session's own setup changes PATH | The agent pane starts from the tmux global environment; a mismatch is rare and shows only as an extra or missing line | user (Decision 33) |
+| A missing program's line clears only at the next start in the thread's own checkout (lead or sub-lead), not at a worker start | Any checkout-wide rule kept flapping or clearing the card wrongly (rounds 21-23); the line is right for the thread's checkout | review-round-23 |
+| Two starts of one thread that the hub did not serialize could publish lines from an older read of `.mcp.json`; they stay until the next start in the checkout that owns them (the thread's worktree for `file` and `programs`, that CLI for its lines) | The hub serializes a thread's starts; per-group ordering added more rules than it removed (rounds 22-23) | review-round-23 |
+| A tmux server started with verbose logging (`-v`) writes the full launch command, including literal `.mcp.json` values, to its own log | An opt-in debugging mode Collin would turn on himself | review-round-17 |
+| A skip line recomputed at a worker start on the same file loses its thread-checkout origin, so after the thread's file changes it can stay until that CLI starts again | Needs a specific sequence of CLIs and checkouts; the line clears at that CLI's next start | review-round-17 |
+| When two machine names that differ only by `.`/`:` versus `_` (one tmux name) have overlapping starts, or a session ends without the machine noticing and its look-alike starts after, or the record is lost, the Antigravity sweep can protect the wrong plugin directory (keep an ended one's file, or remove a live one's after 60 s). It picks by the session record's `created_at`, stamped when the start begins, not when tmux accepts it | Needs hand-made look-alike session names plus overlapping starts, a lost record or an unnoticed end; the hub never makes names with `.` or `:`. Lead's finishing rule for rare setups | verification (attempt 4, R8) |
+| A hand-written saved state file whose `clis` map has a key like `constructor` passes the shape check, and the next start that recomputes that CLI's lines aborts with a TypeError | Needs a hand-edited `<stateDir>/project-tools/<id>.json`; the machine never writes such a key. Lead's finishing rule for rare setups | verification (attempt 5) |
+| On systemd 258 and later, `systemd-run --scope` expands `$` in the command it launches, so a literal Codex header value containing `$` (e.g. `abc$$def`) reaches Codex changed | Hearth runs systemd 257 (Debian 13); needs a newer systemd plus a `$` in a literal header value. Lead agreed to accept | verification (attempt 5) |
+| Literal header or env values in `.mcp.json` are visible to other local users in Codex's process arguments | Needs a second local user account on the machine (home is `drwx------`, so only `/proc` exposes them); literal secrets in a committed `.mcp.json` are already unusual, since `${VAR}` is the documented way; literal env values have been passed this way since PR #112. `${...}` values never reach argv | review-round-15 |
+| With tmux `remain-on-exit` on, an ended Antigravity agent's private plugin file stays until its tmux session is stopped | The file stays private (0600) and is removed when the session is stopped or archived | review-round-15 |
+| A launch left pending by a previous machine service process for more than 60 s can create an Antigravity pane after the sweep removed its plugin files | Needs a service restart mid-launch and a launcher stuck for a minute | review-round-14 |
+| A tool that needs an OAuth login is not detected; a Codex or Antigravity agent without that CLI's login silently lacks it | wheelchair cannot see CLI logins; connection checking is in the follow-up | review-round-2 |
+| `--add-dir` makes the per-session plugin dir part of an Antigravity agent's workspace, so the agent could edit its own `mcp_config.json` | The agent already has a shell and can launch any program; the dir is its own and removed when it ends | review-round-1 |
+
+## Review Rounds
+
+### Round 1 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+Written for every round, including one where the table below stays empty. The table gets a row
+per finding, so a clean round would otherwise leave no record of which gate ran — which is the
+round where knowing it matters most.
+
+<!-- Round 2+: list what changed since the previous round; that list scopes the reviewers. -->
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | OAuth tools give a false card that never clears | upheld | §5 `login`, §8; Decision 14 |
+| intent | major | "Which tools connected" not visible; compact `session list` drops it | upheld | §8 card "Working:" line, wc.js allowlist; Decision 15 |
+| intent | minor | Other `${}` forms on Codex neither fixed nor listed as non-goal | upheld | Non-goals |
+| intent | minor | Changing reasons stack new cards | upheld | §8 identity by tool names |
+| intent | minor | Hanging tool slows every later start | upheld | §6 background check; Decision 12 |
+| intent | minor | `--add-dir` makes plugin dir agent-editable | accepted-risk | Accepted Risks |
+| mechanics | blocking | Deleting `.mcp.json` leaves stale lines | upheld | §7 `reset`, §8 |
+| mechanics | blocking | Cache can report another checkout's result | upheld | §6 thread worktree only, key by (worktree, hash); Decision 13 |
+| mechanics | blocking | Replayed `fresh` result overwrites newer | upheld | §6 `seq` event, §8 older ignored |
+| mechanics | blocking | HTTP handshake incomplete; stdio accepts any result | upheld | §5 handshake |
+| mechanics | blocking | SSE check ignores headers; any 200 passes | upheld | §5 sse |
+| mechanics | blocking | Literal auth headers stored in `session.command`; exceptions leak values | upheld | §3 redaction, §5 fixed reasons; Decision 11 |
+| mechanics | blocking | Antigravity fallback drops env aliases | upheld | §2 same-key rule, §4 |
+| mechanics | major | Registration ordering vs probe results on retry | upheld | §7 computed before registration; check moved to event |
+| mechanics | major | Check and CLI launch same server at once | accepted-risk (minor) | Accepted Risks: multiple agents already run copies concurrently |
+| mechanics | major | Check runs entries a CLI skips; labeling unclear | downgraded (minor) | The same entries run under Claude agents anyway; §5 now states scope and labeling |
+| mechanics | major | Duplicate Authorization header case | upheld | §3/§4 skip duplicate headers |
+| mechanics | major | Agy plugin cleanup only on stop; unsafe on failed kill | upheld | §4 `sweepAgyTools` |
+| mechanics | minor | wc.js compact allowlist | upheld | §8 (merged with intent 2) |
+
+Reported severity is the reviewer's opinion; the lead verdict
+(`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
+exit. Downgrades and declines cite evidence.
+
+### Round 2 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 1:** §2 same-key env rule; §3 duplicate headers, `session.command` redaction; §4 variable rules, `sweepAgyTools` cleanup; §5 scope, full MCP handshake, SSE endpoint check, fixed reasons, `login` flag; §6 thread-worktree only, background check, `seq` event; §7 computed before registration, `reset`; §8 reset, `seq` ordering, card identity by tool names, "Working" and login lines, `session list` default output; Non-goals; Accepted Risks; Decisions 11-15.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Non-goals contradict §4's agy branch | upheld | §4 fixed by research; Non-goals; Decision 16 |
+| intent | major | agy drops `${NAME}` token headers; env inheritance unverified | user-decision | Inheritance verified; Collin chose to write tokens into the private per-agent file (Decision 18) |
+| intent | minor | Worker-checkout reset clears the thread's check | upheld | §6/§7 reset only from thread worktree |
+| intent | minor | `login`-only tools never shown on a card | accepted-risk | Accepted Risks |
+| intent | minor | "Working" contradicts per-CLI skip lines | upheld | §8 "Connects: … (not on Codex)" |
+| mechanics | blocking | Older check can overwrite newer; `seq` race | upheld | §6 generation + serial queue; Decision 17 |
+| mechanics | blocking | Worker reset erases thread results | upheld | §6/§7 (same as intent 3) |
+| mechanics | blocking | Restart between cache and spool strands card | upheld | §6 `published` flag, republish |
+| mechanics | blocking | Agents could spoof the check event | upheld | §6 forwarder drops it; §8 |
+| mechanics | major | agy positive branch contradicts non-goals | upheld | §4 fixed by research |
+| mechanics | major | `ping` and response id matching | upheld | §5 |
+| mechanics | major | Legacy SSE reports success on endpoint only | upheld | §5 full handshake over endpoint |
+| mechanics | major | Cleanup misses natural exits and handoff kills | upheld | §4 timer sweep, `finally` |
+| mechanics | major | Same-identity card body goes stale | upheld | §8 update in place |
+| mechanics | minor | `checked_at` undefined | upheld | §8, §6 `at` |
+
+### Round 3 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 2:** §4 Antigravity variable rules (fixed by research) and header token expansion into the private file (Decision 18), timer and `finally` cleanup; §5 id matching, `ping`, legacy SSE full handshake; §6 rewritten (generation, per-thread serial queue, `published` flag and republish, forwarder drops agent-sent check events, reset only from the thread worktree); §7 reset scope; §8 `check.at`, body updated in place, "Connects … (not on <CLI>)", `session list` `skipped`; Non-goals; Accepted Risks (login-only tools); Decisions 16-18; IDEA.md Constraints exception.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | §2 and Non-goals contradict Decision 18 | upheld | §2 exception; Non-goals narrowed to Codex |
+| intent | major | agy http entries miss `type` | upheld | §4 `type: "http"` |
+| intent | major | No validation of the secret file exception | upheld | Validation, Antigravity |
+| intent | minor | agy env aliases still skipped though the file is private | upheld | §4 expands everywhere; Decision 19 |
+| intent | minor | agy unset-variable line outlives the fix | accepted-risk | Accepted Risks |
+| mechanics | blocking | agy http `type` missing | upheld | §4 (same as intent 2) |
+| mechanics | blocking | Publisher event blocked by hook route / missing session | upheld | Event removed; hub pull (Decision 20) |
+| mechanics | blocking | Hook spool trust boundary | upheld | Event removed; hub-only route (Decision 20) |
+| mechanics | blocking | SSE endpoint origin and redirects | upheld | §5 same-origin, no redirects |
+| mechanics | major | Restart replay under wrong sequence | upheld | Event removed; `running` cleared at startup |
+| mechanics | major | Overlapping starts for same hash | upheld | §6 join running check |
+| mechanics | major | Thread-worktree identity | upheld | §6 by path |
+| mechanics | major | Worker checkout clears thread lines | upheld | §7/§8 only thread worktree counts |
+| mechanics | major | Failed read has no check transition | upheld | §6 failed read changes nothing |
+| mechanics | minor | §2 exception and auth fixture | upheld | §2, Validation |
+
+### Round 4 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 3:** §2 private-file exception; §4 http `type`, expansion of all `${NAME}`/`${NAME:-default}` into the private file; §5 no redirects, SSE endpoint same-origin; §6 rewritten: no event, thread worktree by path, generation and join rules, hub-only `GET /v1/project-tools/<thread_id>`; §7 only thread-worktree starts carry `project_tools`, `check_generation`; §8 hub pull on the 60 s timer and 15 s after a start, `pending`; Edge cases; Non-goals; Validation; Accepted Risks; Decisions 19-20.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | blocking | Worker skip lines never reach the thread | upheld | §6 any tools-getting start sets its CLI's lines; Decision 21 |
+| intent | major | Card can't clear: reruns only from thread worktree starts | upheld | §6 any tools-getting start may rerun |
+| intent | minor | Same-key env written to the private file needlessly | upheld | §4 left out |
+| mechanics | blocking | `check_generation` decided after registration | upheld | §6 state changes before registration; start answer no longer carries it |
+| mechanics | blocking | Interrupted check for new hash reuses old clean result | upheld | §6 step 2 requires a current-generation result |
+| mechanics | blocking | Retried start snapshot replays stale lines | upheld | §6/§8 machine-owned state ordered by `seq` |
+| mechanics | major | Hub restart gap strands result | upheld | §8 timer pulls threads with live tools-getting sessions |
+| mechanics | major | Probe processes survive service restart | upheld | §6 `probes` reclaimed at startup |
+| mechanics | major | Budget-drop line has no names | upheld | §3/§7 lines carry names |
+
+### Round 5 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 4:** §3/§7 skip lines carry server names (budget drop names every dropped server); §4 same-key env left out of the private file; §6 rewritten: machine owns one `seq`-ordered state per thread (lines + check), changed in a serial queue before session registration; any tools-getting start sets its CLI's lines and may rerun the check; only thread-worktree starts set `file` or reset; reuse requires a current-generation result; probe process reclaim at startup; §7 now only defines lines; §8 hub pulls the whole state (after start, 15 s later, 60 s timer), applies by `seq`; Edge cases; Validation; Accepted Risks; Decision 21.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Check reruns on every checkout change | upheld | §6 keyed by hash; Decision 22 |
+| mechanics | blocking | Immediate pull deadlocks inside held thread lock | upheld | §8 lock rules |
+| mechanics | blocking | Reset leaves `running: true` | upheld | §6 reset sets `running: false` |
+| mechanics | blocking | Newer-protocol servers give false problems | downgraded (major) | Real but not "build the wrong thing"; §5 `unsupported`; Decision 23 |
+| mechanics | major | Restart gap if pane ends before first pull | upheld | §8 timer covers starts in the last 15 min |
+| mechanics | major | Crash between spawn and recording pid | upheld | §6 marker recorded before spawn, reuse aside-turns `createProc` |
+| mechanics | major | Failed read vs CLI line replacement conflict | upheld | §6 steps 1 and 3 |
+| mechanics | minor | Non-goals contradict any-worktree checks | upheld | Non-goals |
+
+### Round 6 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: started with no provider flag (intent start was waiting); cross-family: unknown.
+
+**Changed since Round 5:** Collin chose to run the check during agent start (Decision 24). §6 rewritten (check in a per-thread queue during the start, whole-state snapshot with `seq` on the start answer, probe markers); §8 hub applies snapshots by `seq`, no pulling; §5 `unsupported` (Decision 23); check keyed by hash (Decision 22); Edge cases; Validation; Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Queued starts each rerun a failing check (K×11 s) | upheld | §6 `arrived`/`started` reuse rule; Decision 25 |
+| intent | minor | `cli_lines` leftover in Validation | upheld | Validation |
+| mechanics | blocking | Service restart between tmux launch and check end | upheld | §6 check before launch |
+| mechanics | blocking | Handoff cancel during the check registers a killed pane | upheld | §6 check before the existing cancel check and launch |
+| mechanics | major | State write failure with a live pane | upheld | §6 write failure logged, start continues |
+| mechanics | blocking | Queue and retry break the start bound | upheld | §6 (same as intent major) |
+| mechanics | blocking | `initialize` error classification | upheld | §5 version rejection needs `data.supported` |
+| mechanics | major | Legacy SSE version negotiation | upheld | §5 accepted versions; Validation fixture |
+| mechanics | minor | Snapshot exposed via machine session list/status | upheld | §6 omitted there |
+
+### Round 7 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 6:** §5 protocol versions and version-rejection rule; §6 check runs before the tmux launch, `arrived`/`started` reuse rule, write-failure handling, snapshot hidden from machine list/status; Validation; Accepted Risks; Decision 25.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Arrival rule never fires: the hub serializes starts | upheld | §6 reuse a problem result for 2 minutes |
+| intent | minor | Risk row omits the held thread lock | upheld | Accepted Risks |
+| mechanics | blocking | Queue wait unbounded across hashes or throws | upheld | §6 no check after 10 s in the queue |
+| mechanics | blocking | Lost save rolls `seq` back | upheld | §6 `seq` = max(seq+1, now) |
+| mechanics | major | Handoff during a check | upheld | §6 abort on cancel; `kill` waits up to 5 s |
+| mechanics | major | Probe launched without a saved marker | upheld | §6 spawn only after the save |
+| mechanics | major | `data.supported` naming a supported version | upheld | §5 retry with it |
+
+### Round 8 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 7:** §5 `data.supported` retry; §6 2-minute reuse of a problem result (Decision 26), 10 s queue cap, `seq` = max(seq+1, now), abort on cancel and handoff `kill` wait, probe only after its marker is saved; Validation; Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | 2-minute reuse keeps the card open after a token fix | upheld | §6 reuse also needs an unchanged in-memory environment digest |
+| intent | minor | Marker-save failure shown as "newer protocol" and never rerun | upheld | §6 now a problem |
+| intent | minor | Start-wait bound stated inconsistently | upheld | §6 and Accepted Risks: ~21 s, handoff +5 s |
+| mechanics | blocking | 10 s cutoff doesn't cap the queue wait | upheld | §6 queue wait races a 10 s timer |
+| mechanics | major | Cancelled queued start stays in the queue | upheld | §6 abort leaves the queue |
+| mechanics | blocking | Parallel probe marker writes can land out of order | upheld | §6 per-thread write chain |
+| mechanics | blocking | Marker-save failure suppresses checks | upheld | Already fixed this round (intent minor): now a problem |
+| mechanics | major | Retried `initialize` needs id 3 | upheld | §5 |
+| mechanics | major | Clock-based `seq` can fall below the hub's | upheld | §6/§8 `boot` id per service start |
+| mechanics | minor | Token-fix edge case vs 2-minute reuse | upheld | Edge cases (digest) |
+
+### Round 9 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 8:** §5 retried `initialize` id 3; §6 environment digest for reuse, 10 s queue-wait race, abort leaves the queue, per-thread ordered state writes, `boot` id, marker-save failure is a problem; §8 `boot` handling; Edge cases; Validation; Accepted Risks; Decision 27 (rare timing cases accepted as known limits).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Marker-save failure blames the tool; reason missing from §5 | upheld | §5/§6 reason names wheelchair's own fault |
+| intent | minor | Digest misses PATH and inherited tokens | upheld | §6 digest over the whole check environment |
+| intent | minor | Per-thread queue could be replaced by "skip if a check runs" | declined | The queue also serializes every state change and write for the thread (§6), which is needed regardless; the 10 s race is a few lines |
+| mechanics | blocking | Cached success survives token removal | upheld | §6 digest required for every reuse |
+| mechanics | blocking | 401 with a literal custom key header read as OAuth | upheld | §5 `login` only with no headers |
+| mechanics | blocking | Probe that clears its environment escapes recovery | upheld | §6 child-written pidfile wrapper |
+| mechanics | blocking | Cancelled start strands its new checkout | upheld | §6 cancel cleanup |
+| mechanics | blocking | Atomic writer leaves temp files | downgraded (minor) | Leftover files only; §6 fixed temp name and startup sweep |
+| mechanics | major | State-folder failure cached in the reuse window | upheld | §6 bypasses reuse |
+
+### Round 10 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 9:** §5 `login` only for servers with no headers; state-folder failure reason; §6 digest over the whole check environment and required for every reuse, child-written probe pidfiles, cancel cleanup of a created checkout, fixed temp name and startup sweep; Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | Wrapper execs even if pidfile write fails | upheld | Pidfiles removed (§6) |
+| mechanics | blocking | Start time vs mtime comparison undefined | upheld | Pidfiles removed (§6) |
+| mechanics | blocking | Group with exited leader skipped | downgraded (minor) → accepted-risk | Crash recovery now relies on stdin EOF; Accepted Risks |
+| mechanics | blocking | Wrapper hides `ENOENT` | upheld | §6 direct spawn |
+| mechanics | blocking | Kept branch collides with next worker | upheld | §6 skip existing git branches |
+| mechanics | blocking | Restart mid-check strands checkout | upheld | §6 retries clear or skip leftovers |
+| mechanics | blocking | Agy sweep race deletes a live dir | upheld | §4 read order and registered-session guard |
+| mechanics | major | `headers: {}` ambiguous for `login` | upheld | §5 no header entries |
+| intent | major | Wrapper hides missing program | upheld | Wrapper removed (§6) |
+| intent | major | Cancel cleanup could remove a lead's checkout | upheld | §6 only worker/verifier checkouts this start added |
+| intent | minor | Later cancel points still strand checkouts | upheld | §6 cleanup on any unregistered end |
+| intent | minor | State-folder failure blames the tools | upheld | That result no longer exists (§6) |
+| intent | minor | OAuth tool with a harmless header shows a problem | upheld | §5 `resource_metadata=` rule |
+| intent | minor | Decision 22 contradicts §6 | upheld | Decision 28 |
+
+### Round 11 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 10:** §4 sweep read order and registered-session guard; §5 `login` via `resource_metadata=`; §6 probes spawned directly (pidfiles removed; stdin-EOF crash behaviour), cleanup of checkouts a worker/verifier start added, worker branch numbering skips existing branches, verifier stranded-path cleanup; Accepted Risks (stdin-ignoring server after crash); Decision 28.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Two answers for a 401 with a custom header plus OAuth | upheld | §5 `login` needs no configured headers; Validation aligned |
+| intent | major | Worker checkout stranded by a restart | upheld | §6 restart journal |
+| intent | minor | Cancelled worker keeps an empty branch | upheld | §6 delete it |
+| mechanics | blocking | Agy sweep keeps token files for dead panes recorded `ready` | upheld | §4 guard uses only starting names and tmux |
+| mechanics | blocking | First lead's checkout stranded by a restart | upheld | §6 thread-branch start reuses an existing checkout |
+| mechanics | blocking | Worker checkout left after restart | upheld | §6 restart journal (same as intent major) |
+| mechanics | blocking | Verifier cleanup could remove a live pane's checkout | upheld | §6 needs confirmed tmux absence |
+| mechanics | major | Conflicting OAuth rule | upheld | §5 (same as intent major) |
+
+### Round 12 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 11:** §4 sweep guard (starting names, then tmux); §5 `login` needs `resource_metadata=` and no configured headers; §6 cancel/failure cleanup deletes a worker's new branch, restart journal, tmux-confirmed cleanup, thread-branch checkout reuse; Validation; Decision 29 (restart clutter accepted).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | OAuth tool with a harmless header shows a problem | accepted-risk | Accepted Risks |
+| mechanics | blocking | Agy sweep can delete a retry's new files | upheld | §4 sweep synchronous |
+| mechanics | blocking | Cancel cleanup can remove a live pane's checkout | upheld | §6 needs confirmed tmux absence |
+| mechanics | blocking | `resource_metadata=` substring match | upheld | §5 parse the auth-param |
+| mechanics | blocking | Removed server's skip line on another CLI never clears | upheld | §6 step 3 retires lines for removed names |
+
+### Round 13 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 12:** §4 sweep synchronous; §5 `resource_metadata` parsed as a Bearer auth-param; §6 cleanup needs confirmed tmux absence, step 3 retires skip lines of removed servers; Validation; Accepted Risks (OAuth tool with extra headers).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Cleanup skipped when no tmux server runs | upheld | §6 uses `liveTmux()` |
+| intent | minor | Other CLIs' lines go stale after a fix | upheld | §6 recompute other CLIs' lines; Accepted Risk row removed |
+| intent | minor | Budget line dropped whole on one removal | upheld | Same recompute |
+| mechanics | blocking | Budget line erased by one removal | upheld | Fixed this round by recomputing other CLIs' lines |
+| mechanics | blocking | Startup sweep vs a launch surviving the old service | upheld | §4 no sweep in the first 60 s |
+| mechanics | blocking | Cleanup skipped with no tmux server | upheld | Fixed this round (`liveTmux()`) |
+| mechanics | blocking | Empty `resource_metadata` hides a problem | upheld | §5 needs an absolute URL |
+| mechanics | blocking | Multi-line tmux values truncated | upheld | §5 parse `show-environment -s` |
+
+### Round 14 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 13:** §4 no sweep in the first 60 s after service start; §5 `resource_metadata` must be an absolute URL, environment parsed from `show-environment -g -s`; §6 cleanup uses `liveTmux()`, other CLIs' lines recomputed at thread-worktree starts; Accepted Risks (unset-variable row removed); Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Recompute only at thread-worktree starts | upheld | §6 also at any start with the same file hash |
+| intent | minor | 60 s hold-off misses other sweep callers | upheld | §4 never remove a dir younger than 60 s |
+| mechanics | blocking | Literal values reach the journal via the systemd-run description | upheld | §3 `--description` |
+| mechanics | blocking | Launcher surviving a restart beats the sweep/journal | downgraded (minor) → accepted-risk | Restart mid-launch plus a stuck launcher; Accepted Risks |
+| mechanics | blocking | Check sees variables tmux clears from the pane | upheld | §5 apply `update-environment` |
+| mechanics | blocking | Recompute from a different checkout erases a valid warning | upheld | §6 recompute only for an equal hash |
+
+### Round 15 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: started with no provider flag (intent start was waiting); cross-family: unknown.
+
+**Changed since Round 14:** §3 `systemd-run --description`; §4 sweep never removes a dir younger than 60 s; §5 check environment applies tmux `update-environment`; §6 other CLIs' lines recomputed only for an equal file hash; Accepted Risks; Decision 30 (final round, strict filter).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Recompute compares the hash before a changed file is checked | upheld | §6 recompute runs after the check decision |
+| mechanics | blocking | Literal header credentials visible in Codex argv to local users | downgraded (minor) → accepted-risk | Only another local account could read `/proc`; literal secrets in `.mcp.json` are unusual; Accepted Risks. Shown on the approval card |
+| mechanics | blocking | `${PWD}` expands to the wrong directory | upheld | §5 set `PWD` to the worktree |
+| mechanics | blocking | `update-environment` entries are patterns | upheld | §5 fnmatch |
+| mechanics | blocking | `remain-on-exit` keeps token files | downgraded (minor) → accepted-risk | File stays private and is removed at stop; Accepted Risks |
+| mechanics | minor | Validation text on first-start clearing | upheld | Validation |
+
+### Round 16 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: started with no provider flag (intent start was waiting); cross-family: unknown.
+
+**Changed since Round 15:** §5 check environment applies `update-environment` as fnmatch patterns and sets `PWD` to the worktree; §6 other-CLI recompute runs after the check decision; Validation; Accepted Risks. Decision 30's strict filter still applies.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | `PWD` in the digest breaks cross-checkout reuse | downgraded (minor) | Under Decision 30 the cost is extra checks only, nothing wrong is built; one-line fix applied anyway: `PWD` left out of the digest |
+| intent | minor | Wheelchair's own command variables missing from the check environment | accepted-risk | Accepted Risks |
+| mechanics | blocking | `update-environment` rule removes globals the pane keeps | upheld | §5 follows tmux's `environ_update` exactly |
+| mechanics | blocking | Recompute guard always passes after a check | upheld | §6 step 3 rewritten: per-CLI line origin (hash, thread checkout) |
+| mechanics | blocking | Literal stdio env stored in session records | upheld | §3 redaction covers `env` overrides |
+| mechanics | minor | `PWD` in the digest | upheld | Already fixed this round |
+
+### Round 17 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: started with no provider flag; cross-family: unknown.
+
+**Changed since Round 16:** §3 redaction also covers literal stdio `env` overrides; §5 `update-environment` follows tmux's `environ_update`; `PWD` out of the digest; §6 state `clis` entries carry `hash` and `thread`, step 3 rewritten as ordered substeps (queue wait, lines, recompute by origin, check decision); Validation; Accepted Risks. Decision 30's strict filter still applies.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | tmux overlays the client's `PATH` | upheld | §5 `PATH` from the service |
+| mechanics | blocking | `PWD` lost on the `process.env` fallback | upheld | §5 `PWD` set last in every case |
+| mechanics | blocking | Literal tokens in args or URL stored | upheld | §3 redact every project override |
+| mechanics | blocking | tmux verbose log | downgraded (minor) → accepted-risk | Opt-in debug mode; Accepted Risks |
+| mechanics | minor | Recompute relabels origin | accepted-risk | Accepted Risks |
+
+### Round 18 — 2026-11-19
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 17:** §5 environment captured from a throwaway tmux session through a FIFO (`captureEnv`, Decision 31), replacing the rule-built environment; §4 expansion uses it; §6 digest ignores `PWD` and `WHEELCHAIR_*`; §3 redaction of every project override; Validation; Accepted Risks. Decision 30's strict filter still applies.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | blocking | Digest includes per-pane `TMUX`/`TMUX_PANE` | upheld | §6 3d excludes per-pane names |
+| intent | major | Capture only "when a check runs" contradicts the digest | upheld | §5 capture at every tools-getting start with servers |
+| intent | minor | Where capture runs | upheld | §5 before the adapter, outside the queue; up to 10 s staleness stated |
+| mechanics | blocking | Capture scheduled after the reuse decision | upheld | Fixed this round (§5 capture before the adapter) |
+| mechanics | blocking | Captured `TMUX`/`TMUX_PANE` | upheld | §5 dropped from the capture; §6 digest excludes them |
+| mechanics | blocking | Late shell can recreate the FIFO path as a file | upheld | §5 unlink only after the session is confirmed gone |
+| mechanics | blocking | Session names with `/` break the agy dir mapping | upheld | §4 encoded directory names |
+| mechanics | minor | Capture outside the stated bounds and cancel path | upheld | §5/§6 bounds and cancel |
+
+### Round 19 — 2026-11-19
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 18:** §5 capture timing (every tools-getting start with servers, before the adapter), drops `TMUX`/`TMUX_PANE`, FIFO removed only after the session is confirmed gone, cancel kills the capture; §6 digest exclusions and bounds (~26 s); §4 encoded plugin directory names; Validation; Accepted Risks. Decision 30's strict filter still applies.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Login variables in the digest force reruns across CLIs and accounts | upheld | §6 3d excludes `loginEnv` names |
+| intent | minor | Accepted Risks row stale after capture moved | upheld | Row rewritten |
+| intent | minor | Two different longest waits | upheld | §6 ~26 s throughout |
+| mechanics | blocking | Restart cleanup could let the probe write a regular file | upheld | §5 probe writes only into an existing FIFO; startup removal needs no `wcenv-*` left |
+| mechanics | blocking | Excluded variable used by a tool hides a change | upheld | §6 referenced names always in the digest |
+| mechanics | blocking | Recompute with another CLI's login variables | upheld | §6 3c skipped when the file references them |
+| mechanics | minor | No deadline on launch and cleanup | upheld | §5 whole capture bounded at 5 s; cleanup in background |
+
+### Round 20 — 2026-11-19
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: started with no provider flag; cross-family: unknown.
+
+**Changed since Round 19:** §5 probe writes only into an existing FIFO, startup cleanup waits for no `wcenv-*` sessions, whole capture bounded at 5 s with background cleanup; §6 digest excludes `loginEnv` names unless the file references them, 3c recompute skipped when the file references login or `WHEELCHAIR_*` variables, ~26 s bound; Accepted Risks row on start waits rewritten; Validation. Decision 30's strict filter still applies.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Startup sweep refers to a nonexistent cleanup | upheld | §5 wording |
+| intent | minor | 3c skip broader than needed | accepted-risk | Accepted Risks |
+| intent | minor | Referenced per-session variables force reruns | accepted-risk | Accepted Risks |
+| mechanics | blocking | FIFO writer can still create a regular file | upheld | §5 Unix socket: connecting never creates a file |
+| mechanics | blocking | Pending FIFO open can't be cancelled | upheld | §5 socket server closed on timeout |
+| mechanics | minor | Validation promise vs recompute skip | upheld | Validation qualified |
+
+### Round 21 — 2026-11-19
+
+**Changed since Round 20:** Decision 33 cut scope: the connection test (old §5), environment capture, check caching and digest, the per-thread queue, and checkout cancel/restart cleanup are removed. New §5 program check (file check against the tmux global PATH). §4 Antigravity no longer expands variables: any `${` other than same-key env skips the server. §6 rewritten as a synchronous state update. §8 card without connection results; `session list` shows problem lines. Edge cases, Non-goals, Validation and Accepted Risks rewritten. Because so much changed, review the whole Spec in depth. Earlier rounds' findings about removed parts no longer apply.
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: started with no provider flag; cross-family: unknown.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | `programs` overwritten by every checkout flaps the card | upheld | §6 3b: only the thread's worktree sets `programs` |
+| intent | minor | Move state to the hub, drop the machine store | declined | Cross-CLI recompute (§6 3c) needs the adapters on the machine; the store is small and its ordering rules are already specified |
+| intent | minor | No manual check of Codex token or Antigravity http | upheld | Validation manual checks |
+| mechanics | blocking | Reader errors in a worker checkout never shown | declined | Decision 21: only the thread's worktree owns `file`; workers check out the thread branch, so the same error shows from there; Edge cases note added |
+| mechanics | blocking | Another checkout clears a missing-program line | downgraded (minor) | Wrong only until the next thread start; fixed with the intent finding above |
+| mechanics | blocking | Concurrent starts publish an older read under a higher `seq` | downgraded (minor) | The hub serializes a thread's starts (`viewer/app/hub.js:153-155`); fixed anyway with a per-start ticket (§6) |
+| mechanics | blocking | `realpath` of a missing thread directory aborts the start | upheld | §6: failure means not the thread's worktree |
+| mechanics | blocking | Directory passes `X_OK`; relative PATH entries undefined | downgraded (minor) | A false "found" only misses a warning; §5 requires a regular file and resolves relative entries against the worktree |
+| mechanics | minor | README still describes the old behaviour | upheld | Validation: README section rewritten |
+
+### Round 22 — 2026-11-19
+
+**Changed since Round 21:** §5 candidates must be regular executable files, relative PATH entries resolved against the worktree; §6 `realpath` failure means not the thread's worktree, per-start ticket so an older read never overwrites a newer one, `programs` set only from the thread's worktree; Edge cases (worker-only reader errors, program fix timing); Validation (README rewrite, manual Codex token and Antigravity http checks, new state tests).
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Only thread starts clear a bare-name program's line | upheld | §5/§6: `programs` split into `thread` (relative) and `shared` (any checkout) |
+| intent | minor | Ticket drops an older start's own CLI lines | upheld | §6 tickets per group |
+| mechanics | major | Validation contradicts itself on worker `programs` | upheld | Validation rewritten |
+| mechanics | minor | Newer worker ticket discards a thread start's fix | upheld | §6 tickets per group |
+| mechanics | minor | Concurrency tests need explicit completion orders | upheld | Validation: both orders, `seq` rule |
+| mechanics | minor | Path normalization can bypass symlinks | upheld | §5 plain string joining |
+
+### Round 23 — 2026-11-19
+
+**Changed since Round 22:** §5 lines split into `relative` and `shared`, candidates built by plain string joining; §6 tickets per group (`thread`, `shared`, `cli:<name>`), `programs` = `{thread, shared}`, `seq` only on change; §8 problem lines include both program groups; Edge cases; Validation (both completion orders, symlink path, worker `programs` assertions).
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Missing bare name's group undefined with relative PATH entries | upheld | Split removed: only the thread's worktree sets `programs` (Accepted Risks) |
+| intent | major | Leftover single `applied = ticket` contradicts per-group tickets | upheld | Tickets removed |
+| intent | minor | `programs.shared` overwritten from a different file | upheld | Split removed |
+| mechanics | major | Missing bare name with relative PATH has no group | upheld | Split removed |
+| mechanics | blocking | Worker with another file clears shared lines it never checked | upheld | Split removed |
+| mechanics | major | Ticket advance on unchanged observation undefined | upheld | Tickets removed; unserialized starts are an Accepted Risk |
+| mechanics | minor | Reset does not advance tickets of absent CLIs | upheld | Tickets removed |
+
+### Round 24 — 2026-11-19
+
+**Changed since Round 23:** §5 single line list again (no relative/shared split); §6 tickets and program groups removed: only the thread's worktree sets `programs`, concurrency left to the hub's serialization; Edge cases, Validation; two Accepted Risks (Decision 35).
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Program check runs on worker starts only to log | upheld | §5 runs only in the thread's worktree |
+| mechanics | blocking | Session records from before this change keep unredacted commands | declined | Before this change Codex skipped every server with headers (README "Project MCP tools"), so old records hold only literal env, args and url values copied from the committed file, stored that way by design since PR #112 (Decision 7) |
+| mechanics | major | Private-file exception covers headers only, §4 copies all literals | upheld | IDEA constraint and Decision 36: every literal value |
+| mechanics | minor | Concurrency risk says "next start" corrects it | upheld | Accepted Risk wording scoped to the owning checkout |
+
+### Round 25 — 2026-11-19
+
+**Changed since Round 24:** §5 program check and PATH read only in the thread's worktree; §4 and IDEA constraint: the private-file exception covers every literal value (Decision 36); Accepted Risk wording on unserialized starts.
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Decision 36 widens an IDEA constraint without Collin's agreement | user-decision | Collin confirmed (Decision 37) |
+| mechanics | major | "Anywhere" scan inspects unvalidated stray fields | upheld | §4 only translated fields are read or scanned |
+| mechanics | minor | `programs` undefined when a file has no valid servers | upheld | §5: set to [] |
+| mechanics | minor | No hung-tmux test for the PATH read | upheld | §5 real deadline; Validation |
+
+### Round 26 — 2026-11-19
+
+**Changed since Round 25:** §4 only translated fields per transport are read or scanned; §5 `programs` = [] for a file with no valid servers, PATH read has a real 2 s deadline; Validation; Decision 37 (Collin confirmed the private-file exception covers every written value).
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | "A hung tmux never stalls it" overpromises | upheld | §5 deadline scoped to the PATH read only |
+| mechanics | major | Deadline covers only the PATH read; whole-tmux hang undefined | downgraded (minor) | A whole-tmux hang stalls today's launch already (`machine/service.js:625`); §5 now says the deadline covers only this read and the rest is out of scope; Validation scoped |
+| mechanics | minor | No state test for all-invalid file after a missing-program line | upheld | Validation |
+
+## Prior Work
+
+Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
+with work already done, or left behind by an implementation run that died partway.
+
+Stage 3 does not re-implement `pre-existing` items and does not touch their code. Stage 4
+verifies them exactly as rigorously as everything else: this code has never been through
+the gate, so skipping it would leave the least-trustworthy part of the change as the only
+part nobody checked.
+
+Ambiguous evidence means **not done**. A wrong "done" is a silent hole; a wrong "not done"
+costs a worker one look.
+
+| Spec item | State | Evidence (file:line) | Confidence |
+|-----------|-------|----------------------|------------|
+
+`partial` items are implemented by Stage 3 — the brief names what exists so the worker
+completes it instead of restarting it.
+
+## Implementation Tasks
+
+Filled by Stage 3. One row per worker brief.
+
+| # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
+|---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Reader (§1) and Codex adapter (§2, §3 adapter parts) | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/test/project-mcp-codex.test.js, machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker | node --test codex + reader tests; machine/test/run.sh | done |
+| T2 | Antigravity adapter (§4 adapter parts) | machine/adapters/agy.js, machine/test/project-mcp-agy.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-2 | node --test agy + accounts tests; machine/test/run.sh | done |
+| T3 | Program check module (§5 module) | machine/lib/project-programs.js, machine/test/project-programs.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-3 | node --test project-programs; machine/test/run.sh | done |
+| T4 | tricky — Service plumbing: line logging, Codex redaction and --description, Antigravity file writing and sweep (§3, §4 service parts) | machine/service.js, machine/test/service.test.js, machine/test/project-mcp.test.js, new machine tests | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-5 | machine/test/run.sh | done |
+| T5 | tricky — Thread project-tools state, PATH read, program check call (§5 service part, §6) | machine/service.js, machine/test (new state test file) | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-6 | machine/test/run.sh | done |
+| T6 | Hub card, session list field, README (§8, README) | viewer/app/sessions.js, viewer/app/wc.js, viewer/test/app-project-tools.test.js, README.md section | standard (claude) / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-4 | node --test viewer/test/*.test.js | done |
+| R1 | Remediation 1, gap 1: exact duplicate header keys | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/adapters/agy.js, their tests | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-7 | reader/codex/agy tests; machine/test/run.sh | done |
+| R2 | Remediation 1, gap 2: saved state shape check; flaky PATH test | machine/service.js (state loader), machine/test/project-tools-state.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-8 | project-tools-state test; machine/test/run.sh x3 | done |
+| R3 | Remediation 2, gap 1 (2nd attempt): iterative duplicate-header scan | machine/lib/project-mcp.js (duplicateHeaderServers), machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-9 | reader/codex/agy tests; machine/test/run.sh | done |
+| R4 | Remediation 2, gap 2: default project_tools on new threads | viewer/app/threads.js (emptyThread), viewer/test/app-project-tools.test.js | light / claude-haiku-5-5 | wc-b9ca1682b0fa-worker-10 | app-project-tools; viewer/test/*.test.js | done |
+| R5 | Remediation 3, gap 1: sweep matches tmux's `_` spelling of `.`/`:` | machine/service.js (sweepAgyTools), machine/test/project-tools-service.test.js | light / gpt-6-luna | wc-b9ca1682b0fa-worker-11 | project-tools-service; machine/test/run.sh | done |
+| R6 | Remediation 3, gap 2 (2nd attempt): default record on handoff-imported threads | viewer/app/threads.js, viewer/app/handoff-ops.js (createLocked), viewer/test/app-project-tools.test.js | standard / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-12 | handoff + project-tools tests; viewer/test/*.test.js | done |
+| R7 | Remediation 4, gap 2 (3rd and final attempt, Collin's choice A): duplicates only in the kept occurrence | machine/lib/project-mcp.js (duplicateHeaderServers), machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-13 | reader/codex/agy tests; machine/test/run.sh | done |
+| R8 | Remediation 4, gap 1 (2nd attempt): sweep protects only the dir of the session the machine records as running (attempt 2; attempt 1 worker-14 sent back: newest-mtime rule broken by refused starts) | machine/service.js (sweepAgyTools), machine/test/project-tools-service.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-16 | project-tools-service; machine/test/run.sh | done |
+| R9 | Remediation 4, gap 3: card problem lines in plain-text items | viewer/app/sessions.js (applyProjectTools), viewer/test/app-project-tools.test.js | standard (claude) / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-15 | app-project-tools; viewer/test/*.test.js | done |
+| R10 | Remediation 4, follow-up to R9: handoff history includes a needs card's items | viewer/app/handoff.js (historyText needs case), viewer/test/app-handoff.test.js | light (claude) / claude-haiku-5-5 | wc-b9ca1682b0fa-worker-17 | app-handoff + app-project-tools; viewer/test/*.test.js | done |
+| R11 | After verification attempt 5: project-tools-state tests use a temporary HOME | machine/test/project-tools-state.test.js (fixture) | light / gpt-6-luna | wc-b9ca1682b0fa-worker-18 | live hooks.json hash before/after; machine/test/run.sh | done |
+
+Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
+
+## Log
+
+Free-form running notes: deviations discovered mid-implementation, scope events,
+anything a future session needs that fits nowhere above.
+- 2026-11-18 — Choice: T3, machine/lib/project-programs.js: `path` is assumed to be a string (no guard); `mcp: null` returns [] before reading it. (Report said "none"; scout listed this and test helpers only.)
+- 2026-11-18 — Choice: T3, machine/test/project-programs.test.js: added a quoted server name case (`odd name`) exercising `serverLabel`.
+- 2026-11-18 — T3 accepted (band: scout): program check module; 6/6 focused, 175/175 machine tests re-run locally for focused file.
+- 2026-11-18 — worker didn't report its choices accurately ("none"); I listed 5 from the scout's read:
+- 2026-11-18 — Choice: T1, machine/adapters/codex.js: header names are not scanned for `${` (they become literal TOML keys; nothing is expanded).
+- 2026-11-18 — Choice: T1, machine/adapters/codex.js: `Authorization: ${NAME}` (no `Bearer`) goes to `env_http_headers`.
+- 2026-11-18 — Choice: T1, machine/adapters/codex.js: redactions computed by a stride-2 walk over the override pairs after `projectStart`.
+- 2026-11-18 — Choice: T1, machine/adapters/codex.js: the budget line's names are every server that passed the checks, in object order.
+- 2026-11-18 — Choice: T1, machine/lib/project-mcp.js: the outer catch-all failure returns `hash: null` even if bytes were read.
+- 2026-11-18 — T1 accepted (band: scout): reader and Codex adapter; 26/26 focused tests re-run. Interim: service still logs `[object Object]` and ignores redactions until T4.
+- 2026-11-18 — T2: worker didn't report its choices ("none"); I listed 3 from the scout's read:
+- 2026-11-18 — Choice: T2, machine/adapters/agy.js: env and server maps built with `Object.defineProperty` so names like `__proto__` are safe.
+- 2026-11-18 — Choice: T2, machine/adapters/agy.js: header values are not type-checked in the adapter (relies on T1's reader validating headers as strings).
+- 2026-11-18 — Choice: T2, machine/test/project-mcp-agy.test.js: a session name with `/` (`wc-a/b`) exercised for encoding.
+- 2026-11-18 — T2 accepted (band: scout): Antigravity adapter; scout's sse/headers concerns were against the pre-T1 reader and are covered on the feature branch. Focused machine tests re-run after merge.
+- 2026-11-18 — Choice: T6, viewer/test/app-project-tools.test.js: tests wrap `hub.call` on a second Hub over the same state to add `project_tools`/`created_at` to fake machine answers (the fake machine helper was outside the boundary).
+- 2026-11-18 — Choice: T6, viewer/app/sessions.js: `project_tools.problems` goes on the newest lead session (after review; first draft used the oldest).
+- 2026-11-18 — Choice: T6, viewer/app/sessions.js: answered cards get only `answered = true`; a body change is edited in place; clients see both through `hub.save`.
+- 2026-11-18 — Choice: T6, viewer/app/sessions.js: a different-boot answer with no `created_at` is not applied unless nothing is stored; an answer without `created_at` keeps the stored one; a NaN date never applies; missing `names`/`file`/`programs`/`clis` default to empty.
+- 2026-11-18 — Choice: T6, viewer/app/sessions.js: `applyProjectTools` exported for tests.
+- 2026-11-18 — Choice: T6, README.md: pre-approval sentence moved to its own paragraph.
+- 2026-11-18 — T6 accepted (band: bigger-scout): hub card, session list field, README; sent back once for newest-lead, README facts and hub-list test; 14/14 focused tests re-run.
+- 2026-11-18 — T4: worker didn't report its choices ("none"); I listed 3:
+- 2026-11-18 — Choice: T4, machine/service.js: Antigravity tool files written via a `<file>.<uuid>.tmp` temp beside each file; a failed write leaves the start failing (no temp cleanup).
+- 2026-11-18 — Choice: T4, machine/service.js: every directory level from `agy-tools` is mkdir'd and chmod'd 0700 on each start.
+- 2026-11-18 — Choice: T4, machine/test/project-tools-service.test.js: one combined test drives the timer via `agyToolsTimer._onTimeout()` with stubbed `liveTmux`.
+- 2026-11-18 — T4 accepted (band: self, tricky): service plumbing; I read the diff; machine/test/run.sh 183/183 re-run on the worker branch.
+- 2026-11-18 — Choice: T5, machine/service.js: state file names percent-encode the thread id (`encodeURIComponent`), unchanged for ordinary ids.
+- 2026-11-18 — Choice: T5, machine/service.js: the thread-worktree test takes project from `input.project` or the basename of `project_dir`, as `createWorktree` does; the hub always sends both (`viewer/app/sessions.js:361-362`).
+- 2026-11-18 — Choice: T5, machine/service.js: the PATH read spawns `tmux show-environment -g PATH` with SIGKILL at 2 s; output is taken only on exit 0 with a `PATH=` prefix.
+- 2026-11-18 — T5 accepted (band: self, tricky): thread state, PATH read, program check; I read the diff; machine/test/run.sh 190/190 on the worker branch. Coverage limits the worker named: removal of one server while another remains is not separately tested (same code path as a fix); the verifier-checkout test uses a distinct path, not a real git branch.
+- 2026-11-18 — Verification attempt 1 on 23cfa5f: Claude verifier PASS, GPT verifier FAIL (2 gaps). Manual hearth checks passed in both. REMEDIATION-1.md written; R1, R2 dispatched to GPT (same family that built that code), sharpened briefs.
+- 2026-11-18 — Choice: R1, machine/lib/project-mcp.js: array positions use a null path component in the duplicate-header scan.
+- 2026-11-18 — Choice: R1, machine/lib/project-mcp.js: marking is per `headers` occurrence, so a server with a repeated `headers` key, or a repeated server name, whose any occurrence has a duplicate header is skipped even if the copy JSON.parse kept has none (stricter than needed; harmless).
+- 2026-11-18 — Choice: R1, machine/lib/project-mcp.js: the marker is a plain symbol assignment (copied by spread, absent from Object.keys and JSON).
+- 2026-11-18 — Choice: R1, adapter tests set the symbol directly; reader tests parse files.
+- 2026-11-18 — R1 accepted (band: scout): exact duplicate headers now skip on Codex and Antigravity. Scout found that very deep nesting (~6,500 levels, valid JSON) overflowed the recursive scan and turned the file into "read failed"; I added a catch in `duplicateHeaderServers` (scan gives up, read succeeds) and a 15,000-deep test that fails without it.
+- 2026-11-18 — Choice: R2, machine/service.js: `validProjectToolsState` is a method beside `updateProjectTools`; extra unlisted keys are tolerated.
+- 2026-11-18 — Choice: R2, machine/test/project-tools-state.test.js: the fake tmux drains stdin on `load-buffer` (cause of the `tmux buffer failed` flake: the fake exited without reading the piped message, giving an EPIPE under load; not reproduced on demand); extra invalid cases for program lines and cli `thread`/`hash`; the valid-state case starts a worker in the worker checkout.
+- 2026-11-18 — R2 accepted (band: scout): saved state shape validated, invalid → empty; worker pasted three full machine runs at 191/191.
+- 2026-11-18 — Verification attempt 2 on f37b1b8: Claude PASS, GPT FAIL (2 gaps). Gap 1 (duplicate headers) is the R1 gap again, caused by my give-up catch; R3 is its second and last fix attempt. REMEDIATION-2.md written; R3 to GPT, R4 to Claude (light: a one-field transcription).
+- 2026-11-18 — Choice: R3, machine/test/project-mcp-reader.test.js: 15,000-deep nested objects cannot fit in 32 KiB (≥5 bytes per level), so object cases use the deepest nesting that fits; array cases use 15,000 and the deepest that fits.
+- 2026-11-18 — Choice: R3, machine/lib/project-mcp.js: frames `{type, pathKey, key, expectingKey, seen}`, depth from stack length; the headers match also requires root and `mcpServers` to be objects; duplicates in occurrences JSON.parse overwrites still count (stricter, as logged for R1). Worker listed only the test choice; scout listed the rest.
+- 2026-11-18 — R3 accepted (band: scout): iterative scan, no catch; scout fuzzed ~200k random documents against an independent reference with 0 mismatches, plus max-depth cases before/after/inside servers and headers.
+- 2026-11-18 — Choice: R4, viewer/app/threads.js: `project_tools` default placed after `archived`; stub threads (also built by `emptyThread`) get it too.
+- 2026-11-18 — Choice: R4, viewer/test/app-project-tools.test.js: the no-snapshot precondition reads the fake machine's session map rather than injecting a custom answer.
+- 2026-11-18 — R4 accepted (band: scout): new threads carry the default record; first snapshot still applies (stored created_at null counts as older).
+- 2026-11-18 — Verification attempt 3 on a856aa8: Claude PASS, GPT FAIL (2 gaps). R3's duplicate-header fix held. New gap: sweep vs tmux name spelling. Default-record gap returns via handoff import (second and last attempt, R6). REMEDIATION-3.md written.
+- 2026-11-18 — Choice: R6, viewer/app/handoff-ops.js: `defaultProjectTools()` required lazily inside `createLocked` rather than at the top.
+- 2026-11-18 — Choice: R6, viewer/test/app-project-tools.test.js: calls `createLocked` directly under `withThread`; the "lead start fails" part does not affect the check (the thread is saved before any lead start), so the test proves the saved record regardless of the lead outcome.
+- 2026-11-18 — R6 accepted (band: scout): both thread constructors (`emptyThread`, `createLocked`) now set the default; scout found no other constructor in viewer/app.
+- 2026-11-18 — R5: worker reported no choices; I listed 1: the tmux-spelling match is one-way, so a live `wc-a_b` also protects a `wc-a.b` dir (only delays cleanup; accepted).
+- 2026-11-18 — R5 accepted (band: scout): sweep keeps dirs of live sessions under tmux's `_` spelling.
+- 2026-11-18 — Verification attempt 4 on 0e852e1: Claude PASS, GPT FAIL (3 gaps). Duplicate-header gap has survived two fix attempts (R1, R3) — now over-flagging when `mcpServers` is written twice; per the two-attempt rule, no third try: raised to the lead. Other gaps: sweep tmux-spelling collision keeps an ended session's file (1 attempt so far, R5); card Markdown eats underscores in names (new). Work stopped pending Collin.
+- 2026-11-19 — Collin chose A: fix all three attempt-4 gaps in one final remediation; if the duplicate-header gap survives, raise it again. REMEDIATION-4.md written; R7, R8 to GPT, R9 to Claude.
+- 2026-11-19 — Deviation from §8 wording (approved by Collin): the "Project tools problem" card's body is only the intro sentence; the problem lines (and "and N more") go in the needs card's plain-text `items` list, because the body renders as Markdown and changed tool names like `_tool_`.
+- 2026-11-19 — Sweep fix refined from the approved wording ("exact spelling wins") to "the newest dir among those sharing a live tmux name wins, exact spelling on a tie": exact-spelling-wins would delete a live `wc-a.b` session's file whenever an older `wc-a_b` dir was still waiting, the attempt-3 gap again.
+- 2026-11-19 — R7: worker reported "none"; I listed 3 from the scout's read:
+- 2026-11-19 — Choice: R7, machine/lib/project-mcp.js: findings dropped by name as later occurrences appear (all cleared at each root `mcpServers` key; a server's cleared when the name is re-keyed or a new `headers` key appears), instead of occurrence identities.
+- 2026-11-19 — Choice: R7, machine/test/project-mcp-reader.test.js: existing fixture `repeated` (overwritten duplicate `headers`, clean kept copy) now expected unflagged — the old expectation encoded the over-flagging the gap names.
+- 2026-11-19 — Choice: R7, machine/test/project-mcp-reader.test.js: test renamed to "in kept header objects".
+- 2026-11-19 — R7 accepted (band: scout): 21/21 focused re-run; scout's differential fuzz against an independent occurrence-keeping parser: 180,000 cases, 0 mismatches (base function mismatched ~8,700 per 60,000).
+- 2026-11-19 — R8 attempt 1 (worker-14) sent back, not merged (band: scout): the newest-mtime rule from my brief lets a start that tmux refuses (its dir is written, with a fresh mtime, before `tmux new-session`) take protection from the live session's older dir, which is then removed; the report also said "Choices: none" while making four. Brief defect, not a model defect: rewrote the brief to pick the protected dir by the machine's own session record (non-stopped, newest `created_at`; exact spelling, then newest mtime, when no record exists) and started attempt 2 at the same tier (worker-16). Not an escalation step.
+- 2026-11-19 — R9: worker reported "none"; I listed 3 from the scout's read:
+- 2026-11-19 — Choice: R9, viewer/app/sessions.js: in-place update compares `items` by `JSON.stringify` and rewrites the constant body when it differs, so a card made before this change (bullets in body, no items) is converted on the next snapshot with the same names.
+- 2026-11-19 — Choice: R9, viewer/app/sessions.js: `items` holds bare line texts (no `• `), with `and N more` as the last item.
+- 2026-11-19 — Choice: R9, viewer/app/handoff.js left unchanged (outside the boundary); its report wrongly said no other reader of the body exists — `historyText` (`viewer/app/handoff.js:43`) reads only title and body, so exported handoffs would drop the lines. Follow-up task R10 (light) adds `card.items`.
+- 2026-11-19 — R9 accepted (band: scout): 11/11 app-project-tools re-run; scout checked the render path and every other needs-card reader, and ran the logic in isolation (cap, no prefix, in-place, `_tool_` byte-for-byte, legacy card).
+- 2026-11-19 — Lead's rule for this build (Collin asked to finish): remediation 4 is the last; re-verify once. Gaps needing hand-made session names, malformed or repeated .mcp.json keys, simultaneous starts, crashes or restarts mid-start, or similar rare setups go to Accepted Risks (source verification), not fixing. Only normal-use gaps (tool missing or wrong in an ordinary project, leaked secret, failing Spec validation command) go back, after messaging the lead. R7 had already been accepted and merged when this arrived.
+- 2026-11-19 — Choice: R8, machine/service.js: sweep restructured into decode-and-group, select, remove passes; lstat cached per entry so selection and cleanup share one result and error path.
+- 2026-11-19 — Choice: R8, machine/service.js: entries whose decoded names are identical (different encodings) tie-break by encoded entry, so only one is protected; an invalid `created_at` (NaN) counts as a tie.
+- 2026-11-19 — Choice: R8, machine/test/project-tools-service.test.js: a shared `sweepFixture` (default live name, default record `created_at` 2025-01-01) with six separate tests; the existing integration test untouched. Worker listed 3; scout added the defaults and NaN handling.
+- 2026-11-19 — R8 accepted (band: scout): 7/7 focused re-run; scout confirmed a refused start (no record) can no longer take protection. Its residual holes (overlapping look-alike starts, unnoticed end, lost record) go to Accepted Risks under the lead's rare-setup rule.
+- 2026-11-19 — R10: worker reported "none"; scout listed 0 beyond the brief (the change and test row are verbatim from it).
+- 2026-11-19 — R10 accepted (band: scout): 34/34 handoff + project-tools re-run; `historyText` on the new card gives title, body, then each item.
+- 2026-11-19 — Verification attempt 5 started on 4d8ae9c: verifier-9 (Claude), verifier-10 (GPT); brief asks each gap to be classed NORMAL-USE or RARE-SETUP per the lead's rule.
+- 2026-11-19 — Verification attempt 5 on 4d8ae9c: Claude verifier PASS; GPT verifier FAIL with 3 gaps: (1) NORMAL-USE per verifier: on systemd ≥258 the systemd-run scope expands `$$` in the tmux command, so a literal Codex header value containing `$` changes (hearth runs systemd 257); (2) NORMAL-USE: project-tools-state.test.js's cross-CLI test starts an Antigravity session without an isolated HOME, so the machine suite rewrites the live ~/.gemini/config/hooks.json Stop hook to the test's worktree (verifier restored it; it is canonical now); (3) RARE-SETUP: saved state `clis.constructor` passes validation and crashes a recompute — added to Accepted Risks. (1) and (2) raised to the lead before any fix, per the lead's rule.
+- 2026-11-19 — Lead agreed: fix gap (1) live-hook rewrite as R11 (light), put the systemd ≥258 `$` gap in Accepted Risks, then send the build result with no further verification round. Live hooks.json sha256 before: e827a361dfff88491a0be7aec1744d328a76be016f7d5b6e888735f49e2063cc.
+- 2026-11-19 — R11: worker reported "none"; scout listed 0 beyond the brief.
+- 2026-11-19 — R11 accepted (band: scout): merged; on the feature branch I re-ran bash machine/test/run.sh (202/202) with the live ~/.gemini/config/hooks.json sha256 e827a361…63cc identical before and after.

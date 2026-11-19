@@ -49,7 +49,13 @@ default_pins() {
     "gemini.heavy = gemini-3.8-flash-high" \
     "gemini.critical = gemini-3.8-flash-high" \
     "gemini.lead = gemini-3.8-flash-high" \
-    "gemini.sub-lead = gemini-3.8-flash-high"
+    "gemini.sub-lead = gemini-3.8-flash-high" \
+    "kimi.light = kimi-code/kimi-for-coding" \
+    "kimi.standard = kimi-code/k3" \
+    "kimi.heavy = kimi-code/k3.1-pro" \
+    "kimi.critical = kimi-code/k3.1-pro" \
+    "kimi.lead = kimi-code/k3.1-pro" \
+    "kimi.sub-lead = kimi-code/k3.1-pro"
 }
 json_assert() { python3 -c "$1" <<<"$output"; }
 
@@ -111,6 +117,43 @@ run_model effort gemini heavy
 assert 'Gemini pin line reads effort' bash -c '[[ $1 == 0 && $2 == xhigh ]]' _ "$status" "$output"
 run_model show --json
 assert 'show JSON includes Gemini' json_assert 'import json,sys; assert json.load(sys.stdin)["gemini"]["heavy"] == {"model":"gemini-x","effort":"xhigh"}'
+
+# Kimi defaults and slashed aliases (slashes only for Kimi).
+new_case
+for slot in light standard heavy critical lead sub-lead; do
+  case $slot in light) expected=kimi-code/kimi-for-coding ;; standard) expected=kimi-code/k3 ;; *) expected=kimi-code/k3.1-pro ;; esac
+  run_model kimi "$slot"
+  assert "Kimi $slot uses its shipped default" bash -c '[[ $1 == 0 && $2 == "$3" ]]' _ "$status" "$output" "$expected"
+done
+run_model set kimi standard kimi-code/k3-custom
+assert 'set accepts a slashed Kimi alias' test "$status" -eq 0
+run_model kimi standard
+assert 'Kimi slashed alias reads back' equals "$output" kimi-code/k3-custom
+run_model effort kimi standard
+assert 'Kimi has no effort to read back' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
+run_model show --json
+assert 'show JSON includes Kimi' json_assert 'import json,sys; x=json.load(sys.stdin); assert x["kimi"]["standard"] == {"model":"kimi-code/k3-custom","effort":None} and x["malformed"] is False'
+run_model set gemini standard a/b
+assert 'set rejects a slashed non-Kimi model' test "$status" -eq 2
+run_model set kimi standard a/b/c
+assert 'set rejects two slashes for Kimi' test "$status" -eq 2
+printf 'gpt.light = a/b\n' > "$pins"
+run_model show --json
+assert 'a slashed non-Kimi pin is malformed' json_assert 'import json,sys; assert json.load(sys.stdin)["malformed"] is True'
+printf 'kimi.heavy = kimi-code/x\n' > "$pins"
+run_model kimi heavy
+assert 'Kimi pin line reads a slashed model' equals "$output" kimi-code/x
+printf 'kimi.heavy = kimi-code/x\n' > "$pins"
+before=$(cat "$pins")
+run_model set kimi heavy kimi-code/y high
+assert 'set kimi with an effort is refused' test "$status" -ne 0
+assert 'the refusal says Kimi has no effort setting' bash -c '[[ $1 == *"Kimi Code has no effort setting"* ]]' _ "$(cat "$stderr")"
+assert 'the pin file is unchanged after the refusal' equals "$(cat "$pins")" "$before"
+printf 'kimi.heavy = kimi-code/x @high\n' > "$pins"
+run_model show --json
+assert 'a Kimi pin with an effort is malformed' json_assert 'import json,sys; assert json.load(sys.stdin)["malformed"] is True'
+run_model effort kimi light
+assert 'effort kimi light prints nothing and succeeds' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
 
 # New-format reading, defaults, aliases, none, effort and family.
 new_case
@@ -230,6 +273,14 @@ run_model show --json
 assert 'show JSON includes listed unparsed models after parsed models' json_assert 'import json,sys; assert json.load(sys.stdin)["visible"] == ["gpt-7-nova","gpt-7"]'
 run_model check
 assert 'check heads-up stays filtered for the same cache' equals "$output" "heads-up: gpt-7-nova is available and matches no tier. Pin it: $repo/codex/model.sh set gpt <tier> gpt-7-nova (or $repo/codex/model.sh skip gpt-7-nova)"
+
+# show lists Kimi Code's configured model aliases, with display names, and [] when the config is missing.
+new_case
+printf '%s\n' 'default_model = "kimi-code/k3"' '[models."kimi-code/k3"]  # the usual one' 'model = "k3"' 'display_name = "K3" # shown name' '[models."kimi-code/k3.1-pro"]' 'model = "k3.1-pro"' '[models."Bad Alias"]' 'display_name = "x"' '[models.none]' '[models."kimi-code/k3\n"]' > "$case_dir/kimi.toml"
+output=$(WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" WHEELCHAIR_KIMI_CONFIG="$case_dir/kimi.toml" "$model" show --json)
+assert 'show JSON lists Kimi aliases from the Kimi config' json_assert 'import json,sys; assert json.load(sys.stdin)["kimi_visible"] == [{"value":"kimi-code/k3","label":"K3 (kimi-code/k3)"},{"value":"kimi-code/k3.1-pro","label":"kimi-code/k3.1-pro"}]'
+output=$(WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" WHEELCHAIR_KIMI_CONFIG="$case_dir/missing.toml" "$model" show --json)
+assert 'show JSON gives no Kimi aliases without a Kimi config' json_assert 'import json,sys; assert json.load(sys.stdin)["kimi_visible"] == []'
 
 # Legacy behavior coverage ported to the new tier names and models-file format.
 new_case

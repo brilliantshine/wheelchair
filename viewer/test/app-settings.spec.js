@@ -45,7 +45,7 @@ test.describe('desktop', () => {
   test('five sections, kept across a reload through the hash', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const nav = page.locator('#sections a');
-    await expect(nav).toHaveText(['Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style']);
+    await expect(nav).toHaveText(['Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style', 'Project tools']);
     await nav.nth(3).click();
     await expect(page).toHaveURL(/#templates$/);
     await expect(page.locator('.tpl-list h1')).toHaveText('Behavior templates');
@@ -56,6 +56,36 @@ test.describe('desktop', () => {
     await page.reload();
     await expect(page.locator('#panel h1')).toHaveText('Writing style');
     await expect(page.locator('.covers')).not.toContainText('Phone notifications');
+  });
+
+  test('the Kimi row has no effort select while Claude keeps one', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    await expect(page.getByLabel('Kimi Code standard model', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Kimi Code standard effort', { exact: true })).toHaveCount(0);
+    await expect(page.locator('tr[data-provider="kimi"] select.effort')).toHaveCount(0);
+    await expect(page.getByLabel('Claude standard effort', { exact: true })).toHaveCount(1);
+  });
+
+  test('a slashed Kimi alias saves through Other, survives a reload, and other providers refuse a slash', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    await expect(page.locator('tr[data-provider="kimi"]')).toContainText('Kimi Code');
+    const standard = page.getByLabel('Kimi Code standard model', { exact: true });
+    await expect(standard).toHaveValue('kimi-code/k3');
+    await standard.selectOption('__other');
+    await page.getByLabel('Kimi Code standard model, other').fill('kimi-code/a/b');
+    await page.getByRole('button', { name: 'Use', exact: true }).click();
+    await expect(page.locator('.inline-err')).toBeVisible();
+    await page.getByLabel('Kimi Code standard model, other').fill('kimi-code/k3-preview');
+    await page.getByRole('button', { name: 'Use', exact: true }).click();
+    await expect(page.locator('.note').first()).toHaveText('Saved, applies to new sessions');
+    await expect.poll(async () => (await settings(page)).models.kimi.standard.model).toBe('kimi-code/k3-preview');
+    await page.reload();
+    await expect(page.getByLabel('Kimi Code standard model', { exact: true })).toHaveValue('kimi-code/k3-preview');
+    const light = page.getByLabel('GPT light model', { exact: true });
+    await light.selectOption('__other');
+    await page.getByLabel('GPT light model, other').fill('gpt/x');
+    await page.getByRole('button', { name: 'Use', exact: true }).click();
+    await expect(page.locator('.inline-err')).toBeVisible();
   });
 
   test('editing a table cell saves, and Not used saves null', async ({ page }) => {
@@ -117,12 +147,12 @@ test.describe('desktop', () => {
 
   test('sub-lead models and scout tiers render and save independently', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
-    for (const provider of ['Claude', 'GPT', 'Antigravity']) {
+    for (const provider of ['Claude', 'GPT', 'Antigravity', 'Kimi Code']) {
       await expect(page.getByLabel(`${provider} lead model`, { exact: true })).toBeVisible();
       await expect(page.getByLabel(`${provider} sub-lead model`, { exact: true })).toBeVisible();
     }
-    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(3);
-    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(3);
+    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(4);
+    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(4);
     const modelRequest = page.waitForRequest((request) => request.url().endsWith('/api/settings/models') && request.method() === 'PUT');
     await page.getByLabel('GPT sub-lead effort', { exact: true }).selectOption('high');
     expect((await modelRequest).postDataJSON()).toMatchObject({ provider: 'gpt', slot: 'sub-lead', effort: 'high' });
@@ -189,6 +219,7 @@ test.describe('desktop', () => {
     await expect(page.locator('#full-prompt')).toContainText('Role: worker');
     await expect(page.locator('#full-prompt')).toContainText('Save your work after every step.');
     await expect(page.locator('#full-prompt-caption')).toContainText('starting instructions');
+    await expect(page.locator('#full-prompt-caption')).toContainText('Kimi Code');
     await page.locator('#see-full').click();
     await expect(page.locator('#full-prompt-caption')).toHaveCount(1);
     await expect(page.locator('#full-prompt')).toHaveCount(1);
@@ -296,7 +327,7 @@ test.describe('phone', () => {
   test('the sections are tabs above the section and the page never scrolls sideways', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const tabs = page.locator('#sections a');
-    await expect(tabs).toHaveCount(5);
+    await expect(tabs).toHaveCount(6);
     const boxes = await tabs.evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().toJSON()));
     expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(1);
     const panel = await page.locator('#panel').boundingBox();
