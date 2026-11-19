@@ -72,6 +72,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 32 | Supersedes 31's FIFO: the throwaway tmux pane runs a small Node probe that sends its environment over a Unix socket the service listens on | A shell redirect can create a file and a FIFO open cannot be cancelled; connecting to a socket does neither | review-round-20 |
 | 33 | Scope cut: the connection test and reading the agent's environment move to a follow-up thread, with Antigravity tools that need a value from a variable. Supersedes 2, 5, 9, 12-15, 17, 19-28, 31, 32 and the expansion part of 18. "Program exists" stays as a file check against the tmux global PATH (§5). Without long checks, starts are as fast as today, so the queue, check caching, digest and the cancel/restart checkout cleanup are dropped | Collin's pick "Move the test and Antigravity tokens out" after 20 rounds, nearly all findings in those parts | user |
 | 34 | IDEA.md What, Why, What good looks like and Not doing updated for Decision 33 | Collin agreed to the cut on the scope card | idea-change |
+| 35 | Accept both limits: a missing-program line clears only at a start in the thread's own checkout, and starts the hub does not serialize get no extra ordering (Accepted Risks, review-round-23) | Collin's pick "Accept, review again": both only delay a warning clearing | user |
 
 ## Spec
 
@@ -647,6 +648,10 @@ exit. Downgrades and declines cite evidence.
 | mechanics | blocking | Worker with another file clears shared lines it never checked | upheld | Split removed |
 | mechanics | major | Ticket advance on unchanged observation undefined | upheld | Tickets removed; unserialized starts are an Accepted Risk |
 | mechanics | minor | Reset does not advance tickets of absent CLIs | upheld | Tickets removed |
+
+### Round 24 — 2026-11-19
+
+**Changed since Round 23:** §5 single line list again (no relative/shared split); §6 tickets and program groups removed: only the thread's worktree sets `programs`, concurrency left to the hub's serialization; Edge cases, Validation; two Accepted Risks (Decision 35).
 
 ## Prior Work
 
