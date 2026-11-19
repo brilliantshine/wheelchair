@@ -7,6 +7,18 @@ const TOOL_ROLES = new Set(['lead', 'sub-lead', 'worker', 'verifier']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const failure = reason => ({ mcp: null, warnings: [`.mcp.json could not be read: ${JSON.stringify(reason)}`] });
 
+function checkDocumentText(text) {
+  if (Buffer.byteLength(text, 'utf8') > 32768) return { ok: false, reason: 'larger than 32 KiB' };
+  let data;
+  try { data = JSON.parse(text); } catch { return { ok: false, reason: 'invalid JSON' }; }
+  if (!object(data) || !object(data.mcpServers)) return { ok: false, reason: 'mcpServers is not an object' };
+  return { ok: true, data };
+}
+function entryReason(name, entry) {
+  const stdio = object(entry) && (entry.type === undefined || entry.type === 'stdio') && typeof entry.command === 'string' && entry.command.length > 0 && (entry.args === undefined || (Array.isArray(entry.args) && entry.args.every(arg => typeof arg === 'string'))) && (entry.env === undefined || (object(entry.env) && Object.values(entry.env).every(value => typeof value === 'string')));
+  const http = object(entry) && entry.type === 'http' && typeof entry.url === 'string' && entry.url.length > 0;
+  return stdio || http ? null : 'not a valid stdio or http entry';
+}
 async function readProjectMcp(worktree) {
   try {
     const file = path.join(worktree, '.mcp.json');
@@ -27,18 +39,17 @@ async function readProjectMcp(worktree) {
       if (opened.size > 32768) return failure('larger than 32 KiB');
       text = await handle.readFile('utf8');
     } catch (error) { return failure(error.code || 'read failed'); } finally { await handle?.close().catch(() => {}); }
-    let data;
-    try { data = JSON.parse(text); } catch { return failure('invalid JSON'); }
-    if (!object(data) || !object(data.mcpServers)) return failure('mcpServers is not an object');
+    const checked = checkDocumentText(text);
+    if (!checked.ok) return failure(checked.reason);
+    const { data } = checked;
     const names = Object.keys(data.mcpServers), servers = {}, warnings = [];
     for (const name of names) {
       const entry = data.mcpServers[name];
-      const stdio = object(entry) && (entry.type === undefined || entry.type === 'stdio') && typeof entry.command === 'string' && entry.command.length > 0 && (entry.args === undefined || (Array.isArray(entry.args) && entry.args.every(arg => typeof arg === 'string'))) && (entry.env === undefined || (object(entry.env) && Object.values(entry.env).every(value => typeof value === 'string')));
-      const http = object(entry) && entry.type === 'http' && typeof entry.url === 'string' && entry.url.length > 0;
-      if (stdio || http) Object.defineProperty(servers, name, { value: entry, enumerable: true, writable: true, configurable: true });
-      else warnings.push(`server ${JSON.stringify(name)} skipped: not a valid stdio or http entry`);
+      const reason = entryReason(name, entry);
+      if (!reason) Object.defineProperty(servers, name, { value: entry, enumerable: true, writable: true, configurable: true });
+      else warnings.push(`server ${JSON.stringify(name)} skipped: ${reason}`);
     }
-    return { mcp: { names, servers }, warnings };
+    return { mcp: { names, servers, rawServers: data.mcpServers }, warnings };
   } catch { return failure('read failed'); }
 }
-module.exports = { TOOL_ROLES, readProjectMcp };
+module.exports = { TOOL_ROLES, readProjectMcp, entryReason, checkDocumentText };
