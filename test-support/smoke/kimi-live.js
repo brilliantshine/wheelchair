@@ -20,7 +20,12 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
         if (pane) { const frames = captures.get(name) || []; if (!frames.includes(pane)) frames.push(pane); captures.set(name, frames); }
       }
     }, 50);
-    const machine = async name => (await h.callMachine('/v1/sessions')).find(s => s.name === name);
+    const machine = async name => {
+      const listed = (await h.callMachine('/v1/sessions')).find(s => s.name === name);
+      let stored = {};
+      try { stored = JSON.parse(fs.readFileSync(path.join(h.paths.machineState, 'sessions.json'), 'utf8'))[name] || {}; } catch {}
+      return listed && { ...listed, source_transcript: stored.source_transcript, kimi_last_turn: stored.kimi_last_turn, kimi_session_id: stored.kimi_session_id };
+    };
     const waitBound = name => h.waitFor(async () => { const s = await machine(name); return s?.status === 'ready' && s.source_transcript && s; }, 120000);
     const wire = file => fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(JSON.parse);
     const prompt = async (name, marker) => h.waitFor(async () => { const s = await machine(name); if (!s?.source_transcript) return false; const found = wire(s.source_transcript).find(x => x.agentId === 'main' && x.type === 'turn.prompt' && x.origin?.kind === 'user' && JSON.stringify(x.input).includes(marker)); return found && { s, found }; }, 120000);
