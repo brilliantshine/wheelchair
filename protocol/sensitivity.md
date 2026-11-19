@@ -3,7 +3,7 @@
 How readily an agent answers with a picture instead of prose alone. Three positions —
 `ask`, `default`, `high` — one setting, moved on the app's Settings page and remembered afterwards.
 
-The dial has to be in effect *before* Collin types, because the turns it governs are
+The dial has to be in effect *before* the user types, because the turns it governs are
 ordinary questions where no slash command runs and nothing under `protocol/` is otherwise
 read. So the rule and the current level do not live here to be looked up: they live in a
 delimited region below, **rendered into each present harness's global instruction file**,

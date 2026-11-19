@@ -1,6 +1,6 @@
 # Diagrams in documents
 
-Collin reads visually. A document that describes a flow should show it. This file says where a
+The user reads visually. A document that describes a flow should show it. This file says where a
 diagram goes, what kind, and what keeps it from lying.
 
 ## Which kind, and why

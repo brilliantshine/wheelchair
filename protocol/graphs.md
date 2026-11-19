@@ -1,6 +1,6 @@
 # The graph format
 
-A graph is what an agent draws when Collin asks how something works, or when a plan
+A graph is what an agent draws when the user asks how something works, or when a plan
 proposes a flow worth seeing rather than just reading. Two things send an agent here,
 and this file is the only thing either reads before that first write: a thread lead's
 `diagram` card (`protocol/app/lead.md`, "Diagrams"), and an ordinary turn whose answer
@@ -121,7 +121,7 @@ Field by field:
   reader who has since dragged the boxes cannot even repair it. Name a set of boxes by
   what it **is**, and point a reference at that name. An explanation that claims a
   position is refused (`positional-claim`, below). It matters most exactly where it is
-  most tempting: when an agent lays out options for Collin to choose between.
+  most tempting: when an agent lays out options for the user to choose between.
 
   A reference is written `[the retry path](#retry-path)`: the bracketed phrase is what
   the reader sees and can point at, the target is `#` followed by a group's `id`. Only a
@@ -307,7 +307,7 @@ Field by field:
 
 Target size is **10–25 nodes**. Landing outside that range on the high end means the
 question was too broad; split it into another file in the same directory rather than
-crowding one graph past the point Collin can read it.
+crowding one graph past the point the user can read it.
 
 ## Key order and canonical form
 
@@ -380,7 +380,7 @@ repetition belongs in the box's own label.
 An agent still never sends `x`/`y`, and the reason is no longer that a position is
 someone else's to set. It is that nobody's position survives a write: the layout decides
 every one of them on the way to disk, so a position you send is discarded along with the
-dragged one it lands beside. Dragging is how Collin fixes what the layout got wrong,
+dragged one it lands beside. Dragging is how the user fixes what the layout got wrong,
 between one write and the next, and that is the whole of its authority now.
 
 ## Where a graph's content comes from
@@ -482,7 +482,7 @@ root refuses with `bad-path` before anything is contacted — the paths named un
 graph files live" below never produce this. If a viewer is already running and refuses
 the registration, `--open` exits 1 with its error. And if the viewer already running is
 older code, `--open` refuses instead with `a viewer from an older version is running; run
-./install.sh` — if you see that, tell Collin and stop drawing; never run `./install.sh`
+./install.sh` — if you see that, tell the user and stop drawing; never run `./install.sh`
 yourself, since it writes into harness homes and files outside this repo. None of this
 needs an extra step on your part: whichever process ends up as the server also records
 the tmux session and harness `--open` ran in, on its own.
@@ -490,12 +490,12 @@ the tmux session and harness `--open` ran in, on its own.
 The line it prints carries no token:
 
 ```
-http://127.0.0.1:7373/wheelchair/?path=%2Fhome%2Fcollin%2F...%2Fcheckout.json
+http://127.0.0.1:7373/wheelchair/?path=%2Fhome%2Fyou%2F...%2Fcheckout.json
 ```
 
 On a machine set up to serve other devices, the line it prints instead looks like
 `https://<machine>.<tailnet>.ts.net/wheelchair/?path=...`, with no port in it at all. Either
-way, print that URL to Collin.
+way, print that URL to the user.
 
 You still need the token and port again for the `PUT` below. Always read them from
 `<cache-root>/.server`, never by parsing them back out of the printed URL — neither form
@@ -546,7 +546,7 @@ Separately, whether or not the explanation reaches for a phrase: when a set of b
 reads as one system whose parts belong on screen with the rest of the flow, draw it —
 give its `groups` entry `visible: true`, a `label`, and a `note`.
 
-**3. Show it.** The graph exists now, so put it in front of Collin rather than leaving him to
+**3. Show it.** The graph exists now, so put it in front of the user rather than leaving them to
 click a URL out of your turn:
 
 ```bash
@@ -637,7 +637,7 @@ Three new node keys, canonical position directly after `graph` and before `x`:
   from an earlier, restarted run and work that came in already built with an adopted
   plan. The server checks only that it's a non-empty string.
 - **`status`** — one of `not-started`, `in-progress`, `done`, `needs-you`, or `null`.
-- **`needs`** — string or `null`. What Collin has to do, in plain words with no commands
+- **`needs`** — string or `null`. What the user has to do, in plain words with no commands
   or code terms ("log in to Codex again") — the exact command belongs in the lead's turn
   message, never on the picture. Non-empty exactly when `status` is `needs-you`, `null`
   otherwise.

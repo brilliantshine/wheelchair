@@ -2,7 +2,7 @@
 
 The card rules every card-posting role gets (lead, sub-lead, worker, mapper; the lead also
 gets `cards-lead.md`). A **card** is a small JSON document a session posts; the app shows
-some kinds to Collin and uses the rest to move work between sessions. `<root>` is named in
+some kinds to the user and uses the rest to move work between sessions. `<root>` is named in
 your starting instructions.
 
 ## Posting a card
@@ -27,12 +27,12 @@ Rules for every card:
   are from your session token and which thread you belong to from its own record, and it
   assigns every card its `id`.
 - A card is accepted only for the thread your session belongs to.
-- Text fields are plain sentences for a person, not codenames. A card Collin sees is read
+- Text fields are plain sentences for a person, not codenames. A card the user sees is read
   on a phone, so write the short version.
 
 ## Which kinds exist
 
-| Kind | Shown to Collin | Emitted by | Pinned |
+| Kind | Shown to the user | Emitted by | Pinned |
 |---|---|---|---|
 | `offer` | yes | lead | yes |
 | `idea` | yes | lead | yes |
@@ -134,7 +134,7 @@ session that started them as their `result`.
 ## What reaches a session, and the markers
 
 The app types everything into a session as a message. A message starts with a marker the
-app uses to hide traffic Collin did not write:
+app uses to hide traffic the user did not write:
 
 | Starts with | Meaning | Thread shows |
 |---|---|---|
@@ -143,19 +143,19 @@ app uses to hide traffic Collin did not write:
 | `[wc:context stub]` | Context for a lead that starts a stub thread: the stub's summary | hidden, your reply **shown**, with "Started from <parent thread>" in its place |
 | `[wc:context restart]` | Context for a lead that replaces a dead one: the plan and the cards so far | hidden, your reply **shown**, with "Lead restarted" in its place |
 | `[wc:context import]` | Context for a lead continuing an imported thread | hidden, your reply **shown**, with "Imported from a handoff" in its place |
-| `[card <id>] ...` | Collin pressed a button on card `<id>` | a short bubble from him ("Picked B"), and your reply is shown |
-| a final `[wc:style]` block, after a blank line at the END of a message | Collin's writing style, delivered to a lead, replacing any earlier style | stripped from Collin's bubble |
-| anything else | Collin's own words, typed in the app, the browser terminal or over `tmux attach` | his bubble, and your reply is shown |
+| `[card <id>] ...` | The user pressed a button on card `<id>` | a short bubble from them ("Picked B"), and your reply is shown |
+| a final `[wc:style]` block, after a blank line at the END of a message | The user's writing style, delivered to a lead, replacing any earlier style | stripped from the user's bubble |
+| anything else | The user's own words, typed in the app, the browser terminal or over `tmux attach` | their bubble, and your reply is shown |
 
 A question message includes `[question <id>]` after its `[wc:from <session>]` marker. Use that id as `passes_on` when passing the question on. The id must name an asking message in the same thread.
 
-An uploaded file arrives in Collin's message as a line `[attached: <absolute path>]`;
+An uploaded file arrives in the user's message as a line `[attached: <absolute path>]`;
 the lead can open that path.
 
 The press forms, in full:
 
 - `[card <id>] picked: <option label>`, `[card <id>] picked: take it into planning` and `[card <id>] picked: keep talking first`
-- `[card <id>] answered: <text>`, his own words in a question card's box
+- `[card <id>] answered: <text>`, their own words in a question card's box
 - `[card <id>] removed: <bullet text>`
 - `[card <id>] talk about: <finding>`
 - `[card <id>] fix what the check found` and `[card <id>] leave it`
@@ -165,8 +165,8 @@ The press forms, in full:
 - `[card <id>] sudo ran: exit <n>`, `declined`, `sudo expired`, `sudo failed: <reason>` and `talk about: sudo request`, on your `sudo` card
 
 Two consequences for a lead. Nothing you write in the reply to a `[wc:from ...]` message
-reaches Collin, so when such a message means he must decide something, post a card. And a
-message from Collin that arrives while you are mid-turn waits and is typed in when your
+reaches the user, so when such a message means they must decide something, post a card. And a
+message from the user that arrives while you are mid-turn waits and is typed in when your
 turn ends.
 
 An app `[wc:from app]` reminder means your turn ended without the card your starter is
@@ -195,6 +195,6 @@ A session's own `wc.js` and `card.js` calls go to its own machine service (defau
   unavailable". Wait a minute and run the same command again; never work around it.
   `start` takes `--attempt <id>`, chosen once per intended session and reused when you
   re-run the same command after "hub unavailable", so a retry never starts a session twice.
-  `start` takes `--title "<a few words>"`: what the agent does, in Collin's terms,
+  `start` takes `--title "<a few words>"`: what the agent does, in the user's terms,
   shown on its box on the Agents screen.
   A restart, or a re-verify, is a new attempt with a new id.
