@@ -1,6 +1,6 @@
 ---
 slug: remove-owner-name
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -170,6 +170,9 @@ comments, other test and fixture mentions, and everything under `docs/`.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Rewrite `protocol/app/lead.md` per Rewriting rules 1-4 | `protocol/app/lead.md` | standard, claude / claude-sonnet-5-5 | | Validation 1, 2 on lead.md | not started |
+| T2 | Rewrite the other protocol files and routers per Rewriting rules 1-5, incl. sudo message quote and legacy marker | `protocol/app/{sub-lead,worker,verifier,aside,cards,cards-lead,AGENTS}.md`, `protocol/{graphs,diagrams,sensitivity}.md`, `AGENTS.md`, `sudo-helper/AGENTS.md` | standard, claude / claude-sonnet-5-5 | | Validation 1, 2, 3 | not started |
+| T3 | Code: settings prompt lines, sudo message, history "You", lead-context relabel; tests | `viewer/app/settings.js`, `machine/service.js`, `viewer/pages/thread.js`, `viewer/app/threads.js`, `machine/test/sudo.test.js`, `viewer/test/*` | standard, any (gpt-6.1-terra / claude-sonnet-5-5) | | Validation 1 (code files), 4, 5, 6 | not started |
 
 ## Log
 
