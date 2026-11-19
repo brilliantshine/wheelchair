@@ -741,6 +741,8 @@ Filled by Stage 3. One row per worker brief.
 | T4 | tricky — Service plumbing: line logging, Codex redaction and --description, Antigravity file writing and sweep (§3, §4 service parts) | machine/service.js, machine/test/service.test.js, machine/test/project-mcp.test.js, new machine tests | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-5 | machine/test/run.sh | done |
 | T5 | tricky — Thread project-tools state, PATH read, program check call (§5 service part, §6) | machine/service.js, machine/test (new state test file) | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-6 | machine/test/run.sh | done |
 | T6 | Hub card, session list field, README (§8, README) | viewer/app/sessions.js, viewer/app/wc.js, viewer/test/app-project-tools.test.js, README.md section | standard (claude) / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-4 | node --test viewer/test/*.test.js | done |
+| R1 | Remediation 1, gap 1: exact duplicate header keys | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/adapters/agy.js, their tests | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-7 | reader/codex/agy tests; machine/test/run.sh | running |
+| R2 | Remediation 1, gap 2: saved state shape check; flaky PATH test | machine/service.js (state loader), machine/test/project-tools-state.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-8 | project-tools-state test; machine/test/run.sh x3 | running |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -779,3 +781,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: T5, machine/service.js: the thread-worktree test takes project from `input.project` or the basename of `project_dir`, as `createWorktree` does; the hub always sends both (`viewer/app/sessions.js:361-362`).
 - 2026-11-18 — Choice: T5, machine/service.js: the PATH read spawns `tmux show-environment -g PATH` with SIGKILL at 2 s; output is taken only on exit 0 with a `PATH=` prefix.
 - 2026-11-18 — T5 accepted (band: self, tricky): thread state, PATH read, program check; I read the diff; machine/test/run.sh 190/190 on the worker branch. Coverage limits the worker named: removal of one server while another remains is not separately tested (same code path as a fix); the verifier-checkout test uses a distinct path, not a real git branch.
+- 2026-11-18 — Verification attempt 1 on 23cfa5f: Claude verifier PASS, GPT verifier FAIL (2 gaps). Manual hearth checks passed in both. REMEDIATION-1.md written; R1, R2 dispatched to GPT (same family that built that code), sharpened briefs.
