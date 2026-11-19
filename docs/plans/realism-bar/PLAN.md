@@ -46,6 +46,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | A verifier's `RISK:` label is a claim, not a verdict: the sub-lead (or lead for its own verifiers) judges every RISK and GAP line against realism.md; a RISK judged normal use or on the always-fixed list is handled as a GAP | A mislabelled regression must not pass | review-round-1 |
 | 15 | Pull-backs win: a finding or gap about a pulled-back item is never accepted as rare; fix it or ask Collin, as today | Collin explicitly pulled it into the Spec | review-round-1 |
 | 16 | Gaps accepted as rare count like deferred gaps for the lighter-mode exit and the all-deferred re-check | Gives the attempt a defined exit | review-round-1 |
+| 17 | A verification attempt whose gaps are all rare is a PASS in every mode; rare gaps never reach the all-deferred re-check or Collin's fix-or-finish choice | Supersedes the exit part of decision 16; keeps rare paths away from Collin | review-round-2 |
+| 18 | realism.md is loaded through its own list, not the card-file lists; reviewer/verifier headers unchanged | It is not a card file | review-round-2 |
+| 19 | The lead judges GAP and RISK lines alike for its own verifiers before acting | An old or unsure verifier may report a rare path as GAP | review-round-2 |
+| 20 | Pending pull-backs count during triage; applying a pull-back removes a matching Accepted Risks row | Keeps an accepted risk from hiding a pulled-back item | review-round-2 |
+| 21 | Surviving-gap escalation covers every gap still requiring a fix | Always-fixed and pulled-back gaps can be on rare paths | review-round-2 |
 
 ## Spec
 
@@ -76,10 +81,13 @@ One short section, the single source of the bar:
 
 ### S2. Loading it
 
-- `machine/service.js` `ROLE_CARDS` and `viewer/app/settings.js` `ROLE_CARD_FILES` add
-  `realism.md` for `lead`, `sub-lead`, `reviewer`, `verifier` (not worker, mapper). The
-  header wording for reviewer/verifier changes to the "role rules and card rules" form only
-  if needed for consistency; the existing "role rules" header may stay.
+- `realism.md` is not a card file. Add a separate list beside `ROLE_CARDS` in
+  `machine/service.js` and beside `ROLE_CARD_FILES` in `viewer/app/settings.js` naming the
+  roles that get it: `lead`, `sub-lead`, `reviewer`, `verifier` (not worker, mapper). It is
+  appended after the role file and before any card files, as `--- realism.md ---` in
+  `composeRolePrompt` and `[full text of protocol/app/realism.md]` in `fullPrompt`. The
+  header choice stays keyed on card files only, so reviewer and verifier keep "Your role
+  rules are below" (`viewer/test/app-settings.test.js:92` stays as is).
 - Rename nothing else. Update `machine/test/service.test.js`,
   `viewer/test/app-settings.test.js`, and `viewer/test/protocol-rules.test.js` expectations
   (if any assert the file list). `protocol/app/AGENTS.md` table gains a row for
@@ -114,16 +122,25 @@ One short section, the single source of the bar:
   usual. Never a `user-decision` for a rare path; ask Collin only when the lead cannot tell
   whether it is normal use.
 - Lighter modes: "hardening" for Deferred means realistic hardening; rare paths go to
-  Accepted Risks, not Deferred. Verification per-gap answers gain a third option,
-  "accept as rare", recorded in Accepted Risks.
+  Accepted Risks, not Deferred. The lead's per-gap answer may also be "accept as rare"
+  (for a gap the sub-lead marked must-fix or hardening that the lead judges rare); the
+  sub-lead records it in Accepted Risks and it leaves step 4a's list.
+- "Every gap is deferrable hardening" (the Fix them / Defer them choice) counts only
+  Deferred hardening, never accepted rare gaps.
 - Brief reviewers and verifiers with the Accepted Risks table (already true for
   reviewers; add for the sub-lead's verifier brief via S6).
-- Small-fix, after-done and repair verifiers: the lead judges each RISK line by
-  `realism.md`. One judged normal use or on the always-fixed list is handled as a failed
-  check (GAP); the rest are not acted on and no plan records them. The lead may mention a
+- Small-fix, after-done and repair verifiers: before acting on the verdict, the lead judges
+  every RISK and GAP line by `realism.md`. A RISK judged normal use or on the always-fixed
+  list is a failed check; a GAP judged a rare path is not (with a one-line reason in the
+  lead's reply). If no failing lines remain, the check passed. Rare lines are not acted on
+  and no plan records them. A rare-only check never counts toward a retry, the repair
+  budget or a question to Collin. The lead may mention a
   notable one in the done card `note`.
-- Pulled-back items follow S1: never accepted as rare.
-- Surviving-gap question cards are only for normal-use gaps.
+- Pulled-back items follow S1: never accepted as rare. A pull-back pending during a review
+  round already counts during that round's triage. Applying a pull-back removes any
+  Accepted Risks row about the same item; the item is then fixed like any Spec item.
+- The surviving-gap question (a gap surviving two fixes) applies to every gap still
+  requiring a fix: normal use, always-fixed or pulled-back. Never to a gap accepted as rare.
 
 ### S6. `protocol/app/sub-lead.md`
 
@@ -135,12 +152,12 @@ One short section, the single source of the bar:
   `verification-N`, committed, and do not go to remediation or count toward the two-attempt
   rule. If every GAP was moved this way, the attempt counts as PASS. When the sub-lead
   cannot tell, it asks the lead with a `message` (`asks: true`).
-- Step 4a's lighter-mode list marks gaps `hardening`, `must-fix` or `rare`; rare ones are
-  saved as Accepted Risks, not Deferred. For step 4a's exits, a gap accepted as rare counts
-  like a deferred gap: if no gaps remain after saving deferred rows and accepted risks, the
-  all-deferred re-check (or, once used, Collin's "Fix them" / "Defer them and finish"
-  choice) applies exactly as it does today for all-deferred gaps. Accepted rare gaps
-  never count toward the two-attempt rule.
+- Rare gaps are settled by the sub-lead before step 4a, in every mode, and never reach
+  step 4a's list, the all-deferred re-check or Collin's "Fix them" / "Defer them and
+  finish" choice. Step 4a's list marks the remaining gaps `hardening` or `must-fix` as
+  today. If every gap of an attempt was accepted as rare, the attempt is a PASS (step 4).
+  If some were rare and the rest deferred, step 4a runs as today on the deferred ones
+  only. Accepted rare gaps never count toward the two-attempt rule.
 - The build `result` summary names how many rare paths were accepted.
 
 ### S7. `protocol/templates/PLAN.md`
@@ -204,9 +221,24 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 2 — 2026-11-19
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:** IDEA.md "Not doing" amended (decision 12); reviewer `PATH` field dropped for a `Rare path:` prefix, agents.js untouched (S3, decision 13); RISK lines judged by sub-lead/lead before accepting a verdict (S5, S6, decision 14); pull-backs never accepted as rare (S1, S5, decision 15); lighter-mode exit with rare-accepted gaps (S6, decision 16); S2 fallback lines, `assertFits` reference removed; validation grep widened.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Rare-only lighter-mode attempt reaches the fix-or-finish card | upheld | S6; decision 17 |
+| intent | minor | Header switches when realism.md joins the card list | upheld | S2; decision 18 |
+| mechanics | major | Same as intent major (duplicate) | upheld | S6; decision 17 |
+| mechanics | blocking | Lead's own verifiers: GAP lines not judged | downgraded to major | A worker would have to ask, not build wrong; S5, decision 19 |
+| mechanics | major | Pending pull-back vs accepted risk in same round | downgraded to minor | Needs a pull-back and a rare finding on the same item in one round; fixed anyway in one sentence; S5, decision 20 |
+| mechanics | major | Surviving-gap escalation scope | upheld | S5; decision 21 |
+
+### Round 3 — 2026-11-19
+
+**Lanes:** pending.
+
+**Changed since Round 2:** rare-only attempts PASS in every mode and never reach the re-check or choice card (S5, S6, decision 17); realism.md loaded by its own list, headers unchanged (S2, decision 18); lead judges GAP and RISK lines for its own verifiers (S5, decision 19); pending pull-backs and accepted-risk rows (S5, decision 20); surviving-gap escalation scope (S5, decision 21).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
