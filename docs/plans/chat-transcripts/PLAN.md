@@ -328,6 +328,7 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine: S1 `known` transcript route, S2 cheap copies and dedupe sets, API.md, machine S5 tests | `machine/service.js`, `machine/API.md`, `machine/test/` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker | `bash machine/test/run.sh` | done |
 | T2 | Hub: S3 chat/report split, S4 idle sweep, S4b last-seen throttle, fake machine new form, hub S5 tests | `viewer/app/{chat,hub,state,sessions,asides,routes}.js`, `viewer/test/` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
+| T3 | Machine test gaps from T1 review (gen/end, malformed known, blank lines across batches, no-trailing-newline set, stop/archive drops, idle boundary, archived queue wait) | `machine/test/service.test.js` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker-3 | `bash machine/test/run.sh` | running |
 
 ## Log
 - 2026-11-19 Ready check at approval: hub and machine service answer (`wc.js session list`); Claude CLI installed; Codex preflight passed (token fresh).
