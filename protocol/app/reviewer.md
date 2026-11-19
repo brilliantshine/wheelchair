@@ -51,11 +51,10 @@ you.
 A finding you cannot tie to a concrete worker consequence is `minor`. Reporting nothing is
 an acceptable outcome; padding severity is not.
 
-The plan's Review Rounds table and Accepted Risks section record findings already settled.
-Anything marked `declined`, `accepted-risk` or `check-once-built` was considered and closed, as is
-anything in the Accepted Risks or Check Once Built sections; do not raise it
-again, nor a variant of an accepted rare path unless you have concrete evidence its rationale is factually wrong, in which case
-prefix the line `RE-RAISE:` and cite the evidence.
+The plan's Review Rounds table, Accepted Risks and Check Once Built sections record findings
+already settled. Anything marked `declined`, `accepted-risk` or `check-once-built`, and
+anything listed in those sections, was considered and closed; do not raise it again. A rare
+path already in Accepted Risks, or a variant of one, is not raised again either.
 
 ## The realism bar
 

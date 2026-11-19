@@ -250,7 +250,7 @@ possible. During a running review commit `Pending pull-back: <item text>` to the
 once, then apply it after triage before approval or the next round. Match entries by exact
 bullet text. A pull-back is never accepted as a rare path (`realism.md`); a pending one
 counts during that round's triage, and applying one removes any Accepted Risks row about the
-same item.
+same item; the item is then fixed like any Spec item.
 
 After approval, a mode change or pull-back first retracts the approval and returns the
 plan to `ready-for-review`. If retract is refused because Start building was recorded,
@@ -317,8 +317,9 @@ accepted-risk findings and post `phase: clean` with equal `found` and `fixed` (o
 if none counted), then proceed to approval. Otherwise post `phase: fixing`, `found: F`,
 `fixed: 0`, and re-post as `fixed` rises for each saved Spec fix, Accepted Risk or Collin
 decision. Count `upheld`, `downgraded`, `accepted-risk` and `user-decision` findings as
-found, never `declined`, `check-once-built` or a rare-path `accepted-risk`; a finding is resolved when its Spec fix is saved, its risk moved
-to Accepted Risks, or Collin's decision logged. While a `question` or the review budget's
+found, never `declined`, `check-once-built` or a rare-path `accepted-risk`; a finding is
+resolved when its Spec fix is saved, its risk moved to Accepted Risks, or Collin's decision
+logged. While a `question` or the review budget's
 `needs` card waits on Collin, re-post the current line with `choice_waiting: true`, then
 `false` once answered.
 
@@ -403,7 +404,8 @@ list stay fixed from that commit, even if the start fails.
 In a lighter mode, answer the sub-lead’s verification message per gap: defer hardening
 or fix the rest. Deferred is realistic hardening only; rare paths go to Accepted Risks. A
 failing Spec validation command, a pulled-back item and any gap on the always-fixed list in
-`realism.md` are never deferrable. On the saved-rows message, repost the locked `deferred` card. If a gap
+`realism.md` are never deferrable. On the saved-rows message, repost the locked
+`deferred` card. If a gap
 survived two fix attempts, the surviving-gap question comes first; defer and save other
 hardening gaps before the sub-lead stops, then send Collin’s answer back. Other must-fix
 gaps proceed to remediation after that answer. If the all-deferred re-check was already
