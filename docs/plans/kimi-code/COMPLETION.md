@@ -287,3 +287,25 @@ node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 - Load-sensitive tests (`app-quiet` "6 message clears debt", status-latency checks, port collisions, Firefox timeouts) fail intermittently under heavy machine load and pass alone; none is in code this build changed in a way that touches them.
 - The installer's "real wheelchair directory is byte-identical" check fails while live sessions write `~/.wheelchair/accounts/`.
 - Leftover worker worktrees not removable by the service (unmerged or dirty): `wc-01b8cb1bf051-w1`, `-w6`, `-w7`, `-w9`, `-w10`.
+
+### Remediation 6 — 2026-11-18
+
+Verification attempt 6 (`3ee4fae`): Claude verifier PASS; GPT verifier FAIL with 4 gaps (`REMEDIATION-6.md`).
+
+| Gap | Resolution | Fixed at | Test |
+|-----|------------|----------|------|
+| 1. Kimi's real `▶`-prefixed approval panel was not detected | Collin: fix (Decision 52). An optional `▶` or `❯` is allowed before the title and the choice; Decision 48's shape kept | `machine/adapters/kimi.js:117,121` | `machine/test/kimi.test.js:359-378` (renderer lines with the Kimi footer, bordered and not; false-positive cases unchanged plus a `▶` panel with the input box present) |
+| 2. A pane recovered at an approval prompt was classed as Claude | Kimi recognised by its footer and context lines without requiring the input box | `machine/service.js:401` | `machine/test/kimi-turns.test.js:185` |
+| 3. `transcript_source.path` exposed the Kimi log path | `publicSession` also strips `transcript_source` | `machine/service.js:79` | `machine/test/kimi-turns.test.js:280-303` |
+| 4. The live script read fields `/v1/sessions` no longer returns | The script reads binding state from the isolated machine's own `sessions.json` | `test-support/smoke/kimi-live.js:23-28` | live check 5 PASS (worker L1 run) |
+
+Validation on the merged branch at `e7063c0`:
+
+```
+bash machine/test/run.sh            # tests 204, pass 204, fail 0
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 192 passed, 0 failed
+node --test viewer/test/*.test.js   # run in two halves: 438/438 and 208/208
+npm --prefix viewer run test:browser   # 28 skipped, 774 passed (4.6m)
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```

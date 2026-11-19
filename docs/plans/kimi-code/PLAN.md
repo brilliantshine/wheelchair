@@ -961,6 +961,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Remediation 6 complete; every validation command passes on the merged branch. Verification attempt 7 next.
+
 - 2026-11-18 — A2 accepted (band: scout): exactly the brief's matcher change; the renderer test omitted the Kimi footer under the panel, so the sub-lead added the footer and context lines to `kimiPanel` in `machine/test/kimi.test.js`; kimi tests 29/29. Remediation 6 complete.
 
 - 2026-11-18 — Collin on remediation 6 gap 1: fix it (Decision 52); dispatched as A2 (light, gpt).
