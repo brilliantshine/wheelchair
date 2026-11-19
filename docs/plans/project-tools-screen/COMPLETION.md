@@ -170,3 +170,19 @@ $ npm --prefix viewer run test:browser -- app-settings.spec.js app-project-tools
   1 failed  [firefox] app-settings.spec.js:61 (table cell; not changed by this build; different Settings tests fail run to run)
   379 passed
 ```
+
+### Remediation 3 (after verification attempt 3, commit 96feb07)
+
+Attempt 3: the claude verifier passed; the gpt verifier failed. Two gap families had survived two fix attempts (A: stale state across a switch; B: key warnings vs the current key state). They went to Collin, whose answers are Decision Log 48 and 49, folded into the Spec's Reading and Keys sections. The lead decided gaps 1-5: fix all, defer none. Details are in `REMEDIATION-3.md`.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| A Stale switch (Log 48) | A load counter locks the picker and section while the picker list, a Read, or a post-save reload is in flight; the project list is cleared at once on a machine change; handlers refuse while locked | `viewer/pages/project-tools.js:146-153,177-210,232` | lock test; stale-guard tests (forced changes) |
+| B Key warnings (Log 49) | The machine returns per-tool `keys`/`held_back`; the page shows "needs X" from `checks[name].keys` against the current keys; "shared with" from the same names | `machine/lib/project-tools.js:29-31`; `viewer/pages/project-tools.js:325-361,444` | `project-tools.test.js` per-tool names; browser key-warning test |
+| 1 Header renamed onto a read-only header | Refused as a duplicate | `viewer/pages/project-tools.js:503` | header rename test |
+| 2 `\r` in args | Args read-only | `viewer/pages/project-tools.js:96` | `\r` args test |
+| 3 Ignored `.mcp.json` | `git add -f` | `machine/lib/project-tools.js:132` | ignored-file save test |
+| 4 Shared with via read-only setting | Folded into B | as B | B test |
+| 5 `failed` replies without revision/keys | Every `failed` path carries them (0/[] if the store is unreadable) | `machine/lib/project-tools.js:91,152` | unreadable-store test |
+
+Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 207 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` 144 passed, twice.
