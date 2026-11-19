@@ -329,7 +329,7 @@ Filled by Stage 3. One row per worker brief.
 | R5 | Remediation 4 (Decision 17): keep page scroll across the Agents refresh, re-place an open popover | `viewer/pages/agents.js` lines 6 and 246, `viewer/test/app-agents-decks.spec.js` | light · claude-haiku-5-5 | wc-d268e3df9c50-worker-7 (r5-a1) | `npm --prefix viewer run test:browser` | done |
 | R6 | tricky — Remediation 5 (Decision 18): popover scroll restored after final placement, height capped and clamped on screen; invariant tests | `viewer/pages/agents.js` lines 6, 228, 230-243, 246; `viewer/test/app-agents-decks.spec.js` | standard · claude-sonnet-5-5 | wc-d268e3df9c50-worker-8 (r6-a1) | `npm --prefix viewer run test:browser` | done |
 | R7 | Remediation 6 gap 2: refuse a bare `--round` only in flag position | `viewer/app/wc.js`, `viewer/test/app-session-meta.test.js` | light · gpt-6-luna | wc-d268e3df9c50-worker-9 (r7-a1) | `node --test viewer/test/*.test.js` | done |
-| R8 | Remediation 6 gap 1 (Decision 19): boundary test, a popover scrolled to the bottom grows on refresh | `viewer/test/app-agents-decks.spec.js` | standard · claude-sonnet-5-5 | wc-d268e3df9c50-worker-10 (r8-a1) | `npm --prefix viewer run test:browser` | in progress |
+| R8 | Remediation 6 gap 1 (Decision 19): boundary test, a popover scrolled to the bottom grows on refresh | `viewer/test/app-agents-decks.spec.js` | standard · claude-sonnet-5-5 | wc-d268e3df9c50-worker-10 (r8-a1) | `npm --prefix viewer run test:browser` | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -392,3 +392,7 @@ Build accepted: approval 408048b5-0427-443e-9d5e-4fc6d2b09c7d
 - 2026-11-19 — Collin chose (a) for attempt 6's gap 1: reword the invariant (Decision 19), no code change, add a boundary test. The lead said to fix gap 2. REMEDIATION-6.md, tasks R7 (gap 2) and R8 (gap 1).
 - 2026-11-19 — Choice: R7, none (the worker reported none; the scout found no design choice beyond the dictated text).
 - 2026-11-19 — R7 accepted (band: scout): the diff is exactly the two dictated edits plus the test line. I re-ran app-session-meta and wc-cli: 12 pass, 0 fail. The scout noted the check now also covers `session stop`/`list --round` with no value. This is harmless, because neither takes `--round`.
+- 2026-11-19 — Choice: R8, visible-row check: rows are measured against the popover's client box (`clientTop`, `clientHeight`), so borders don't count.
+- 2026-11-19 — Choice: R8, visible-row check: only top and bottom are checked, not left and right (found by the scout, not reported).
+- 2026-11-19 — Choice: R8, test output: a `console.log` line prints the before and after scrollTop and clientHeight (found by the scout, not reported).
+- 2026-11-19 — R8 accepted (band: scout): one new test, 36 lines, no source change, and the existing scenarios are unchanged. I re-ran the deck spec: 78 passed, 6 skipped, in both browsers and both widths. The new case showed phone 997→850 and desktop 1211→894 with the box growing, and the visible rows stayed visible. The worker's full-suite run failed only on app-threads:538 in Firefox, a known-intermittent chat test.
