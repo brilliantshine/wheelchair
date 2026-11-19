@@ -54,6 +54,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | Supersedes 16 for `reach`: Allow writes only the pressed thread; a link counts when either thread lists the other | One write can't leave a half-made link | review-round-2 |
 | 18 | Leads never wait on another lead; a late answer that changes the Spec retracts the approval and goes back to review | Waiting had no fallback when the peer never answers | review-round-2 |
 | 19 | Supersedes 8, 15 (agreement part) and 18 (late-answer handling): leads only inform each other; any change to a plan from what they learn goes to that lead's own user as a question card; leads never negotiate a split | Negotiation rules kept producing new edge cases over three review rounds; the user stays in charge | user |
+| 20 | IDEA.md "What good looks like" bullet 3 reworded: each lead learns of the overlap and tells its user, who decides who does what | Follows from the user's pick in Decision 19 ("leads just inform") | idea-change |
 
 ## Spec
 
@@ -110,7 +111,8 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
     defines it, else `null`
   - `branch`: the thread's branch; `pr_url`: the latest non-retracted done card's `pr_url`, else `null`
 - `--all-projects` additionally lists every other reachable thread on the same machine in
-  other projects with at least one lead, each with only `thread`, `lead`, `project`, `title`
+  other projects with at least one lead that is not already listed (linked threads keep
+  their full entry and appear once), each with only `thread`, `lead`, `project`, `title`
   and `linked`. It exists so a lead can find a thread the user named.
 - Threads on other machines are never listed.
 
@@ -200,9 +202,9 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   overlaps; when something does, say so in one line in your reply.
 - **Overlap:** when a listed thread's title, idea or stage suggests it touches the same files
   or behaviour, it has a `lead`, and you have not already raised this overlap with that
-  lead, message that lead: what you are building and the areas you will touch. Add
-  `asks: true` only when you want to know what it is doing there. If that lead has already
-  messaged you about this overlap, answer it instead of sending your own. A listed thread
+  lead, message that lead with `asks: true`: what you are building, the areas you will
+  touch, and what it is doing there. If that lead has already asked you about this overlap,
+  answer its question instead of sending your own. A listed thread
   with `lead: null` cannot be messaged: tell your user in one line that it exists and may
   overlap.
 - **Replies:** answer a cross-thread message only when it carries `[question <id>]`
@@ -224,6 +226,13 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   - When their decision affects the other thread, message its lead the outcome (no
     `asks`), so it can tell its own user.
   - Nothing that needs no change goes to your user beyond a one-line mention of the overlap.
+    When you learn of an overlap during a hidden turn (a `[wc:from ...]` message, such as the
+    mapper's result), put that line in your next reply the user sees.
+  - One question at a time still holds: a question card prompted by another lead waits
+    until your open question is answered, then goes next.
+  - While a review round is running, a Spec change your user approved waits: finish triage
+    against the plan the reviewers were briefed with, then apply it and list it in the next
+    round's "Changed since" list (as lead.md already does for mode changes).
 - **Never wait on another lead.** Asking another lead never holds up your own step: carry
   on. A late answer is handled by the bullet above whenever it arrives.
 - **Another project:** only when the user names a thread or project. Find it with
@@ -250,11 +259,12 @@ and press forms (`[card <id>] picked: allow`, `[card <id>] picked: don't allow`,
 
 ### 5. `card.js` prints the posted card's id
 
-On success `card.js` prints the machine's response body as one JSON line. When the hub
-accepted the card directly this is the stored card, including its `id`; when the machine
-spooled it, it is `{"ok":true,"spooled":true}` (no id yet). Leads use the printed `id` when
-they later need to retract or resolve a card. The exit code and every refusal path are
-unchanged. Update `cards.md` "Posting a card" to say so.
+On success `card.js` prints one JSON line with only the posted card's `id` and `kind`
+(`{"id":"…","kind":"…"}`) when the hub accepted it directly, or `{"spooled":true}` when the
+machine spooled it (no id yet). It never prints the card's text, so a message's body does not
+appear in the sender's visible tool output. Leads use the printed `id` when they later need
+to retract or resolve a card. The exit code and every refusal path are unchanged. Update
+`cards.md` "Posting a card" to say so.
 
 ### Non-goals
 
@@ -275,7 +285,7 @@ New tests in `viewer/test/` must cover:
   (`lead: null`); treats `hub` and the hub's hostname as the same machine; excludes the
   caller's own, archived, frozen and other-machine threads; `stage` is the cached status,
   `"no plan"` or `"unknown"`; `--all-projects` adds other-project threads with only the five
-  fields; non-lead callers refused.
+  fields and lists a linked thread once, with its full entry; non-lead callers refused.
 - Cross-thread `message`: each refusal in order, with nothing stored; success lands on the
   target's latest live lead (after a lead restart) with the `[thread ...]` marker and
   `[question <id>]` when `asks`; a non-lead naming another thread's session still gets 404;
@@ -287,7 +297,7 @@ New tests in `viewer/test/` must cover:
   can then message back; Allow on a target archived after posting answers the card, links
   nothing and queues `allow failed: that thread is archived`; Allow when already linked succeeds without change; Don't allow links
   nothing; a second press refused; retract works; an open `reach` card appears in Needs you.
-- `card.js` prints the stored card (with `id`) on a direct accept and `{"ok":true,"spooled":true}` when spooled.
+- `card.js` prints only `{"id","kind"}` on a direct accept (never the card's text) and `{"spooled":true}` when spooled.
 - A `reach` press with no live lead is refused 409 and the card stays open; an open `reach`
   card's Needs you entry shows its title.
 - A browser test shows a `reach` card with its two buttons and its answered state.
@@ -400,9 +410,25 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 4 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** User decision 19 (budget reached after round 3; the user picked "leads just inform"): §4 lead rules rewritten: the "Agreements" bullet and the negotiation rules are removed; new "Leads inform; your user decides" bullet; "Overlap", "Replies" and "Never wait" shortened. Round 3 fixes also landed: §3 no-live-lead press and Needs you title; §5 `card.js` prints the card id; Validation additions; one Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Overlap and Replies rules contradict for a message without a question | upheld | Overlap message always carries `asks: true` |
+| intent | minor | IDEA.md still promises leads agree who does what | upheld | IDEA bullet reworded; Decision 20 |
+| mechanics | major | User-approved change during a running review | upheld | Waits for triage, then next round's list |
+| mechanics | major | Peer-prompted question while another is open | upheld | Waits its turn |
+| mechanics | major | Overlap line during a hidden turn goes unseen | upheld | Carried into the next visible reply |
+| mechanics | major | RE-RAISE: printed card exposes message text | upheld | `card.js` prints only id and kind |
+| mechanics | major | Linked thread listed twice | upheld | Listed once with its full entry |
+
+### Round 5 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 4:** IDEA.md "What good looks like" bullet 3 (Decision 20); §4 Overlap message always asks; §4 "Leads inform" bullet: hidden-turn mention, one question at a time, changes during a running review; §1 `--all-projects` lists linked threads once; §5 `card.js` prints only id and kind; Validation wording.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|

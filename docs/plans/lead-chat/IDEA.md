@@ -27,8 +27,8 @@ between them by hand.
   machine and, in a line or two each, what they are working on.
 - A lead can message another lead in its project and get an answer back, without the user
   carrying it across.
-- Two leads touching the same area can agree who does what, and that shows in what they
-  then build.
+- When two threads touch the same area, each lead learns about it and tells its user, and
+  the user decides who does what; that shows in what they then build.
 - A lead does not wander into threads of unrelated projects: they don't show up in its
   summary, and a message to a lead in another project goes only with the user's OK.
 
