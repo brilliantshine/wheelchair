@@ -856,3 +856,4 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-19 — Verification attempt 9: gpt verifier-18 FAIL with 1 gap (the hub decodes each HTTP chunk separately, so a UTF-8 character split across chunks is corrupted and an ordinary Save pushes the corruption) and 4 hardening candidates it named under Log 52; verifier-18 stopped. Waiting for verifier-17.
 - 2026-11-19 — Verification attempt 9: claude verifier-17 PASS (stopped). Sent the lead 1 gap marked must-fix (hub UTF-8 chunk decoding) and 5 hardening deferral proposals under Log 52.
 - 2026-11-19 — Lead on attempt 9: fix gap 1 (hub UTF-8 chunk decoding, rule (b)); defer 2-6 as Deferred rows 9-13, source verification. Remediation 9 covers gap 1 only.
+- 2026-11-19 — Remediation 9 dispatched: R9-1 (gap 1, hub UTF-8 decoding; light / gpt-6-luna, wc-406595075040-worker-24).
