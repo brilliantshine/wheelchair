@@ -7,6 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
+// Filesystem timestamp ticks can be coarse (up to 1 s) and clocks can skew.
+const SETTLE_MS = 2000;
 
 function appError(status, message) {
   const error = new Error(message);
@@ -136,9 +138,12 @@ class State {
 
   async cachedThread(file) {
     try {
+      const checkedAt = Date.now();
       const stat = await fs.stat(file);
       const cached = this.threadCache.get(file);
-      if (cached && ['mtimeMs', 'ctimeMs', 'size', 'ino'].every((key) => cached[key] === stat[key])) return cached.record;
+      if (cached
+        && ['mtimeMs', 'ctimeMs', 'size', 'ino'].every((key) => cached[key] === stat[key])
+        && Math.max(cached.mtimeMs, cached.ctimeMs) < cached.checkedAt - SETTLE_MS) return cached.record;
       this.threadCache.delete(file);
       const record = JSON.parse(await fs.readFile(file, 'utf8'));
       const freeze = (value) => {
@@ -149,7 +154,7 @@ class State {
         return value;
       };
       freeze(record);
-      this.threadCache.set(file, { mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, size: stat.size, ino: stat.ino, record });
+      this.threadCache.set(file, { mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, size: stat.size, ino: stat.ino, checkedAt, record });
       return record;
     } catch (error) {
       this.threadCache.delete(file);
@@ -245,4 +250,4 @@ class State {
   }
 }
 
-module.exports = { DEFAULT_STATE, State, appError, atomicWrite, readJson };
+module.exports = { DEFAULT_STATE, SETTLE_MS, State, appError, atomicWrite, readJson };
