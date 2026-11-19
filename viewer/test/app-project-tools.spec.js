@@ -43,7 +43,7 @@ async function stub(page, { read = readBody(), replies = [], gate = null } = {})
   await page.route('**/wheelchair/api/project-tools/*', async (route) => {
     const kind = new URL(route.request().url()).pathname.split('/').pop();
     const body = JSON.parse(route.request().postData() || '{}');
-    if (kind === 'read') { calls.read.push(body); return route.fulfill({ json: typeof read === 'function' ? read(calls.read.length, body) : read }); }
+    if (kind === 'read') { calls.read.push(body); return route.fulfill({ json: typeof read === 'function' ? await read(calls.read.length, body) : read }); }
     (kind === 'save' ? calls.save : calls.remove).push(body);
     if (gate) await gate;
     const [status, json] = replies.shift() || [200, { outcome: 'saved', key_revision: 1, keys: ['API_KEY'], warnings: [] }];
@@ -477,4 +477,176 @@ test('an unreadable source still shows waiting pull requests', async ({ page }) 
   }) });
   await expect(page.locator('.pt-waiting a')).toHaveAttribute('href', 'https://github.com/o/n/pull/5');
   await expect(page.getByRole('button', { name: 'Start over' })).toBeVisible();
+});
+
+async function openBare(page, opts) {
+  const calls = await stub(page, opts);
+  await openPage(page, context, '/app/settings#tools');
+  await expect(page.locator('#pt-project')).toBeVisible();
+  return calls;
+}
+const betaRead = () => readBody({ keys: ['BETA_K'], references: {}, token: { project: '/b', baseline: null, key_revision: 7 }, mode: 'keys-only', source: null });
+
+test('machine key warnings show for read-only tools and rows, and follow the key status', async ({ page }) => {
+  const tools = {
+    ro: { command: 'run', env: { K1: '${K1}' }, headers: { a: 'b' } },
+    multi: { type: 'http', url: 'https://m.example/mcp', headers: { 'X-M': 'a ${A} b ${B}' } },
+    al: { command: 'node', env: { ALIAS: '${TOKEN}' } },
+  };
+  await open(page, {
+    replies: [[200, { outcome: 'saved', key_revision: 2, keys: ['K1'], warnings: [] }]],
+    read: readBody({
+      source: { state: 'ok', reason: null, document: { mcpServers: tools } }, keys: [], references: { K1: ['ro'] },
+      checks: {
+        ro: { key_warnings: ['needs K1, not set on this machine'] },
+        multi: { key_warnings: ['needs A, not set on this machine', 'needs B, not set on this machine'] },
+        al: { key_warnings: ['needs TOKEN, not set on this machine'] },
+      },
+    }),
+  });
+  await expect(tool(page, 'ro')).toContainText('needs K1, not set on this machine');
+  await expect(tool(page, 'multi')).toContainText('needs A, not set on this machine');
+  await expect(tool(page, 'multi')).toContainText('needs B, not set on this machine');
+  await expect(tool(page, 'al')).toContainText('needs TOKEN, not set on this machine');
+  await page.getByLabel('Value for K1').fill('s');
+  await page.getByRole('button', { name: 'Set K1' }).click();
+  await expect(keyRow(page, 'K1').locator('.pt-chip.set')).toBeVisible();
+  await expect(tool(page, 'ro')).not.toContainText('needs K1');
+  await expect(tool(page, 'multi')).toContainText('needs A, not set on this machine');
+  await expect(tool(page, 'al')).toContainText('needs TOKEN, not set on this machine');
+});
+
+test('a late picker load never lands after the machine changed again', async ({ page }) => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await openBare(page, {});
+  await page.route('**/wheelchair/api/new-thread*', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('machine') === 'node-2') {
+      await gate;
+      return route.fulfill({ json: { machine: 'node-2', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'gamma', path: '/tmp/proj-gamma' }], found: [], previous: [] } });
+    }
+    return route.fulfill({ json: { machine: 'hub', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'alpha', path: '/tmp/proj-alpha' }], found: [], previous: [] } });
+  });
+  await page.locator('#pt-machine').selectOption('node-2');
+  await page.locator('#pt-machine').selectOption('hub');
+  await expect(page.locator('#pt-project option[value="/tmp/proj-alpha"]')).toHaveCount(1);
+  release();
+  await page.waitForTimeout(300);
+  await expect(page.locator('#pt-project option[value="/tmp/proj-gamma"]')).toHaveCount(0);
+  await expect(page.locator('#pt-machine')).toHaveValue('hub');
+});
+
+test('a late read never lands on another project', async ({ page }) => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await openBare(page, { read: async (n, body) => {
+    if (body.path === '/tmp/proj-alpha') { await gate; return readBody(); }
+    return betaRead();
+  } });
+  await page.locator('#pt-project').selectOption('/tmp/proj-alpha');
+  await page.locator('#pt-project').selectOption('/tmp/proj-beta');
+  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  release();
+  await page.waitForTimeout(300);
+  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  await expect(tool(page, 'db')).toHaveCount(0);
+  await expect(keyRow(page, 'API_KEY')).toHaveCount(0);
+});
+
+test('the post-save reload of one project never shows its pull request on another', async ({ page }) => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const calls = await open(page, {
+    replies: [[200, { outcome: 'opened', key_revision: 1, keys: ['API_KEY'], pr_url: 'https://github.com/o/n/pull/77', warnings: [] }]],
+    read: async (n, body) => {
+      if (body.path === '/tmp/proj-beta') return betaRead();
+      if (n === 2) { await gate; }
+      return readBody();
+    },
+  });
+  await tool(page, 'web').getByRole('button', { name: 'Edit web' }).click();
+  await page.getByLabel('URL', { exact: true }).fill('https://y.example/mcp');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect.poll(() => calls.read.length).toBe(2);
+  await page.locator('#pt-project').selectOption('/tmp/proj-beta');
+  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  release();
+  await page.waitForTimeout(300);
+  await expect(page.locator('.pt-status a')).toHaveCount(0);
+  await expect(page.locator('.pt-status')).not.toContainText('Pull request opened');
+  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  await expect(tool(page, 'web')).toHaveCount(0);
+});
+
+test('a late remove-key reply never lands on another project', async ({ page }) => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const calls = await open(page, {
+    gate,
+    read: (n, body) => (body.path === '/tmp/proj-beta' ? betaRead() : readBody()),
+    replies: [[200, { outcome: 'removed', key_revision: 5, keys: [] }]],
+  });
+  await keyRow(page, 'API_KEY').getByRole('button', { name: 'Remove API_KEY' }).click();
+  await page.getByRole('button', { name: 'Yes, remove API_KEY' }).click();
+  await expect.poll(() => calls.remove.length).toBe(1);
+  await page.locator('#pt-project').selectOption('/tmp/proj-beta');
+  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  release();
+  await page.waitForTimeout(300);
+  await expect(page.locator('.pt-status')).not.toHaveText('Key removed');
+  await expect(keyRow(page, 'BETA_K').locator('.pt-chip.set')).toBeVisible();
+  await expect(keyRow(page, 'API_KEY')).toHaveCount(0);
+});
+
+test('a __proto__ header survives an edit of its tool URL', async ({ page }) => {
+  const mcpServers = JSON.parse('{"web":{"type":"http","url":"https://x.example/mcp","headers":{"__proto__":"v","a":"b"}}}');
+  const calls = await open(page, { read: readBody({ source: { state: 'ok', reason: null, document: { mcpServers } }, keys: [], references: {} }) });
+  await tool(page, 'web').getByRole('button', { name: 'Edit web' }).click();
+  await page.getByLabel('URL', { exact: true }).fill('https://y.example/mcp');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect(page.locator('.pt-status')).toHaveText('Saved');
+  const headers = calls.save[0].tools.web.headers;
+  expect(Object.hasOwn(headers, '__proto__')).toBe(true);
+  expect(headers.a).toBe('b');
+  expect(Object.getOwnPropertyDescriptor(headers, '__proto__').value).toBe('v');
+  expect(calls.save[0].tools.web.url).toBe('https://y.example/mcp');
+});
+
+test('a tool and a key named constructor render and save', async ({ page }) => {
+  const mcpServers = JSON.parse('{"constructor":{"command":"x","env":{"constructor":"${constructor}"}}}');
+  const calls = await open(page, {
+    read: readBody({ source: { state: 'ok', reason: null, document: { mcpServers } }, keys: [], references: { constructor: ['constructor'] }, checks: {} }),
+    replies: [[200, { outcome: 'saved', key_revision: 2, keys: ['constructor'], warnings: [] }], [200, { outcome: 'saved', key_revision: 3, keys: ['constructor'], warnings: [] }]],
+  });
+  await expect(tool(page, 'constructor')).toContainText('needs constructor, not set on this machine');
+  await expect(keyRow(page, 'constructor')).toContainText('used by constructor');
+  await page.getByLabel('Value for constructor').fill('s');
+  await page.getByRole('button', { name: 'Set constructor' }).click();
+  await expect(keyRow(page, 'constructor').locator('.pt-chip.set')).toBeVisible();
+  expect(Object.keys(calls.save[0].keys)).toEqual(['constructor']);
+  await tool(page, 'constructor').getByRole('button', { name: 'Edit constructor' }).click();
+  await page.getByLabel('Command', { exact: true }).fill('y');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect(page.locator('.pt-status')).toHaveText('Saved');
+  expect(calls.save[1].tools.constructor.command).toBe('y');
+  expect(calls.save[1].tools.constructor.env.constructor).toBe('${constructor}');
+});
+
+test('a $ in the text before a key is refused', async ({ page }) => {
+  const calls = await open(page, {});
+  await page.locator('#pt-add').click();
+  await page.getByLabel('Name', { exact: true }).fill('hh');
+  await page.getByLabel('Kind', { exact: true }).selectOption('http');
+  await page.getByLabel('URL', { exact: true }).fill('https://h.example/mcp');
+  await page.getByRole('button', { name: 'Add a header' }).click();
+  await page.getByLabel('Header name').fill('Authorization');
+  await page.getByLabel('Header kind').selectOption('key');
+  await page.getByLabel('Text before the key').fill('Bearer $');
+  await page.getByLabel('Key name', { exact: true }).fill('NEW_K');
+  await page.getByRole('button', { name: 'Add to the list' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: "The text before the key can't contain $." })).toBeVisible();
+  expect(calls.save).toHaveLength(0);
 });

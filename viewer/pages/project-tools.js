@@ -40,6 +40,12 @@
     if (ka.length !== kb.length) return false;
     return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && deepEqual(a[k], b[k]));
   }
+  // Names the user chooses (tools, settings, headers, keys) can be `__proto__` or `constructor`,
+  // so objects keyed by them have no prototype and are written with defineProperty.
+  const nullObj = () => Object.create(null);
+  const setOwn = (o, k, v) => { Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true }); return o; };
+  const own = (o, k) => (o && typeof o === 'object' && Object.hasOwn(o, k) ? o[k] : undefined);
+  const copyObj = (o) => { const n = nullObj(); for (const [k, v] of Object.entries(o || {})) setOwn(n, k, v); return n; };
   const isPlain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
   async function post(route, body) {
@@ -95,7 +101,7 @@
       hdrRows: kind === 'http' ? Object.entries(raw.headers || {}).map(([k, v]) => classifyHeader(k, v)) : [],
     };
   }
-  const NEEDS_RE = /^needs [A-Za-z_][A-Za-z0-9_]*, not set on this machine$/;
+  const NEEDS_RE = /^needs ([A-Za-z_][A-Za-z0-9_]*), not set on this machine$/;
   function rowKeyName(row, kind) {
     if (row.ro || row.mode !== 'key') return null;
     return kind === 'env' ? row.name : row.keyName;
@@ -107,8 +113,8 @@
     const state = {
       picker: null, machine: '', path: '',
       read: null, token: null, keys: [], tools: {}, sourceTools: {},
-      pending: {},            // key values typed in the tool form, by name
-      busy: false, readSeq: 0, pickSeq: 0,
+      pending: nullObj(),     // key values typed in the tool form, by name
+      busy: false, readSeq: 0, pickSeq: 0, gen: 0,
     };
     let els = {};
     let formState = null;
@@ -159,31 +165,38 @@
     async function loadPicker(machine) {
       const seq = ++state.pickSeq;
       state.path = '';
+      state.machine = machine || 'hub';
       clearView();
+      const t = tag();
       try {
         const res = await fetch(API + '/new-thread?machine=' + encodeURIComponent(machine || 'hub'));
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || data.error || 'http ' + res.status);
-        if (seq !== state.pickSeq) return;
+        if (seq !== state.pickSeq || !fresh(t)) return;
         state.picker = data;
         machineSel.replaceChildren(...(data.machines || ['hub']).map((m) => h('option', { value: m, text: m })));
         machineSel.value = data.machine || machine || 'hub';
         state.machine = machineSel.value;
         fillProjects(data);
       } catch (e) {
-        if (seq !== state.pickSeq) return;
+        if (seq !== state.pickSeq || !fresh(t)) return;
         setStatus('Could not load the project list: ' + e.message, true);
       }
     }
     machineSel.addEventListener('change', () => { setStatus(null); loadPicker(machineSel.value); });
     projectSel.addEventListener('change', () => {
+      state.gen++;
       state.path = projectSel.value;
       setStatus(null);
       if (state.path) readProject(); else clearView();
     });
 
+    const tag = () => ({ machine: state.machine, path: state.path, gen: state.gen });
+    const fresh = (t) => t.machine === state.machine && t.path === state.path && t.gen === state.gen;
+
     function clearView() {
       state.readSeq++;
+      state.gen++;
       state.read = null;
       view.replaceChildren();
       els = {};
@@ -196,9 +209,10 @@
       const seq = ++state.readSeq;
       const machine = state.machine;
       const path = state.path;
+      const t = tag();
       view.replaceChildren(h('p', { class: 'hint', text: 'Reading the project…' }));
       const { status: code, body } = await post('/project-tools/read', { machine, path });
-      if (seq !== state.readSeq) return;
+      if (seq !== state.readSeq || !fresh(t)) return;
       if (!body || !body.mode || code >= 400) {
         view.replaceChildren();
         setStatus("Couldn't read this project: " + ((body && (body.reason || body.error)) || (code ? 'http ' + code : 'the hub could not be reached')), true);
@@ -210,7 +224,7 @@
       state.keys = [...(body.keys || [])];
       state.sourceTools = isPlain(body.source?.document?.mcpServers) ? body.source.document.mcpServers : {};
       state.tools = structuredClone(state.sourceTools);
-      state.pending = {};
+      state.pending = nullObj();
       if (!keepStatus) setStatus(null);
       buildView();
     }
@@ -303,7 +317,7 @@
       const r = state.read;
       const raw = state.tools[name];
       const p = parseEntry(raw);
-      const checks = r.checks?.[name] || {};
+      const checks = own(r.checks, name) || {};
       const card = h('div', { class: 'pt-tool', 'data-tool': name });
       card.append(h('div', { class: 'pt-tool-head' }, h('h3', { text: name }),
         h('span', { class: 'pt-chip', text: p ? (p.kind === 'command' ? 'command' : 'web address') : 'edit in the file' })));
@@ -324,8 +338,19 @@
         card.dataset.needs = myKeys.filter((k) => !state.keys.includes(k)).join(',');
       }
       for (const s of checks.skip || []) card.append(h('p', { class: 'pt-warn', text: s }));
-      for (const key of (card.dataset.needs || '').split(',').filter(Boolean)) card.append(h('p', { class: 'pt-warn', text: 'needs ' + key + ', not set on this machine' }));
-      for (const w of checks.key_warnings || []) if (!NEEDS_RE.test(w)) card.append(h('p', { class: 'pt-warn', text: w }));
+      // The machine's key warnings are the source; a "needs" one shows only while the key is unset.
+      const named = new Set();
+      for (const w of Array.isArray(checks.key_warnings) ? checks.key_warnings : []) {
+        const m = NEEDS_RE.exec(w);
+        if (m) {
+          if (state.keys.includes(m[1])) continue;
+          named.add(m[1]);
+        }
+        card.append(h('p', { class: 'pt-warn', text: w }));
+      }
+      for (const key of (card.dataset.needs || '').split(',').filter(Boolean)) {
+        if (!named.has(key)) card.append(h('p', { class: 'pt-warn', text: 'needs ' + key + ', not set on this machine' }));
+      }
       const actions = h('div', { class: 'actions' });
       if (p) actions.append(button('Edit', () => openForm(name), { 'aria-label': 'Edit ' + name }));
       const confirmHost = h('div', { class: 'pt-confirm', hidden: true });
@@ -355,7 +380,7 @@
     }
 
     function openForm(origName) {
-      const raw = origName !== null ? state.tools[origName] : null;
+      const raw = origName !== null ? own(state.tools, origName) || null : null;
       const p = raw ? parseEntry(raw) : null;
       if (raw && !p) return;
       const f = formState = {
@@ -460,7 +485,7 @@
         showErr('');
         const name = f.name.trim();
         if (!name) return showErr('Give the tool a name.');
-        if (name !== origName && Object.prototype.hasOwnProperty.call(state.tools, name)) return showErr('There is already a tool called ' + name + '.');
+        if (name !== origName && Object.hasOwn(state.tools, name)) return showErr('There is already a tool called ' + name + '.');
         const rows = f.kind === 'command' ? f.envRows : f.hdrRows;
         const rk = f.kind === 'command' ? 'env' : 'hdr';
         if (f.kind === 'command' && !f.command.trim()) return showErr('Enter the command to run.');
@@ -476,23 +501,23 @@
             const key = (rk === 'env' ? nm : (row.keyName || '').trim());
             const bad = keyNameProblem(key);
             if (bad) return showErr(bad);
-            if (rk === 'hdr' && (row.prefix || '').includes('${')) return showErr('The text before the key can\'t contain ${.');
+            if (rk === 'hdr' && (row.prefix || '').includes('$')) return showErr('The text before the key can\'t contain $.');
           } else if (row.value.includes('${')) return showErr('A plain value can\'t contain ${. Use a key instead.');
         }
         const entry = buildEntry(f, name);
-        const pending = { ...state.pending };
+        const pending = copyObj(state.pending);
         for (const row of rows) {
           const key = rowKeyName(row, rk);
           const secret = row.secret || '';
           const k = key && (rk === 'env' ? row.name.trim() : (row.keyName || '').trim());
-          if (k && secret && !state.keys.includes(k)) pending[k] = secret;
+          if (k && secret && !state.keys.includes(k)) setOwn(pending, k, secret);
         }
         state.pending = pending;
         if (origName !== null && origName !== name) {
-          const next = {};
-          for (const [k, v] of Object.entries(state.tools)) next[k === origName ? name : k] = k === origName ? entry : v;
+          const next = nullObj();
+          for (const [k, v] of Object.entries(state.tools)) setOwn(next, k === origName ? name : k, k === origName ? entry : v);
           state.tools = next;
-        } else state.tools[name] = entry;
+        } else setOwn(state.tools, name, entry);
         formState = null;
         els.form.replaceChildren();
         paintTools(); paintSave();
@@ -516,12 +541,12 @@
       void name;
       const e = f.raw ? structuredClone(f.raw) : {};
       const rowsObj = (rows, kind) => {
-        const out = {};
+        const out = nullObj();
         for (const row of rows) {
-          if (row.ro) { out[row.name] = row.raw; continue; }
+          if (row.ro) { setOwn(out, row.name, row.raw); continue; }
           const nm = row.name.trim();
-          if (row.mode === 'key') out[nm] = kind === 'env' ? '${' + nm + '}' : (row.prefix || '') + '${' + (row.keyName || '').trim() + '}';
-          else out[nm] = row.value;
+          if (row.mode === 'key') setOwn(out, nm, kind === 'env' ? '${' + nm + '}' : (row.prefix || '') + '${' + (row.keyName || '').trim() + '}');
+          else setOwn(out, nm, row.value);
         }
         return out;
       };
@@ -580,8 +605,8 @@
       if (state.busy) return;
       const dirty = isDirty();
       const refs = currentRefs(state.tools);
-      const keys = {};
-      for (const [k, v] of Object.entries(state.pending)) if (v && refs.has(k)) keys[k] = v;
+      const keys = nullObj();
+      for (const [k, v] of Object.entries(state.pending)) if (v && refs.has(k)) setOwn(keys, k, v);
       if (!dirty && !Object.keys(keys).length) { setStatus('Nothing to save.'); return; }
       await send({ tools: dirty ? state.tools : null, keys });
     }
@@ -591,7 +616,7 @@
     }
     async function setKey(name, value) {
       if (state.busy) return false;
-      return send({ tools: null, keys: { [name]: value } });
+      return send({ tools: null, keys: setOwn(nullObj(), name, value) });
     }
 
     function applyKeys(body) {
@@ -603,18 +628,15 @@
       if (els.tools) paintTools();
     }
 
-    const ctx = () => ({ machine: state.machine, path: state.path, seq: state.readSeq });
-    const stale = (c) => c.machine !== state.machine || c.path !== state.path || c.seq !== state.readSeq;
-
     async function send(extra) {
       setBusy(true);
       setStatus('Saving…');
       let out;
-      const c = ctx();
+      const c = tag();
       try {
-        const { status: code, body } = await post('/project-tools/save', { machine: state.machine, path: state.path, token: state.token, ...extra });
-        if (stale(c)) return false;
-        out = await handle(code, body);
+        const { status: code, body } = await post('/project-tools/save', { machine: c.machine, path: c.path, token: state.token, ...extra });
+        if (!fresh(c)) return false;
+        out = await handle(code, body, c);
       } finally { setBusy(false); }
       return out;
     }
@@ -624,7 +646,7 @@
     }
 
     // Shows a save or remove reply. Returns true when the keys/tools were stored.
-    async function handle(code, body) {
+    async function handle(code, body, c) {
       const outcome = body && KNOWN_OUTCOMES.includes(body.outcome) ? body.outcome : null;
       if (!outcome) { setStatus(LOST, true); return false; }
       if (outcome === 'saved') {
@@ -644,6 +666,7 @@
         const link = h('a', { href: body.pr_url, target: '_blank', rel: 'noopener', text: body.pr_url });
         const parts = [h('p', {}, 'Pull request opened: ', link), h('p', { text: 'New threads get the change once it is merged.' }), warningsList(body.warnings)].filter(Boolean);
         await readProject(true);
+        if (!fresh(c)) return false;
         setStatus(parts);
         return true;
       }
@@ -652,6 +675,7 @@
         const parts = [h('p', { text: 'The change was pushed but the pull request could not be opened: ' + (body.error || 'unknown error') }),
           h('p', {}, 'Branch ' + body.branch + '. ', h('a', { href: body.compare_url, target: '_blank', rel: 'noopener', text: 'Open the pull request yourself' }))];
         await readProject(true);
+        if (!fresh(c)) return false;
         setStatus(parts, true);
         return false;
       }
@@ -665,6 +689,7 @@
       const reason = body.reason || 'refused';
       if (code === 409) {
         await readProject(true);
+        if (!fresh(c)) return false;
         setStatus(reason + '. The project was reloaded; make your change again.', true);
       } else setStatus(reason, true);
       return false;
@@ -680,7 +705,7 @@
 
     function keyUsage(name) {
       if (!state.read?.token?.baseline) return 'unknown';
-      const users = state.read.references?.[name] || [];
+      const users = own(state.read.references, name) || [];
       return users.length ? 'used by ' + users.join(', ') : 'not used on main';
     }
 
@@ -716,7 +741,7 @@
         if (await setKey(name, value.value)) value.value = '';
       }, { 'aria-label': 'Set ' + name, disabled: state.busy });
       const rm = isSet ? button('Remove', () => {
-        const users = state.read?.references?.[name] || [];
+        const users = own(state.read?.references, name) || [];
         rm.hidden = true;
         confirmHost.hidden = false;
         confirmHost.replaceChildren(
@@ -725,11 +750,11 @@
             button('Yes, remove ' + name, async () => {
               if (state.busy) return;
               setBusy(true); setStatus('Removing…');
-              const c = ctx();
+              const c = tag();
               try {
-                const { status: code, body } = await post('/project-tools/remove-key', { machine: state.machine, path: state.path, token: state.token, name });
-                if (stale(c)) return;
-                await handle(code, body);
+                const { status: code, body } = await post('/project-tools/remove-key', { machine: c.machine, path: c.path, token: state.token, name });
+                if (!fresh(c)) return;
+                await handle(code, body, c);
               } finally { setBusy(false); }
             }, { class: 'danger' }),
             button('Cancel', () => { confirmHost.hidden = true; rm.hidden = false; })));
