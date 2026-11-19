@@ -737,7 +737,7 @@ Filled by Stage 3. One row per worker brief.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Reader (§1) and Codex adapter (§2, §3 adapter parts) | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/test/project-mcp-codex.test.js, machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker | node --test codex + reader tests; machine/test/run.sh | running |
 | T2 | Antigravity adapter (§4 adapter parts) | machine/adapters/agy.js, machine/test/project-mcp-agy.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-2 | node --test agy + accounts tests; machine/test/run.sh | running |
-| T3 | Program check module (§5 module) | machine/lib/project-programs.js, machine/test/project-programs.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-3 | node --test project-programs; machine/test/run.sh | running |
+| T3 | Program check module (§5 module) | machine/lib/project-programs.js, machine/test/project-programs.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-3 | node --test project-programs; machine/test/run.sh | done |
 | T4 | tricky — Service plumbing: line logging, Codex redaction and --description, Antigravity file writing and sweep (§3, §4 service parts) | machine/service.js, machine/test/service.test.js, machine/test/project-mcp.test.js, new machine tests | standard | | machine/test/run.sh | waiting on T1, T2 |
 | T5 | tricky — Thread project-tools state, PATH read, program check call (§5 service part, §6) | machine/service.js, machine/test (new state test file) | standard | | machine/test/run.sh | waiting on T3, T4 |
 | T6 | Hub card, session list field, README (§8, README) | viewer/app/sessions.js, viewer/app/wc.js, viewer/test/app-project-tools.test.js, README.md section | standard (claude) | wc-b9ca1682b0fa-worker-4 | node --test viewer/test/*.test.js | waiting for Claude room |
@@ -748,3 +748,6 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+- 2026-11-18 — Choice: T3, machine/lib/project-programs.js: `path` is assumed to be a string (no guard); `mcp: null` returns [] before reading it. (Report said "none"; scout listed this and test helpers only.)
+- 2026-11-18 — Choice: T3, machine/test/project-programs.test.js: added a quoted server name case (`odd name`) exercising `serverLabel`.
+- 2026-11-18 — T3 accepted (band: scout): program check module; 6/6 focused, 175/175 machine tests re-run locally for focused file.
