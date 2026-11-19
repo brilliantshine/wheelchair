@@ -740,7 +740,7 @@ Filled by Stage 3. One row per worker brief.
 | T3 | Program check module (§5 module) | machine/lib/project-programs.js, machine/test/project-programs.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-3 | node --test project-programs; machine/test/run.sh | done |
 | T4 | tricky — Service plumbing: line logging, Codex redaction and --description, Antigravity file writing and sweep (§3, §4 service parts) | machine/service.js, machine/test/service.test.js, machine/test/project-mcp.test.js, new machine tests | standard | wc-b9ca1682b0fa-worker-5 | machine/test/run.sh | running |
 | T5 | tricky — Thread project-tools state, PATH read, program check call (§5 service part, §6) | machine/service.js, machine/test (new state test file) | standard | | machine/test/run.sh | waiting on T3, T4 |
-| T6 | Hub card, session list field, README (§8, README) | viewer/app/sessions.js, viewer/app/wc.js, viewer/test/app-project-tools.test.js, README.md section | standard (claude) | wc-b9ca1682b0fa-worker-4 | node --test viewer/test/*.test.js | waiting for Claude room |
+| T6 | Hub card, session list field, README (§8, README) | viewer/app/sessions.js, viewer/app/wc.js, viewer/test/app-project-tools.test.js, README.md section | standard (claude) / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-4 | node --test viewer/test/*.test.js | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -763,3 +763,10 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: T2, machine/adapters/agy.js: header values are not type-checked in the adapter (relies on T1's reader validating headers as strings).
 - 2026-11-18 — Choice: T2, machine/test/project-mcp-agy.test.js: a session name with `/` (`wc-a/b`) exercised for encoding.
 - 2026-11-18 — T2 accepted (band: scout): Antigravity adapter; scout's sse/headers concerns were against the pre-T1 reader and are covered on the feature branch. Focused machine tests re-run after merge.
+- 2026-11-18 — Choice: T6, viewer/test/app-project-tools.test.js: tests wrap `hub.call` on a second Hub over the same state to add `project_tools`/`created_at` to fake machine answers (the fake machine helper was outside the boundary).
+- 2026-11-18 — Choice: T6, viewer/app/sessions.js: `project_tools.problems` goes on the newest lead session (after review; first draft used the oldest).
+- 2026-11-18 — Choice: T6, viewer/app/sessions.js: answered cards get only `answered = true`; a body change is edited in place; clients see both through `hub.save`.
+- 2026-11-18 — Choice: T6, viewer/app/sessions.js: a different-boot answer with no `created_at` is not applied unless nothing is stored; an answer without `created_at` keeps the stored one; a NaN date never applies; missing `names`/`file`/`programs`/`clis` default to empty.
+- 2026-11-18 — Choice: T6, viewer/app/sessions.js: `applyProjectTools` exported for tests.
+- 2026-11-18 — Choice: T6, README.md: pre-approval sentence moved to its own paragraph.
+- 2026-11-18 — T6 accepted (band: bigger-scout): hub card, session list field, README; sent back once for newest-lead, README facts and hub-list test; 14/14 focused tests re-run.
