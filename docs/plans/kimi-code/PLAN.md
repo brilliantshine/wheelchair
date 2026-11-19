@@ -85,6 +85,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 48 | A Kimi permission prompt counts only when the input box (`│ >`) is gone and the approval title and choice lines sit together at the bottom of the pane; tested with output that merely mentions the words (no card) and with the real panel (card) | Permission-prompt detection survived two fix attempts (verification attempt 3: ordinary output mentioning the words raised a card every poll); Kimi's approval panel replaces the input box | user |
 | 49 | Leave the version floor's handling of malformed SemVer as is; recorded as an Accepted Risk | Version-floor parsing survived two fix attempts (verification attempt 3: `02.6.3`, `2.6.3+abc..def`, `2.6.4-01` accepted); real `kimi --version` prints plain versions | user |
 | 50 | Live with the remaining permission-prompt false positive; recorded as an Accepted Risk | Permission-prompt detection failed verification attempt 4 after R1, Q1 and A1 (Decision 48): title and choice from separate blocks of ordinary output can still match | user |
+| 51 | A hub Stop sends the fatal-stop notice only when the session was still live in the hub before that Stop; tested with a retried Stop | Fatal-stop notification failed verification attempt 4 after R3 and P1 (a retried Stop notified twice) | user |
 
 ## Spec
 
@@ -958,6 +959,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Collin on remediation 4 gap 2: fix it (Decision 51); dispatched as B1 (light, gpt).
 
 - 2026-11-18 — Collin on remediation 4 gap 1: live with it (Decision 50, Accepted Risk). Gap 2 (duplicate notice on a retried Stop) is with him.
 
