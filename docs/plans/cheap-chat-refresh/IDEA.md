@@ -1,6 +1,6 @@
 ---
 slug: cheap-chat-refresh
-status: draft   # draft | confirmed
+status: confirmed   # draft | confirmed
 mode: two-part   # thorough | two-part | proof-of-concept
 created: 2026-11-19
 ---
