@@ -36,6 +36,15 @@ test('git runner uses a deadline and reports killed', async () => {
   const runner = new TryService({ stateDir: root, root, projects: null, gitExecutable: git, killGrace: 50 });
   const result = await runner.runGit(root, [], 80); assert.equal(result.code, 'killed');
 });
+test('git runner spawn failure resolves and Try refuses without crashing', async () => {
+  const { makeTemp } = require('../../test-support/run-dir'); const fs = require('node:fs/promises'); const path = require('node:path');
+  const root = await makeTemp('try-spawn-failure-'); const f = await tryFixture();
+  const instance = new TryService({ stateDir: path.join(root, 'state'), root, projects: async () => ({ checked: { ok: true } }), gitExecutable: '/nonexistent/git' });
+  const result = await instance.runGit(f.repo, ['status'], 100);
+  assert.notEqual(result.code, 0); assert.ok(result.error);
+  const answer = await instance.handle({ ...f.request, action: 'try' });
+  assert.equal(answer.accepted, false);
+});
 test('outcome table honors only git removal warning lines', () => {
   const from = { branch: 'refs/heads/main', sha: 'a' }, to = { branch: null, sha: 'b' };
   const result = (code, stderr = '') => ({ code, stderr: Buffer.from(stderr) });
@@ -245,6 +254,23 @@ test('back refused when files changed while trying, listing them, nothing delete
   await f.instance.handle(f.request); const trial = await f.done(); await fs.writeFile(path.join(f.repo, 'mine'), 'mine');
   await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done();
   assert.equal(result.last.outcome, 'refused'); assert.deepEqual(result.last.files, ['mine']); assert.equal(await fs.readFile(path.join(f.repo, 'mine'), 'utf8'), 'mine');
+});
+test('Back after a commit pins once across dirty refusals, then succeeds', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await f.instance.handle(f.request); let trial = await f.done();
+  await fs.writeFile(path.join(f.repo, 'file'), 'commit while trying\n'); f.git('commit', '-am', 'commit while trying');
+  const commit = f.git('rev-parse', 'HEAD'); await fs.writeFile(path.join(f.repo, 'dirty'), 'keep me');
+  for (let i = 0; i < 2; i++) {
+    const reply = await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); assert.equal(reply.accepted, true);
+    trial = await f.done(); assert.equal(trial.last.outcome, 'refused'); assert.equal(await fs.readFile(path.join(f.repo, 'dirty'), 'utf8'), 'keep me');
+  }
+  let record = await f.instance.read(f.repo);
+  assert.equal(record.kept.filter(entry => f.git('rev-parse', entry.ref) === commit).length, 0);
+  await fs.unlink(path.join(f.repo, 'dirty'));
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done();
+  assert.equal(result.last.outcome, 'success');
+  record = await f.instance.read(f.repo);
+  assert.equal(record.kept.filter(entry => f.git('rev-parse', entry.ref) === commit).length, 1);
 });
 test('back after the return branch advanced', async () => {
   const f = await tryFixture(); await f.instance.handle(f.request); const trial = await f.done();
