@@ -166,3 +166,18 @@ test('default wc.js session list shows project_tools on the lead entry', async (
     assert.deepEqual(out.sessions[0].project_tools, { problems: ['Server "a" is broken'] });
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
+
+test('with two lead sessions only the newest lead carries project_tools in the hub list', async () => {
+  const f = await fixture();
+  try {
+    await f.apply({ project_tools: tools({ programs: [line('lead problem', 'a')] }), created_at: '2026-01-01T00:00:00.000Z' });
+    const t = await f.get();
+    t.sessions.push({ name: 'wc-second-lead', role: 'lead', live: true, status: 'ready', queue: [], created_at: new Date().toISOString() });
+    await f.hub.save(t);
+    const listed = await sessions.sessionRequest(f.hub, { calling_session: f.made.sessions[0].name, action: 'list' });
+    const leads = listed.sessions.filter((s) => s.role === 'lead');
+    assert.equal(leads.length, 2);
+    assert.equal(leads[0].project_tools, undefined);
+    assert.deepEqual(leads[1].project_tools, { problems: ['lead problem'] });
+  } finally { await finish(f); }
+});

@@ -171,9 +171,9 @@ Put project tools in `.mcp.json` at the repository root in Claude Code's format,
 
 On Codex, project tools are pre-approved, so agents can call them without an approval prompt.
 
-**Codex headers.** A header `Authorization: Bearer ${NAME}` takes its token from the variable `NAME`. A header whose whole value is `${NAME}` takes it from that variable. A literal header is passed as written. Codex skips a server that is sse, that has the same header twice, that uses any other `${...}` form, or whose variable name uses anything but letters, digits, `_` and `-`.
+**Codex headers.** A header `Authorization: Bearer ${NAME}` takes its token from the variable `NAME`. A header whose whole value is `${NAME}` takes it from that variable. A literal header is passed as written. Codex skips a server that is sse, that has the same header twice, that uses any other `${...}` form, or whose name uses anything but letters, digits, `_` and `-`. An `env` value exactly equal to `${KEY}` for that key passes through.
 
-**Antigravity.** It now gets project tools through a private file made for each agent and deleted when the agent ends. Its `${...}` limit: only a stdio `env` entry `KEY: ${KEY}` passes through. Any other server with `${...}` in it is skipped. Antigravity also skips sse servers.
+**Antigravity.** It now gets project tools through a private file made for each agent and deleted when the agent ends. Its `${...}` limit: only a stdio `env` entry `KEY: ${KEY}` passes through. Any other server with `${...}` in it is skipped. Antigravity also skips sse servers, names that use anything but letters, digits, `_` and `-`, and a header given twice.
 
 **Missing programs.** A stdio server whose program cannot be found is reported.
 

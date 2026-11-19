@@ -643,7 +643,7 @@ async function sessionRequest(hub, payload) {
   const caller = session(thread, payload.calling_session);
   if (payload.action === 'list') {
     const problems = projectToolProblems(thread.project_tools && thread.project_tools.state).map((line) => line.text);
-    const leadEntry = thread.sessions.find((item) => item.role === 'lead');
+    const leadEntry = [...thread.sessions].reverse().find((item) => item.role === 'lead');
     const listed = thread.sessions.map((item) => (item === leadEntry ? { ...publicSession(item), project_tools: { problems } } : publicSession(item)));
     return { sessions: listed, review_families: (await settingsStore.load(hub)).review_families };
   }
