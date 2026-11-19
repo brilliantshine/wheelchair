@@ -957,6 +957,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 4: Claude PASS, GPT FAIL with 3 gaps (REMEDIATION-4.md). Permission-prompt detection and fatal-stop notification survived two fix attempts again: sent to the lead; work stopped pending Collin.
+
 - 2026-11-18 — Verification attempt 4 at `7aab07f`: `wc-01b8cb1bf051-verifier-7` (claude) and `wc-01b8cb1bf051-verifier-8` (gpt), both waiting for account room when started.
 
 - 2026-11-18 — Remediation 3 complete at `4ad4237`; validation as in COMPLETION.md "Remediation 3" (one known app-quiet timing failure, passing alone; a full viewer re-run stalled under machine load average above 50 from other threads and was re-run in two halves, all passing). Verification attempt 4 next.
