@@ -74,7 +74,7 @@ the sudo helper is meant to act on your machine, not on a container.
    systemd=true
    ```
 3. Inside WSL, install the [dependencies](#dependencies) and sign in to `gh` and `claude` or
-   `codex` or `agy`. Install Tailscale inside WSL, since the installer runs `tailscale serve` there,
+   `codex`, `agy`, or `kimi`. Install Tailscale inside WSL, since the installer runs `tailscale serve` there,
    and quit it on Windows: Tailscale traffic breaks when both run at once.
 4. Clone wheelchair and your projects under the Linux home folder (`~/...`), never under
    `/mnt/c`. Windows drives are slow from WSL, and git and file permissions misbehave there.
@@ -194,7 +194,7 @@ the harness homes. It is idempotent. Re-run it after pulling a change under `vie
 It also writes a few things outside this repo:
 - a delimited block in `~/.claude/CLAUDE.md` and/or `~/.codex/AGENTS.md`, which holds the
   diagram-sensitivity setting
-- `~/.wheelchair/models`, if Codex is present: the GPT model pinned per tier
+- `~/.wheelchair/models`: the GPT model pinned per tier
 - `~/.local/state/wheelchair/`: the app's threads, settings, machine registry and the
   machine service's secret
 - on a serving systemd machine, the `wheelchair-viewer` and `wheelchair-machine` user
@@ -246,7 +246,7 @@ next. Start at the root one. `CONTRIBUTING.md` has the conventions and validatio
 
 ## Dependencies
 
-- `claude`, `codex` (v0.146+), or `agy`. One alone works; multiple CLIs let reviews and checks use
+- `claude`, `codex` (v0.146+), `agy`, or `kimi` (Kimi Code). One alone works; multiple CLIs let reviews and checks use
   another family. Codex sessions run through the app like any other.
 - `tmux`, which runs every agent session.
 - `git` and the GitHub CLI `gh`, signed in, so threads can push branches and open pull

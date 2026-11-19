@@ -65,7 +65,7 @@ data. For wheelchair that means `viewer/server.js` with a free `--port`, a tempo
 `--cache-root` **and** a temporary `--state-dir` (without `--state-dir` it opens the live
 app state: `viewer/test/helpers/server.js:66-74`). Follow app steps in a headless browser at
 phone size (390×844), using the project's Playwright if it has one, otherwise any headless
-browser available on the machine.
+browser available on the machine. A desktop app or game is checked the same way, on your session's invisible screen rather than in a headless browser, with the same isolation rules: `node <root>/viewer/app/wc.js screen run -- <command>`, then `shot`, `click`, `type` and `key`, and `screen stop` when done. Name in your report the screenshot paths that show what you saw. If the screen command says tools are missing on this machine, that step is COULD NOT TRY with that reason.
 
 If the project gives no safe way to run its app in isolation (it needs real accounts,
 devices, paid services or its live data), report those steps COULD NOT TRY with that reason;

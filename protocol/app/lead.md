@@ -56,8 +56,8 @@ Use `node <root>/viewer/app/wc.js session start --role <role> --tier top --brief
 <path> --attempt <id> --title "<a few words saying what this agent does, in Collin's
 terms>"`, and `session stop <name>`, `session list`. The title is what the Agents screen
 shows on the agent's box. The list output is
-`{ sessions, review_families }`. The hub chooses the provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt|gemini>`
-or `--not-provider <claude|gpt|gemini>`; leads, sub-leads and mappers may not. The hub checks the
+`{ sessions, review_families }`. The hub chooses the provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt|gemini|kimi>`
+or `--not-provider <claude|gpt|gemini|kimi>`; leads, sub-leads and mappers may not. The hub checks the
 rules and refuses anything else with the reason. A refusal is final: change the request
 rather than resending it.
 
@@ -114,7 +114,7 @@ Collin picks the project and the machine, then writes in plain words.
   documents. Read `review_families` and the lead's provider in `sessions` from
   `session list`. Start a verifier on that commit with
   `--not-provider <the provider the lead runs on>` if `review_families` is `both`, or no
-  provider flag if it is `claude`, `gpt`, or `gemini`, and a brief that says what Collin asked for;
+  provider flag if it is `claude`, `gpt`, `gemini`, or `kimi`, and a brief that says what Collin asked for;
   its `result` names the commit it checked. A failed check gets one more attempt; a
   gap surviving two attempts comes to Collin as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
@@ -262,7 +262,7 @@ start came back `waiting`, start the mechanics reviewer with no provider flag. T
 drops a provider constraint it cannot meet and says so in the start output's `note`.
 Brief them from `<root>/protocol/app/reviewer.md`: one takes the **mechanics lens**, one
 the **intent lens**. With one family usable, both land on it, one per lens. If
-`review_families` is `claude`, `gpt`, or `gemini`, start one fresh reviewer with no provider flag,
+`review_families` is `claude`, `gpt`, `gemini`, or `kimi`, start one fresh reviewer with no provider flag,
 briefed with both lenses from `reviewer.md`. Record one lane and `cross-family: no` in
 the Review Rounds "Lanes" line. Include in each brief the Review Rounds table and Accepted
 Risks from PLAN.md, so settled findings are not re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
@@ -429,7 +429,7 @@ When Collin reports a problem, first run `gh pr view --json state`:
   1. Commit the fix (`wc.js git commit`, exact paths).
   2. Read `review_families` and the lead's provider in `sessions` from `session list`.
      Start a verifier on that commit with `--not-provider <the provider the lead runs on>`
-     if `review_families` is `both`, or no provider flag if it is `claude`, `gpt`, or `gemini`,
+     if `review_families` is `both`, or no provider flag if it is `claude`, `gpt`, `gemini`, or `kimi`,
      briefed with the reported problem and the plan's Spec. Its
      `result` names the commit it checked. A failed check gets one more
      attempt; a gap surviving two attempts comes to Collin as a `question` card: push the
@@ -762,7 +762,7 @@ restart of the imported thread; if Collin asks for it, post it then.
 ## Diagrams
 
 See the `diagram` section of `cards-lead.md` for the forms and how to pick one. Show an image
-with an `image` card.
+with an `image` card. To show Collin what an agent saw on its invisible screen, post the screenshot path from its report with an `image` card.
 
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a
 picture, write the graph with `<root>/protocol/graphs.md`: its schema, where graph files

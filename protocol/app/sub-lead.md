@@ -110,8 +110,8 @@ looks.
 
 Start a worker with `node <root>/viewer/app/wc.js session start --role worker --tier
 <tier> --brief-file <path> --attempt <id> --title "<a few words saying what this agent
-does, in Collin's terms>" [--provider <claude|gpt|gemini> |
---not-provider <claude|gpt|gemini>] [--effort <e>]`. The optional `--effort` is for worker starts
+does, in Collin's terms>" [--provider <claude|gpt|gemini|kimi> |
+--not-provider <claude|gpt|gemini|kimi>] [--effort <e>]`. The optional `--effort` is for worker starts
 only and overrides the tier's pinned effort for that session. The tier is `light`, `standard`, `heavy`, `critical` or `top` (Heavy), for all CLIs; a tier whose
 cell in Settings is Not used for that CLI is refused. The old names `luna`, `terra`, `sol`, `astra`
 (any CLI) and `haiku`, `sonnet`, `opus` (Claude) are still accepted and mean the Light, Standard,
@@ -122,7 +122,7 @@ write-workers never share a checkout. You may start workers and verifiers for th
 only. You may stop sessions you started, once their `result` arrives.
 
 Record each task's lane in the table: the tier plus the resolved model
-(`<root>/codex/model.sh <gpt|claude> <tier>` prints it).
+(`<root>/codex/model.sh <gpt|claude|gemini|kimi> <tier>` prints it).
 
 ## While workers run
 
@@ -171,7 +171,7 @@ A worker's `result` card is a claim, not a fact. When one arrives:
    not accepted as "none": list the choices you can see in the diff against the brief, and
    log "worker didn't report its choices; I listed N" (including when N is 0). When a scout
    read the diff, check its list (3) against the report's choices section; if the report has
-   no choices section, use list (3) as the list you log instead.
+   no choices section, use list (3) as the list you log instead. When a worker's or verifier's report names screenshot paths, pass them on to the lead in your `result` summary or a `message`.
 3. If it passes, record `- <date> — T<n> accepted (band: scout): ...` in the Log, using the actual band. Merge the worker's branch into the feature branch with
    `wc.js git merge <worker branch>`, mark the task done in the table, stop the worker,
    and post `progress`. Then remove its worktree with `wc.js git worktree-remove <worker
@@ -221,11 +221,11 @@ When every task is done and the full validation passes:
    ones. It is written for a hostile reader: every claim checkable.
 2. Set `status: verifying` and commit PLAN.md and COMPLETION.md.
 3. Read `review_families` and the builders in `sessions` from `wc.js session list`. If
-   `review_families` is `claude`, `gpt`, or `gemini`, start exactly one top-tier verifier with no
+   `review_families` is `claude`, `gpt`, `gemini`, or `kimi`, start exactly one top-tier verifier with no
    provider flag, whatever families built. If it is `both` and every builder ran on one
    provider, start one top-tier verifier with `--not-provider <that provider>`. If it is
    `both` and two or more providers built, start one top-tier verifier on each of the
-   first two that built, in the order `claude`, `gpt`, `gemini`, using `--provider` for each. If the first
+   first two that built, in the order `claude`, `gpt`, `gemini`, `kimi`, using `--provider` for each. If the first
    start's output has a `note` saying its provider was not honoured, start no second verifier.
    If the second start's output has such a note (it landed on the first verifier's provider),
    stop the second verifier at once.
