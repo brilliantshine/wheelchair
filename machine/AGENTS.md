@@ -13,6 +13,7 @@ agents own neither tmux nor the machine secret.
 | `lib/sudo.js` | Durable sudo request registration, polling, outcome delivery and cancellation. |
 | `lib/usage-probe.js` | Asynchronous, timed CLI usage probe runner. |
 | `lib/project-mcp.js` | Reads project MCP servers and exposes shared document and entry validation. |
+| `lib/project-tools.js` | Reads and saves project tools and manages stored keys through GitHub PRs. |
 | `lib/project-keys.js` | Shared project key references, identity, storage and launch selection. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |
 | `lib/startup-warning.js` | Background startup-size check: ledger tail and kept-transcript first-call samples against `STARTUP_TYPICAL`, giving the approval card's `warnings` line. |
