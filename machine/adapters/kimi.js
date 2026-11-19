@@ -101,6 +101,18 @@ module.exports = {
   firstMessage(input, promptPath, name) { return `[wc:role] Role: ${input.role}\nSession: ${name}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${input.brief || input.first_message || ''}`; },
   readyText(session, pane) { return /│\s*>/.test(pane) && pane.includes('context:') && !pane.includes('Trust this folder?'); },
   answerPrompts(session, pane) { if (!pane.includes('Trust this folder?')) return null; if (/❯\s*Trust and continue/.test(pane)) return { step: 'trust', keys: ['Enter'] }; if (/❯\s*Exit/.test(pane)) return { step: 'trust-select', keys: ['Up'] }; return null; },
-  promptText(pane) { return /(?:Run this command\?|Write this file\?|Apply these edits\?|Stop this task\?|Approve [^\n?]+\?)/.test(pane) && /\bApprove once\b/.test(pane) || pane.includes('Ready to build with this plan?') && /^\s*(?:❯\s*)?(?:\d+\.\s*)?Approve\b/m.test(pane); },
+  promptText(pane) {
+    if (/│\s*>/.test(pane)) return false;
+    const lines = pane.split('\n').filter(line => line.trim()).slice(-15)
+      .map(line => line.trim().replace(/^[│\s]+|[│\s]+$/g, ''));
+    for (let i = 0; i < lines.length; i++) {
+      const title = lines[i];
+      const plan = title.startsWith('Ready to build with this plan?');
+      if (!plan && !/^(?:Run this command\?|Write this file\?|Apply these edits\?|Stop this task\?)/.test(title) && !/^Approve [^\n?]+\?$/.test(title)) continue;
+      const choice = plan ? /^Approve/ : /^Approve once/;
+      if (lines.slice(i + 1).some(line => choice.test(line.replace(/^(?:❯\s*)?(?:\d+\.\s*)?/, '')))) return true;
+    }
+    return false;
+  },
   async findTranscript(session, dir) { return findTranscript(session, dir); }, hookEvent() { return null; }, usageFrom() { return null; },
 };
