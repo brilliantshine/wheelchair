@@ -66,8 +66,9 @@ async function shot(ctx, { size, window, outPath }) {
   } catch (err) { await fs.unlink(tmp).catch(() => {}); throw err.status === 422 ? err : invalid(err); }
   return { path: outPath, width, height };
 }
-async function pointer(ctx, op, p) {
-  const end = Date.now() + 10000;
+// baseDeadlineMs is a test hook; production uses the specified 10 second base.
+async function pointer(ctx, op, p, { baseDeadlineMs = 10000 } = {}) {
+  const end = Date.now() + baseDeadlineMs;
   const run = args => call(ctx, 'xdotool', args, Math.max(0, end - Date.now()));
   if (op === 'move') await run(['mousemove', '--', p.x, p.y]);
   else if (op === 'click') { await run(['mousemove', '--', p.x, p.y]); await run(['click', ...(p.double ? ['--repeat', '2'] : []), '--', p.button]); }
@@ -75,14 +76,21 @@ async function pointer(ctx, op, p) {
     await run(['mousemove', '--', p.x1, p.y1]);
     let error;
     try { await run(['mousedown', '--', 1]); await run(['mousemove', '--', p.x2, p.y2]); } catch (err) { error = err; }
-    try { await run(['mouseup', '--', 1]); } catch (err) { error ||= err; }
+    try { await call(ctx, 'xdotool', ['mouseup', '--', 1], 1000); } catch (err) { error ||= err; }
     if (error) throw error;
   } else throw invalid(new Error('invalid pointer operation'));
   return { ok: true };
 }
-async function typeText(ctx, text) { await call(ctx, 'xdotool', ['type', '--delay', 20, '--', text], typeTimeoutMs(text)); return { ok: true }; }
-// baseDeadlineMs is a test hook; production uses the specified 10 second base.
-async function pressKeys(ctx, { hold, tokens }, { baseDeadlineMs = 10000 } = {}) {
+// onTimeout is a test hook for observing the timeout passed to the tool.
+async function typeText(ctx, text, { onTimeout } = {}) {
+  try { parseOp('type', [text]); } catch (err) { throw invalid(err); }
+  const timeout = typeTimeoutMs(text);
+  if (onTimeout) onTimeout(timeout);
+  await call(ctx, 'xdotool', ['type', '--delay', 20, '--', text], timeout);
+  return { ok: true };
+}
+// baseDeadlineMs and onRelease are test hooks for the deadline and release start order.
+async function pressKeys(ctx, { hold, tokens }, { baseDeadlineMs = 10000, onRelease } = {}) {
   try { parseOp('key', hold === null ? tokens : ['--hold', String(hold), ...tokens]); } catch (err) { throw invalid(err); }
   const end = Date.now() + baseDeadlineMs + (hold || 0), down = [];
   let error;
@@ -98,14 +106,14 @@ async function pressKeys(ctx, { hold, tokens }, { baseDeadlineMs = 10000 } = {})
     await new Promise(resolve => setTimeout(resolve, wait));
     if (wait < hold) error = invalid(new Error('xdotool timed out'));
   }
-  const releases = await Promise.all(down.reverse().map(token => runTool('xdotool', ['keyup', '--', token], { env: ctx.env, timeoutMs: 500 })));
+  const releases = await Promise.all(down.reverse().map(token => { if (onRelease) onRelease(token); return runTool('xdotool', ['keyup', '--', token], { env: ctx.env, timeoutMs: 500 }); }));
   if (releases.some(r => !r.ok)) throw Object.assign(new Error('keys may still be held; run wc.js screen stop'), { status: 422, lockInput: true });
   if (error) throw error;
   return { ok: true };
 }
 async function focusWindow(ctx, id) { await call(ctx, 'xdotool', ['windowfocus', '--', id], 10000); return { ok: true }; }
 async function autoFocus(ctx, baseline, { pollMs = 250, waitMs = 5000, probeTimeoutMs = 1000, phaseMs = 6000 } = {}) {
-  if (baseline === null) return null;
+  if (!Array.isArray(baseline)) return null;
   const start = Date.now(), deadline = start + phaseMs, old = new Set(baseline);
   try {
     do {
