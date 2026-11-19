@@ -624,3 +624,5 @@ manager, no video, no Ready-check change.
 - 2026-11-18 — T3c accepted (band: scout). In my 2 live runs at ba6a089, 22 ok each; Xvfb set unchanged, no `wcscreen-*` unit left. Residual (from the scout): the child env still spreads the caller's other `WHEELCHAIR_*` variables, but the URL and token are always the test's.
 - 2026-11-18 — All tasks done. Final suites at d1b7ee4: machine 205/205, viewer 653/653. COMPLETION.md written; status verifying.
 - 2026-11-18 — Verification attempt 1: both verifiers FAIL, 6 distinct gaps. The lead's answers: fix gaps 1–5 (one-window parse, archive keeping screens with uploads, baseline inside the 6 s phase, skip only BadWindow, router rows); defer gap 6 (app pid/pgid in state.json) as Deferred row 6, source verification. Four other findings not counted, which the lead agreed with.
+- 2026-11-18 — Choice: R1, `screen-args.test.js:61-62`: the one-child sample is a template literal that starts with a newline (scout).
+- 2026-11-18 — R1 accepted (band: scout). Gap 1: `parseRootChildren` matches `N child(ren)?:`, with a one-child test. Gap 5: router rows added at `machine/AGENTS.md:15-16`. screen-args tests 5 pass.
