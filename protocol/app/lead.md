@@ -323,12 +323,13 @@ offer for that part. Post the offer as a `question` card before any other questi
 that round (a split may make them moot), and in place of the budget's `needs` card if
 both would fire. Name the part in his words and say what the rest does without it.
 Options: "Split it off" and "Keep it here" (leaning: split). On "Split it off": remove
-that part from the Spec and log the decision with source `user`; if the part is named in
-IDEA.md's What or What good looks like, his press is his agreement to the scope change:
+that part from the Spec and log the decision with source `user`; if that takes away
+anything IDEA.md's What or What good looks like promises, his press is his agreement to the scope change:
 move it to Not doing with a pointer to the new thread and log it with source
-`idea-change` instead. Post a `stub` card whose summary names the part, its open findings
-and this plan's path (`depends_on_parent` true when it builds on the rest), then run the
-next round on the change. On "Keep it here": carry on; the budget resets as for any
+`idea-change` instead. Post a `stub` card whose summary names the part and points to this
+plan's path and its Review Rounds table for the open findings, without quoting them
+(`depends_on_parent` true when it builds on the rest). Settle any question still open from
+that round, then run the next round on the change. On "Keep it here": carry on; the budget resets as for any
 decision of his.
 
 **Budget.** A round is clean when your triage upholds no blocking and no major finding and
