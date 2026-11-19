@@ -1,6 +1,6 @@
 ---
 slug: lighter-server
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -101,6 +101,20 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 Current code is described in `MAP.md` (file:line). Decision numbers refer to the Decision Log.
 
+In short: a thread list reads only the thread files that changed since the last look (S1, S2); a browser tab that is not on screen stops asking the server for updates until it is shown again (S6); a browser test run opens at most two browsers at a time (S7).
+
+```mermaid
+flowchart TD
+  A[a page or timer asks for the thread list] --> B[look at each thread file's size and change time]
+  B --> C{changed since last look?}
+  C -- no --> D[reuse the copy already read]
+  C -- yes --> E[read and keep that one file]
+  D --> F[answer as today]
+  E --> F
+  G[browser tab hidden] --> H[its regular refreshes pause]
+  H --> I[tab shown: refresh once at once, then as usual]
+```
+
 ### S1. Thread snapshot cache (`viewer/app/state.js`)
 
 - Add `threadSnapshot(id)`: the same stat-checked cache for one file, returning the frozen record (used by chat and `/threads`, S2). A missing file, or one that holds no thread record (for example JSON `null`), throws exactly as `thread(id)` does (so a thread deleted while `/threads` waits for its lock gives today's 404), unlike the listing's skip.
@@ -140,7 +154,7 @@ Dropped (#27). The machine service's tmux, readiness, trust, Codex step and `sta
 ### S7. Browser tests and measurement
 
 - `viewer/playwright.config.js` sets `workers: 2` (#11). `--workers` on the command line still overrides.
-- No benchmark script (#70). After the change is merged and installed, the lead measures the live hub's CPU by hand as the Log baseline was taken: CPU seconds of `viewer/server.js --service` over 60 seconds with a similar number of agents live, one thread page open and the hub up about 47 minutes (as at the baseline), compared with 30.8 CPU-seconds per 60 s; RSS is recorded beside the reading. This is reported to Collin, not a build gate.
+- No benchmark script (#70). Before the change is installed, the lead takes a fresh baseline on the live hub under a fixed workload: exactly one visible wheelchair tab, on a thread page, and no other wheelchair tabs open in any browser. After the change is merged and installed, the lead measures under the same workload the live hub's CPU by hand as the Log baseline was taken: CPU seconds of `viewer/server.js --service` over 60 seconds with a similar number of agents live, one thread page open and the hub up about 47 minutes (as at the baseline), compared with that fresh baseline (the 30.8 CPU-seconds in the Log had an unrecorded browser workload); RSS is recorded beside both readings. This is reported to Collin, not a build gate.
 - Machine tests and `test-support/run-dir.js` are not changed by this plan; the leftover tmux fix is its own thread (#70).
 
 ### Non-goals
@@ -533,6 +547,10 @@ Collin chose "Keep going" (budget reset).
 | intent | minor | Moved section hands over the benchmark and `workers: 2` | upheld | Section keeps only tmux; benchmark marked dropped |
 | intent | minor | By-hand reading needs comparable uptime | upheld | S7: about 47 min uptime, RSS recorded |
 | intent | minor | Commands still run machine and test-support suites this plan no longer touches | upheld | Removed from Commands |
+| mechanics | major | Baseline's browser workload unrecorded; after-reading not comparable | downgraded to minor | Affects only the lead's after-install reading, not an implementing worker. S7: fresh baseline before install under a fixed workload |
+| mechanics | minor | Handoff still lists worker cap and benchmark | upheld | Already fixed after the intent review |
+
+**Result:** clean (no upheld blocking or major).
 
 ## Prior Work
 
@@ -564,3 +582,4 @@ Accepted then: a SIGKILL at the instant a tmux client is launching a server can 
 ## Log
 
 - 2026-11-18 live baseline (before any change): hub `viewer/server.js --service` up 47 min, RSS 1.7 GB (730 MB at 10 min), 30.8 CPU-seconds per 60 s (51% of a core); machine service RSS 128 MB, 77 CPU-seconds over 48 min; 21 agent CLIs live; 117 thread files, 19 MB.
+- 2026-11-19 Ready check at approval: hub and machine service answer (`wc.js session list`); Claude CLI logged in; Codex preflight passed (token fresh).
