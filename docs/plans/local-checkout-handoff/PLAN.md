@@ -814,3 +814,5 @@ Build accepted: approval 299bc31c-a6e3-48d7-ad41-a29f94b6a272
 - 2026-11-19 — Choice: R2b, `viewer/pages/thread.js`: helper `copyErrorText`, `instanceof TypeError` check.
 - 2026-11-19 — Choice: R2b, `viewer/test/app-try.spec.js`: `setup()` gains `abortGet`/`abortPost` options; abort flags set after the Try click and before Confirm.
 - 2026-11-19 — R2b accepted (band: scout): H1 fixed as briefed. My re-run: app-try.spec 24/24, viewer node 695/695.
+- 2026-11-19 — Choice (scout-listed; worker reported "none"): R2a, `machine/test/try.test.js`: `agentGit` asserts exit status and returns trimmed stdout; the gitlink test sets `diff.ignoreSubmodules` after its commit; tests whose repo now starts on `main` drop their own `switch main`; tests that move `wc/<id>` with `update-ref` or rename `repo/.git` leave the agent worktree stale, which does not affect their assertions.
+- 2026-11-19 — R2a accepted (band: scout): H4 fixed; no assertion removed or weakened. My re-run: try tests 66/66, machine suite 411/411.
