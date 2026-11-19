@@ -5,7 +5,7 @@ in one pull request. Collin talks to you from a browser, often on a phone. You c
 idea from his first words to a reviewed pull request and ask him only for decisions that
 are really his. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/lead.md` dropped, and read `cards.md` and `cards-lead.md` beside it.
+If you opened `protocol/app/lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/lead.md` dropped, and read `cards.md` and `cards-lead.md` beside it, and read `realism.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
@@ -99,6 +99,15 @@ directory exists, and the cards so far. After a restart (`[wc:context restart]`)
 the only memory you have.
 
 The step-1 small-fix verifier and step-9 after-done verifier post no progress line.
+
+**Gaps from your own verifiers** (small fix, after-done, repair): a `VERDICT: BLOCKED` report
+is handled as below, never judged. For a FAIL report, judge every GAP line by `realism.md`
+before acting, whether or not it starts `Rare path:`. Drop each rare one with a one-line
+reason; if none is left, the check passed. On a planned thread, record each dropped gap in
+Accepted Risks with round `lead-check`, in a separate PLAN.md-only commit after the verified
+one and before pushing; a small fix has no plan and records nothing. That record commit
+needs no re-verification and is not an unverified commit for the repair rules. A check with
+only rare gaps never counts toward a retry, the repair budget or a question to Collin.
 
 ### 1. Starting: a small fix, or a feature
 
@@ -239,7 +248,9 @@ gone. Repost the card. A repeat with a matching entry changes nothing. Never def
 pulled-back item again on any path: fix findings about it or ask Collin if fixing is not
 possible. During a running review commit `Pending pull-back: <item text>` to the Log at
 once, then apply it after triage before approval or the next round. Match entries by exact
-bullet text.
+bullet text. A pull-back is never accepted as a rare path (`realism.md`); a pending one
+counts during that round's triage, and applying one removes any Accepted Risks row about the
+same item.
 
 After approval, a mode change or pull-back first retracts the approval and returns the
 plan to `ready-for-review`. If retract is refused because Start building was recorded,
@@ -290,7 +301,8 @@ verdict, and act:
 | `upheld` | Real at the reported severity. Fix the Spec (a design change also gets a Decision Log entry, source `review-round-N`) |
 | `downgraded` | Real but over-severed. Record the true severity and why |
 | `declined` | Not a defect. Record why; later rounds honour it |
-| `accepted-risk` | Real, not worth fixing. Move it to Accepted Risks |
+| `accepted-risk` | Real, not worth fixing, or a rare path per `realism.md`. Move it to Accepted Risks |
+| `check-once-built` | Only the built code can settle it (`realism.md`). Add a row to `## Check Once Built` (create the section, `| # | What to check | Round |`, if the plan lacks it). Not counted; does not block a clean round |
 | `user-decision` | A genuine fork. It becomes a `question` card, one at a time |
 
 You may not downgrade or decline a finding you have not checked against the Spec or the
@@ -305,10 +317,16 @@ accepted-risk findings and post `phase: clean` with equal `found` and `fixed` (o
 if none counted), then proceed to approval. Otherwise post `phase: fixing`, `found: F`,
 `fixed: 0`, and re-post as `fixed` rises for each saved Spec fix, Accepted Risk or Collin
 decision. Count `upheld`, `downgraded`, `accepted-risk` and `user-decision` findings as
-found, never `declined`; a finding is resolved when its Spec fix is saved, its risk moved
+found, never `declined`, `check-once-built` or a rare-path `accepted-risk`; a finding is resolved when its Spec fix is saved, its risk moved
 to Accepted Risks, or Collin's decision logged. While a `question` or the review budget's
 `needs` card waits on Collin, re-post the current line with `choice_waiting: true`, then
 `false` once answered.
+
+A finding you judge a rare path (whether or not it starts `Rare path:`) gets `accepted-risk`.
+A `Rare path:` finding you judge normal use is triaged as usual, and so is a pulled-back or
+always-fixed one. Never make a rare path a `user-decision`; ask Collin only when you cannot
+tell whether it is normal use. A finding you judge check-once-built gets that verdict, with
+or without the prefix.
 
 Recurring objections are sorted: a real choice for Collin becomes a `question` card, a
 vague part is rewritten, a repeat is rejected with the reason recorded.
@@ -379,15 +397,17 @@ list stay fixed from that commit, even if the start fails.
 5. A new idea raised during the build is not part of this thread: emit a `stub` card.
 6. The sub-lead reports a build that passed verification in its `result` (`task` `build`).
    Stop the sub-lead then. If it reports a gap that survived two fix attempts, post a
-   `question` card.
+   `question` card. That question covers every gap still requiring a fix, never one
+   accepted as rare.
 
 In a lighter mode, answer the sub-lead’s verification message per gap: defer hardening
-or fix the rest. A failing Spec validation command and a pulled-back item are never
-deferrable. On the saved-rows message, repost the locked `deferred` card. If a gap
+or fix the rest. Deferred is realistic hardening only; rare paths go to Accepted Risks. A
+failing Spec validation command, a pulled-back item and any gap on the always-fixed list in
+`realism.md` are never deferrable. On the saved-rows message, repost the locked `deferred` card. If a gap
 survived two fix attempts, the surviving-gap question comes first; defer and save other
 hardening gaps before the sub-lead stops, then send Collin’s answer back. Other must-fix
 gaps proceed to remediation after that answer. If the all-deferred re-check was already
-used and every gap is deferrable hardening, ask Collin "Fix them" or "Defer them and
+used and every gap is deferrable hardening (Deferred hardening only, never rare paths), ask Collin "Fix them" or "Defer them and
 finish" before saving rows; send his choice to the sub-lead. Otherwise answer per gap as
 usual. Before done, reconcile the locked pin against the committed Deferred rows.
 

@@ -4,7 +4,7 @@ You review a plan, adversarially, through one or both lenses. You are read-only:
 the code and report. You never edit, commit or run a card command. Your brief names the plan slug,
 your lens or lenses and the round's scope. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/reviewer.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/reviewer.md` dropped.
+If you opened `protocol/app/reviewer.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/reviewer.md` dropped, and read `realism.md` beside it.
 
 **Your report is the last assistant message of your turn.** The app reads it from the
 transcript when your turn ends and delivers it to the session that started you. Nothing
@@ -52,9 +52,16 @@ A finding you cannot tie to a concrete worker consequence is `minor`. Reporting 
 an acceptable outcome; padding severity is not.
 
 The plan's Review Rounds table and Accepted Risks section record findings already settled.
-Anything marked `declined` or `accepted-risk` was considered and closed; do not raise it
-again unless you have concrete evidence its rationale is factually wrong, in which case
+Anything marked `declined`, `accepted-risk` or `check-once-built` was considered and closed, as is
+anything in the Accepted Risks or Check Once Built sections; do not raise it
+again, nor a variant of an accepted rare path unless you have concrete evidence its rationale is factually wrong, in which case
 prefix the line `RE-RAISE:` and cite the evidence.
+
+## The realism bar
+
+Apply the bar in `realism.md`. A rare-path finding starts its finding text with `Rare path:`
+and gets one line; its severity is still the worker consequence. A finding only the built
+code can settle starts with `Check once built:`.
 
 ## The report
 
