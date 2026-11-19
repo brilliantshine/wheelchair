@@ -240,7 +240,7 @@ function kimiReport(raw, turnId) {
     if (row.type === 'turn.prompt' && row.origin?.kind === 'user') {
       turn = { id: row.turnId, steps: new Map() };
       turns.push(turn);
-    } else if (row.type === 'turn.ended') {
+    } else if (row.type === 'turn.ended' && row.turnId === turn?.id && (row.agentId === undefined || row.agentId === 'main')) {
       turn = null;
     } else if (turn && row.type === 'context.append_loop_event') {
       const event = row.event || {};
