@@ -114,10 +114,10 @@ For each tools-getting server, in addition to today's rules:
 For a tools-getting session with servers:
 - Plugin dir: `<stateDir>/agy-tools/<encodeURIComponent(session name)>/.agents/plugins/wheelchair-project/`, directories mode 0700, holding `plugin.json` = `{"name":"wheelchair-project","version":"1"}` and `mcp_config.json` = `{"mcpServers":{...}}`, files mode 0600, written atomically. argv gains `--add-dir <stateDir>/agy-tools/<encodeURIComponent(session name)>`. The sweep maps each directory entry back with `decodeURIComponent` before comparing it with `startingNames` and `liveTmux()`; entries that do not decode to a valid session name are removed only if older than 60 s.
 - `command` returns the files to write (like `settingsPath`/`settings`); `startIn` writes them before tmux starts. No writes inside `command`.
-- Translation: name kept (agy namespaces it `wheelchair-project_<name>`); stdio → `{command, args, env}`; http → `{type: "http", url, headers}` (`type` is required: verified format).
+- Translation: name kept (agy namespaces it `wheelchair-project_<name>`); stdio → `{command, args, env}`; http → `{type: "http", url, headers}` (`type` is required: verified format). Only these fields, as the reader validated them for that transport, are read or scanned; any other key on the entry (for example `args` on an http entry or `headers` on a stdio entry) is ignored and never inspected.
 - Variables (verified 2026-11-18 on agy 1.5.11: plugin `mcp_config.json` expands nothing — not env, args, url or headers; stdio servers inherit agy's whole environment):
   - A stdio `env` entry that passes through (same key, section 2) is left out of the file: the server inherits it from agy's environment.
-  - Any other `${` anywhere in command, args, env, url or headers skips the server: "uses ${...} that Antigravity cannot pass through". (A tool whose token comes from a variable is in the follow-up.)
+  - Any other `${` in a translated field (stdio: command, args, env; http: url, headers) skips the server: "uses ${...} that Antigravity cannot pass through". (A tool whose token comes from a variable is in the follow-up.)
   - Literal values are copied as is. A literal value (env, args, url or header) may be a credential, which is why the file is private (0600, in 0700 dirs) and deleted when the session ends (IDEA constraint). Literal values never reach `session.command`, logs, lines or the card.
 - Skips: `type: "sse"` ("uses sse, which Antigravity does not support here"); names not matching `[A-Za-z0-9_-]+` (same text as Codex); the same header twice ignoring case.
 - If every server is skipped: no plugin dir and no `--add-dir`.
@@ -135,7 +135,8 @@ For a tools-getting session with servers:
   - Otherwise searched in each directory of `path` in order; empty and relative entries are joined to `worktree` (the agent's working directory), as a shell would; no counting candidate in any → line.
   - Line: `{ names: [name], text: "<name>: its program can't be found" }`. The command itself is not printed.
 - A `command` containing `${` is not checked.
-- `path`: the start reads the tmux server's global `PATH` (`tmux show-environment -g PATH`, async, 2 s bound; `NAME=value` output used, `-NAME` or failure falls back to the service's own `process.env.PATH`), because an agent's pane gets the tmux global environment. Read, and `missingPrograms` run, only for tools-getting starts in the thread's worktree whose reader returned servers, before section 6's update; other checkouts skip both.
+- A thread-worktree start whose reader returned a file with no valid servers (all invalid) sets `programs` = [] (§6 step 3b with no lines).
+- `path`: the start reads the tmux server's global `PATH` (`tmux show-environment -g PATH`, async, with a real 2 s deadline: on expiry the tmux child is killed and the start goes on with the fallback, so a hung tmux never stalls it; `NAME=value` output used, `-NAME` or failure falls back to the service's own `process.env.PATH`), because an agent's pane gets the tmux global environment. Read, and `missingPrograms` run, only for tools-getting starts in the thread's worktree whose reader returned servers, before section 6's update; other checkouts skip both.
 
 ### 6. Machine project-tools state (`machine/service.js`)
 
@@ -200,8 +201,8 @@ For a tools-getting session with servers:
 
 - `bash machine/test/run.sh`, new tests:
   - Codex: bearer, env header, every project override (real in argv, `<redacted>` in `session.command`, including args and url query strings), mixed `${}` header skip, duplicate header skip, sse skip, non-ASCII budget (under 64 Ki UTF-16 units, over 64 KiB bytes → dropped; line names every dropped server); `systemd-run` gets `--description`.
-  - Antigravity: plugin files and `--add-dir` for tool roles, none for reviewer; http entry written with `type: "http"`; same-key env left out of the file; any other `${` skips the server with its line; literal header copied into the file and absent from `session.command` and logs; files 0600 and dirs 0700; sweep removes dirs of sessions not live, keeps live and starting ones and any dir younger than 60 s, removes nothing when tmux state is unknown, has no await between its checks and removals; dir removed by the timer after its pane exits even with the record at `ready`; a session name containing `/` maps to one encoded directory; no old warning.
-  - Program check: absolute, worktree-relative and PATH programs found; missing or non-executable reported without printing the command; `${` command not checked; PATH from `tmux set-environment -g PATH` is used; fallback to the service PATH when tmux has none.
+  - Antigravity: an http entry with a stray `args` and a stdio entry with a stray `headers` translate normally; plugin files and `--add-dir` for tool roles, none for reviewer; http entry written with `type: "http"`; same-key env left out of the file; any other `${` skips the server with its line; literal header copied into the file and absent from `session.command` and logs; files 0600 and dirs 0700; sweep removes dirs of sessions not live, keeps live and starting ones and any dir younger than 60 s, removes nothing when tmux state is unknown, has no await between its checks and removals; dir removed by the timer after its pane exits even with the record at `ready`; a session name containing `/` maps to one encoded directory; no old warning.
+  - Program check: absolute, worktree-relative and PATH programs found; missing or non-executable reported without printing the command; `${` command not checked; PATH from `tmux set-environment -g PATH` is used; a tmux that never answers falls back after 2 s; fallback to the service PATH when tmux has none.
   - State: `realpath` of a missing thread directory does not abort a worker start; `programs` changes only from the thread's worktree;
   - Program check: a directory named like the program does not count; a relative PATH entry is searched under the worktree; `bin/link/../runner` with `link` a symlink is checked through the symlink.
   - State (cont.): `seq` increases per start; `boot` changes per service start; worker start replaces its CLI's lines but never `file` or `programs`, and never resets; reset only from the thread's worktree (by path; a verifier checkout on the same branch does not qualify); reader failure keeps other lines; a fixed or removed server loses its skip lines on every CLI whose lines came from the same file hash or the thread's checkout (a worker checkout's line with another file survives a thread start); repeated start returns the same `project_tools`; writes land in order; `.tmp` leftovers swept at startup; a failed state write still starts the agent; `project_tools` absent from machine session-list and status responses; no state change for non-tool roles.
@@ -666,6 +667,15 @@ exit. Downgrades and declines cite evidence.
 ### Round 25 — 2026-11-19
 
 **Changed since Round 24:** §5 program check and PATH read only in the thread's worktree; §4 and IDEA constraint: the private-file exception covers every literal value (Decision 36); Accepted Risk wording on unserialized starts.
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Decision 36 widens an IDEA constraint without Collin's agreement | user-decision | Question to Collin |
+| mechanics | major | "Anywhere" scan inspects unvalidated stray fields | upheld | §4 only translated fields are read or scanned |
+| mechanics | minor | `programs` undefined when a file has no valid servers | upheld | §5: set to [] |
+| mechanics | minor | No hung-tmux test for the PATH read | upheld | §5 real deadline; Validation |
 
 ## Prior Work
 
