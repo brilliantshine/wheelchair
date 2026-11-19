@@ -963,6 +963,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 9: Claude PASS, GPT FAIL with 2 gaps (REMEDIATION-9.md), both sent to the lead (recovery classification survived two fixes; version check vs launch race).
+
 - 2026-11-18 — Verification attempt 9 at `697d145`: `wc-01b8cb1bf051-verifier-17` (claude) and `wc-01b8cb1bf051-verifier-18` (gpt).
 
 - 2026-11-18 — Choice: H1, `viewer/app/chat.js:243`: with no open turn, a `turn.ended` row is a no-op (scout-found). H1 accepted (band: scout): targeted 27/27 re-run by the sub-lead. Remediation 8 complete.
