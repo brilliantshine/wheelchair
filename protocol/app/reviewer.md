@@ -62,7 +62,7 @@ or a variant of one, is never re-raised.
 ## The realism bar
 
 Apply the bar in `realism.md`. A rare-path finding starts its finding text with `Rare path:`
-and gets one line; it is `minor` unless it is on that file's always-fixed list. A finding only the built
+and gets one line; its severity is still the worker consequence. A finding only the built
 code can settle starts with `Check once built:`.
 
 ## The report

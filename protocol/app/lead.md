@@ -311,8 +311,8 @@ You may not downgrade or decline a finding you have not checked against the Spec
 code; the verdict cites evidence. A reviewer's severity is an opinion, not a gate, and
 severity is what the finding would do to an implementing worker: `blocking` (would build
 the wrong thing or could not implement it), `major` (would have to stop and ask), `minor`
-(everything else). A rare path (`realism.md`) is `minor` unless it is on that
-file's always-fixed list, as `reviewer.md` says. Stop each
+(everything else). Whether a rare path is chased is decided by `realism.md`, not
+by its severity. Stop each
 reviewer when its `result` arrives; each round starts fresh reviewers.
 
 After triage, if the round is clean by the test below, resolve any counted minor or
