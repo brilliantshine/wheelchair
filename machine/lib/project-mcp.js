@@ -58,7 +58,9 @@ function duplicateHeaderServers(text) {
     } else if (text[i] === '"') string();
     else while (i < text.length && !' \t\r\n,]}'.includes(text[i])) i++;
   }
-  value([]);
+  // A file JSON.parse accepted is never turned into a failure here: nesting deep enough to
+  // overflow this recursive scan gives up on duplicate detection instead.
+  try { value([]); } catch { /* keep what was found */ }
   return duplicates;
 }
 
