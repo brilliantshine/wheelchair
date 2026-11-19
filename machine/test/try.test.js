@@ -86,6 +86,22 @@ async function tryFixture() {
   const done = async () => { for (let i = 0; i < 200; i++) { const status = await instance.handle({ ...request, action: 'status' }); if (status.state !== 'busy') return status; await new Promise(resolve => setTimeout(resolve, 20)); } throw new Error('switch did not finish'); };
   return { root, repo, git, instance, request, done };
 }
+test('first Try allows a slow ignored-files scan beyond the metadata deadline', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  const wrapper = path.join(f.root, 'git-wrapper');
+  await fs.writeFile(wrapper, '#!/bin/sh\ncase "$*" in *"ls-files -z --others --ignored"*) sleep 2;; esac\nexec git "$@"\n', { mode: 0o755 });
+  f.instance.gitExecutable = wrapper; f.instance.metadataTimeout = 1000;
+  assert.equal((await f.instance.handle(f.request)).accepted, true);
+  const result = await f.done(); assert.equal(result.state, 'trying-this'); assert.equal(result.last.outcome, 'success');
+});
+test('metadata timeout in folder check is reported as a timeout', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  const wrapper = path.join(f.root, 'git-wrapper');
+  await fs.writeFile(wrapper, '#!/bin/sh\ncase "$*" in *"ls-files -u"*) sleep 2;; esac\nexec git "$@"\n', { mode: 0o755 });
+  f.instance.gitExecutable = wrapper; f.instance.metadataTimeout = 100;
+  const status = await f.instance.handle({ ...f.request, action: 'status' }); assert.equal(status.refused, 'Git did not answer in time. Try again.');
+  const reply = await f.instance.handle(f.request); assert.equal(reply.accepted, false); assert.equal(reply.reason, status.refused);
+});
 test('try from a clean branch acknowledges, switches and remembers the return point', async () => {
   const f = await tryFixture(); const initial = f.git('rev-parse', 'HEAD');
   const answer = await f.instance.handle(f.request); assert.equal(answer.accepted, true); assert.equal(answer.status.state, 'busy');
