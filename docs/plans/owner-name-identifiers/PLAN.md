@@ -182,5 +182,8 @@ grep -rni collin viewer machine test-support codex install sensitivity sudo-help
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Implement S1–S6: normaliser, new writers/readers, handoff v2, API.md, comments, tests | viewer/app, viewer/pages, viewer/server.js, viewer/index.html, viewer/playwright.config.js, viewer/test, test-support/smoke/live.js, docs/maps/owner-name-state.md | standard / gpt-6.1-terra | wc-9b2a60752bc2-worker | Spec Validation block | in progress |
 
 ## Log
+
+- 2026-11-19 — Decomposed into one task (T1): the code, comment and test changes share the same files, so splitting would only serialise them.
