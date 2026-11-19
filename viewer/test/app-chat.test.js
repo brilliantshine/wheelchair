@@ -374,6 +374,10 @@ test('chat versions, fallback and independent fresh report reads', async () => {
   result = { status: 'unchanged', gen: '1-2', end: 10 }; now++;
   assert.strictEqual(await chatTranscript(hub, thread, session), first, 'unchanged reuses the parsed array');
   assert.equal(new URL(routes.at(-1), 'http://test').searchParams.get('known'), '1-2:10');
+  result = { status: 'unchanged', gen: 'other', end: 10 };
+  assert.strictEqual(await chatTranscript(hub, thread, session), first);
+  hub.transcriptCache.clear();
+  assert.equal((await chatTranscript(hub, thread, session))[0].text, 'local');
   result = { status: 'full', gen: '1-2', end: 11, data: raw };
   assert.notStrictEqual(await chatTranscript(hub, thread, session), first);
   thread.parent_title = 'Second';
@@ -396,6 +400,8 @@ test('chat versions, fallback and independent fresh report reads', async () => {
   assert.equal(hub.transcriptCache.size, 0);
   result = { status: 'unavailable' }; session.cli = 'unknown'; session.transcript_path = null;
   assert.match((await chatTranscript(hub, thread, session))[0].text, /no transcript reader/);
+  session.cli = 'claude'; result = { status: 'full', gen: '1-2', end: 4, data: 'null' };
+  await assert.rejects(() => chatTranscript(hub, thread, session), TypeError);
 });
 
 test('idle sweep protects queued aside and timer drops idle entries', async () => {
@@ -418,6 +424,25 @@ test('idle sweep protects queued aside and timer drops idle entries', async () =
     now += 600001;
     await new Promise((resolve) => setTimeout(resolve, 40)); assert.equal(hub.transcriptCache.size, 0);
   } finally { release(); clearInterval(hub.transcriptTimer); settings.modelCommand = original; }
+});
+
+test('a queued chat protects its thread entry from idle sweep', async () => {
+  const { Hub, sweepTranscripts } = require('../app/hub.js');
+  const dir = await makeTemp('wc-chat-pending-'); let now = 0;
+  const hub = new Hub({ stateDir: dir, now: () => now }); await hub.state.init();
+  const thread = { id: 'pending', machine: 'm', project: '/tmp', sessions: [{ role: 'lead', name: 'lead', cli: 'agy' }], cards: [], pinned: {}, queues: {}, asides: [] };
+  await hub.save(thread);
+  const raw = lines([{ type: 'USER_INPUT', content: 'hello' }]);
+  let available = true; hub.call = async () => available ? { status: 'full', gen: '1-2', end: 10, data: raw } : { status: 'unavailable' };
+  await hub.chat(thread.id); available = false;
+  let release; const gate = new Promise((resolve) => { release = resolve; });
+  const held = hub.withThread(thread.id, () => gate);
+  try {
+    const pending = hub.chat(thread.id);
+    now = 600001; sweepTranscripts(hub);
+    release(); await held;
+    assert.equal((await pending).items[0].text, 'hello');
+  } finally { release(); }
 });
 
 test('machine seen writes are reserved synchronously and throttled', async () => {

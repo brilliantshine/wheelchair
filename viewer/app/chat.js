@@ -288,18 +288,19 @@ async function chatTranscript(hub, thread, session) {
   const parseKey = JSON.stringify([session.cli, session.name, thread.parent_title]);
   const entry = hub.transcriptCache.get(key);
   const known = entry && entry.parseKey === parseKey && entry.gen != null ? `${entry.gen}:${entry.end}` : '-';
+  let result;
   try {
-    const result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}/transcript?known=${encodeURIComponent(known)}`, 'GET');
-    if (result?.status === 'unchanged' && entry && entry.parseKey === parseKey && result.gen === entry.gen && result.end === entry.end) {
-      entry.lastRead = hub.now();
-      return entry.parsed;
-    }
-    if ((result?.status === 'full' || result?.status === undefined) && result?.data) {
-      const parsed = transcriptItems(session.cli, result.data, thread, session.name);
-      hub.transcriptCache.set(key, { parsed, gen: result.gen, end: result.end, parseKey, threadId: thread.id, lastRead: hub.now() });
-      return parsed;
-    }
+    result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}/transcript?known=${encodeURIComponent(known)}`, 'GET');
   } catch { /* machine unavailable: use the last parsed chat */ }
+  if (result?.status === 'unchanged' && entry && entry.parseKey === parseKey && result.gen === entry.gen && result.end === entry.end) {
+    entry.lastRead = hub.now();
+    return entry.parsed;
+  }
+  if ((result?.status === 'full' || result?.status === undefined) && result?.data) {
+    const parsed = transcriptItems(session.cli, result.data, thread, session.name);
+    hub.transcriptCache.set(key, { parsed, gen: result.gen, end: result.end, parseKey, threadId: thread.id, lastRead: hub.now() });
+    return parsed;
+  }
   if (entry) { entry.lastRead = hub.now(); return entry.parsed; }
   const raw = await localTranscript(session);
   return raw || !Object.hasOwn(PARSERS, session.cli) ? transcriptItems(session.cli, raw, thread, session.name) : [];
