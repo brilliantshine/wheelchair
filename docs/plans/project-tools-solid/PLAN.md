@@ -738,7 +738,7 @@ Filled by Stage 3. One row per worker brief.
 | T1 | Reader (§1) and Codex adapter (§2, §3 adapter parts) | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/test/project-mcp-codex.test.js, machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker | node --test codex + reader tests; machine/test/run.sh | done |
 | T2 | Antigravity adapter (§4 adapter parts) | machine/adapters/agy.js, machine/test/project-mcp-agy.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-2 | node --test agy + accounts tests; machine/test/run.sh | done |
 | T3 | Program check module (§5 module) | machine/lib/project-programs.js, machine/test/project-programs.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-3 | node --test project-programs; machine/test/run.sh | done |
-| T4 | tricky — Service plumbing: line logging, Codex redaction and --description, Antigravity file writing and sweep (§3, §4 service parts) | machine/service.js, machine/test/service.test.js, machine/test/project-mcp.test.js, new machine tests | standard | wc-b9ca1682b0fa-worker-5 | machine/test/run.sh | running |
+| T4 | tricky — Service plumbing: line logging, Codex redaction and --description, Antigravity file writing and sweep (§3, §4 service parts) | machine/service.js, machine/test/service.test.js, machine/test/project-mcp.test.js, new machine tests | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-5 | machine/test/run.sh | done |
 | T5 | tricky — Thread project-tools state, PATH read, program check call (§5 service part, §6) | machine/service.js, machine/test (new state test file) | standard | | machine/test/run.sh | waiting on T3, T4 |
 | T6 | Hub card, session list field, README (§8, README) | viewer/app/sessions.js, viewer/app/wc.js, viewer/test/app-project-tools.test.js, README.md section | standard (claude) / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-4 | node --test viewer/test/*.test.js | done |
 
@@ -770,3 +770,8 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: T6, viewer/app/sessions.js: `applyProjectTools` exported for tests.
 - 2026-11-18 — Choice: T6, README.md: pre-approval sentence moved to its own paragraph.
 - 2026-11-18 — T6 accepted (band: bigger-scout): hub card, session list field, README; sent back once for newest-lead, README facts and hub-list test; 14/14 focused tests re-run.
+- 2026-11-18 — T4: worker didn't report its choices ("none"); I listed 3:
+- 2026-11-18 — Choice: T4, machine/service.js: Antigravity tool files written via a `<file>.<uuid>.tmp` temp beside each file; a failed write leaves the start failing (no temp cleanup).
+- 2026-11-18 — Choice: T4, machine/service.js: every directory level from `agy-tools` is mkdir'd and chmod'd 0700 on each start.
+- 2026-11-18 — Choice: T4, machine/test/project-tools-service.test.js: one combined test drives the timer via `agyToolsTimer._onTimeout()` with stubbed `liveTmux`.
+- 2026-11-18 — T4 accepted (band: self, tricky): service plumbing; I read the diff; machine/test/run.sh 183/183 re-run on the worker branch.
