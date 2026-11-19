@@ -55,11 +55,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 Viewer hub and Agents page (`viewer/app/sessions.js`, `viewer/app/agents.js`, `viewer/app/wc.js`, `viewer/app/API.md`, `viewer/pages/agents.js`, `viewer/pages/views.css`, tests in `viewer/test/`), plus protocol text in `protocol/app/lead.md`, `protocol/app/sub-lead.md` and `protocol/app/cards.md`. Also add Collin's proposal files to the repo unchanged: `docs/proposals/app-shell/finished-agents.md` and `docs/proposals/app-shell/design/AgentsFinishedDecks.dc.html` (sources: the attached copies the lead hands to the build). Routers (`viewer/AGENTS.md`) updated if a file's role changes.
 
 ### 1. Round number on reviewer and verifier sessions
-- `wc.js session start` accepts `--round <N>` (integer >= 1). The hub stores it on the session as `round`. Accepted only for roles `reviewer` and `verifier`; any other role, or a non-integer / < 1 value, is refused with a reason naming the flag. This validation runs before the attempt dedupe below, so an invalid `--round` is refused even when the attempt matches an existing session. Absent means no round.
+- `wc.js session start` accepts `--round <N>` (integer >= 1). A bare `--round` with no value (last argument, or followed by another `--flag`) is refused by `wc.js` itself before calling the hub. The hub stores it on the session as `round`. Accepted only for roles `reviewer` and `verifier`; any other role, or a non-integer / < 1 value, is refused with a reason naming the flag. This validation runs before the attempt dedupe below, so an invalid `--round` is refused even when the attempt matches an existing session. Absent means no round.
 - Retries keep today's attempt dedupe (`viewer/app/sessions.js:606-611`): a start whose `--attempt` matches a live or unanswered session returns that session (an unanswered one is retried as today); its stored `round` never changes, and the new call's `--round` is ignored; otherwise a new session is created carrying the `--round` of its own start call. No other change to dedupe.
 - `round` is included in the public session and in the Agents API node.
 - Protocol: lead.md step 5 tells the lead to pass `--round <N>` (the review round number, same as the progress `pass`) when starting reviewers, including restarts within a round. sub-lead.md tells the sub-lead to pass `--round <N>` (the verification attempt number, same as the verify progress `pass`) when starting build verifiers. Small-fix, after-done and steps-only verifiers are started without `--round`.
-- Verification attempt numbering (sub-lead.md, and the `pass` definition in `protocol/app/cards.md`): a build's attempts are numbered 1, 2, 3 in start order, every fresh attempt (including the all-deferred re-check) taking 1 + the highest `round` among this thread's verifiers in `wc.js session list`; restarting a dead or blocked verifier within an attempt reuses that attempt's number. The verify progress `pass` is that same number. Replace the cards.md wording "`REMEDIATION-N.md`'s N + 1 for a re-verify" with this rule. `wc.js session list` shows each session's `round` (it is in the public session).
+- Verification attempt numbering (sub-lead.md, and the `pass` definition in `protocol/app/cards.md`): a build's attempts are numbered 1, 2, 3 in start order, every fresh attempt (including the all-deferred re-check) taking 1 + the larger of: the highest `round` among this thread's verifiers in `wc.js session list`, and the highest N among committed `docs/plans/<slug>/REMEDIATION-N.md` files (so a remediation file is never overwritten, including for a build that straddles this change); restarting a dead or blocked verifier within an attempt reuses that attempt's number. The verify progress `pass` is that same number. Replace the cards.md wording "`REMEDIATION-N.md`'s N + 1 for a re-verify" with this rule. `wc.js session list` shows each session's `round` (it is in the public session).
 
 ### 2. Per-round counts and outcome in the Agents API
 For each lead in `GET /wheelchair/api/agents`, add `rounds: { review: {<N>: R}, verify: {<N>: R} }` built from the thread's `progress` cards (including replaced ones) with `stage` `review` / `verify`. For each pass N, use the latest card for that stage and pass whose phase is `fixing` or `clean`:
@@ -67,7 +67,7 @@ For each lead in `GET /wheelchair/api/agents`, add `rounds: { review: {<N>: R}, 
 - `clean` → `found` = its `found` if present, else 0; `clean: true`.
 - Only `checking` cards for that pass → no entry (count unknown).
 
-Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> }` parsed from the newest result summary: reviewers count lines starting `SEVERITY:` or `RE-RAISE: SEVERITY:` (strip the `RE-RAISE: ` prefix before parsing) and take the finding text (third ` — `-separated field) of the first; verifiers count lines starting `GAP:` and take its second field (what is missing). No result → no `report`.
+Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> }` parsed from the newest result summary: reviewers count lines starting `SEVERITY:` or `RE-RAISE: SEVERITY:` (strip the `RE-RAISE: ` prefix before parsing) and take the finding text of the first: split on ` — `, drop the first two fields (severity, lens) and the last (evidence), and rejoin the rest with ` — `. Verifiers count lines starting `GAP:` and take the text between the first and the last ` — ` (rejoined the same way). A line with too few fields uses everything after the first field. No result → no `report`.
 
 ### 3. Decks on the tree (Hide finished agents OFF)
 - Among one parent's children, finished nodes with the same `role` form a deck when there are 2 or more. A single finished node stays a normal box. Live (working, waiting, idle) nodes are never in a deck. "Finished" is the existing page definition.
@@ -83,7 +83,7 @@ Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> 
 - The square row has an accessible label: "<N> rounds; objections went from <first counted> to <last counted>" (verifiers: "problems"); with fewer than two counted rounds, "<N> rounds".
 
 ### 5. Deck popover
-- Clicking a deck (button, keyboard-activatable) opens a popover anchored under it; Escape, clicking outside or clicking the deck again closes it. Only one open at a time. It survives the 5-second refresh (stays open, content updates).
+- Clicking a deck (button, keyboard-activatable) opens a popover anchored under it; Escape, clicking outside or clicking the deck again closes it. Only one open at a time. It survives the 5-second refresh (stays open, content updates). The open popover, and any expanded round, is remembered by the name of one member session (the newest at opening); after a refresh it reopens on whichever deck now contains that session (for example after two child decks merge), with the same round expanded if it still exists; if no deck contains it, the popover closes.
 - Reviewer/verifier decks with rounds list rounds newest first: square, "Round N", "<k> reviewers · <text>" (verifiers: "<k> verifiers"). <text> is "1 objection: <first>" when found is 1 and the round's members' reports total exactly one finding line; else "<found> objections" (singular for 1; "problems" for verifiers); "no objections" for 0; "not counted" with no entry. Members without a round are listed as a final group "Other". Shows the latest 5 rounds, then a "Show all N rounds" button that expands in place.
 - Opening a round lists its agents (title, finished time); each is selectable exactly like a box: sets `?agent=` and shows that agent in the right panel. The deck containing the selected agent is drawn selected.
 - Other decks list their agents newest first, latest 5 then "Show all N agents", each selectable the same way.
@@ -112,7 +112,7 @@ Changing Hide finished agents ON; decking live agents; closed asides; changing h
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | D1 | Full keyboard handling in the deck popover: arrow keys between rows, focus moved into the popover and returned to the deck on close | Mouse/tap, Enter/Space to open and Escape to close already work | planning | Follow the proposal's popover; check with Playwright keyboard tests on both browsers |
-| D3 | Threads mid-build when this change is installed: verification attempts may be numbered from 1 again after older unnumbered attempts, so early squares and "last round clean" can be wrong for that one build | Only affects builds that straddle the update; new threads number correctly | review-round-3 | Seed the next attempt from the highest verify progress `pass` as well as verifier rounds |
+| D3 | Threads mid-build when this change is installed: an old unnumbered attempt that wrote no remediation file may share a number with the first numbered one, so early squares and "last round clean" can be wrong for that one build | Only affects builds that straddle the update; new threads number correctly | review-round-3 | Seed the next attempt from the highest verify progress `pass` as well as verifier rounds |
 | D2 | Deck squares for agents started before this change (backfilling round numbers from old cards and plans) | New threads get rounds from now on; old ones still deck, just without squares | planning | Membership can't be recovered reliably from timestamps (MAP.md); would need a best-effort match against progress `checking` cards |
 
 ## Accepted Risks
@@ -213,6 +213,23 @@ exit. Downgrades and declines cite evidence.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | IDEA.md and the proposal still say "then approved" | upheld | IDEA example and Constraint updated (Decision 13) |
+| mechanics | blocking | New attempt numbering could rewrite an existing REMEDIATION-N.md | upheld | §1 numbering also counts committed remediation files; D3 narrowed |
+| mechanics | minor | Bare `--round` indistinguishable from absent | upheld | §1: wc.js refuses it |
+| mechanics | minor | Finding text containing ` — ` truncated | upheld | §2 takes the middle fields rejoined |
+| mechanics | minor | Popover anchor lost when child decks merge | upheld | §5 remembers a member session and reopens on its deck |
+
+### Round 5 — 2026-11-18
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 4:**
+- IDEA.md example and Constraint now say "last round clean" (Decision 13).
+- §1: verification numbering also counts committed REMEDIATION-N.md files; bare `--round` refused by wc.js. D3 narrowed.
+- §2: finding/gap text parsing keeps text containing ` — `.
+- §5: popover remembered by a member session across refreshes and deck merges.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
