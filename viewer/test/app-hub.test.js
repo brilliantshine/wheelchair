@@ -258,11 +258,11 @@ test('records a press and lets a lead resolve an open question only in its threa
 
     const openQuestion = await card(context, made.id, lead.name, question);
     const resolved = await card(context, made.id, lead.name, {
-      kind: 'resolve', card: openQuestion.body.id, note: 'Collin chose A in chat.',
+      kind: 'resolve', card: openQuestion.body.id, note: 'the user chose A in chat.',
     });
     assert.equal(resolved.status, 202);
     const resolvedCard = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === openQuestion.body.id);
-    assert.equal(resolvedCard.resolved_note, 'Collin chose A in chat.');
+    assert.equal(resolvedCard.resolved_note, 'the user chose A in chat.');
 
     const answered = await card(context, made.id, lead.name, {
       kind: 'resolve', card: openQuestion.body.id, note: 'Again.',
@@ -363,7 +363,7 @@ test('marks a result task finished and relays it to its starter', async () => {
 
 test('holds a queued message until both readiness and a turn end', async () => {
   await withContext(async (context) => {
-    const made = await thread(context, { message: 'Hello from Collin.' });
+    const made = await thread(context, { message: 'Hello from the user.' });
     const file = path.join(context.state, 'threads', `${made.id}.json`);
     const stored = JSON.parse(await fs.readFile(file, 'utf8'));
     stored.sessions[0].ready = false;
@@ -372,16 +372,16 @@ test('holds a queued message until both readiness and a turn end', async () => {
     assert.equal(context.machine.sessions.get(made.sessions[0].name).submits, undefined);
     await event(context, made.id, made.sessions[0].name, 'ready');
     assert.deepEqual(context.machine.sessions.get(made.sessions[0].name).submits, [
-      'Hello from Collin.',
+      'Hello from the user.',
     ]);
   });
 });
 
-test('stamps when Collin last wrote in a thread, and only for his messages', async () => {
+test('stamps when the user last wrote in a thread, and only for their messages', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     // Read through the same list route the Threads page polls.
-    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).collin_at;
+    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).user_at;
     const before = await stampOf();
     await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Sort me up.' } });
     const stamped = await stampOf();
@@ -391,11 +391,11 @@ test('stamps when Collin last wrote in a thread, and only for his messages', asy
   });
 });
 
-test('stamps when Collin answers a card, so the thread moves up the list', async () => {
+test('stamps when the user answers a card, so the thread moves up the list', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0];
-    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).collin_at;
+    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).user_at;
     const question = await card(context, made.id, lead.name, {
       kind: 'question', fits: 'This settles the approach.', question: 'Which?',
       options: [{ id: 'a', label: 'A', consequence: 'Use A.' }, { id: 'b', label: 'B', consequence: 'Use B.' }],
@@ -1371,7 +1371,7 @@ test('successful submits record their destination, source, text, and time', asyn
       to: stored.sent[0].to,
       text: stored.sent[0].text,
       source: stored.sent[0].source,
-    }, { to: lead.name, text: 'Remember this.', source: 'collin' });
+    }, { to: lead.name, text: 'Remember this.', source: 'user' });
     assert.match(stored.sent[0].at, /^\d{4}-\d{2}-\d{2}T/);
   });
 });
@@ -1382,7 +1382,7 @@ test('sent history keeps 500 entries and appends older entries beside the thread
     const file = path.join(context.state, 'threads', `${made.id}.json`);
     const before = JSON.parse(await fs.readFile(file, 'utf8'));
     before.sent = Array.from({ length: 500 }, (_, index) => ({
-      to: made.sessions[0].name, text: `old-${index}`, source: 'collin', at: `2026-01-01T00:00:${String(index % 60).padStart(2, '0')}.000Z`,
+      to: made.sessions[0].name, text: `old-${index}`, source: 'user', at: `2026-01-01T00:00:${String(index % 60).padStart(2, '0')}.000Z`,
     }));
     await fs.writeFile(file, `${JSON.stringify(before)}\n`);
     await event(context, made.id, made.sessions[0].name, 'turn-ended');
@@ -1397,7 +1397,7 @@ test('sent history keeps 500 entries and appends older entries beside the thread
   });
 });
 
-test('restart context includes the latest twenty Collin and card messages', async () => {
+test('restart context includes the latest twenty the user and card messages', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const oldLead = made.sessions[0];
@@ -1406,7 +1406,7 @@ test('restart context includes the latest twenty Collin and card messages', asyn
     before.sent = Array.from({ length: 28 }, (_, index) => ({
       to: oldLead.name,
       text: `message-${index}`,
-      source: index % 4 === 0 ? 'app' : (index % 2 ? 'collin' : 'card'),
+      source: index % 4 === 0 ? 'app' : (index % 2 ? 'user' : 'card'),
       at: `2026-01-01T00:00:${String(index).padStart(2, '0')}.000Z`,
     }));
     await fs.writeFile(file, `${JSON.stringify(before)}\n`);
@@ -1419,7 +1419,7 @@ test('restart context includes the latest twenty Collin and card messages', asyn
     const replacement = after.sessions.find((session) => session.name === restarted.body.name);
     const contextMessage = replacement.queue.find((message) => message.source === 'context');
     const state = JSON.parse(contextMessage.text.replace(/^\[wc:context restart] Thread state:\n/, ''));
-    const expected = before.sent.filter((message) => ['collin', 'card'].includes(message.source)).slice(-20).map((message) => ({ ...message, source: message.source === 'collin' ? 'user' : message.source }));
+    const expected = before.sent.filter((message) => ['user', 'card'].includes(message.source)).slice(-20).map((message) => ({ ...message, source: message.source === 'user' ? 'user' : message.source }));
     assert.deepEqual(state.recent_messages, expected);
   });
 });
@@ -1785,7 +1785,7 @@ test('keep going and talk about it close a lead needs card and reach the lead', 
     assert.equal(pressed.body.text, 'keep going');
     let card = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === first);
     assert.equal(card.answered, true);
-    assert.equal(card.resolved_by, 'collin');
+    assert.equal(card.resolved_by, 'user');
     assert.equal(card.resolved_note, 'Keep going');
     const again = await api(context, `/threads/${made.id}/cards/${first}/press`, { method: 'POST', body: { action: 'keep-going' } });
     assert.equal(again.status, 422);
@@ -1801,7 +1801,7 @@ test('keep going and talk about it close a lead needs card and reach the lead', 
   });
 });
 
-test('dismiss closes a lead needs card as collin and refuses a system one', async () => {
+test('dismiss closes a lead needs card as user and refuses a system one', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0].name;
@@ -1817,7 +1817,7 @@ test('dismiss closes a lead needs card as collin and refuses a system one', asyn
     assert.equal(ok.status, 200);
     const closed = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === id);
     assert.equal(closed.answered, true);
-    assert.equal(closed.resolved_by, 'collin');
+    assert.equal(closed.resolved_by, 'user');
     assert.equal((await needsStrip(context)).some((item) => item.card_id === id), false);
     // The live lead hears the dismissal (held here behind the open permission prompt).
     const stored = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));

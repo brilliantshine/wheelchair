@@ -55,7 +55,7 @@ test('banner states, undo, download and retry', async ({ page }) => {
 });
 
 test('imported history is collapsed and plain text', async ({ page }) => {
-  const id = await thread(page, { imported: { at: '2026-01-01T00:00:00Z', history: [{ at: '2025-01-01', who: 'lead', text: '<b>hello</b>' }, { at: '2025-01-02', who: 'collin', text: 'My message' }] } });
+  const id = await thread(page, { imported: { at: '2026-01-01T00:00:00Z', history: [{ at: '2025-01-01', who: 'lead', text: '<b>hello</b>' }, { at: '2025-01-02', who: 'user', text: 'My message' }] } });
   await page.goto(`${ctx.server.url}/app/thread?id=${id}`);
   const history = page.locator('#before-handoff'); await expect(history).not.toHaveAttribute('open'); await history.locator('summary').click();
   await expect(history).toContainText('2025-01-02 · You · My message');

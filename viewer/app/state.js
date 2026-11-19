@@ -40,6 +40,27 @@ async function readJson(file, fallback) {
   }
 }
 
+function normalizeThread(record) {
+  if (!record || typeof record !== 'object') return record;
+  if (Object.hasOwn(record, 'collin_at')) {
+    if (!Object.hasOwn(record, 'user_at') || record.user_at < record.collin_at) record.user_at = record.collin_at;
+    delete record.collin_at;
+  }
+  const convert = (items, key) => {
+    if (Array.isArray(items)) for (const item of items) {
+      if (item && typeof item === 'object' && item[key] === 'collin') item[key] = 'user';
+    }
+  };
+  if (record.queues && typeof record.queues === 'object') for (const queue of Object.values(record.queues)) convert(queue, 'source');
+  if (Array.isArray(record.sessions)) for (const session of record.sessions) if (session && typeof session === 'object') convert(session.queue, 'source');
+  convert(record.sent, 'source');
+  convert(record.cards, 'resolved_by');
+  if (record.pinned && typeof record.pinned === 'object') convert(Object.values(record.pinned), 'resolved_by');
+  convert(record.imported?.history, 'who');
+  convert(record.handoff_op?.carried?.history, 'who');
+  return record;
+}
+
 class State {
   constructor(stateDir = DEFAULT_STATE) {
     this.dir = path.resolve(stateDir);
@@ -110,7 +131,7 @@ class State {
   async thread(id) {
     const thread = await readJson(this.threadPath(id), null);
     if (!thread) throw appError(404, 'thread not found');
-    return thread;
+    return normalizeThread(thread);
   }
 
   async save(thread) {
@@ -128,6 +149,7 @@ class State {
     return this.queued(file, async () => {
       const thread = await readJson(file, null);
       if (!thread) throw appError(404, 'thread not found');
+      normalizeThread(thread);
       const result = await operation(thread);
       thread.updated_at = new Date().toISOString();
       await atomicWrite(file, json(thread));
@@ -145,7 +167,7 @@ class State {
         && ['mtimeMs', 'ctimeMs', 'size', 'ino'].every((key) => cached[key] === stat[key])
         && Math.max(cached.mtimeMs, cached.ctimeMs) < cached.checkedAt - SETTLE_MS) return cached.record;
       this.threadCache.delete(file);
-      const record = JSON.parse(await fs.readFile(file, 'utf8'));
+      const record = normalizeThread(JSON.parse(await fs.readFile(file, 'utf8')));
       const freeze = (value) => {
         if (value && typeof value === 'object') {
           for (const child of Object.values(value)) freeze(child);
@@ -250,4 +272,4 @@ class State {
   }
 }
 
-module.exports = { DEFAULT_STATE, SETTLE_MS, State, appError, atomicWrite, readJson };
+module.exports = { DEFAULT_STATE, SETTLE_MS, State, appError, atomicWrite, readJson, normalizeThread };

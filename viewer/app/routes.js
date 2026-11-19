@@ -531,7 +531,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
       require('./handoff.js').refuseFrozen(hub, thread);
       const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
       if (!lead) throw appError(409, 'no live lead');
-      await hub.enqueue(thread, lead.name, String(body.text || ''), 'collin');
+      await hub.enqueue(thread, lead.name, String(body.text || ''), 'user');
     });
     return send(response, 202, { queued: true });
   }

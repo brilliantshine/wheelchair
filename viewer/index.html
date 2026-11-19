@@ -315,7 +315,7 @@
   let updatedMs = null;
   let rollupsJson = null;
   let needsYouKeys = new Set();
-  // Whether Collin has answered the one-time notification offer, persisted so it is asked once
+  // Whether the user has answered the one-time notification offer, persisted so it is asked once
   // ever, not once per tab (Spec, "Tab signal"). Read at module load, wrapped in try/catch since a
   // private window or blocked site data can make localStorage throw on either access.
   const NOTIFY_ASKED_KEY = 'wheelchair-run-notify-asked';
@@ -327,7 +327,7 @@
   let impliedRemoved = new Set();  // edges shift-clicked away while both ends stay selected
   let writing = false;
   // Whether the explanation panel is open. Lives only here: not on the graph (a viewing
-  // preference isn't part of Collin's positions or the agent's claims) and not in storage
+  // preference isn't part of the user's positions or the agent's claims) and not in storage
   // (a poll or a navigation into a child graph must not reset it, but a reload must).
   let explainExpanded = true;
   // The group id a marked phrase is currently hovered over, or null. Read fresh out of `graph`
