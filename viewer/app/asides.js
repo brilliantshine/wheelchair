@@ -37,7 +37,7 @@ async function create(hub, thread, input) {
   if (!chat.items.some((item) => item.type === 'assistant' && item.id === input.message_id)) throw appError(400, 'message not found');
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   const provider = lead?.provider || providerOf(lead?.cli);
-  if (PROVIDERS[provider]?.asideFork === false) throw appError(400, "Side conversations aren't available on Antigravity sessions yet");
+  if (PROVIDERS[provider]?.asideFork === false) throw appError(400, `Side conversations aren't available on ${PROVIDERS[provider].label} sessions yet`);
   const parent = lead?.[({ claude: 'cli_session_id', gpt: 'codex_thread_id', gemini: 'agy_conversation_id' })[provider]];
   if (!lead || !parent) throw appError(409, "the lead isn't ready yet");
   const standard = await model(hub, provider, 'standard'), heavy = await model(hub, provider, 'heavy');

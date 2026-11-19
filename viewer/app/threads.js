@@ -216,6 +216,13 @@ async function archive(hub, id) {
   await hub.save(thread);
   const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id });
   thread.archive = result;
+  if (result.pending === true) {
+    const names = result.pending_sessions?.join(', ') || 'a session';
+    require('./cards.js').addCard(thread, { kind: 'needs', title: 'Archive waiting for a session to stop', body: `Waiting for ${names} to stop on ${thread.machine}. Archive again to retry.` }, { system: true });
+    thread.archived = false;
+    await hub.save(thread);
+    return result;
+  }
   const rebases = (result.kept || []).filter((item) => item.reason === 'rebase in progress');
   if (rebases.length || result.uploads_removed === false) {
     for (const kept of rebases) {
