@@ -170,6 +170,9 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
 - New lead-only, shown, unpinned kind `reach`. Fields: `thread` (required, the other
   thread's id from `--all-projects`; the one card field that holds a thread id), `why`
   (required, one line in the user's terms).
+- An open (unanswered, not retracted) `reach` card blocks handing the thread off: add it to
+  `quietReason` in `viewer/app/handoff.js` with the reason `A request to talk to another
+  project is waiting`, beside the waiting sudo check.
 - Only one `reach` card may be open in a thread at a time: the hub refuses another
   (422, `a reach request is already open`) while one is unanswered and not retracted, so a
   press always refers to the one open request.
@@ -207,8 +210,9 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
 
 **`protocol/app/lead.md`**: add a section "Other leads on this machine":
 - **When to look:** run `wc.js session leads` (a) after the mapper's `result` arrives and
-  you have read MAP.md, (b) when Open Questions and the Watch List are empty, before you set
-  `status: ready-for-review`, whatever turn that is. A new overlap found there (one you
+  you have read MAP.md, (b) when Open Questions and the Watch List are empty, before you first set
+  `status: ready-for-review` from `planning`, whatever turn that is (not when an approved
+  plan returns to review; check (c) still applies then). A new overlap found there (one you
   have not already told your user about) becomes an Open Question in PLAN.md, asked as a
   `question` card like any other ("<thread title> is also working on <what>: what should
   this plan do?", with options such as keep the plan as it is, or change it), so the status
@@ -287,7 +291,8 @@ New tests in `viewer/test/` must cover:
   between two legacy threads with no `provider` field; a cross-thread question never shows as
   outstanding on the Agents screen; the
   receiving thread's chat view hides the delivered message and the reply.
-- `reach`: each post-time refusal, including a second open `reach` card; Allow writes only the pressed thread and the other lead
+- `reach`: each post-time refusal, including a second open `reach` card; an open `reach`
+  card blocks export with its quiet reason; Allow writes only the pressed thread and the other lead
   can then message back; Allow on a target archived after posting answers the card, links
   nothing and queues `allow failed: that thread is archived`; Allow when already linked succeeds without change; Don't allow links
   nothing; a second press refused; retract works; an open `reach` card appears in Needs you.
@@ -508,9 +513,20 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 11 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5 (no findings); mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 10:** Decision 24: §4 check (b) runs before `ready-for-review` and a new overlap becomes an ordinary Open Question asked by card; "Leads inform" last sentence names that exception.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | major | Check (b) on an approved plan returning to review | upheld | (b) only on the first move out of `planning` |
+| mechanics | minor | Open `reach` card on an exported thread lingers in Needs you | upheld | Open `reach` blocks handoff via `quietReason` |
+
+### Round 12 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 11:** §4 check (b) only on the first move from `planning` to `ready-for-review`; §3 an open `reach` card blocks handoff (`quietReason`); Validation line.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
