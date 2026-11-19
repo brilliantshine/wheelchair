@@ -223,7 +223,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| Literal header or env values in `.mcp.json` are visible to other local users in Codex's process arguments | The same values sit in the project's `.mcp.json`, in a worktree other local users can already read (`drwxrwxr-x`); no new exposure. `${...}` values never reach argv | review-round-15 |
+| Literal header or env values in `.mcp.json` are visible to other local users in Codex's process arguments | Needs a second local user account on the machine (home is `drwx------`, so only `/proc` exposes them); literal secrets in a committed `.mcp.json` are already unusual, since `${VAR}` is the documented way; literal env values have been passed this way since PR #112. `${...}` values never reach argv | review-round-15 |
 | With tmux `remain-on-exit` on, an ended Antigravity agent's private plugin file stays until its tmux session is stopped | The file stays private (0600) and is removed when the session is stopped or archived | review-round-15 |
 | An OAuth tool whose `.mcp.json` also sets any header shows `needs login` as a problem rather than information | Rare; guessing which headers are credentials would hide a wrong API key, which is worse | review-round-12 |
 | A launch left pending by a previous machine service process for more than 60 s can create an Antigravity pane after the sweep removed its plugin files, or after the startup journal removed its checkout | Needs a service restart mid-launch and a launcher stuck for a minute; same class as Decision 29 | review-round-14 |
@@ -525,7 +525,7 @@ exit. Downgrades and declines cite evidence.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | Recompute compares the hash before a changed file is checked | upheld | §6 recompute runs after the check decision |
-| mechanics | blocking | Literal header credentials visible in Codex argv to local users | downgraded (minor) → accepted-risk | Same values readable in the worktree's `.mcp.json` (`drwxrwxr-x`); Accepted Risks |
+| mechanics | blocking | Literal header credentials visible in Codex argv to local users | downgraded (minor) → accepted-risk | Only another local account could read `/proc`; literal secrets in `.mcp.json` are unusual; Accepted Risks. Shown on the approval card |
 | mechanics | blocking | `${PWD}` expands to the wrong directory | upheld | §5 set `PWD` to the worktree |
 | mechanics | blocking | `update-environment` entries are patterns | upheld | §5 fnmatch |
 | mechanics | blocking | `remain-on-exit` keeps token files | downgraded (minor) → accepted-risk | File stays private and is removed at stop; Accepted Risks |
