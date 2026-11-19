@@ -145,3 +145,28 @@ $ bash machine/test/run.sh                      # pass 202, fail 0
 $ node --test viewer/test/*.test.js             # pass 641, fail 0
 $ npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js   # 120 passed
 ```
+
+### Remediation 2 (after verification attempt 2, commit 0cd19d1)
+
+Gaps and briefs: `REMEDIATION-2.md`. Lead decision: fix all seven, defer none, with the fix shape given per gap.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| 1 "needs" warnings lost for read-only parts | Machine warnings are the source, shown while the key is unset; computed ones only added for draft keys the machine didn't name | `viewer/pages/project-tools.js` tool card warnings | `app-project-tools.spec.js` machine key warnings test |
+| 2 Late replies on another project (whole family) | Every request (picker, read, post-save reloads, save, remove-key) tagged with machine, path and a generation bumped on every switch; stale replies dropped | `viewer/pages/project-tools.js` `tag()`/`fresh()`, `send`, `handle`, remove handler | one switch-mid-request test per kind |
+| 3 Nested `${A:-${B}}` hold-back | Brace-matching parse collects every name at any depth; regex fallback for unbalanced input | `machine/lib/project-keys.js:14-30` | `project-keys.test.js` nested/unbalanced test |
+| 4 `constructor` key broke Read | Null-prototype objects for name-keyed maps | `machine/lib/project-keys.js`, `machine/lib/project-tools.js` | `project-tools.test.js` special-names test |
+| 5 `__proto__` header dropped | Null-prototype objects and own-property helpers in the page | `viewer/pages/project-tools.js` | `__proto__` header test |
+| 6 `$` before a key | Refused | `viewer/pages/project-tools.js` `apply()` | `$` refused test |
+| 7 Start over with tools | Machine refuses unless `tools` is `{}` | `machine/lib/project-tools.js:92` | `project-tools.test.js` |
+| (found before re-verify) flaky phone test | Measure inside `evaluate` under `expect.poll` | `viewer/test/app-project-tools.spec.js:337` | — |
+
+Validation after remediation (sub-lead, on the merged branch):
+
+```
+$ bash machine/test/run.sh                       # pass 204, fail 0
+$ node --test viewer/test/*.test.js              # pass 641 (one flaky failure on a first run, passed on re-run)
+$ npm --prefix viewer run test:browser -- app-settings.spec.js app-project-tools.spec.js --repeat-each 3
+  1 failed  [firefox] app-settings.spec.js:61 (table cell; not changed by this build; different Settings tests fail run to run)
+  379 passed
+```
