@@ -258,7 +258,7 @@ test('HTTP pending stop, archive and hook preserve pending session and its workt
     const chatSession = { name:'wc-def-worker', thread_id:'def', cli:'kimi', status:'ready', account_dir:root, token:'other-token', created_at:new Date(Date.now()-10000).toISOString(), ready_at:new Date().toISOString() };
     machine.sessions[chatSession.name] = chatSession;
     const chatFile = path.join(root, 'sessions/work/chat/agents/main/wire.jsonl'); fs.mkdirSync(path.dirname(chatFile), {recursive:true});
-    fs.writeFileSync(chatFile, [ {type:'metadata',protocol_version:'1.5'}, {type:'turn.prompt',origin:{kind:'user'},input:[{text:`[wc:role] Role: worker\nSession: ${chatSession.name}\n`}]} ].map(JSON.stringify).join('\n')+'\n');
+    fs.writeFileSync(chatFile, [ {type:'metadata',protocol_version:'1.5'}, {type:'turn.prompt',origin:{kind:'user'},input:[{type:'text',text:`[wc:role] Role: worker\nSession: ${chatSession.name}\n`}]} ].map(JSON.stringify).join('\n')+'\n');
     const [chatResponse] = await Promise.all([request(`/v1/sessions/${chatSession.name}/transcript`,'GET'), machine.pollKimiTurns()]);
     assert.match((await chatResponse.json()).data, /Session: wc-def-worker/); assert.equal(chatSession.source_transcript,chatFile); assert.equal(chatSession.kimi_session_id,'chat');
     const chatStat = fs.statSync(chatFile); assert.deepEqual(chatSession.kimi_log_id,{dev:chatStat.dev,ino:chatStat.ino});
