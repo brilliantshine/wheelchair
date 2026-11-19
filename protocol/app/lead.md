@@ -328,7 +328,9 @@ anything IDEA.md's What or What good looks like promises, his press is his agree
 move it to Not doing with a pointer to the new thread and log it with source
 `idea-change` instead. Post a `stub` card whose summary names the part and points to this
 plan's path and its Review Rounds table for the open findings, without quoting them
-(`depends_on_parent` true when it builds on the rest). Settle any question still open from
+(`depends_on_parent` true when it builds on the rest). Move Deferred rows that belong
+only to that part into the stub's summary, delete them and repost the `deferred` card.
+Settle any question still open from
 that round, then run the next round on the change. On "Keep it here": carry on; the budget resets as for any
 decision of his.
 
