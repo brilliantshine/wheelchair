@@ -10,11 +10,6 @@ created: 2026-11-19
 
 ## Open Questions
 
-### Q2: How does the user give wheelchair the OpenRouter key?
-- **Context:** Other providers log in through a login pane wheelchair opens (`loginCommand`/`parseLogin` in each adapter). Pi accepts the key via `/login openrouter` (saved in `~/.pi/agent/auth.json`) or the `OPENROUTER_API_KEY` environment variable.
-- **Options:** In the app, through Pi's own login screen like other providers; or set once on the machine in Pi's auth file / environment, with Settings only showing whether a key is present.
-- **Recommendation:** In the app.
-
 ### Q3: Show what OpenRouter agents cost?
 - **Context:** OpenRouter is pay per use; Pi records cost per reply. Today's usage screen shows subscription limits (`viewer/app/usage.js`), and Kimi shows none.
 - **Options:** Show spend per thread/agent now; show nothing now and defer it.
@@ -42,6 +37,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | The new provider may fill every role Kimi can (lead, sub-lead, mapper, worker, reviewer, verifier), governed by the same Settings orders | Consistency with Kimi (`viewer/app/balancer.js:29-50`) | defaulted |
 | 5 | Model ids accept OpenRouter's `vendor/model` form with an optional `:variant` suffix (e.g. `:free`), up to 64 characters, in the hub, Settings page and `codex/model.sh` | That is OpenRouter's id format | defaulted |
 | 6 | The provider is named `openrouter` and counts as its own family for cross-family review, whatever model it serves | Simplest; a mismatch only matters when it serves the same family as the other reviewer | defaulted |
+| 7 | The key is entered in the app: Settings offers sign-in for OpenRouter like other providers, opening Pi's own login (`/login openrouter`) in the login pane; status reads only whether `auth.json` has an `openrouter` entry or `OPENROUTER_API_KEY` is set, never the key itself | User's choice; matches the other providers | user |
 
 ## Spec
 
