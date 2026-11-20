@@ -281,3 +281,4 @@ Claude/GPT behaviour or to how the page looks.
 - 2026-11-19 — Choice: T2, viewer/app/usage-poll.js: hub-first order rebuilt with splice/unshift; claude/gpt use eligible.slice(0, 1) through the same loop.
 - 2026-11-19 — Choice: T2, viewer/test/app-usage.test.js: failover test writes machines.json directly; named kimi fixture uses plan 'unknown'.
 - 2026-11-19 — Choice: T2, worker reported 'none'; the scout listed 4 choice groups from the diff, logged above.
+- 2026-11-19 — Verification attempt 1 started on f64ac970 (one verifier, not GPT: every builder was GPT).
