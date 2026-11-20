@@ -588,7 +588,7 @@ Filled by Stage 3. One row per worker brief.
 | T2 | Cross-thread lead `message` with two-lock delivery (§2) — tricky | cards.js (message path), hub.js (acceptCard), agents.js (questionFor), peers.js (additions), test/app-lead-messages.test.js | standard | | app-lead-messages test, full node suite, machine suite | not started (after T1) |
 | T3 | `reach` card hub side: schema, accept/refusals, press, Needs you, handoff (§3) | card.js, cards.js (reach), threads.js (reach press), views.js (addNeeds), handoff.js, API.md, peers.js (additions), test/app-reach.test.js | standard | | app-reach test, full node suite, machine suite | not started (after T2) |
 | T4 | `reach` card on the thread page + browser test (§3 display) | viewer/pages/thread.js, thread.css, test/app-reach.spec.js | standard / claude-sonnet-5-5 | wc-ed3eb67e1cfc-worker-2 | app-reach spec, browser suite, node suite | running |
-| T5 | Protocol rules: lead.md section, cards.md, cards-lead.md, protocol-rules test (§4) | protocol/app/lead.md, cards.md, cards-lead.md, viewer/test/protocol-rules.test.js | standard / claude-sonnet-5-5 | wc-ed3eb67e1cfc-worker-3 | protocol-rules test, full node suite | running |
+| T5 | Protocol rules: lead.md section, cards.md, cards-lead.md, protocol-rules test (§4) | protocol/app/lead.md, cards.md, cards-lead.md, viewer/test/protocol-rules.test.js | standard / claude-sonnet-5-5 | wc-ed3eb67e1cfc-worker-3 | protocol-rules test, full node suite | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -599,3 +599,8 @@ anything a future session needs that fits nowhere above.
 
 - 2026-11-19 Ready check: hub and machine service answer (session list via the machine); claude 2.1.329 and codex-cli 0.169.0 installed; codex preflight passed (token fresh). Ready.
 - Build accepted: approval 661559d8-c161-4fda-b6d5-47904040f458
+- 2026-11-19 — Choice: T5, protocol/app/lead.md: section "Other leads on this machine" placed before "Asking the user to run something as root", opening with a short paragraph describing the `session leads` output.
+- 2026-11-19 — Choice: T5, protocol/app/cards-lead.md: `reach` section placed after `sudo`, before "The kinds never shown"; its `picked: allow` line adds "the link exists; message that lead".
+- 2026-11-19 — Choice: T5, viewer/test/protocol-rules.test.js: the no-plan-reference test checks `lead-chat`, `Decision Log`, `Decision ` and `PLAN.md of lead-chat` (bare `PLAN.md` is allowed: lead.md names the file generically).
+- 2026-11-19 — Choice: T5, lead.md "Leads inform" bullet: dropped the Spec's "under lead.md's existing rules" phrase (wording only).
+- 2026-11-19 — T5 accepted (band: scout): all §4 bullets, cards.md and cards-lead.md items present; protocol-rules 36/36 re-run by sub-lead. Report summarized rather than pasted its output.
