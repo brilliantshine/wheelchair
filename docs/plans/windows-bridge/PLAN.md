@@ -108,6 +108,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D76 | The deletion list is the only rule for deleting a copy | Lifecycle text contradicted it for copies whose worktree is gone | review-round-6 |
 | D77 | A copy with unresolved conflict paths is never deleted at archive or worktree removal | A masked Windows edit would be deleted with the copy | review-round-6 |
 | D78 | An app's wrapper closing sets `used_since_ok` | An app can write and exit naturally after the last sync | review-round-6 |
+| D79 | Run one more review round; if not clean, come back to the user before going further | User's pick at the second review budget | user |
 
 ## Spec
 
@@ -619,6 +620,15 @@ sets `WHEELCHAIR_UNITY`.
 | mechanics | blocking | Files force-added after the bridge index exists are missed | downgraded: minor | `git add -f` of real-index paths before each snapshot |
 | mechanics | major | Failed-copy retention and missing-worktree deletion contradict | upheld | D76 |
 | mechanics | major | Rename/rename conflict: Windows version at another path in the ref | accepted-risk | Rare path: both sides renaming one file between syncs; instructions say `git ls-tree -r <ref>` |
+
+### Round 7 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 6:** live check's Unity project from minimal files filled in by Unity on Windows (D75); agent instructions for delete and rename conflicts; deletion list is the only deletion rule (D76); copies with unresolved conflicts never deleted at archive or worktree removal (D77); an app's wrapper closing sets `used_since_ok` (D78); force-added files picked up before each Linux snapshot.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
