@@ -51,6 +51,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 21 | If Pi needs `extended-keys`, set the tmux server option to `on` | tmux has no per-session scope for it; `on` only affects programs that request it | review-round-4 |
 | 22 | Extends 21: set only when the current value is `off`, accepting that it also applies to the user's own tmux sessions on the default server | Harmless with `on`; a user's own setting is kept | review-round-5 |
 | 23 | After rounds 4–6 without a clean pass, approve the plan as it stands; round 6's fixes are not re-reviewed | User's choice: remaining findings were narrow edge cases that verification checks against the built code | user |
+| 24 | Supersedes 21, 22 and the Spec's tmux start order: no `extended-keys` check-and-set and no shell-then-`respawn-pane` start; Pi panes start like Kimi's | Dry run: plain Enter and bracketed multi-line paste submit with `extended-keys off` | lead |
+| 25 | Supersedes Decision 7's `/login openrouter`: the login pane runs `pi auth login openrouter --api-key` (honouring `PI_CODING_AGENT_DIR`); `wantsCode` while `Enter OpenRouter API key:` shows; done on `Saved API key for OpenRouter` or exit 0, failed otherwise; no URL path. Exact target, buffer deletion, Pi-only stale-prompt refusal and pane redaction stay. Settings' paste field reads "Paste your OpenRouter key" | Dry run: the TUI login has an OAuth-first menu, swallows the first Enter and echoes the key; the one-shot command hides it and exits | lead |
+| 26 | Spend sums `message.usage.cost.total` on assistant entries whose `message.provider` is `openrouter` | Dry run: that is where Pi records cost | lead |
+| 27 | Reviewers run with `--tools read,grep,find,ls`; the role prompt goes in with `--append-system-prompt <file>` and `typesRoleMessage: false` | Dry run confirmed both flags | lead |
 
 ## Spec
 
