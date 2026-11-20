@@ -1,6 +1,6 @@
 ---
 slug: openrouter-harness
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -50,8 +50,27 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 20 | After three unclean rounds, keep the plan as is and run another review round | User's choice over simplifying sign-in or building now | user |
 | 21 | If Pi needs `extended-keys`, set the tmux server option to `on` | tmux has no per-session scope for it; `on` only affects programs that request it | review-round-4 |
 | 22 | Extends 21: set only when the current value is `off`, accepting that it also applies to the user's own tmux sessions on the default server | Harmless with `on`; a user's own setting is kept | review-round-5 |
+| 23 | After rounds 4–6 without a clean pass, approve the plan as it stands; round 6's fixes are not re-reviewed | User's choice: remaining findings were narrow edge cases that verification checks against the built code | user |
 
 ## Spec
+
+### Flow
+
+```mermaid
+flowchart TD
+  A[You add your OpenRouter key in Settings, through Pi's own sign-in screen] --> B[A thread asks for an OpenRouter agent, or OpenRouter is in an order you set]
+  B --> C[Wheelchair starts Pi in tmux with the chosen OpenRouter model]
+  C --> D[Pi works on its turn]
+  D --> E[Pi's add-on tells wheelchair the turn ended, with the turn number and which reply ended it]
+  E --> F{How did the turn end?}
+  F -->|with a reply| G[The reply shows in the thread; a reviewer's or verifier's report goes to whoever started it]
+  F -->|cancelled| H[Turn ends, no report]
+  F -->|error, including rate limits| I[Turn marked failed, key blanked out of the message]
+  G --> J[Spend from Pi's records adds up on the usage view]
+```
+
+The flow above repeats the sections below: sign-in (Machine adapter), placement (Identity),
+turn ends and reports (Machine adapter, Hub) and spend (Hub).
 
 ### Harness
 
