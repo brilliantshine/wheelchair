@@ -24,9 +24,9 @@ test('states with a link or without wantsCode keep the existing behaviour', () =
   for (const st of [{ state: 'starting', url: null, wantsCode: true }, { state: 'waiting', url: null, wantsCode: false }]) assert.equal(run('keyOnlySignin', st), false);
 });
 
-test('the page treats key-only waiting like a link: the startup timeout stops, the key is a password field, 409 offers a restart', () => {
+test('the page treats key-only waiting like a link: the startup timeout stops, the key is a password field, 409 offers a restart for OpenRouter only', () => {
   assert.match(source, /if \(\(card\.hadUrl \|\| !\(st\.url \|\| keyOnly\)\) && expired\(\)\) return fail\(\);/);
   assert.match(source, /if \(st\.url \|\| keyOnly\) \{\s*if \(!card\.hadUrl\) card\.firstUrl = Date\.now\(\);\s*card\.hadUrl = true;/);
   assert.match(source, /type: 'password'[^}]*'aria-label': 'Paste your OpenRouter key'/);
-  assert.match(source, /e\.status === 409[\s\S]*Start again/);
+  assert.match(source, /e\.status === 409 && account\.provider === 'openrouter'[\s\S]*Start again/);
 });

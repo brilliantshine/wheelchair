@@ -1073,7 +1073,10 @@
       try { await api(`/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}/code`, { method: 'POST', body: { code } }); field.value = ''; status.textContent = 'Code sent.'; inlineErr(codeBox, ''); }
       catch (e) {
         inlineErr(codeBox, e.message);
-        if (e.status === 409) { field.value = ''; codeBox.append(h('button', { type: 'button', class: 'small', text: 'Start again', onclick: () => openSignin(account, machine) })); }
+        if (e.status === 409 && account.provider === 'openrouter') {
+          field.value = '';
+          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine) }));
+        }
       }
     } });
     const pasteLabel = h('label', { text: 'Paste the code' });
