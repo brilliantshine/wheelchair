@@ -104,6 +104,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D72 | Only text content conflicts get markers; every other conflict kind takes the Linux entry | A modify/delete conflict would otherwise resurrect the file on Windows | review-round-5 |
 | D73 | A new Linux bridge index starts from `HEAD` without stat data | Tracked files matching an ignore rule must reach the copy | review-round-5 |
 | D74 | A copy counts as used while a live session there has a Windows-program tool | Such tools write outside the bridge's tracked apps | review-round-5 |
+| D75 | The live check's Unity project starts as minimal committed files; Unity fills in its own files on Windows through `win start` before the test run | Avoids running Unity over the WSL share and the `run` time limit | review-round-6 |
 
 ## Spec
 
@@ -343,8 +344,10 @@ Add to `protocol/app/worker.md` and `protocol/app/verifier.md`, next to the scre
 on a WSL machine, use `wc.js win` to run or look at things on Windows; your Windows copy is
 synced with git around each command; after editing files, run `win sync` before asking a
 Windows-side tool to look at them; a sync can report conflicts: text files then hold git
-conflict markers to resolve, and a binary keeps your version, with the Windows version
-available through `git show <ref>:<path>` using the ref the result names; if a Windows-side
+conflict markers to resolve, and any other kind (binary, deleted on one side,
+renamed) keeps your version; the Windows side is in the ref the result names, so `git show
+<ref>:<path>` gets a Windows file back when it exists there, and `git ls-tree -r <ref>` shows
+what the Windows side had if the path was renamed or deleted; if a Windows-side
 tool failed at the start of your session, check `win info`'s `ready` and say so in your
 report; Windows apps
 appear on the user's desktop, so never leave them running and never try to type into them;
@@ -429,11 +432,13 @@ the report shows which build answered. Steps: `info` ok, `sync` round trip with 
 on each side, `run -- cmd.exe /c echo hi`, `start -- notepad.exe`, `windows`, `shot` produces
 a PNG that is not a single colour, `stop`. With `WHEELCHAIR_UNITY=<path to Unity.exe>` set it
 also runs the Unity part (D33) on the fixture project `machine/test/fixtures/unity-min` (one
-passing EditMode test). The script does not ship a whole Unity project (D70): it creates one
-in the temporary repository with the installed Unity (`-batchmode -createProject <path>
--quit`), copies in the fixture's files (`Packages/manifest.json` entries for the test
-framework, an `.asmdef`, one test script), opens it once in batchmode with `-quit` so Unity
-writes its own files for that version, syncs and commits. The fixture carries its own
+passing EditMode test). The fixture ships only the files a Unity project needs to start (D70, D75):
+`.gitignore`, `Packages/manifest.json` with the test framework, an `.asmdef` and one test
+script, with no `ProjectSettings/`. In order, the script: commits these into the temporary
+repository; runs `win sync`; `win start`s Unity on the copy with `-batchmode -quit` (no
+`-createProject`, nothing run on the Linux side) and polls `win status` until it exits 0, so
+Unity writes its own `ProjectSettings/` and `.meta` files for the installed version on
+Windows; runs `win sync` and commits what came back. Only then the test run below. The fixture carries its own
 `.gitignore` ignoring `Library/`, `Temp/`, `Logs/`, `UserSettings/`, `obj/`, `*.csproj`,
 `*.sln` and `Packages/packages-lock.json` (D36). `win run` of batchmode tests with
 `-testResults` at the fixture's (not ignored) `wheelchair-live-results.xml` returns exit 0,
@@ -596,6 +601,8 @@ sets `WHEELCHAIR_UNITY`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Live check's Unity project creation order and location unclear; risks the WSL share and the `run` limit | upheld | D75 |
+| intent | minor | Agent instructions do not cover delete or rename conflicts | upheld | Instructions extended |
 
 ## Implementation Tasks
 
