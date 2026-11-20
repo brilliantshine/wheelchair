@@ -108,3 +108,17 @@ test('aborted turn without a new assistant emits and forwards a null entry', asy
   const machine = new MachineService({ stateDir: root }); machine.sessions['wc-test-worker'] = { name: 'wc-test-worker', cli: 'pi', thread_id: 'test', cli_session_id: '123', account_dir: root }; const forwarded = []; machine.emitEvent = async event => forwarded.push(event);
   await machine.hook('wc-test-worker', emitted); assert.equal(forwarded[0].entry_id, null); assert.equal(forwarded[0].interrupted, true);
 });
+
+
+test('missing Pi transcript does not hold a settled hook', async () => {
+  const fs = require('node:fs'), path = require('node:path'), { spawnSync } = require('node:child_process');
+  const { MachineService } = require('../service'), root = require('../../test-support/run-dir').makeTempSync('pi-missing-');
+  const result = spawnSync(path.join(__dirname, '../hook.sh'), ['pi', 'wc-test-worker'], { input: JSON.stringify({ hook_event_name: 'agent_settled', turn: 1, entry_id: 'a1' }), encoding: 'utf8', env: { ...process.env, WHEELCHAIR_STATE_DIR: root, WHEELCHAIR_SESSION_TOKEN: 'synthetic' } });
+  assert.equal(result.status, 0);
+  const spool = path.join(root, 'spool/events'), files = fs.readdirSync(spool); assert.equal(files.length, 1);
+  const event = JSON.parse(fs.readFileSync(path.join(spool, files[0]), 'utf8')); assert.equal(event.type, 'turn-ended');
+  const machine = new MachineService({ stateDir: root }); machine.sessions['wc-test-worker'] = { name: 'wc-test-worker', cli: 'pi', thread_id: 'test', cli_session_id: '123', account_dir: root };
+  const forwarded = []; machine.emitEvent = async value => forwarded.push(value);
+  await machine.hook('wc-test-worker', event);
+  assert.equal(forwarded.length, 1); assert.equal(forwarded[0].type, 'turn-ended'); assert.equal(forwarded[0].entry_id, 'a1');
+});
