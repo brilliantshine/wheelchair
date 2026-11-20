@@ -458,7 +458,8 @@ async function handleThreads(hub, request, response, url, bits, body) {
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
       const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
       // Before that, its pinned progress line says where it is: building, verifying or verified.
-      const progress = pinned && pinned.progress;
+      // A planned thread (it has a slug) takes its stage from PLAN.md, even archived.
+      const progress = !summary.slug && pinned && pinned.progress;
       const progressStage = !progress ? null
         : (progress.stage || 'build') === 'build' ? 'building'
           : progress.stage === 'verify' ? (progress.phase === 'clean' ? 'verified' : 'verifying') : null;

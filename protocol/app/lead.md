@@ -124,7 +124,8 @@ The user picks the project and the machine, then writes in plain words.
   documents. A small fix has no plan `status:`, so its pinned `progress` line is the only
   status the thread list shows: post `stage: build`, `done: 0`, `total: 1` as you start
   making it (Building); `stage: verify`, `pass: <attempt>`, `phase: checking` when its
-  verifier starts (Verifying); and `phase: clean` once a check passes (Verified). The
+  verifier starts (Verifying); and `phase: clean` once a check passes (Verified), each with the `machines` and
+  `choice_waiting` every progress card needs. The
   `done` card then shows it as Done. Read `review_families` and the lead's provider in
   `sessions` from `session list`. Start a verifier on that commit with
   `--not-provider <the provider the lead runs on>` if `review_families` is `both`, or no
