@@ -82,8 +82,8 @@ link and button in it is at least 44px tall.
 ### S3. Which plan documents exist, read through the thread's machine
 
 New hub route `GET /wheelchair/api/threads/<id>/documents` (in `viewer/app/routes.js`,
-same auth as the other thread GETs) returns `{ "documents": [ { "file": "MAP.md", "size":
-<bytes> }, ... ] }`, only names that exist, in MAP, IDEA, PLAN order.
+same auth as the other thread GETs) returns `{ "documents": [ "MAP.md", ... ] }`: only the names that exist, in MAP, IDEA,
+PLAN order. No sizes.
 
 - **Live thread** (not archived): the hub asks the thread's machine,
   `GET /v1/threads/<thread id>/documents?slug=<slug>` (hub-authenticated with the machine
@@ -93,7 +93,7 @@ same auth as the other thread GETs) returns `{ "documents": [ { "file": "MAP.md"
   `^[a-z0-9][a-z0-9-]{0,79}$`, else 400. For each of the three names it `lstat`s
   `<worktree>/docs/plans/<slug>/<FILE>` and includes it only if it is a regular file (not
   a symlink). No lead record → `{ "documents": [] }`.
-- **Archived thread:** the hub runs `git -C <project> cat-file -s <branch>:docs/plans/<slug>/<FILE>`
+- **Archived thread:** the hub runs `git -C <project> cat-file -e <branch>:docs/plans/<slug>/<FILE>`
   for each name (as `archivedDocument` reads them, `viewer/app/threads.js:251-265`) and lists
   those that succeed.
 - No slug → `{ "documents": [] }`.
@@ -176,7 +176,7 @@ New lead-only card kind `file`, shown to the user, not pinned.
 Editing documents in the app; changing composer attachments; sharing files across threads;
 carrying sent files through a handoff export or import; downloading pictures; download all;
 in-app previews of sent non-image files; keeping sent files after archive; making the
-archived-document read work for projects that exist only on another machine (unchanged).
+archived-document read work for projects that exist only on another machine (Deferred D5).
 
 ### Validation
 
@@ -213,6 +213,7 @@ npm --prefix viewer run test:browser
 | D2 | Download all documents at once (zip) | Per-file download works | planning | |
 | D3 | In-app preview for sent documents other than images | Download opens them with the phone's own viewer | planning | Markdown could reuse the doc page renderer |
 | D4 | Keep sent files after the thread is archived | User chose removal for now | planning | Needs a store outside the uploads folder and a cleanup rule |
+| D5 | Project documents of an archived thread whose project exists only on another machine | Live remote threads work; archived reads stay as today | review-round-1 | Archived reads run `git -C <project>` on the hub (`viewer/app/threads.js:251-265`); route them through the thread's machine like S3/S4 live reads |
 
 ## Accepted Risks
 
@@ -229,6 +230,10 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Archived remote threads lose project documents; hidden in Non-goals | upheld | Moved to Deferred D5 with notes |
+| intent | minor | Widen `image` to any file instead of a new `file` kind | declined | `image` has a fixed contract (inline display, image extensions) used by existing leads and the chat card; a separate kind keeps both simple and is what the reviewer calls defensible |
+| intent | minor | `/documents` returns sizes nobody shows | upheld | S3 returns names only; archived check uses `cat-file -e` |
+| intent | minor | S5 filename header also changes user attachments; say so | upheld | S5 Serving says it is intended |
 
 ## Implementation Tasks
 
