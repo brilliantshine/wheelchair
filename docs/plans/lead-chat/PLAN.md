@@ -593,3 +593,4 @@ Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
 
 - 2026-11-19 Ready check: hub and machine service answer (session list via the machine); claude 2.1.329 and codex-cli 0.169.0 installed; codex preflight passed (token fresh). Ready.
+- Build accepted: approval 661559d8-c161-4fda-b6d5-47904040f458
