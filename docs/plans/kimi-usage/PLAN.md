@@ -38,6 +38,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | Monthly limits and the top-up balance in the response are ignored | IDEA.md Not doing | defaulted |
 | 10 | On a Kimi limit hit the machine reads usage once, so the stopped session resumes at Kimi's real reset | Review round 1: otherwise it retries hourly; the key is surely fresh at that moment | review-round-1 |
 | 11 | For Kimi, the poller tries each eligible machine until one reads | Review round 1: the same account may be signed in on several machines; only the one that ran Kimi lately has a fresh key | review-round-1 |
+| 12 | Supersedes 10: the Kimi limit-hit probe and `kimiLimitedUntil` are split off to their own thread; Kimi limit hits keep today's one-hour retry | That part drew a new upheld timing finding in rounds 1–3 while the rest settled; the user chose to split | user |
 
 ## Spec
 
@@ -87,33 +88,10 @@ or Antigravity changes.
 
 - Accept `cli: 'kimi'` alongside `claude` and `codex`; the account and directory checks are
   unchanged (`default-kimi` with `dir: null`, or `~/.wheelchair/accounts/<id>`).
-- Pass the probe a test-only URL override from `this.options.kimiUsageUrl` when set, here
-  and in the limit-hit probe below, (the
+- Pass the probe a test-only URL override from `this.options.kimiUsageUrl` when set, (the
   service tests set it to a local fake server); in production the option is unset.
 - Reading construction, `reached` → `limited_until`, 200 and 502 handling stay as they are.
 - `agy` stays refused with 400.
-
-### Machine: Kimi limit hit (`machine/service.js` `hook`, around line 1379)
-
-When a `limit-hit` event arrives for a session whose `cli` is `kimi`, the machine first
-calls the kimi `usageProbe` for that session's account home (the same `dir` the session
-runs with: `null` for `default-kimi`, else `~/.wheelchair/accounts/<id>` expanded), with a
-5-second timeout, inline in the hook (a limit hit is rare, so briefly holding up other Kimi
-turn events on that machine is acceptable). The key is fresh at that moment because the session has just run. On
-success it builds the reading as the `/v1/usage` route does (account, `at`, windows,
-`limited_until` from `limitedUntil(reading)` when `reached`), stores it as the session's
-`last_reading`, and puts it on the forwarded event as `reading`, so the hub records it.
-The event's `limited_until` comes from a new helper `kimiLimitedUntil(reading)` in
-`machine/lib/limits.js`: among the reading's windows that are at least 95% used and have a
-future `resets_at`, the **latest** reset (so a spent week is not retried at the earlier
-five-hour reset); if there is no such window, one hour from now. The quota is the cause
-only when a window is that full; otherwise (for example short-term throttling) the one-hour
-wait stands, though the reading is still recorded. On a probe failure the helper is applied
-to `current.last_reading` instead (null gives one hour), so an old reading with a distant
-weekly reset never parks the session for days. `limitedUntil` itself and every other
-provider are unchanged. Claude, Codex and Antigravity
-limit hits are unchanged. Effect: a running Kimi session stopped by its limit resumes at
-Kimi's real reset time instead of retrying every hour.
 
 ### Hub: idle poller (`viewer/app/usage-poll.js`)
 
@@ -150,7 +128,8 @@ into the page, forecast and rank as is. Do not add Kimi-specific display.
 
 ### Non-goals
 
-Renewing tokens; Kimi monthly limits or top-up balance; usage for Antigravity; any change to
+Changing what happens when a running Kimi session hits its limit (it keeps today's
+one-hour retry; split to its own thread, Decision 12); renewing tokens; Kimi monthly limits or top-up balance; usage for Antigravity; any change to
 Claude/GPT behaviour or to how the page looks.
 
 ### Validation
@@ -162,14 +141,6 @@ Claude/GPT behaviour or to how the page looks.
   expired `expires_at` → 502 and the fake received **no** request; not signed in / China
   region → 502, no request; fake returns 401 → 502 and the error text and response contain
   no token; the request carried `Authorization: Bearer <token>`; `agy` still 400.
-- Machine test for the limit hit: a kimi session's `limit-hit` with the fake usage server
-  returning a 100% week resetting at time T forwards `limited_until` = T and a `reading`; with
-  a 40% week and 30% five-hour reading it forwards the one-hour fallback plus the `reading`;
-  with the fake returning 500 it forwards the one-hour fallback, also when the session's
-  `last_reading` holds a 40% week with a reset days away; with five-hour 96% resetting at T1
-  and week 100% resetting at T2 > T1 it forwards T2. Unit tests for `kimiLimitedUntil`. A malformed 2xx body containing a
-  dummy secret string gives a 502 whose error text does not contain that string. A 302 from
-  the fake gives a 502 and the fake sees exactly one request.
 - New hub tests in `viewer/test/app-usage.test.js`: an idle `kimi` account is polled with
   `cli: 'kimi'` and its reading is stored in `usage.json`; a `kimi` account with a live
   session is still polled **and its reading is stored**; a `kimi` account signed in on two
@@ -240,9 +211,21 @@ Claude/GPT behaviour or to how the page looks.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent (claude) | — | No findings | — | — |
-| mechanics (gpt) | blocking | Five-hour 100% resetting tonight and week 96% resetting in days: the latest-reset rule parks the session for days | upheld (major) | Fix pending the user's answer to the split offer for the limit-hit part |
+| mechanics (gpt) | blocking | Five-hour 100% resetting tonight and week 96% resetting in days: the latest-reset rule parks the session for days | upheld (major) | Part split off to its own thread (Decision 12); open finding carried there |
 | mechanics (gpt) | blocking | The poll's machine status check can run `kimi --version` after a Kimi upgrade | declined | Existing machine status check, shared by every provider and the Settings page, cached and run whether or not readings exist (usage.js:48-76); not part of getting a reading, which stays one web request |
 | mechanics (gpt) | minor | The grep validation can't prove credentials are untouched | upheld | Replaced by a before/after bytes-and-mtime test |
+
+### Round 4 — 2026-11-19
+
+**Lanes:** claude (intent); not-claude (mechanics); cross-family: yes.
+
+**Changed since Round 3:**
+- Removed "Machine: Kimi limit hit" and its tests (split off, Decision 12); added it as a non-goal.
+- Test URL override now only for the `/v1/usage` route.
+- Credential-untouched check is now a before/after bytes-and-mtime test.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
