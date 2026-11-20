@@ -1,6 +1,6 @@
 ---
 slug: thread-sidebar-files
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -40,6 +40,23 @@ _None._
 ## Spec
 
 Line numbers are from commit `a5f9d5f6`; see `MAP.md` and `docs/maps/thread-sidebar-files.md`.
+
+```mermaid
+flowchart TD
+  A[Thread page polls the chat] --> B{Which plan files exist?}
+  B -->|live thread| C[Check the worktree on the app's computer]
+  B -->|archived thread| D[Check the thread's branch, cached]
+  C --> E[Project documents: map, idea, plan, then pictures]
+  D --> E
+  E --> F[Open the page, or Download as slug-FILE.md]
+  G[Lead posts a file card] --> H[Its machine checks it and copies it into the thread's uploads]
+  H --> I[Card in chat and a row in Sent to you]
+  I --> J[Download streams from that machine, never runs in the browser]
+  K[Thread archived] --> L[Sent files removed; names stay, marked removed]
+```
+
+The page lays both sections out the same way in the right column and, on a phone, inside
+the panel the header's Files button opens.
 
 ### S1. The right column has two sections
 
@@ -195,6 +212,11 @@ map, idea and plan of threads on another computer, live or archived (Deferred D5
 
 ### Validation
 
+Existing browser tests that assert today's sidebar and phone strip (plan links shown for
+missing files, picture chips visible under the header without opening a panel) are updated
+to the new UI as part of S1–S3: `viewer/test/app-threads.spec.js:657-665,908-915`,
+`viewer/test/app-doc.spec.js:111-119`, `viewer/test/app-pictures.spec.js:90-99`.
+
 New or changed tests:
 
 - `machine/test/`: `copyFile` accepts a text and a PDF file, refuses a relative path, a
@@ -241,6 +263,7 @@ npm --prefix viewer run test:browser
 | A plan folder that is itself a symlink out of the worktree passes the eligibility check | Needs an agent to plant the symlink (tampering); the lead can already read any such file | review-round-2 |
 | A `file` card carrying a `warnings` field passes the machine's extra-field check | `card.js` refuses unknown fields; needs a client bypassing it | review-round-3 |
 | An archived plan document with non-UTF-8 bytes downloads re-encoded | Agents write UTF-8 Markdown | review-round-3 |
+| An archived thread advanced by a handoff import and archived again can show a cached document list from before | Needs an import that advances an archived thread, a change in which plan files exist, and a re-archive, with the hub still running | review-round-5 |
 | An archived plan document over 2 MiB is listed but its page fails | Plan documents are far smaller in ordinary use | review-round-2 |
 
 ## Review Rounds
@@ -340,6 +363,9 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Archived document cache goes stale after an import advances and re-archives a thread | accepted-risk | Rare path: needs import-advance, a changed set of plan files and re-archive in one hub run; Accepted Risks |
+| mechanics | minor | Existing browser tests assert the old sidebar and phone strip | upheld | Validation names the tests to update |
+| mechanics | minor | `file` title accepts line breaks | declined | Same `text` check as the `image` card's title (`viewer/app/card.js:148`); the card wraps text, nothing breaks |
 
 ## Implementation Tasks
 
