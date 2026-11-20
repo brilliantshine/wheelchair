@@ -1343,6 +1343,17 @@
   }
   $('attach').addEventListener('click', () => { if (!uploading) fileInput.click(); });
   fileInput.addEventListener('change', () => { addFiles(fileInput.files, false); fileInput.value = ''; });
+  // Enter sends and Shift+Enter starts a new line, when this browser's Settings switch is on.
+  // Unset, it is on for a mouse-and-keyboard device and off for a touch one (no Shift+Enter there).
+  function enterSends() {
+    let v = null; try { v = localStorage.getItem('enter-sends'); } catch (e) { /* default below */ }
+    if (v === '1' || v === '0') return v === '1';
+    return !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+  msgEl.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' || ev.shiftKey || ev.isComposing || ev.keyCode === 229 || !enterSends()) return;
+    ev.preventDefault(); composerEl.requestSubmit();
+  });
   msgEl.addEventListener('paste', (ev) => { if (ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
   composerEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
   composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); addFiles(ev.dataTransfer.files, false); } });
