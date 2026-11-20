@@ -130,7 +130,7 @@ async function acceptCard(hub, payload) {
       if (Object.hasOwn(thread.sudo_index, checked.card.request_id)) throw appError(422, 'that sudo request already has a card');
     }
 
-    const stored = checked.card.kind === 'image' ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
+    const stored = ['image', 'file'].includes(checked.card.kind) ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
     const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name });
     if (card.kind === 'sudo') thread.sudo_index[card.request_id] = card.id;
     if (card.kind === 'message' || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }

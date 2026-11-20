@@ -250,7 +250,7 @@ async function archive(hub, id) {
 
 async function archivedDocument(hub, id, file) {
   const thread = await hub.thread(id);
-  if (!thread.archived || !thread.branch || !thread.slug || !ARCHIVED_DOCUMENTS.has(file)) {
+  if (!thread.archived || !thread.branch || !require('./documents.js').validSlug(thread.slug) || !ARCHIVED_DOCUMENTS.has(file)) {
     throw appError(404, 'archived document not found');
   }
   const object = `${thread.branch}:docs/plans/${thread.slug}/${file}`;
