@@ -50,6 +50,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D18 | Agents are told about `wc.js win` in worker.md and verifier.md (sub-lead and lead read the same section through those docs only when briefing) | Same place the screen commands are documented | defaulted |
 | D19 | No installer change: the bridge needs nothing installed on Windows; README "On Windows" gains a setup and check section | IDEA: setup is a one-time step, written down plainly | defaulted |
 | D20 | A live check script `machine/test/windows-live.sh` exercises the real bridge on a WSL machine; it exits 77 (skipped) elsewhere | The build machine is not WSL; fakes cover CI | defaulted |
+| D21 | Supersedes D6's per-session key: a Windows copy belongs to a worktree, at `%LOCALAPPDATA%\Wheelchair\copies\<thread-id>\<worktree-key>`, where `<worktree-key>` is the first 12 hex characters of the SHA-256 of the worktree's absolute Linux path. Sessions sharing a worktree (lead and sub-lead; a replacement worker) share its copy, manifest and warm cache | Every worker and verifier is a new session; per-session copies would always start cold, and two copies could pull into one worktree | review-round-1 |
+| D22 | A newly created copy is first seeded on the Windows side with the ignored files (such as Unity's `Library/`) of the thread's most recently synced other copy, then pushed as usual. Pulls Deferred #3 into the Spec | Verifiers get a fresh worktree each; without seeding every one waits through a full Unity import | review-round-1 |
+| D23 | The supported way to reach a Windows-side tool is to run its MCP server on Windows as a stdio entry launched through interop; it then reaches its app (such as the Unity Editor) over Windows' own localhost, so no networking settings change. HTTP and SSE servers on Windows stay Deferred #1 | Meets IDEA's "without hand-editing networking settings" for any tool with a stdio server, which both known Unity MCPs offer | review-round-1 |
+| D24 | On a machine that is not WSL, `.mcp.json` stdio entries whose command is a Windows program are left out of the session's project tools and are not reported as missing programs | IDEA: machines without WSL are unaffected; a committed `.mcp.json` may carry Windows entries | review-round-1 |
 
 ## Spec
 
@@ -113,9 +117,14 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 
 ### The Windows copy and sync (D3–D6, D14, D16)
 
-- Copy path: `%LOCALAPPDATA%\Wheelchair\copies\<thread-id>\<session-name>` (D6), reached from
-  Linux through the mount. Created on the first `sync`, `run` or `start`.
-- A manifest per session at `<stateDir>/win/<session>/manifest.json` records, for every synced
+- Copy path: `%LOCALAPPDATA%\Wheelchair\copies\<thread-id>\<worktree-key>` (D21), reached
+  from Linux through the mount. One copy per worktree: sessions sharing a worktree share its
+  copy. Created on the first `sync`, `run` or `start` from that worktree.
+- **Seeding (D22):** when a copy is created and the thread has another copy, the one whose
+  last sync is newest gives its ignored files: one Windows-side `robocopy` of every path that
+  is not in that copy's manifest (so only ignored files) into the new copy, before the first
+  push. With no other copy, the new copy starts empty.
+- A manifest per copy at `<stateDir>/win/copies/<worktree-key>/manifest.json` records, for every synced
   path, size, Linux mtime, Windows last-write time and SHA-256 at the last sync.
 - **Synced set:** paths git would see in the worktree (`git ls-files --cached --others
   --exclude-standard`) plus, on the Windows side, new paths that `git check-ignore --stdin`
@@ -128,9 +137,9 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   differs from the manifest is copied back to the worktree; manifest paths missing in the copy
   are deleted in the worktree.
 - **Conflict:** a path changed on both sides since the last sync keeps the Linux file; the
-  Windows file is moved to `%LOCALAPPDATA%\Wheelchair\conflicts\<thread-id>\<session-name>\<path>`
+  Windows file is moved to `%LOCALAPPDATA%\Wheelchair\conflicts\<thread-id>\<worktree-key>\<path>`
   and listed in `conflicts` (D5).
-- Sync of one session is serialized with its other `win` ops. Line endings and file modes
+- All sync and `win` ops on one copy are serialized, across every session sharing it. Line endings and file modes
   are copied byte for byte; no conversion. A symlink in the worktree is copied as the file it
   points to if that is inside the worktree, otherwise skipped and listed in a `skipped` field.
 - Copies are kept when a session ends. Archiving a thread stops its apps and deletes
@@ -149,10 +158,16 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 - On WSL machines, every session's tmux environment gets `WHEELCHAIR_WINDOWS_PROJECT` set to
   its copy's Windows path. The value is already a Windows path, so `WSLENV` gains `WHEELCHAIR_WINDOWS_PROJECT` (appended to any
   existing value with `:`). Not set on other machines.
+- The supported route for a Windows-side tool (D23): its MCP server runs on Windows as a
+  stdio entry, so it reaches its app over Windows' own localhost. Example for a tool on the
+  Windows PATH: `"command": "/mnt/c/Windows/System32/cmd.exe", "args": ["/c", "<tool>"]`.
 - A `.mcp.json` stdio entry whose `command` is a Windows program (an absolute `/mnt/<drive>/...`
   path ending in `.exe`, `.cmd` or `.bat`) is launched by the agent's CLI through interop as
   today. The project-programs check (`machine/lib/project-programs.js`) treats such a path as
   found when the file exists, regardless of the execute bit.
+- On a machine that is not WSL, such entries are left out of the session's project tools
+  and not reported as missing (D24); `cmd.exe` and `powershell.exe` paths count as Windows
+  programs too.
 - Such a tool may be used before the copy exists; README tells projects to have the agent run
   `wc.js win sync` first.
 
@@ -165,7 +180,8 @@ appear on the user's desktop, so never leave them running and never try to type 
 use `win stop` when done. Unity tests: `win run -- <Unity.exe path> -batchmode -runTests
 -projectPath <copy> -testResults <copy>\results.xml` with no Editor open on that copy (Unity
 refuses a second instance on one project). A verifier reports a `win` 422 for "not WSL" as
-COULD NOT TRY.
+COULD NOT TRY. The first Unity open in a thread imports the whole project and can outlast
+`run`'s limit: use `win start` and poll `win status` for it.
 
 ### Setup (D19)
 
@@ -191,7 +207,9 @@ The tests must cover: non-WSL 422; reviewer and mapper 403; push of new, changed
 files; pull of new, changed and deleted files; ignored files never copied either way; a
 conflict keeps Linux and moves the Windows file; `run` timeout kills and still pulls; `run`
 output cap and log; `start` limit of 4; `windows`/`shot` refuse handles of other processes;
-session end kills apps; archive deletes the thread's copies; `WHEELCHAIR_WINDOWS_PROJECT` and
+session end kills apps; a second session on the same worktree shares the copy; a new copy is
+seeded with another copy's ignored files only; Windows-program `.mcp.json` entries dropped
+without warnings on non-WSL; archive deletes the thread's copies; `WHEELCHAIR_WINDOWS_PROJECT` and
 `WSLENV` set only on WSL; the token never reaches a Windows program's environment.
 `windows-live.sh` runs on real WSL: `info` ok, `sync` round trip, `run -- cmd.exe /c echo hi`,
 `start -- notepad.exe`, `windows`, `shot` produces a PNG, `stop`.
@@ -202,7 +220,6 @@ session end kills apps; archive deletes the thread's copies; `WHEELCHAIR_WINDOWS
 |---|------|-----------------|--------|-------------------------|
 | 1 | Windows-side tools that use HTTP or SSE on Windows `localhost` | Stdio tools cover normal use; WSL's default networking does not forward to Windows localhost | planning | Options: rewrite `localhost` to the Windows host address, or a per-session port forward |
 | 2 | Ready-made setup for a specific Unity MCP | The general hook (D8, D12) lets any stdio Unity MCP target the copy | planning | Pick once the user chooses one; Unity's own and MCP for Unity both target an Editor by project path |
-| 3 | Start a new copy from another copy's Unity cache | First open is slow but works | planning | Copy `Library/` from the thread's newest copy when creating one |
 | 4 | Disk use report and limits for copies | Archive cleans up | planning | Show size in `win info`; warn past a threshold |
 | 5 | Warning at session start when the bridge is broken on a WSL machine | `win info` reports it | planning | Mirror the screen tools warning at `machine/service.js:1999` |
 
@@ -218,6 +235,19 @@ session end kills apps; archive deletes the thread's copies; `WHEELCHAIR_WINDOWS
 | 1 | A Windows stdio MCP server launched by a Codex session works through interop | planning |
 
 ## Review Rounds
+
+### Round 1 — 2026-11-19
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Per-session copies make every worker and verifier start cold, against "Unity must work well" | upheld | D21 keys copies by worktree; D22 seeds new copies (Deferred #3 pulled in) |
+| intent | major | HTTP Windows tools deferred, yet IDEA promises no networking tweaks | downgraded: minor | A stdio server run on Windows reaches its app over Windows localhost with no networking change; both known Unity MCPs offer stdio. Stated as the supported route (D23) |
+| intent | minor | Lead and sub-lead get two copies pulling into one worktree | upheld | Removed by D21 |
+| intent | minor | Committed Windows paths in `.mcp.json` flagged on non-WSL machines | upheld | D24 |
 
 ## Implementation Tasks
 
