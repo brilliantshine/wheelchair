@@ -17,11 +17,12 @@ function effective(reading, now = Date.now()) {
   return out;
 }
 function hasRoom(account, reading, { loggedIn, leave = 10, now = Date.now() }) {
+  if (account.provider === 'openrouter') return !account.paused && loggedIn === true;
   const r = effective(reading, now);
   return !account.paused && loggedIn === true && !(r?.limited_until && Date.parse(r.limited_until) > millis(now)) && ['five_hour', 'week'].every((key) => !r?.[key] || r[key].used < 100 - leave);
 }
 function forecast(accounts, readingsById, now = Date.now()) {
-  const active = accounts.filter((a) => !a.paused);
+  const active = accounts.filter((a) => !a.paused && a.provider !== 'openrouter');
   const capacity = active.reduce((n, a) => n + a.weight, 0);
   const withReadings = active.filter((a) => readingsById[a.id]?.week);
   const used = capacity ? active.reduce((n, a) => n + a.weight * (effective(readingsById[a.id], now)?.week?.used || 0) / 100, 0) / capacity : 0;
@@ -75,6 +76,21 @@ async function machineAccounts(hub) {
   cache.set(hub, { at: Date.now(), promise });
   return promise;
 }
+// OpenRouter spend: asked of every known machine on each call and summed; nothing is kept.
+async function spend(hub) {
+  const machines = await hub.machines();
+  const total = { today: 0, last_7_days: 0, last_30_days: 0, incomplete: false };
+  await Promise.all(Object.keys(machines).map(async (name) => {
+    try {
+      const body = await Promise.race([hub.call(name, '/v1/spend', 'GET', undefined, 3000), new Promise((_, reject) => { const t = setTimeout(() => reject(new Error('timeout')), 3000); t.unref(); })]);
+      if (!body || !Array.isArray(body.accounts)) throw new Error('bad spend answer');
+      const rows = body.accounts.map((a) => [a?.today, a?.last_7_days, a?.last_30_days]);
+      if (rows.some((r) => r.some((n) => typeof n !== 'number' || !Number.isFinite(n)))) throw new Error('bad spend answer');
+      for (const [d, w, m] of rows) { total.today += d; total.last_7_days += w; total.last_30_days += m; }
+    } catch { total.incomplete = true; }
+  }));
+  return total;
+}
 function rank(accounts, readingsById, machineState, settings, machine, now = Date.now(), lastChosen = {}) {
   const state = machineState?.[machine] || machineState || {};
   const ranked = accounts.map((account) => {
@@ -107,7 +123,7 @@ async function summary(hub, includeMachines = true, now = Date.now()) {
     const f = forecast(accounts, data.readings || {}, now);
     const below_notify = f.left !== null && f.left < settings.notify_below / 100;
     const ranked = rank(accounts, data.readings || {}, machines, settings, localName, now, data.last_chosen);
-    providers[provider] = { label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : a.provider === 'kimi' && m.cliProblems?.kimi ? { state: 'problem', text: m.cliProblems.kimi } : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
+    providers[provider] = { ...(provider === 'openrouter' && includeMachines ? { spend: await spend(hub) } : {}), label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: provider === 'openrouter' ? accounts.every((a) => a.paused) : f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : a.provider === 'kimi' && m.cliProblems?.kimi ? { state: 'problem', text: m.cliProblems.kimi } : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
   }
   return { providers, seen: data.seen || {} };
 }
@@ -121,4 +137,4 @@ function weekKey(now) {
 }
 async function alert(hub, now = Date.now()) { const { providers, seen } = await summary(hub, false, now); return { dot: Object.entries(providers).some(([p, f]) => (f.amber || f.below_notify) && seen[p] !== weekKey(now)) }; }
 async function seen(hub, now = Date.now()) { const { providers } = await summary(hub, false, now); await change(hub, (data) => { for (const [p, f] of Object.entries(providers)) if (f.amber || f.below_notify) data.seen[p] = weekKey(now); }); return { ok: true }; }
-module.exports = { effective, hasRoom, forecast, belowMargin, record, readings, lastChosen, recordChosen, machineAccounts, rank, summary, alert, seen };
+module.exports = { effective, hasRoom, forecast, belowMargin, record, readings, lastChosen, recordChosen, machineAccounts, spend, rank, summary, alert, seen };
