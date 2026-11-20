@@ -48,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 18 | OpenRouter rate-limit and credit errors are turn failures, never `limit-hit` | No usage windows to cool down against; the account stays usable | review-round-2 |
 | 19 | Extends 16: every provider's code submission targets its login pane exactly; only Pi refuses a submission once its key prompt is gone | Exact targeting is invisible; the visible refusal is limited to the new provider | review-round-3 |
 | 20 | After three unclean rounds, keep the plan as is and run another review round | User's choice over simplifying sign-in or building now | user |
+| 21 | If Pi needs `extended-keys`, set the tmux server option to `on` | tmux has no per-session scope for it; `on` only affects programs that request it | review-round-4 |
 
 ## Spec
 
@@ -155,8 +156,11 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   what `copyTranscript` reads. A missing transcript does not hold up the event: it is
   forwarded and the hub ends the turn without a report. If Pi's API offers tool start/end events, map them to
   `step` events as Claude does; otherwise send none.
-- tmux: if the dry run shows Pi needs `extended-keys`, the machine turns it on for Pi sessions
-  without changing behaviour for other CLIs.
+- tmux: if the dry run shows Pi needs `extended-keys`, the machine sets the server option
+  `extended-keys on` (not `always`) when it starts a Pi session. tmux scopes this option to
+  the whole server; with `on`, tmux sends extended key sequences only to programs that ask
+  for them, so the other CLIs see no change. The existing machine readiness tests for the
+  other CLIs must still pass with the option set.
 - `readyText`/`answerPrompts`: from the dry run's screens. There are no per-tool approval
   prompts.
 - `findTranscript`: the `*_<cli_session_id>.jsonl` file under the account's
@@ -212,7 +216,9 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
 
 The key never appears in machine or hub logs, state files, thread files, cards, chat items or
 API responses. Text pasted into the login pane is sent to tmux only. Pane captures returned
-for the login screen redact anything matching `sk-or-[A-Za-z0-9_-]+`.
+for the login screen redact anything matching `sk-or-[A-Za-z0-9_-]+`. The kept copy of a Pi
+transcript (`copyTranscript`, `machine/service.js:1246-1254`) applies the same redaction to
+every line before it is written, so the saved and served transcript never holds the key.
 
 ### Not in this part
 
@@ -238,16 +244,20 @@ Pi CLI driving a full start → ready → turn-ended cycle in the machine tests,
 fake's extension calling the real `machine/hook.sh`; and a hub test (like
 `viewer/test/app-kimi-hub.test.js`) taking a Pi turn-ended event with the sample transcript
 through to the result delivered to the starting session, for a completed, an aborted (no
-report) and a failed turn; two successive turns where the second is delivered; a replayed
+report) and a failed turn; a first turn aborted then a second turn completed, with the second turn's report delivered;
+two completed turns in a row advancing `last_turn_id` to 2; a replayed
 earlier event ignored; an aborted turn with no assistant entry after a successful turn (no
 report, the earlier reply is not reused); and an OpenRouter rate-limit failure leaving the
 account eligible; a failed turn whose error text contains a synthetic `sk-or-` key arrives
 redacted in the spool and in what the starter receives; Pi login for account `work` leaves a
 live `work-2` login pane untouched; and with `review_families` fixed to one family, a
 reviewer requesting `openrouter` is placed on that family. Code submission tests also cover a stale submission refused once the key
-prompt is gone. A hook payload carrying a `transcript_path` is ignored. Code submission tests assert no tmux buffer remains.
-The live smoke starts a Pi session through the machine service, waits for one turn end, and
-checks that the chat shows the reply, the report is delivered and spend is non-zero.
+prompt is gone. A hook payload carrying a `transcript_path` is ignored. A sample transcript line holding a
+synthetic `sk-or-` key is redacted in the kept copy and in the chat API response. Code submission tests assert no tmux buffer remains.
+The live smoke, set up like `test-support/smoke/kimi-live.js` on an isolated hub, starts a
+thread whose lead runs on Pi, checks the lead's reply shows in the thread chat, has that lead
+start a Pi reviewer with a one-line brief, checks the reviewer's report reaches the lead as
+its result, and checks spend is non-zero.
 
 ## Deferred
 
@@ -362,6 +372,24 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | Outside-order placement would also change removed existing providers | upheld | Spec Identity: limited to `openrouter` |
+| mechanics | blocking | Key in an error line stays in the kept transcript | upheld | Spec: redact every line in Pi's kept copy; fixture test |
+| mechanics | blocking | Live smoke can't prove chat and report with one session | upheld | Spec: Pi lead plus Pi reviewer in the smoke |
+| mechanics | major | Two-turn test ambiguous because the first report sets `finished` | upheld | Spec: aborted-then-completed, plus watermark test |
+| mechanics | major | `extended-keys` is server-scoped | upheld | Decision 21 |
+
+### Round 5 — 2026-11-19
+
+**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+
+**Changed since Round 4:**
+- Outside-order placement limited to `openrouter`.
+- Pi's kept transcript redacts the key on every line.
+- Live smoke: Pi lead plus Pi reviewer.
+- Two-turn tests made specific (aborted-then-completed; watermark).
+- `extended-keys on` at server scope if Pi needs it (Decision 21).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
