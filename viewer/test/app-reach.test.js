@@ -27,6 +27,9 @@ const rejects = (promise, status, message) => assert.rejects(promise, e => e.sta
 test('validation and ordered post refusals', async () => {
   for (const card of [{ why: 'x' }, { thread: 'x' }]) assert.equal(validate('reach', card, 'lead').ok, false);
   assert.equal(validate('reach', { thread: 'x', why: 'x' }, 'worker').ok, false);
+  assert.equal(validate('reach', { thread: 'x', why: 'First line\nSecond line' }, 'lead').ok, false);
+  assert.equal(validate('reach', { thread: 'x', why: 'First line\rSecond line' }, 'lead').ok, false);
+  assert.equal(validate('reach', { thread: 'x', why: 'One line' }, 'lead').ok, true);
   const cases = [
     ['missing', {}, 'no such thread'], ['self', {}, 'that is this thread'],
     ['target', { machine: 'other', archived: true }, 'that thread is on another machine'],
@@ -55,7 +58,7 @@ test('allow links only sender and permits reply, and handoff and Needs reflect s
   const afterNeeds = []; addNeeds(afterNeeds, current); assert.deepEqual(afterNeeds, []);
   const file = buildHandoffFile(current, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/a/b' });
   assert.equal(validateHandoffFile(JSON.stringify(file)).ok, true);
-  assert.match(file.history.find(e => e.kind === 'reach').text, /Coordinate work\nallow/);
+  assert.equal(file.history.find(e => e.kind === 'reach').text, 'Talk to b (two)\nCoordinate work\nallow');
   await hub.acceptCard({ thread_id: b.id, session: 'lead-b', kind: 'message', to: 'lead-a', text: 'reply' });
   assert.match((await hub.state.thread(a.id)).sessions[0].queue.at(-1).text, /reply/);
   await rejects(press(card), 422, 'card is already answered');

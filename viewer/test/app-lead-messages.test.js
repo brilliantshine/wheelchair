@@ -52,6 +52,24 @@ test('restart routes to latest lead; cross-thread question is hidden in agents a
   await assert.rejects(send(a, 'lead-b', { passes_on: 'outside' }), e => e.status === 422 && e.message === 'passes_on names no question in this thread');
 });
 
+test('receiving chat hides cross-thread traffic and retains ordinary turns', async () => {
+  const { hub, a, b, send } = await fixture();
+  b.sessions[0].cli = 'claude'; await hub.state.save(b);
+  await send(a, 'lead-b', { asks: true });
+  const delivered = (await hub.state.thread(b.id)).sessions[0].queue[0].text;
+  const raw = [
+    { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: 'ordinary user turn' } },
+    { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: delivered } },
+    { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'hidden reply' }] } },
+  ].map(JSON.stringify).join('\n');
+  hub.call = async () => ({ data: raw, gen: 'g', end: raw.length });
+  const result = await hub.chat(b.id);
+  const visible = JSON.stringify(result.items);
+  assert.match(visible, /ordinary user turn/);
+  assert.ok(!visible.includes(delivered));
+  assert.ok(!visible.includes('hidden reply'));
+});
+
 test('workers cannot cross threads', async () => {
   const { hub, a, b } = await fixture(); a.sessions.push({ name: 'worker', role: 'worker', live: true }); await hub.state.save(a);
   await assert.rejects(hub.acceptCard({ thread_id: a.id, session: 'worker', kind: 'message', to: 'lead-b', text: 'hello' }), e => e.status === 404 && e.message === 'session not found in thread');

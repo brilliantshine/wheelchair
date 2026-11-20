@@ -47,6 +47,7 @@ const roles = {
 };
 
 const text = (value) => typeof value === 'string' && value.trim().length > 0;
+const line = (value) => text(value) && !/[\n\r]/.test(value);
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const array = (value, check, minimum = 0) => (
   Array.isArray(value) && value.length >= minimum && value.every(check)
@@ -100,7 +101,7 @@ const fields = {
     passes_on: (value) => value === undefined || text(value),
     doc: (value) => value === undefined || ['MAP.md', 'IDEA.md', 'PLAN.md'].includes(value),
   },
-  reach: { thread: text, why: text },
+  reach: { thread: text, why: line },
   approval: {
     objections: (value) => array(value, (item) => (
       object(item)
