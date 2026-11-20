@@ -67,6 +67,13 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D35 | A copy is deleted when Wheelchair removes its worktree (verifier at stop, worker at merge) | Seeded copies are several GB each; their worktrees are gone | review-round-2 |
 | D36 | The Unity fixture has its own `.gitignore`; the live check confirms the worktree stays clean | Unity's generated folders would otherwise be pulled into the worktree | review-round-2 |
 | D37 | `WHEELCHAIR_WINDOWS_PROJECT` and the start-time copy only for `TOOL_ROLES` | Reviewers and mappers cannot use the copy | review-round-2 |
+| D38 | Seeding copies only paths the new worktree's git ignores, checked by `git check-ignore` | A path missing from the source manifest may be a new asset, not a cache file | review-round-2 |
+| D39 | Apps run inside a Job Object; running means the job has processes; the full exit code comes from a JSON line, not the wrapper's exit status | Launchers exit while children run; Linux truncates exit status to 8 bits | review-round-2 |
+| D40 | Conflicts are saved under a time folder per reconcile | A second conflict on one path must not overwrite the first | review-round-2 |
+| D41 | A copy is deleted only after a successful reconcile; a failed one keeps the copy | Deleting after a failed reconcile could lose the only Windows version | review-round-2 |
+| D42 | Stop does not wait for its reconcile; archive returns `pending` until the thread's reconciles finish | The hub gives machine calls 5 s; archive already has a retry contract | review-round-2 |
+| D43 | The live check drives the candidate bridge module from the worktree with a stub service, and runs once without `WSL_INTEROP` | The installed service runs the canonical clone's code, not the build under test | review-round-2 |
+| D44 | Workers run `win sync` and commit before reporting done | The merge happens before the worker is stopped | review-round-2 |
 
 ## Spec
 
@@ -123,15 +130,20 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   `timed_out: true`, and the reconcile still happens. `output` is the last 64 KiB of combined
   stdout and stderr; the full output is in `log`, a Linux file under
   `<stateDir>/win/<session>/logs/`. Programs started by `run` and `start` get no console window.
-- **Process tracking (D27):** `run` and `start` launch a PowerShell wrapper as a child of the
-  machine service. The wrapper starts the program, prints one JSON line with the program's
-  PID and its process creation time, waits for it, and exits with its exit code; the service
-  keeps the wrapper and so learns the exit code when it closes. Each app is recorded in
-  `<stateDir>/win/apps.json` with session, PID and creation time. Every later action on a
-  recorded process (`windows`, `shot`, `stop`, a sweep kill) first checks that a process with
-  that PID still has that creation time; if not, the app counts as exited and nothing is
-  touched. After a service restart the exit code of an app the service no longer holds is
-  `null` with `running: false`.
+- **Process tracking (D27, D39):** `run` and `start` launch a PowerShell wrapper as a child of
+  the machine service. The wrapper creates a Windows Job Object with
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, starts the program inside it (so every descendant is
+  in the job), prints one JSON line `{"started": {pid, created}}` with the program's PID and
+  process creation time, waits until the job has no active processes, then prints one JSON
+  line `{"done": {exit_code}}` with the program's full 32-bit exit code and exits. The
+  service reads the exit code only from that line, never from the wrapper's own exit status
+  (which Linux truncates to 8 bits). An app is **running** while its job has any process,
+  even after the program itself exited. `windows` and `shot` see every process in the job;
+  `stop` and the sweep terminate the job. Each app is recorded in `<stateDir>/win/apps.json`
+  with session, PID and creation time. After a service restart, for a recorded app the
+  service no longer holds, a process with that PID is killed (its tree) only if its creation
+  time matches; its exit code is `null` with `running: false`. A wrapper that ends without a
+  `done` line reports `exit_code: null`.
 - `start` returns once the wrapper has printed its line; output goes to the log. At most 4
   started apps per session at once; a fifth gets 422.
 - `windows` and `shot` only see windows owned by processes this session started (or their
@@ -142,18 +154,23 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   posted with an `image` card.
 - No op sends mouse or keyboard input (D7).
 
-### The Windows copy and sync (D3, D4, D5, D14, D16, D21, D22, D25, D26, D28)
+
+### The Windows copy and sync (D3, D4, D5, D14, D16, D21, D22, D25, D26, D28, D38, D40, D41)
 
 - Copy path: `%LOCALAPPDATA%\Wheelchair\copies\<thread-id>\<worktree-key>` (D21), reached
   from Linux through the mount. One copy per worktree: sessions sharing a worktree share its
   copy. Created on the first `sync`, `run` or `start` from that worktree, or at session start
   (D30).
-- **Seeding (D22):** when a copy is created and the thread has another copy, the one whose
-  last sync is newest gives its ignored files: one Windows-side `robocopy` of every path that
-  is not in that copy's manifest (so only ignored files) into the new copy, before the first
-  reconcile. With no other copy, the new copy starts empty.
+- **Seeding (D22, D38):** when a copy is created and the thread has another copy, the one
+  whose last successful reconcile is newest is the source. List the source from Windows, pass
+  the paths to `git check-ignore --stdin` run in the **new** worktree, and `robocopy` only the
+  paths it reports ignored into the new copy, before the first reconcile. Nothing git would
+  see is ever seeded. With no other copy, the new copy starts empty.
 - A manifest per copy at `<stateDir>/win/copies/<worktree-key>/manifest.json` records, for
-  every synced path, size, Linux mtime, Windows last-write time and SHA-256 at the last sync.
+  every synced path, its exact spelling, size, Linux mtime, Windows last-write time and SHA-256
+  at the last sync, plus `last_ok` (time of the last successful reconcile), `last_failed`
+  (reason of the last failed one, cleared on success) and `used_since_ok` (set by any `win` op
+  or a tool-role session start on this worktree, cleared by a successful reconcile).
 - **Synced set:** paths git would see in the worktree (`git ls-files --cached --others
   --exclude-standard`) plus, on the Windows side, new paths that `git check-ignore --stdin`
   (run in the worktree) does not ignore. `.git` is never synced. Ignored paths on Windows are
@@ -164,17 +181,22 @@ Ops act only on the caller's own session; no op takes a session or thread argume
      every path against the manifest as unchanged, changed or new, or deleted, on each side.
   2. Changed on one side only: copy it to the other side. Deleted on one side only and
      unchanged on the other: delete it on the other side.
-  3. Changed or new on both sides with different content: the Windows file is moved to
-     `%LOCALAPPDATA%\Wheelchair\conflicts\<thread-id>\<worktree-key>\<path>`, then the Linux
-     file is copied over; the path is listed in `conflicts`. Deleted on Linux but changed on
-     Windows: the Windows file goes to conflicts and the path is deleted; changed on Linux but
-     deleted on Windows: the Linux file is copied over. Linux always wins (D5); the Windows
-     version is never discarded without being saved.
+  3. Changed or new on both sides with different content: the Windows file is moved to the
+     conflicts folder (below), then the Linux file is copied over; the path is listed in
+     `conflicts`. Deleted on Linux but changed on Windows: the Windows file goes to the
+     conflicts folder and the path is deleted. Changed on Linux but deleted on Windows: the
+     Linux file is copied over, recreating it on Windows (nothing to save). Linux always wins
+     (D5); a Windows version is never discarded without being saved.
   4. Write the new manifest.
+- **Conflicts folder (D40):** each saved version goes to
+  `%LOCALAPPDATA%\Wheelchair\conflicts\<thread-id>\<worktree-key>\<UTC time as
+  YYYYMMDDTHHMMSSmmmZ>\<path>`, one time folder per reconcile, so a later conflict on the same
+  path never overwrites an earlier one.
 - **Letter case (D26):** two Linux paths that differ only in letter case make the reconcile
-  fail with 422 naming them, before anything is written. A case-only rename on Linux (old
-  path deleted, new path added, equal ignoring case) is applied on Windows as a rename, never
-  as delete plus copy, and the Windows listing is matched to Linux paths ignoring case.
+  fail with 422 naming them, before anything is written. The Windows listing is matched to
+  Linux paths ignoring case. A case-only rename on Linux (old path deleted, new path added,
+  equal ignoring case) is applied on Windows as a rename, never as delete plus copy. A
+  spelling change made only on Windows is not propagated (Accepted Risks).
 - **File modes (D28):** modes never come from Windows. A pulled file that already exists on
   Linux keeps its Linux mode; a new file pulled from Windows gets 0644. Push writes content
   only. Line endings are copied byte for byte.
@@ -183,23 +205,34 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   in the Windows copy are skipped and listed in `skipped`, never followed.
 - All reconciles and `win` ops on one copy are serialized, across every session sharing it
   (lead and sub-lead share the thread worktree).
-- Copies are kept when a session ends, and deleted when Wheelchair removes their worktree
-  (D35): a verifier's worktree at its stop (`machine/service.js:864`, after the stop's
-  reconcile) and a worker's at merge (`machine/service.js:1400`, its apps already killed and
-  copy reconciled at its stop). Archive deletes `copies\<thread-id>` after the final
-  reconcile (Lifecycle) and keeps `conflicts\<thread-id>` (D14, D31).
-### Lifecycle (D27, D31)
+- **Deleting a copy (D35, D41)** happens only after a successful reconcile with that worktree
+  (or when the worktree is already gone and `used_since_ok` is clear). A copy whose final
+  reconcile failed is never deleted by Wheelchair: it is left in place and the machine log
+  names it. Copies are kept when a session ends, and deleted when Wheelchair removes their
+  worktree: a verifier's after its stop's reconcile (the removal at `machine/service.js:864`
+  moves to after that reconcile) and a worker's at merge (`machine/service.js:1400`): the merge
+  cleanup first reconciles; if that changes the worktree, git's existing refusal to remove a
+  dirty worktree reports it to the sub-lead. Archive deletes the thread's copies after their
+  final reconciles and keeps `conflicts\<thread-id>` (D14, D31).
 
-- **Session stop** (an explicit stop, including the stops archive makes before committing
-  worktrees, `machine/service.js:1122-1135`): kill the session's started apps, then, if no
-  other live session shares the copy, reconcile it before the stop returns, so archive's WIP
-  commit includes Windows changes. A reconcile failure is logged and does not block the stop.
-- **Sweep** every 60 s, like the screen sweep (`machine/lib/screen.js:105-110`): for each
-  recorded app whose session is not live in tmux (a crash or a natural exit), kill it and
-  reconcile its copy if no live session shares it. A `run` in flight for such a session is
-  killed the same way. On service start the same sweep runs once.
-- Archive deletes the thread's copies but keeps its conflicts folder, so a saved Windows
-  version is never deleted by Wheelchair.
+### Lifecycle (D27, D31, D41, D42)
+
+- **Session stop** (an explicit stop, including the stops archive makes,
+  `machine/service.js:1122-1135`): terminate the session's apps' jobs and return at once.
+  If no other live session shares the copy, a reconcile of it starts in the background; the
+  verifier worktree removal and the copy deletion wait for it (D41).
+- **Archive (D42):** if any of the thread's copies has a reconcile running or
+  `used_since_ok` set, archive starts or waits for those reconciles and returns the existing
+  `pending` result (`viewer/app/threads.js:217-222`) naming the sessions that last used them,
+  so the user's "Archive again" retries; the WIP commit happens only once they finished. A
+  failed reconcile does not hold archive: its copy is kept (D41) and archive goes on.
+- **Sweep** every 60 s, like the screen sweep (`machine/lib/screen.js:105-110`), and once at
+  service start: terminate the jobs of apps whose session is not live in tmux (a crash or a
+  natural exit), including a `run` in flight; then reconcile every copy that has
+  `used_since_ok` set and no live session on its worktree, whether or not it had apps (a
+  session that only used a Windows-side tool counts).
+- Archive keeps the thread's conflicts folder, so a saved Windows version is never deleted by
+  Wheelchair.
 ### Windows-side tools (D8, D12)
 
 - On WSL machines, every lead, sub-lead, worker and verifier session's tmux environment
@@ -221,8 +254,9 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 - **Ready before tools start (D30):** on WSL, for the same roles only, when the worktree's `.mcp.json` has at least
   one Windows-program entry, session start creates (and seeds) the copy and reconciles it
   before launching the agent's CLI, so a tool that needs the project finds it. A failure there
-  does not block the start; it is added to the session's `project_tools.problems` as
-  `Windows copy not ready: <reason>`, which shows the existing "Project tools problem" card.
+  does not block the start; it is added as a line `{names: [], text: "Windows copy not ready:
+  <reason>"}` to the start response's `project_tools.programs` list, which the hub already
+  turns into the "Project tools problem" card (`viewer/app/sessions.js:144-168`).
 
 ### Agent instructions (D18)
 
@@ -231,7 +265,8 @@ on a WSL machine, use `wc.js win` to run or look at things on Windows; your Wind
 synced around each command; after editing files, run `win sync` before asking a Windows-side
 tool to look at them; Windows apps
 appear on the user's desktop, so never leave them running and never try to type into them;
-use `win stop` when done. Unity tests: `win run -- <Unity.exe path> -batchmode -runTests
+use `win stop` when done. A worker runs `win sync` and commits what it brought back before
+reporting its task done, so the merge carries every Windows-side change. Unity tests: `win run -- <Unity.exe path> -batchmode -runTests
 -projectPath <copy> -testResults <copy>\Logs\wheelchair-results.xml` with no Editor open on
 that copy (Unity refuses a second instance on one project); `Logs/` is ignored in a Unity
 project, so read the results through `copy_linux` from `win info` rather than expecting them
@@ -267,17 +302,27 @@ in Reconcile step 3 saves the Windows version before writing; a Windows edit mad
 commands is not overwritten by the next command's reconcile; case-only rename kept as one
 file on both sides; Linux case collision refused before writing; pulled files keep Linux
 modes and new ones get 0644; `status` returns `sync` with conflicts; `WSL_INTEROP` repaired
-from `/run/WSL`; a recorded PID with a different creation time is never killed; the sweep
-kills apps of a dead session and reconciles; stop reconciles before returning;
+from `/run/WSL`; a recorded PID with a different creation time is never killed; the exit code
+comes from the `done` line (a fake exit code of 256 reports 256); an app whose launcher
+exited stays running while its job has processes; the sweep terminates a dead session's jobs
+and reconciles copies with `used_since_ok` and no live session, including ones with no apps;
+stop returns at once and its reconcile runs after; archive returns `pending` while a
+reconcile runs or a used copy is unreconciled; a copy whose reconcile failed is never
+deleted; two conflicts on one path in separate reconciles are both kept; the Linux-changed,
+Windows-deleted case recreates the Windows file; seeding copies only paths the new worktree's
+git ignores (a non-ignored file that exists only in the source copy is not seeded);
 session start readies the copy when `.mcp.json` has a Windows `.exe` entry and reports a
-failure as a project tools problem; `.cmd` entries are not treated as Windows programs; `run` timeout kills and still pulls; `run`
+failure as a `project_tools.programs` line that produces the hub's card; `.cmd` entries are not treated as Windows programs; `run` timeout kills and still pulls; `run`
 output cap and log; `start` limit of 4; `windows`/`shot` refuse handles of other processes;
 session end kills apps; a second session on the same worktree shares the copy; a new copy is
 seeded with another copy's ignored files only; Windows-program `.mcp.json` entries dropped
 without warnings on non-WSL; archive deletes the thread's copies and keeps its conflicts; `WHEELCHAIR_WINDOWS_PROJECT` and
 `WSLENV` set only on WSL; the token never reaches a Windows program's environment.
-`windows-live.sh` runs on real WSL from the installed service's environment (through
-`wc.js win`): `info` ok, `sync` round trip, `run -- cmd.exe /c echo hi`, `start --
+`windows-live.sh` (with `windows-live.js`, the pattern of `machine/test/screen-live.sh`)
+tests the candidate code, not the installed service (D43): it loads the bridge module from
+the worktree it lives in, with a stub service and a temporary state directory, and drives it
+against the real `powershell.exe`. It runs once with `WSL_INTEROP` removed from its
+environment, as a systemd service would have it, so the repair (D29) is exercised. Steps: `info` ok, `sync` round trip, `run -- cmd.exe /c echo hi`, `start --
 notepad.exe`, `windows`, `shot` produces a PNG that is not a single colour, `stop`. With
 `WHEELCHAIR_UNITY=<path to Unity.exe>` set it also runs the Unity part (D33) on the fixture
 project `machine/test/fixtures/unity-min` (one passing EditMode test). The fixture carries
@@ -304,6 +349,7 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A letter-case-only rename made by a Windows tool is not carried to Linux | Rare path: Windows tools seldom rename by case alone; content still syncs, nothing is lost | review-round-2 |
 | A junction or symlinked parent directory inside a copy or worktree could make sync read or write outside it | Rare path: projects do not contain them in ordinary use; reparse points in the copy are skipped | review-round-1 |
 
 ## Check Once Built
@@ -342,7 +388,7 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 
 ### Round 2 — 2026-11-19
 
-**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt (model per hub); cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:** copies keyed by worktree and seeded from another copy (D21, D22); stdio-on-Windows as the supported tool route (D23); Windows entries dropped on non-WSL (D24); one reconcile instead of push then pull (D25); letter case (D26); app wrapper, PID plus creation time, sweep (D27); file modes (D28); `WSL_INTEROP` repair (D29); copy ready before tools start (D30); stop/sweep reconcile, conflicts kept on archive (D31); `.exe` only (D32); Unity in the live check (D33); `status` returns `sync`.
 
@@ -353,6 +399,27 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 | intent | minor | Copy and env var made for reviewers and mappers too | upheld | D37 |
 | intent | minor | `results.xml` at the copy root gets pulled and maybe committed | upheld | Results under ignored `Logs/`, read through `copy_linux` |
 | intent | minor | D17 contradicts D22 | upheld | D34 |
+| mechanics | blocking | Seeding treats anything missing from the source manifest as ignored | upheld | D38 |
+| mechanics | blocking | Archive can delete a copy after a failed reconcile | downgraded: major | Real, small fix: D41 |
+| mechanics | blocking | A second conflict on one path overwrites the first saved version | downgraded: major | D40 |
+| mechanics | major | Sweep only finds dead sessions through app records | upheld | `used_since_ok` sweep (Lifecycle) |
+| mechanics | major | Worker merge happens before the stop's reconcile | upheld | D44, plus reconcile at merge cleanup |
+| mechanics | major | Windows-origin case-only rename not propagated | accepted-risk | Rare path: a Windows tool changing only letter case; no data is lost |
+| mechanics | blocking | Descendants escape once the launcher exits | upheld | D39 Job Object |
+| mechanics | blocking | Exit code truncated to 8 bits | upheld | D39 `done` line |
+| mechanics | major | Stop and archive waiting for a reconcile exceed the hub's 5 s call limit | upheld | D42 |
+| mechanics | blocking | Readiness failure in a field the hub ignores | upheld | Now a `project_tools.programs` line |
+| mechanics | major | Live check exercises the installed service, not the candidate | upheld | D43 |
+| mechanics | minor | Linux-changed/Windows-deleted case has nothing to save | upheld | Spec and tests: recreated on Windows |
+
+### Round 3 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 2:** copies deleted with their worktree, only after a successful reconcile (D35, D41); Unity fixture `.gitignore` and clean-worktree check (D36); copy and env var only for tool roles (D37); seeding filtered by the new worktree's git ignore rules (D38); Job Object tracking and full exit codes (D39); per-reconcile conflict folders (D40); stop reconciles in the background and archive returns `pending` (D42); live check drives the candidate module without `WSL_INTEROP` (D43); workers sync and commit before done (D44); manifest `used_since_ok` and the sweep over used copies; readiness failure as a `project_tools.programs` line; Unity results under `Logs/`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
