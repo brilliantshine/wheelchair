@@ -40,6 +40,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Default model for every slot is `openrouter/auto` (OpenRouter's own router); the user changes pins in Settings | Never goes stale; works with any key | defaulted |
 | 11 | No effort/thinking setting and no side conversations (asides) on OpenRouter sessions in this part | Same as Kimi; hardening for the follow-up | defaulted |
 | 12 | Spend is summed from the `cost` Pi records on each reply in its session logs, offline; no call to OpenRouter's API | No key handling beyond Pi's own; the dry run confirms the cost is recorded | defaulted |
+| 13 | OpenRouter is not auto-added to the placement orders; the user adds it in Settings | Avoids silent pay-per-use spend | review-round-1 |
+| 14 | Sign-in status reads only Pi's `auth.json`; the `OPENROUTER_API_KEY` env route is dropped | Keeps the key out of every pane's environment | review-round-1 |
 
 ## Spec
 
@@ -72,8 +74,11 @@ build task confirms them with a dry run and records any difference in the Log):
   `machine/service.js` (CLI name checks), `install.sh` (detect `pi` on PATH, add its directory
   to the service PATH; never install Pi), `viewer/app/API.md`, `machine/API.md`,
   `viewer/AGENTS.md`, `machine/AGENTS.md`, `README.md`, and the provider enums in
-  `protocol/app/lead.md` and `protocol/app/sub-lead.md`. Settings normalization already
-  appends a newly seen provider to the orders; keep that.
+  `protocol/app/lead.md` and `protocol/app/sub-lead.md`.
+- OpenRouter is pay per use, so it is **not** added to `lead_order` or `worker_order`
+  automatically: settings normalization marks it seen without appending it, and the user adds
+  it in Settings. Defaults keep it out of both orders. A `--provider openrouter` request
+  still places on it when an account is signed in.
 - Roles: every role Kimi can fill (Decision 4). Counts as its own family (Decision 6).
 
 ### Model ids
@@ -117,8 +122,8 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   prompts.
 - `findTranscript`: the `*_<cli_session_id>.jsonl` file under the account's
   `sessions/` tree.
-- `loginStatus(dir)`: signed in when the account's `auth.json` has an `openrouter` entry or
-  `OPENROUTER_API_KEY` is set in the service environment. It reads `auth.json` only to test
+- `loginStatus(dir)`: signed in when the account's `auth.json` has an `openrouter` entry.
+  `OPENROUTER_API_KEY` in the environment is ignored for status and never set by wheelchair. It reads `auth.json` only to test
   for the key's presence and returns booleans and fixed problem strings, never the key.
 - `loginCommand`/`parseLogin`/`loginPrompt`: open Pi and drive `/login openrouter` in the
   existing login pane flow, exposing whatever Pi presents: a URL to open and/or a prompt to
@@ -133,11 +138,13 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   like the other parsers, and a report selector that returns the final assistant text of the
   turn that ended (reviewer and verifier results).
 - Spend: a machine endpoint (documented in `machine/API.md`) returns, per OpenRouter account,
-  the sum of `cost.total` over assistant messages in that account's Pi session files for today
+  the sum of `cost.total` over assistant messages whose `provider` is `openrouter` in that account's Pi session files for today
   (machine local time), the last 7 days and the last 30 days, in US dollars, read offline.
   The hub's usage view shows these three figures on the OpenRouter provider card in place of
   the percentage bars, e.g. "$0.42 today · $3.10 this week · $11.80 this month", with
-  "no spend yet" when zero. Missing or unparseable cost fields count as zero. OpenRouter
+  "no spend yet" when zero.
+- Settings shows one line under OpenRouter: "Counts as its own family for cross-checked
+  reviews, even when it runs a Claude or GPT model." Missing or unparseable cost fields count as zero. OpenRouter
   accounts never count as out of room.
 
 ### Keeping the key secret
@@ -194,6 +201,10 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Auto-appending OpenRouter to placement orders moves work onto pay-per-use silently | upheld | Spec Identity: not auto-added; Decision 13 |
+| intent | minor | Spend sums non-OpenRouter Pi sessions in `~/.pi/agent` | upheld | Spec Spend: only messages with provider `openrouter` |
+| intent | minor | `OPENROUTER_API_KEY` env branch exposes the key to every pane | upheld | Spec loginStatus: auth.json only; Decision 14 |
+| intent | minor | `openrouter/auto` defaults make "cross-family" reviews possibly same-family without notice | upheld | Spec Hub: Settings note on OpenRouter |
 
 ## Implementation Tasks
 
