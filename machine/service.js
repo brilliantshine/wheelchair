@@ -1507,6 +1507,14 @@ class MachineService {
       if (!captured.ok) { const live = this.liveTmux(); if (live && !live.has(`wc-login-${account}`)) return record.result = { state: 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated }; return { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: authenticated }; }
       const parsed = adapter.parseLogin(pane); return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: false, logged_in: authenticated };
     }
+    if (record.cli === 'pi') {
+      const marker = pane.match(/__wc_login_exit (\d+)/);
+      if (adapter.loginDone(pane) || marker || !captured.ok) {
+        if (adapter.loginDone(pane)) this.tmux(['kill-session', '-t', `=wc-login-${account}:`]);
+        const logged_in = adapter.loginStatus(record.dir).logged_in;
+        return { state: logged_in && (adapter.loginDone(pane) || !marker || marker[1] === '0') ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+      }
+    }
     if (!captured.ok || /__wc_login_exit \d+/.test(pane)) {
       const logged_in = adapter.loginStatus(record.dir).logged_in;
       return { state: logged_in && (record.cli !== 'pi' || /__wc_login_exit 0(?:\s|$)/.test(pane)) ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
@@ -1915,7 +1923,15 @@ class MachineService {
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
       if (request.method === 'GET' && url.pathname === '/v1/spend') {
         await this.authorize(request, 'hub');
-        const accounts = this.status().accounts.filter(account => account.cli === 'pi').map(account => ({ account: account.id, ...adapters.pi.spend(account.id === 'default-openrouter' ? null : path.join(os.homedir(), '.wheelchair', 'accounts', account.id)) }));
+        const root = path.join(os.homedir(), '.wheelchair', 'accounts');
+        const folders = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
+        const entries = [{ account: 'default-openrouter', dir: null }];
+        for (const folder of folders) {
+          if (!folder.isDirectory() || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(folder.name)) continue;
+          const dir = path.join(root, folder.name);
+          try { const meta = JSON.parse(await fsp.readFile(path.join(dir, 'wheelchair-account.json'), 'utf8')); if (meta.id === folder.name && meta.cli === 'pi') entries.push({ account: meta.id, dir }); } catch {}
+        }
+        const accounts = await Promise.all(entries.map(async ({ account, dir }) => ({ account, ...await adapters.pi.spend(dir) })));
         return send(response, 200, { accounts });
       }
       if (request.method === 'POST' && url.pathname === '/v1/usage') {

@@ -15,20 +15,21 @@ module.exports = {
   loginPrompt: null, codeNeedsPrompt: true,
   parseLogin(pane) { const lines = pane.split(/\r?\n/).filter(line => line.trim()); return !pane.includes('Saved API key for OpenRouter') && lines.slice(-5).some(line => line.trim() === 'Enter OpenRouter API key:') ? { url: null, code: null, wantsCode: true } : null; },
   loginDone: pane => pane.includes('Saved API key for OpenRouter'),
-  spend(dir, now = new Date()) {
+  async spend(dir, now = new Date()) {
     const totals = { today: 0, last_7_days: 0, last_30_days: 0 };
     const start = days => new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1).getTime();
-    const walk = root => {
-      let entries; try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return; }
+    const walk = async root => {
+      let entries; try { entries = await fs.promises.readdir(root, { withFileTypes: true }); } catch { return; }
       for (const entry of entries) {
         const file = path.join(root, entry.name);
-        if (entry.isDirectory()) { walk(file); continue; }
+        if (entry.isDirectory()) { await walk(file); continue; }
         if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
-        let text; try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
+        let text; try { text = await fs.promises.readFile(file, 'utf8'); } catch { continue; }
         for (const line of text.split('\n')) {
           let row; try { row = JSON.parse(line); } catch { continue; }
           if (row?.type !== 'message' || row.message?.role !== 'assistant' || row.message?.provider !== 'openrouter') continue;
-          const at = Date.parse(row.timestamp), cost = row.message?.usage?.cost?.total;
+          const at = Date.parse(row.timestamp), raw = row.message?.usage?.cost?.total;
+          const cost = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : 0;
           if (!Number.isFinite(at) || at > now.getTime() || typeof cost !== 'number' || !Number.isFinite(cost)) continue;
           if (at >= start(1)) totals.today += cost;
           if (at >= start(7)) totals.last_7_days += cost;
@@ -36,7 +37,7 @@ module.exports = {
         }
       }
     };
-    walk(path.join(home(dir), 'sessions')); return totals;
+    await walk(path.join(home(dir), 'sessions')); return totals;
   },
   seed(dir, id) { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); fs.writeFileSync(path.join(dir, 'wheelchair-account.json'), JSON.stringify({ id, cli: 'pi' }) + '\n', { mode: 0o600 }); }, prepare() {},
   loginStatus(dir) {

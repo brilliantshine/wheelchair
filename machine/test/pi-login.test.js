@@ -19,8 +19,8 @@ test('fake Pi completes a sign-in in an isolated tmux server without touching pr
   const { spawnSync } = require('node:child_process'), http = require('node:http');
   const root = makeTempSync('pi-login-real-'), bin = path.join(root, 'bin'), socket = path.join(root, 'tmux.sock'); fs.mkdirSync(bin);
   fs.writeFileSync(path.join(bin, 'pi'), `#!/bin/sh
-printf 'Enter OpenRouter API key: '
 stty -echo
+printf 'Enter OpenRouter API key: '
 IFS= read -r value
 stty echo
 mkdir -p "$PI_CODING_AGENT_DIR"
@@ -33,12 +33,38 @@ if [ "$value" = 'sk-or-v1-0000synthetic0000' ]; then printf '{"openrouter":{}}' 
   const request = async (method, endpoint, body) => { const res = await fetch(`http://127.0.0.1:${server.address().port}${endpoint}`, { method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body) }); return { status: res.status, body: await res.json() }; };
   const wait = async predicate => { for (let i = 0; i < 100; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); } assert.fail('timed out'); };
   try {
-    assert.ok(tmux(['new-session', '-d', '-s', 'wc-login-work-2']).ok);
+    assert.ok(tmux(['new-session', '-d', '-s', 'wc-login-work-2', 'printf sibling-content; sleep 600']).ok);
+    await wait(() => tmux(['capture-pane', '-p', '-t', '=wc-login-work-2:']).stdout.includes('sibling-content'));
+    const sibling = tmux(['capture-pane', '-p', '-t', '=wc-login-work-2:']).stdout;
     await machine.startLogin({ account: 'work', cli: 'pi', dir: '~/.wheelchair/accounts/work' }); assert.ok(tmux(['has-session', '-t', '=wc-login-work-2']).ok);
-    await wait(() => machine.loginState('work').wantsCode); const result = await request('POST', '/v1/logins/work/code', { code: 'sk-or-v1-0000synthetic0000' }); assert.equal(result.status, 200);
+    await wait(() => machine.loginState('work').wantsCode); const result = await request('POST', '/v1/logins/work/code', { code: 'sk-or-v1-0000synthetic0000' }); assert.equal(result.status, 200); assert.doesNotMatch(JSON.stringify(result.body), /sk-or-/);
     await wait(() => machine.loginState('work').state === 'done'); assert.doesNotMatch(JSON.stringify(await request('GET', '/v1/logins/work/pane')), /sk-or-/);
-    assert.ok(tmux(['has-session', '-t', '=wc-login-work-2']).ok); assert.equal(tmux(['list-buffers']).stdout.trim(), '');
+    assert.ok(tmux(['has-session', '-t', '=wc-login-work-2']).ok); assert.equal(tmux(['capture-pane', '-p', '-t', '=wc-login-work-2:']).stdout, sibling); assert.equal(tmux(['list-buffers']).stdout.trim(), '');
     await machine.startLogin({ account: 'fail', cli: 'pi', dir: '~/.wheelchair/accounts/fail' }); await wait(() => machine.loginState('fail').wantsCode);
     assert.equal((await request('POST', '/v1/logins/fail/code', { code: 'invalid' })).status, 200); await wait(() => machine.loginState('fail').state === 'failed');
   } finally { tmux(['kill-server']); await new Promise(resolve => server.close(resolve)); process.env.HOME = old.HOME; process.env.PATH = old.PATH; }
+});
+
+test('Pi completion handles saved screen, exit marker and missing pane', () => {
+  const dir = makeTempSync('pi-completion-'), machine = new MachineService({ stateDir: dir });
+  machine.logins = { work: { cli: 'pi', dir } }; let pane = '', ok = true; const calls = [];
+  machine.tmux = args => { calls.push(args); return { ok, stdout: pane }; };
+  const auth = logged => fs.writeFileSync(path.join(dir, 'auth.json'), logged ? '{"openrouter":{}}' : '{}');
+  for (const logged of [false, true]) {
+    auth(logged); pane = 'Saved API key for OpenRouter.'; ok = true;
+    assert.equal(machine.loginState('work').state, logged ? 'done' : 'failed');
+    assert.ok(calls.some(a => a[0] === 'kill-session' && a[2] === '=wc-login-work:'));
+    pane = '__wc_login_exit 0'; assert.equal(machine.loginState('work').state, logged ? 'done' : 'failed');
+    pane = '__wc_login_exit 1'; assert.equal(machine.loginState('work').state, 'failed');
+    ok = false; assert.equal(machine.loginState('work').state, logged ? 'done' : 'failed');
+  }
+});
+test('joined wrapped Pi key is redacted from pane and state responses', async () => {
+  const http = require('node:http'), machine = new MachineService({ stateDir: makeTempSync('pi-wrap-') });
+  machine.logins = { work: { cli: 'pi' } }; machine.authorize = async () => {};
+  const rows = ['sk-or-v1-0000', 'synthetic0000'];
+  machine.tmux = args => ({ ok: true, stdout: args.includes('-J') ? rows.join('') : rows.join('\n') });
+  const server = http.createServer((req, res) => machine.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try { for (const suffix of ['/pane', '']) { const body = await (await fetch(`http://127.0.0.1:${server.address().port}/v1/logins/work${suffix}`)).text(); assert.doesNotMatch(body, /sk-or-/); if (suffix) assert.match(body, /\[redacted key\]/); } }
+  finally { await new Promise(resolve => server.close(resolve)); }
 });
