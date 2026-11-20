@@ -49,4 +49,4 @@ Windows apps at all. A native Windows version would be far more work than a brid
 - Wheelchair and its projects stay in the WSL Linux home folder, as the README already says.
 - Machines without WSL must be unaffected.
 - An agent's own `wc.js` and `card.js` calls stay always allowed.
-- Git for Windows must be installed on the Windows side, and WSL's git must be 2.40 or newer (added during planning, when the user chose git-based syncing).
+- Git for Windows must be installed on the Windows side, and WSL's git and Git for Windows must be 2.43 or newer (added during planning, when the user chose git-based syncing).

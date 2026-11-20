@@ -96,6 +96,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D64 | Exact list of when a copy is deleted; a failed copy is kept except a verifier's or a merged worker's | Removes the contradiction between D41 and D59 | review-round-4 |
 | D65 | Conflict refs are kept, never deleted by Wheelchair | Archive must not discard the only Windows version | review-round-4 |
 | D66 | The live check reads the Unity results file for a passing fixture test | Exit status alone does not show the test ran | review-round-4 |
+| D67 | Supersedes D63: no `pending` record or `--abandon`; base moves only after both applies, and the next reconcile re-merges from the old base | Identical changes on both sides merge cleanly; the recovery rule wedged the bridge after a new edit | review-round-5 |
+| D68 | Supersedes D56: git 2.43 or newer on both sides | `--attr-source` arrived in 2.41; `merge-tree` crashed with it until 2.43 | review-round-5 |
+| D69 | Copies are deleted only at archive or worktree removal, never for being idle | Keeps the thread worktree's warm Unity cache (D14) | review-round-5 |
+| D70 | The live check creates its Unity project with the installed Unity and lets Unity write its files before the clean check | A committed project would be rewritten by a different Unity version | review-round-5 |
 
 ## Spec
 
@@ -136,7 +140,7 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 | Op | Args | Does | Returns |
 |---|---|---|---|
 | `info` | none | Probes PowerShell, `git.exe` and Linux git's version; does not create the copy | `{wsl, ok, ready, reason?, copy_windows, copy_linux, sandboxed}` |
-| `sync` | `[--abandon]` | Reconcile (below) | `{to_windows, to_linux, conflicts, skipped}` |
+| `sync` | none | Reconcile (below) | `{to_windows, to_linux, conflicts, skipped}` |
 | `run` | `[--timeout <s>] [--env K=V]... -- <program> [args...]` | Reconcile, run in the copy, wait, reconcile | `{exit_code, timed_out, output, log, sync}` |
 | `start` | `[--env K=V]... -- <program> [args...]` | Reconcile, start without waiting | `{id, pid, log, sync}` |
 | `status` | `[<id>]` | Running or exited, with exit code; reconciles once when it first sees an exit | `{apps: [{id, program, running, exit_code, log}], sync?}`; `sync` present when a reconcile ran |
@@ -190,8 +194,8 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 - **The copy is a git repository (D48).** It is created by Windows `git.exe init` with
   `core.autocrlf=false`, `core.ignorecase=true`, `core.filemode=false` and
   `core.longpaths=true`. Windows-side work uses `git.exe` (Git for Windows, found by
-  PowerShell on the Windows PATH); Linux-side work uses the worktree's `git`. Both must be 2.40
-  or newer (D56: `merge-tree --merge-base` and `--attr-source`); `win info` checks both. Linux
+  PowerShell on the Windows PATH); Linux-side work uses the worktree's `git`. Both must be 2.43
+  or newer (D68: `--attr-source` arrived in 2.41 and `merge-tree` with it works from 2.43); `win info` checks both. Linux
   git reaches the copy's repository through its mount path for `fetch` and `push` only;
   checkouts in the copy are always done by `git.exe`.
 - **Raw bytes (D57, D61).** Every git command the bridge runs, on either side, runs as
@@ -203,8 +207,7 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   and only under these settings: Linux `<stateDir>/win/copies/<worktree-key>/linux.index`,
   Windows `<copy>\.git\wheelchair.index`. The worktree's real index is never read or written,
   so no stat entry made under LFS or `eol` rules is reused.
-- **Refs.** Linux repository: `refs/wheelchair/<worktree-key>/base`, `.../windows` and
-  `.../pending`; conflict refs under `refs/wheelchair/conflicts/<thread-id>/<worktree-key>/<UTC
+- **Refs.** Linux repository: `refs/wheelchair/<worktree-key>/base` and `.../windows`; conflict refs under `refs/wheelchair/conflicts/<thread-id>/<worktree-key>/<UTC
   time>`. Copy: `refs/wheelchair/base` and `refs/wheelchair/linux`. The thread's branch and
   `HEAD` are never changed by sync.
 - **Snapshots.** A side's snapshot is the tree `git add -A` then `git write-tree` produce on
@@ -215,14 +218,6 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   reconcile with 422 naming them, before anything is written.
 - **Reconcile (D49)** is the only sync step; every op that syncs runs it, serialized per copy
   across every session sharing it:
-  0. **Finish an interrupted one (D63).** If `state.json` has `pending: {r, r_win}` (commit
-     ids), snapshot both sides. A side whose snapshot tree already equals its target (`r` for
-     Linux, `r_win` for Windows) is done. A side whose snapshot equals its tree from before the
-     interrupted apply (`pending.l` / `pending.w`) gets the apply now. If either side matches
-     neither, the reconcile fails with 422 `an interrupted sync needs attention: <paths that
-     differ>` and changes nothing; `win sync --abandon` (the one flag `sync` takes) then drops
-     `pending` without changing files, so the next reconcile treats current files as fresh
-     changes against `base`. Once both sides are done, go to step 4.
   1. Snapshot Linux (tree `L`) and Windows (tree `W`). Fetch `W`'s objects into
      `refs/wheelchair/<key>/windows`.
   2. **Unresolved conflicts (D60).** For each path in `state.unresolved`: if the Linux file
@@ -236,15 +231,18 @@ Ops act only on the caller's own session; no op takes a session or thread argume
      version); a commit of `W` is kept as a conflict ref; each conflicted path is listed in
      `conflicts` with that ref and added to `state.unresolved` if it got markers. `R_win` is
      `R` with every conflicted path taken from `L` (D58), so Windows never holds markers.
-  4. Commit `R` and `R_win` with `commit-tree` (parent: the current `base` commit), record
-     `pending: {l: L, w: W, r, r_win}` in `state.json`, then apply: `git read-tree -m -u L r`
+  4. Commit `R` and `R_win` with `commit-tree` (parent: the current `base` commit), then apply: `git read-tree -m -u L r`
      on the Linux bridge index; push `r_win` to the copy's `refs/wheelchair/linux` and run
      `git.exe read-tree -m -u W r_win` there (`--reset -u` when the copy has no `base` yet).
      A refusal because a file the update touches changed since its snapshot restarts the
-     reconcile at step 0 once; a second refusal fails with 422 naming the paths, leaving
-     `pending` for step 0 to finish later.
+     reconcile at step 1 once; a second refusal fails with 422 naming the paths.
+     **Interrupted applies need no recovery (D67):** `base` moves only in step 5, after both
+     applies succeeded. If one side was updated and the other was not (a locked Windows file,
+     a service restart), the next reconcile merges from the old `base` again; whatever the
+     first apply already wrote now appears identically on both sides, which git merges
+     cleanly, and paths with unresolved markers are held back by step 2.
   5. Set `base` to `r_win` on both sides (so a conflicted path resolved later on Linux reads
-     as a Linux-only change), clear `pending`, record `last_ok`.
+     as a Linux-only change), record `last_ok`.
   Result fields: `{to_windows, to_linux, conflicts: [{path, ref}], unresolved, skipped}`. A
   symlink pointing outside the worktree is left out of the Linux snapshot and listed in
   `skipped`.
@@ -257,16 +255,19 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   `last_failed` (reason, cleared on success), `used_since_ok` (D45: set by any `win` op, by a
   tool-role session start on a worktree whose copy exists or is being readied, and by the
   sweep or a stop when it terminates jobs on that copy; cleared by a successful reconcile),
-  `unresolved` and `pending`. A worktree with no copy gets no state and no flag.
-- **Deleting a copy (D35, D41, D46, D59, D64)** deletes the folder and its `base`, `windows`
-  and `pending` refs, in exactly these cases:
+  and `unresolved`. A worktree with no copy gets no state and no flag.
+- **Deleting a copy (D35, D41, D46, D59, D64)** deletes the folder and its `base` and `windows`
+  refs, in exactly these cases:
   1. a verifier's copy, after its apps' jobs are terminated at its stop, with no reconcile
      (both removal sites, `machine/service.js:864` and `:1087`);
   2. a worker's copy at merge cleanup (`machine/service.js:1400`), whatever its state (D50:
      workers sync and commit before reporting done);
-  3. any other copy whose last reconcile succeeded with nothing used since, including at
-     archive after its final reconcile, or whose worktree is gone and whose last reconcile
-     did not fail.
+  3. at archive, each remaining copy after its final reconcile succeeded or when it needed
+     none (D69);
+  4. when Wheelchair removes a worktree in any other way, its copy, unless its last reconcile
+     failed.
+  Copies are never deleted for being idle: the thread worktree's copy, and its Unity cache,
+  stays until archive (D14).
   Every other copy, in particular one whose last reconcile failed, is kept and the machine log
   names it.
 - **Conflict refs are never deleted by Wheelchair (D65)**, not with the copy and not at
@@ -347,7 +348,8 @@ COULD NOT TRY. The first Unity open in a thread imports the whole project and ca
 ### Setup (D19, D48)
 
 README "On Windows" gains: install Git for Windows on the Windows side and make sure WSL's
-git is 2.40 or newer (both checked by `win info`); interop must be on (`[interop] enabled=true`, the default); check
+git is 2.43 or newer, as is Git for Windows (both checked by `win info`); conflict refs under
+`refs/wheelchair/conflicts/` can be removed with `git update-ref -d` once no longer needed; interop must be on (`[interop] enabled=true`, the default); check
 from a thread by asking the lead to run `wc.js win info`, which runs inside the installed
 machine service (D29); if it fails, run `wsl --shutdown` from Windows, reopen WSL and check
 again; Windows-side tools use full
@@ -375,8 +377,8 @@ either way; edits to different files on both sides both survive; a text conflict
 markers in the Linux file and names a ref whose tree has the Windows version; a binary
 conflict keeps the Linux version and the ref has the Windows one; a file touched by the
 update that changes during a reconcile makes it retry once and then fail with nothing lost;
-an interrupted apply (Windows checkout failing after Linux was updated) is finished by the
-next reconcile without new conflicts; a second sync before a text conflict is resolved does
+an interrupted apply (Windows checkout failing after Linux was updated), followed by a new
+Linux edit, is finished by the next reconcile without conflicts or a 422; a second sync before a text conflict is resolved does
 not send markers to Windows, and resolving it later sends the resolution; a Linux case
 collision is refused before writing; an LFS-tracked file and a file with `eol=crlf` reach the
 copy byte for byte from a clean checkout; conflict refs survive copy deletion and archive; the thread branch, `HEAD` and
@@ -411,7 +413,11 @@ the report shows which build answered. Steps: `info` ok, `sync` round trip with 
 on each side, `run -- cmd.exe /c echo hi`, `start -- notepad.exe`, `windows`, `shot` produces
 a PNG that is not a single colour, `stop`. With `WHEELCHAIR_UNITY=<path to Unity.exe>` set it
 also runs the Unity part (D33) on the fixture project `machine/test/fixtures/unity-min` (one
-passing EditMode test), copied into the temporary repository. The fixture carries its own
+passing EditMode test). The script does not ship a whole Unity project (D70): it creates one
+in the temporary repository with the installed Unity (`-batchmode -createProject <path>
+-quit`), copies in the fixture's files (`Packages/manifest.json` entries for the test
+framework, an `.asmdef`, one test script), opens it once in batchmode with `-quit` so Unity
+writes its own files for that version, syncs and commits. The fixture carries its own
 `.gitignore` ignoring `Library/`, `Temp/`, `Logs/`, `UserSettings/`, `obj/`, `*.csproj`,
 `*.sln` and `Packages/packages-lock.json` (D36). `win run` of batchmode tests with
 `-testResults` at the fixture's (not ignored) `wheelchair-live-results.xml` returns exit 0,
@@ -428,7 +434,7 @@ sets `WHEELCHAIR_UNITY`.
 |---|------|-----------------|--------|-------------------------|
 | 1 | Windows-side tools that use HTTP or SSE on Windows `localhost` | Stdio tools cover normal use; WSL's default networking does not forward to Windows localhost | planning | Options: rewrite `localhost` to the Windows host address, or a per-session port forward |
 | 2 | Ready-made setup for a specific Unity MCP | The general hook (D8, D12) lets any stdio Unity MCP target the copy | planning | Pick once the user chooses one; Unity's own and MCP for Unity both target an Editor by project path |
-| 4 | Disk use report and limits for copies | Copies of removed worktrees are deleted (D35) and archive removes the rest | planning | Show size in `win info`; warn past a threshold |
+| 4 | Disk use report and limits for copies, and for raw blobs and kept conflict refs in the repository's `.git` | Copies of removed worktrees are deleted (D35) and archive removes the rest; conflict refs are rare and removable by hand (README) | planning | Show size in `win info`; warn past a threshold |
 | 6 | Restart Windows-side tools that started before the copy was ready | The copy is usually ready within the 45 s wait; the agent reports when it was not | review-round-3 | Restart the tool once `win info` reports ready |
 | 5 | Warning at session start when the bridge is broken on a WSL machine | `win info` reports it | planning | Mirror the screen tools warning at `machine/service.js:1999` |
 
@@ -549,6 +555,11 @@ sets `WHEELCHAIR_UNITY`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Deletion case 3 could delete the thread copy's warm cache after any clean sync | upheld | D69 |
+| intent | major | `--attr-source` needs git 2.41, and `merge-tree` with it 2.43 | upheld | D68 |
+| intent | major | Interrupted-sync recovery wedges after a new edit | upheld | D67: recovery removed; re-merge from old base |
+| intent | major | Committed Unity fixture is rewritten by a different Unity version | upheld | D70 |
+| intent | minor | Raw LFS blobs and kept conflict refs grow `.git` with no cleanup | upheld | Deferred #4 widened; README says how to remove conflict refs |
 
 ## Implementation Tasks
 
