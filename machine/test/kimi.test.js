@@ -465,7 +465,7 @@ test('readiness polling opens one Kimi permission hold and clears it on input', 
 test('recovery prioritizes anchored Kimi markers over reply text', async () => {
   const machine = Object.create(MachineService.prototype); machine.sessions = {}; machine.persistSessions = async () => {};
   const panes = { 'wc-a-worker': 'Codex and Antigravity CLI\n│ >\nAsk When Needed K3 thinking: high\ncontext: 12%', 'wc-b-worker': 'Codex\ncontext: 20%', 'wc-c-worker': 'Antigravity CLI', 'wc-d-worker': 'Claude says context: 3% and Ask When Needed thinking\n│ >' };
-  machine.liveTmux = () => new Set(Object.keys(panes)); machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1)] : '/tmp' });
+  machine.liveTmux = () => new Set(Object.keys(panes)); machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1).replace(/^=(.*):$/, '$1')] : '/tmp' });
   await machine.recoverFromTmux(); assert.deepEqual(Object.values(machine.sessions).map(s => s.cli), ['kimi', 'codex', 'agy', 'claude']); assert.match(machine.sessions['wc-a-worker'].end_reason, /Lost track/);
 });
 
