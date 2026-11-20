@@ -35,6 +35,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Read-only: wheelchair never renews, writes or locks Kimi's login; it reads usage only while the stored access token is unexpired, and otherwise skips without any network request | Zero sign-out risk; Kimi usage only moves while Kimi runs, which keeps the token fresh. Cost: use of the same account on another computer is not seen until Kimi runs here again | user |
 | 7 | The usage URL is fixed at `https://api.kimi.ai/coding/v1/usages`; `base_url` in config.toml and `KIMI_CODE_BASE_URL` are ignored, and only accounts whose `loginStatus` is `logged_in: true` (global region) are read | The token is only ever sent to Kimi's own global host, never to an address taken from a file or env var; wheelchair already refuses China-region logins | defaulted |
 | 8 | A window at `used_ratio >= 1` marks the reading `reached`, so the machine sets `limited_until` the same way it does for Codex | Reuses `limitedUntil` (machine/lib/limits.js); lets waiting sessions skip a spent Kimi account before it hits the limit | defaulted |
+| 10 | On a Kimi limit hit the machine reads usage once, so the stopped session resumes at Kimi's real reset | Review round 1: otherwise it retries hourly; the key is surely fresh at that moment | review-round-1 |
+| 11 | For Kimi, the poller tries each eligible machine until one reads | Review round 1: the same account may be signed in on several machines; only the one that ran Kimi lately has a fresh key | review-round-1 |
 | 9 | Monthly limits and the top-up balance in the response are ignored | IDEA.md Not doing | defaulted |
 
 ## Spec
@@ -60,17 +62,21 @@ or Antigravity changes.
 3. If `expires_at * 1000 <= Date.now() + 30_000`, throw `Kimi Code's login key has expired;
    it renews the next time Kimi Code runs` with no network request.
 4. `GET https://api.kimi.ai/coding/v1/usages` with headers `Authorization: Bearer <token>`
-   and `Accept: application/json`, using Node's global `fetch` with an abort timeout of
-   `min(timeout, 10000)` ms. The URL comes only from the adapter constant; tests override it
+   and `Accept: application/json`, using Node's global `fetch` with `redirect: 'error'` (exactly one request; a 3xx
+   is a failure) and an abort timeout of `min(timeout, 10000)` ms. The URL comes only from the adapter constant; tests override it
    through a machine-service option (below), never through config.toml or the environment.
-5. A non-2xx status → throw `Kimi usage request failed (HTTP <status>)`; a timeout or
-   network error → throw `Kimi usage request failed`. Error text never contains the token,
+5. A non-2xx status → throw `Kimi usage request failed (HTTP <status>)`; a timeout,
+   redirect or network error → throw `Kimi usage request failed`; a body that is not JSON
+   or has no `usages` object → throw `invalid usage response`. Every thrown message is one
+   of the fixed strings in this section (plus the status number); never wrap or forward an
+   underlying error's message. Error text never contains the token,
    the response body or headers.
 6. Parse the JSON body's `usages` object: `limit_7d` → `week`, `limit_5h` → `five_hour`.
    Each entry `{used_ratio, reset_time}`: `used_ratio` is a number or numeric string;
-   `used = used_ratio * 100` (not clamped below; clamp to at most 100). `reset_time` a
-   non-empty string parseable by `Date.parse` → `resets_at` as ISO string, otherwise `null`.
-   An entry missing or with a non-numeric `used_ratio` gives `null` for that window. If both
+   `used = used_ratio * 100` (not clamped below; clamp to at most 100). `reset_time` must be
+   a non-empty string parseable by `Date.parse`, giving `resets_at` as an ISO string. An
+   entry that is missing, has a non-numeric `used_ratio` or has no parseable `reset_time`
+   gives `null` for that window (a window with no reset could never age out of a reading). If both
    are `null`, throw `no usage windows`. Ignore every other field.
 7. Return `{ five_hour, week, ...(any window used >= 100 ? { reached: true } : {}) }`, the
    same shape Codex's probe returns (`machine/adapters/codex.js:11-20`).
@@ -86,22 +92,43 @@ or Antigravity changes.
 - Reading construction, `reached` → `limited_until`, 200 and 502 handling stay as they are.
 - `agy` stays refused with 400.
 
+### Machine: Kimi limit hit (`machine/service.js` `hook`, around line 1379)
+
+When a `limit-hit` event arrives for a session whose `cli` is `kimi`, the machine first
+calls the kimi `usageProbe` for that session's account home (the same `dir` the session
+runs with: `null` for `default-kimi`, else `~/.wheelchair/accounts/<id>` expanded), with a
+10-second timeout. The key is fresh at that moment because the session has just run. On
+success it builds the reading as the `/v1/usage` route does (account, `at`, windows,
+`limited_until` from `limitedUntil(reading)` when `reached`), stores it as the session's
+`last_reading`, and puts it on the forwarded event as `reading`, so the hub records it.
+The event's `limited_until` is then `limitedUntil(reading)` computed from that fresh
+reading even when no window is reached (`machine/lib/limits.js`: earliest future reset
+among windows ≥ 95%, else the earliest future reset). On any probe failure it falls back
+to today's `limitedUntil(current.last_reading)` (one hour). Claude, Codex and Antigravity
+limit hits are unchanged. Effect: a running Kimi session stopped by its limit resumes at
+Kimi's real reset time instead of retrying every hour.
+
 ### Hub: idle poller (`viewer/app/usage-poll.js`)
 
 - Candidates include `kimi` accounts alongside `claude` and `gpt` (same unpaused,
-  nine-minute reading and attempt rules, same machine choice, CLI from
-  `PROVIDERS.kimi.cli` = `kimi`).
+  nine-minute reading and attempt rules, CLI from `PROVIDERS.kimi.cli` = `kimi`).
+- Machine choice for `kimi`: the same eligible list and order as today (the hub machine
+  first if eligible, then the rest by name), but on a failed probe try the next eligible
+  machine, stopping at the first reading. The same Kimi account can be signed in on more
+  than one machine, and only the one where Kimi ran lately has a fresh key; a failed Kimi
+  probe with an expired key costs no network request. Claude and GPT keep today's single
+  machine choice.
 - For `kimi` accounts only, a live session on the account does **not** skip the poll, in
   either the pre-call or post-call check. Claude and GPT keep today's live-session skips.
-- A failed probe (502, including the expired-key case) leaves the previous reading as it is,
-  as today; the attempt time still gates the next try to nine minutes.
+- When every eligible machine fails (502, including the expired-key case), the previous
+  reading stays as it is, as today; the attempt time still gates the next try to nine minutes.
 
 ### Hub and page
 
-No change to `viewer/app/usage.js`, `balancer.js`, `sessions.js` or `viewer/pages/settings.js`
-is expected: the reading shape is the one they already handle, and summary already covers
-Kimi. If a test shows the Usage page or rank special-cases Kimi as unread, remove that
-special case; do not add Kimi-specific display.
+No change to `viewer/app/usage.js`, `balancer.js`, `sessions.js` or `viewer/pages/settings.js`.
+They already handle this reading shape for every provider without a provider check (Kimi is
+special-cased only for CLI problems, `viewer/app/usage.js:62-69`), so a Kimi reading flows
+into the page, forecast and rank as is. Do not add Kimi-specific display.
 
 ### Edge cases
 
@@ -128,9 +155,16 @@ Claude/GPT behaviour or to how the page looks.
   expired `expires_at` → 502 and the fake received **no** request; not signed in / China
   region → 502, no request; fake returns 401 → 502 and the error text and response contain
   no token; the request carried `Authorization: Bearer <token>`; `agy` still 400.
+- Machine test for the limit hit: a kimi session's `limit-hit` with the fake usage server
+  returning a 100% week resetting at time T forwards `limited_until` = T and a `reading`; with
+  the fake returning 500 it forwards the one-hour fallback. A malformed 2xx body containing a
+  dummy secret string gives a 502 whose error text does not contain that string. A 302 from
+  the fake gives a 502 and the fake sees exactly one request.
 - New hub tests in `viewer/test/app-usage.test.js`: an idle `kimi` account is polled with
-  `cli: 'kimi'`; a `kimi` account with a live session is still polled; a `claude` account
-  with a live session is still skipped.
+  `cli: 'kimi'` and its reading is stored in `usage.json`; a `kimi` account with a live
+  session is still polled **and its reading is stored**; a `kimi` account signed in on two
+  machines whose first machine fails is read from the second; a `claude` account with a live
+  session is still skipped.
 - A grep check that no Kimi credential path or token is written by the change:
   `git diff main -- machine viewer | grep -nE 'writeFile|atomicWrite' ` shows nothing new in
   `machine/adapters/kimi.js`.
@@ -147,12 +181,19 @@ Claude/GPT behaviour or to how the page looks.
 
 ### Round 1 — 2026-11-19
 
-**Lanes:** pending.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics (gpt) | blocking | Poller always picks the same machine; a stale key there blocks readings although another machine running Kimi has a fresh one | downgraded (major) | Real but the rest works; Spec now tries each eligible machine for Kimi until one reads |
+| mechanics (gpt) | blocking | A 100% window with no reset never ages out of a reading and blocks placement | downgraded (minor) | Kimi always sends `reset_time` per its CLI parser; still, windows without a parseable reset are now dropped |
+| mechanics (gpt) | major | A running Kimi session stopped by its limit still waits the one-hour fallback; poll readings never reach its `last_reading` | upheld | New Spec section: on a Kimi limit hit the machine probes usage once and uses the real reset |
+| mechanics (gpt) | minor | Redirects not specified; fetch follows them | upheld | `redirect: 'error'` |
+| mechanics (gpt) | minor | Check once built: a parse error could quote the response body into the forwarded error | upheld | Fixed error strings only, plus a malformed-body test |
+| mechanics (gpt) | minor | Live-Kimi poll test should assert the reading is stored | upheld | Test now asserts storage |
+| intent (claude) | minor | "Hub and page" asks the worker to hunt for a Kimi special case that doesn't exist | upheld | Section now says plainly nothing changes there, with evidence |
 
 ## Implementation Tasks
 
