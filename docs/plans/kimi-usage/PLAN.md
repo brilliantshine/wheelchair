@@ -66,9 +66,10 @@ or Antigravity changes.
    and `Accept: application/json`, using Node's global `fetch` with `redirect: 'error'` (exactly one request; a 3xx
    is a failure) and an abort timeout of `min(timeout, 10000)` ms. The URL comes only from the adapter constant; tests override it
    through a machine-service option (below), never through config.toml or the environment.
-5. A non-2xx status → throw `Kimi usage request failed (HTTP <status>)`; a timeout,
-   redirect or network error → throw `Kimi usage request failed`; a body that is not JSON
-   or has no `usages` object → throw `invalid usage response`. Every thrown message is one
+5. A non-2xx status → throw `Kimi usage request failed (HTTP <status>)`; a timeout
+   (including one while reading the body), redirect, network error or any failure to read
+   the body → throw `Kimi usage request failed`; a body read in full that is not JSON or has
+   no `usages` object → throw `invalid usage response`. Every thrown message is one
    of the fixed strings in this section (plus the status number); never wrap or forward an
    underlying error's message. Error text never contains the token,
    the response body or headers.
@@ -92,6 +93,10 @@ or Antigravity changes.
   service tests set it to a local fake server); in production the option is unset.
 - Reading construction, `reached` → `limited_until`, 200 and 502 handling stay as they are.
 - `agy` stays refused with 400.
+- Update `machine/API.md` (the `POST /v1/usage` paragraph, line 94): the CLI may also be
+  `kimi`; for Kimi the service reads the access token from Kimi's credential file and makes
+  one HTTPS GET to Kimi's usage service, never renewing or writing it, and no request when
+  the token has expired.
 
 ### Hub: idle poller (`viewer/app/usage-poll.js`)
 
@@ -146,9 +151,13 @@ Claude/GPT behaviour or to how the page looks.
   session is still polled **and its reading is stored**; a `kimi` account signed in on two
   machines whose first machine fails is read from the second; a `claude` account with a live
   session is still skipped.
-- In the adapter tests, the Kimi home's `config.toml`, credential file and `oauth/` directory
-  have identical bytes and modification times before and after every probe (success,
-  expired, HTTP error), and no new file appears under the Kimi home.
+- In the adapter tests, the Kimi home's `config.toml` and credential file have identical
+  bytes and modification times before and after every probe (success, expired, HTTP error),
+  and the recursive list of entries under the Kimi home is unchanged (no file or directory
+  added or removed).
+- Adapter or route tests: a 2xx body that is not JSON and contains a dummy secret string
+  gives a 502 whose error text does not contain that string; a 302 from the fake gives a 502
+  and the fake sees exactly one request.
 - Commands, all must pass:
   - `bash machine/test/run.sh`
   - `node --test viewer/test/*.test.js`
@@ -226,6 +235,11 @@ Claude/GPT behaviour or to how the page looks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | — | No findings | — | — |
+| mechanics (gpt) | minor | Malformed-body and redirect tests were dropped with the split | upheld | Restored in Validation |
+| mechanics (gpt) | minor | `oauth/` byte check doesn't fit a directory absent from the fixture | upheld | Now: file bytes/mtimes plus unchanged recursive entry list |
+| mechanics (gpt) | minor | Body-read failure vs parse failure ambiguous | upheld | Body-read failures are `Kimi usage request failed` |
+| mechanics (gpt) | minor | `machine/API.md` still says Claude/Codex only and no credential reads | upheld | Spec requires the API.md update |
 
 ## Implementation Tasks
 
