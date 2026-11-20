@@ -91,7 +91,8 @@ PLAN order. No sizes.
 
 - **Live thread** (not archived): the hub asks the thread's machine,
   `GET /v1/threads/<thread id>/documents?slug=<slug>` (hub-authenticated with the machine
-  secret, like `/v1/uploads`). The machine finds the worktree from its own record of the
+  secret, like `/v1/uploads`); it answers `{ "slug": <slug>, "documents": [...] }`. With no
+  `slug` parameter it discovers one (see "Slug for a thread on another machine" below). The machine finds the worktree from its own record of the
   thread's lead session (`this.sessions` entry with that `thread_id` and role `lead`; the
   newest if several, live or not). The hub never sends a path. `slug` must match
   `^[a-z0-9][a-z0-9-]{0,79}$`, else 400. For each of the three names it includes it only if it passes
@@ -106,12 +107,12 @@ PLAN order. No sizes.
 on its own filesystem against `thread.worktree` (`viewer/app/views.js:71-105`, called from
 `viewer/app/chat.js:338`), which fails when the worktree is on another machine. Change
 `discoverSlug`: when the thread is not archived, has no slug, and `thread.worktree` does not
-exist on the hub's filesystem, ask the thread's machine with new
-`GET /v1/threads/<thread id>/plan-slug` (hub-authenticated). The machine runs the same
+exist on the hub's filesystem, ask the thread's machine's `/documents` route (below) without a `slug`. The machine runs the same
 `newPlanDirectories` logic (move that function to a module both `viewer/app/views.js` and
 `machine/service.js` can require, or copy it with a comment naming the other) against the
-lead worktree from its record (as above) and returns `{ "slug": <name or null> }`, null
-unless exactly one name. The hub saves it as `findSlug` does today. A machine that cannot
+lead worktree from its record (as above) and returns `{ "slug": <name or null>,
+"documents": [...] }`: slug null unless exactly one name, documents listed for that slug
+(empty when null). The hub saves it as `findSlug` does today. A machine that cannot
 be reached leaves the slug unset; the next poll tries again. Test with a fake machine and a
 worktree path that does not exist on the hub.
 
@@ -160,7 +161,8 @@ New lead-only card kind `file`, shown to the user, not pinned.
   check: absolute path, exists, regular file (following no symlink at the final component:
   `lstat` must say regular file), at most 25 MB (`UPLOAD_LIMIT`), real path not inside the machine's real `stateDir`
   (`machine/service.js:224`; that is where its secret, session records and uploads live;
-  422 `file is inside the wheelchair state folder`), copied into the thread's
+  422 `file is inside the wheelchair state folder`) unless it is inside
+  `<stateDir>/worktrees/` (`machine/service.js:584-585`), where every agent's checkout lives, copied into the thread's
   uploads with `reserveUpload`. Errors are 422 with plain sentences: `file path must be
   absolute`, `file does not exist`, `file is not a regular file`, `file exceeds 25 MB`. It
   passes on `{ path: <stored path>, title, name: <sanitized original basename>, size:
@@ -204,9 +206,11 @@ archived-document read work for projects that exist only on another machine (Def
 New or changed tests:
 
 - `machine/test/`: `copyFile` accepts a text and a PDF file, refuses a relative path, a
-  missing file, a directory, a symlink, a file over 25 MB, a file inside the state folder,
+  missing file, a directory, a symlink, a file over 25 MB, a file inside the state folder (but
+  accepting one inside a worktree under `<stateDir>/worktrees/`),
   a non-lead session and an extra field, leaving no upload behind for any refusal; the
-  plan-slug route returns the one new plan directory and null otherwise; a document over
+  documents route without a slug returns the one new plan directory as `slug` and null
+  otherwise; a document over
   2 MiB is neither listed nor served; the document list and
   document routes return existing names only, refuse a bad slug, a symlinked document and a
   path escaping the plan folder, and return `[]` with no lead record; the upload GET sends
@@ -258,7 +262,7 @@ npm --prefix viewer run test:browser
 | intent | minor | Widen `image` to any file instead of a new `file` kind | declined | `image` has a fixed contract (inline display, image extensions) used by existing leads and the chat card; a separate kind keeps both simple and is what the reviewer calls defensible |
 | intent | minor | `/documents` returns sizes nobody shows | upheld | S3 returns names only; archived check uses `cat-file -e` |
 | intent | minor | S5 filename header also changes user attachments; say so | upheld | S5 Serving says it is intended |
-| mechanics | blocking | Remote thread never gets a slug: discovery runs Git on the hub | upheld | S3 adds machine-side slug discovery through `/v1/threads/<id>/plan-slug` |
+| mechanics | blocking | Remote thread never gets a slug: discovery runs Git on the hub | upheld | S3 adds machine-side slug discovery (round 2: folded into the machine's `/documents` route) |
 | mechanics | blocking | Machine copies before the hub checks role and fields; refused cards leave uploads | downgraded → minor | The orphan copy is never listed and needs a session bypassing `card.js`'s own role check; cheap to close: S5 checks role and fields on the machine before copying |
 | mechanics | blocking | Lead could send the machine secret or session records | downgraded → minor | The lead already runs as the same user and can print any of these files into its reply, and the receiver is the owner; still cheap to refuse: S5 refuses sources inside the machine's state folder |
 | mechanics | blocking | Listing and serving disagree (big files, symlinked parents) | downgraded → minor | Would show a dead link, not build the wrong thing; S3/S4 share one eligibility check |
@@ -270,7 +274,7 @@ npm --prefix viewer run test:browser
 
 **Changed since the last round:**
 - S3: `/documents` returns names only; archived existence check is `cat-file -e`.
-- S3: new machine-side slug discovery (`/v1/threads/<id>/plan-slug`) for threads whose worktree is not on the hub.
+- S3: new machine-side slug discovery for threads whose worktree is not on the hub.
 - S3/S4: listing and serving share one eligibility check (no final symlink, regular file, real path inside the plan folder, at most 2 MiB).
 - S5: machine checks lead role and allowed fields before copying; refuses sources inside the machine's state folder.
 - S5: states that the filename header also applies to the user's own attachments, on purpose.
@@ -280,6 +284,9 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | State-folder refusal blocks files in agents' own worktrees | upheld | S5 exempts `<stateDir>/worktrees/`; test added |
+| intent | minor | Decide "remote" from `thread.machine`, not a missing path | declined | `discoverSlug` runs on every thread-list poll; the local path check keeps local threads on the existing Git path with no machine round trip, and a missing worktree on an unarchived thread is exactly the remote case |
+| intent | minor | `/plan-slug` duplicates `/documents`' worktree lookup | upheld | Machine `/documents` returns `{slug, documents}` and discovers the slug when none is given; `/plan-slug` removed |
 
 ## Implementation Tasks
 
