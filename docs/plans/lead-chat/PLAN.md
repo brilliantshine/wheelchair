@@ -584,6 +584,11 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | `session leads` listing + shared `peers.js` helpers (§1, Terms) | viewer/app/peers.js, sessions.js (leads action), wc.js, viewer/AGENTS.md, API.md, test/app-lead-list.test.js, wc-cli.test.js | standard | | app-lead-list test, full node suite, machine suite | not started |
+| T2 | Cross-thread lead `message` with two-lock delivery (§2) — tricky | cards.js (message path), hub.js (acceptCard), agents.js (questionFor), peers.js (additions), test/app-lead-messages.test.js | standard | | app-lead-messages test, full node suite, machine suite | not started (after T1) |
+| T3 | `reach` card hub side: schema, accept/refusals, press, Needs you, handoff (§3) | card.js, cards.js (reach), threads.js (reach press), views.js (addNeeds), handoff.js, API.md, peers.js (additions), test/app-reach.test.js | standard | | app-reach test, full node suite, machine suite | not started (after T2) |
+| T4 | `reach` card on the thread page + browser test (§3 display) | viewer/pages/thread.js, thread.css, test/app-reach.spec.js | standard, claude | | app-reach spec, browser suite, node suite | not started |
+| T5 | Protocol rules: lead.md section, cards.md, cards-lead.md, protocol-rules test (§4) | protocol/app/lead.md, cards.md, cards-lead.md, viewer/test/protocol-rules.test.js | standard, claude | | protocol-rules test, full node suite | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
