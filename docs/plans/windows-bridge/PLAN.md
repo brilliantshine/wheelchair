@@ -85,6 +85,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D53 | Supersedes D47's 20 s and its project tools line: wait at most 45 s; readiness is reported through `win info` only | The hub keeps project tools lines only for the thread worktree (`machine/service.js:662-707`) | review-round-3 |
 | D54 | Sandboxed sessions cannot `run` or `start` Windows programs | Windows programs run outside any Linux sandbox | review-round-3 |
 | D55 | Supersedes D43: the live check runs the candidate service under `systemd-run --user` and calls it through `wc.js win` | Exercises the real route and a service environment | review-round-3 |
+| D56 | WSL git must be 2.40 or newer | `merge-tree --merge-base` arrived in 2.40; Debian 12 ships 2.39 | review-round-4 |
+| D57 | Bridge git commands disable line-ending conversion and every filter driver (LFS included), so files travel as raw bytes | Unity projects often use LFS; pointer files would break the copy | review-round-4 |
+| D58 | The copy gets the Linux version of conflicted paths; markers only on Linux | Unity's YAML files are the likeliest to conflict; an open Editor must not load markers | review-round-4 |
+| D59 | Supersedes D50's kept-if-flagged rule: a worker's copy is deleted at merge cleanup regardless, and a copy whose worktree is gone is deleted, never reconciled | Otherwise a several-GB copy could stay forever | review-round-4 |
 
 ## Spec
 
@@ -180,7 +184,7 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   `core.autocrlf=false`, `core.ignorecase=true`, `core.filemode=false` and
   `core.longpaths=true`. All work on the Windows side uses `git.exe` (Git for Windows, found
   by PowerShell on the Windows PATH); Linux-side work uses the worktree's `git`, which must be
-  2.38 or newer (for `git merge-tree --write-tree`). Linux git reaches the copy's repository
+  2.40 or newer (for `git merge-tree --write-tree --merge-base`, D56). Linux git reaches the copy's repository
   through its mount path for `fetch` and `push` only; checkouts in the copy are always done by
   `git.exe`.
 - **Refs.** In the Linux repository: `refs/wheelchair/<worktree-key>/base`, `/windows` and
@@ -193,6 +197,14 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   index or `base`). So ignore rules, deletions, renames, letter case (Windows side ignores
   case), executable bits (kept from Linux; Windows has `core.filemode=false`) and file/folder
   changes all follow git. Ignored files are never in a snapshot and never touched.
+- **Raw bytes (D57).** Every git command the bridge runs, on either side, runs with
+  `-c core.autocrlf=false -c core.eol=lf`, and with every filter driver named in the
+  worktree's `.gitattributes` files (for example `lfs`) overridden as
+  `-c filter.<name>.clean=cat -c filter.<name>.smudge=cat -c filter.<name>.process=
+  -c filter.<name>.required=false`. So Git LFS files and other filtered files travel as their
+  real contents, never as pointer files, and the copy needs no LFS remote. These raw blobs
+  live only under the bridge's refs and are pruned by git's normal garbage collection once
+  the copy and its refs are deleted.
 - **Reconcile (D49)** is the only sync step; every op that syncs runs it, serialized per
   copy across every session sharing it:
   1. Snapshot Linux (`L`) and, with `git.exe` in the copy, Windows (`W`). Fetch `W` into
@@ -203,12 +215,15 @@ Ops act only on the caller's own session; no op takes a session or thread argume
      conflict markers; for a binary conflict it holds the Linux version), `W` is kept as
      `refs/wheelchair/<key>/conflict/<UTC time>`, and every conflicted path is listed in
      `conflicts` with that ref name, so `git show <ref>:<path>` gets the Windows version back.
-  3. Apply `R` to the Linux worktree with `git read-tree -m -u L R` on the temporary index;
-     apply `R` to the copy by pushing `R` to the copy's `refs/wheelchair/linux` and running
-     `git.exe read-tree -m -u W R` there. Git refuses if a file changed since its snapshot;
+  3. Apply `R` to the Linux worktree with `git read-tree -m -u L R` on the temporary index.
+     For the copy, build `R'`: `R` with every conflicted path taken from `L` (D58), so the
+     Windows side never holds conflict markers and an open Editor keeps loading valid files;
+     push `R'` to the copy's `refs/wheelchair/linux` and run `git.exe read-tree -m -u W R'`
+     there. Git refuses if a file changed since its snapshot;
      the reconcile then starts again from step 1 once, and on a second refusal fails with 422
      naming the paths, having changed nothing further.
-  4. Move `base` to `R` on both sides. Record `last_ok`.
+  4. Move `base` to `R'` on both sides (so after the agent resolves a conflict on Linux, the
+     next sync sees a Linux-only change). Record `last_ok`.
   Result fields: `{to_windows, to_linux, conflicts: [{path, ref}], skipped}` (counts of
   changed paths each way). A symlink pointing outside the worktree is left out of the Linux
   snapshot and listed in `skipped`.
@@ -229,8 +244,7 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   terminated at its stop, with no reconcile (D46), at both removal sites
   (`machine/service.js:864` and `:1087`). A worker's copy is not reconciled at its stop or at
   merge (D50): workers sync and commit before reporting done (D44); at merge cleanup
-  (`machine/service.js:1400`) the copy is deleted if `used_since_ok` is clear, otherwise kept
-  and logged. Archive deletes the thread's remaining copies after their final reconciles
+  (`machine/service.js:1400`) the copy is deleted whatever its flag (D59). Archive deletes the thread's remaining copies after their final reconciles
   (Lifecycle). Conflict refs live in the Linux repository and are kept until the copy is
   deleted.
 
@@ -242,13 +256,14 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   background: a verifier's copy is deleted (D46); a worker's is left (D50); for a lead or
   sub-lead, if no other live session shares the copy and `used_since_ok` is set, a reconcile
   starts. A stop of a session already stopped starts nothing.
-- **Archive (D42, D51):** a copy *needs a final reconcile* when `used_since_ok` is set and no
-  reconcile has failed since it was set. Archive starts one for each such copy of the thread
+- **Archive (D42, D51):** a copy *needs a final reconcile* when its worktree exists,
+  `used_since_ok` is set and no reconcile has failed since it was set. Archive starts one for each such copy of the thread
   that has none running, and returns the existing `pending` result
   (`viewer/app/threads.js:217-222`) naming the sessions that last used those copies while any
   is running; the user's "Archive again" retries. A finished reconcile, successful or failed,
   never makes archive wait again. The WIP commit happens once none is running. Then archive
-  deletes copies per D41.
+  deletes copies per D41. A copy whose worktree no longer exists is never reconciled; it is
+  deleted (D59).
 - **Sweep** every 60 s, like the screen sweep (`machine/lib/screen.js:105-110`), and once at
   service start: terminate the jobs of apps whose session is not live in tmux (a crash or a
   natural exit), including a `run` in flight, setting `used_since_ok`; then reconcile every
@@ -308,7 +323,7 @@ COULD NOT TRY. The first Unity open in a thread imports the whole project and ca
 ### Setup (D19, D48)
 
 README "On Windows" gains: install Git for Windows on the Windows side and make sure WSL's
-git is 2.38 or newer (both checked by `win info`); interop must be on (`[interop] enabled=true`, the default); check
+git is 2.40 or newer (both checked by `win info`); interop must be on (`[interop] enabled=true`, the default); check
 from a thread by asking the lead to run `wc.js win info`, which runs inside the installed
 machine service (D29); if it fails, run `wsl --shutdown` from Windows, reopen WSL and check
 again; Windows-side tools use full
@@ -344,8 +359,9 @@ exit code of 256 reports 256); an app whose launcher exited stays running while 
 processes; the start-time sweep ends a recorded surviving wrapper; the sweep terminates a dead
 session's jobs and reconciles lead or sub-lead copies needing it, including ones with no apps;
 stop returns at once; a verifier's copy is deleted at stop without a reconcile; a worker's
-copy is not reconciled at stop and is deleted at merge cleanup only when unused since its last
-sync; a session start on a worktree with no copy and no Windows `.exe` entry creates no copy
+copy is not reconciled at stop and is deleted at merge cleanup even when flagged; a copy
+whose worktree is gone is deleted without a reconcile; an LFS-tracked file reaches the copy
+with its real bytes; the copy never receives conflict markers; a session start on a worktree with no copy and no Windows `.exe` entry creates no copy
 or state; start-time readying past 45 s launches the CLI and `win info` reports `ready:
 false`; archive returns `pending` while a final reconcile runs and not again after it
 finished or failed; a copy whose reconcile failed is never deleted; seeding copies only paths
@@ -482,6 +498,10 @@ sets `WHEELCHAIR_UNITY`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | `merge-tree --merge-base` needs git 2.40, not 2.38 | upheld | D56 |
+| intent | major | Git LFS files would sync as pointer files | upheld | D57 |
+| intent | major | Flagged worker copy kept at merge, then never deletable | upheld | D59 |
+| intent | minor | Conflict markers written into the Windows copy break an open Editor | upheld | D58 |
 
 ## Implementation Tasks
 
