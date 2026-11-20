@@ -111,6 +111,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D79 | Run one more review round; if not clean, come back to the user before going further | User's pick at the second review budget | user |
 | D80 | The force-add step skips paths not on disk | A deleted, uncommitted tracked file made every later sync fail | review-round-7 |
 | D81 | Supersedes D77: a copy with unresolved paths is deleted after saving its Windows snapshot as a kept conflict ref | Nothing is lost and no several-GB copy stays forever | review-round-7 |
+| D82 | A copy whose last reconcile failed is never deleted at archive | It otherwise read as "needed none" | review-round-7 |
+| D83 | Newly ignored, untracked paths are dropped from the bridge indexes before each snapshot | A `.gitignore` added mid-thread (common for a new Unity project) must stop caches syncing | review-round-7 |
 
 ## Spec
 
@@ -222,7 +224,9 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   first `add -A`), so files tracked despite matching an ignore rule are included (D73). Before each Linux
   snapshot, any path the worktree's real index lists (read only, `git ls-files`) that the
   bridge index lacks and that exists in the worktree is added with `git add -f` (paths
-  no longer on disk are skipped, D80), so a file force-added later is included too. A new
+  no longer on disk are skipped, D80), and any path in the bridge index that git now ignores
+  and the real index does not list is removed from the bridge index with `git rm --cached`
+  (D83), on both sides, so a newly ignored file stops syncing. so a file force-added later is included too. A new
   Windows bridge index starts from the first `r_win` checkout.
 - **Refs.** Linux repository: `refs/wheelchair/<worktree-key>/base` and `.../windows`; conflict refs under `refs/wheelchair/conflicts/<thread-id>/<worktree-key>/<UTC
   time>`. Copy: `refs/wheelchair/base` and `refs/wheelchair/linux`. The thread's branch and
@@ -285,8 +289,8 @@ Ops act only on the caller's own session; no op takes a session or thread argume
      (both removal sites, `machine/service.js:864` and `:1087`);
   2. a worker's copy at merge cleanup (`machine/service.js:1400`), whatever its state (D50:
      workers sync and commit before reporting done);
-  3. at archive, each remaining copy after its final reconcile succeeded or when it needed
-     none (D69);
+  3. at archive, each remaining copy whose last reconcile did not fail, after its final
+     reconcile succeeded or when it needed none (D69, D82);
   4. when Wheelchair removes a worktree in any other way, its copy, unless its last reconcile
      failed.
   Copies are never deleted for being idle: the thread worktree's copy, and its Unity cache,
@@ -433,7 +437,8 @@ edit to a path with unresolved markers waits on Windows and the reconcile still 
 other changes; a Linux delete against a Windows edit keeps the deletion and the conflict ref
 holds the Windows file; a file tracked despite an ignore rule reaches the copy; a tracked file deleted but not
 committed syncs on two syncs in a row without error; a copy deleted with unresolved paths
-leaves a conflict ref holding its Windows files; `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` set only on WSL and only for tool
+leaves a conflict ref holding its Windows files; a copy whose final reconcile failed is not
+deleted at archive; a file synced before a new `.gitignore` rule covered it stops syncing; `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` set only on WSL and only for tool
 roles; the token never reaches a Windows program's environment.
 
 `windows-live.sh` (with `windows-live.js`, in the pattern of `machine/test/screen-live.sh`)
@@ -478,6 +483,9 @@ sets `WHEELCHAIR_UNITY`.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| An app that writes and exits during a sync's own window, followed by a stop before the next sync, can leave that write unsynced | Rare path: a race inside one sync | review-round-7 |
+| A copy deleted after its worktree is gone saves an older Windows snapshot for unresolved paths | Rare path: three unlikely conditions together | review-round-7 |
+| Force-adding a generated file Windows already created makes the reconcile fail | Rare path; fails with a reason, nothing lost | review-round-7 |
 | After an interrupted apply, a Linux edit to the same lines before the retry produces a reported conflict | Rare path: needs a failed apply and a same-line edit before the retry; nothing is lost | review-round-6 |
 | A rename/rename conflict reports the Linux path; the Windows file is at another path in the ref | Rare path: both sides renaming one file between syncs; `git ls-tree -r <ref>` finds it | review-round-6 |
 | A repository-local `info/attributes` with filters or line-ending rules still applies to bridge git commands | Rare path: hand-made local file | review-round-5 |
@@ -639,6 +647,11 @@ sets `WHEELCHAIR_UNITY`.
 | intent | minor | D77 keeps a whole copy forever | upheld | D81 |
 | intent | minor | Archive still says "per D41" | upheld | Points at the deletion list |
 | intent | minor | Fixture test files' folder unnamed | upheld | `Assets/Tests/` |
+| mechanics | blocking | An app exiting during a sync's window leaves its last write unflagged | accepted-risk | Rare path: a race inside one sync plus a stop before the next sync |
+| mechanics | blocking | Failed final reconcile reads as "needed none" and archive deletes the copy | downgraded: major | D82 |
+| mechanics | blocking | Copy deleted with a missing worktree uses an older Windows snapshot | accepted-risk | Rare path: worktree gone plus unresolved conflicts plus later Windows edits to those paths |
+| mechanics | blocking | Force-added previously ignored file collides with Windows' own untracked copy | accepted-risk | Rare path: force-adding a generated file Windows already made; the reconcile fails with a reason |
+| mechanics | blocking | A newly ignored file keeps syncing | downgraded: major | D83 |
 
 ## Implementation Tasks
 
@@ -650,3 +663,4 @@ sets `WHEELCHAIR_UNITY`.
 - 2026-11-19: The user will export the plan after review and import it on the Windows PC (WSL), so the build and its verification run there. `machine/test/windows-live.sh` is then a real check, not a skip: verifiers on that machine run it.
 - 2026-11-19: Review budget reached after round 3 (three rounds without a clean one since the user's last decision). Recurring area: the two-way file sync and its lifecycle. Asked the user how to proceed.
 - 2026-11-19: Review budget reached again after round 6 (rounds 4–6 since the user's git-sync decision, none clean). Findings now small and fixed; asked the user how to proceed.
+- 2026-11-19: Round 7 not clean (two majors, both fixed: D82, D83). Per D79, asked the user before going further.
