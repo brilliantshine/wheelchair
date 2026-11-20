@@ -20,6 +20,7 @@ const shown = new Set([
   'check',
   'diagram',
   'image',
+  'file',
   'stub',
   'sudo',
 ]);
@@ -37,6 +38,7 @@ const roles = {
   check: ['lead'],
   diagram: ['lead'],
   image: ['lead'],
+  file: ['lead'],
   stub: ['lead'],
   sudo: ['lead'],
   title: ['lead'],
@@ -150,6 +152,7 @@ const fields = {
   },
   diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html'].includes(value) },
   image: { path: (value) => text(value) && path.isAbsolute(value), title: text },
+  file: { path: (value) => text(value) && path.isAbsolute(value), title: text },
   stub: {
     title: text,
     summary: text,
@@ -170,6 +173,8 @@ const fields = {
   },
 };
 
+const fileMachineFields = { ...fields.file, name: text, size: (value) => Number.isSafeInteger(value) && value >= 0 };
+
 const approvalMachineFields = {
   ...fields.approval,
   warnings: (value) => value === undefined || (array(value, text, 1) && value.length <= 10),
@@ -182,7 +187,8 @@ function validate(kind, card, role, options = {}) {
   if (card.kind !== undefined && card.kind !== kind) {
     return { ok: false, reason: 'kind must equal the command-line kind' };
   }
-  const spec = options.machine && kind === 'sudo' ? sudoMachineFields
+  const spec = options.machine && kind === 'file' ? fileMachineFields
+    : options.machine && kind === 'sudo' ? sudoMachineFields
     : options.machine && kind === 'approval' ? approvalMachineFields : fields[kind];
   const allowed = new Set([...Object.keys(spec), 'kind']);
   for (const key of Object.keys(card)) {

@@ -368,6 +368,7 @@ async function chat(hub, id) {
   return {
     thread: { ...publicThread, asides: (thread.asides || []).map(require('./asides.js').brief) },
     asides: (thread.asides || []).map(require('./asides.js').brief),
+    documents: await require('./documents.js').list(thread),
     items: shown,
     cards: thread.cards.filter((card) => !card.replaced),
     pinned: shownPins(thread),

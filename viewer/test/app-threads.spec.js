@@ -657,10 +657,13 @@ for (const [label, size] of SIZES) {
     test('plan links use the slug the API returns, not a diagram card plan', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.post(made.id, { kind: 'diagram', plan: 'other-plan', graph: 'flow', title: 'Flow' });
-      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
+      const wt = await makeTemp('wc-plan-links-');
+      await fs.mkdir(path.join(wt, 'docs/plans/dark'), { recursive: true });
+      for (const f of ['MAP', 'IDEA', 'PLAN']) await fs.writeFile(path.join(wt, 'docs/plans/dark', f + '.md'), '# ' + f);
+      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = wt; });
       await open(page, made.id);
       for (const f of ['MAP', 'IDEA', 'PLAN']) {
-        await expect(page.locator('#files a', { hasText: f })).toHaveAttribute(
+        await expect(page.locator('#files a', { hasText: f + '.md' }).first()).toHaveAttribute(
           'href', `/wheelchair/app/doc?thread=${made.id}&file=${f}.md`);
       }
     });
@@ -907,12 +910,16 @@ for (const [label, size] of SIZES) {
 
     test('plan document links open the in-app document page', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
-      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
+      const wt = await makeTemp('wc-plan-docs-');
+      await fs.mkdir(path.join(wt, 'docs/plans/dark'), { recursive: true });
+      await fs.writeFile(path.join(wt, 'docs/plans/dark/PLAN.md'), '# plan');
+      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = wt; });
       await open(page, made.id);
-      const plan = page.locator('#files a', { hasText: 'PLAN' });
+      const plan = page.locator('#files a', { hasText: 'PLAN.md' }).first();
       await expect(plan).toHaveAttribute('href', `/wheelchair/app/doc?thread=${made.id}&file=PLAN.md`);
-      await expect(page.locator('#files a', { hasText: 'MAP' })).toHaveCount(1);
-      await expect(page.locator('#files a', { hasText: 'IDEA' })).toHaveCount(1);
+      // Only the documents that exist are listed.
+      await expect(page.locator('#files a', { hasText: 'MAP' })).toHaveCount(0);
+      await expect(page.locator('#files a', { hasText: 'IDEA' })).toHaveCount(0);
     });
   });
 }

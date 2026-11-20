@@ -46,6 +46,7 @@ Rules for every card:
 | `merged` | yes | app | no |
 | `diagram` | yes | lead | no |
 | `image` | yes | lead | no |
+| `file` | yes | lead | no |
 | `stub` | yes | lead | no |
 | `sudo` | yes | lead | no |
 | `reach` | yes | lead | no |

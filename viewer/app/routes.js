@@ -570,8 +570,16 @@ async function handleThreads(hub, request, response, url, bits, body) {
     return send(response, 200, await hub.chat(id));
   }
   if (request.method === 'GET' && bits[2] === 'doc') {
-    const content = await hub.archivedDocument(id, url.searchParams.get('file'));
-    return send(response, 200, { content });
+    const file = url.searchParams.get('file');
+    const thread = await hub.thread(id);
+    const documents = require('./documents.js');
+    if (!documents.validSlug(thread.slug) || !documents.FILES.includes(file)) throw appError(404, 'document not found');
+    const content = thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
+    if (url.searchParams.get('download') === '1') {
+      response.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8', 'x-content-type-options': 'nosniff', 'content-disposition': `attachment; filename="${thread.slug}-${file}"`, 'cache-control': 'no-store' });
+      return response.end(content);
+    }
+    return send(response, 200, { content: content.toString('utf8') });
   }
   if (request.method === 'GET' && bits[2] === 'graph') {
     return send(response, 200, await require('./threads.js').archivedGraph(hub, id, url.searchParams.get('file')));

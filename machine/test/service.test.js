@@ -1215,8 +1215,9 @@ test('uploads sanitize, stream, serve, and enforce admission and size', async ()
     assert.equal((await fs.readdir(dir)).length, 5);
     await write(path.join(dir, '6-image.png'), 'png');
     let r = await fetch(`${env.base}/v1/uploads/t/6-image.png`, { headers: hubHeader });
-    assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.equal(await r.text(), 'png');
-    r = await fetch(`${env.base}/v1/uploads/t/3---x.txt`, { headers: hubHeader }); assert.equal(r.headers.get('content-type'), 'application/octet-stream'); assert.equal(r.headers.get('content-disposition'), 'attachment'); await r.text();
+    assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.equal(r.headers.get('content-disposition'), null); assert.equal(await r.text(), 'png');
+    await write(path.join(dir, '3-report.pdf'), 'pdf');
+    r = await fetch(`${env.base}/v1/uploads/t/3-report.pdf`, { headers: hubHeader }); assert.equal(r.headers.get('content-type'), 'application/octet-stream'); assert.equal(r.headers.get('content-disposition'), 'attachment; filename="report.pdf"'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); await r.text();
     assert.equal((await fetch(`${env.base}/v1/uploads/t/1-missing`, { headers: hubHeader })).status, 404);
     assert.equal((await fetch(`${env.base}/v1/uploads/t/bad`, { headers: hubHeader })).status, 400);
     env.instance.sessions['wc-t-lead'].archived_pending = true; assert.equal((await upload('x')).status, 409);
@@ -1243,6 +1244,45 @@ test('image cards are validated and copied before spooling, including archive or
     const late = api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: png, title: 'late' }, headers); await started;
     assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader)).body.uploads_removed, true); release(); assert.equal((await late).status, 409);
     await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+  } finally { await env.close(); }
+});
+
+test('file cards validate before copying and forward sanitized names and sizes', async () => {
+  const root = await temp(); const env = await service(root);
+  try {
+    await start(env); await start(env, { role: 'worker', thread_id: 't', token: 'worker-token' });
+    const txt = path.join(root, 'hello world.txt'); const pdf = path.join(root, 'report.pdf');
+    const secret = path.join(env.state, 'secret-file'); const worktreeFile = path.join(env.state, 'worktrees', 'checkout', 'work.txt');
+    const link = path.join(root, 'link'); const big = path.join(root, 'big');
+    await write(txt, 'hello'); await write(pdf, '%PDF'); await write(secret, 'secret'); await write(worktreeFile, 'work');
+    await fs.symlink(txt, link); await write(big, ''); await fs.truncate(big, 25 * 1024 * 1024 + 1);
+    const base = { kind: 'file', path: txt, title: 'Document' };
+    const cases = [
+      [{ ...base, path: 'relative' }, 'alpha', 422, 'file path must be absolute'],
+      [{ ...base, path: path.join(root, 'missing') }, 'alpha', 422, 'file does not exist'],
+      [{ ...base, path: root }, 'alpha', 422, 'file is not a regular file'],
+      [{ ...base, path: link }, 'alpha', 422, 'file is not a regular file'],
+      [{ ...base, path: big }, 'alpha', 422, 'file exceeds 25 MB'],
+      [{ ...base, path: secret }, 'alpha', 422, 'file is inside the wheelchair state folder'],
+      [base, 'worker-token', 403, 'only a lead may post a file card'],
+      [{ ...base, extra: true }, 'alpha', 422, 'field extra is not allowed'],
+      [{ ...base, warnings: [] }, 'alpha', 422, 'field warnings is not allowed'],
+      [{ ...base, title: '  \t ' }, 'alpha', 422, 'title is required'],
+      [{ kind: 'file', path: txt }, 'alpha', 422, 'title is required'],
+    ];
+    for (const [input, token, status, message] of cases) {
+      const response = await api(env, 'POST', '/v1/agent/cards', input, agentHeader(token));
+      assert.equal(response.status, status); assert.equal(response.body.error, message);
+      await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+    }
+    for (const [source, name, contents] of [[txt, 'hello-world.txt', 'hello'], [pdf, 'report.pdf', '%PDF'], [worktreeFile, 'work.txt', 'work']]) {
+      const response = await api(env, 'POST', '/v1/agent/cards', { ...base, path: source }, agentHeader('alpha'));
+      assert.equal(response.status, 202);
+      const spool = await fs.readdir(path.join(env.state, 'spool', 'cards'));
+      const cards = await Promise.all(spool.map(file => fs.readFile(path.join(env.state, 'spool', 'cards', file), 'utf8').then(JSON.parse)));
+      const card = cards.find(item => item.name === name);
+      assert.equal(card.title, 'Document'); assert.equal(card.size, Buffer.byteLength(contents)); assert.equal(path.basename(card.path).replace(/^\d+-/, ''), name); assert.equal(await fs.readFile(card.path, 'utf8'), contents);
+    }
   } finally { await env.close(); }
 });
 
