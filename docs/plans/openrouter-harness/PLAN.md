@@ -162,7 +162,8 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   is `off`; a value the user already set is left alone. Wheelchair uses the user's default
   tmux server (`machine/service.js:828-834`), so this also reaches the user's own tmux
   sessions; with `on`, tmux sends extended key sequences only to programs that ask for them,
-  so other programs see no change. The existing machine readiness tests for the
+  so other programs see no change. The same check-and-set runs before Settings opens a Pi
+  sign-in pane, since sign-in can be the first Pi pane on a fresh tmux server. The existing machine readiness tests for the
   other CLIs must still pass with the option set.
 - `readyText`/`answerPrompts`: from the dry run's screens. There are no per-tool approval
   prompts.
@@ -201,7 +202,8 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
 - `viewer/app/chat.js`: a Pi transcript parser showing user and assistant text and tool calls
   like the other parsers, and a report selector (like `kimiReport`, `chat.js:244,314`) that
   returns the text of the assistant entry named by the event's `entry_id`, never a later
-  one; with `entry_id` null there is no report.
+  one; with `entry_id` null there is no report. `viewer/app/sessions.js` (`:430`, where it
+  calls the report selector with `turn_id`) also passes the event's `entry_id` through.
 - Spend: a machine endpoint (documented in `machine/API.md`) returns, per OpenRouter account on that machine,
   the sum of `cost.total` over assistant messages whose `provider` is `openrouter` in that account's Pi session files for today
   (machine local time), the last 7 days and the last 30 days, in US dollars, read offline.
@@ -222,6 +224,8 @@ API responses. Text pasted into the login pane is sent to tmux only. Pane captur
 for the login screen redact anything matching `sk-or-[A-Za-z0-9_-]+`. The kept copy of a Pi
 transcript (`copyTranscript`, `machine/service.js:1246-1254`) applies the same redaction to
 every line before it is written, so the saved and served transcript never holds the key.
+Pane text the machine returns for a Pi agent session (the Agents terminal,
+`machine/service.js:524,1973`) is redacted the same way.
 
 ### Not in this part
 
@@ -250,7 +254,8 @@ through to the result delivered to the starting session, for a completed, an abo
 report) and a failed turn; a first turn aborted then a second turn completed, with the second turn's report delivered;
 two completed turns in a row advancing `last_turn_id` to 2; a replayed
 earlier event ignored; an aborted turn with no assistant entry after a successful turn (no
-report, the earlier reply is not reused); and an OpenRouter rate-limit failure leaving the
+report, the earlier reply is not reused, and the machine-side test asserts the emitted event
+itself has `entry_id: null`); and an OpenRouter rate-limit failure leaving the
 account eligible; a failed turn whose error text contains a synthetic `sk-or-` key arrives
 redacted in the spool and in what the starter receives; Pi login for account `work` leaves a
 live `work-2` login pane untouched; and with `review_families` fixed to one family, a
@@ -260,7 +265,7 @@ synthetic `sk-or-` key is redacted in the kept copy and in the chat API response
 The live smoke, set up like `test-support/smoke/kimi-live.js` on an isolated hub, starts a
 thread whose lead runs on Pi, checks the lead's reply shows in the thread chat, has that lead
 start a Pi reviewer with a one-line brief, checks the reviewer's report reaches the lead as
-its result, and checks spend is non-zero.
+its result, and checks that the spend figure rose during the run (read before and after).
 
 ## Deferred
 
@@ -394,6 +399,24 @@ its result, and checks spend is non-zero.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | `extended-keys` also reaches the user's own tmux sessions on the shared server | upheld | Spec: set only when `off`; shared server named; Decision 21 consequence recorded |
+| mechanics | blocking | Pi agent pane text not redacted | upheld | Spec: redact Pi agent pane responses |
+| mechanics | major | `extended-keys` not set before a first Pi sign-in pane | upheld | Spec: same check-and-set before sign-in |
+| mechanics | minor | `entry_id` not passed to report selection | upheld | Spec: `sessions.js:430` passes it |
+| mechanics | minor | Aborted-after-success test can pass on reuse | upheld | Spec: assert emitted `entry_id: null` |
+| mechanics | minor | Live spend check can pass on older replies | upheld | Spec: assert spend rose during the run |
+
+### Round 6 — 2026-11-19
+
+**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+
+**Changed since Round 5:**
+- `extended-keys` set only when `off`, named as the shared default server (Decision 22); also before a Pi sign-in pane.
+- Pi agent pane text redacted.
+- `entry_id` passed through `sessions.js` to report selection.
+- Tests: emitted `entry_id: null` assertion; live spend must rise during the run.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
