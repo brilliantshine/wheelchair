@@ -91,3 +91,19 @@ exit 0
 - `machine/test/project-tools-service.test.js` flaked once (tmux buffer) and passed on rerun.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1, b341883a)
+
+Gaps (GPT verifier; Claude verifier passed): reach history line did not name the target thread; `reach.why` accepted several lines; the chat-view hiding test used the transcript parser instead of the thread's chat view. Fixed in task R1 (standard / gpt-6.1-terra), see REMEDIATION-1.md:
+
+- viewer/app/handoff.js:38 — history starts `Talk to <target_title> (<project>)`; validated by viewer/test/app-reach.test.js (exact history text).
+- viewer/app/card.js:50, 104 — `line` validator for `reach.why` only; validated by app-reach.test.js (\n and \r refused, one line accepted).
+- viewer/test/app-lead-messages.test.js:55-71 — goes through `hub.chat` on the receiving thread: the ordinary turn shows, the delivered message and the reply do not.
+
+`node --test viewer/test/*.test.js; echo "exit $?"` after the merge:
+```
+# tests 711
+# pass 711
+# fail 0
+exit 0
+```
