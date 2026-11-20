@@ -263,5 +263,9 @@ Claude/GPT behaviour or to how the page looks.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Kimi `usageProbe` adapter, `/v1/usage` accepts kimi with `kimiUsageUrl` test override, API.md, machine tests | `machine/adapters/kimi.js`, `machine/service.js` (/v1/usage block only), `machine/API.md`, `machine/test/kimi.test.js`, `machine/test/service.test.js` | codex standard / gpt-6.1-terra | wc-12789ba41816-worker | `bash machine/test/run.sh` | in progress |
+| T2 | Idle poller includes kimi, no live-session skip for kimi, tries each eligible machine for kimi | `viewer/app/usage-poll.js`, `viewer/test/app-usage.test.js`, `viewer/test/helpers/app-machine.js` (if needed) | codex standard / gpt-6.1-terra | wc-12789ba41816-worker-2 | `node --test viewer/test/*.test.js` | in progress |
 
 ## Log
+
+- 2026-11-19 — Build started; T1 and T2 dispatched in parallel (disjoint ownership), both Standard.
