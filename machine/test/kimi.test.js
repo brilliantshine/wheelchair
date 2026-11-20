@@ -322,7 +322,7 @@ test('service login endpoints use exact targets for prefix sibling and stale req
     const stale = await fetch(`http://127.0.0.1:${port}/v1/logins/team/keys`, { method: 'POST', headers: { 'x-wheelchair-machine-secret': 'secret', 'content-type': 'application/json' }, body: JSON.stringify({ keys: 'x' }) });
     assert.equal(stale.status, 409); assert.equal(calls.at(-1)[2], '=wc-login-team:');
     const staleCode = await fetch(`http://127.0.0.1:${port}/v1/logins/team/code`, { method: 'POST', headers: { 'x-wheelchair-machine-secret': 'secret', 'content-type': 'application/json' }, body: JSON.stringify({ code: '1234' }) });
-    assert.equal(staleCode.status, 409); assert.equal(calls.at(-1)[2], '=wc-login-team:');
+    assert.equal(staleCode.status, 409); assert.equal(calls.at(-1)[0], 'delete-buffer'); assert.equal(calls.at(-1)[2], calls.at(-2)[2]);
     const saved = { resolveCli: kimi.resolveCli, loginCommand: kimi.loginCommand, seed: kimi.seed };
     try {
       kimi.resolveCli = () => '/fake/kimi'; kimi.loginCommand = () => ['/fake/kimi', 'login']; kimi.seed = () => {};
