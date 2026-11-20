@@ -544,7 +544,7 @@
   const copied = {};         // check card step key -> true for ~2s after a successful Copy
   async function press(card, action, value, node) {
     if (pressing[card.id]) return;
-    const once = card.kind === 'question' || card.kind === 'offer';
+    const once = card.kind === 'question' || card.kind === 'offer' || card.kind === 'reach';
     if (once) { pressing[card.id] = true; card.answered = true; sigs.chat = null; sigs.pinned = null; render(); }
     try {
       await post(T + '/cards/' + encodeURIComponent(card.id) + '/press',
@@ -579,6 +579,11 @@
     } else if (card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       label = ' ' + (card.resolved_note || (card.resolved_by === 'collin' ? 'Dismissed' : 'Resolved'));
       tag.classList.add('resolved');
+    } else if (card.kind === 'reach' && card.allow_failed) {
+      label = ' Allow failed: ' + card.allow_failed;
+      tag.classList.add('resolved');
+    } else if (card.kind === 'reach' && card.answered_value != null) {
+      label = ' You picked ' + (card.answered_value === 'allow' ? 'Allow' : "Don't allow");
     } else if (card.kind === 'question' && card.resolved_by) {
       label = ' Answered in chat' + (card.resolved_note ? ' \u00b7 ' + card.resolved_note : '');
       tag.classList.add('resolved');
@@ -707,6 +712,25 @@
         }
         if (card.why) box.appendChild(el('div', 'fits', 'Why the lean: ' + card.why));
         if (!off) box.appendChild(ownWords(card));
+        break;
+      }
+      case 'reach': {
+        head(box, 'Talk to another thread', card.answered ? '' : 'warn');
+        const h = el('h3', '');
+        const seg = String(card.target_project || '').split('/').filter(Boolean).pop() || '';
+        h.append(document.createTextNode("Let this thread's lead talk to the lead of "),
+          el('strong', '', card.target_title || ''), document.createTextNode(' (' + seg + ')?'));
+        box.appendChild(h);
+        if (card.why) box.appendChild(el('div', 'fits', card.why));
+        const a = el('div', 'actions');
+        for (const [value, label] of [['allow', 'Allow'], ["don't allow", "Don't allow"]]) {
+          const pk = card.answered && card.answered_value === value && !card.allow_failed;
+          const b = button(label, (pk ? 'picked' : ''), () => press(card, 'picked', value), off);
+          b.dataset.option = value;
+          if (pk) b.prepend(icon(ICON.check, 12), document.createTextNode(' '));
+          a.appendChild(b);
+        }
+        box.appendChild(a);
         break;
       }
       case 'approval': {
@@ -981,7 +1005,7 @@
       default:
         return null;
     }
-    if (card.retracted_at || ['offer', 'question', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
+    if (card.retracted_at || ['offer', 'question', 'reach', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
