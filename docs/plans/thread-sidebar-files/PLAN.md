@@ -223,7 +223,7 @@ npm --prefix viewer run test:browser
 
 ### Round 1 — 2026-11-19
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since the last round:** n/a (first round — whole Spec in scope)
 
