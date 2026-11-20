@@ -44,3 +44,24 @@ test('the list view marks a thread whose lead posted a done card', async () => {
     assert.equal((await lean()).done_card, true);
   } finally { await close(context); }
 });
+
+test('the list view gives a quick fix its stage from the pinned progress line', async () => {
+  const context = await setup();
+  try {
+    const made = await thread(context, { project: '/srv/proj', machine: 'hub', message: 'Quick fix' });
+    const lead = made.sessions.find((s) => s.role === 'lead');
+    const lean = async () => (await api(context, '/threads?view=list')).body.threads.find((t) => t.id === made.id);
+    assert.equal((await lean()).progress_stage, null);
+    const steps = [
+      [{ stage: 'build', done: 0, total: 1 }, 'building'],
+      [{ stage: 'verify', pass: 1, phase: 'checking' }, 'verifying'],
+      [{ stage: 'verify', pass: 1, phase: 'fixing', found: 1, fixed: 0 }, 'verifying'],
+      [{ stage: 'verify', pass: 2, phase: 'clean' }, 'verified'],
+    ];
+    for (const [fields, expected] of steps) {
+      const posted = await card(context, made.id, lead.name, { kind: 'progress', machines: [], choice_waiting: false, ...fields });
+      assert.equal(posted.status, 202, JSON.stringify(posted.body));
+      assert.equal((await lean()).progress_stage, expected);
+    }
+  } finally { await close(context); }
+});
