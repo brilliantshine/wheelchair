@@ -163,7 +163,10 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   tmux server (`machine/service.js:828-834`), so this also reaches the user's own tmux
   sessions; with `on`, tmux sends extended key sequences only to programs that ask for them,
   so other programs see no change. The same check-and-set runs before Settings opens a Pi
-  sign-in pane, since sign-in can be the first Pi pane on a fresh tmux server. The existing machine readiness tests for the
+  sign-in pane, since sign-in can be the first Pi pane on a fresh tmux server. Order, for
+  both: create the tmux session running a plain shell (`new-session -d`, which also starts
+  the server if none is running), then check and set the option, then start Pi in that pane
+  with `respawn-pane -k` and the Pi argv, so Pi never starts before the option is set. The existing machine readiness tests for the
   other CLIs must still pass with the option set.
 - `readyText`/`answerPrompts`: from the dry run's screens. There are no per-tool approval
   prompts.
@@ -225,7 +228,8 @@ for the login screen redact anything matching `sk-or-[A-Za-z0-9_-]+`. The kept c
 transcript (`copyTranscript`, `machine/service.js:1246-1254`) applies the same redaction to
 every line before it is written, so the saved and served transcript never holds the key.
 Pane text the machine returns for a Pi agent session (the Agents terminal,
-`machine/service.js:524,1973`) is redacted the same way.
+`machine/service.js:524,1973`) is redacted the same way. Pi pane captures (agent and sign-in)
+are taken with `capture-pane -J`, so a key wrapped across rows is joined before redaction.
 
 ### Not in this part
 
@@ -261,11 +265,15 @@ redacted in the spool and in what the starter receives; Pi login for account `wo
 live `work-2` login pane untouched; and with `review_families` fixed to one family, a
 reviewer requesting `openrouter` is placed on that family. Code submission tests also cover a stale submission refused once the key
 prompt is gone. A hook payload carrying a `transcript_path` is ignored. A sample transcript line holding a
-synthetic `sk-or-` key is redacted in the kept copy and in the chat API response. Code submission tests assert no tmux buffer remains.
+synthetic `sk-or-` key is redacted in the kept copy and in the chat API response, and a
+synthetic key wrapped across two pane rows is redacted in both pane responses. Code submission tests assert no tmux buffer remains.
 The live smoke, set up like `test-support/smoke/kimi-live.js` on an isolated hub, starts a
 thread whose lead runs on Pi, checks the lead's reply shows in the thread chat, has that lead
 start a Pi reviewer with a one-line brief, checks the reviewer's report reaches the lead as
-its result, and checks that the spend figure rose during the run (read before and after).
+its result, and checks spend. Its OpenRouter account uses its own temporary
+`PI_CODING_AGENT_DIR` (inside the test run folder, `test-support/run-dir.js`) holding only a
+copy of the user's `auth.json`, and a paid model pin rather than `:free`, so the account's
+unrounded spend must be greater than zero and comes only from this run.
 
 ## Deferred
 
@@ -281,6 +289,8 @@ its result, and checks that the spend figure rose during the run (read before an
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A key shown on a Pi screen with colour codes inside it may escape pane redaction | Needs the key on screen and styled mid-string; OpenRouter does not echo keys | review-round-6 |
+| A caller holding a session's hook token can post unredacted Pi errors or an inline report directly to the machine's hook route | Needs a local agent forging hook calls | review-round-6 |
 | A Pi pane left running after its registry entry is lost can't be reattached; it is ended with a restart reason | Needs a restart plus lost state; matches Kimi | review-round-1 |
 
 ## Review Rounds
@@ -407,7 +417,7 @@ its result, and checks that the spend figure rose during the run (read before an
 
 ### Round 6 — 2026-11-19
 
-**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:**
 - `extended-keys` set only when `off`, named as the shared default server (Decision 22); also before a Pi sign-in pane.
@@ -417,6 +427,11 @@ its result, and checks that the spend figure rose during the run (read before an
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | blocking | `extended-keys` can't be set before Pi on a cold tmux server | upheld | Spec: shell first, set option, `respawn-pane -k` into Pi |
+| mechanics | blocking | Key wrapped across pane rows escapes the regex | downgraded (major): a key on screen at all is unlikely, but the fix is cheap | Spec: `capture-pane -J`; wrapped-key test. A key split by escape codes mid-string is a rare path (Accepted Risks) |
+| mechanics | blocking | Rare path: the authenticated hook route lets a caller with the session token send unredacted errors or inline reports | accepted-risk | Needs a local agent forging hook calls; Accepted Risks |
+| mechanics | major | Live spend increase could come from unrelated Pi use | upheld | Spec: dedicated Pi dir with only the key, paid pin, spend > 0 |
 
 ## Implementation Tasks
 
