@@ -2,7 +2,25 @@
 slug: lead-chat
 date: 2026-11-19
 implemented-by: "standard (gpt-6.1-terra: T1, T2, T3; claude-sonnet-5-5: T4, T5); integration fixes by the sub-lead (claude-opus-5-5)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (PASS)
+    checks: gpt-6.1-terra (T1-T3), claude-sonnet-5-5 (T4, T5)
+  - round: 1
+    lane: gpt-6.2-sol (FAIL, 3 gaps)
+    checks: gpt-6.1-terra (T1-T3), claude-sonnet-5-5 (T4, T5)
+  - round: 2
+    lane: claude-opus-5-5 (PASS)
+    checks: gpt-6.1-terra (T1-T3, R1), claude-sonnet-5-5 (T4, T5)
+  - round: 2
+    lane: gpt-6.2-sol (FAIL, 1 gap)
+    checks: gpt-6.1-terra (T1-T3, R1), claude-sonnet-5-5 (T4, T5)
+  - round: 3
+    lane: claude-opus-5-5 (PASS)
+    checks: gpt-6.1-terra (T1-T3, R1), gpt-6-luna (R2), claude-sonnet-5-5 (T4, T5)
+  - round: 3
+    lane: gpt-6.2-sol (PASS)
+    checks: gpt-6.1-terra (T1-T3, R1), gpt-6-luna (R2), claude-sonnet-5-5 (T4, T5)
 ---
 
 # Completion Report — Leads that know about each other
