@@ -96,7 +96,7 @@ function assertIsolated(paths, ports, dir) {
   }
   for (const p of Object.values(ports)) assert(Number.isInteger(p) && p > 0 && p <= 65535 && p !== 7373 && p !== 7374, `unsafe port: ${p}`);
 }
-async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSettings = null, recordEvents = false, modelPins = null } = {}) {
+async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSettings = null, recordEvents = false, modelPins = null, piAuthSource = null } = {}) {
   assert(['smoke', 'live'].includes(mode));
   assert(Number.isInteger(slowOriginSeconds) && slowOriginSeconds >= 0);
   const dir = runDir();
@@ -107,14 +107,22 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
   const [hubPort, machinePort, proxyPort, eventPort] = ports;
   const env = { ...process.env, TMUX_TMPDIR: paths.tmux };
   for (const key of Object.keys(env)) if (key.startsWith('WHEELCHAIR_') || key === 'TMUX' || key === 'TMUX_PANE' || (mode === 'smoke' && ['CLAUDE_CONFIG_DIR', 'CODEX_HOME'].includes(key))) delete env[key];
-  if (mode === 'smoke') env.HOME = paths.home;
+  if (mode === 'smoke' || piAuthSource) env.HOME = paths.home;
+  if (piAuthSource) {
+    assert.equal(mode, 'live');
+    env.PI_CODING_AGENT_DIR = path.join(paths.home, '.pi', 'agent');
+    delete env.OPENROUTER_API_KEY;
+    fs.mkdirSync(env.PI_CODING_AGENT_DIR, { recursive: true, mode: 0o700 });
+    fs.copyFileSync(piAuthSource, path.join(env.PI_CODING_AGENT_DIR, 'auth.json'));
+    fs.chmodSync(path.join(env.PI_CODING_AGENT_DIR, 'auth.json'), 0o600);
+  }
   if (modelPins !== null) { env.WHEELCHAIR_MODELS = path.join(dir, 'models'); await fsp.writeFile(env.WHEELCHAIR_MODELS, modelPins); }
   const hubUrl = `http://127.0.0.1:${hubPort}/wheelchair`, machineUrl = `http://127.0.0.1:${machinePort}`;
   const hubArgv = ['viewer/server.js', '--port', String(hubPort), '--cache-root', paths.hubCache, '--state-dir', paths.hubState];
   const machineArgv = ['machine/service.js', '--stateDir', paths.machineState, '--port', String(machinePort), '--host', '127.0.0.1', '--hubUrl', recordEvents ? `http://127.0.0.1:${eventPort}/wheelchair` : hubUrl, '--secretFile', secretFile];
   const hubEnv = { ...env, WHEELCHAIR_NO_BROWSER: '1' };
   const resolved = effectivePaths({ hubArgv, machineArgv, env });
-  assertIsolated({ ...resolved.paths, tmux: paths.tmux, secretFile, ...(mode === 'smoke' ? { home: paths.home } : {}) }, { ...resolved.ports, proxy: proxyPort, events: eventPort }, dir);
+  assertIsolated({ ...resolved.paths, tmux: paths.tmux, secretFile, ...(mode === 'smoke' || piAuthSource ? { home: paths.home } : {}) }, { ...resolved.ports, proxy: proxyPort, events: eventPort }, dir);
   for (const key of ['hubState', 'hubCache', 'machineState']) assert.equal(resolved.paths[key], paths[key], `${key} differs from intended path`);
   for (const p of [paths.home, paths.hubState, paths.hubCache, paths.machineState, paths.tmux, paths.seed]) await fsp.mkdir(p, { recursive: true });
   await fsp.writeFile(secretFile, 'harness-machine-secret\n', { mode: 0o600 });
@@ -184,7 +192,7 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
     child.output = () => output; children.push(child); trackChild(child); return child;
   }
   const tmux = (...args) => spawnSync('tmux', args, { env, encoding: 'utf8' });
-  const matchPaths = { tmux: paths.tmux, ...(mode === 'smoke' ? { home: paths.home } : {}) };
+  const matchPaths = { tmux: paths.tmux, ...(mode === 'smoke' || piAuthSource ? { home: paths.home } : {}) };
   onCleanup(() => { tmux('kill-server'); proxy.close(); eventProxy.close(); waitForRunProcesses(dir, matchPaths); });
   let teardown;
   try {
@@ -216,7 +224,7 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
       const list = await agent({ action: 'list' });
       assert(list.sessions.some(s => s.name === sublead && s.role === 'sub-lead' && s.live && s.status === 'ready'), `seeded sub-lead missing from agent list: ${JSON.stringify(list)}`);
     }
-    return { dir, paths, ports: { hub: hubPort, machine: machinePort, proxy: proxyPort }, env, threadId, sublead, token, counts, statuses, events, callHub, callMachine, agent, tmux, waitFor, teardown, git, setOriginSlow };
+    return { dir, paths, ports: { hub: hubPort, machine: machinePort, proxy: proxyPort }, env, threadId, sublead, token, counts, statuses, events, callHub, callMachine, agent, tmux, waitFor, teardown, git, setOriginSlow, logs: () => children.map(child => child.output()) };
   } catch (error) { if (teardown) await teardown(); else cleanupNow(); throw error; }
 }
 module.exports = { createHarness, waitFor, effectivePaths, assertIsolated, runProcesses, waitForRunProcesses };
