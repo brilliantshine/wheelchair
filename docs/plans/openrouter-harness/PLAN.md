@@ -10,10 +10,7 @@ created: 2026-11-19
 
 ## Open Questions
 
-### Q1: Which program runs OpenRouter agents: Pi or OpenCode?
-- **Context:** Research 2026-11-19 (docs only, nothing run). Pi (`earendil-works/pi`, v1.5.x, single Node process): documented `agent_settled` extension event; JSONL transcript under `~/.pi/agent/sessions/`, file chosen by `--session-id`; per-message usage and cost; `auth.json` keyed by provider; built-in OpenRouter via `OPENROUTER_API_KEY`; no per-tool approval prompts, only a project-trust prompt skipped by `--approve`; needs tmux `extended-keys`. OpenCode (`anomalyco/opencode`, mid v1→v2 rewrite, client/server on Bun): transcript in SQLite with a schema that changed between versions; v2 turn-end event undocumented; TUI launch flags and auth path unconfirmed.
-- **Options:** Pi; OpenCode.
-- **Recommendation:** Pi.
+_None open; more being prepared from the Watch List._
 
 ## Watch List
 
@@ -31,10 +28,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | 1 | Plan mode two-part | User's choice: build for day-to-day use first, harden in a follow-up | user |
+| 2 | Build on Pi (`earendil-works/pi`, `@earendil-works/pi-coding-agent`), not OpenCode | Documented turn-end event, JSONL transcript chosen by `--session-id`, per-message usage, plain auth file; OpenCode's v2 transcript and turn-end are undocumented | user |
 
 ## Spec
 
-_Grows as decisions land._
+### Harness
+
+The new provider runs the Pi coding agent (`pi`, from `earendil-works/pi`) with Pi's built-in
+`openrouter` provider. Facts from Pi's docs (2026-11-19, unverified by a run; the first
+build task confirms them with a dry run and records any difference in the Log):
+
+- Launch: `pi [message]` in the session's working directory; `--provider`, `--model`,
+  `--session-id <uuid>`, `--approve` (skips the project-trust prompt).
+- Turn end: an extension (global `~/.pi/agent/extensions/`, or `-e <file>`) can listen for
+  `agent_settled`.
+- Transcript: `~/.pi/agent/sessions/--<cwd>--/<timestamp>_<uuid>.jsonl`; header line
+  `type: session`, then `type: message` lines; assistant messages carry `usage` and `cost`.
+- Credentials: `~/.pi/agent/auth.json` keyed by provider, or `OPENROUTER_API_KEY`.
+- tmux needs `extended-keys` on for Pi's Enter handling.
 
 ## Deferred
 
