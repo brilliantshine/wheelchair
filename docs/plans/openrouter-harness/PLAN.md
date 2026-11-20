@@ -46,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | Code submission for every provider deletes its tmux buffer after pasting (`paste-buffer -d`, `delete-buffer` on failure) | A deliberate exception to IDEA's "not changing the existing providers": it only removes leftover pasted secrets and changes nothing users see | review-round-2 |
 | 17 | An explicit provider request places on that provider even when it is outside the placement orders | Makes Decision 13 workable: OpenRouter is used only when asked or added to an order | review-round-2 |
 | 18 | OpenRouter rate-limit and credit errors are turn failures, never `limit-hit` | No usage windows to cool down against; the account stays usable | review-round-2 |
+| 19 | Extends 16: every provider's code submission targets its login pane exactly; only Pi refuses a submission once its key prompt is gone | Exact targeting is invisible; the visible refusal is limited to the new provider | review-round-3 |
 
 ## Spec
 
@@ -88,7 +89,8 @@ build task confirms them with a dry run and records any difference in the Log):
   only (the loop at `balancer.js:55-60`), so `available[provider]` is set and the existing
   pick at `:66` applies. Placement without a provider request is unchanged. This applies to
   any provider requested outside the order, which today never happens because every other
-  provider is in the default orders.
+  provider is in the default orders. When `review_families` is not `both`, its existing
+  override (`balancer.js:38-47`) still wins over a reviewer's or verifier's requested provider.
 - Roles: every role Kimi can fill (Decision 4). Counts as its own family (Decision 6).
 
 ### Model ids
@@ -169,9 +171,11 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   key".
 - Code submission (`machine/service.js` `/code`, used by every provider) pastes with
   `paste-buffer -d` and runs `delete-buffer` on any failure, so no pasted text stays in tmux.
-  It targets the login pane exactly (`=wc-login-<account>:`, as Kimi's paths do) and refuses
-  with 409 "the sign-in screen has moved on; start again" unless the adapter's `parseLogin`
-  on a fresh capture of that pane still reports `wantsCode`.
+  It targets the login pane exactly (`=wc-login-<account>:`, as Kimi's paths do) for every
+  provider. For Pi only (an adapter flag, `codeNeedsPrompt: true`, set only in `pi.js`), it
+  also refuses with 409 "the sign-in screen has moved on; start again" unless the adapter's
+  `parseLogin` on a fresh capture of that pane still reports `wantsCode`. Other providers'
+  submissions behave as today apart from the buffer deletion and exact target.
 - The Settings sign-in view treats a `waiting` state with `wantsCode` and no URL exactly like
   one with a URL: the 30-second startup timeout (`viewer/pages/settings.js:976`) stops once
   `waiting` is seen, and polling continues for the normal sign-in window.
@@ -191,7 +195,7 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   the sum of `cost.total` over assistant messages whose `provider` is `openrouter` in that account's Pi session files for today
   (machine local time), the last 7 days and the last 30 days, in US dollars, read offline.
   The hub's usage view shows these three figures on the OpenRouter provider card in place of
-  the percentage bars, e.g. "$0.42 today · $3.10 this week · $11.80 this month", with
+  the percentage bars, e.g. "$0.42 today · $3.10 last 7 days · $11.80 last 30 days", with
   "no spend yet" when zero. The figures are the sum over every OpenRouter account on every
   reachable machine. If any machine the hub knows is unreachable, or its spend request fails,
   the line adds "· total may be incomplete" and never shows "no spend yet". Nothing is kept
@@ -312,7 +316,7 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 
 ### Round 3 — 2026-11-19
 
-**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:**
 - Explicit provider requests place outside the orders (`balancer.js`; Decision 17).
@@ -326,6 +330,9 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Stale-prompt refusal reaches Claude and Antigravity sign-ins, outside Decision 16 | upheld | Pi-only flag; Decision 19 |
+| intent | minor | `review_families` override vs explicit request unstated | upheld | Spec Identity: override still wins |
+| intent | minor | Spend labels say week/month, figures are 7/30 days | upheld | Labels now "last 7 days · last 30 days" |
 
 ## Implementation Tasks
 
