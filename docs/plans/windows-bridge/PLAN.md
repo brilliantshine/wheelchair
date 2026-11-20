@@ -360,6 +360,7 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A file replaced by a same-named directory on Windows cannot reconcile | Rare path: Windows tools do not do this in ordinary use; the reconcile fails with a reason rather than losing data | review-round-3 |
 | A letter-case-only rename made by a Windows tool is not carried to Linux | Rare path: Windows tools seldom rename by case alone; content still syncs, nothing is lost | review-round-2 |
 | A junction or symlinked parent directory inside a copy or worktree could make sync read or write outside it | Rare path: projects do not contain them in ordinary use; reparse points in the copy are skipped | review-round-1 |
 
@@ -434,6 +435,15 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 | intent | major | Every worktree on a WSL machine would get a copy through `used_since_ok` | upheld | D45 |
 | intent | major | Start-time readying can exceed the hub's 60 s start limit | upheld | D47 |
 | intent | minor | Reconciling a verifier copy is wasted; second removal site missed | upheld | D46 |
+| mechanics | blocking | A successful reconcile clears `used_since_ok` while an Editor can still write; the sweep then skips the copy | downgraded: major | Pending fix: the sweep reconciles any copy whose jobs it terminated |
+| mechanics | blocking | Archive retries can stay `pending` forever (re-stops queue reconciles; failed reconcile keeps the flag) | downgraded: major | Pending fix |
+| mechanics | blocking | `win run`/`start` let a sandboxed Codex session run programs outside its sandbox | upheld | Pending fix: refuse `run`/`start` in sandboxed sessions |
+| mechanics | blocking | A file that Windows turned into a directory cannot reconcile | accepted-risk | Rare path: a Windows tool replacing a file with a same-named folder |
+| mechanics | major | Readiness line for worker/verifier worktrees is dropped (project tools state is thread-worktree only, `machine/service.js:662-707`) | upheld | Pending fix |
+| mechanics | major | MCP server launched on an incomplete copy after the 20 s cap is never restarted | upheld | Pending fix |
+| mechanics | major | After a service restart the wrapper holding the job may survive; recovery records only the program PID | upheld | Pending fix |
+| mechanics | major | Merge cleanup's reconcile pulls edits after the merge, outside the accepted work | upheld | Pending fix |
+| mechanics | major | Live check never exercises the candidate service route under systemd | upheld | Pending fix |
 
 ## Implementation Tasks
 
@@ -443,3 +453,4 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 ## Log
 
 - 2026-11-19: The user will export the plan after review and import it on the Windows PC (WSL), so the build and its verification run there. `machine/test/windows-live.sh` is then a real check, not a skip: verifiers on that machine run it.
+- 2026-11-19: Review budget reached after round 3 (three rounds without a clean one since the user's last decision). Recurring area: the two-way file sync and its lifecycle. Asked the user how to proceed.
