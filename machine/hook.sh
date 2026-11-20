@@ -13,7 +13,7 @@ if [[ -z "$token" ]]; then
 fi
 
 case "$kind" in
-  claude)
+  claude|pi)
     session=${2:?usage: hook.sh claude session-name}
     payload=$(cat)
     ;;
