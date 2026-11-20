@@ -31,7 +31,7 @@ for (const role of ['worker', 'mapper', 'sub-lead', 'reviewer', 'verifier']) {
 }
 
 const roles = ['lead', 'sub-lead', 'worker', 'mapper', 'reviewer', 'verifier'];
-const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'image', 'stub', 'sudo', 'retract', 'title'];
+const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'image', 'stub', 'sudo', 'reach', 'retract', 'title'];
 const sharedKinds = ['progress', 'message', 'result'];
 const sections = text => [...text.matchAll(/^### `([^`]+)`$/gm)].map(match => match[1]);
 
@@ -91,4 +91,13 @@ test('lead finishing steps point to mergeability before done', () => {
 test('done card table lists the pushed head', () => {
   const section = read('cards-lead').split('### `done`')[1].split('### `merged`')[0];
   assert.match(section, /^\| `head` \| string \| yes \|/m);
+});
+
+test('lead.md has the Other leads on this machine section, as a standing rule', () => {
+  const text = read('lead');
+  const match = text.match(/^## Other leads on this machine\n([\s\S]*?)(?=^## )/m);
+  assert.ok(match, 'section present');
+  for (const phrase of ['lead-chat', 'Decision Log', 'PLAN.md of lead-chat', 'Decision ']) {
+    assert.ok(!match[1].includes(phrase), phrase);
+  }
 });
