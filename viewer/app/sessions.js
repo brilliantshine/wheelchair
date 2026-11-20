@@ -430,8 +430,8 @@ async function startSession(hub, thread, input) {
 async function deliverReport(hub, thread, target, payload) {
   if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
   const chat = require('./chat.js');
-  let text = String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
-  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target), payload.turn_id);
+  let text = target.cli === 'pi' ? '' : String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
+  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target), payload.turn_id, payload.entry_id);
   if (!text) return;
   const commit = text.match(/^COMMIT:\s*([0-9a-f]{7,40})/m)?.[1];
   addCard(

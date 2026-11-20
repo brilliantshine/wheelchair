@@ -241,6 +241,36 @@ function parseKimi(raw, thread, sessionName) {
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
 
+function parsePi(raw, thread, sessionName) {
+  lastAt = null;
+  const turns = [], calls = new Map();
+  // The machine normally redacts its copy; also protect chat if it reads another copy.
+  raw = raw.replace(/sk-or-[A-Za-z0-9_-]+/g, '[redacted key]');
+  for (const row of transcriptRows(raw)) {
+    if (row.type !== 'message') continue;
+    const message = row.message || {};
+    if (message.role === 'user') turns.push({ human: unwrap(textOf(message.content)), replies: [], at: itemAt(row) });
+    else if (message.role === 'toolResult') foldResults(calls, [[message.toolCallId, message.content]]);
+    else if (message.role === 'assistant' && turns.length) {
+      const text = unwrap(textOf(message.content));
+      if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
+      for (const call of Array.isArray(message.content) ? message.content.filter((part) => part.type === 'toolCall') : []) {
+        const tool = { type: 'tool', text: call.name || 'tool call', at: itemAt(row), detail: toolDetail(call.arguments) };
+        turns.at(-1).replies.push(tool);
+        if (call.id) calls.set(call.id, { item: tool, input: call.arguments });
+      }
+    }
+  }
+  if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
+  return turns.flatMap((turn) => renderTurn(turn, thread));
+}
+
+function piReport(raw, entryId) {
+  if (entryId == null) return '';
+  const row = transcriptRows(raw).find((item) => item.id === entryId && item.type === 'message' && item.message?.role === 'assistant');
+  return row ? textOf(row.message.content) : '';
+}
+
 function kimiReport(raw, turnId) {
   const turns = [];
   let turn;
@@ -262,7 +292,7 @@ function kimiReport(raw, turnId) {
   const parts = selected && [...selected.steps.values()].filter((step) => step.length).at(-1);
   return parts ? parts.sort((a, b) => a.block - b.block).map((part) => part.text).join('') : '';
 }
-const PARSERS = { claude: parseClaude, codex: parseCodex, agy: parseAgy, kimi: parseKimi };
+const PARSERS = { claude: parseClaude, codex: parseCodex, agy: parseAgy, kimi: parseKimi, pi: parsePi };
 function transcriptItems(cli, raw, thread, sessionName) {
   const parser = Object.hasOwn(PARSERS, cli) && PARSERS[cli];
   return parser ? parser(raw, thread, sessionName) : [{ type: 'notice', text: `This session's CLI (${cli}) has no transcript reader.`, at: new Date(0).toISOString() }];
@@ -310,8 +340,9 @@ const ASSISTANT_CONTENT = {
   codex: (row) => { const payload = row.payload || row; return row.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant' ? payload.content : null; },
   agy: (row) => row.type === 'PLANNER_RESPONSE' && typeof row.content === 'string' ? row.content : null,
 };
-function lastAssistantText(cli, raw, turnId) {
+function lastAssistantText(cli, raw, turnId, entryId) {
   if (cli === 'kimi') return kimiReport(raw, turnId);
+  if (cli === 'pi') return piReport(raw, entryId);
   const content = Object.hasOwn(ASSISTANT_CONTENT, cli) && ASSISTANT_CONTENT[cli];
   if (!content) return '';
   let last = '';
