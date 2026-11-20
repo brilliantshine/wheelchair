@@ -457,7 +457,13 @@ async function handleThreads(hub, request, response, url, bits, body) {
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
       const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
-      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
+      // Before that, its pinned progress line says where it is: building, verifying or verified.
+      // A planned thread (it has a slug) takes its stage from PLAN.md, even archived.
+      const progress = !summary.slug && pinned && pinned.progress;
+      const progressStage = !progress ? null
+        : (progress.stage || 'build') === 'build' ? 'building'
+          : progress.stage === 'verify' ? (progress.phase === 'clean' ? 'verified' : 'verifying') : null;
+      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, progress_stage: progressStage, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
     const revoke_notices = (await require('./handoff-ops.js').revokes(hub)).filter((entry) => entry.last_result === 'failed').map((entry) => ({ thread_id: entry.thread_id, sha: entry.sha, text: `Couldn't take back a cancelled pick-up on ${entry.repository || entry.project} ${entry.branch}: ${entry.error}` }));
     return send(response, 200, { threads, revoke_notices });

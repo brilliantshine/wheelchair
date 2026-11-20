@@ -98,7 +98,7 @@ Look at the thread before you act: IDEA.md, PLAN.md and its `status:` if the pla
 directory exists, and the cards so far. After a restart (`[wc:context restart]`) these are
 the only memory you have.
 
-The step-1 small-fix verifier and step-9 after-done verifier post no progress line.
+The step-1 small-fix verifier and step-9 after-done verifier post no progress line (for a small fix the lead posts it, step 1).
 
 **Gaps from your own verifiers** (small fix, after-done, repair): a `VERDICT: BLOCKED` report
 is handled as below, never judged. For a FAIL report, judge every GAP line by `realism.md`
@@ -121,8 +121,13 @@ The user picks the project and the machine, then writes in plain words.
 
 - **A small fix** (a couple of files, nothing to parallelize) is just done. Make it in the
   worktree, commit it (`wc.js git commit` with the exact paths), and write no plan
-  documents. Read `review_families` and the lead's provider in `sessions` from
-  `session list`. Start a verifier on that commit with
+  documents. A small fix has no plan `status:`, so its pinned `progress` line is the only
+  status the thread list shows: post `stage: build`, `done: 0`, `total: 1` as you start
+  making it (Building); `stage: verify`, `pass: <attempt>`, `phase: checking` when its
+  verifier starts (Verifying); and `phase: clean` once a check passes (Verified), each with the `machines` and
+  `choice_waiting` every progress card needs. The
+  `done` card then shows it as Done. Read `review_families` and the lead's provider in
+  `sessions` from `session list`. Start a verifier on that commit with
   `--not-provider <the provider the lead runs on>` if `review_families` is `both`, or no
   provider flag if it is `claude`, `gpt`, `gemini`, or `kimi`, and a brief that says what the user asked for;
   its `result` names the commit it checked. A failed check gets one more attempt; a
