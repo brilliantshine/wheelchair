@@ -122,3 +122,32 @@ cleanup {"privateTmuxGone":true,"runFolderGone":true,"leftoverProcesses":0}
 - Accepted Risks and Deferred in PLAN.md stand as listed there.
 
 ## Remediation rounds
+
+### Remediation 1 (verification attempt 1 on `5a5f0742`)
+
+Verifiers: Claude PASS; GPT FAIL with 3 gaps (verbatim in `REMEDIATION-1.md`). Gap 3 (no `turn_id` on Pi `turn-failed`) judged a rare path and recorded in PLAN.md Accepted Risks (`verification-1`). Gaps 1 and 2 fixed by task R1-1 (standard, gpt-6.1-terra; three attempts, the third at effort xhigh), merged at `d8344314`.
+
+| Gap | Fix (file:line on `d2e7c783`) | Validated by |
+|-----|-------------------------------|--------------|
+| 1. Pi marked ready while it downloads `fd`/`rg` at startup; its first Enter rejected ("Startup is still in progress"), so the first message stayed in the editor. This was T8 attempt 1's symptom (the sub-lead's runs had `fd` on PATH) | `machine/adapters/pi.js` `readyText` (not ready while a `<N> not found. Downloading...` line has no later `<N> installed to` / `Failed to download <N>:` line); `machine/service.js` `retryPiStartupEnter` and its call in `submit` (Pi-only `retryStartupEnter` flag: re-sends Enter, never re-pastes, at most once a second for up to 60 s while the rejection shows and Pi is not busy) | `machine/test/pi.test.js` "Pi waits for every startup download to complete"; `machine/test/pi-turns.test.js` "Pi startup download delivers queued first message after readiness" and "... with early readiness and Enter retry" (fake Pi download mode; the second fails with the re-send disabled); live smoke with no `fd` on PATH, below |
+| 2. Pi step events carried tool arguments (and so any `sk-or-` text) unredacted into the spool and hub thread | `machine/adapters/pi.js` `redactEvent` applied to every object `hookEvent` returns | `machine/test/pi-turns.test.js` "Pi redacts every returned turn string and offline tool event" (synthetic key through the real `machine/hook.sh pi` path) |
+
+Validation on `d2e7c783`:
+
+```text
+bash codex/test/run.sh                RESULT 147 passed, 0 failed
+bash machine/test/run.sh              # tests 476  # pass 476  # fail 0
+node --test viewer/test/*.test.js     # tests 723  # pass 723  # fail 0
+bash install/test/run.sh              RESULT 206 passed, 0 failed
+node --test test-support/test/*.test.js   # pass 9  # fail 0
+PATH without ~/.kimi-code/bin (no fd): node test-support/smoke/pi-live.js
+lead chat | PASS | Pi lead ready and assistant text appears in chat
+reviewer result | PASS | Pi reviewer result card has a summary and is delivered to the lead
+spend | PASS | machine today $0.003332832; hub today $0.003332832
+key isolation | PASS | no key marker in hub, cache and machine state files, chat, or logs
+4 passed; 0 failed
+```
+
+The browser suite was not re-run: R1-1 changed only machine code and machine tests.
+
+Residual: the installer suite's "real wheelchair directory is byte-identical after suite" check fails when the live hub writes the real state folder during the run (environmental; a verifier saw 205/206 with the inherited HOME, 206/206 isolated).
