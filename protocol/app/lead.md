@@ -835,6 +835,8 @@ Documents have their own rule: PLAN.md's Spec gets a Mermaid diagram when it is 
 drawn mid-churn goes stale. MAP.md and the routers stay plain text. Draw proposals on
 the graph page.
 
+To hand the user a document such as a report, spreadsheet or PDF, post a `file` card; a sub-lead or worker that made one asks you with a `message` naming its path.
+
 ## `status:` in PLAN.md
 
 It is the state machine, not a label. You write these, at these moments, and no other:

@@ -293,3 +293,5 @@ The `result` summary names how many rare paths were accepted.
 
 You do not write `done`; the lead does, after your `result`. A `result` you send marks the
 build finished, and the worktree goes back to the lead.
+
+A document meant for the user goes to the lead with a `message` naming its path.

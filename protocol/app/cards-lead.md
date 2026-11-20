@@ -219,6 +219,18 @@ The machine copies the file into the thread's uploads folder, so the original ma
 deleted afterwards. Only the lead posts it: a screenshot another session took reaches
 the user when the lead posts it. Images are removed when the thread is archived.
 
+### `file`
+
+A document sent to the user.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | yes | Absolute path to a regular file on the lead's machine, at most 25 MB |
+| `title` | string | yes | One line: what the document is |
+
+The machine copies the file at send time, so later edits to the source do not reach the user.
+It shows in chat and in the sidebar's Sent to you section. Archiving the thread deletes it.
+
 ### `stub`
 
 New work that belongs in its own thread.
