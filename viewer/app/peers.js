@@ -12,6 +12,19 @@ function reachable(hub, thread) { return !thread.archived && !frozen(hub, thread
 function linked(a, b) { return (a.lead_links || []).includes(b.id) || (b.lead_links || []).includes(a.id); }
 function latestLiveLead(thread) { return [...(thread.sessions || [])].reverse().find(s => s.role === 'lead' && s.live); }
 
+async function reachTarget(hub, thread, id) {
+  const match = (await hub.state.allThreads()).find(item => item.id === id);
+  if (!match) return { reason: 'no such thread' };
+  let target;
+  try { target = await hub.state.thread(match.id); }
+  catch (error) { if (error.status === 404) return { reason: 'no such thread' }; throw error; }
+  if (target.id === thread.id) return { reason: 'that is this thread' };
+  if (!(await sameMachine(hub, await hub.machines(), thread.machine, target.machine))) return { reason: 'that thread is on another machine' };
+  if (target.archived) return { reason: 'that thread is archived' };
+  if (!reachable(hub, target)) return { reason: 'that thread was handed off' };
+  return { target };
+}
+
 // Mirrors progressWords and pinLabel in pages/thread.js, which are private to the page.
 function progressLabel(card) {
   if (card.stage !== 'review' && card.stage !== 'verify') return `Building ${card.done} of ${card.total}${card.choice_waiting ? ': choice for you' : ''}`;
@@ -49,4 +62,4 @@ async function listLeads(hub, callerThread, { allProjects = false } = {}) {
   }
   return { leads };
 }
-module.exports = { sameMachine, reachable, linked, latestLiveLead, listLeads };
+module.exports = { sameMachine, reachable, linked, latestLiveLead, listLeads, reachTarget };

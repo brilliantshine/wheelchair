@@ -2,7 +2,7 @@
 
 // The handoff is data, not a live card or session record.
 const LIMIT = 10 * 1024 * 1024;
-const KINDS = new Set(['message', 'press', 'offer', 'idea', 'question', 'approval', 'progress', 'needs', 'done', 'check', 'diagram', 'image', 'stub', 'sudo', 'title', 'resolve', 'retract', 'result', 'merged']);
+const KINDS = new Set(['message', 'press', 'offer', 'idea', 'question', 'reach', 'approval', 'progress', 'needs', 'done', 'check', 'diagram', 'image', 'stub', 'sudo', 'title', 'resolve', 'retract', 'result', 'merged']);
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, required, optional = []) => object(value)
   && required.every((key) => Object.hasOwn(value, key))
@@ -35,6 +35,7 @@ function historyText(card) {
   const answer = card.retracted_at ? 'withdrawn' : card.answered_value || card.resolved_note || card.answered_action || (card.answered ? 'answered' : '');
   const lines = (...items) => items.flat(Infinity).filter((item) => typeof item === 'string' && item.length).join('\n');
   switch (card.kind) {
+    case 'reach': return lines(card.why, answer || 'withdrawn');
     case 'question': return lines(card.question, (card.options || []).map((option) => option.label), answer || 'withdrawn');
     case 'idea': return lines((card.bullets || []).map((bullet) => bullet.text));
     case 'approval': return lines((card.objections || []).map((item) => lines(item.finding, item.reason)), answer);
@@ -95,6 +96,7 @@ function quietReason(hub, thread) {
   if (sessions.some((s) => (s.role === 'lead' && s.live && s.turn_ended !== true)
     || ((s.live || s.status === 'pending' || s.role === 'lead') && (s.queue || thread.queues?.[s.name] || []).length))) return 'The lead is busy';
   if ((thread.cards || []).some((card) => card.kind === 'sudo' && ['waiting', 'running'].includes(card.state))) return 'A root command is waiting';
+  if ((thread.cards || []).some((card) => card.kind === 'reach' && !card.answered && !card.retracted_at)) return 'A request to talk to another project is waiting';
   if ((hub.uploadsInFlight?.get(thread.id) || 0) > 0) return 'A file is still uploading';
   return null;
 }
