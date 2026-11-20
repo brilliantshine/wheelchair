@@ -330,7 +330,7 @@ npm --prefix viewer run test:browser
 
 ### Round 5 — 2026-11-19
 
-**Lanes:** pending.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since the last round:**
 - S3: `documents` is a field of the chat response (no `/documents` route, no refetch schedule); archived result cached per thread and branch.
