@@ -159,7 +159,7 @@ for (const forced of [false, true]) test(`Pi startup download delivers queued fi
     if (!forced) { assert.notEqual(session.status, 'ready'); for (let i = 0; i < 100 && session.status !== 'ready'; i++) { await new Promise(resolve => setTimeout(resolve, 20)); await machine.checkReady(machine.sessions[session.name]); } }
     for (let i = 0; i < 250 && !events.some(e => e.type === 'turn-ended'); i++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.ok(events.some(e => e.type === 'turn-ended' && e.entry_id === 'a1'));
-    const transcript = path.join(root, 'sessions', 'fake-work', `2026-01-01_${machine.sessions[session.name].cli_session_id}.jsonl`);
+    const transcript = path.join(root, '.pi', 'agent', 'sessions', 'fake-work', `2026-01-01_${machine.sessions[session.name].cli_session_id}.jsonl`);
     const users = fs.readFileSync(transcript, 'utf8').trim().split('\n').map(JSON.parse).filter(row => row.message?.role === 'user');
     assert.deepEqual(users.map(row => row.message.content), ['queued first message']);
     const timeline = fs.readFileSync(`${transcript}.events`, 'utf8').trim().split('\n');
