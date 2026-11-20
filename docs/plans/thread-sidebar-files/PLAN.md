@@ -35,6 +35,7 @@ _None._
 | 10 | Images sent with the `image` card are listed in the sent-files section too | Both are things an agent handed the user | defaulted |
 | 11 | Plan documents download as `<slug>-<FILE>.md` | Downloads from several threads don't overwrite each other | defaulted |
 | 12 | On a phone, the header shows one Files button that opens a panel with both sections | A chip per file gets long once agents send files | defaulted |
+| 13 | Superseding 5: map, idea and plan of threads on another computer move to the follow-up (Deferred D7); this build reads them on the app's own computer only. IDEA's remote constraint becomes a Not doing item | User picked "Save it for the follow-up" after three review rounds kept finding problems in that part | idea-change |
 
 ## Spec
 
@@ -83,48 +84,23 @@ under the header with the same two sections and the same rows and links as S1 (o
 render function fills both places); pressing it again or following a link closes it. Every
 link and button in it is at least 44px tall.
 
-### S3. Which plan documents exist, read through the thread's machine
+### S3. Which plan documents exist
 
 New hub route `GET /wheelchair/api/threads/<id>/documents` (in `viewer/app/routes.js`,
-same auth as the other thread GETs) returns `{ "documents": [ "MAP.md", ... ] }`: only the names that exist, in MAP, IDEA,
-PLAN order. No sizes.
+same auth as the other thread GETs) returns `{ "documents": [ "MAP.md", ... ] }`: only the
+names that exist, in MAP, IDEA, PLAN order. No sizes.
 
-- **Live thread** (not archived): the hub asks the thread's machine,
-  `GET /v1/threads/<thread id>/documents?slug=<slug>` (hub-authenticated with the machine
-  secret, like `/v1/uploads`); it answers `{ "slug": <slug>, "documents": [...] }`. With no
-  `slug` parameter it discovers one (see "Slug for a thread on another machine" below). The machine finds the worktree from its own record of the
-  thread's lead session (`this.sessions` entry with that `thread_id` and role `lead`; the
-  newest if several, live or not). The hub never sends a path. `slug` must match
-  `^[a-z0-9][a-z0-9-]{0,79}$`, else 400. For each of the three names it includes it only if it passes
-  the same eligibility check S4 uses to serve it (one shared function on the machine), so
-  every listed document can be opened and downloaded. No lead record → `{ "documents": [] }`.
+- **Live thread** (not archived): the hub checks its own filesystem at
+  `<thread.worktree>/docs/plans/<slug>/<FILE>` for each name and lists those that pass the
+  eligibility check in S4 (one shared function, so every listed document can be opened and
+  downloaded). A worktree that is not on the hub's filesystem (a thread on another
+  computer) gives `[]` (Deferred D7).
 - **Archived thread:** the hub runs `git -C <project> cat-file -e <branch>:docs/plans/<slug>/<FILE>`
   for each name (as `archivedDocument` reads them, `viewer/app/threads.js:251-265`) and lists
   those that succeed.
-- No slug → `{ "documents": [] }`.
+- No slug or no worktree → `{ "documents": [] }`.
 
-**Slug for a thread on another machine.** Today the hub finds a thread's slug by running Git
-on its own filesystem against `thread.worktree` (`viewer/app/views.js:71-105`, called from
-`viewer/app/chat.js:338`), which fails when the worktree is on another machine. Change
-`discoverSlug`: when the thread is not archived, has no slug, and `thread.worktree` does not
-exist on the hub's filesystem, ask the thread's machine's `/documents` route (below) without a `slug`. The machine runs the same
-`newPlanDirectories` logic (move that function to a module both `viewer/app/views.js` and
-`machine/service.js` can require, or copy it with a comment naming the other) against the
-lead worktree from its record (as above) and returns `{ "slug": <name or null>,
-"documents": [...] }`: slug null unless exactly one name, documents listed for that slug
-(empty when null). It passes the lead record's `default_branch` (`machine/service.js:772`,
-`main` when unset) as `newPlanDirectories`' base, as local discovery passes the thread's. The remote branch lives inside `discoverSlug`, which takes an optional `{ hub }`; it asks
-the machine only when `hub` is given. Every caller already holds the thread lock (the
-thread-list GET via `hub.withThread`, `viewer/app/routes.js:442-447`; `chat()` via
-`hub.chat`'s `withChatThread`, `viewer/app/hub.js:266-268`, and aside creation's
-`withChatThread`, `viewer/app/routes.js:482`), so no new lock is taken anywhere and no
-`withThread` is nested. Discovery runs **once** per caller: `findSlug` is replaced by
-`saveSlug(hub, thread, slug)`, which re-reads the thread, sets `slug` only if it is still
-unset, saves and registers the plan. Only `chat()` passes `hub` (remote lookup happens
-when the thread page or its document page loads); the thread-list GET does not, so the
-list poll never waits on a machine. A machine that cannot
-be reached leaves the slug unset; the next poll tries again. Test with a fake machine and a
-worktree path that does not exist on the hub.
+Slug discovery is unchanged (`viewer/app/views.js:71-112`).
 
 The page fetches this list when the thread loads and again whenever the render signature's
 card part changes (a new card arrived) and at most once every 30 seconds otherwise while
@@ -136,20 +112,20 @@ The hub route `GET /wheelchair/api/threads/<id>/doc?file=<FILE>` (`viewer/app/ro
 now serves live threads too:
 
 - `FILE` must be one of `MAP.md`, `IDEA.md`, `PLAN.md`, else 404.
-- Live: the hub streams from the machine's new `GET /v1/threads/<thread id>/document?slug=<slug>&file=<FILE>`,
-  which resolves the worktree as in S3 and applies the eligibility check: the final
-  component is not a symlink and is a regular file, its real path is inside the real path of
-  `<worktree>/docs/plans/<slug>/`, and it is at most 2 MiB. Anything failing it is 404, and returns the bytes with `content-type: text/markdown; charset=utf-8` and
-  `x-content-type-options: nosniff`.
+- Live: the hub reads `<thread.worktree>/docs/plans/<slug>/<FILE>` from its own filesystem
+  after the eligibility check: the final component is not a symlink and is a regular file,
+  its real path is inside the real path of `<thread.worktree>/docs/plans/<slug>/`, and it is
+  at most 2 MiB (the same containment idea as the existing `/wheelchair/doc` read,
+  `viewer/server.js:1551-1569`). Anything failing it is 404.
 - Archived: as today (`git show`).
 - Without `download`: response stays `{ "content": "<text>" }` (JSON), as today.
-- With `download=1`: the raw bytes, `content-type: text/markdown; charset=utf-8`,
+- With `download=1`: the file's bytes, `content-type: text/markdown; charset=utf-8`,
   `x-content-type-options: nosniff`, `content-disposition: attachment; filename="<slug>-<FILE>"`.
 
 The document page (`viewer/pages/doc.js:53-67`) reads live documents through this route
-instead of `/wheelchair/doc?plan=...`, so a thread on another machine shows its documents.
-It gains a **Download** link (to `...doc?file=<FILE>&download=1`) next to its title. The
-older plan viewer's `/wheelchair/doc` route is left as it is.
+instead of `/wheelchair/doc?plan=...`, so live and archived use one route. It gains a
+**Download** link (to `...doc?file=<FILE>&download=1`) next to its title. The older plan
+viewer's `/wheelchair/doc` route is left as it is.
 
 The sidebar's **Download** link for a plan document is that same `download=1` URL.
 
@@ -211,7 +187,7 @@ Editing documents in the app; changing composer attachments; sharing files acros
 carrying sent files through a handoff export or import; downloading pictures; download all;
 in-app previews of sent non-image files; opening pictures of a live thread whose worktree is
 only on another machine (Deferred D6; they are listed as today and open as today); keeping sent files after archive; making the
-archived-document read work for projects that exist only on another machine (Deferred D5).
+map, idea and plan of threads on another computer, live or archived (Deferred D5, D7).
 
 ### Validation
 
@@ -220,16 +196,14 @@ New or changed tests:
 - `machine/test/`: `copyFile` accepts a text and a PDF file, refuses a relative path, a
   missing file, a directory, a symlink, a file over 25 MB, a file inside the state folder (but
   accepting one inside a worktree under `<stateDir>/worktrees/`),
-  a non-lead session, an extra field and a blank title, leaving no upload behind for any refusal; the
-  documents route without a slug returns the one new plan directory as `slug` and null
-  otherwise; a document over
-  2 MiB is neither listed nor served; the document list and
+  a non-lead session, an extra field and a blank title, leaving no upload behind for any refusal;  the document list and
   document routes return existing names only, refuse a bad slug, a symlinked document and a
   path escaping the plan folder, and return `[]` with no lead record; the upload GET sends
   `content-disposition: attachment; filename="report.pdf"` for `3-report.pdf`.
 - `viewer/test/` unit: `card.js` accepts a valid `file` card and refuses it from non-leads
   and with extra fields; the hub stores `file`, `name`, `size`; `/documents` and `/doc` for
-  live (through a fake machine) and archived threads; `download=1` headers.
+  live and archived threads, a document over 2 MiB and a symlinked document neither listed
+  nor served, a worktree not on the hub's filesystem giving `[]`; `download=1` headers.
 - `viewer/test/` browser spec: the sidebar shows `Project documents` with only the existing
   plan files and a Download link carrying `download=1`, then pictures; `Sent to you` lists a
   `file` card and an `image` card newest first with Download links; archived thread shows
@@ -255,6 +229,7 @@ npm --prefix viewer run test:browser
 | D4 | Keep sent files after the thread is archived | User chose removal for now | planning | Needs a store outside the uploads folder and a cleanup rule |
 | D5 | Project documents of an archived thread whose project exists only on another machine | Live remote threads work; archived reads stay as today | review-round-1 | Archived reads run `git -C <project>` on the hub (`viewer/app/threads.js:251-265`); route them through the thread's machine like S3/S4 live reads |
 | D6 | Opening pictures (diagrams) of a live thread whose worktree is on another machine | Map, idea, plan work remotely; pictures already behave this way in chat today | review-round-2 | `viewer/pages/picture.js:31-41` and `viewer/pages/diagram.js:12-24` send the worktree path to a hub-local reader (`viewer/server.js:1673-1687`); read graphs through the machine like S4 |
+| D7 | Map, idea, plan of a live thread running on another computer | User chose to save it for the follow-up | user | Review rounds 1–3 show the hard part: finding the slug on that machine (`viewer/app/views.js:71-112` runs Git on the hub) without nesting `hub.withThread` (every `discoverSlug` caller already holds it: `viewer/app/routes.js:442-447`, `viewer/app/hub.js:266-268`, `viewer/app/routes.js:482`) or holding the list-poll lock across a machine request. Read documents through a hub-authenticated machine route with the same eligibility check as S4 |
 
 ## Accepted Risks
 
@@ -329,6 +304,19 @@ npm --prefix viewer run test:browser
 | mechanics | minor | Thread-list poll would hold the lock across a machine request | upheld | S3: only `chat()` does the remote lookup; the list poll stays local |
 | mechanics | minor | `warnings` deleted before the machine's extra-field check | accepted-risk | Rare path: `card.js` refuses unknown fields; only a client bypassing it sends `warnings` on a file card |
 | mechanics | minor | Archived download decodes non-UTF-8 Markdown | accepted-risk | Rare path: agents write UTF-8 Markdown |
+
+### Round 4 — 2026-11-19
+
+**Lanes:** pending.
+
+**Changed since the last round:**
+- User decision 13 (idea-change): map, idea and plan of threads on another computer moved to Deferred D7. IDEA's Not doing and Constraints updated.
+- S3 rewritten: hub-local existence check with S4's eligibility function; no machine document routes; slug discovery unchanged (all round 2–3 slug and lock text removed).
+- S4 rewritten: live reads from the hub's own filesystem with the eligibility check; doc page uses the hub thread route for live and archived.
+- Validation and Non-goals updated to match.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 

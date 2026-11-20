@@ -35,10 +35,12 @@ buried on the machine.
 - Editing documents in the app.
 - Changing how you attach files to your own messages.
 - Sharing files between threads.
+- The map, idea and plan for threads running on another computer (saved for the follow-up
+  thread).
 
 ## Constraints
 
 - Must work from a phone browser.
 - Files from agents must not be able to run code in the browser (same safety as today's
   attachments).
-- Threads can run on another machine than the app, so documents must reach you from there.
+- Files an agent sends must reach you from whichever computer its thread runs on.
