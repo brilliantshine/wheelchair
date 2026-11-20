@@ -197,7 +197,21 @@ class Hub {
         if (!result.ok) throw appError(422, result.reason);
       }
     }
-    return this.withThread(payload.thread_id, () => cards.acceptCard(this, payload));
+    const result = await this.withThread(payload.thread_id, () => cards.acceptCard(this, payload));
+    if (!result.targetThread) return result;
+    await this.withThread(result.targetThread, async () => {
+      const name = await this.updateThread(result.targetThread, (thread) => {
+        const peers = require('./peers.js');
+        const lead = peers.reachable(this, thread) && peers.latestLiveLead(thread);
+        if (!lead) return null;
+        lead.queue ||= [];
+        lead.queue.push({ text: `[wc:from ${result.card.session}] [thread ${payload.thread_id}: ${result.senderTitle}] ${result.card.asks === true ? `[question ${result.card.id}] ` : ''}${result.card.text}`, source: 'session', at: new Date().toISOString() });
+        thread.queues[lead.name] = lead.queue;
+        return lead.name;
+      });
+      if (name) await this.deliver(await this.thread(result.targetThread), name);
+    });
+    return result.card;
   }
   createThread(input) { return threads.createThread(this, input); }
   threadBySession(name) { return threads.threadBySession(this, name); }

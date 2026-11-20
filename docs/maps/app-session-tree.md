@@ -3,6 +3,8 @@
 Checked against: `be198998f46768a07d03019a25d1d4fd6890bf71` (origin/main)
 Files covered: `viewer/app/sessions.js`, `viewer/app/cards.js`, `viewer/app/card.js`, `viewer/app/agents.js`, `machine/service.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `machine/adapters/claude.js`, `machine/adapters/codex.js`
 
+> Lead-chat paths rechecked against `1ee9ad1487d2a3f8b6ceda7f73cf7218657f52c2`; see [lead-chat/MAP.md](../plans/lead-chat/MAP.md). Other claims retain their historical checked commit.
+
 ## Flow
 
 A session start records `started_by`, passes its brief to the machine and records whether a first message will be typed (`viewer/app/sessions.js:174-185,196-210,233-247`). When ready, the machine submits `pending_initial`; Codex includes the role prompt and brief, Claude the brief (`machine/service.js:445-447,478-488`; `machine/adapters/codex.js:32`; `machine/adapters/claude.js:24`).

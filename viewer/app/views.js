@@ -138,7 +138,7 @@ async function currentStatus(hub, snapshot) {
 
 function addNeeds(needs, thread) {
   for (const card of thread.cards) {
-    const open = !card.replaced && !card.answered && ['question', 'needs', 'approval', 'merged'].includes(card.kind);
+    const open = !card.replaced && !card.answered && ['question', 'needs', 'approval', 'merged', 'reach'].includes(card.kind);
     if (!open) continue;
     needs.push({
       thread_id: thread.id,

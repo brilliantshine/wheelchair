@@ -119,10 +119,10 @@ html:has(.shell.on-thread) { scroll-padding-top: calc(var(--nav-h) + var(--head-
 .card .md { margin-top: 8px; font-size: 13px; color: var(--ink-2); }
 
 .card-offer { border-width: 1px; }
-.card-question { background: var(--panel); border-color: var(--warn-line); }
-.card-question.is-answered { border-color: var(--line); }
-.card-question .eyebrow { color: var(--warn); }
-.card-question.is-answered .eyebrow { color: var(--dim); }
+.card-question, .card-reach { background: var(--panel); border-color: var(--warn-line); }
+.card-question.is-answered, .card-reach.is-answered { border-color: var(--line); }
+.card-question .eyebrow, .card-reach .eyebrow { color: var(--warn); }
+.card-question.is-answered .eyebrow, .card-reach.is-answered .eyebrow { color: var(--dim); }
 .opt { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; text-align: left;
   margin-top: 8px; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: transparent;
   color: var(--ink); height: auto; font-weight: 400; justify-content: flex-start; }
@@ -367,3 +367,19 @@ a.sent-file:hover { border-color: var(--accent-line); }
 .card-check .check-see-label { font-weight: 600; color: var(--ink); }
 .card-check .check-note { margin-top: 4px; font-size: 13px; }
 .card-check .check-broken { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 6px 8px; }
+
+/* "Your copy" panel */
+.copy-panel { margin: 0 0 12px; min-width: 0; overflow-wrap: anywhere; }
+.copy-panel .copy-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.copy-panel .copy-where { font-size: 12px; margin-top: 2px; }
+.copy-panel p { margin: 6px 0 0; font-size: 13px; }
+.copy-panel .copy-note { color: var(--warn); }
+.copy-panel .copy-working { font-weight: 600; }
+.copy-panel .copy-files { margin: 4px 0 0; padding-left: 18px; font-family: var(--mono); font-size: 11.5px; }
+.copy-panel .copy-ask { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--warn-line); border-radius: 8px; }
+.copy-panel .copy-kept-title { font-weight: 600; }
+.copy-panel .copy-kept { list-style: none; margin: 4px 0 0; padding: 0; }
+.copy-panel .copy-kept-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.copy-panel .copy-kept-info { display: flex; flex-direction: column; min-width: 0; flex: 1 1 160px; font-size: 13px; }
+.copy-panel .copy-kept-meta { font-size: 11.5px; font-family: var(--mono); }
+.copy-panel .card-error { margin-top: 8px; }

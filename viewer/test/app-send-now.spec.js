@@ -80,3 +80,28 @@ test('an old queued message remains pending and can be sent now', async ({ page 
   await expect(page.locator('#chat .pending .tag')).toHaveText(['sent']);
   expect(ctx.machine.sessions.get(made.sessions[0].name).submits).toContain('old queued message');
 });
+
+test('Enter sends, Shift+Enter starts a new line, and the switch turns Enter-to-send off', async ({ page }) => {
+  const { made } = await open(page, '', 0);
+  await ctx.patch(made.id, (t) => { t.sessions[0].turn_ended = true; });
+  const msg = page.locator('#msg');
+  await msg.fill('first line');
+  await msg.press('Shift+Enter');
+  await msg.pressSequentially('second line');
+  await expect(msg).toHaveValue('first line\nsecond line');
+  const sent = page.waitForResponse((r) => r.url().endsWith('/messages'));
+  await msg.press('Enter');
+  expect((await sent).status()).toBe(202);
+  await expect(msg).toHaveValue('');
+  expect(ctx.machine.sessions.get(made.sessions[0].name).submits).toEqual(['first line\nsecond line']);
+
+  await page.goto(ctx.server.url + '/app/settings');
+  const group = page.getByRole('radiogroup', { name: 'Enter to send' });
+  await expect(group.getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'true');
+  await group.getByRole('radio', { name: 'Off' }).click();
+  await expect(group.getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true');
+  await page.goto(ctx.server.url + '/app/thread?id=' + made.id);
+  await msg.fill('no send');
+  await msg.press('Enter');
+  await expect(msg).toHaveValue('no send\n');
+});
