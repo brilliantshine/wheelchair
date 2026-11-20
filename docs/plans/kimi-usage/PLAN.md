@@ -175,9 +175,9 @@ Claude/GPT behaviour or to how the page looks.
   session is still polled **and its reading is stored**; a `kimi` account signed in on two
   machines whose first machine fails is read from the second; a `claude` account with a live
   session is still skipped.
-- A grep check that no Kimi credential path or token is written by the change:
-  `git diff main -- machine viewer | grep -nE 'writeFile|atomicWrite' ` shows nothing new in
-  `machine/adapters/kimi.js`.
+- In the adapter tests, the Kimi home's `config.toml`, credential file and `oauth/` directory
+  have identical bytes and modification times before and after every probe (success,
+  expired, HTTP error), and no new file appears under the Kimi home.
 - Commands, all must pass:
   - `bash machine/test/run.sh`
   - `node --test viewer/test/*.test.js`
@@ -239,6 +239,10 @@ Claude/GPT behaviour or to how the page looks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | — | No findings | — | — |
+| mechanics (gpt) | blocking | Five-hour 100% resetting tonight and week 96% resetting in days: the latest-reset rule parks the session for days | upheld (major) | Fix pending the user's answer to the split offer for the limit-hit part |
+| mechanics (gpt) | blocking | The poll's machine status check can run `kimi --version` after a Kimi upgrade | declined | Existing machine status check, shared by every provider and the Settings page, cached and run whether or not readings exist (usage.js:48-76); not part of getting a reading, which stays one web request |
+| mechanics (gpt) | minor | The grep validation can't prove credentials are untouched | upheld | Replaced by a before/after bytes-and-mtime test |
 
 ## Implementation Tasks
 
