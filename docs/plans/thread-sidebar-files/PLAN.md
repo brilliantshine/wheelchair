@@ -373,7 +373,7 @@ npm --prefix viewer run test:browser
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S5 machine half: `file` card checks, `copyFile`, upload GET filename header, tests | `machine/service.js`, `machine/test/` | gpt standard / gpt-6.1-terra | wc-620b2787c998-worker | `bash machine/test/run.sh` | done |
 | T2 | S3, S4, S5 hub half, S6: `file` kind, `documents` in chat, live+archived `/doc` with download, protocol text, unit tests | `viewer/app/{card,cards,chat,routes,threads,documents}.js`, `viewer/AGENTS.md`, `viewer/test/*.test.js`, `protocol/app/{cards,cards-lead,lead,sub-lead,worker}.md` | gpt standard / gpt-6.1-terra | wc-620b2787c998-worker-2 | `node --test viewer/test/*.test.js` | done |
-| T3 | S1, S2, S4 page half, S5 chat card: sidebar sections, phone Files panel, doc page via hub route + Download, browser specs (after T2) | `viewer/pages/`, `viewer/test/*.spec.js` | claude standard / claude-sonnet-5-5 | — | `npm --prefix viewer run test:browser`, `node --test viewer/test/*.test.js` | not started |
+| T3 | S1, S2, S4 page half, S5 chat card: sidebar sections, phone Files panel, doc page via hub route + Download, browser specs (after T2) | `viewer/pages/`, `viewer/test/*.spec.js` | claude standard / claude-sonnet-5-5 | wc-620b2787c998-worker-3 | `npm --prefix viewer run test:browser`, `node --test viewer/test/*.test.js` | in progress |
 
 ## Log
 
