@@ -113,10 +113,15 @@ exist on the hub's filesystem, ask the thread's machine's `/documents` route (be
 lead worktree from its record (as above) and returns `{ "slug": <name or null>,
 "documents": [...] }`: slug null unless exactly one name, documents listed for that slug
 (empty when null). It passes the lead record's `default_branch` (`machine/service.js:772`,
-`main` when unset) as `newPlanDirectories`' base, as local discovery passes the thread's. The hub saves it under the thread lock: discover first (no lock held during the machine
-request), then inside `hub.withThread(id, ...)` re-read the thread, set `slug` only if it
-is still unset, and save, so a card or message saved during the request is not
-overwritten. Local discovery keeps its current path. A machine that cannot
+`main` when unset) as `newPlanDirectories`' base, as local discovery passes the thread's. The remote branch lives inside `discoverSlug` (it needs the hub, so `discoverSlug` takes
+`hub` as a new first argument); callers keep their own locking. Discovery runs **once** per
+caller: `findSlug` is replaced by `saveSlug(hub, thread, slug)`, which sets `slug` only if
+the re-read thread still has none, saves and registers the plan. The thread-list GET
+(`viewer/app/routes.js:442-447`) already holds `hub.withThread` and calls
+`discoverSlug` once, then re-reads and `saveSlug`s inside that same lock (never a nested
+`withThread`). `chat()` (`viewer/app/chat.js:338-340`) calls `discoverSlug` once without a
+lock, then does the re-read and `saveSlug` inside `hub.withThread(id, ...)`, so a card or
+message saved during the machine request is not overwritten. A machine that cannot
 be reached leaves the slug unset; the next poll tries again. Test with a fake machine and a
 worktree path that does not exist on the hub.
 
@@ -315,6 +320,8 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Round-2 lock fix would nest `withThread` on the thread-list path and hang it | upheld | S3: remote branch inside `discoverSlug`; callers keep their own lock; only `chat()` adds `withThread` around re-read and save |
+| intent | minor | Discovery runs twice per caller (test, then `findSlug`) | upheld | S3: discover once, pass the result to `saveSlug` |
 
 ## Implementation Tasks
 
