@@ -86,11 +86,10 @@ build task confirms them with a dry run and records any difference in the Log):
   it in Settings. Defaults keep it out of both orders.
 - An explicit `--provider openrouter` request (worker, reviewer, verifier) places on
   OpenRouter even when it is not in `worker_order`: in `viewer/app/balancer.js`, when the
-  requested provider is absent from `order`, it is evaluated for availability for that request
+  requested provider is `openrouter` and absent from `order`, it is evaluated for availability for that request
   only (the loop at `balancer.js:55-60`), so `available[provider]` is set and the existing
-  pick at `:66` applies. Placement without a provider request is unchanged. This applies to
-  any provider requested outside the order, which today never happens because every other
-  provider is in the default orders. When `review_families` is not `both`, its existing
+  pick at `:66` applies. Placement without a provider request is unchanged, and a request
+  for any other provider removed from the order behaves exactly as today. When `review_families` is not `both`, its existing
   override (`balancer.js:38-47`) still wins over a reviewer's or verifier's requested provider.
 - Roles: every role Kimi can fill (Decision 4). Counts as its own family (Decision 6).
 
@@ -349,7 +348,7 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 
 ### Round 4 — 2026-11-19
 
-**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:**
 - Stale-prompt refusal on code submission limited to Pi; exact login target for every provider (Decision 19).
@@ -362,6 +361,7 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Outside-order placement would also change removed existing providers | upheld | Spec Identity: limited to `openrouter` |
 
 ## Implementation Tasks
 
