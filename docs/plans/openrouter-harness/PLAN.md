@@ -148,6 +148,8 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   "Pi ended the turn without a reply"). OpenRouter never emits `limit-hit`: rate limits and
   exhausted credits arrive as `turn-failed` with OpenRouter's message, so no cooldown is
   recorded and the account stays eligible.
+- Error text is redacted in `hookEvent`, before anything is spooled or forwarded: every match
+  of `sk-or-[A-Za-z0-9_-]+` becomes `[redacted key]`.
 - The transcript is bound only by `findTranscript` (the account's `sessions/` tree, file name
   ending `_<cli_session_id>.jsonl`), never from a path in a hook payload, and the bound path is
   what `copyTranscript` reads. A missing transcript does not hold up the event: it is
@@ -176,6 +178,8 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   also refuses with 409 "the sign-in screen has moved on; start again" unless the adapter's
   `parseLogin` on a fresh capture of that pane still reports `wantsCode`. Other providers'
   submissions behave as today apart from the buffer deletion and exact target.
+- Pi's whole login lifecycle (kill of an old pane, create, capture, prompt keys, completion)
+  uses the exact target `=wc-login-<account>:`, as Kimi's does.
 - The Settings sign-in view treats a `waiting` state with `wantsCode` and no URL exactly like
   one with a URL: the 30-second startup timeout (`viewer/pages/settings.js:976`) stops once
   `waiting` is seen, and polling continues for the normal sign-in window.
@@ -237,7 +241,10 @@ through to the result delivered to the starting session, for a completed, an abo
 report) and a failed turn; two successive turns where the second is delivered; a replayed
 earlier event ignored; an aborted turn with no assistant entry after a successful turn (no
 report, the earlier reply is not reused); and an OpenRouter rate-limit failure leaving the
-account eligible. Code submission tests also cover a stale submission refused once the key
+account eligible; a failed turn whose error text contains a synthetic `sk-or-` key arrives
+redacted in the spool and in what the starter receives; Pi login for account `work` leaves a
+live `work-2` login pane untouched; and with `review_families` fixed to one family, a
+reviewer requesting `openrouter` is placed on that family. Code submission tests also cover a stale submission refused once the key
 prompt is gone. A hook payload carrying a `transcript_path` is ignored. Code submission tests assert no tmux buffer remains.
 The live smoke starts a Pi session through the machine service, waits for one turn end, and
 checks that the chat shows the reply, the report is delivered and spend is non-zero.
@@ -250,6 +257,7 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 | 2 | Thinking/effort levels for OpenRouter agents | Agents run fine at the model's default | planning | Pi `--thinking`; `providers.js` `effort` flag |
 | 3 | Pi version check and a clear message when Pi changes its screens or log format | Needed only when Pi updates break something | planning | Kimi's `checkKimiVersion` in `machine/service.js` is the model |
 | 4 | Spend on the Agents screen per thread and per agent | The usage view total covers day-to-day needs | planning | Sum per session file by `cli_session_id` |
+| 5 | Recovering a report when reading the agent's log briefly fails (affects every provider) | Pre-existing for every provider, not new here; rare in day-to-day use | review-round-3 | `viewer/app/chat.js:278-304` turns a failed read into an empty transcript; `sessions.js:430-435,567-569,607-615` then ends the turn and saves the watermark. Distinguish a retryable read failure from an absent transcript |
 
 ## Accepted Risks
 
@@ -333,6 +341,10 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 | intent | minor | Stale-prompt refusal reaches Claude and Antigravity sign-ins, outside Decision 16 | upheld | Pi-only flag; Decision 19 |
 | intent | minor | `review_families` override vs explicit request unstated | upheld | Spec Identity: override still wins |
 | intent | minor | Spend labels say week/month, figures are 7/30 days | upheld | Labels now "last 7 days · last 30 days" |
+| mechanics | major | Explicit OpenRouter request vs fixed review family precedence | upheld | Spec says the family override wins (fixed with the intent finding); test added |
+| mechanics | blocking | Transient transcript read failure drops a report permanently | upheld, deferred | Deferred row 5: pre-existing for every provider |
+| mechanics | blocking | Pi error text could carry the key into spool and cards | upheld | Spec: redact in `hookEvent`; test with a synthetic key |
+| mechanics | major | Pi login lifecycle still prefix-matches tmux targets | upheld | Spec: exact target for the whole Pi login lifecycle |
 
 ## Implementation Tasks
 
