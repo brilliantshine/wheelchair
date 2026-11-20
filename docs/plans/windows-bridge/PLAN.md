@@ -100,6 +100,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D68 | Supersedes D56: git 2.43 or newer on both sides | `--attr-source` arrived in 2.41; `merge-tree` crashed with it until 2.43 | review-round-5 |
 | D69 | Copies are deleted only at archive or worktree removal, never for being idle | Keeps the thread worktree's warm Unity cache (D14) | review-round-5 |
 | D70 | The live check creates its Unity project with the installed Unity and lets Unity write its files before the clean check | A committed project would be rewritten by a different Unity version | review-round-5 |
+| D71 | Unresolved-marker paths are masked on both sides, not only Linux | A Windows edit to such a path made the Linux apply refuse | review-round-5 |
+| D72 | Only text content conflicts get markers; every other conflict kind takes the Linux entry | A modify/delete conflict would otherwise resurrect the file on Windows | review-round-5 |
+| D73 | A new Linux bridge index starts from `HEAD` without stat data | Tracked files matching an ignore rule must reach the copy | review-round-5 |
+| D74 | A copy counts as used while a live session there has a Windows-program tool | Such tools write outside the bridge's tracked apps | review-round-5 |
 
 ## Spec
 
@@ -200,13 +204,16 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   checkouts in the copy are always done by `git.exe`.
 - **Raw bytes (D57, D61).** Every git command the bridge runs, on either side, runs as
   `git --attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904 -c core.attributesFile=<empty
-  file> -c core.autocrlf=false ...` (the empty tree), so no `.gitattributes` applies: no
+  file> -c core.autocrlf=false ...` (the empty tree) with `GIT_ATTR_NOSYSTEM=1`, so no `.gitattributes` applies: no
   filter (Git LFS included), no `text`/`eol` conversion. Files travel as their exact bytes,
   never as LFS pointers, and the copy needs no LFS remote.
 - **Bridge indexes (D61).** Each side has its own persistent index, used only by the bridge
   and only under these settings: Linux `<stateDir>/win/copies/<worktree-key>/linux.index`,
   Windows `<copy>\.git\wheelchair.index`. The worktree's real index is never read or written,
-  so no stat entry made under LFS or `eol` rules is reused.
+  so no stat entry made under LFS or `eol` rules is reused. A new Linux bridge index starts
+  from `git read-tree HEAD` (entries without stat data, so every file is hashed raw on the
+  first `add -A`), so files tracked despite matching an ignore rule are included (D73). A new
+  Windows bridge index starts from the first `r_win` checkout.
 - **Refs.** Linux repository: `refs/wheelchair/<worktree-key>/base` and `.../windows`; conflict refs under `refs/wheelchair/conflicts/<thread-id>/<worktree-key>/<UTC
   time>`. Copy: `refs/wheelchair/base` and `refs/wheelchair/linux`. The thread's branch and
   `HEAD` are never changed by sync.
@@ -222,13 +229,16 @@ Ops act only on the caller's own session; no op takes a session or thread argume
      `refs/wheelchair/<key>/windows`.
   2. **Unresolved conflicts (D60).** For each path in `state.unresolved`: if the Linux file
      still has a line starting `<<<<<<< `, `=======` alone, or `>>>>>>> `, replace that path
-     in `L` with its `base` entry for the rest of this reconcile (it neither travels nor
-     counts as a change); otherwise drop it from `unresolved`.
+     in both `L` and `W` with its `base` entry for the rest of this reconcile, so it neither
+     travels nor counts as a change on either side and neither apply touches it (D71); a
+     Windows edit to it waits on Windows. Otherwise drop it from `unresolved`.
   3. Result tree `R`: `L` if `W` equals `base`'s tree; `W` if `L` equals it; otherwise `git
      merge-tree --write-tree --merge-base=base L W` (each tree wrapped as a commit with
      `commit-tree`, parent `base`). On a clean merge `R` is that tree. On conflicts `R` is the
-     tree merge-tree wrote (text conflicts carry markers; a binary conflict holds the Linux
-     version); a commit of `W` is kept as a conflict ref; each conflicted path is listed in
+     tree merge-tree wrote, except that every conflicted path that is not a both-sides content
+     conflict in a text file (binary, modify/delete, rename or add/add of differing types)
+     takes `L`'s entry, present or absent (D72); so only text content conflicts carry markers,
+     and Linux wins every other kind; a commit of `W` is kept as a conflict ref; each conflicted path is listed in
      `conflicts` with that ref and added to `state.unresolved` if it got markers. `R_win` is
      `R` with every conflicted path taken from `L` (D58), so Windows never holds markers.
   4. Commit `R` and `R_win` with `commit-tree` (parent: the current `base` commit), then apply: `git read-tree -m -u L r`
@@ -254,7 +264,9 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 - **State** per copy at `<stateDir>/win/copies/<worktree-key>/state.json`: `last_ok`,
   `last_failed` (reason, cleared on success), `used_since_ok` (D45: set by any `win` op, by a
   tool-role session start on a worktree whose copy exists or is being readied, and by the
-  sweep or a stop when it terminates jobs on that copy; cleared by a successful reconcile),
+  sweep or a stop when it terminates jobs on that copy; cleared by a successful reconcile,
+  except that it is set again at once while a live session on that worktree has a
+  Windows-program `.mcp.json` entry, because such a tool can write at any time (D74)),
   and `unresolved`. A worktree with no copy gets no state and no flag.
 - **Deleting a copy (D35, D41, D46, D59, D64)** deletes the folder and its `base` and `windows`
   refs, in exactly these cases:
@@ -394,12 +406,16 @@ copy is not reconciled at stop and is deleted at merge cleanup even when flagged
 whose worktree is gone is deleted without a reconcile; the copy never receives conflict markers; a session start on a worktree with no copy and no Windows `.exe` entry creates no copy
 or state; start-time readying past 45 s launches the CLI and `win info` reports `ready:
 false`; archive returns `pending` while a final reconcile runs and not again after it
-finished or failed; a copy whose reconcile failed is never deleted; seeding copies only paths
+finished or failed; a copy whose reconcile failed is kept except a verifier's or a merged worker's; seeding copies only paths
 the new worktree's git ignores; `.cmd` entries are not treated as Windows programs; `run`
 timeout kills and still syncs; `run` output cap and log; `start` limit of 4; `windows`/`shot`
 refuse handles of other processes; a second session on the same worktree shares the copy;
 Windows-program `.mcp.json` entries dropped without warnings on non-WSL; deleting a copy
-removes its refs; `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` set only on WSL and only for tool
+removes its `base` and `windows` refs and keeps its conflict refs; a lead copy used only
+through a Windows MCP tool after its last sync is reconciled at the lead's stop; a Windows
+edit to a path with unresolved markers waits on Windows and the reconcile still applies
+other changes; a Linux delete against a Windows edit keeps the deletion and the conflict ref
+holds the Windows file; a file tracked despite an ignore rule reaches the copy; `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` set only on WSL and only for tool
 roles; the token never reaches a Windows program's environment.
 
 `windows-live.sh` (with `windows-live.js`, in the pattern of `machine/test/screen-live.sh`)
@@ -442,6 +458,8 @@ sets `WHEELCHAIR_UNITY`.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A repository-local `info/attributes` with filters or line-ending rules still applies to bridge git commands | Rare path: hand-made local file | review-round-5 |
+| Both sides adding the same file name in different letter case between two syncs merges into paths NTFS cannot hold | Rare path: two unlikely edits in one window; the Windows apply then fails with a reason | review-round-5 |
 | A junction or symlinked parent directory inside a copy or worktree could make sync read or write outside it | Rare path: projects do not contain them in ordinary use; reparse points in the copy are skipped | review-round-1 |
 
 ## Check Once Built
@@ -560,6 +578,24 @@ sets `WHEELCHAIR_UNITY`.
 | intent | major | Interrupted-sync recovery wedges after a new edit | upheld | D67: recovery removed; re-merge from old base |
 | intent | major | Committed Unity fixture is rewritten by a different Unity version | upheld | D70 |
 | intent | minor | Raw LFS blobs and kept conflict refs grow `.git` with no cleanup | upheld | Deferred #4 widened; README says how to remove conflict refs |
+| mechanics | blocking | `win info` accepts git 2.40 without `--attr-source` | upheld | Same as the intent finding; D68 |
+| mechanics | blocking | `info/attributes` and system attributes still apply | accepted-risk | Rare path for `info/attributes` (a hand-made local file); system attributes off via `GIT_ATTR_NOSYSTEM=1` |
+| mechanics | blocking | Fresh bridge index omits tracked files matching ignore rules | upheld | D73 |
+| mechanics | blocking | Partial Windows checkout and step 0 recovery | declined | Read an older revision: step 0 was removed by D67; a partial apply re-merges cleanly from the old base |
+| mechanics | blocking | Windows edit to a marker-held path makes the Linux apply refuse | upheld | D71 |
+| mechanics | blocking | Modify/delete conflict resurrects the file on Windows | upheld | D72 |
+| mechanics | blocking | Merge can produce a case collision both sides added independently | accepted-risk | Rare path: both sides adding the same name in different case between two syncs |
+| mechanics | blocking | Copy deletion and tests disagree on failed copies and conflict refs | downgraded: major | Test wording aligned with D64 and D65 |
+| mechanics | blocking | Windows MCP writes after a sync are skipped at stop and archive | upheld | D74 |
+
+### Round 6 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 5:** git 2.43 floor on both sides (D68); interrupted applies re-merge from the old base, no `pending` or `--abandon` (D67); copies deleted only at archive or worktree removal (D69); live check creates its Unity project with the installed Unity (D70); unresolved-marker paths masked on both sides (D71); non-text conflicts take the Linux entry (D72); new Linux bridge index from `HEAD` (D73); `GIT_ATTR_NOSYSTEM=1`; copies used while a Windows MCP tool is live (D74); test wording on failed copies and conflict refs.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
