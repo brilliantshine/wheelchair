@@ -1476,11 +1476,11 @@ class MachineService {
     if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !adapter) die('invalid account or cli');
     const dir = accountDir(input.dir, account);
     if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
-    if (cli === 'kimi' && !adapter.resolveCli()) throw Object.assign(new Error('Kimi Code is not installed'), { status: 409 });
+    if ((cli === 'kimi' || cli === 'pi') && !adapter.resolveCli()) throw Object.assign(new Error(cli === 'pi' ? 'Pi is not installed' : 'Kimi Code is not installed'), { status: 409 });
     if (dir) adapter.seed(dir, account);
     await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
-    this.tmux(['kill-session', '-t', cli === 'kimi' ? `=${name}` : name]);
+    this.tmux(['kill-session', '-t', cli === 'pi' ? `=${name}:` : cli === 'kimi' ? `=${name}` : name]);
     const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
     const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
     const cwd = adapter.loginCwd?.(this.stateDir);
@@ -1491,15 +1491,15 @@ class MachineService {
   }
   loginPane(account) {
     const record = this.loginRecord(account);
-    const result = this.tmux(['capture-pane', '-p', '-e', '-t', record.cli === 'kimi' ? `=wc-login-${account}:` : `wc-login-${account}`]);
+    const result = this.tmux(['capture-pane', '-p', '-e', ...(record.cli === 'pi' ? ['-J'] : []), '-t', ['kimi', 'pi'].includes(record.cli) ? `=wc-login-${account}:` : `wc-login-${account}`]);
     if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
-    return result.stdout;
+    return record.cli === 'pi' ? adapters.pi.redact(result.stdout) : result.stdout;
   }
   loginState(account) {
     const record = this.loginRecord(account), adapter = adapters[record.cli];
     if (record.cli === 'kimi' && record.result) return record.result;
-    const captured = this.tmux(['capture-pane', '-p', '-t', record.cli === 'kimi' ? `=wc-login-${account}:` : `wc-login-${account}`]);
-    const pane = captured.ok ? captured.stdout : '';
+    const captured = this.tmux(['capture-pane', '-p', ...(record.cli === 'pi' ? ['-J'] : []), '-t', ['kimi', 'pi'].includes(record.cli) ? `=wc-login-${account}:` : `wc-login-${account}`]);
+    const pane = captured.ok ? (record.cli === 'pi' ? adapter.redact(captured.stdout) : captured.stdout) : '';
     if (record.cli === 'kimi') {
       const authenticated = adapter.loginStatus(record.dir).authenticated;
       const marker = pane.match(/__wc_login_exit (\d+)/);
@@ -1507,11 +1507,19 @@ class MachineService {
       if (!captured.ok) { const live = this.liveTmux(); if (live && !live.has(`wc-login-${account}`)) return record.result = { state: 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated }; return { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: authenticated }; }
       const parsed = adapter.parseLogin(pane); return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: false, logged_in: authenticated };
     }
+    if (record.cli === 'pi') {
+      const marker = pane.match(/__wc_login_exit (\d+)/);
+      if (adapter.loginDone(pane) || marker || !captured.ok) {
+        if (adapter.loginDone(pane)) this.tmux(['kill-session', '-t', `=wc-login-${account}:`]);
+        const logged_in = adapter.loginStatus(record.dir).logged_in;
+        return { state: logged_in && (adapter.loginDone(pane) || !marker || marker[1] === '0') ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+      }
+    }
     if (!captured.ok || /__wc_login_exit \d+/.test(pane)) {
       const logged_in = adapter.loginStatus(record.dir).logged_in;
-      return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+      return { state: logged_in && (record.cli !== 'pi' || /__wc_login_exit 0(?:\s|$)/.test(pane)) ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
     }
-    if (adapter.loginDone?.(pane)) {
+    if (record.cli !== 'pi' && adapter.loginDone?.(pane)) {
       this.tmux(['kill-session', '-t', `wc-login-${account}`]);
       const logged_in = adapter.loginStatus(record.dir).logged_in;
       return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
@@ -1913,6 +1921,19 @@ class MachineService {
         finally { if (this.projectToolsLocks.get(identity) === current) this.projectToolsLocks.delete(identity); release(); }
       }
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
+      if (request.method === 'GET' && url.pathname === '/v1/spend') {
+        await this.authorize(request, 'hub');
+        const root = path.join(os.homedir(), '.wheelchair', 'accounts');
+        const folders = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
+        const entries = [{ account: 'default-openrouter', dir: null }];
+        for (const folder of folders) {
+          if (!folder.isDirectory() || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(folder.name)) continue;
+          const dir = path.join(root, folder.name);
+          try { const meta = JSON.parse(await fsp.readFile(path.join(dir, 'wheelchair-account.json'), 'utf8')); if (meta.id === folder.name && meta.cli === 'pi') entries.push({ account: meta.id, dir }); } catch {}
+        }
+        const accounts = await Promise.all(entries.map(async ({ account, dir }) => ({ account, ...await adapters.pi.spend(dir) })));
+        return send(response, 200, { accounts });
+      }
       if (request.method === 'POST' && url.pathname === '/v1/usage') {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
@@ -1940,11 +1961,20 @@ class MachineService {
       }
       if (request.method === 'POST' && url.pathname === '/v1/logins') { await this.authorize(request, 'hub'); return send(response, 201, await this.startLogin(await bodyOf(request))); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'logins' && pathBits[2]) {
-        await this.authorize(request, 'hub'); const account = decodeURIComponent(pathBits[2]); const loginRecord = this.loginRecord(account); const loginTarget = loginRecord.cli === 'kimi' ? `=wc-login-${account}:` : `wc-login-${account}`;
+        await this.authorize(request, 'hub'); const account = decodeURIComponent(pathBits[2]); const loginRecord = this.loginRecord(account); const loginTarget = `=wc-login-${account}:`;
         if (request.method === 'GET' && pathBits.length === 3) return send(response, 200, this.loginState(account));
         if (request.method === 'GET' && pathBits[3] === 'pane') return send(response, 200, { text: this.loginPane(account) });
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); const r = this.tmux(['send-keys', '-t', loginTarget, String(input.keys || '')]); if (!r.ok) throw Object.assign(new Error('tmux keys failed'), { status: 409 }); return send(response, 200, { ok: true }); }
-        if (request.method === 'POST' && pathBits[3] === 'code') { const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required'); const buffer = `wc-${crypto.randomUUID()}`; const a = this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }); const b = this.tmux(['paste-buffer', '-p', '-b', buffer, '-t', loginTarget]); const c = this.tmux(['send-keys', '-t', loginTarget, 'Enter']); if (!a.ok || !b.ok || !c.ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 }); return send(response, 200, { ok: true }); }
+        if (request.method === 'POST' && pathBits[3] === 'code') {
+          const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required');
+          const adapter = adapters[loginRecord.cli];
+          if (adapter.codeNeedsPrompt) { const pane = this.tmux(['capture-pane', '-p', '-J', '-t', loginTarget]); if (!pane.ok || !adapter.parseLogin(pane.stdout)?.wantsCode) throw Object.assign(new Error('the sign-in screen has moved on; start again'), { status: 409 }); }
+          const buffer = `wc-${crypto.randomUUID()}`;
+          try {
+            if (!this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }).ok || !this.tmux(['paste-buffer', '-p', '-d', '-b', buffer, '-t', loginTarget]).ok || !this.tmux(['send-keys', '-t', loginTarget, 'Enter']).ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 });
+          } catch (error) { this.tmux(['delete-buffer', '-b', buffer]); throw error; }
+          return send(response, 200, { ok: true });
+        }
       }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.sessionList()); }
