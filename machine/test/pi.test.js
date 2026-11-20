@@ -88,3 +88,12 @@ test('registered Pi session survives restart and forwards a later settled hook',
   await machine.hook(name, pi.hookEvent({ hook_event_name: 'agent_settled', turn: 1, entry_id: 'a1' }));
   assert.equal(events.length, 1); assert.equal(events[0].type, 'turn-ended'); assert.equal(events[0].entry_id, 'a1');
 });
+
+test('Pi waits for every startup download to complete', () => {
+  const ready = 'escape interrupt · ctrl+c/ctrl+d clear/exit\n─────\nopenrouter/auto • medium';
+  const download = 'fd not found. Downloading...';
+  assert.equal(pi.readyText({}, `${download}\n${ready}`), false);
+  assert.equal(pi.readyText({}, `${download}\nfd installed to /tmp/fake/fd\n${ready}`), true);
+  assert.equal(pi.readyText({}, `${download}\nFailed to download fd: fetch failed\n${ready}`), true);
+  assert.equal(pi.readyText({}, `${download}\nfd installed to /tmp/fake/fd\nrg not found. Downloading...\n${ready}`), false);
+});
