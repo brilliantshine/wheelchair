@@ -1,6 +1,6 @@
 ---
 slug: kimi-usage
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -282,3 +282,4 @@ Claude/GPT behaviour or to how the page looks.
 - 2026-11-19 — Choice: T2, viewer/test/app-usage.test.js: failover test writes machines.json directly; named kimi fixture uses plan 'unknown'.
 - 2026-11-19 — Choice: T2, worker reported 'none'; the scout listed 4 choice groups from the diff, logged above.
 - 2026-11-19 — Verification attempt 1 started on f64ac970 (one verifier, not GPT: every builder was GPT).
+- 2026-11-19 — Verification attempt 1 PASS on f64ac970 (claude-opus-5-5): no gaps, 0 rare paths accepted.
