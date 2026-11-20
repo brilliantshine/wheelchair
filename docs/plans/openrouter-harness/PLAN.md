@@ -186,6 +186,15 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 
 ## Review Rounds
 
+### Round 1 — 2026-11-19
+
+**Lanes:** intent lens and mechanics lens, families recorded at start; cross-family: yes.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
