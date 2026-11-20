@@ -44,6 +44,7 @@ async function solid(locator) {
   await expect(locator).toBeVisible();
   const color = await locator.evaluate(e => getComputedStyle(e).backgroundColor);
   expect(color, 'content surface must have an opaque background').toMatch(/^rgb\(\d+, \d+, \d+\)$/);
+  expect(await locator.evaluate(e => { for (let node = e; node; node = node.parentElement) { if (Number(getComputedStyle(node).opacity) !== 1) return false; } return true; }), 'surface ancestors must not fade text or controls over the image').toBe(true);
 }
 async function noOverflow(page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -121,6 +122,7 @@ test('shared pages and standalone or framed documents use the expected appearanc
   for (const [url, surface] of pages) {
     await page.goto(ctx.server.url + url);
     await active(page); await solid(page.locator(surface).first());
+    if (url === '/app/features') await solid(page.locator('.v-group.empty .stage-head').first());
     if (url.startsWith('/app/picture')) {
       await solid(page.locator('.picture-bar'));
       await expect(page.frameLocator('iframe.picture-frame').locator('svg#canvas')).toBeVisible();
@@ -165,23 +167,26 @@ for (const width of [1280, 390]) {
     await page.getByLabel('Visibility').focus(); await expect(page.getByLabel('Visibility')).toBeFocused();
     await screenshot(page, testInfo, 'settings', width);
     await page.goto(`${ctx.server.url}/app/thread?id=${thread.id}`);
-    await active(page); await solid(page.locator('#composer')); await solid(page.locator('.bubble.assistant').first());
+    await active(page); await solid(page.locator('#composer')); await solid(page.locator('.bubble.assistant').first()); await solid(page.locator('.lead-by').first());
     await page.locator('#msg').fill('Background does not block input'); await expect(page.locator('#msg')).toBeFocused();
     await expect(page.locator('#msg')).toHaveValue('Background does not block input');
     const frame = page.locator('iframe.diagram').first(); await solid(frame);
     await expect(frame.contentFrame().locator('svg#canvas')).toBeVisible();
     await screenshot(page, testInfo, 'thread', width);
     await page.goto(`${ctx.server.url}/app/agents?lead=${thread.id}`); await active(page); await solid(page.locator('.agents-heading').first());
+    if (width === 390) await solid(page.locator('.agents-back').first());
     const info = page.getByRole('button', { name: 'How to read this tree' });
     await info.click(); await expect(page.locator('.agents-info')).toBeVisible();
     await page.keyboard.press('Escape'); await expect(page.locator('.agents-info')).toBeHidden();
     await screenshot(page, testInfo, 'agents', width);
     await page.route('**/api/accounts/*/signin/hub/pane', route => route.fulfill({ json: { text: Array.from({ length: 100 }, (_, i) => `Terminal line ${i}`).join('\n') } }));
     await page.goto(`${ctx.server.url}/app/terminal?login=default-claude&machine=hub`);
-    await active(page); await solid(page.locator('.term-bar')); await solid(page.locator('.tv-host'));
+    await active(page); await solid(page.locator('.term-bar')); await solid(page.locator('.tv-host')); await solid(page.locator('.tv-view'));
     await page.getByRole('button', { name: 'View only' }).click();
     await page.getByRole('button', { name: 'Typing' }).focus();
     await expect(page.getByRole('button', { name: 'Typing' })).toBeFocused();
+    await expect(page.locator('.tv-notice')).toBeVisible();
+    expect(await page.locator('.tv-notice').evaluate(e => getComputedStyle(e.closest('.tv-view')).backgroundColor)).toMatch(/^rgb\(/);
     await screenshot(page, testInfo, 'terminal', width);
     await page.goto(`${ctx.server.url}/app/doc?thread=${thread.id}&file=PLAN.md`);
     await active(page); await solid(page.locator('#content')); await expect(page.locator('#content h1')).toHaveText('Dark mode plan');
