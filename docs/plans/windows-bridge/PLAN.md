@@ -109,6 +109,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D77 | A copy with unresolved conflict paths is never deleted at archive or worktree removal | A masked Windows edit would be deleted with the copy | review-round-6 |
 | D78 | An app's wrapper closing sets `used_since_ok` | An app can write and exit naturally after the last sync | review-round-6 |
 | D79 | Run one more review round; if not clean, come back to the user before going further | User's pick at the second review budget | user |
+| D80 | The force-add step skips paths not on disk | A deleted, uncommitted tracked file made every later sync fail | review-round-7 |
+| D81 | Supersedes D77: a copy with unresolved paths is deleted after saving its Windows snapshot as a kept conflict ref | Nothing is lost and no several-GB copy stays forever | review-round-7 |
 
 ## Spec
 
@@ -219,7 +221,8 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   from `git read-tree HEAD` (entries without stat data, so every file is hashed raw on the
   first `add -A`), so files tracked despite matching an ignore rule are included (D73). Before each Linux
   snapshot, any path the worktree's real index lists (read only, `git ls-files`) that the
-  bridge index lacks is added with `git add -f`, so a file force-added later is included too. A new
+  bridge index lacks and that exists in the worktree is added with `git add -f` (paths
+  no longer on disk are skipped, D80), so a file force-added later is included too. A new
   Windows bridge index starts from the first `r_win` checkout.
 - **Refs.** Linux repository: `refs/wheelchair/<worktree-key>/base` and `.../windows`; conflict refs under `refs/wheelchair/conflicts/<thread-id>/<worktree-key>/<UTC
   time>`. Copy: `refs/wheelchair/base` and `refs/wheelchair/linux`. The thread's branch and
@@ -288,8 +291,9 @@ Ops act only on the caller's own session; no op takes a session or thread argume
      failed.
   Copies are never deleted for being idle: the thread worktree's copy, and its Unity cache,
   stays until archive (D14).
-  The list is the only rule for deleting a copy; nothing else deletes one (D76). A copy with
-  any path in `unresolved` is never deleted under cases 3 and 4 (D77). Every other copy, in
+  The list is the only rule for deleting a copy; nothing else deletes one (D76). Before deleting a copy
+  with any path in `unresolved` under cases 3 and 4, the Windows snapshot its final
+  reconcile fetched is saved as a conflict ref (kept per D65), then it is deleted (D81). Every other copy, in
   particular one whose last reconcile failed, is kept and the machine log
   names it.
 - **Conflict refs are never deleted by Wheelchair (D65)**, not with the copy and not at
@@ -309,7 +313,7 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   (`viewer/app/threads.js:217-222`) naming the sessions that last used those copies while any
   is running; the user's "Archive again" retries. A finished reconcile, successful or failed,
   never makes archive wait again. The WIP commit happens once none is running. Then archive
-  deletes copies per D41. A copy whose worktree no longer exists is never reconciled; whether it
+  deletes copies per the deletion list (D76). A copy whose worktree no longer exists is never reconciled; whether it
   is deleted follows only the deletion list above (D76).
 - **Sweep** every 60 s, like the screen sweep (`machine/lib/screen.js:105-110`), and once at
   service start: terminate the jobs of apps whose session is not live in tmux (a crash or a
@@ -427,7 +431,9 @@ removes its `base` and `windows` refs and keeps its conflict refs; a lead copy u
 through a Windows MCP tool after its last sync is reconciled at the lead's stop; a Windows
 edit to a path with unresolved markers waits on Windows and the reconcile still applies
 other changes; a Linux delete against a Windows edit keeps the deletion and the conflict ref
-holds the Windows file; a file tracked despite an ignore rule reaches the copy; `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` set only on WSL and only for tool
+holds the Windows file; a file tracked despite an ignore rule reaches the copy; a tracked file deleted but not
+committed syncs on two syncs in a row without error; a copy deleted with unresolved paths
+leaves a conflict ref holding its Windows files; `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` set only on WSL and only for tool
 roles; the token never reaches a Windows program's environment.
 
 `windows-live.sh` (with `windows-live.js`, in the pattern of `machine/test/screen-live.sh`)
@@ -442,8 +448,8 @@ on each side, `run -- cmd.exe /c echo hi`, `start -- notepad.exe`, `windows`, `s
 a PNG that is not a single colour, `stop`. With `WHEELCHAIR_UNITY=<path to Unity.exe>` set it
 also runs the Unity part (D33) on the fixture project `machine/test/fixtures/unity-min` (one
 passing EditMode test). The fixture ships only the files a Unity project needs to start (D70, D75):
-`.gitignore`, `Packages/manifest.json` with the test framework, an `.asmdef` and one test
-script, with no `ProjectSettings/`. In order, the script: commits these into the temporary
+`.gitignore`, `Packages/manifest.json` with the test framework, `Assets/Tests/Tests.asmdef` (editor-only, referencing the test
+framework) and `Assets/Tests/FixtureTest.cs`, with no `ProjectSettings/`. In order, the script: commits these into the temporary
 repository; runs `win sync`; `win start`s Unity on the copy with `-batchmode -quit` (no
 `-createProject`, nothing run on the Linux side) and polls `win status` until it exits 0, so
 Unity writes its own `ProjectSettings/` and `.meta` files for the installed version on
@@ -629,6 +635,10 @@ sets `WHEELCHAIR_UNITY`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (mechanics) | major | Force-add step fails every sync after an uncommitted deletion | upheld | D80 |
+| intent | minor | D77 keeps a whole copy forever | upheld | D81 |
+| intent | minor | Archive still says "per D41" | upheld | Points at the deletion list |
+| intent | minor | Fixture test files' folder unnamed | upheld | `Assets/Tests/` |
 
 ## Implementation Tasks
 
