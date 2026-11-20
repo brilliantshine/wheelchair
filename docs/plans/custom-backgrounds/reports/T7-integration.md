@@ -10,7 +10,7 @@ Running 40 tests using 2 workers
 exit 0
 ```
 
-Screenshots: /tmp/backgrounds-resume-T7-tjKiXB/results/background-editor-represen-ec1ef-ppearance-after-removal-chromium/settings-1280.png and corresponding settings-390.png; exact discovered paths are recorded with final validation evidence.
+Screenshots: /tmp/backgrounds-resume-T7-tjKiXB/results/background-editor-represen-d1a88-re-appearance-after-removal-chromium/settings-1280.png and corresponding settings-390.png; exact discovered paths are recorded with final validation evidence.
 
 ## Choices
 Per-test Playwright screenshot paths prevent collisions. Invalid PNG fixture corrected without changing product validation.
