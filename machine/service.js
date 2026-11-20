@@ -482,7 +482,7 @@ class MachineService {
       if (!name.startsWith('wc-') || name.startsWith('wc-login-') || this.sessions[name]) continue;
       const parsed = /^wc-(.+?)-(sub-lead|lead|worker|reviewer|verifier|[a-z]+)(?:-\d+)?$/.exec(name);
       if (!parsed) continue;
-      const pane = this.tmux(['capture-pane', '-p', '-t', `=${name}:`]);
+      const pane = this.tmux(['capture-pane', '-p', '-t', name]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
         cli: pane.ok && ((/^\s*(?:Ask When Needed|Never Ask)\b/im.test(pane.stdout) && /^\s*context:\s*\d+%/im.test(pane.stdout)) || (() => { const lines = pane.stdout.split(/\r?\n/).map(line => line.trim()); return lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line)); })()) ? 'kimi' : pane.ok && (pane.stdout.includes('escape interrupt') && pane.stdout.includes('ctrl+c/ctrl+d clear/exit') || /openrouter\/\S+\s*•\s*\S+/.test(pane.stdout)) ? 'pi' : pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
