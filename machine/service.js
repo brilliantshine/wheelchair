@@ -482,7 +482,7 @@ class MachineService {
       if (!name.startsWith('wc-') || name.startsWith('wc-login-') || this.sessions[name]) continue;
       const parsed = /^wc-(.+?)-(sub-lead|lead|worker|reviewer|verifier|[a-z]+)(?:-\d+)?$/.exec(name);
       if (!parsed) continue;
-      const pane = this.tmux(['capture-pane', '-p', '-t', name]);
+      const pane = this.tmux(['capture-pane', '-p', '-t', `=${name}:`]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
         cli: pane.ok && ((/^\s*(?:Ask When Needed|Never Ask)\b/im.test(pane.stdout) && /^\s*context:\s*\d+%/im.test(pane.stdout)) || (() => { const lines = pane.stdout.split(/\r?\n/).map(line => line.trim()); return lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line)); })()) ? 'kimi' : pane.ok && (pane.stdout.includes('escape interrupt') && pane.stdout.includes('ctrl+c/ctrl+d clear/exit') || /openrouter\/\S+\s*•\s*\S+/.test(pane.stdout)) ? 'pi' : pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
@@ -525,9 +525,9 @@ class MachineService {
   // checks that match pane text read it plain.
   pane(name, color = false, history = 0) {
     const session = this.managed(name);
-    const result = this.tmux(['capture-pane', '-p', ...(session.cli === 'pi' ? ['-J'] : []), ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', name]);
+    const result = this.tmux(['capture-pane', '-p', ...(session.cli === 'pi' ? ['-J'] : []), ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', `=${name}:`]);
     if (!result.ok) throw Object.assign(new Error(result.stderr.trim() || 'tmux pane unavailable'), { status: 409 });
-    return session.cli === 'pi' ? adapters.pi.redact(result.stdout) : result.stdout;
+    return adapters.pi.redact(result.stdout);
   }
   sessionName(threadId, role) {
     safeName(threadId, 'thread id'); safeName(role, 'role');
@@ -1510,15 +1510,15 @@ class MachineService {
   }
   loginPane(account) {
     const record = this.loginRecord(account);
-    const result = this.tmux(['capture-pane', '-p', '-e', ...(record.cli === 'pi' ? ['-J'] : []), '-t', ['kimi', 'pi'].includes(record.cli) ? `=wc-login-${account}:` : `wc-login-${account}`]);
+    const result = this.tmux(['capture-pane', '-p', '-e', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
     if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
-    return record.cli === 'pi' ? adapters.pi.redact(result.stdout) : result.stdout;
+    return adapters.pi.redact(result.stdout);
   }
   loginState(account) {
     const record = this.loginRecord(account), adapter = adapters[record.cli];
     if (record.cli === 'kimi' && record.result) return record.result;
-    const captured = this.tmux(['capture-pane', '-p', ...(record.cli === 'pi' ? ['-J'] : []), '-t', ['kimi', 'pi'].includes(record.cli) ? `=wc-login-${account}:` : `wc-login-${account}`]);
-    const pane = captured.ok ? (record.cli === 'pi' ? adapter.redact(captured.stdout) : captured.stdout) : '';
+    const captured = this.tmux(['capture-pane', '-p', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
+    const pane = captured.ok ? adapters.pi.redact(captured.stdout) : '';
     if (record.cli === 'kimi') {
       const authenticated = adapter.loginStatus(record.dir).authenticated;
       const marker = pane.match(/__wc_login_exit (\d+)/);
@@ -1987,7 +1987,7 @@ class MachineService {
         if (request.method === 'POST' && pathBits[3] === 'code') {
           const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required');
           const adapter = adapters[loginRecord.cli];
-          if (adapter.codeNeedsPrompt) { const pane = this.tmux(['capture-pane', '-p', '-J', '-t', loginTarget]); if (!pane.ok || !adapter.parseLogin(pane.stdout)?.wantsCode) throw Object.assign(new Error('the sign-in screen has moved on; start again'), { status: 409 }); }
+          if (adapter.codeNeedsPrompt) { const pane = this.tmux(['capture-pane', '-p', '-J', '-t', loginTarget]); if (!pane.ok || pane.stdout.includes('__wc_login_exit') || !adapter.parseLogin(pane.stdout)?.wantsCode) throw Object.assign(new Error('the sign-in screen has moved on; start again'), { status: 409 }); }
           const buffer = `wc-${crypto.randomUUID()}`;
           try {
             if (!this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }).ok || !this.tmux(['paste-buffer', '-p', '-d', '-b', buffer, '-t', loginTarget]).ok || !this.tmux(['send-keys', '-t', loginTarget, 'Enter']).ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 });

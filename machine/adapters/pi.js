@@ -19,7 +19,7 @@ module.exports = {
   loginEnv: dir => dir && path.resolve(dir) !== home(null) ? { PI_CODING_AGENT_DIR: dir } : {},
   loginCommand() { const cli = resolveCli(); if (!cli) throw new Error('Pi is not installed'); return [cli, 'auth', 'login', 'openrouter', '--api-key']; },
   loginPrompt: null, codeNeedsPrompt: true,
-  parseLogin(pane) { const lines = pane.split(/\r?\n/).filter(line => line.trim()); return !pane.includes('Saved API key for OpenRouter') && lines.slice(-5).some(line => line.trim() === 'Enter OpenRouter API key:') ? { url: null, code: null, wantsCode: true } : null; },
+  parseLogin(pane) { const lines = pane.split(/\r?\n/).filter(line => line.trim()); return !pane.includes('Saved API key for OpenRouter') && !pane.includes('__wc_login_exit') && lines.at(-1)?.trim() === 'Enter OpenRouter API key:' ? { url: null, code: null, wantsCode: true } : null; },
   loginDone: pane => pane.includes('Saved API key for OpenRouter'),
   async spend(dir, now = new Date()) {
     const totals = { today: 0, last_7_days: 0, last_30_days: 0 };

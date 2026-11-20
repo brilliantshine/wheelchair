@@ -705,7 +705,7 @@ test('pane history captures requested scrollback and rejects invalid values', as
   const env = await service(await temp()); try {
     await start(env);
     assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane?history=2000', undefined, hubHeader)).status, 200);
-    assert.match(await log(env), /tmux capture-pane -p -e -S -2000 -t wc-t-lead/);
+    assert.match(await log(env), /tmux capture-pane -p -e -S -2000 -t =wc-t-lead:/);
     await fs.writeFile(env.fake.log, '');
     assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane', undefined, hubHeader)).status, 200);
     assert.doesNotMatch(await log(env), /capture-pane.* -S /);
