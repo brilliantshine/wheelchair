@@ -1,6 +1,6 @@
 ---
 slug: thread-sidebar-files
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -410,3 +410,4 @@ Build accepted: approval 4ceb0129-efd9-4063-a1da-9603a9f82e9b
 - 2026-11-19 — Choice: T3, existing specs (`app-ui`, `app-threads`) now create temp worktrees with real plan files.
 - 2026-11-19 — T3 sent back once for small test fixes (screenshots wrote into the repo; a vacuous archived-card assertion); fixed by the same worker.
 - 2026-11-19 — T3 accepted (band: bigger-scout): full browser suite 1060 passed on the first commit, rerun by sub-lead; touched specs pass after the fix; full validation run on the merged branch below.
+- 2026-11-19 — Full validation on the merged branch: machine 375/375, unit 704/704, browser 1060 passed (34 skipped). Status verifying; verification attempt 1.
