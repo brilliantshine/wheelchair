@@ -47,6 +47,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | An explicit provider request places on that provider even when it is outside the placement orders | Makes Decision 13 workable: OpenRouter is used only when asked or added to an order | review-round-2 |
 | 18 | OpenRouter rate-limit and credit errors are turn failures, never `limit-hit` | No usage windows to cool down against; the account stays usable | review-round-2 |
 | 19 | Extends 16: every provider's code submission targets its login pane exactly; only Pi refuses a submission once its key prompt is gone | Exact targeting is invisible; the visible refusal is limited to the new provider | review-round-3 |
+| 20 | After three unclean rounds, keep the plan as is and run another review round | User's choice over simplifying sign-in or building now | user |
 
 ## Spec
 
@@ -345,6 +346,22 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 | mechanics | blocking | Transient transcript read failure drops a report permanently | upheld, deferred | Deferred row 5: pre-existing for every provider |
 | mechanics | blocking | Pi error text could carry the key into spool and cards | upheld | Spec: redact in `hookEvent`; test with a synthetic key |
 | mechanics | major | Pi login lifecycle still prefix-matches tmux targets | upheld | Spec: exact target for the whole Pi login lifecycle |
+
+### Round 4 — 2026-11-19
+
+**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+
+**Changed since Round 3:**
+- Stale-prompt refusal on code submission limited to Pi; exact login target for every provider (Decision 19).
+- `review_families` override still wins over an explicit reviewer/verifier provider request.
+- Spend labels "last 7 days · last 30 days".
+- Error text redacted in `hookEvent` before spooling.
+- Pi's whole login lifecycle uses exact tmux targets.
+- Deferred row 5 (transient transcript read failures, all providers).
+- Validation additions for the above.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
