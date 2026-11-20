@@ -12,10 +12,11 @@
     ['heavy', 'Heavy', 'Leading, planning, review, checking'],
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
-  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI']];
+  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI'], ['openrouter', 'OpenRouter', 'Pi']];
   const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
   const KIMI_MODEL_VALUE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/;
+  const OPENROUTER_MODEL_VALUE = /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/;
   const NONE = '__none';
   const OTHER = '__other';
   const ROLES = [
@@ -210,8 +211,8 @@
       const row = h('div', { class: 'other' }, input, use);
       const go = () => {
         const value = input.value.trim();
-        if (!(provider === 'kimi' ? KIMI_MODEL_VALUE : MODEL_VALUE).test(value)) {
-          inlineErr(wrap, 'Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.');
+        if (!(provider === 'openrouter' ? OPENROUTER_MODEL_VALUE : provider === 'kimi' ? KIMI_MODEL_VALUE : MODEL_VALUE).test(value)) {
+          inlineErr(wrap, provider === 'openrouter' ? 'Use vendor/model with an optional :variant, up to 128 lowercase letters, digits, dots, dashes and underscores.' : 'Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.');
           return;
         }
         commit(value, effort);
@@ -453,7 +454,7 @@
     const head = h('tr', {}, h('th', { scope: 'col', text: 'Provider' }),
       TIERS.map(([, label, desc]) => h('th', { scope: 'col' }, h('span', { class: 'tier-name', text: label }), h('span', { class: 'tier-desc', text: desc }))));
     const body = PROVIDERS.map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
-      h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli })),
+      h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli }), provider === 'openrouter' && h('span', { class: 'hint', text: 'Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.' })),
       TIERS.map(([slot, label]) => {
         const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
         if (provider === 'gpt') for (const item of tierItems(slot)) td.append(headsUpLine(item));
@@ -568,7 +569,7 @@
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
-            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code']])),
+            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']])),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
@@ -968,9 +969,10 @@
     gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
     gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
     kimi: [['unknown', 'Not sure']],
+    openrouter: [['unknown', 'Not sure']],
   };
   const planLabel = (provider, plan) => ((PLAN_OPTIONS[provider] || []).find((p) => p[0] === plan) || [0, plan])[1];
-  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
+  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
   const WITHIN = [['soonest', 'Soonest refill first'], ['spread', 'Spread evenly'], ['one', 'Stay on one account']];
   const CLAUDE_TERMS = "Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.";
   const SIGNIN_WAIT_MS = 30000;
