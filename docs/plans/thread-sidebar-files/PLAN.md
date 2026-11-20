@@ -373,3 +373,5 @@ npm --prefix viewer run test:browser
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+Build accepted: approval 4ceb0129-efd9-4063-a1da-9603a9f82e9b
