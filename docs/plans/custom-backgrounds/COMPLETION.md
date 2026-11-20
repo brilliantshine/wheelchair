@@ -7,7 +7,7 @@ verified-by: []
 
 # Completion Report — Custom image and GIF backgrounds
 
-DRAFT: Final full-browser validation is running on3ab9a309. This document will be completed before verifying status.
+DRAFT: Final full-browser validation follows the initial-composer HTML correction. This document will be completed before verifying status.
 
 ## Spec coverage
 
@@ -41,6 +41,7 @@ DRAFT: Final full-browser validation is running on3ab9a309. This document will b
 | No repeated image/node assignment on opacity/poll; native GIF beyond finite stop | this run | viewer/pages/background.js:23; viewer/pages/background.js:54 | background-editor.spec.js:111; background-rendering.spec.js:106 |
 | Narrow img-src blob CSP; no arbitrary HTML/styles from images | this run | viewer/server.js:45; viewer/pages/settings.js:1424 | routes.test.js; background-completion.test.js |
 | Test helper isolated state before appearance requests; sequential restart | this run | viewer/test/helpers/server.js; viewer/test/server-isolation.test.js | server-isolation.test.js; background.test.js:18 |
+| Thread controls wait for own initial data; slow appearance metadata does not block Send | this run | viewer/pages/thread.html:50; viewer/pages/thread.js:1141 | background-rendering.spec.js:200 (red before fix, green both browsers) |
 | Existing auth, graph interactions and unrelated Settings behavior | pre-existing | viewer/server.js; viewer/pages/settings.js | pre-existing architecture; full Node and both-browser suite |
 
 ## Deviations from plan
@@ -89,6 +90,25 @@ exit 0
 ```
 
 Unique focused screenshot root /tmp/backgrounds-T6-final-xxI2wj/results. Firefox phone terminal /background-rendering-repre-6ab8a-and-solid-surfaces-at-390px-firefox/terminal-390.png (relative to that root) was inspected after the opaque terminal fix. Report T6.md lists matching Settings/thread/agents/terminal paths for both browsers and sizes.
+
+```text
+npm --prefix viewer run test:browser -- pages.spec.js -g 'document page response' --output=/tmp/backgrounds-pages-isolation-5aNrWM/results
+2 passed (5.9s)
+exit 0
+```
+
+The strengthened case waits for actual background metadata and checks initialization under the temporary hub-state/backgrounds directory.
+
+```text
+npm --prefix viewer run test:browser -- app-send-now.spec.js app-threads.spec.js app-accounts.spec.js app-settings.spec.js -g 'regular composer send already|message box posts and shows queued|waiting lead pinned|editing a table cell saves' --output=/tmp/backgrounds-failures-isolated-Cd254t/results
+10 passed (11.6s)
+exit 0
+npm --prefix viewer run test:browser -- background-rendering.spec.js --output=/tmp/backgrounds-composer-after-b4TH29/results
+10 passed (19.7s)
+exit 0
+```
+
+The controlled initial-thread-data check failed in both browsers before the three disabled attributes, then passed while appearance metadata remained pending. The earlier1122 run completed1056pass/34skip/4fail/28not-run (serial groups),14.9m; it is recorded as failing, not as final validation.
 
 ## Known gaps / residual risks
 

@@ -196,3 +196,28 @@ for (const width of [1280, 390]) {
     await noOverflow(page);
   });
 }
+
+test('thread composer waits for thread data while appearance metadata remains slow', async ({ page }) => {
+  let releaseChat, releaseAppearance, chatStarted, appearanceStarted;
+  const chat = new Promise(resolve => { releaseChat = resolve; });
+  const appearance = new Promise(resolve => { releaseAppearance = resolve; });
+  const chatSeen = new Promise(resolve => { chatStarted = resolve; });
+  const appearanceSeen = new Promise(resolve => { appearanceStarted = resolve; });
+  await page.route(`**/api/threads/${thread.id}/chat`, async route => { chatStarted(); await chat; await route.continue().catch(() => {}); });
+  await page.route('**/api/settings/background', async route => { appearanceStarted(); await appearance; await route.continue().catch(() => {}); });
+  try {
+    await page.goto(`${ctx.server.url}/app/thread?id=${thread.id}`);
+    await Promise.all([chatSeen, appearanceSeen]);
+    await expect(page.locator('#msg')).toBeDisabled();
+    await expect(page.locator('#send')).toBeDisabled();
+    await expect(page.locator('#attach')).toBeDisabled();
+    releaseChat();
+    await expect(page.locator('#msg')).toBeEnabled();
+    await page.locator('#msg').fill('Thread data is ready');
+    const response = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith(`/threads/${thread.id}/messages`));
+    await page.locator('#send').click();
+    expect((await response).status()).toBe(202);
+    await expect(page.locator('#msg')).toHaveValue('');
+    await expect(page.locator('#chat .bubble.pending')).toContainText('queued');
+  } finally { releaseChat(); releaseAppearance(); }
+});
