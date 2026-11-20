@@ -113,15 +113,16 @@ exist on the hub's filesystem, ask the thread's machine's `/documents` route (be
 lead worktree from its record (as above) and returns `{ "slug": <name or null>,
 "documents": [...] }`: slug null unless exactly one name, documents listed for that slug
 (empty when null). It passes the lead record's `default_branch` (`machine/service.js:772`,
-`main` when unset) as `newPlanDirectories`' base, as local discovery passes the thread's. The remote branch lives inside `discoverSlug` (it needs the hub, so `discoverSlug` takes
-`hub` as a new first argument); callers keep their own locking. Discovery runs **once** per
-caller: `findSlug` is replaced by `saveSlug(hub, thread, slug)`, which sets `slug` only if
-the re-read thread still has none, saves and registers the plan. The thread-list GET
-(`viewer/app/routes.js:442-447`) already holds `hub.withThread` and calls
-`discoverSlug` once, then re-reads and `saveSlug`s inside that same lock (never a nested
-`withThread`). `chat()` (`viewer/app/chat.js:338-340`) calls `discoverSlug` once without a
-lock, then does the re-read and `saveSlug` inside `hub.withThread(id, ...)`, so a card or
-message saved during the machine request is not overwritten. A machine that cannot
+`main` when unset) as `newPlanDirectories`' base, as local discovery passes the thread's. The remote branch lives inside `discoverSlug`, which takes an optional `{ hub }`; it asks
+the machine only when `hub` is given. Every caller already holds the thread lock (the
+thread-list GET via `hub.withThread`, `viewer/app/routes.js:442-447`; `chat()` via
+`hub.chat`'s `withChatThread`, `viewer/app/hub.js:266-268`, and aside creation's
+`withChatThread`, `viewer/app/routes.js:482`), so no new lock is taken anywhere and no
+`withThread` is nested. Discovery runs **once** per caller: `findSlug` is replaced by
+`saveSlug(hub, thread, slug)`, which re-reads the thread, sets `slug` only if it is still
+unset, saves and registers the plan. Only `chat()` passes `hub` (remote lookup happens
+when the thread page or its document page loads); the thread-list GET does not, so the
+list poll never waits on a machine. A machine that cannot
 be reached leaves the slug unset; the next poll tries again. Test with a fake machine and a
 worktree path that does not exist on the hub.
 
@@ -260,6 +261,8 @@ npm --prefix viewer run test:browser
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A plan folder that is itself a symlink out of the worktree passes the eligibility check | Needs an agent to plant the symlink (tampering); the lead can already read any such file | review-round-2 |
+| A `file` card carrying a `warnings` field passes the machine's extra-field check | `card.js` refuses unknown fields; needs a client bypassing it | review-round-3 |
+| An archived plan document with non-UTF-8 bytes downloads re-encoded | Agents write UTF-8 Markdown | review-round-3 |
 | An archived plan document over 2 MiB is listed but its page fails | Plan documents are far smaller in ordinary use | review-round-2 |
 
 ## Review Rounds
@@ -322,6 +325,10 @@ npm --prefix viewer run test:browser
 |------|----------|---------|--------------|------------|
 | intent | blocking | Round-2 lock fix would nest `withThread` on the thread-list path and hang it | upheld | S3: remote branch inside `discoverSlug`; callers keep their own lock; only `chat()` adds `withThread` around re-read and save |
 | intent | minor | Discovery runs twice per caller (test, then `findSlug`) | upheld | S3: discover once, pass the result to `saveSlug` |
+| mechanics | blocking | `chat()` already runs under `withChatThread`; the round-3 `withThread` would deadlock | upheld | S3: no new lock anywhere; every caller already holds the lock; `saveSlug` re-reads and saves |
+| mechanics | minor | Thread-list poll would hold the lock across a machine request | upheld | S3: only `chat()` does the remote lookup; the list poll stays local |
+| mechanics | minor | `warnings` deleted before the machine's extra-field check | accepted-risk | Rare path: `card.js` refuses unknown fields; only a client bypassing it sends `warnings` on a file card |
+| mechanics | minor | Archived download decodes non-UTF-8 Markdown | accepted-risk | Rare path: agents write UTF-8 Markdown |
 
 ## Implementation Tasks
 
