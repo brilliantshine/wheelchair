@@ -306,7 +306,7 @@ npm --prefix viewer run test:browser
 
 ### Round 3 — 2026-11-19
 
-**Lanes:** pending.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since the last round:**
 - S5: state-folder refusal exempts `<stateDir>/worktrees/`; blank title refused on the machine before copying.
