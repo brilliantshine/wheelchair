@@ -16,7 +16,7 @@ test('Pi command writes an extension and applies reviewer and account settings',
   assert.deepEqual(pi.command({ role: 'reviewer' }, session, root, context).argv.slice(-2), ['--tools', 'read,grep,find,ls']);
   assert.deepEqual(pi.loginEnv(null), {}); assert.deepEqual(pi.loginEnv(root), { PI_CODING_AGENT_DIR: root });
   assert.equal(pi.firstMessage({ brief: 'brief' }), 'brief');
-  assert.equal(pi.readyText({}, 'escape interrupt · ctrl+c/ctrl+d clear/exit'), true);
+  assert.equal(pi.readyText({}, 'escape interrupt · ctrl+c/ctrl+d clear/exit\n─────\n─────\nopenrouter/auto • medium'), true);
   assert.equal(pi.readyText({}, 'escape interrupt · ctrl+c/ctrl+d clear/exit Trust project folder?'), false);
 });
 test('login status checks presence without returning credentials', () => {

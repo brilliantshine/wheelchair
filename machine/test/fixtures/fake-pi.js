@@ -12,11 +12,12 @@ const { pathToFileURL } = require('node:url');
   const handlers = {}, entries = [];
   (await import(pathToFileURL(value('-e')).href)).default({ on: (name, handler) => { handlers[name] = handler; } });
   const ctx = { sessionManager: { getEntries: () => entries } };
-  console.log('escape interrupt · ctrl+c/ctrl+d clear/exit · / commands\n│  │\nopenrouter/auto • medium');
+  console.log('escape interrupt · ctrl+c/ctrl+d clear/exit · / commands\n──────\n      \n──────\nopenrouter/auto • medium');
   for await (const line of readline.createInterface({ input: process.stdin })) {
     entries.push({ type: 'message', id: `u${entries.length}`, message: { role: 'user', content: line } });
     await handlers.tool_execution_start({ toolCallId: 'tool', toolName: 'read', args: { path: 'file' } }, ctx);
     await handlers.tool_execution_end({ toolCallId: 'tool', toolName: 'read', isError: false }, ctx);
+    if (line === 'abort') { await handlers.agent_settled({ aborted: true }, ctx); continue; }
     const reply = { type: 'message', id: `a${entries.length}`, message: { role: 'assistant', stopReason: 'stop' } }; entries.push(reply);
     fs.appendFileSync(file, entries.slice(-2).map(row => JSON.stringify(row)).join('\n') + '\n');
     await handlers.agent_settled({ aborted: false }, ctx);
