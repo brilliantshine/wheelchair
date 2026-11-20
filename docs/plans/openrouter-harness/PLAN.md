@@ -310,6 +310,23 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 | mechanics | major | Unreachable machines' account membership is lost | upheld | Spec: conservative "total may be incomplete" |
 | mechanics | major | Grammar rejects the `none` sentinel | upheld | Spec Model ids: `none` kept |
 
+### Round 3 — 2026-11-19
+
+**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+
+**Changed since Round 2:**
+- Explicit provider requests place outside the orders (`balancer.js`; Decision 17).
+- Buffer deletion for every provider recorded as an exception (Decision 16); spend/room rules moved into the Spend bullet.
+- Turn-end payload: `turn` (user-message count) as `turn_id`, `entry_id` for the reply after the last user entry or null; no transcript path; transcript bound only by `findTranscript`; missing transcript forwards the event.
+- No `limit-hit` for OpenRouter (Decision 18).
+- `/code`: exact login target, refuse once the key prompt is gone; key-only login ends the startup timeout.
+- Spend: "total may be incomplete" rule.
+- Model ids: `none` sentinel kept.
+- Validation additions for all of the above.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
