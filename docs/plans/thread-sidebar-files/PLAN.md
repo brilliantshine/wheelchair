@@ -66,7 +66,11 @@ Line numbers are from commit `a5f9d5f6`; see `MAP.md` and `docs/maps/thread-side
 A section with nothing in it is not shown. When both are empty the column shows nothing,
 as today. The old heading "This thread's files" is gone.
 
-The render signature (`viewer/pages/thread.js:1115`) also covers the `file` and `image`
+Sent to you skips cards with `retracted_at` and cards the chat hides as before an import
+(the same `sinceImport` test, `viewer/pages/thread.js:344,382`), so cards replaced by an
+import are not listed.
+
+The render signature (`viewer/pages/thread.js:1115`) also covers the import time and the `file` and `image`
 cards (id, title, file, name, size) and S3's document list, so new items appear on the next
 poll without reload.
 
@@ -90,13 +94,26 @@ PLAN order. No sizes.
   secret, like `/v1/uploads`). The machine finds the worktree from its own record of the
   thread's lead session (`this.sessions` entry with that `thread_id` and role `lead`; the
   newest if several, live or not). The hub never sends a path. `slug` must match
-  `^[a-z0-9][a-z0-9-]{0,79}$`, else 400. For each of the three names it `lstat`s
-  `<worktree>/docs/plans/<slug>/<FILE>` and includes it only if it is a regular file (not
-  a symlink). No lead record → `{ "documents": [] }`.
+  `^[a-z0-9][a-z0-9-]{0,79}$`, else 400. For each of the three names it includes it only if it passes
+  the same eligibility check S4 uses to serve it (one shared function on the machine), so
+  every listed document can be opened and downloaded. No lead record → `{ "documents": [] }`.
 - **Archived thread:** the hub runs `git -C <project> cat-file -e <branch>:docs/plans/<slug>/<FILE>`
   for each name (as `archivedDocument` reads them, `viewer/app/threads.js:251-265`) and lists
   those that succeed.
 - No slug → `{ "documents": [] }`.
+
+**Slug for a thread on another machine.** Today the hub finds a thread's slug by running Git
+on its own filesystem against `thread.worktree` (`viewer/app/views.js:71-105`, called from
+`viewer/app/chat.js:338`), which fails when the worktree is on another machine. Change
+`discoverSlug`: when the thread is not archived, has no slug, and `thread.worktree` does not
+exist on the hub's filesystem, ask the thread's machine with new
+`GET /v1/threads/<thread id>/plan-slug` (hub-authenticated). The machine runs the same
+`newPlanDirectories` logic (move that function to a module both `viewer/app/views.js` and
+`machine/service.js` can require, or copy it with a comment naming the other) against the
+lead worktree from its record (as above) and returns `{ "slug": <name or null> }`, null
+unless exactly one name. The hub saves it as `findSlug` does today. A machine that cannot
+be reached leaves the slug unset; the next poll tries again. Test with a fake machine and a
+worktree path that does not exist on the hub.
 
 The page fetches this list when the thread loads and again whenever the render signature's
 card part changes (a new card arrived) and at most once every 30 seconds otherwise while
@@ -109,9 +126,9 @@ now serves live threads too:
 
 - `FILE` must be one of `MAP.md`, `IDEA.md`, `PLAN.md`, else 404.
 - Live: the hub streams from the machine's new `GET /v1/threads/<thread id>/document?slug=<slug>&file=<FILE>`,
-  which resolves the worktree as in S3, refuses a symlink or non-regular file (404),
-  refuses a resolved real path outside `<worktree>/docs/plans/<slug>/` (404) and files over
-  2 MiB (413), and returns the bytes with `content-type: text/markdown; charset=utf-8` and
+  which resolves the worktree as in S3 and applies the eligibility check: the final
+  component is not a symlink and is a regular file, its real path is inside the real path of
+  `<worktree>/docs/plans/<slug>/`, and it is at most 2 MiB. Anything failing it is 404, and returns the bytes with `content-type: text/markdown; charset=utf-8` and
   `x-content-type-options: nosniff`.
 - Archived: as today (`git show`).
 - Without `download`: response stays `{ "content": "<text>" }` (JSON), as today.
@@ -136,10 +153,14 @@ New lead-only card kind `file`, shown to the user, not pinned.
 
 - `viewer/app/card.js`: add `file` to the kinds, `roles.file = ['lead']`, fields `path`
   (absolute) and `title` (text). Any other field is refused, as for every kind.
-- `machine/service.js`, in the `/v1/agent/cards` handler beside `copyImage`: `copyFile`
+- `machine/service.js`, in the `/v1/agent/cards` handler beside `copyImage`: before
+  reserving or copying anything it refuses a non-lead session (403, `only a lead may post a
+  file card`) and a card with fields other than `kind`, `path`, `title` (422). Then `copyFile`
   takes the same steps as `copyImage` (`machine/service.js:351-368`) without the extension
   check: absolute path, exists, regular file (following no symlink at the final component:
-  `lstat` must say regular file), at most 25 MB (`UPLOAD_LIMIT`), copied into the thread's
+  `lstat` must say regular file), at most 25 MB (`UPLOAD_LIMIT`), real path not inside the machine's real `stateDir`
+  (`machine/service.js:224`; that is where its secret, session records and uploads live;
+  422 `file is inside the wheelchair state folder`), copied into the thread's
   uploads with `reserveUpload`. Errors are 422 with plain sentences: `file path must be
   absolute`, `file does not exist`, `file is not a regular file`, `file exceeds 25 MB`. It
   passes on `{ path: <stored path>, title, name: <sanitized original basename>, size:
@@ -183,7 +204,10 @@ archived-document read work for projects that exist only on another machine (Def
 New or changed tests:
 
 - `machine/test/`: `copyFile` accepts a text and a PDF file, refuses a relative path, a
-  missing file, a directory, a symlink and a file over 25 MB; the document list and
+  missing file, a directory, a symlink, a file over 25 MB, a file inside the state folder,
+  a non-lead session and an extra field, leaving no upload behind for any refusal; the
+  plan-slug route returns the one new plan directory and null otherwise; a document over
+  2 MiB is neither listed nor served; the document list and
   document routes return existing names only, refuse a bad slug, a symlinked document and a
   path escaping the plan folder, and return `[]` with no lead record; the upload GET sends
   `content-disposition: attachment; filename="report.pdf"` for `3-report.pdf`.
@@ -193,7 +217,7 @@ New or changed tests:
 - `viewer/test/` browser spec: the sidebar shows `Project documents` with only the existing
   plan files and a Download link carrying `download=1`, then pictures; `Sent to you` lists a
   `file` card and an `image` card newest first with Download links; archived thread shows
-  `Removed when the thread was archived`; at 390px wide the `Files (N)` button opens the
+  `Removed when the thread was archived`; a retracted or pre-import `file` card is not listed; at 390px wide the `Files (N)` button opens the
   panel with both sections; the doc page has a Download link and loads a live document
   through the hub route.
 
@@ -234,6 +258,28 @@ npm --prefix viewer run test:browser
 | intent | minor | Widen `image` to any file instead of a new `file` kind | declined | `image` has a fixed contract (inline display, image extensions) used by existing leads and the chat card; a separate kind keeps both simple and is what the reviewer calls defensible |
 | intent | minor | `/documents` returns sizes nobody shows | upheld | S3 returns names only; archived check uses `cat-file -e` |
 | intent | minor | S5 filename header also changes user attachments; say so | upheld | S5 Serving says it is intended |
+| mechanics | blocking | Remote thread never gets a slug: discovery runs Git on the hub | upheld | S3 adds machine-side slug discovery through `/v1/threads/<id>/plan-slug` |
+| mechanics | blocking | Machine copies before the hub checks role and fields; refused cards leave uploads | downgraded → minor | The orphan copy is never listed and needs a session bypassing `card.js`'s own role check; cheap to close: S5 checks role and fields on the machine before copying |
+| mechanics | blocking | Lead could send the machine secret or session records | downgraded → minor | The lead already runs as the same user and can print any of these files into its reply, and the receiver is the owner; still cheap to refuse: S5 refuses sources inside the machine's state folder |
+| mechanics | blocking | Listing and serving disagree (big files, symlinked parents) | downgraded → minor | Would show a dead link, not build the wrong thing; S3/S4 share one eligibility check |
+| mechanics | blocking | Import-retracted file/image cards would still be listed | downgraded → minor | Edge of handoff import, a worker builds the rest correctly; S1 skips retracted and pre-import cards |
+
+### Round 2 — 2026-11-19
+
+**Lanes:** pending.
+
+**Changed since the last round:**
+- S3: `/documents` returns names only; archived existence check is `cat-file -e`.
+- S3: new machine-side slug discovery (`/v1/threads/<id>/plan-slug`) for threads whose worktree is not on the hub.
+- S3/S4: listing and serving share one eligibility check (no final symlink, regular file, real path inside the plan folder, at most 2 MiB).
+- S5: machine checks lead role and allowed fields before copying; refuses sources inside the machine's state folder.
+- S5: states that the filename header also applies to the user's own attachments, on purpose.
+- S1: Sent to you skips retracted and pre-import cards; signature covers the import time.
+- Deferred D5 added (archived threads from another machine); Non-goals points to it.
+- Validation list extended for the above.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
