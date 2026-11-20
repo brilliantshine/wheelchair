@@ -266,7 +266,7 @@ npm --prefix viewer run test:browser
 
 ### Round 2 — 2026-11-19
 
-**Lanes:** pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt; cross-family: yes.
 
 **Changed since the last round:**
 - S3: `/documents` returns names only; archived existence check is `cat-file -e`.
