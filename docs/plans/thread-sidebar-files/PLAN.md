@@ -12,15 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: Which files count as project documents?
-- **Context:** A plan folder holds MAP.md, IDEA.md, PLAN.md and graphs, and after a build
-  also COMPLETION.md, REMEDIATION-N.md and `reports/` (worker and verifier notes). The
-  sidebar today shows only map, idea, plan and pictures.
-- **Options:** A) map, idea, plan and pictures only; B) everything in the plan folder;
-  C) A, plus the rest folded under "More".
-- **Recommendation:** A — matches "starting with today's map, idea, plan"; the rest are
-  agents' working notes.
-
 ### Q2: Do files agents sent survive archiving the thread?
 - **Context:** Archive deletes the thread's uploads folder on its machine today
   (`machine/service.js:1181-1189`); map, idea and plan survive because they are committed.
@@ -43,10 +34,13 @@ get buried as this file grows.
 | 5 | Plan documents are read through the thread's machine, so remote threads work | IDEA constraint; uploads already stream through the machine (`viewer/app/routes.js:104-117,501-510`) | defaulted |
 | 6 | Each document gets its own open and download control; no "download all" | Simplest form of "easily downloadable" | defaulted |
 | 7 | On a phone, both sections live where the plan links sit today, under the thread header | No right column on phones (`viewer/pages/thread.js:260`) | defaulted |
+| 8 | Project documents are MAP.md, IDEA.md, PLAN.md and the thread's pictures (diagram cards and aside graphs); COMPLETION, REMEDIATION and reports/ are not listed | User's pick | user |
 
 ## Spec
 
 _Grows as decisions land._
+
+- Project documents section lists MAP.md, IDEA.md, PLAN.md (each only when it exists) and the thread's pictures, nothing else from the plan folder.
 
 ## Deferred
 
