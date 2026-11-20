@@ -107,3 +107,18 @@ Gaps (GPT verifier; Claude verifier passed): reach history line did not name the
 # fail 0
 exit 0
 ```
+
+### Remediation 2 (after verification attempt 2, 5728cab9)
+
+Gap (GPT verifier; Claude verifier passed): a thread with no stored title showed a blank or `undefined` name in `session leads`, the Allow card, Needs you and the `[thread ...]` marker. Fixed in task R2 (light / gpt-6-luna), see REMEDIATION-2.md:
+
+- viewer/app/peers.js:14 — `threadName`: title, else plan slug, else project folder, else thread id (the pages' order, viewer/pages/threads.js:39). Used at peers.js:50 (listing), viewer/app/cards.js:140-141 (`target_title`, stored title), cards.js:190 (sender marker).
+- Tests: app-lead-list.test.js (slug fallback), app-reach.test.js (project-folder fallback, no `undefined`), app-lead-messages.test.js (marker uses the fallback).
+
+`node --test viewer/test/*.test.js; echo "exit $?"` after the merge:
+```
+# tests 711
+# pass 711
+# fail 0
+exit 0
+```
