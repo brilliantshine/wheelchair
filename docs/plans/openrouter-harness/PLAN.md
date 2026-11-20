@@ -468,7 +468,7 @@ unrounded spend must be greater than zero and comes only from this run.
 | T6 | Hub: Pi transcript parser, report selector by `entry_id`, `sessions.js` passes `entry_id`; hub turn tests | `viewer/app/chat.js`, `viewer/app/sessions.js`, `viewer/test/app-openrouter-hub.test.js` | standard (gpt-6.1-terra) | wc-0679c9caaa67-worker-4 | `node --test viewer/test/*.test.js` | done |
 | T7 | Settings: key-only sign-in view; usage view spend line from `GET /v1/spend`; OpenRouter never out of room | `viewer/pages/settings.js`, `viewer/app/usage.js`, usage route in `viewer/app/routes.js`, `viewer/app/API.md`, `viewer/test/app-openrouter-{usage,signin}.test.js` | standard (claude-sonnet-5-5) | wc-0679c9caaa67-worker-6 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done |
 | T9 | Update the three browser specs that expect the pre-OpenRouter provider list (regression from T2) | `viewer/test/*.spec.js` | standard (gpt-6.1-terra) | wc-0679c9caaa67-worker-9 | `npm --prefix viewer run test:browser` | running |
-| T8 | Live smoke `test-support/smoke/pi-live.js` | `test-support/smoke/pi-live.js` | standard | | `node test-support/smoke/pi-live.js` | last |
+| T8 | Live smoke `test-support/smoke/pi-live.js` | `test-support/smoke/pi-live.js` (live model `deepseek/deepseek-v4.1-flash-1017`) | standard (gpt-6.1-terra) | wc-0679c9caaa67-worker-10 | `node test-support/smoke/pi-live.js` | running |
 
 ## Log
 - 2026-11-20 Ready check: hub and machine service answer; Codex preflight passes; Pi not installed and no OpenRouter key saved in Pi (`~/.pi/agent/auth.json` absent). Not ready.
