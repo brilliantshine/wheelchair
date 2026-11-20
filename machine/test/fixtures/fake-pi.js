@@ -14,7 +14,7 @@ const { pathToFileURL } = require('node:url');
   const ctx = { sessionManager: { getEntries: () => entries } };
   console.log('escape interrupt · ctrl+c/ctrl+d clear/exit · / commands\n──────\n      \n──────\nopenrouter/auto • medium');
   for await (const line of readline.createInterface({ input: process.stdin })) {
-    entries.push({ type: 'message', id: `u${entries.length}`, message: { role: 'user', content: line } });
+    entries.push({ type: 'message', id: `u${entries.length}`, message: { role: 'user', content: line === 'hello' ? 'sk-or-v1-0000synthetic0000' : line } });
     await handlers.tool_execution_start({ toolCallId: 'tool', toolName: 'read', args: { path: 'file' } }, ctx);
     await handlers.tool_execution_end({ toolCallId: 'tool', toolName: 'read', isError: false }, ctx);
     if (line === 'abort') { await handlers.agent_settled({ aborted: true }, ctx); continue; }

@@ -24,15 +24,19 @@ test('login status checks presence without returning credentials', () => {
   fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({ openrouter: { key: 'sk-or-v1-0000synthetic0000' } }));
   assert.equal(pi.loginStatus(dir).logged_in, true); assert.doesNotMatch(JSON.stringify(pi.loginStatus(dir)), /sk-or-/);
 });
-test('Pi binds by session id and redacts kept lines and pane', async () => {
+test('Pi binds by session id and redacts kept lines', async () => {
   const root = makeTempSync('pi-copy-'); const file = path.join(root, 'sessions', 'work', 'time_123.jsonl'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '{"text":"sk-or-v1-0000synthetic0000"}\n');
   const session = { name: 'wc-test-worker', thread_id: 'test', cli: 'pi', cli_session_id: '123' };
   assert.equal(await pi.findTranscript(session, root), file);
   const machine = Object.create(MachineService.prototype); machine.stateDir = root; machine.sessions = { [session.name]: session }; machine.persistSessions = async () => {};
   await machine.copyTranscript(session, file); assert.doesNotMatch(fs.readFileSync(session.transcript_path, 'utf8'), /sk-or-/);
-  machine.tmux = args => { assert.ok(args.includes('-J')); return { ok: true, stdout: 'sk-or-v1-0000synthetic0000' }; }; assert.equal(machine.pane(session.name), '[redacted key]');
 });
 test('orphaned Pi pane is marked lost after restart', async () => {
-  const machine = Object.create(MachineService.prototype); machine.sessions = {}; machine.liveTmux = () => new Set(['wc-abc-worker']); machine.persistSessions = async () => {}; machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? 'escape interrupt · ctrl+c/ctrl+d clear/exit' : '/tmp' });
-  await machine.recoverFromTmux(); assert.match(machine.sessions['wc-abc-worker'].end_reason, /Lost track of this Pi session/);
+  const machine = Object.create(MachineService.prototype); machine.sessions = {}; machine.liveTmux = () => new Set(['wc-abc-worker']); machine.persistSessions = async () => {}; machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? fs.readFileSync(path.join(__dirname, '../../docs/plans/openrouter-harness/samples/screens/agent-agent.txt'), 'utf8') : '/tmp' });
+  await machine.recoverFromTmux(); assert.equal(machine.sessions['wc-abc-worker'].end_reason, 'Lost track of this Pi session after a machine restart; restart it');
+});
+
+test('wrapped key is joined and redacted in agent pane', () => {
+  const machine = new MachineService({ stateDir: makeTempSync('pi-pane-') }); const name = 'wc-test-worker'; machine.sessions[name] = { name, cli: 'pi' };
+  machine.tmux = args => ({ ok: true, stdout: args.includes('-J') ? ['sk-or-v1-0000', 'synthetic0000'].join('') : ['sk-or-v1-0000', 'synthetic0000'].join('\n') }); assert.equal(machine.pane(name, true), '[redacted key]');
 });
