@@ -2,7 +2,10 @@
 slug: kimi-usage
 date: 2026-11-19
 implemented-by: "codex standard / gpt-6.1-terra (T1 machine, T2 hub); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5 (top)
+    checks: codex standard / gpt-6.1-terra
 ---
 
 # Completion Report — Kimi Code weekly usage on Settings → Usage
