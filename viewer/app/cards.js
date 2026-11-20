@@ -130,6 +130,16 @@ async function acceptCard(hub, payload) {
       if (Object.hasOwn(thread.sudo_index, checked.card.request_id)) throw appError(422, 'that sudo request already has a card');
     }
 
+    if (checked.card.kind === 'reach') {
+      if (thread.cards.some(item => item.kind === 'reach' && !item.answered && !item.retracted_at)) throw appError(422, 'a reach request is already open');
+      const peers = require('./peers.js');
+      const { target, reason } = await peers.reachTarget(hub, thread, checked.card.thread);
+      if (reason) throw appError(422, reason);
+      if (target.project === thread.project) throw appError(422, 'already in your project; no OK needed');
+      if (peers.linked(thread, target)) throw appError(422, 'already allowed');
+      Object.assign(checked.card, { target_title: target.title, target_project: target.project, title: `Let this lead talk to ${target.title}?` });
+    }
+
     let crossThread = null;
     if (checked.card.kind === 'message' && !thread.sessions.some((item) => item.name === checked.card.to) && session.role === 'lead') {
       const peers = require('./peers.js');
