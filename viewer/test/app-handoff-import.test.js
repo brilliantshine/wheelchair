@@ -143,7 +143,7 @@ test('raw route rejects oversized bodies before invoking import', async () => {
 });
 
 test('invalid file shapes fail before any machine handoff call', async () => {
-  for (const edit of [(f) => { f.thread.id = 'bad'; }, (f) => { f.version = 2; }, (f) => { f.unknown = true; }, (f) => { f.history = [{ who: 'bad' }]; }]) {
+  for (const edit of [(f) => { f.thread.id = 'bad'; }, (f) => { f.version = 3; }, (f) => { f.unknown = true; }, (f) => { f.history = [{ who: 'bad' }]; }]) {
     const invalid = structuredClone(file); edit(invalid);
     const f = await operationFixture();
     await assert.rejects(importHandoff(f.hub, Buffer.from(JSON.stringify(invalid)), 'hub', '/project'), { status: 422 });
@@ -298,4 +298,26 @@ test('repository and containment errors use the specified status and sentence', 
     const f = await operationFixture({ inspect: { ...base, ...change } });
     await assert.rejects(importHandoff(f.hub, bytes(), 'hub', '/project'), { status, message });
   }
+});
+
+test('imports both history versions and retries interrupted old history before export', async () => {
+  const { buildHandoffFile } = require('../app/handoff.js');
+  const ops = require('../app/handoff-ops.js');
+  for (const [version, who] of [[1, 'collin'], [2, 'user']]) {
+    const f = await operationFixture();
+    const input = { ...file, version, history: [{ at: file.exported_at, who, kind: 'message', text: 'hello' }] };
+    await importHandoff(f.hub, Buffer.from(JSON.stringify(input)), 'hub', '/project');
+    const saved = await f.hub.thread(file.thread.id);
+    assert.equal(saved.imported.history[0].who, 'user');
+    const exported = buildHandoffFile(saved, { head: file.head, stage: file.stage, repository: file.repository });
+    assert.equal(exported.version, 2); assert.equal(exported.history[0].who, 'user');
+  }
+  const f = await operationFixture();
+  const old = { ...file, history: [{ at: file.exported_at, who: 'collin', kind: 'message', text: 'interrupted' }] };
+  const op = ops.operation('create', file.head, old); op.claim_landed = true; op.claim_sha = f.sha;
+  await f.hub.save({ id: file.thread.id, title: 'Title', machine: 'hub', project: '/project', slug: 'title', sessions: [], cards: [], pinned: {}, handoff_op: op });
+  await importHandoff(f.hub, bytes(), 'hub', '/project');
+  const saved = await f.hub.thread(file.thread.id);
+  const exported = buildHandoffFile(saved, { head: file.head, stage: file.stage, repository: file.repository });
+  assert.equal(exported.version, 2); assert.equal(exported.history[0].who, 'user');
 });

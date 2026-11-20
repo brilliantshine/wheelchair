@@ -1,0 +1,3 @@
+{"form":"side-by-side","explanation":"Two ways to get Kimi's weekly reading when Kimi hasn't been used for a while. Leaves out how the reading is shown, which is the same either way.","columns":[
+{"title":"A. Only read while Kimi's key is fresh","items":["Reads usage during and up to 15 min after any Kimi use","Never touches Kimi's login","Idle: keeps the last reading; reset times still roll over","Misses Kimi use from another computer until Kimi runs here again"]},
+{"title":"B. Renew Kimi's key ourselves","items":["Fresh reading every 9 min, always","Writes new login keys into Kimi's files","Must copy Kimi's private locking exactly, or a clash signs you out","A Kimi update could break it silently"]}]}

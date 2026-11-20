@@ -391,6 +391,30 @@
     showLeadNames();
   }
 
+  // Enter to send in a thread's message box. Saved in this browser only, so a phone and a
+  // computer can differ; unset, it is on unless the device is touch-first (thread.js reads it).
+  function enterSendsNow() {
+    let v = null; try { v = localStorage.getItem('enter-sends'); } catch (e) { /* default below */ }
+    if (v === '1' || v === '0') return v === '1';
+    return !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+  function enterRow() {
+    const on = enterSendsNow();
+    const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': 'Enter to send' },
+      [[true, 'On'], [false, 'Off']].map(([value, text]) => h('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(on === value), text,
+        onclick: () => {
+          if (on === value) return;
+          try { localStorage.setItem('enter-sends', value ? '1' : '0'); } catch (e) { setNote('This browser would not save it', true); return; }
+          renderPanel();
+          setNote('Saved for this browser', false);
+        },
+      })));
+    return h('div', { class: 'row-line' },
+      h('div', { class: 'what' }, h('span', { text: 'Enter to send' }), h('span', { class: 'hint', text: (on ? 'Enter sends a message; Shift+Enter starts a new line.' : 'Enter starts a new line; send with the button.') + ' Applies to this browser only.' })),
+      group);
+  }
+
   // The Default project folder: typed, then saved with the button. A refusal shows under the
   // input and the typed value stays.
   function folderRow() {
@@ -534,6 +558,7 @@
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
+          enterRow(),
           folderRow())),
       h('section', { 'aria-labelledby': 'diagrams' },
         h('h2', { id: 'diagrams', text: 'Diagrams' }),
@@ -1303,7 +1328,7 @@
   function providerBar(provider, f) {
     const left = f.left;
     const lines = [];
-    if (f.all_paused) lines.push(h('p', { class: 'usage-line', text: 'All accounts paused' }));
+    if (f.all_paused) lines.push(h('p', { class: 'usage-line', text: (f.accounts || []).length ? 'All accounts paused' : 'No accounts added' }));
     else if (left === null) lines.push(h('p', { class: 'usage-line dim', text: 'no reading yet' }));
     if (f.amber && f.runs_out_at) lines.push(h('p', { class: 'usage-line amber', text: `Runs out ${dayPart(f.runs_out_at)}, before the first refill ${f.first_refill ? dayTime(f.first_refill) : ''}`.trim() }));
     if (f.below_notify) lines.push(h('p', { class: 'usage-line amber', text: 'Under your notify line for this week.' }));

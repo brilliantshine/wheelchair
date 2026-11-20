@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const { TryService } = require('./lib/try');
 const { startupWarning } = require('./lib/startup-warning');
 const { createProjectTools } = require('./lib/project-tools');
 const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
@@ -142,6 +143,8 @@ const PERMISSION_MODES = { auto: 'auto', bypass: 'bypassPermissions' };
 const CODEX_MODES = ['sandboxed', 'unrestricted'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const PREVIEW_TIMEOUT_MS = 60_000;
+// A session's in-memory copy hashes are dropped when it stops or ends, or after this long without new lines.
+const COPY_HASHES_IDLE_MS = 10 * 60_000;
 const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md'], worker: ['cards.md'], mapper: ['cards.md'], reviewer: [], verifier: [] };
 const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
 function composeRolePrompt(input) {
@@ -220,6 +223,7 @@ function requestJson(urlText, method, headers, payload, timeout = 5000) {
 class MachineService {
   constructor(options) {
     this.stateDir = path.resolve(options.stateDir || DEFAULT_STATE);
+    this.tryService = new TryService({ stateDir: this.stateDir, root: ROOT, projects: params => this.projects(params) });
     this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir });
     this.projectToolsLocks = new Map();
     this.configPath = path.join(this.stateDir, 'machine.json');
@@ -848,7 +852,7 @@ class MachineService {
     return spool;
   }
   async fatalKimi(session, reason) {
-    if (!session.end_reason) { session.end_reason = reason; await this.persistSessions(); }
+    if (!session.end_reason) { session.end_reason = reason; this.copyHashes?.delete(session.name); await this.persistSessions(); }
     return this.stopFatal(session);
   }
   async stopFatal(session) {
@@ -1075,6 +1079,7 @@ class MachineService {
     const session = this.managed(name);
     if (session.end_reason) return this.stopFatal(session);
     this.tmux(['kill-session', '-t', name]);
+    this.copyHashes?.delete(name);
     session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     this.screens.killSession(name);
@@ -1205,6 +1210,8 @@ class MachineService {
     return run;
   }
   async copyTranscriptNow(session, source) {
+    this.copyHashes ??= new Map();
+    for (const [name, entry] of this.copyHashes) if (Date.now() - entry.used > COPY_HASHES_IDLE_MS) this.copyHashes.delete(name);
     if (!source || (session.cli === 'kimi' && session.end_reason)) return { offset: 0, lines: [] };
     let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
     const current = session.transcript_source;
@@ -1221,12 +1228,34 @@ class MachineService {
     const target = path.join(this.stateDir, 'transcripts', session.thread_id, `${session.name}.jsonl`);
     let additions = [];
     if (lines.length) {
-      let copied = '';
-      try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      if (copied && !copied.endsWith('\n')) { copied = copied.slice(0, copied.lastIndexOf('\n') + 1); await fsp.truncate(target, Buffer.byteLength(copied)); }
-      const hashes = new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex')));
-      additions = lines.filter(line => { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (hashes.has(hash)) return false; hashes.add(hash); return true; });
-      if (additions.length) { await mkdir(path.dirname(target)); await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+      // Each session keeps its kept copy's line hashes in memory, valid while the kept
+      // file's inode and size match what this copier last left there.  Anything else
+      // (first copy, restart, a crash fragment, an outside edit) rebuilds from the file.
+      const now = Date.now();
+      let kept = this.copyHashes.get(session.name);
+      let keptStat = null;
+      try { keptStat = await fsp.stat(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (!kept || kept.target !== target || !keptStat || keptStat.ino !== kept.ino || keptStat.size !== kept.size) {
+        this.copyHashes.delete(session.name);
+        let copied = '';
+        try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        if (copied && !copied.endsWith('\n')) { copied = copied.slice(0, copied.lastIndexOf('\n') + 1); await fsp.truncate(target, Buffer.byteLength(copied)); }
+        kept = { target, ino: keptStat?.ino, size: Buffer.byteLength(copied), hashes: new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex'))) };
+      }
+      kept.used = now;
+      const fresh = new Map();
+      for (const line of lines) { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (!kept.hashes.has(hash) && !fresh.has(hash)) fresh.set(hash, line); }
+      additions = [...fresh.values()];
+      if (additions.length) {
+        await mkdir(path.dirname(target));
+        // Hashes join the set only once the append succeeded; a failed append may have
+        // left part of a write behind, so the next copy rebuilds from the file.
+        try { await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+        catch (error) { this.copyHashes.delete(session.name); throw error; }
+        for (const hash of fresh.keys()) kept.hashes.add(hash);
+        const after = await fsp.stat(target); kept.ino = after.ino; kept.size = after.size;
+      }
+      if (kept.ino !== undefined) this.copyHashes.set(session.name, kept);
     }
     const changed = session.transcript_path !== target || !current || current.path !== source || current.offset !== nextOffset || current.ino !== stat.ino;
     session.transcript_path = target;
@@ -1880,11 +1909,11 @@ class MachineService {
         const input = await bodyOf(request);
         if (!input || typeof input !== 'object' || Array.isArray(input)) die('invalid usage request');
         const { account, cli } = input;
-        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
+        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex', 'kimi'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
         const adapter = adapters[cli], dir = accountDir(input.dir, account);
         if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
         try {
-          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000 });
+          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000, ...(cli === 'kimi' && this.options.kimiUsageUrl ? { url: this.options.kimiUsageUrl } : {}) });
           const { reached, ...windows } = parsed;
           const reading = { account, at: new Date().toISOString(), ...windows };
           if (reached) reading.limited_until = limitedUntil(reading);
@@ -1924,6 +1953,12 @@ class MachineService {
         const type = IMAGE_TYPES[path.extname(name).toLowerCase()];
         response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': 'attachment' } : {}) });
         file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/try') {
+        await this.authorize(request, 'hub');
+        let input;
+        try { input = await bodyOf(request); } catch (error) { if (error.status === 400) error.status = 422; throw error; }
+        return send(response, 200, await this.tryService.handle(input));
       }
       if (request.method === 'POST' && url.pathname === '/v1/handoff') {
         await this.authorize(request, 'hub');

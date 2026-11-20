@@ -80,6 +80,19 @@ class MachineClient {
     return result.body;
   }
 
+  async tryCheckout(machineName, input) {
+    let timer;
+    try {
+      return await Promise.race([
+        this.call(machineName, '/v1/try', 'POST', input),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('machine timeout')), 5000); }),
+      ]);
+    } catch (error) {
+      if (error.status) throw error;
+      throw appError(502, `Can't reach ${machineName}.`);
+    } finally { clearTimeout(timer); }
+  }
+
   async passThrough(machineName, suffix, method, body, timeout = 5000) {
     const machine = await this.state.machine(machineName);
     const secret = await this.secret(machine);

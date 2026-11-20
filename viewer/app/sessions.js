@@ -473,8 +473,8 @@ async function enqueue(hub, thread, name, text, source = 'app', first = false, {
   target.queue ||= [];
   thread.queues ||= {};
   const message = { text, source, at: new Date().toISOString(), ...(quietTag ? { quiet: quietTag } : {}), ...(about ? { about } : {}) };
-  // The thread list orders threads by when Collin last wrote or pressed a card in them (see threads.js press), not by any activity.
-  if (source === 'collin') thread.collin_at = message.at;
+  // The thread list orders threads by when the user last wrote or pressed a card in them (see threads.js press), not by any activity.
+  if (source === 'user') thread.user_at = message.at;
   if (first) target.queue.unshift(message);
   else target.queue.push(message);
   thread.queues[name] = target.queue;
@@ -533,13 +533,13 @@ async function deliver(hub, thread, target, { midTurn = false } = {}) {
   return true;
 }
 
-// Collin's "Send now" on one of his queued messages: it goes to the lead at once instead of
+// The user's "Send now" on one of their queued messages: it goes to the lead at once instead of
 // at the turn's end. Both CLIs take input typed mid-turn and read it at their next step, so
 // the message joins the running turn rather than interrupting it.
 async function sendNow(hub, thread, at) {
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   if (!lead) throw appError(409, 'no live lead');
-  const index = (lead.queue || []).findIndex((item) => item.source === 'collin' && item.at === at);
+  const index = (lead.queue || []).findIndex((item) => item.source === 'user' && item.at === at);
   if (index < 0) throw appError(404, 'message is no longer queued');
   if (!lead.ready || held(lead)) throw appError(409, 'the lead cannot take a message right now');
   lead.queue.unshift(...lead.queue.splice(index, 1));

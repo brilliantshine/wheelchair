@@ -11,6 +11,7 @@
   const STAGE = {
     idea: 'Idea', planning: 'Planning', review: 'Review', building: 'Building', verifying: 'Verifying', done: 'Done',
   };
+  const QUICK_STAGE = { building: 'Building', verifying: 'Verifying', verified: 'Verified' };
   const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
   let threads = [];
   let notices = [];
@@ -35,15 +36,16 @@
     return Math.floor(s / 86400) + 'd ago';
   }
   // Your last message in the thread; agent activity does not move it. Older threads fall back to creation.
-  function stamp(t) { return Date.parse(t.collin_at || t.created_at) || 0; }
+  function stamp(t) { return Date.parse(t.user_at || t.created_at) || 0; }
   function nameOf(t) { return t.title || t.slug || base(t.project); }
 
   function row(t) {
     const li = el('li', 'row' + (t.id === currentId ? ' current' : ''));
     li.dataset.id = t.id;
     const top = el('div', 'top');
-    // A small fix has no plan and so no stage; its done card marks it Done.
-    const stage = stages[t.id] || (t.done_card ? 'Done' : undefined);
+    // A small fix has no plan and so no plan stage: its done card marks it Done, and until then
+    // its pinned progress line says Building, Verifying or Verified.
+    const stage = stages[t.id] || (t.done_card ? 'Done' : QUICK_STAGE[t.progress_stage]);
     const working = !t.archived && (t.sessions || []).some((s) => s.role === 'lead' && s.live && s.ready && s.turn_ended === false);
     const dot = el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : stage === 'Done' ? 'green' : stage ? 'blue' : '') + (working ? ' working' : ''));
     if (working) dot.title = 'Working';
@@ -71,7 +73,7 @@
     if (t.archived) top.appendChild(el('span', 'badge', 'archived'));
     li.appendChild(top);
     li.appendChild(el('div', 'sub', [
-      stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.collin_at || t.created_at),
+      stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.user_at || t.created_at),
     ].filter(Boolean).join(' · ')));
     return li;
   }

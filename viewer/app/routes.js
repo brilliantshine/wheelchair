@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 // Spec "Security" and "Views": browser and machine callback HTTP routes.
 const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
@@ -455,7 +457,13 @@ async function handleThreads(hub, request, response, url, bits, body) {
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
       const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
-      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
+      // Before that, its pinned progress line says where it is: building, verifying or verified.
+      // A planned thread (it has a slug) takes its stage from PLAN.md, even archived.
+      const progress = !summary.slug && pinned && pinned.progress;
+      const progressStage = !progress ? null
+        : (progress.stage || 'build') === 'build' ? 'building'
+          : progress.stage === 'verify' ? (progress.phase === 'clean' ? 'verified' : 'verifying') : null;
+      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, progress_stage: progressStage, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
     const revoke_notices = (await require('./handoff-ops.js').revokes(hub)).filter((entry) => entry.last_result === 'failed').map((entry) => ({ thread_id: entry.thread_id, sha: entry.sha, text: `Couldn't take back a cancelled pick-up on ${entry.repository || entry.project} ${entry.branch}: ${entry.error}` }));
     return send(response, 200, { threads, revoke_notices });
@@ -466,6 +474,48 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (!bits[1]) throw appError(404, 'route not found');
   const id = bits[1];
+  if (bits[2] === 'try' && bits.length === 3 && ['GET', 'POST'].includes(request.method)) {
+    const thread = await hub.thread(id);
+    const machines = await hub.state.machines();
+    const local = await hub.state.resolveMachine(machines, 'hub');
+    const target = await hub.state.resolveMachine(machines, thread.machine);
+    let ownRoot = false;
+    if (local && target && local === target) {
+      try {
+        const [project, root] = await Promise.all([fs.realpath(thread.project), fs.realpath(hub.root)]);
+        const relative = path.relative(project, root);
+        ownRoot = relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+      } catch { /* The machine reports invalid folders. */ }
+    }
+    const refusal = 'This folder runs wheelchair itself; switching it would swap the running app for untested code.';
+    const statusWithTitle = async (status) => ({
+      ...status,
+      ...(ownRoot ? { refused: refusal } : {}),
+      active_thread_title: (await hub.allThreads()).find((item) => item.id === status.active_thread_id)?.title ?? null,
+    });
+    const base = { thread_id: id, project: thread.project };
+    const call = async (input) => {
+      try { return await hub.client.tryCheckout(thread.machine, input); }
+      catch (error) {
+        if (error.status === 422 || error.status === 502) {
+          send(response, error.status, { error: error.message });
+          return null;
+        }
+        throw error;
+      }
+    };
+    if (request.method === 'GET' || (ownRoot && ['try', 'back'].includes(body.action))) {
+      const result = await call({ action: 'status', ...base });
+      if (!result) return;
+      const status = await statusWithTitle(result);
+      return send(response, 200, request.method === 'GET' ? status : { accepted: false, reason: refusal, status });
+    }
+    const input = { action: body.action, ...base };
+    for (const field of ['version', 'kept']) if (Object.hasOwn(body, field)) input[field] = body[field];
+    const answer = await call(input);
+    if (!answer) return;
+    return send(response, 200, { ...answer, status: await statusWithTitle(answer.status) });
+  }
   if (request.method === 'GET' && bits[2] === 'handoff' && bits.length === 3) return send(response, 200, await hub.handoffBanner(id));
   if (request.method === 'GET' && bits[2] === 'handoff-file' && bits.length === 3) {
     const file = await hub.handoffFile(id);
@@ -532,7 +582,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
       require('./handoff.js').refuseFrozen(hub, thread);
       const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
       if (!lead) throw appError(409, 'no live lead');
-      await hub.enqueue(thread, lead.name, String(body.text || ''), 'collin');
+      await hub.enqueue(thread, lead.name, String(body.text || ''), 'user');
     });
     return send(response, 202, { queued: true });
   }

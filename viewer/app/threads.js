@@ -76,7 +76,7 @@ async function createThread(hub, input) {
   const lead = await hub.withThread(thread.id, async () => {
     const current = await hub.thread(thread.id);
     const started = await startSession(hub, current, { role: 'lead', cli: current.cli, brief: '', tier: 'top' });
-    if (input.message) await hub.enqueue(current, started.name, input.message, 'collin');
+    if (input.message) await hub.enqueue(current, started.name, input.message, 'user');
     return started;
   });
   Object.assign(thread, await hub.thread(thread.id));
@@ -135,19 +135,17 @@ async function restartLead(hub, id) {
       if (inspected.worktree_exists === false) { thread.worktree = null; await hub.save(thread); }
     } catch {}
   }
-  const asUser = (value) => value === 'collin' ? 'user' : value;
-  const relabelCard = (card) => card && typeof card === 'object' && Object.hasOwn(card, 'resolved_by') ? { ...card, resolved_by: asUser(card.resolved_by) } : card;
   const state = {
     slug: thread.slug,
-    cards: thread.cards.filter((card) => !card.replaced).map(relabelCard),
-    pinned: Object.fromEntries(Object.entries(thread.pinned).map(([kind, card]) => [kind, relabelCard(card)])),
+    cards: thread.cards.filter((card) => !card.replaced),
+    pinned: thread.pinned,
     card_kinds: Object.fromEntries(thread.cards.map((card) => [card.id, card.kind])),
     ...(thread.context ? { stub_summary: thread.context } : {}),
     recent_messages: (thread.sent || [])
-      .filter((message) => message.source === 'collin' || message.source === 'card')
-      .slice(-20).map((message) => ({ ...message, source: asUser(message.source) })),
+      .filter((message) => message.source === 'user' || message.source === 'card')
+      .slice(-20),
   };
-  if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50).map((entry) => entry && typeof entry === 'object' && Object.hasOwn(entry, 'who') ? { ...entry, who: asUser(entry.who) } : entry) };
+  if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50) };
   const firstImport = thread.imported && !thread.sessions.some((session) => session.role === 'lead' && Object.hasOwn(session, 'first_message') && Date.parse(session.created_at) > Date.parse(thread.imported.at));
   const context = `[wc:context ${firstImport ? 'import' : 'restart'}] Thread state:\n${JSON.stringify(state)}`;
   if (thread.imported) {
@@ -243,7 +241,7 @@ async function archive(hub, id) {
   }
   thread.archived = true;
   for (const card of thread.cards) {
-    if (card.kind === 'merged' && !card.answered) require('./cards.js').resolveCard(card, 'collin', 'Archived');
+    if (card.kind === 'merged' && !card.answered) require('./cards.js').resolveCard(card, 'user', 'Archived');
   }
   for (const session of thread.sessions) { session.live = false; session.ended_at ||= new Date().toISOString(); }
   await hub.save(thread);
@@ -341,16 +339,16 @@ async function press(hub, id, cardId, input) {
     card.answered = true;
     card.answered_action = 'picked';
     card.answered_value = input.value;
-    thread.collin_at = new Date().toISOString();
+    thread.user_at = new Date().toISOString();
     await hub.enqueue(thread, lead.name, `[card ${card.id}] ${text}`, 'card');
     return { queued: true, text };
   }
-  // A press is Collin acting in the thread, so it moves the thread up the list like a message.
-  thread.collin_at = new Date().toISOString();
+  // A press is the user acting in the thread, so it moves the thread up the list like a message.
+  thread.user_at = new Date().toISOString();
   if (card.kind === 'merged') {
     if (input.action !== 'keep') throw appError(400, 'a merged card takes keep');
     if (card.answered) throw appError(422, 'card is already answered');
-    require('./cards.js').resolveCard(card, 'collin', 'Kept');
+    require('./cards.js').resolveCard(card, 'user', 'Kept');
     await hub.save(thread);
     return { queued: false };
   }
@@ -421,9 +419,9 @@ async function press(hub, id, cardId, input) {
     card.answered_action = input.action;
     card.answered_value = input.value ?? null;
   }
-  // A needs card Collin answers is closed by him, so it dims like a resolved one.
+  // A needs card the user answers is closed by them, so it dims like a resolved one.
   if (card.kind === 'needs') {
-    require('./cards.js').resolveCard(card, 'collin', input.action === 'keep-going' ? 'Keep going' : 'Talking it over');
+    require('./cards.js').resolveCard(card, 'user', input.action === 'keep-going' ? 'Keep going' : 'Talking it over');
   }
   if (card.kind === 'approval' && input.action === 'start-building' && thread.pinned.approval?.id === card.id) {
     delete thread.pinned.approval;
@@ -441,10 +439,10 @@ async function dismiss(hub, id, cardId) {
   require('./handoff.js').refuseFrozen(hub, thread);
   const found = require('./card.js').resolvable(thread, cardId);
   if (!found.ok) throw appError(found.reason === 'no such card in this thread' ? 404 : 422, found.reason);
-  require('./cards.js').resolveCard(found.card, 'collin', null);
-  thread.collin_at = new Date().toISOString();
+  require('./cards.js').resolveCard(found.card, 'user', null);
+  thread.user_at = new Date().toISOString();
   await hub.save(thread);
-  // A dismissal is Collin's answer, like a press: the live lead hears it so it stops waiting.
+  // A dismissal is the user's answer, like a press: the live lead hears it so it stops waiting.
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   if (lead) await hub.enqueue(thread, lead.name, `[card ${cardId}] dismissed`, 'card');
   return { ok: true };

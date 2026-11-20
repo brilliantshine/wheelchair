@@ -50,7 +50,7 @@ async function seedThreads(context) {
     question: 'Who does a stuck worker ask?',
     options: [
       { id: 'a', label: 'The lead', consequence: 'Fast' },
-      { id: 'b', label: 'Collin', consequence: 'Slow' },
+      { id: 'b', label: 'Sam', consequence: 'Slow' },
     ],
     leaning: 'a',
     why: 'Fewer interruptions.',
