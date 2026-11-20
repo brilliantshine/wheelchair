@@ -263,9 +263,15 @@ Claude/GPT behaviour or to how the page looks.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Kimi `usageProbe` adapter, `/v1/usage` accepts kimi with `kimiUsageUrl` test override, API.md, machine tests | `machine/adapters/kimi.js`, `machine/service.js` (/v1/usage block only), `machine/API.md`, `machine/test/kimi.test.js`, `machine/test/service.test.js` | codex standard / gpt-6.1-terra | wc-12789ba41816-worker | `bash machine/test/run.sh` | in progress |
+| T1 | Kimi `usageProbe` adapter, `/v1/usage` accepts kimi with `kimiUsageUrl` test override, API.md, machine tests | `machine/adapters/kimi.js`, `machine/service.js` (/v1/usage block only), `machine/API.md`, `machine/test/kimi.test.js`, `machine/test/service.test.js` | codex standard / gpt-6.1-terra | wc-12789ba41816-worker | `bash machine/test/run.sh` | done |
 | T2 | Idle poller includes kimi, no live-session skip for kimi, tries each eligible machine for kimi | `viewer/app/usage-poll.js`, `viewer/test/app-usage.test.js`, `viewer/test/helpers/app-machine.js` (if needed) | codex standard / gpt-6.1-terra | wc-12789ba41816-worker-2 | `node --test viewer/test/*.test.js` | in progress |
 
 ## Log
 
 - 2026-11-19 — Build started; T1 and T2 dispatched in parallel (disjoint ownership), both Standard.
+- 2026-11-19 — T1 accepted (band: scout): adapter usageProbe, /v1/usage accepts kimi, API.md, tests; machine/test/run.sh 446/446 re-run by sub-lead.
+- 2026-11-19 — Choice: T1, machine/adapters/kimi.js usageProbe: blank-string and non-finite used_ratio rejected (window becomes null).
+- 2026-11-19 — Choice: T1, machine/adapters/kimi.js usageProbe: oauth key regex re-checked; whitespace-only access_token and non-finite expires_at rejected as unreadable login.
+- 2026-11-19 — Choice: T1, machine/adapters/kimi.js usageProbe: blank reset_time gives a null window; used_ratio parsed with Number() (accepts exponent/hex strings).
+- 2026-11-19 — Choice: T1, machine/adapters/kimi.js usageProbe: default timeout 10000 when none given; no cap on response body size.
+- 2026-11-19 — Choice: T1, worker reported 1 choice; the scout listed 5 more from the diff, logged above.
