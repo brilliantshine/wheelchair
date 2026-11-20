@@ -130,11 +130,36 @@ async function acceptCard(hub, payload) {
       if (Object.hasOwn(thread.sudo_index, checked.card.request_id)) throw appError(422, 'that sudo request already has a card');
     }
 
+    if (checked.card.kind === 'reach') {
+      if (thread.cards.some(item => item.kind === 'reach' && !item.answered && !item.retracted_at)) throw appError(422, 'a reach request is already open');
+      const peers = require('./peers.js');
+      const { target, reason } = await peers.reachTarget(hub, thread, checked.card.thread);
+      if (reason) throw appError(422, reason);
+      if (target.project === thread.project) throw appError(422, 'already in your project; no OK needed');
+      if (peers.linked(thread, target)) throw appError(422, 'already allowed');
+      const targetName = peers.threadName(target);
+      Object.assign(checked.card, { target_title: targetName, target_project: target.project, title: `Let this lead talk to ${targetName}?` });
+    }
+
+    let crossThread = null;
+    if (checked.card.kind === 'message' && !thread.sessions.some((item) => item.name === checked.card.to) && session.role === 'lead') {
+      const peers = require('./peers.js');
+      const match = (await hub.state.allThreads()).find((item) => item.sessions?.some((s) => s.name === checked.card.to));
+      if (!match || !match.sessions.some((s) => s.name === checked.card.to && s.role === 'lead')) throw appError(422, 'no lead by that name');
+      const target = await hub.state.thread(match.id);
+      if (!(await peers.sameMachine(hub, await hub.machines(), thread.machine, target.machine))) throw appError(422, 'that lead is on another machine');
+      if (target.archived) throw appError(422, 'that thread is archived');
+      if (require('./handoff.js').frozen(hub, target)) throw appError(422, 'that thread was handed off');
+      if (target.project !== thread.project && !peers.linked(thread, target)) throw appError(422, 'that lead is in another project; ask the user with a reach card first');
+      if (!peers.latestLiveLead(target)) throw appError(422, 'that thread has no live lead right now');
+      crossThread = target.id;
+    }
+
     const stored = checked.card.kind === 'image' ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
     const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name });
     if (card.kind === 'sudo') thread.sudo_index[card.request_id] = card.id;
     if (card.kind === 'message' || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }
-    if (card.kind === 'message') {
+    if (card.kind === 'message' && !crossThread) {
       const target = hub.session(thread, card.to);
       target.queue ||= [];
       const message = { text: `[wc:from ${session.name}] ${card.asks === true ? `[question ${card.id}] ` : ''}${card.text}`, source: 'session', at: new Date().toISOString() };
@@ -155,20 +180,21 @@ async function acceptCard(hub, payload) {
       card.thread_id = child.id;
     }
     const targetName = card.kind === 'message'
-      ? card.to
+      ? (crossThread ? null : card.to)
       : card.kind === 'result'
         ? thread.sessions.find((item) => item.name === payload.session)?.started_by
         : null;
     if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
     // The card, queue and durable delivery id commit together. Delivery happens afterwards:
     // a dead target must not turn a valid card into a rejected one.
-    return { card, targetName };
+    return { card, targetName, ...(crossThread ? { targetThread: crossThread, senderTitle: require('./peers.js').threadName(thread) } : {}) };
   });
   if (result.duplicate) return result;
   if (result.targetName) {
     const thread = await hub.thread(payload.thread_id);
     await hub.deliver(thread, result.targetName);
   }
+  if (result.targetThread) return { card: result.card, targetThread: result.targetThread, senderTitle: result.senderTitle };
   return result.card;
 }
 

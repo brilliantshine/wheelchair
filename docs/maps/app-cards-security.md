@@ -3,6 +3,8 @@
 Checked against: `908b2bfd288550660416b4cc60339e71a3199b96` (origin/main)
 Files covered: `viewer/app/card.js`, `viewer/app/cards.js`, `viewer/app/chat.js`, `viewer/app/threads.js`, `viewer/app/sessions.js`, `viewer/app/routes.js`, `viewer/app/state.js`, `viewer/app/machine-client.js`, `viewer/app/API.md`, `viewer/pages/thread.js`, `viewer/pages/terminal.js`, `viewer/server.js`, `viewer/signin.html`, `machine/service.js`, `machine/API.md`, `machine/adapters/codex.js`, `install.sh`
 
+> Lead-chat paths rechecked against `1ee9ad1487d2a3f8b6ceda7f73cf7218657f52c2`; see [lead-chat/MAP.md](../plans/lead-chat/MAP.md). Other claims retain their historical checked commit.
+
 > Historical map: covered files changed since the checked-against commit. The launch, ledger, hooks and approval paths relevant to startup growth were rechecked in `docs/plans/startup-growth-warning/MAP.md` against `c81c022e30a5d3fa11aaf2ed9fbe28b903eab011`; other parts below have not been revalidated for that commit.
 
 ## Flow

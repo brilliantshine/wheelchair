@@ -23,7 +23,7 @@ Rules for every card:
 - The file holds one JSON object. `kind` must equal the kind on the command line.
 - Fields marked required must be present and non-empty. A field not listed for the kind
   is refused.
-- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient.) The app learns who you
+- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient; `reach` is the one card that carries a thread id, the other thread's.) The app learns who you
   are from your session token and which thread you belong to from its own record, and it
   assigns every card its `id`.
 - A card is accepted only for the thread your session belongs to.
@@ -48,6 +48,7 @@ Rules for every card:
 | `image` | yes | lead | no |
 | `stub` | yes | lead | no |
 | `sudo` | yes | lead | no |
+| `reach` | yes | lead | no |
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
 | `retract` | never | lead | no |
@@ -100,17 +101,18 @@ build folded label remains "Building D of T". Text wraps at phone widths.
 
 ### `message`
 
-To another session in the same thread.
+To another session in the same thread, or, from a lead only, to another thread's lead (see `lead.md`, Other leads on this machine).
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `to` | string | yes | The session's name, `wc-<thread-id>-<role>[-<n>]`. `wc.js session list` shows the names |
 | `text` | string | yes | The message |
 | `asks` | boolean | no | True when this message needs an answer |
-| `passes_on` | string | no | The id of the question message this passes on |
+| `passes_on` | string | no | The id of the question message this passes on; names only a question in your own thread |
 
 The app types it into that session when its turn ends, as one message starting
 `[wc:from <your session name>]`. The thread hides it and the receiver's whole reply.
+A message to another thread's lead goes to that thread's latest live lead and carries `[thread <id>: <title>]` (the sender's thread) after the `[wc:from <session>]` marker.
 A worker's question to the lead, a sub-lead's report of a surviving gap and the app's
 "your session died" notices all travel this way.
 
@@ -139,7 +141,7 @@ app uses to hide traffic the user did not write:
 | Starts with | Meaning | Thread shows |
 |---|---|---|
 | `[wc:role]` | Your role instruction (Codex sessions get it as their first message) | hidden, and your reply to it |
-| `[wc:from <session>]` | Another session's `message`, or a `result` delivered to you | hidden, and your reply to it |
+| `[wc:from <session>]`, then for another thread's lead `[thread <id>: <title>]` | Another session's `message`, or a `result` delivered to you | hidden, and your reply to it |
 | `[wc:context stub]` | Context for a lead that starts a stub thread: the stub's summary | hidden, your reply **shown**, with "Started from <parent thread>" in its place |
 | `[wc:context restart]` | Context for a lead that replaces a dead one: the plan and the cards so far | hidden, your reply **shown**, with "Lead restarted" in its place |
 | `[wc:context import]` | Context for a lead continuing an imported thread | hidden, your reply **shown**, with "Imported from a handoff" in its place |
@@ -162,6 +164,7 @@ The press forms, in full:
 - `[card <id>] start building`
 - `[card <id>] start thread about: <text>`
 - `[card <id>] keep going` and `[card <id>] talk about: <needs card title>`, on your `needs` card
+- `[card <id>] picked: allow`, `picked: don't allow` and `allow failed: <reason>`, on your `reach` card
 - `[card <id>] sudo ran: exit <n>`, `declined`, `sudo expired`, `sudo failed: <reason>` and `talk about: sudo request`, on your `sudo` card
 
 Two consequences for a lead. Nothing you write in the reply to a `[wc:from ...]` message
@@ -178,6 +181,7 @@ waiting for; for a reviewer or verifier it means the last turn ended with no rep
 node <root>/viewer/app/card.js <kind> <json-file>
 node <root>/viewer/app/wc.js git <fetch|commit|merge|cherry-pick|revert|push|pr> ...
 node <root>/viewer/app/wc.js session <start|stop|list> ...
+node <root>/viewer/app/wc.js session leads [--all-projects]
 ```
 
 A session's own `wc.js` and `card.js` calls go to its own machine service (default port

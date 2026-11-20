@@ -119,10 +119,10 @@ html:has(.shell.on-thread) { scroll-padding-top: calc(var(--nav-h) + var(--head-
 .card .md { margin-top: 8px; font-size: 13px; color: var(--ink-2); }
 
 .card-offer { border-width: 1px; }
-.card-question { background: var(--panel); border-color: var(--warn-line); }
-.card-question.is-answered { border-color: var(--line); }
-.card-question .eyebrow { color: var(--warn); }
-.card-question.is-answered .eyebrow { color: var(--dim); }
+.card-question, .card-reach { background: var(--panel); border-color: var(--warn-line); }
+.card-question.is-answered, .card-reach.is-answered { border-color: var(--line); }
+.card-question .eyebrow, .card-reach .eyebrow { color: var(--warn); }
+.card-question.is-answered .eyebrow, .card-reach.is-answered .eyebrow { color: var(--dim); }
 .opt { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; text-align: left;
   margin-top: 8px; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: transparent;
   color: var(--ink); height: auto; font-weight: 400; justify-content: flex-start; }
