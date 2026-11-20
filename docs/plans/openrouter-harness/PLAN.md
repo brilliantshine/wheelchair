@@ -43,6 +43,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | OpenRouter is not auto-added to the placement orders; the user adds it in Settings | Avoids silent pay-per-use spend | review-round-1 |
 | 14 | Sign-in status reads only Pi's `auth.json`; the `OPENROUTER_API_KEY` env route is dropped | Keeps the key out of every pane's environment | review-round-1 |
 | 15 | Supersedes 5: OpenRouter model ids follow one grammar, `^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$`, at most 128 characters in total | One rule, testable at the edges | review-round-1 |
+| 16 | Code submission for every provider deletes its tmux buffer after pasting (`paste-buffer -d`, `delete-buffer` on failure) | A deliberate exception to IDEA's "not changing the existing providers": it only removes leftover pasted secrets and changes nothing users see | review-round-2 |
+| 17 | An explicit provider request places on that provider even when it is outside the placement orders | Makes Decision 13 workable: OpenRouter is used only when asked or added to an order | review-round-2 |
 
 ## Spec
 
@@ -78,8 +80,14 @@ build task confirms them with a dry run and records any difference in the Log):
   `protocol/app/lead.md` and `protocol/app/sub-lead.md`.
 - OpenRouter is pay per use, so it is **not** added to `lead_order` or `worker_order`
   automatically: settings normalization marks it seen without appending it, and the user adds
-  it in Settings. Defaults keep it out of both orders. A `--provider openrouter` request
-  still places on it when an account is signed in.
+  it in Settings. Defaults keep it out of both orders.
+- An explicit `--provider openrouter` request (worker, reviewer, verifier) places on
+  OpenRouter even when it is not in `worker_order`: in `viewer/app/balancer.js`, when the
+  requested provider is absent from `order`, it is evaluated for availability for that request
+  only (the loop at `balancer.js:55-60`), so `available[provider]` is set and the existing
+  pick at `:66` applies. Placement without a provider request is unchanged. This applies to
+  any provider requested outside the order, which today never happens because every other
+  provider is in the default orders.
 - Roles: every role Kimi can fill (Decision 4). Counts as its own family (Decision 6).
 
 ### Model ids
@@ -164,10 +172,10 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   the percentage bars, e.g. "$0.42 today · $3.10 this week · $11.80 this month", with
   "no spend yet" when zero. The figures are the sum over every OpenRouter account on every
   reachable machine. If any machine with an OpenRouter account is unreachable, the line adds
-  "· <machine> not reachable" and never shows "no spend yet".
+  "· <machine> not reachable" and never shows "no spend yet". Missing or unparseable cost
+  fields count as zero. OpenRouter accounts never count as out of room.
 - Settings shows one line under OpenRouter: "Counts as its own family for cross-checked
-  reviews, even when it runs a Claude or GPT model." Missing or unparseable cost fields count as zero. OpenRouter
-  accounts never count as out of room.
+  reviews, even when it runs a Claude or GPT model."
 
 ### Keeping the key secret
 
@@ -246,7 +254,7 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 
 ### Round 2 — 2026-11-19
 
-**Lanes:** intent — (recorded at start); mechanics — (recorded at start); cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:**
 - OpenRouter not auto-added to placement orders (Decision 13).
@@ -262,6 +270,9 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Explicit `--provider openrouter` can't place: balancer only considers `worker_order` | upheld | Spec Identity: requested provider evaluated outside the order; Decision 17 |
+| intent | minor | `/code` buffer change touches existing providers without a recorded exception | upheld | Decision 16 |
+| intent | minor | Spend/room rules sat in the Settings-note bullet | upheld | Moved into the Spend bullet |
 
 ## Implementation Tasks
 
