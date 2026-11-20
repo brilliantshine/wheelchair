@@ -456,6 +456,14 @@ unrounded spend must be greater than zero and comes only from this run.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Dry run of Pi with OpenRouter; record facts; save samples | `docs/plans/openrouter-harness/samples/`, Log | sub-lead (claude-opus-5-5) | wc-0679c9caaa67-sub-lead | facts in Log; no key in samples | done |
+| T2 | Provider identity, model-id rule, defaults, placement (not auto-added; explicit request outside order), docs/enums | `codex/model.sh`, `codex/test/`, `viewer/app/{providers,settings,routes,balancer}.js`, `viewer/pages/{settings,threads,thread}.js` (not login view), `viewer/app/API.md`, `viewer/AGENTS.md`, `README.md`, `protocol/app/{lead,sub-lead}.md`, `viewer/test/app-openrouter-settings.test.js`, `viewer/test/app-balancer.test.js` | standard | | `bash codex/test/run.sh`; `node --test viewer/test/*.test.js` | not started |
+| T3 | Installer detects `pi` on PATH, adds its dir to the service PATH; fixtures | `install.sh`, `install/test/` | standard | | `bash install/test/run.sh` | not started (after T2: pins) |
+| T4 | Machine adapter `pi.js`, `hook.sh pi`, extension, turn events, transcript binding + redacted copy, pane redaction (`-J`), restart handling, fake Pi lifecycle tests (tricky) | `machine/adapters/{pi,index}.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `machine/service.js` (agent paths), `machine/test/pi*.test.js`, fake Pi fixtures | standard | | `bash machine/test/run.sh` | waiting on lead (dry-run differences) |
+| T5 | Pi sign-in (login pane, status, `/code` buffer deletion + exact target + stale refusal, redaction), Settings sign-in view; spend endpoint | `machine/service.js` (login, `/code`, spend), `machine/adapters/pi.js` (login part), `machine/API.md`, `machine/AGENTS.md`, `viewer/pages/settings.js` (login view), tests | standard | | `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | after T4 |
+| T6 | Hub: Pi transcript parser, report selector by `entry_id`, `sessions.js` passes `entry_id`; hub turn tests | `viewer/app/chat.js`, `viewer/app/sessions.js`, `viewer/test/app-openrouter-hub.test.js` | standard | | `node --test viewer/test/*.test.js` | after T2 |
+| T7 | Usage view spend line from the machine spend endpoint | `viewer/app/usage.js`, usage page code, `viewer/test/app-openrouter-usage.test.js` | standard | | `node --test viewer/test/*.test.js` | after T5, T6 |
+| T8 | Live smoke `test-support/smoke/pi-live.js` | `test-support/smoke/pi-live.js` | standard | | `node test-support/smoke/pi-live.js` | last |
 
 ## Log
 - 2026-11-20 Ready check: hub and machine service answer; Codex preflight passes; Pi not installed and no OpenRouter key saved in Pi (`~/.pi/agent/auth.json` absent). Not ready.
