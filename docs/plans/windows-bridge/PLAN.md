@@ -225,3 +225,5 @@ session end kills apps; archive deletes the thread's copies; `WHEELCHAIR_WINDOWS
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-19: The user will export the plan after review and import it on the Windows PC (WSL), so the build and its verification run there. `machine/test/windows-live.sh` is then a real check, not a skip: verifiers on that machine run it.
