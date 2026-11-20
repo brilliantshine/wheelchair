@@ -1,6 +1,6 @@
 ---
 slug: custom-backgrounds
-status: implementing
+status: verifying
 created: 2026-11-19
 adopted-from: user-supplied 1-plan.md and realism review copy
 ---
@@ -187,7 +187,7 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 | T4 | tricky: complete renderer/editor lifecycle and surfaces; T2 hit twice-failed incomplete gate | pages source excluding format helper, legacy doc; report T4.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | wc-7108adfdf9ea-worker-5 | JS syntax, diff check, focused both browsers | done (6/6 root baseline) |
 | T5 | tricky: complete representative browser checks | test/background*.spec.js, fixtures/background-browser, app-settings.spec.js section expectation only; report T5.md | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker-3 | private TMPDIR focused Chromium then integrated both browsers | partial integrated; superseded by T6/T7 |
 
-| T6 | tricky: native GIF timing and representative signed-in page/interaction coverage | test/background-rendering.spec.js, fixtures/background-browser; report T6.md | standard gpt/gpt-6.1-terra, xhigh (T5 completion effort step) | worker-8 stopped; sub-lead completed locally | isolated both-browser background-rendering.spec.js | implemented; final full-browser gate running |
+| T6 | tricky: native GIF timing and representative signed-in page/interaction coverage | test/background-rendering.spec.js, fixtures/background-browser; report T6.md | standard gpt/gpt-6.1-terra, xhigh (T5 completion effort step) | worker-8 stopped; sub-lead completed locally | isolated both-browser background-rendering.spec.js | done (local completion; final52/52) |
 | T7 | tricky: real delayed polling, timeouts/fallback and native decode lifecycle | test/background-network.spec.js and background-editor.spec.js; report T7.md | standard gpt/gpt-6.1-terra, xhigh (T5 completion effort step) | wc-7108adfdf9ea-worker-7 | isolated both-browser background-editor.spec.js background-network.spec.js | done (40/40 independent) |
 
 ## Log
@@ -243,3 +243,8 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 
 - 2026-11-20 — Full1122 run on69dc99eb:1056passed/34skipped/4failed/28did-not-run,14.9m. All custom-background cases passed. Four existing named failures (composer initial readiness, fixture port collision, Settings timing) reran10/10 after broad load ended, before source changes. Logs in reports/T6.md.
 - 2026-11-20 — Choice: initial thread readiness: controlled held first /chat reproduced enabled controls before data in both browsers. Lead authorized initial disabled attrs on textarea/Send/Attach, reused existing render enabling logic. No lifecycle/Settings logic change. Regression proves successful send after thread data while appearance metadata remains held. Final focused T6 ten cases pass19.7s, /tmp/backgrounds-composer-after-b4TH29/output.log. Fresh full1124 required after this small HTML correction; no overlapping broad suites.
+
+- 2026-11-20 — Clean full browser suite on068a4dc3:1090passed/34existing skips/0failures/0did-not-run (13.4m), /tmp/backgrounds-delivery-browser-bd0p9i/output.log. All custom background cases execute in Chromium and Firefox.
+- 2026-11-20 — Choice: final Settings category audit, inner surfaces: Models/Accounts/Usage/Writing sections and Project tools children need opaque backdrops outside their existing boxes; keep main/nav wrappers and gutters transparent. Added bounded all-seven-category check (one loop per browser); beforefix2/2 reproduces exposed provider headings, afterfix2/2 passes3.7s. Templates already opens a new draft and its list/editor are solid; corrected test expectation rather than adding a dead-branch rule. Final all52 appearance cases rerun after narrow CSS addition, no further broad repetition unless verification finds a concern.
+
+- 2026-11-20 — T6 accepted as sub-lead local completion (full self/tricky source/test review plus read-only bigger-scout findings): final all52 appearance cases pass in Chromium/Firefox (45.3s), /tmp/backgrounds-appearance-verified-oCRys4/output.log. Full1124 prior to only last conditional Settings CSS addition passed1090 with34existing skips, no failures/did-not-run. Relevant final Node routes/isolation23/23 pass. All implementation tasks complete; COMPLETION.md and exact reports/SCREENSHOTS.md recorded; status verifying for independent attempt1. Seven Accepted Risks unchanged, no new rare paths.

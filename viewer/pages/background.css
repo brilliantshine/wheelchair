@@ -22,3 +22,7 @@ html.background-active body { position: relative; isolation: isolate; }
 /* Status remains explicit in labels; translucent content panels would expose the image. */
 .background-active :is(.v-group.empty .stage-head, .bubble.human.pending, .sent-attachments.pending,
   .card-needs.is-answered, .card-merged.is-answered, .card-question.is-resolved, .card.is-retracted) { opacity: 1; }
+
+/* Settings groups are content panels; the main column and its gutters stay clear. */
+.background-active .settings :is(.models > section, .writing > section, .writing > .actions,
+  .writing > div:last-child, .pt > *, .accounts > #add-account) { background-color: var(--bg); }

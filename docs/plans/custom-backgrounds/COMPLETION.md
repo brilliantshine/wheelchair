@@ -7,7 +7,7 @@ verified-by: []
 
 # Completion Report — Custom image and GIF backgrounds
 
-DRAFT: Final full-browser validation follows the initial-composer HTML correction. This document will be completed before verifying status.
+Viewer-only implementation is complete. Independent verification evaluates the coverage and exact validation ordering below.
 
 ## Spec coverage
 
@@ -31,16 +31,17 @@ DRAFT: Final full-browser validation follows the initial-composer HTML correctio
 | Bounded format signatures/container payload checks; safe errors; native UI decoding | this run | viewer/pages/background-format.js:15; viewer/app/background.js:159 | background-completion.test.js:67 |
 | GIF block walk infinite loop/no-loop/finite/GIF87a promotion without frame changes | this run | viewer/pages/background-format.js:93 | background-completion.test.js:48; background.test.js:9 |
 | Shared browser/CommonJS helper; original bounded bytes vs normalized preview | this run | viewer/pages/background-format.js:1; viewer/pages/settings.js:1422 | background-completion.test.js; background-editor.spec.js |
-| Shared external renderer/css on ten signed-in shells; ownership routers | this run | viewer/pages/background.js:1; viewer/pages/background.css:1; viewer/AGENTS.md | background-rendering.spec.js:106 |
+| Shared external renderer/css on ten signed-in shells; ownership routers | this run | viewer/pages/background.js:1; viewer/pages/background.css:1; viewer/AGENTS.md | background-rendering.spec.js:107 |
 | Fixed centered-cover decorative layer; only image opacity; original reset painting | this run | viewer/pages/background.js:13; viewer/pages/background.css:1 | background-editor.spec.js:111; background-rendering.spec.js:162 |
-| Solid content surfaces, gutters,390/1280 widths, input/focus/scroll | this run | viewer/pages/background.css:5; viewer/pages/background.css:23; viewer/pages/settings.css | background-rendering.spec.js:106 |
-| Standalone graph exempt; framed documents skip initialization before requests | this run | viewer/index.html; viewer/pages/background.js:6 | background-rendering.spec.js:106; existing graph browser suite |
+| Solid content surfaces, gutters,390/1280 widths, input/focus/scroll | this run | viewer/pages/background.css:5; viewer/pages/background.css:24; viewer/pages/settings.css | background-rendering.spec.js:107 |
+| Standalone graph exempt; framed documents skip initialization before requests | this run | viewer/index.html; viewer/pages/background.js:6 | background-rendering.spec.js:107; existing graph browser suite |
 | Visible10-second single-flight polling/focus/pageshow;15-second abort retry | this run | viewer/pages/background.js:68 | background-network.spec.js:59 |
 | Revision-ordered metadata; preload with60-second timeout; retry unchanged image | this run | viewer/pages/background.js:44 | background-network.spec.js:39; background-network.spec.js:78 |
 | Separate last saved display/preview; Cancel failure fallback/reset/missing default | this run | viewer/pages/background.js:8; viewer/pages/background.js:88 | background-network.spec.js:138; background-network.spec.js:202 |
-| No repeated image/node assignment on opacity/poll; native GIF beyond finite stop | this run | viewer/pages/background.js:23; viewer/pages/background.js:54 | background-editor.spec.js:111; background-rendering.spec.js:106 |
+| No repeated image/node assignment on opacity/poll; native GIF beyond finite stop | this run | viewer/pages/background.js:23; viewer/pages/background.js:54 | background-editor.spec.js:111; background-rendering.spec.js:77 |
 | Narrow img-src blob CSP; no arbitrary HTML/styles from images | this run | viewer/server.js:45; viewer/pages/settings.js:1424 | routes.test.js; background-completion.test.js |
-| Test helper isolated state before appearance requests; sequential restart | this run | viewer/test/helpers/server.js; viewer/test/server-isolation.test.js | server-isolation.test.js; background.test.js:18 |
+| Isolated shared/helper and manual browser fixture state; sequential restart | this run | viewer/test/helpers/server.js:66; viewer/test/pages.spec.js:85; viewer/test/server-isolation.test.js | server-isolation.test.js; background.test.js:18 |
+| All seven Settings categories keep unboxed text/control groups opaque, with transparent outer gutters | this run | viewer/pages/background.css:28 | background-settings-surfaces.spec.js:25 (red before fix, green both browsers) |
 | Thread controls wait for own initial data; slow appearance metadata does not block Send | this run | viewer/pages/thread.html:50; viewer/pages/thread.js:1141 | background-rendering.spec.js:200 (red before fix, green both browsers) |
 | Existing auth, graph interactions and unrelated Settings behavior | pre-existing | viewer/server.js; viewer/pages/settings.js | pre-existing architecture; full Node and both-browser suite |
 
@@ -54,7 +55,9 @@ Bootstrap root ROUTER.md, machine/ROUTER.md, protocol/ROUTER.md, viewer/ROUTER.m
 
 ## Validation evidence
 
-Each invocation uses a distinct mktemp directory under /tmp, with private config/cache/runtime/tmp (runtime0700). Browser environment: TMPDIR=<root>/tmp XDG_CONFIG_HOME=<root>/config XDG_CACHE_HOME=<root>/cache XDG_RUNTIME_DIR=<root>/runtime GSETTINGS_BACKEND=memory PLAYWRIGHT_BROWSERS_PATH=/home/junjie/.cache/ms-playwright. No live viewer, installation or live model smoke suite used. Shared helpers isolate state; the audit additionally corrected the manual pages.spec.js server fixture, which could previously attempt default hub initialization. The agent did not inspect or alter actual user state.
+Every run uses a distinct private /tmp root. Browser setup creates config/cache/runtime/tmp and chmod0700 runtime, then sets TMPDIR=<root>/tmp XDG_CONFIG_HOME=<root>/config XDG_CACHE_HOME=<root>/cache XDG_RUNTIME_DIR=<root>/runtime GSETTINGS_BACKEND=memory PLAYWRIGHT_BROWSERS_PATH=/home/junjie/.cache/ms-playwright. No HOME/global Git changes, installation, live viewer or live model smoke suite. Shared helper state was isolated before feature tests; the later manual pages.spec.js fixture audit added its own temporary --state-dir before the final runs. That earlier fixture could attempt default hub initialization; actual user state was not inspected for diagnosis.
+
+Full required Node command (before only CSS/HTML/browser-test follow-ups):
 
 ```text
 TMPDIR=/tmp/backgrounds-resume-node-DDlhDq/tmp GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=init.defaultBranch GIT_CONFIG_VALUE_0=main node --test viewer/test/*.test.js
@@ -67,48 +70,47 @@ TMPDIR=/tmp/backgrounds-resume-node-DDlhDq/tmp GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY
 exit 0
 ```
 
-Full log /tmp/backgrounds-resume-node-DDlhDq/output.log.
+Log /tmp/backgrounds-resume-node-DDlhDq/output.log. The command-local Git setting is needed because existing fixture tests assume main; no persistent Git config changed.
+
+Full required browser command on068a4dc3, including the initial-composer fix and all50 then-existing appearance cases:
 
 ```text
-npm --prefix viewer run test:browser -- background-editor.spec.js background-network.spec.js --output=/tmp/backgrounds-resume-T7-tjKiXB/results
-Running 40 tests using 2 workers
-40 passed (58.7s)
+npm --prefix viewer run test:browser -- --output=/tmp/backgrounds-delivery-browser-bd0p9i/results
+Running 1124 tests using 2 workers
+34 skipped
+1090 passed (13.4m)
 exit 0
 ```
 
-Full log /tmp/backgrounds-resume-T7-tjKiXB/output.log. Screenshot paths: /tmp/backgrounds-resume-T7-tjKiXB/results/background-editor-represen-d1a88-re-appearance-after-removal-{chromium,firefox}/settings-{1280,390}.png. These private paths supersede the older colliding global artifacts.
+Log /tmp/backgrounds-delivery-browser-bd0p9i/output.log. Both Chromium and Firefox execute. No failures/did-not-run cases. The34 skipped cases are existing suite conditions; no appearance case was skipped.
 
-Superseded broad browser runs were intentionally interrupted during the readability/fixture audit. The initial1114-case run exposed a stale exact CSP expectation, now corrected without widening any additional directive. The final1122-case run includes all eight T6 checks and isolated manual fixtures; its final evidence follows when complete.
+After that full command, the only product addition is the conditional Settings inner-surface CSS rule at background.css:28. The new two-browser category loop covers previously untested active-image Settings sections; all existing appearance cases were rerun with it on final source:
 
 ```text
-npm --prefix viewer run test:browser -- background-rendering.spec.js --output=/tmp/backgrounds-T6-final-xxI2wj/results
-8 passed (26.6s)
-exit 0
-npm --prefix viewer run test:browser -- pages.spec.js --output=/tmp/backgrounds-pages-final-GJgVps/results
-20 passed (11.3s)
+npm --prefix viewer run test:browser -- background-editor.spec.js background-network.spec.js background-rendering.spec.js background-settings-surfaces.spec.js --output=/tmp/backgrounds-appearance-verified-oCRys4/results
+Running 52 tests using 2 workers
+52 passed (45.3s)
 exit 0
 ```
 
-Unique focused screenshot root /tmp/backgrounds-T6-final-xxI2wj/results. Firefox phone terminal /background-rendering-repre-6ab8a-and-solid-surfaces-at-390px-firefox/terminal-390.png (relative to that root) was inspected after the opaque terminal fix. Report T6.md lists matching Settings/thread/agents/terminal paths for both browsers and sizes.
+Log /tmp/backgrounds-appearance-verified-oCRys4/output.log. This is exact combined coverage, not a claim that a full1126 command ran after the final CSS rule. No JS/routes/persistence changed after the clean full command.
+
+Relevant Node follow-up after the HTML correction:
 
 ```text
-npm --prefix viewer run test:browser -- pages.spec.js -g 'document page response' --output=/tmp/backgrounds-pages-isolation-5aNrWM/results
-2 passed (5.9s)
+TMPDIR=/tmp/backgrounds-final-routes-nQy4kA/tmp node --test viewer/test/routes.test.js viewer/test/server-isolation.test.js
+# tests 23
+# pass 23
+# fail 0
+# duration_ms 5122.834859
 exit 0
 ```
 
-The strengthened case waits for actual background metadata and checks initialization under the temporary hub-state/backgrounds directory.
+Log /tmp/backgrounds-final-routes-nQy4kA/output.log. JS syntax checks for source/new tests and git diff --check exit0.
 
-```text
-npm --prefix viewer run test:browser -- app-send-now.spec.js app-threads.spec.js app-accounts.spec.js app-settings.spec.js -g 'regular composer send already|message box posts and shows queued|waiting lead pinned|editing a table cell saves' --output=/tmp/backgrounds-failures-isolated-Cd254t/results
-10 passed (11.6s)
-exit 0
-npm --prefix viewer run test:browser -- background-rendering.spec.js --output=/tmp/backgrounds-composer-after-b4TH29/results
-10 passed (19.7s)
-exit 0
-```
+Reports/T6.md preserves the earlier failed/superseded attempts, isolated reruns and expected red/green tests. Initial data readiness failed in both browsers before the three native disabled attributes, then passed while appearance metadata stayed held. The seven-category readability test failed before the final inner-surface rule, then passed in both browsers. The earlier broad failures are not reported as final passes.
 
-The controlled initial-thread-data check failed in both browsers before the three disabled attributes, then passed while appearance metadata remained pending. The earlier1122 run completed1056pass/34skip/4fail/28not-run (serial groups),14.9m; it is recorded as failing, not as final validation.
+Exact final screenshot paths are listed in reports/SCREENSHOTS.md. They include nonuniform100% Settings/thread/agents/terminal at1280/390 in both browsers and Project tools in both browsers. Earlier global /tmp/backgrounds-T5-artifacts paths are superseded because concurrent runs overwrote them.
 
 ## Known gaps / residual risks
 
@@ -116,4 +118,4 @@ The seven Accepted Risks in PLAN.md remain unchanged: external file loss/corrupt
 
 ## Remediation rounds
 
-None yet.
+None.
