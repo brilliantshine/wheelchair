@@ -87,7 +87,8 @@ or Antigravity changes.
 
 - Accept `cli: 'kimi'` alongside `claude` and `codex`; the account and directory checks are
   unchanged (`default-kimi` with `dir: null`, or `~/.wheelchair/accounts/<id>`).
-- Pass the probe a test-only URL override from `this.options.kimiUsageUrl` when set (the
+- Pass the probe a test-only URL override from `this.options.kimiUsageUrl` when set, here
+  and in the limit-hit probe below, (the
   service tests set it to a local fake server); in production the option is unset.
 - Reading construction, `reached` → `limited_until`, 200 and 502 handling stay as they are.
 - `agy` stays refused with 400.
@@ -97,14 +98,20 @@ or Antigravity changes.
 When a `limit-hit` event arrives for a session whose `cli` is `kimi`, the machine first
 calls the kimi `usageProbe` for that session's account home (the same `dir` the session
 runs with: `null` for `default-kimi`, else `~/.wheelchair/accounts/<id>` expanded), with a
-10-second timeout. The key is fresh at that moment because the session has just run. On
+5-second timeout, inline in the hook (a limit hit is rare, so briefly holding up other Kimi
+turn events on that machine is acceptable). The key is fresh at that moment because the session has just run. On
 success it builds the reading as the `/v1/usage` route does (account, `at`, windows,
 `limited_until` from `limitedUntil(reading)` when `reached`), stores it as the session's
 `last_reading`, and puts it on the forwarded event as `reading`, so the hub records it.
-The event's `limited_until` is then `limitedUntil(reading)` computed from that fresh
-reading even when no window is reached (`machine/lib/limits.js`: earliest future reset
-among windows ≥ 95%, else the earliest future reset). On any probe failure it falls back
-to today's `limitedUntil(current.last_reading)` (one hour). Claude, Codex and Antigravity
+The event's `limited_until` comes from a new helper `kimiLimitedUntil(reading)` in
+`machine/lib/limits.js`: among the reading's windows that are at least 95% used and have a
+future `resets_at`, the **latest** reset (so a spent week is not retried at the earlier
+five-hour reset); if there is no such window, one hour from now. The quota is the cause
+only when a window is that full; otherwise (for example short-term throttling) the one-hour
+wait stands, though the reading is still recorded. On a probe failure the helper is applied
+to `current.last_reading` instead (null gives one hour), so an old reading with a distant
+weekly reset never parks the session for days. `limitedUntil` itself and every other
+provider are unchanged. Claude, Codex and Antigravity
 limit hits are unchanged. Effect: a running Kimi session stopped by its limit resumes at
 Kimi's real reset time instead of retrying every hour.
 
@@ -157,7 +164,10 @@ Claude/GPT behaviour or to how the page looks.
   no token; the request carried `Authorization: Bearer <token>`; `agy` still 400.
 - Machine test for the limit hit: a kimi session's `limit-hit` with the fake usage server
   returning a 100% week resetting at time T forwards `limited_until` = T and a `reading`; with
-  the fake returning 500 it forwards the one-hour fallback. A malformed 2xx body containing a
+  a 40% week and 30% five-hour reading it forwards the one-hour fallback plus the `reading`;
+  with the fake returning 500 it forwards the one-hour fallback, also when the session's
+  `last_reading` holds a 40% week with a reset days away; with five-hour 96% resetting at T1
+  and week 100% resetting at T2 > T1 it forwards T2. Unit tests for `kimiLimitedUntil`. A malformed 2xx body containing a
   dummy secret string gives a 502 whose error text does not contain that string. A 302 from
   the fake gives a 502 and the fake sees exactly one request.
 - New hub tests in `viewer/test/app-usage.test.js`: an idle `kimi` account is polled with
@@ -176,6 +186,7 @@ Claude/GPT behaviour or to how the page looks.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A machine that drops its connection right after sending response headers can leave the hub's idle poll pending | Rare path (sub-second window); existing exposure for every provider's poll | review-round-2 |
 
 ## Review Rounds
 
@@ -205,6 +216,26 @@ Claude/GPT behaviour or to how the page looks.
 - Poller tries each eligible machine for Kimi until one reads (Decision 11).
 - "Hub and page" now states nothing changes there.
 - Validation: limit-hit, malformed-body, redirect, two-machine and stored-reading tests.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (claude) | major | Limit-hit used the earliest reset even with no window near full; a throttling 429 would park the account until a quota reset | upheld | Real reset only when a window is ≥ 95%; else one-hour fallback |
+| mechanics (gpt) | blocking | Five-hour 96% and week 100%: the earliest reset resumes the session while the week is still spent | downgraded (major) | It self-corrects after one wasted turn, but fixed: new `kimiLimitedUntil` takes the latest reset among full windows |
+| mechanics (gpt) | blocking | A machine dropping the connection after sending headers leaves the hub's poll pending forever, now across several machines | accepted-risk | Rare path: needs a drop inside the sub-second window of one response; same exposure already exists for Claude/GPT polling (machine-client.js:33) |
+| mechanics (gpt) | major | Failed limit-hit probe falls back to `limitedUntil(last_reading)`, which can pick a weekly reset days away | upheld | Fallback uses `kimiLimitedUntil(last_reading)`: only full windows count, else one hour |
+| mechanics (gpt) | major | A failed reading after a good one isn't shown on Settings | declined | IDEA asks for failures shown "the way it does for the other providers"; Claude/GPT also keep the old reading silently (usage-poll.js:44). Changing the page is a non-goal |
+| mechanics (gpt) | minor | Test URL override not specified for the limit-hit probe | upheld | Override applies to both |
+| intent (claude) | minor | Inline 10-second probe holds up other Kimi turn events | upheld | 5-second timeout, inline stated as acceptable |
+
+### Round 3 — 2026-11-19
+
+**Lanes:** claude (intent); not-claude (mechanics); cross-family: yes.
+
+**Changed since Round 2:**
+- "Machine: Kimi limit hit": new `kimiLimitedUntil` helper (latest reset among windows ≥ 95%, else one hour), used for the fresh reading and for `last_reading` on probe failure; 5-second inline probe.
+- Test URL override covers the limit-hit probe.
+- New validation cases for the helper and the limit-hit fallbacks.
+- One Accepted Risk added.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
