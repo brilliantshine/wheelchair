@@ -62,3 +62,10 @@ test('session output compact and full', async () => {
     assert.ok(received.every(body => !Object.hasOwn(body, 'full')));
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
+
+test('session leads sends the all-projects flag and prints the response', async () => {
+  const received = []; const server = http.createServer(async (req, res) => { let body = ''; for await (const chunk of req) body += chunk; received.push(JSON.parse(body)); res.end(JSON.stringify({ leads: [{ thread: 'a' }] })); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const run = args => new Promise((resolve, reject) => { const child = spawn(process.execPath, [cli, 'session', 'leads', ...args], { env: { ...process.env, WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}`, WHEELCHAIR_SESSION_TOKEN: 'test' } }); let out = ''; child.stdout.on('data', c => out += c); child.on('error', reject); child.on('close', code => code ? reject(new Error(`exit ${code}`)) : resolve(out)); });
+  try { assert.equal(await run([]), '{"leads":[{"thread":"a"}]}\n'); assert.equal(await run(['--all-projects']), '{"leads":[{"thread":"a"}]}\n'); assert.deepEqual(received, [{ action: 'leads', all_projects: false }, { action: 'leads', all_projects: true }]); } finally { await new Promise(resolve => server.close(resolve)); }
+});
