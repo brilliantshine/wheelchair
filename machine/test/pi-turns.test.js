@@ -122,3 +122,54 @@ test('missing Pi transcript does not hold a settled hook', async () => {
   await machine.hook('wc-test-worker', event);
   assert.equal(forwarded.length, 1); assert.equal(forwarded[0].type, 'turn-ended'); assert.equal(forwarded[0].entry_id, 'a1');
 });
+
+test('Pi redacts every returned turn string and offline tool event', () => {
+  const fs = require('node:fs'), path = require('node:path'), { spawnSync } = require('node:child_process');
+  const root = require('../../test-support/run-dir').makeTempSync('pi-tool-redact-');
+  const key = 'sk-or-v1-0000synthetic0000';
+  for (const event of [
+    pi.hookEvent({ hook_event_name: 'agent_settled', turn: key, entry_id: key }),
+    pi.hookEvent({ hook_event_name: 'agent_settled', stopReason: 'error', errorMessage: key }),
+  ]) { assert.doesNotMatch(JSON.stringify(event), /sk-or-/); assert.match(JSON.stringify(event), /\[redacted key\]/); }
+  const result = spawnSync(path.join(__dirname, '../hook.sh'), ['pi', 'wc-test-worker'], { input: JSON.stringify({ hook_event_name: 'tool_execution_start', toolCallId: 'tool', toolName: 'bash', args: { command: `echo ${key}` } }), encoding: 'utf8', env: { ...process.env, WHEELCHAIR_STATE_DIR: root, WHEELCHAIR_SESSION_TOKEN: 'synthetic' } });
+  assert.equal(result.status, 0);
+  const spool = path.join(root, 'spool/events'); const content = fs.readFileSync(path.join(spool, fs.readdirSync(spool)[0]), 'utf8');
+  assert.doesNotMatch(content, /sk-or-/); assert.match(content, /\[redacted key\]/);
+});
+
+for (const forced of [false, true]) test(`Pi startup download delivers queued first message${forced ? ' with early readiness and Enter retry' : ' after readiness'}`, async () => {
+  const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), { spawn } = require('node:child_process');
+  const { MachineService } = require('../service'), { makeTempSync } = require('../../test-support/run-dir');
+  const root = makeTempSync('pi-download-'), bin = path.join(root, 'bin'), commandFile = path.join(root, 'command'); fs.mkdirSync(bin);
+  fs.symlinkSync(path.join(__dirname, 'fixtures/fake-pi.js'), path.join(bin, 'pi'));
+  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nfor arg do :; done\nprintf %s "$arg" > '${commandFile}'\n`, { mode: 0o755 });
+  const old = { PATH: process.env.PATH, HOME: process.env.HOME, FAKE_PI_DOWNLOAD_MS: process.env.FAKE_PI_DOWNLOAD_MS };
+  process.env.PATH = `${bin}:${old.PATH}`; process.env.HOME = root; process.env.FAKE_PI_DOWNLOAD_MS = '700';
+  const machine = new MachineService({ stateDir: root }), events = []; let child, pane = '', buffer = '', pasted = '';
+  Object.assign(machine, { config: { host: '127.0.0.1', port: 0 }, sessions: {}, cancelledStarts: new Set(), startingNames: new Map(), startingBranches: new Set(), startingWorktrees: new Set() });
+  machine.createWorktree = async () => ({ worktree: root }); machine.persistSessions = async () => {}; machine.emitEvent = async event => events.push(event); machine.log = () => {};
+  machine.tmux = (args, options) => { if (args[0] === 'capture-pane') return { ok: true, stdout: pane }; if (args[0] === 'load-buffer') buffer = options.input; if (args[0] === 'paste-buffer') pasted = buffer; if (args[0] === 'send-keys' && args.at(-1) === 'Enter') { child.stdin.write(pasted + '\n'); pasted = ''; } return { ok: true, stdout: '' }; };
+  const server = http.createServer((req, res) => { let text = ''; req.on('data', chunk => { text += chunk; }); req.on('end', async () => { try { await machine.hook('wc-test-worker', JSON.parse(text)); res.writeHead(202).end(); } catch { res.writeHead(500).end(); } }); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); machine.config.port = server.address().port; fs.writeFileSync(path.join(root, 'machine.json'), JSON.stringify(machine.config));
+  if (forced) machine.readyText = () => true;
+  machine.checkReady = async session => { if (!child) { child = spawn('sh', ['-c', fs.readFileSync(commandFile, 'utf8')], { env: process.env, stdio: ['pipe', 'pipe', 'pipe'] }); child.stderr.resume(); await new Promise((resolve, reject) => { child.stdout.on('data', chunk => { pane += chunk.toString(); resolve(); }); child.once('error', reject); }); } return MachineService.prototype.checkReady.call(machine, session); };
+  try {
+    const session = await machine.start({ cli: 'pi', role: 'worker', thread_id: 'test', token: 'token', first_message: 'queued first message', role_prompt: 'rules' });
+    if (!forced) { assert.notEqual(session.status, 'ready'); for (let i = 0; i < 100 && session.status !== 'ready'; i++) { await new Promise(resolve => setTimeout(resolve, 20)); await machine.checkReady(machine.sessions[session.name]); } }
+    for (let i = 0; i < 250 && !events.some(e => e.type === 'turn-ended'); i++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.ok(events.some(e => e.type === 'turn-ended' && e.entry_id === 'a1'));
+    const transcript = path.join(root, '.pi', 'agent', 'sessions', 'fake-work', `2026-01-01_${machine.sessions[session.name].cli_session_id}.jsonl`);
+    const users = fs.readFileSync(transcript, 'utf8').trim().split('\n').map(JSON.parse).filter(row => row.message?.role === 'user');
+    assert.deepEqual(users.map(row => row.message.content), ['queued first message']);
+    const timeline = fs.readFileSync(`${transcript}.events`, 'utf8').trim().split('\n');
+    const done = timeline.indexOf('download-done'), message = timeline.indexOf('line:queued first message');
+    assert.ok(done >= 0 && message >= 0);
+    if (forced) assert.ok(message < done, `expected early message: ${timeline}`);
+    else { assert.ok(message > done, `expected message after download: ${timeline}`); assert.ok(!timeline.slice(0, done).includes('line:queued first message')); }
+  } finally {
+    if (machine.sessions['wc-test-worker']) machine.sessions['wc-test-worker'].status = 'stopped';
+    if (child) { child.stdin.end(); await new Promise(resolve => child.once('exit', resolve)); } await new Promise(resolve => server.close(resolve));
+    for (const [key, value] of Object.entries(old)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
+});

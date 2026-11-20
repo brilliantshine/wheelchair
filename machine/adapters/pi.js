@@ -7,9 +7,15 @@ const { classify } = require('../lib/steps');
 const c = require('./common');
 const home = dir => path.resolve(dir || path.join(os.homedir(), '.pi/agent'));
 const redact = value => String(value).replace(/sk-or-[A-Za-z0-9_-]+/g, '[redacted key]');
+function redactEvent(value) {
+  if (typeof value === 'string') return redact(value);
+  if (Array.isArray(value)) return value.map(redactEvent);
+  if (value && Object.getPrototypeOf(value) === Object.prototype) return Object.fromEntries(Object.entries(value).map(([key, item]) => [redact(key), redactEvent(item)]));
+  return value;
+}
 function resolveCli() { const result = spawnSync('sh', ['-c', 'command -v pi'], { encoding: 'utf8' }); return result.status === 0 ? result.stdout.trim() || null : null; }
 module.exports = {
-  provider: 'openrouter', resolveCli, redact,
+  provider: 'openrouter', resolveCli, redact, retryStartupEnter: true,
   loginEnv: dir => dir && path.resolve(dir) !== home(null) ? { PI_CODING_AGENT_DIR: dir } : {},
   loginCommand() { const cli = resolveCli(); if (!cli) throw new Error('Pi is not installed'); return [cli, 'auth', 'login', 'openrouter', '--api-key']; },
   loginPrompt: null, codeNeedsPrompt: true,
@@ -53,13 +59,20 @@ module.exports = {
     return { argv: [resolveCli(), '--provider', 'openrouter', '--model', input.model || 'openrouter/auto', '--session-id', session.cli_session_id, '--approve', '-e', extensionPath, '--append-system-prompt', context.promptPath, ...(input.role === 'reviewer' ? ['--tools', 'read,grep,find,ls'] : [])] };
   },
   firstMessage(input) { return input.brief || input.first_message || ''; },
-  readyText(session, pane) { return pane.includes('escape interrupt') && pane.includes('ctrl+c/ctrl+d clear/exit') && !pane.includes('Trust project folder?') && /─{3,}/.test(pane) && /•\s*\S+/.test(pane) && !/Working\s*[─-]/.test(pane); },
+  readyText(session, pane) {
+    const lines = pane.split(/\r?\n/);
+    if (lines.some((line, index) => {
+      const match = line.match(/^\s*(\S+) not found\. Downloading\.\.\.\s*$/);
+      return match && !lines.slice(index + 1).some(later => later.includes(`${match[1]} installed to `) || later.includes(`Failed to download ${match[1]}:`));
+    })) return false;
+    return pane.includes('escape interrupt') && pane.includes('ctrl+c/ctrl+d clear/exit') && !pane.includes('Trust project folder?') && /─{3,}/.test(pane) && /•\s*\S+/.test(pane) && !/Working\s*[─-]/.test(pane); },
   answerPrompts() { return null; }, promptText() { return false; }, usageFrom() { return null; },
   async findTranscript(session, dir) {
     const walk = async root => { for (const entry of await fs.promises.readdir(root, { withFileTypes: true }).catch(() => [])) { const file = path.join(root, entry.name); if (entry.isDirectory()) { const found = await walk(file); if (found) return found; } else if (entry.isFile() && entry.name.endsWith(`_${session.cli_session_id}.jsonl`)) return file; } return null; };
     return walk(path.join(home(dir), 'sessions'));
   },
   hookEvent(raw) {
+    const event = (() => {
     if (raw.hook_event_name === 'tool_execution_start' || raw.hook_event_name === 'tool_execution_end') {
       if (!raw.toolCallId) return null;
       if (raw.hook_event_name === 'tool_execution_end') return { type: 'step', phase: 'end', step: { id: raw.toolCallId, ended_at: new Date().toISOString(), failed: !!raw.isError, clean: true } };
@@ -69,5 +82,7 @@ module.exports = {
     if (raw.hook_event_name !== 'agent_settled') return null;
     if (!raw.aborted && (raw.stopReason === 'error' || raw.entry_id == null)) return { type: 'turn-failed', error: redact(raw.errorMessage || 'Pi ended the turn without a reply') };
     return { type: 'turn-ended', turn_id: raw.turn, entry_id: raw.entry_id ?? null, ...(raw.aborted ? { interrupted: true } : {}) };
+    })();
+    return redactEvent(event);
   },
 };

@@ -1062,6 +1062,24 @@ class MachineService {
     await this.emitEvent({ type: 'prompt-cleared', session: session.name, thread_id: session.thread_id });
     return true;
   }
+  retryPiStartupEnter(session) {
+    this.piStartupRetries ||= new Map();
+    const previous = this.piStartupRetries.get(session.name);
+    if (previous) clearTimeout(previous.timer);
+    const retry = { deadline: Date.now() + 60_000, lastEnter: 0 };
+    this.piStartupRetries.set(session.name, retry);
+    const check = () => {
+      if (this.piStartupRetries.get(session.name) !== retry) return;
+      if (this.sessions[session.name] !== session || session.status !== 'ready' || session.end_reason || Date.now() >= retry.deadline) { this.piStartupRetries.delete(session.name); return; }
+      let pane; try { pane = this.pane(session.name); } catch { this.piStartupRetries.delete(session.name); return; }
+      if (/Working\s*[─-]/.test(pane)) { this.piStartupRetries.delete(session.name); return; }
+      if (pane.includes('Startup is still in progress') && Date.now() - retry.lastEnter >= 1000) {
+        this.tmux(['send-keys', '-t', session.name, 'Enter']); retry.lastEnter = Date.now();
+      }
+      retry.timer = setTimeout(check, 500); retry.timer.unref();
+    };
+    retry.timer = setTimeout(check, 500); retry.timer.unref();
+  }
   async submit(name, text) {
     const session = this.managed(name);
     if (session.end_reason) throw Object.assign(new Error(session.end_reason), { status: 409 });
@@ -1072,6 +1090,7 @@ class MachineService {
     const pasted = this.tmux(['paste-buffer', '-p', '-b', buffer, '-t', name]);
     const enter = this.tmux(['send-keys', '-t', name, 'Enter']);
     if (!pasted.ok || !enter.ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 });
+    if (adapters[session.cli]?.retryStartupEnter) this.retryPiStartupEnter(session);
   }
   raw(name, keys) {
     const session = this.managed(name);
