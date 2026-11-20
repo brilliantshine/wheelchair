@@ -18,14 +18,34 @@ test('Pi login state waits for exit and redacts joined pane', () => {
 test('fake Pi completes a sign-in in an isolated tmux server without touching prefix sibling', async () => {
   const { spawnSync } = require('node:child_process'), http = require('node:http');
   const root = makeTempSync('pi-login-real-'), bin = path.join(root, 'bin'), socket = path.join(root, 'tmux.sock'); fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'pi'), `#!/bin/sh
-trap 'exit 130' INT
-stty -echo
-printf 'Enter OpenRouter API key: '
-IFS= read -r value
-stty echo
-mkdir -p "$PI_CODING_AGENT_DIR"
-if [ "$value" = 'sk-or-v1-0000synthetic0000' ]; then printf '{"openrouter":{}}' > "$PI_CODING_AGENT_DIR/auth.json"; printf '\\nSaved API key for OpenRouter. Credentials saved to %s\\n' "$PI_CODING_AGENT_DIR/auth.json"; fi
+  fs.writeFileSync(path.join(bin, 'pi'), `#!/usr/bin/env node
+const fs = require('node:fs'), path = require('node:path');
+process.stdout.write('Enter OpenRouter API key: ');
+process.stdin.setRawMode(true);
+process.stdin.resume();
+let value = '';
+process.stdin.on('data', bytes => {
+  for (const byte of bytes) {
+    if (byte === 3) {
+      process.stdin.setRawMode(false);
+      process.stdout.write('\\n^C\\n');
+      process.exit(130);
+    }
+    if (byte === 13 || byte === 10) {
+      process.stdin.setRawMode(false);
+      if (value === 'sk-or-v1-0000synthetic0000') {
+        const dir = process.env.PI_CODING_AGENT_DIR, auth = path.join(dir, 'auth.json');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(auth, '{"openrouter":{}}');
+        process.stdout.write('\\nSaved API key for OpenRouter. Credentials saved to ' + auth + '\\n');
+        process.exit(0);
+      }
+      process.stdout.write('\\nFailed to save API key for OpenRouter.\\n');
+      process.exit(1);
+    }
+    value += String.fromCharCode(byte);
+  }
+});
 `, { mode: 0o755 });
   const old = { HOME: process.env.HOME, PATH: process.env.PATH }; process.env.HOME = root; process.env.PATH = `${bin}:${old.PATH}`;
   const tmux = (args, options = {}) => { const r = spawnSync('tmux', ['-S', socket, ...args], { encoding: 'utf8', input: options.input }); return { ok: r.status === 0, stdout: r.stdout, stderr: r.stderr }; };
