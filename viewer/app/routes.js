@@ -332,12 +332,15 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (typeof body.default_project_folder !== 'string') throw appError(400, 'default_project_folder must be text');
         value.default_project_folder = validFolder(body.default_project_folder);
       }
+      if (body.user_name !== undefined) {
+        value.user_name = settings.validUserName(body.user_name);
+      }
       if (body.other_agents !== undefined) {
         if (!body.other_agents || typeof body.other_agents !== 'object' || Array.isArray(body.other_agents)) throw appError(400, 'other_agents must be an object');
         for (const role of ['reviewer', 'verifier', 'mapper', 'scout', 'scout-heavy']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));
@@ -457,7 +460,13 @@ async function handleThreads(hub, request, response, url, bits, body) {
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
       const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
-      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
+      // Before that, its pinned progress line says where it is: building, verifying or verified.
+      // A planned thread (it has a slug) takes its stage from PLAN.md, even archived.
+      const progress = !summary.slug && pinned && pinned.progress;
+      const progressStage = !progress ? null
+        : (progress.stage || 'build') === 'build' ? 'building'
+          : progress.stage === 'verify' ? (progress.phase === 'clean' ? 'verified' : 'verifying') : null;
+      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, progress_stage: progressStage, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
     const revoke_notices = (await require('./handoff-ops.js').revokes(hub)).filter((entry) => entry.last_result === 'failed').map((entry) => ({ thread_id: entry.thread_id, sha: entry.sha, text: `Couldn't take back a cancelled pick-up on ${entry.repository || entry.project} ${entry.branch}: ${entry.error}` }));
     return send(response, 200, { threads, revoke_notices });
@@ -564,8 +573,16 @@ async function handleThreads(hub, request, response, url, bits, body) {
     return send(response, 200, await hub.chat(id));
   }
   if (request.method === 'GET' && bits[2] === 'doc') {
-    const content = await hub.archivedDocument(id, url.searchParams.get('file'));
-    return send(response, 200, { content });
+    const file = url.searchParams.get('file');
+    const thread = await hub.thread(id);
+    const documents = require('./documents.js');
+    if (!documents.validSlug(thread.slug) || !documents.FILES.includes(file)) throw appError(404, 'document not found');
+    const content = thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
+    if (url.searchParams.get('download') === '1') {
+      response.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8', 'x-content-type-options': 'nosniff', 'content-disposition': `attachment; filename="${thread.slug}-${file}"`, 'cache-control': 'no-store' });
+      return response.end(content);
+    }
+    return send(response, 200, { content: content.toString('utf8') });
   }
   if (request.method === 'GET' && bits[2] === 'graph') {
     return send(response, 200, await require('./threads.js').archivedGraph(hub, id, url.searchParams.get('file')));

@@ -108,15 +108,29 @@ for (const [label, size] of SIZES) {
       await back();
     });
 
-    test('an archived thread has MAP/IDEA/PLAN links and no #docview panel', async ({ page }) => {
+    test('an archived thread lists only the documents on its branch and no #docview panel', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
-      await ctx.patch(made.id, (x) => { x.archived = true; x.branch = 'feature'; x.slug = 'dark'; });
+      const repo = await planRepo('dark', ['PLAN.md', 'IDEA.md']);
+      git(repo, 'add', '.');
+      git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'plan');
+      git(repo, 'branch', '-M', 'feature');
+      await ctx.patch(made.id, (x) => { x.archived = true; x.branch = 'feature'; x.slug = 'dark'; x.project = repo; });
       await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
-      for (const f of ['MAP', 'IDEA', 'PLAN']) {
-        await expect(page.locator('#files a', { hasText: f })).toHaveAttribute(
+      for (const f of ['IDEA', 'PLAN']) {
+        await expect(page.locator('#files a', { hasText: f + '.md' }).first()).toHaveAttribute(
           'href', `/wheelchair/app/doc?thread=${made.id}&file=${f}.md`);
       }
+      await expect(page.locator('#files a', { hasText: 'MAP.md' })).toHaveCount(0);
       await expect(page.locator('#docview')).toHaveCount(0);
+    });
+
+    test('the page has a Download link and reads a live document through the hub route', async ({ page }) => {
+      const made = await liveThread();
+      const hit = page.waitForResponse((r) => r.url().includes(`/threads/${made.id}/doc?file=PLAN.md`) && !r.url().includes('download'));
+      await page.goto(docUrl(made.id, 'PLAN.md'));
+      expect((await hit).status()).toBe(200);
+      await expect(page.locator('#content h1')).toHaveText('Dark mode plan');
+      await expect(page.getByRole('link', { name: 'Download' })).toHaveAttribute('href', `/wheelchair/api/threads/${made.id}/doc?file=PLAN.md&download=1`);
     });
   });
 }

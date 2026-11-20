@@ -75,3 +75,5 @@ lead" or no template, the rule stands as written above.
 Your turn ending is not the signal that you are finished. The `result` card is. The
 sub-lead will re-run your validation and read your diff: a finished worker is a claim,
 not a fact.
+
+A document meant for the user goes to the lead with a `message` naming its path.

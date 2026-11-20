@@ -370,6 +370,32 @@ class MachineService {
       return { ...input, path: target };
     });
   }
+  async copyFile(agent, input) {
+    return this.withThreadLock(agent.thread_id, async () => {
+      const current = this.sessions[agent.name];
+      if (!current || current.archived_pending || current.status === 'stopped') throw Object.assign(new Error('session is not writable'), { status: 409 });
+      if (typeof input.path !== 'string' || !path.isAbsolute(input.path)) throw Object.assign(new Error('file path must be absolute'), { status: 422 });
+      let stat;
+      try { stat = await fsp.lstat(input.path); } catch { throw Object.assign(new Error('file does not exist'), { status: 422 }); }
+      if (!stat.isFile()) throw Object.assign(new Error('file is not a regular file'), { status: 422 });
+      if (stat.size > UPLOAD_LIMIT) throw Object.assign(new Error('file exceeds 25 MB'), { status: 422 });
+      const real = await fsp.realpath(input.path);
+      const state = await fsp.realpath(this.stateDir);
+      const worktrees = await fsp.realpath(path.join(this.stateDir, 'worktrees')).catch(error => {
+        if (error.code === 'ENOENT') return path.join(state, 'worktrees');
+        throw error;
+      });
+      const inside = (base, target) => { const relative = path.relative(base, target); return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)); };
+      if (inside(state, real) && !inside(worktrees, real)) throw Object.assign(new Error('file is inside the wheelchair state folder'), { status: 422 });
+      const name = uploadName(path.basename(input.path));
+      const { target, file } = await this.reserveUpload(agent.thread_id, path.basename(input.path));
+      try {
+        await pipeline(fs.createReadStream(input.path), file.createWriteStream());
+        await fsp.rename(`${target}.part`, target);
+      } catch (error) { await file.close().catch(() => {}); await fsp.unlink(`${target}.part`).catch(() => {}); throw error; }
+      return { kind: 'file', path: target, title: input.title, name, size: stat.size };
+    });
+  }
   async init() {
     await mkdir(this.stateDir);
     const toolsDir = path.join(this.stateDir, 'project-tools');
@@ -1958,11 +1984,11 @@ class MachineService {
         const input = await bodyOf(request);
         if (!input || typeof input !== 'object' || Array.isArray(input)) die('invalid usage request');
         const { account, cli } = input;
-        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
+        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex', 'kimi'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
         const adapter = adapters[cli], dir = accountDir(input.dir, account);
         if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
         try {
-          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000 });
+          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000, ...(cli === 'kimi' && this.options.kimiUsageUrl ? { url: this.options.kimiUsageUrl } : {}) });
           const { reached, ...windows } = parsed;
           const reading = { account, at: new Date().toISOString(), ...windows };
           if (reached) reading.limited_until = limitedUntil(reading);
@@ -2009,7 +2035,7 @@ class MachineService {
         const target = path.join(this.stateDir, 'uploads', id, name);
         let file; try { file = await fsp.open(target, 'r'); } catch (error) { if (error.code === 'ENOENT') throw Object.assign(new Error('not found'), { status: 404 }); throw error; }
         const type = IMAGE_TYPES[path.extname(name).toLowerCase()];
-        response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': 'attachment' } : {}) });
+        response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': `attachment; filename="${name.replace(/^\d+-/, '')}"` } : {}) });
         file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
       }
       if (request.method === 'POST' && url.pathname === '/v1/try') {
@@ -2049,7 +2075,7 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/cards') {
         const agent = await this.authorize(request, 'agent');
         let input = await bodyOf(request);
-        delete input.warnings;
+        if (input.kind !== 'file') delete input.warnings;
         if (input.kind === 'approval' && agent.role === 'lead') {
           const warnings = [];
           if (typeof this.startupWarning === 'string') warnings.push(this.startupWarning);
@@ -2061,6 +2087,13 @@ class MachineService {
           this.refreshStartupWarning();
         }
         if (input.kind === 'image') input = await this.copyImage(agent, input);
+        if (input.kind === 'file') {
+          if (agent.role !== 'lead') throw Object.assign(new Error('only a lead may post a file card'), { status: 403 });
+          const extra = Object.keys(input).find(key => !['kind', 'path', 'title'].includes(key));
+          if (extra) throw Object.assign(new Error(`field ${extra} is not allowed`), { status: 422 });
+          if (typeof input.title !== 'string' || !input.title.trim()) throw Object.assign(new Error('title is required'), { status: 422 });
+          input = await this.copyFile(agent, input);
+        }
         if (input.kind === 'sudo') {
           if (agent.role !== 'lead') throw Object.assign(new Error('only a lead may post a sudo card'), { status: 403 });
           try { input = { ...input, ...await this.sudo.register(input) }; }

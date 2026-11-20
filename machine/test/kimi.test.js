@@ -506,3 +506,32 @@ test('config comments preserve hashes and escapes inside quoted values', () => {
   fs.writeFileSync(file, '[providers."managed:kimi-code".oauth]\nkey = "oauth/x" # note\noauth_host = "https://auth.kimi.ai/\\\"#device" # comment\n');
   assert.deepEqual(kimi.readConfig(dir), { key: 'oauth/x', oauth_host: 'https://auth.kimi.ai/"#device' });
 });
+
+test('usage probe reads without changing Kimi files', async () => {
+  const http = require('node:http'), dir = fixture(), credential = path.join(dir, 'credentials/dummy.json');
+  const token = 'dummy-test-token', requests = []; let status = 200, payload = '';
+  const server = http.createServer((req, res) => { requests.push({ method: req.method, path: req.url, headers: req.headers }); res.writeHead(status); res.end(payload); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${server.address().port}/coding/v1/usages`;
+  const files = [path.join(dir, 'config.toml'), credential];
+  const entries = root => fs.readdirSync(root, { withFileTypes: true }).flatMap(e => [path.relative(dir, path.join(root, e.name)), ...(e.isDirectory() ? entries(path.join(root, e.name)) : [])]).sort();
+  const probe = async () => {
+    const before = files.map(f => [fs.readFileSync(f), fs.statSync(f).mtimeMs]), names = entries(dir);
+    try { return await kimi.usageProbe(dir, { timeout: 1000, url }); }
+    finally { assert.deepEqual(files.map(f => [fs.readFileSync(f), fs.statSync(f).mtimeMs]), before); assert.deepEqual(entries(dir), names); }
+  };
+  const credentials = expires_at => fs.writeFileSync(credential, JSON.stringify({ access_token: token, expires_at }));
+  try {
+    credentials(Date.now() / 1000 + 600);
+    payload = JSON.stringify({ usages: { limit_7d: { used_ratio: '1.4', reset_time: '2030-01-01T00:00:00Z' }, limit_5h: { used_ratio: 0.25, reset_time: '2030-01-02T00:00:00Z' } } });
+    assert.deepEqual(await probe(), { week: { used: 100, resets_at: '2030-01-01T00:00:00.000Z' }, five_hour: { used: 25, resets_at: '2030-01-02T00:00:00.000Z' }, reached: true });
+    assert.equal(requests[0].method, 'GET'); assert.equal(requests[0].path, '/coding/v1/usages'); assert.equal(requests[0].headers.authorization, `Bearer ${token}`); assert.equal(requests[0].headers.accept, 'application/json');
+    payload = JSON.stringify({ usages: { limit_5h: { used_ratio: '0.5', reset_time: '2030-01-02' } } });
+    assert.deepEqual(await probe(), { week: null, five_hour: { used: 50, resets_at: '2030-01-02T00:00:00.000Z' } });
+    payload = JSON.stringify({ usages: { limit_7d: { used_ratio: 'bad', reset_time: '2030-01-01' }, limit_5h: { used_ratio: 1, reset_time: '' } } });
+    await assert.rejects(probe(), { message: 'no usage windows' });
+    status = 401; await assert.rejects(probe(), { message: 'Kimi usage request failed (HTTP 401)' });
+    credentials(Date.now() / 1000 - 1); const count = requests.length;
+    await assert.rejects(probe(), /login key has expired/); assert.equal(requests.length, count);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});

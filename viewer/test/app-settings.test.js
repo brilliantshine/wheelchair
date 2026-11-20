@@ -418,3 +418,23 @@ test('model ID limits protect near-limit scout role layers', async () => {
     assert.ok(subLayers.length <= 12000);
   });
 });
+
+test('your name is saved, validated, and told to every agent only when set', async () => {
+  const defaults = settings.defaults();
+  for (const role of settings.ROLES) assert.doesNotMatch(settings.roleLayers(defaults, role).text, /The user’s name is/);
+  const named = { ...defaults, user_name: 'Sam' };
+  for (const role of settings.ROLES) assert.ok(settings.roleLayers(named, role).text.includes('The user’s name is Sam. Where these rules say "the user", that is Sam; call them by it.'));
+  assert.equal(settings.normalize({ user_name: 'x\ny' }).user_name, '');
+  assert.equal(settings.normalize({ user_name: 7 }).user_name, '');
+  await withContext(async (context) => {
+    assert.equal((await api(context, '/settings')).body.user_name, '');
+    const put = (user_name) => api(context, '/settings/preferences', { method: 'PUT', body: { user_name } });
+    assert.equal((await put('  Sam  ')).body.user_name, 'Sam');
+    assert.equal((await api(context, '/settings')).body.user_name, 'Sam');
+    assert.equal((await put('a'.repeat(81))).status, 400);
+    assert.equal((await put('two\nlines')).status, 400);
+    assert.equal((await put(5)).status, 400);
+    assert.equal((await api(context, '/settings')).body.user_name, 'Sam');
+    assert.equal((await put('')).body.user_name, '');
+  });
+});

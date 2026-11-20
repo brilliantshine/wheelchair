@@ -250,7 +250,7 @@ async function archive(hub, id) {
 
 async function archivedDocument(hub, id, file) {
   const thread = await hub.thread(id);
-  if (!thread.archived || !thread.branch || !thread.slug || !ARCHIVED_DOCUMENTS.has(file)) {
+  if (!thread.archived || !thread.branch || !require('./documents.js').validSlug(thread.slug) || !ARCHIVED_DOCUMENTS.has(file)) {
     throw appError(404, 'archived document not found');
   }
   const object = `${thread.branch}:docs/plans/${thread.slug}/${file}`;
@@ -321,6 +321,28 @@ async function press(hub, id, cardId, input) {
   const card = thread.cards.find((item) => item.id === cardId && !item.replaced);
   if (!card) throw appError(404, 'card not found');
   if (card.retracted_at) throw appError(422, 'this card was withdrawn');
+  if (card.kind === 'reach') {
+    if (input.action !== 'picked' || !['allow', "don't allow"].includes(input.value)) throw appError(400, 'unknown card press');
+    if (card.answered) throw appError(422, 'card is already answered');
+    const lead = require('./peers.js').latestLiveLead(thread);
+    if (!lead) throw appError(409, 'no live lead');
+    let text = `picked: ${input.value}`;
+    if (input.value === 'allow') {
+      const peers = require('./peers.js');
+      const { target, reason } = await peers.reachTarget(hub, thread, card.thread);
+      if (reason) { card.allow_failed = reason; text = `allow failed: ${reason}`; }
+      else if (!peers.linked(thread, target)) {
+        thread.lead_links ||= [];
+        thread.lead_links.push(target.id);
+      }
+    }
+    card.answered = true;
+    card.answered_action = 'picked';
+    card.answered_value = input.value;
+    thread.user_at = new Date().toISOString();
+    await hub.enqueue(thread, lead.name, `[card ${card.id}] ${text}`, 'card');
+    return { queued: true, text };
+  }
   // A press is the user acting in the thread, so it moves the thread up the list like a message.
   thread.user_at = new Date().toISOString();
   if (card.kind === 'merged') {

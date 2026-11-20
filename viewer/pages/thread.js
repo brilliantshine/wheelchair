@@ -15,7 +15,7 @@
   const $ = (x) => document.getElementById(x);
   const errorEl = $('error'); const headEl = $('head'); const stubEl = $('stub-open');
   const deadEl = $('dead'); const pinnedEl = $('pinned'); const waitEl = $('lead-wait');
-  const filesEl = $('files'); const headFilesEl = $('head-files'); const chatEl = $('chat'); const queuedNote = $('queued-note');
+  const filesEl = $('files'); const headFilesEl = $('head-files'); const filesToggle = $('files-toggle'); const filesPanel = $('files-panel'); const chatEl = $('chat'); const queuedNote = $('queued-note');
   const msgEl = $('msg'); const sendBtn = $('send');
 
   let data = null;
@@ -235,7 +235,8 @@
   // Fetched on load, after each action and on its own button; never on the page's poll timer.
   // While a switch runs it re-reads every 3 seconds on a timer of its own.
   const copyEl = el('section', 'card copy-panel'); copyEl.id = 'copy'; copyEl.setAttribute('aria-label', 'Your copy');
-  $('head-files').after(copyEl);
+  // After the phone Files panel, so the panel opens right under its button.
+  $('files-panel').after(copyEl);
   const copy = { status: null, error: '', ask: null, sending: false, waiting: false, loading: false, started: false, timer: null, seq: 0 };
   const plural = (list, total) => {
     const ul = el('ul', 'copy-files');
@@ -378,15 +379,6 @@
   }
 
   // ---- the right column: this thread's files ----
-  function fileLinks(into, cls) {
-    const t = thread(); const s = slug();
-    if (!(s && (planDir() || t.archived))) return;
-    for (const f of ['MAP', 'IDEA', 'PLAN']) {
-      const a = el('a', cls, f + '.md');
-      a.href = '/wheelchair/app/doc?thread=' + encodeURIComponent(id) + '&file=' + f + '.md';
-      into.appendChild(a);
-    }
-  }
   const pictureHref = (card) => '/wheelchair/app/picture?thread=' + encodeURIComponent(id) + '&card=' + encodeURIComponent(card.id);
   const asideTitle = (a) => 'Aside: ' + String((a.anchor && a.anchor.quote) || '').slice(0, 40);
   // One entry per picture file (the latest card for it wins), then one per saved aside graph.
@@ -401,25 +393,76 @@
     }
     return out;
   }
-  function renderFiles() {
-    filesEl.textContent = '';
-    // Phones have no right column, so the plan files sit under the sticky header instead.
-    headFilesEl.textContent = '';
-    fileLinks(headFilesEl, 'btn small');
-    const pictures = pictureList();
-    for (const p of pictures) { const a = el('a', 'btn small', p.title); a.href = p.href; headFilesEl.appendChild(a); }
-    headFilesEl.hidden = !headFilesEl.children.length;
-    const list = el('div', 'file-list');
-    fileLinks(list, 'file');
-    if (pictures.length) {
-      list.appendChild(el('span', 'file dim', 'graphs/ \u00b7 ' + pictures.length + (pictures.length === 1 ? ' picture' : ' pictures')));
-      for (const p of pictures) { const a = el('a', 'file graph', p.title); a.href = p.href; list.appendChild(a); }
-    }
-    filesEl.hidden = !list.children.length;
-    if (filesEl.hidden) return;
-    filesEl.appendChild(el('h3', '', "This thread's files"));
-    filesEl.appendChild(list);
+  const docHref = (f) => '/wheelchair/app/doc?thread=' + encodeURIComponent(id) + '&file=' + encodeURIComponent(f);
+  const docDownload = (f) => T + '/doc?file=' + encodeURIComponent(f) + '&download=1';
+  const REMOVED = 'Removed when the thread was archived';
+  function humanSize(n) {
+    if (!(n >= 0)) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1000 * 1024) return Math.round(n / 1024) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
   }
+  // The `file` and `image` cards the user was sent, newest first; retracted and pre-import cards are skipped.
+  function sentList() {
+    return data.cards.filter((c) => (c.kind === 'file' || c.kind === 'image') && c.file && !c.retracted_at && sinceImport(c.created_at || c.at))
+      .map((c, i) => ({ c, i, t: Date.parse(c.created_at || c.at) || 0 }))
+      .sort((x, y) => (y.t - x.t) || (y.i - x.i)).map((x) => x.c);
+  }
+  const sentName = (c) => c.kind === 'file' ? (c.name || c.file) : String(c.file).replace(/^\d+-/, '');
+  const sentUrl = (c) => T + '/files/' + encodeURIComponent(c.file);
+  function filesCount() { return ((data.documents || []).length) + pictureList().length + sentList().length; }
+  // Both the right column and the phone panel are filled by this one function.
+  function fillFiles(into) {
+    into.textContent = '';
+    const archived = thread().archived;
+    const docs = data.documents || []; const pictures = pictureList();
+    if (docs.length || pictures.length) {
+      const sec = el('div', 'files-section'); sec.appendChild(el('h3', '', 'Project documents'));
+      const list = el('div', 'file-list');
+      for (const f of docs) {
+        const row = el('div', 'file-row');
+        const a = el('a', 'file', f); a.href = docHref(f); row.appendChild(a);
+        const d = el('a', 'file-dl', 'Download'); d.href = docDownload(f); row.appendChild(d);
+        list.appendChild(row);
+      }
+      if (pictures.length) {
+        list.appendChild(el('span', 'file dim', 'graphs/ \u00b7 ' + pictures.length + (pictures.length === 1 ? ' picture' : ' pictures')));
+        for (const p of pictures) { const a = el('a', 'file graph', p.title); a.href = p.href; list.appendChild(a); }
+      }
+      sec.appendChild(list); into.appendChild(sec);
+    }
+    const sent = sentList();
+    if (sent.length) {
+      const sec = el('div', 'files-section'); sec.appendChild(el('h3', '', 'Sent to you'));
+      const list = el('div', 'file-list');
+      for (const c of sent) {
+        const row = el('div', 'file-row sent-row');
+        const isImage = c.kind === 'image';
+        if (isImage && !archived) { const a = el('a', 'file', c.title); a.href = sentUrl(c); a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a); }
+        else row.appendChild(el('span', 'file-title', c.title));
+        row.appendChild(el('span', 'file-meta dim', [sentName(c), isImage ? '' : humanSize(c.size)].filter(Boolean).join(' \u00b7 ')));
+        if (archived) row.appendChild(el('span', 'file-meta dim', REMOVED));
+        else { const d = el('a', 'file-dl', 'Download'); d.href = sentUrl(c); d.setAttribute('download', sentName(c)); row.appendChild(d); }
+        list.appendChild(row);
+      }
+      sec.appendChild(list); into.appendChild(sec);
+    }
+  }
+  function renderFiles() {
+    fillFiles(filesEl);
+    filesEl.hidden = !filesEl.children.length;
+    fillFiles(filesPanel);
+    const n = filesCount();
+    headFilesEl.hidden = n === 0;
+    filesToggle.textContent = 'Files (' + n + ')';
+    if (n === 0) setPanel(false);
+  }
+  function setPanel(open) {
+    filesPanel.hidden = !open || !filesPanel.children.length;
+    filesToggle.setAttribute('aria-expanded', String(!filesPanel.hidden));
+  }
+  filesToggle.addEventListener('click', () => setPanel(filesPanel.hidden));
+  filesPanel.addEventListener('click', (e) => { if (e.target.closest('a')) setPanel(false); });
   async function doArchive() {
     try { await post(T + '/archive'); archiveAsk = false; sigs.head = null; await poll(); }
     catch (e) { showError('Archive failed: ' + e.message); }
@@ -690,7 +733,7 @@
   const copied = {};         // check card step key -> true for ~2s after a successful Copy
   async function press(card, action, value, node) {
     if (pressing[card.id]) return;
-    const once = card.kind === 'question' || card.kind === 'offer';
+    const once = card.kind === 'question' || card.kind === 'offer' || card.kind === 'reach';
     if (once) { pressing[card.id] = true; card.answered = true; sigs.chat = null; sigs.pinned = null; render(); }
     try {
       await post(T + '/cards/' + encodeURIComponent(card.id) + '/press',
@@ -725,6 +768,11 @@
     } else if (card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       label = ' ' + (card.resolved_note || (card.resolved_by === 'user' ? 'Dismissed' : 'Resolved'));
       tag.classList.add('resolved');
+    } else if (card.kind === 'reach' && card.allow_failed) {
+      label = ' Allow failed: ' + card.allow_failed;
+      tag.classList.add('resolved');
+    } else if (card.kind === 'reach' && card.answered_value != null) {
+      label = ' You picked ' + (card.answered_value === 'allow' ? 'Allow' : "Don't allow");
     } else if (card.kind === 'question' && card.resolved_by) {
       label = ' Answered in chat' + (card.resolved_note ? ' \u00b7 ' + card.resolved_note : '');
       tag.classList.add('resolved');
@@ -853,6 +901,25 @@
         }
         if (card.why) box.appendChild(el('div', 'fits', 'Why the lean: ' + card.why));
         if (!off) box.appendChild(ownWords(card));
+        break;
+      }
+      case 'reach': {
+        head(box, 'Talk to another thread', card.answered ? '' : 'warn');
+        const h = el('h3', '');
+        const seg = String(card.target_project || '').split('/').filter(Boolean).pop() || '';
+        h.append(document.createTextNode("Let this thread's lead talk to the lead of "),
+          el('strong', '', card.target_title || ''), document.createTextNode(' (' + seg + ')?'));
+        box.appendChild(h);
+        if (card.why) box.appendChild(el('div', 'fits', card.why));
+        const a = el('div', 'actions');
+        for (const [value, label] of [['allow', 'Allow'], ["don't allow", "Don't allow"]]) {
+          const pk = card.answered && card.answered_value === value && !card.allow_failed;
+          const b = button(label, (pk ? 'picked' : ''), () => press(card, 'picked', value), off);
+          b.dataset.option = value;
+          if (pk) b.prepend(icon(ICON.check, 12), document.createTextNode(' '));
+          a.appendChild(b);
+        }
+        box.appendChild(a);
         break;
       }
       case 'approval': {
@@ -1065,6 +1132,13 @@
         else { const url = T + '/files/' + encodeURIComponent(card.file); const a = el('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; const img = el('img', 'card-image'); img.src = url; img.alt = card.title; a.appendChild(img); box.appendChild(a); }
         break;
       }
+      case 'file': {
+        box.appendChild(el('h3', '', card.title));
+        box.appendChild(el('p', 'dim', [card.name || card.file, humanSize(card.size)].filter(Boolean).join(' \u00b7 ')));
+        if (thread().archived) box.appendChild(el('p', 'dim', REMOVED));
+        else { const d = el('a', 'btn small', 'Download'); d.href = sentUrl(card); d.setAttribute('download', card.name || card.file); box.appendChild(d); }
+        break;
+      }
       case 'stub': {
         head(box, 'Another thread', '', card.title);
         box.appendChild(prose('', card.summary));
@@ -1127,7 +1201,7 @@
       default:
         return null;
     }
-    if (card.retracted_at || ['offer', 'question', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
+    if (card.retracted_at || ['offer', 'question', 'reach', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
@@ -1260,7 +1334,7 @@
     sync('copy', [t.archived, t.project, t.machine], renderCopy);
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
     sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
-    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
+    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), data.documents, t.imported && t.imported.at, data.cards.filter((c) => c.kind === 'file' || c.kind === 'image').map((c) => [c.id, c.title, c.file, c.name, c.size, c.retracted_at, c.created_at]), (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported], renderDead);

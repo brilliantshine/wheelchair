@@ -651,6 +651,10 @@ async function event(hub, payload) {
 async function sessionRequest(hub, payload) {
   const thread = await hub.threadBySession(payload.calling_session);
   const caller = session(thread, payload.calling_session);
+  if (payload.action === 'leads') {
+    if (caller.role !== 'lead') throw appError(403, 'only a lead may list other leads');
+    return require('./peers.js').listLeads(hub, thread, { allProjects: payload.all_projects === true });
+  }
   if (payload.action === 'list') {
     const problems = projectToolProblems(thread.project_tools && thread.project_tools.state).map((line) => line.text);
     const leadEntry = [...thread.sessions].reverse().find((item) => item.role === 'lead');

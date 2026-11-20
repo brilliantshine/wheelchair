@@ -1,0 +1,40 @@
+# Lead chat: current flow
+
+Checked against `1ee9ad1487d2a3f8b6ceda7f73cf7218657f52c2` (origin/main and worktree HEAD). Relevant portions of the existing maps [app-sessions](../../maps/app-sessions.md), [session-token-flow](../../maps/session-token-flow.md), [app-cards-security](../../maps/app-cards-security.md), [card-closure](../../maps/card-closure.md), [app-threads-list](../../maps/app-threads-list.md), [thread-handoffs](../../maps/thread-handoffs.md), and [app-session-tree](../../maps/app-session-tree.md) were rechecked; their remaining historical claims were not revalidated.
+
+```text
+lead card JSON -> card.js -> machine token and spool -> hub sender thread -> recipient queue
+                                                                        -> turn ends -> machine types message
+hub thread records -> project, machine, title, sessions, pins, cards -> possible summary
+                                             worktree PLAN.md -> status, if available
+user question card -> answer recorded -> lead queue -> lead acts on answer
+```
+
+## Messages
+
+`card.js` reads and validates JSON, then posts with `WHEELCHAIR_SESSION_TOKEN` to the local machine (`viewer/app/card.js:159`, `viewer/app/card.js:175`, `viewer/app/card.js:275`). The machine matches the token to its session record, adds that record's name and thread id, durably spools the card, and relays it with the machine secret; an outage returns spooled success and a hub rejection is retained as a rejected spool (`machine/service.js:497`, `machine/service.js:1956`, `machine/service.js:1979`, `machine/service.js:1994`). The hub authenticates the machine, validates against the sender's role and assigns a card id (`viewer/app/routes.js:420`, `viewer/app/cards.js:11`, `viewer/app/cards.js:56`).
+
+A `message` has required `to` and `text` and optional `asks` and `passes_on` (`viewer/app/card.js:159`). The hub resolves `to` with `hub.session(thread, card.to)` **inside the sender's thread**; `session()` searches only that thread and returns 404 otherwise (`viewer/app/cards.js:137`, `viewer/app/sessions.js:464`). Thus naming another thread's lead cannot work today, even in the same project. The card, recipient queue and delivery id are saved together before delivery is attempted (`viewer/app/cards.js:133`, `viewer/app/cards.js:157`). A normal queued delivery waits for a live, ready session whose turn has ended, with no hold; failed submission stays queued, and successful submission is typed by the machine and recorded in sent history (`viewer/app/sessions.js:486`, `viewer/app/sessions.js:508`, `machine/service.js:1059`). Turn-end events mark the session idle and trigger delivery (`viewer/app/sessions.js:607`, `viewer/app/sessions.js:640`).
+
+The delivered text begins `[wc:from <sender>]`; `asks: true` adds `[question <card-id>]`. `passes_on` must reference an asking message card in the **same sender thread**, including on a user question card (`viewer/app/cards.js:69`, `viewer/app/cards.js:137`, `viewer/app/card.js:87`). The protocol says to carry the id when passing on a question, and hides the marker and receiver's reply from the user (`protocol/app/cards.md:105`, `protocol/app/cards.md:133`, `protocol/app/cards.md:150`; `viewer/app/chat.js:127`). Cross-thread questions therefore also need an explicit choice about how ids and follow-ups cross that boundary.
+
+## Threads and summary material
+
+Creation checks a project path on the chosen machine, stores its resolved path, machine, initial title, empty sessions/cards/pins and archive flag, then starts a lead (`viewer/app/threads.js:21`, `viewer/app/threads.js:43`, `viewer/app/threads.js:59`). A lead start creates a named session with token, role, status, live and ready state; its worktree and branch are saved on the thread (`viewer/app/sessions.js:192`, `viewer/app/sessions.js:329`, `viewer/app/sessions.js:354`, `viewer/app/sessions.js:415`). Restarts can leave old leads; user messages select the most recent live lead (`viewer/app/threads.js:161`, `viewer/app/routes.js:529`). A title card can replace the title (`viewer/app/cards.js:107`).
+
+Hub thread records live as `threads/<id>.json` under the state directory (`viewer/app/state.js:9`, `viewer/app/state.js:43`, `viewer/app/state.js:87`). The full browser threads response includes stored cards, pins and public session records; its lean list deliberately omits history and pins (`viewer/app/routes.js:439`). Cards are appended in order; the latest idea and progress replace their previous singleton pin, so pins and recent non-replaced cards are accessible from the thread record (`viewer/app/cards.js:9`, `viewer/app/cards.js:22`, `viewer/app/cards.js:33`; `viewer/app/chat.js:372`). The browser-facing route is not an agent `wc.js` listing (`viewer/app/routes.js:439`; `viewer/app/wc.js:71`).
+
+For a plan, the hub discovers a slug only when it finds exactly one new plan directory, reads `docs/plans/<slug>/PLAN.md` in the recorded worktree and caches its `status:` as `last_status`; missing content falls back to the cache (`viewer/app/views.js:100`, `viewer/app/views.js:115`, `viewer/app/views.js:121`). Small fixes may have no plan (`viewer/app/routes.js:455`). Archived documents use `git show` on the thread branch and require an archived thread, branch and slug (`viewer/app/threads.js:253`). These are separate sources: title and cards may exist before a slug or plan, and status alone is not a description of current work.
+
+`wc.js session list` posts through the local machine; its token identifies the local session, the machine forwards its name, and the hub finds the caller's thread by scanning recorded sessions (`viewer/app/wc.js:71`, `viewer/app/wc.js:159`, `machine/service.js:497`, `machine/service.js:1402`, `viewer/app/threads.js:86`). The list returns only that thread's public sessions plus `review_families`, with project-tool problems on its latest lead; default CLI output compacts fields to name, role, provider, model, status, live, ready, starter, attempt, round, title, branch, worktree and project tools, while `--full` preserves the public response (`viewer/app/sessions.js:187`, `viewer/app/sessions.js:651`, `viewer/app/wc.js:106`, `viewer/app/wc.js:162`, `viewer/app/wc.js:188`). There is no token-to-other-thread discovery in this path.
+
+## User approval and lead instructions
+
+A lead can post a question with two to four options and a leaning; a press or typed answer records the answer on the card and queues `[card <id>] picked: ...` or `answered: ...` to the latest live lead (`protocol/app/cards-lead.md:45`, `viewer/app/threads.js:375`, `viewer/app/threads.js:385`). The lead rules require a question card for something it waits on the user to decide (`protocol/app/lead.md:32`). This is an existing user-decision pattern, but the current message handler does not inspect such an answer to authorize a destination (`viewer/app/cards.js:56`, `viewer/app/cards.js:137`). Sudo demonstrates a stronger action-specific lifecycle: the machine registers a request, the user runs or declines it, and the outcome returns to the lead; it is tied to a helper, not a general messaging approval (`machine/service.js:1971`, `protocol/app/cards-lead.md:236`, `viewer/app/cards.js:178`).
+
+The rules live in `protocol/app/lead.md`, `cards.md` and `cards-lead.md` (`protocol/app/AGENTS.md:10`). The hub supplies role layers and project when starting a session; the machine composes the lead role, realism and both card files with those layers into a prompt file (`viewer/app/sessions.js:318`, `viewer/app/sessions.js:357`, `machine/service.js:145`, `machine/service.js:753`). Codex receives a `[wc:role]` first message pointing to that file (`machine/adapters/codex.js:137`).
+
+## What I did not look at
+
+- Browser layout and detailed rendering of each card, machine alias normalization beyond project selection, and every provider's prompt delivery.
+- Cross-machine file access or a proposed implementation, concurrency protocol, and tests for a new cross-thread feature.

@@ -43,6 +43,7 @@
   let diagram = null; // GET /settings/diagram-sensitivity, or null until read for this visit
   let diagramLoading = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
+  let nameDraft = null; // the typed Your name, kept across re-renders until saved
   // Lead name saves, kept across re-renders: they run one after another in the order made,
   // `choice` is the list last picked in the dropdown, which a save's answer never undoes, and
   // `reads` counts file picks so only the newest file is saved.
@@ -445,6 +446,34 @@
       host);
   }
 
+  // Your name: typed, then saved with the button. Blank means agents say "the user".
+  function nameRow() {
+    const saved = data.user_name || '';
+    const input = h('input', { type: 'text', id: 'user-name', 'aria-label': 'Your name', placeholder: 'the user', autocomplete: 'off', maxLength: 80, value: nameDraft === null ? saved : nameDraft });
+    const save = h('button', { type: 'button', text: 'Save' });
+    const status = h('p', { class: 'note', role: 'status' });
+    const host = h('div', { class: 'ctl wide' }, h('div', { class: 'folder' }, input, save), status);
+    input.addEventListener('input', () => { nameDraft = input.value; status.textContent = ''; inlineErr(host, ''); });
+    const go = async () => {
+      save.disabled = true;
+      inlineErr(host, '');
+      status.textContent = '';
+      try {
+        const res = await api('/settings/preferences', { method: 'PUT', body: { user_name: input.value.trim() } });
+        data.user_name = res.user_name || '';
+        nameDraft = null;
+        input.value = data.user_name;
+        status.textContent = 'Saved';
+      } catch (e) { inlineErr(host, e.message); }
+      save.disabled = false;
+    };
+    save.addEventListener('click', go);
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
+    return h('div', { class: 'row-line' },
+      h('div', { class: 'what' }, h('span', { text: 'Your name' }), h('span', { class: 'hint', text: 'Agents call you by it. Blank means they say "the user". Agents started after you save use it.' })),
+      host);
+  }
+
   function renderModels() {
     const items = (data.heads_up || []).slice();
     if (data.models.malformed && !items.some((i) => i.kind === 'malformed')) items.unshift({ kind: 'malformed' });
@@ -560,7 +589,8 @@
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
           enterRow(),
-          folderRow())),
+          folderRow(),
+          nameRow())),
       h('section', { 'aria-labelledby': 'diagrams' },
         h('h2', { id: 'diagrams', text: 'Diagrams' }),
         h('div', { class: 'box', id: 'diagram-choices' })),
