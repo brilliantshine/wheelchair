@@ -307,7 +307,7 @@ npm --prefix viewer run test:browser
 
 ### Round 4 — 2026-11-19
 
-**Lanes:** pending.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since the last round:**
 - User decision 13 (idea-change): map, idea and plan of threads on another computer moved to Deferred D7. IDEA's Not doing and Constraints updated.
