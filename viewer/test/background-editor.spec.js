@@ -173,7 +173,7 @@ test('representative settings views retain screenshots and restore appearance af
     await expect(page.locator('.background-layer')).toHaveCount(1);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByLabel('Visibility').focus(); await expect(page.getByLabel('Visibility')).toBeFocused();
-    await page.screenshot({ path: `/tmp/backgrounds-T5-artifacts/${testInfo.project.name}-settings-${width}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`settings-${width}.png`) });
   }
   await page.getByRole('button', { name: 'Remove background' }).click(); await save(page);
   await expect(page.locator('.background-layer')).toHaveCount(0);
