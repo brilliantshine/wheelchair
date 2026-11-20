@@ -372,7 +372,7 @@ npm --prefix viewer run test:browser
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S5 machine half: `file` card checks, `copyFile`, upload GET filename header, tests | `machine/service.js`, `machine/test/` | gpt standard / gpt-6.1-terra | wc-620b2787c998-worker | `bash machine/test/run.sh` | done |
-| T2 | S3, S4, S5 hub half, S6: `file` kind, `documents` in chat, live+archived `/doc` with download, protocol text, unit tests | `viewer/app/{card,cards,chat,routes,threads,documents}.js`, `viewer/AGENTS.md`, `viewer/test/*.test.js`, `protocol/app/{cards,cards-lead,lead,sub-lead,worker}.md` | gpt standard / gpt-6.1-terra | wc-620b2787c998-worker-2 | `node --test viewer/test/*.test.js` | in progress |
+| T2 | S3, S4, S5 hub half, S6: `file` kind, `documents` in chat, live+archived `/doc` with download, protocol text, unit tests | `viewer/app/{card,cards,chat,routes,threads,documents}.js`, `viewer/AGENTS.md`, `viewer/test/*.test.js`, `protocol/app/{cards,cards-lead,lead,sub-lead,worker}.md` | gpt standard / gpt-6.1-terra | wc-620b2787c998-worker-2 | `node --test viewer/test/*.test.js` | done |
 | T3 | S1, S2, S4 page half, S5 chat card: sidebar sections, phone Files panel, doc page via hub route + Download, browser specs (after T2) | `viewer/pages/`, `viewer/test/*.spec.js` | claude standard / claude-sonnet-5-5 | — | `npm --prefix viewer run test:browser`, `node --test viewer/test/*.test.js` | not started |
 
 ## Log
@@ -386,3 +386,14 @@ Build accepted: approval 4ceb0129-efd9-4063-a1da-9603a9f82e9b
 - 2026-11-19 — Choice: T1, `copyFile` does not call the `beforeImageLock` archive hook that `copyImage` calls.
 - 2026-11-19 — Choice: T1, machine tests: the old `3---x.txt` GET disposition assertion was replaced by the `3-report.pdf` → `report.pdf` assertion.
 - 2026-11-19 — T1 accepted (band: scout): machine suite 375/375 rerun by sub-lead; all required tests present.
+- 2026-11-19 — Choice: T2, `viewer/app/documents.js`: the archived listing caches the in-flight promise as well as its result, so concurrent polls share one set of Git calls.
+- 2026-11-19 — T2 reported 1 choice; the scout listed more from the diff, logged below.
+- 2026-11-19 — Choice: T2, `/doc` download response also sends `cache-control: no-store`.
+- 2026-11-19 — Choice: T2, `/doc` route: slug and file-name checks run before the live/archived split, so a bad archived slug answers "document not found".
+- 2026-11-19 — Choice: T2, archived listing returns `[]` when the record has no branch or project; the cache is keyed by `[id, branch]`, never evicted, and also keeps a failed lookup's `[]`.
+- 2026-11-19 — Choice: T2, `readLive` reads the checked path itself (not its resolved real path).
+- 2026-11-19 — Choice: T2, `card.js`: machine-only `name` is any non-blank text and `size` a non-negative safe integer; the 25 MB bound is left to the machine.
+- 2026-11-19 — Choice: T2, `viewer/app/threads.js`: the existing archived-document read also requires the new slug check.
+- 2026-11-19 — Choice: T2, protocol: the sub-lead and worker sentences sit at the end of their Finishing sections.
+- 2026-11-19 — Choice: T2, tests: archived cases use a fake `git` on `PATH` that intercepts `cat-file` and `show`.
+- 2026-11-19 — T2 accepted (band: scout): viewer unit suite 704/704 rerun by sub-lead.
