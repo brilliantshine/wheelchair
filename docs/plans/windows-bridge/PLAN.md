@@ -12,12 +12,7 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: How do the Linux worktree and its Windows copy stay in step?
-- **Context:** Each session has its own Linux worktree (`machine/service.js:554-589`). Windows tools need a copy on a Windows drive. Unity writes files (`.meta`, settings) that must come back; Unity's cache (`Library/`, `Temp/`) must not.
-- **Options:** (A) sync around each bridge command: push Linux edits before, pull back Windows changes after, plus an explicit sync command; (B) a live two-way watcher.
-- **Recommendation:** A. Predictable, no background process, and an agent touches Unity right after a bridge call anyway.
-
-### Q2: Where do agents' Windows apps appear, and may agents send them mouse and keyboard input?
+### Q1: Where do agents' Windows apps appear, and may agents send them mouse and keyboard input?
 - **Context:** Linux screens are invisible (Xvfb). Windows client editions allow one active desktop; a hidden Win32 desktop is unreliable for GPU apps such as Unity and for input.
 - **Options:** (A) apps open on the user's desktop; agents screenshot windows but send no input, and drive apps through their own tools (Unity's MCP, command-line modes); (B) A plus mouse/keyboard input on the user's desktop; (C) research a hidden desktop.
 - **Recommendation:** A.
@@ -40,10 +35,28 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|----------|-----------|--------|
 | D1 | Mode two-part | User's pick | user |
 | D2 | Build for WSL on the same Windows PC; a separate Linux computer is out of scope | User's pick; recorded in IDEA.md Not doing | user |
+| D3 | Sync around each Windows step, not live: Linux edits copied to the Windows copy right before any bridge command, Windows changes copied back right after, plus an explicit sync command | User's pick; live two-way sync left out | user |
+| D4 | What syncs is what git would see: tracked files plus untracked files git does not ignore; deletions sync too. Ignored files (Unity's `Library/`, `Temp/`) live only on the Windows side | Keeps caches on Windows and never pollutes the thread's worktree | defaulted |
+| D5 | A file changed on both sides since the last sync: the Linux version wins, the Windows version is saved to a conflicts folder beside the copy, and the command's result names each conflict | Agent edits are the source of truth; nothing is lost silently | defaulted |
+| D6 | Each session's Windows copy lives at `%LOCALAPPDATA%\Wheelchair\copies\<thread-id>\<session-name>` | Fast local drive, per session so workers and verifiers do not collide | defaulted |
 
 ## Spec
 
-To be written as decisions land.
+To be completed as decisions land.
+
+### Keeping the Windows copy in step (D3–D6)
+
+- Each session that uses the bridge gets its own Windows copy (D6), created on first use.
+- Before every bridge command, the session's worktree is pushed to its copy: files git would
+  see (tracked, plus untracked not ignored) are copied if changed, and files removed in Linux
+  are removed from the copy. Ignored paths on the Windows side are never touched.
+- After every bridge command, files git would see that changed or appeared in the copy are
+  copied back to the worktree, and files deleted in the copy are deleted in the worktree.
+- A file changed on both sides since the last sync keeps the Linux version; the Windows
+  version goes to the conflicts folder and the result lists it (D5).
+- An explicit sync command does both directions without running anything.
+- The copy is not watched between commands: an app left open on Windows sees Linux edits
+  only at the next bridge command or sync.
 
 ## Deferred
 
