@@ -524,9 +524,15 @@
     if (!dead) return;
     deadEl.textContent = '';
     deadEl.appendChild(el('p', '', 'The lead has stopped.'));
+    const failed = el('p', 'dead-error'); failed.setAttribute('role', 'alert'); failed.hidden = true;
     deadEl.appendChild(button('Restart lead', 'primary', async () => {
-      try { await post(T + '/restart'); await poll(); } catch (e) { showError('Restart failed: ' + e.message); }
+      failed.hidden = true;
+      try { await post(T + '/restart'); await poll(); } catch (e) {
+        // Shown in the sticky box too: the page's error banner may be scrolled out of sight.
+        showError('Restart failed: ' + e.message); failed.textContent = 'Restart failed: ' + e.message; failed.hidden = false;
+      }
     }));
+    deadEl.appendChild(failed);
   }
 
   // ---- chat ----
