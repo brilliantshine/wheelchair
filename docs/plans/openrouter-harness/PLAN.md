@@ -10,16 +10,25 @@ created: 2026-11-19
 
 ## Open Questions
 
-_None open; more being prepared from the Watch List._
+### Q2: How does the user give wheelchair the OpenRouter key?
+- **Context:** Other providers log in through a login pane wheelchair opens (`loginCommand`/`parseLogin` in each adapter). Pi accepts the key via `/login openrouter` (saved in `~/.pi/agent/auth.json`) or the `OPENROUTER_API_KEY` environment variable.
+- **Options:** In the app, through Pi's own login screen like other providers; or set once on the machine in Pi's auth file / environment, with Settings only showing whether a key is present.
+- **Recommendation:** In the app.
+
+### Q3: Show what OpenRouter agents cost?
+- **Context:** OpenRouter is pay per use; Pi records cost per reply. Today's usage screen shows subscription limits (`viewer/app/usage.js`), and Kimi shows none.
+- **Options:** Show spend per thread/agent now; show nothing now and defer it.
+- **Recommendation:** Defer (two-part).
 
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| 1 | Pi runs tools with no approval prompt | How other harnesses are launched (approval mode) and whether Pi's behaviour matches | no | |
-| 2 | Kimi limits model ids to one slash | OpenRouter ids may be `vendor/model` or `openrouter/vendor/model`; check the hub, settings page and `codex/model.sh` rules | no | |
-| 3 | Roles | Which roles may run on the new provider, matching how Kimi is treated | no | |
-| 4 | Key handling | Where the key lives (Pi `auth.json` vs env) and how wheelchair checks it offline without reading it into logs | no | |
+| 1 | Pi runs tools with no approval prompt | How other harnesses are launched | no | Settled: Decision 3 |
+| 2 | Kimi limits model ids to one slash | OpenRouter id format | no | Settled: Decision 5 |
+| 3 | Roles | Which roles may use the provider | no | Settled: Decision 4 |
+| 4 | Key handling | Where the key lives and how it is checked | yes | Promoted to Q2 |
+| 5 | Review families | OpenRouter can serve Claude or GPT models; cross-family review counts providers | no | Settled: Decision 6 |
 
 ## Decision Log
 
@@ -29,6 +38,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|----------|-----------|--------|
 | 1 | Plan mode two-part | User's choice: build for day-to-day use first, harden in a follow-up | user |
 | 2 | Build on Pi (`earendil-works/pi`, `@earendil-works/pi-coding-agent`), not OpenCode | Documented turn-end event, JSONL transcript chosen by `--session-id`, per-message usage, plain auth file; OpenCode's v2 transcript and turn-end are undocumented | user |
+| 3 | Pi agents run without approval prompts, like Claude `auto`, Kimi and Antigravity today (`machine/adapters/claude.js:74`, `kimi.js:128`, `agy.js:67`). Always pass `--approve`. Reviewers get Pi's read-only tool set if Pi offers one (checked in the dry run); if not, same as Kimi, which ignores role | Matches existing providers; Codex's sandbox is the only stricter one | defaulted |
+| 4 | The new provider may fill every role Kimi can (lead, sub-lead, mapper, worker, reviewer, verifier), governed by the same Settings orders | Consistency with Kimi (`viewer/app/balancer.js:29-50`) | defaulted |
+| 5 | Model ids accept OpenRouter's `vendor/model` form with an optional `:variant` suffix (e.g. `:free`), up to 64 characters, in the hub, Settings page and `codex/model.sh` | That is OpenRouter's id format | defaulted |
+| 6 | The provider is named `openrouter` and counts as its own family for cross-family review, whatever model it serves | Simplest; a mismatch only matters when it serves the same family as the other reviewer | defaulted |
 
 ## Spec
 
