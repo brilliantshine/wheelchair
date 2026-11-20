@@ -180,3 +180,23 @@ key isolation | PASS | no key marker in hub, cache and machine state files, chat
 The browser suite was not re-run: R2-1 changed only machine code, machine tests and `machine/API.md`.
 
 Residual, pre-existing on the base `dbb0a6b3` and not part of these gaps: `stop()` (`kill-session -t name`), `raw()` (`send-keys -t name`) and Claude/Codex/Antigravity `startLogin`'s kill still use prefix targets; on a record whose tmux session is gone they could reach a `-2` sibling. The restart-recovery capture keeps `-t name` because its names come from tmux's own session list.
+
+### Remediation 3 (verification attempt 3 on `78da748e`)
+
+Verifiers: Claude PASS; GPT FAIL with 2 gaps (verbatim in `REMEDIATION-3.md`). Gap 1 (a key the user pastes as a chat message is stored verbatim) accepted by the lead as a rare path, recorded in PLAN.md Accepted Risks (`verification-3`). Gap 2 fixed by task R3-1 (standard, claude-sonnet-5-5, one attempt), merged at `81cb7d4c`.
+
+| Gap | Fix | Validated by |
+|-----|-----|--------------|
+| 2. Settings cleared the pasted code and showed Start again on any 409 from code submission, for every provider (a change to the existing providers, from T7) | `viewer/pages/settings.js` `openSignin` `send` handler: the clear-and-Start-again path runs only for `account.provider === 'openrouter'`, with at most one Start again; other providers show the error and keep the code, as on `dbb0a6b3:viewer/pages/settings.js:1059` | `viewer/test/app-accounts.spec.js`: Claude 409 keeps the code with no Start again (fails under the old handler in all 4 projects); OpenRouter 409 clears the key with exactly one Start again after two 409s; `viewer/test/app-openrouter-signin.test.js:27` source check updated |
+
+Validation on the R3-1 branch (`81cb7d4c`; the merge into the feature branch was a fast-forward):
+
+```text
+node --test viewer/test/*.test.js     # tests 723  # pass 723  # fail 0
+npm --prefix viewer run test:browser
+  34 skipped
+  1090 passed (11.0m)
+exit 0
+```
+
+Machine, codex, installer and test-support code is unchanged since `0e934ff5` (their results are under Remediation 2).
