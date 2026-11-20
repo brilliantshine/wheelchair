@@ -1004,6 +1004,15 @@
   const dayTime = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'long' }) + ' '
     + new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   const pct = (n) => Math.round(n) + '%';
+  const usd = (n) => (n > 0 && n < 0.005 ? '<$0.01' : '$' + n.toFixed(2));
+  const spendText = (sp) => {
+    const none = !sp.today && !sp.last_7_days && !sp.last_30_days;
+    const line = none && !sp.incomplete ? 'no spend yet' : `${usd(sp.today)} today · ${usd(sp.last_7_days)} last 7 days · ${usd(sp.last_30_days)} last 30 days`;
+    return line + (sp.incomplete ? ' · total may be incomplete' : '');
+  };
+  // OpenRouter sign-in is key only: waiting, no link, and the machine wants the key pasted.
+  const keyOnlySignin = (st) => st.state === 'waiting' && !st.url && st.wantsCode === true;
+  const signinHint = (st) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : 'Paste your OpenRouter key');
   const safeHref = (u) => (/^https?:\/\//i.test(String(u)) ? String(u) : '#');
 
   async function refreshUsage() {
@@ -1055,12 +1064,20 @@
     const actions = h('div', { class: 'actions signin-actions' });
     const codeBox = h('div', { class: 'signin-code' });
     const paste = h('textarea', { rows: 2, 'aria-label': 'Paste the code from the sign-in page', placeholder: 'Paste the code here' });
+    const keyInput = h('input', { type: 'password', class: 'ctl', autocomplete: 'off', 'aria-label': 'Paste your OpenRouter key', placeholder: 'Paste your OpenRouter key', hidden: true });
+    const activeField = () => (keyInput.hidden ? paste : keyInput);
     const send = h('button', { type: 'button', class: 'primary small', text: 'Send code', onclick: async () => {
-      const code = paste.value.trim();
+      const field = activeField();
+      const code = field.value.trim();
       if (!code) return;
-      try { await api(`/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}/code`, { method: 'POST', body: { code } }); paste.value = ''; status.textContent = 'Code sent.'; } catch (e) { inlineErr(codeBox, e.message); }
+      try { await api(`/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}/code`, { method: 'POST', body: { code } }); field.value = ''; status.textContent = 'Code sent.'; inlineErr(codeBox, ''); }
+      catch (e) {
+        inlineErr(codeBox, e.message);
+        if (e.status === 409) { field.value = ''; codeBox.append(h('button', { type: 'button', class: 'small', text: 'Start again', onclick: () => openSignin(account, machine) })); }
+      }
     } });
-    const pasteWrap = h('div', { class: 'paste', hidden: true }, h('label', { text: 'Paste the code' }), paste, send);
+    const pasteLabel = h('label', { text: 'Paste the code' });
+    const pasteWrap = h('div', { class: 'paste', hidden: true }, pasteLabel, paste, keyInput, send);
     const termLink = h('a', { class: 'small-link', href: terminal, target: '_blank', rel: 'noopener', text: 'Open terminal' });
     const closeBtn = h('button', { type: 'button', class: 'small', text: 'Close', onclick: closeSignin });
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
@@ -1091,12 +1108,15 @@
         return;
       }
       if (st.state === 'failed') return fail();
-      if ((card.hadUrl || !st.url) && expired()) return fail();
-      if (st.url) {
+      const keyOnly = keyOnlySignin(st);
+      if ((card.hadUrl || !(st.url || keyOnly)) && expired()) return fail();
+      if (st.url || keyOnly) {
         if (!card.hadUrl) card.firstUrl = Date.now();
         card.hadUrl = true;
-        status.className = 'hint'; status.textContent = st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.';
-        if (account.provider === 'claude' || account.provider === 'gemini') {
+        status.className = 'hint'; status.textContent = signinHint(st);
+        keyInput.hidden = !keyOnly; paste.hidden = keyOnly; pasteLabel.textContent = keyOnly ? 'Paste your OpenRouter key' : 'Paste the code';
+        if (keyOnly) actions.replaceChildren();
+        else if (account.provider === 'claude' || account.provider === 'gemini') {
           actions.replaceChildren(h('a', { class: 'btn-link primary', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: 'Open sign-in link' }));
         } else {
           actions.replaceChildren(h('a', { class: 'btn-link', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: st.url }));
@@ -1112,7 +1132,7 @@
       } else if (card.hadUrl) {
         status.className = 'hint waiting';
         status.replaceChildren(h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Finishing sign-in on ' + machine + '…'));
-        actions.replaceChildren(); codeBox.replaceChildren(); paste.value = ''; pasteWrap.hidden = true;
+        actions.replaceChildren(); codeBox.replaceChildren(); paste.value = ''; keyInput.value = ''; pasteWrap.hidden = true;
       }
     };
     (async () => {
@@ -1335,6 +1355,12 @@
     if (f.amber && f.runs_out_at) lines.push(h('p', { class: 'usage-line amber', text: `Runs out ${dayPart(f.runs_out_at)}, before the first refill ${f.first_refill ? dayTime(f.first_refill) : ''}`.trim() }));
     if (f.below_notify) lines.push(h('p', { class: 'usage-line amber', text: 'Under your notify line for this week.' }));
     const open = openProvider === provider;
+    if (f.spend) {
+      return h('div', { class: 'usage-prov', 'data-provider': provider },
+        h('div', { class: 'usage-toggle' },
+          h('span', { class: 'usage-name', text: f.label }),
+          h('span', { class: 'usage-left usage-spend', text: spendText(f.spend) })));
+    }
     return h('div', { class: 'usage-prov' + (f.amber ? ' amber' : ''), 'data-provider': provider },
       h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; renderPanel(); } },
         h('span', { class: 'usage-name', text: f.label }),

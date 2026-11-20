@@ -130,7 +130,7 @@ Worker restart (`wc.js session start --role worker ... --replaces <session>`): t
 updates the balancing keys and returns `reserved_provider`; an old saved file’s boolean `save_claude_for_leads` carries over to `save_for_leads`. `PUT /settings/preferences` accepts `review_families` as `both`, `claude`, `gpt`, `gemini`, `kimi`, or `openrouter` and returns it. Invalid values return 400.
 
 `GET /usage` returns `{providers}` with each provider's forecast and account readings,
-machine sign-in states, placement reason and live session count. `GET /usage/alert` returns
+machine sign-in states, placement reason and live session count. The `openrouter` provider has no usage windows and is never out of room, amber or alerting; instead it carries `spend: {today,last_7_days,last_30_days,incomplete}` in US dollars, summed fresh on each call over every OpenRouter account on every known machine from `GET /v1/spend` (nothing is stored). `incomplete` is true when any machine is unreachable, answers 404 or returns a malformed body. OpenRouter sign-in is key only: its login state is `waiting` with `url: null` and `wantsCode: true`, the key goes through the code route, and that route can answer `409` ("the sign-in screen has moved on; start again"). `GET /usage/alert` returns
 `{dot}`; `POST /usage/seen` marks current provider alerts seen for their refill week.
 `POST /accounts/:id/signin` accepts `{machine}` and starts sign-in on that machine.
 `GET /accounts/:id/signin/:machine` returns its state; `POST .../code` sends `{code}`;
