@@ -112,7 +112,11 @@ exist on the hub's filesystem, ask the thread's machine's `/documents` route (be
 `machine/service.js` can require, or copy it with a comment naming the other) against the
 lead worktree from its record (as above) and returns `{ "slug": <name or null>,
 "documents": [...] }`: slug null unless exactly one name, documents listed for that slug
-(empty when null). The hub saves it as `findSlug` does today. A machine that cannot
+(empty when null). It passes the lead record's `default_branch` (`machine/service.js:772`,
+`main` when unset) as `newPlanDirectories`' base, as local discovery passes the thread's. The hub saves it under the thread lock: discover first (no lock held during the machine
+request), then inside `hub.withThread(id, ...)` re-read the thread, set `slug` only if it
+is still unset, and save, so a card or message saved during the request is not
+overwritten. Local discovery keeps its current path. A machine that cannot
 be reached leaves the slug unset; the next poll tries again. Test with a fake machine and a
 worktree path that does not exist on the hub.
 
@@ -156,7 +160,8 @@ New lead-only card kind `file`, shown to the user, not pinned.
   (absolute) and `title` (text). Any other field is refused, as for every kind.
 - `machine/service.js`, in the `/v1/agent/cards` handler beside `copyImage`: before
   reserving or copying anything it refuses a non-lead session (403, `only a lead may post a
-  file card`) and a card with fields other than `kind`, `path`, `title` (422). Then `copyFile`
+  file card`), a card with fields other than `kind`, `path`, `title` (422) and a missing or
+  blank `title` (422, `title is required`). Then `copyFile`
   takes the same steps as `copyImage` (`machine/service.js:351-368`) without the extension
   check: absolute path, exists, regular file (following no symlink at the final component:
   `lstat` must say regular file), at most 25 MB (`UPLOAD_LIMIT`), real path not inside the machine's real `stateDir`
@@ -198,7 +203,8 @@ New lead-only card kind `file`, shown to the user, not pinned.
 
 Editing documents in the app; changing composer attachments; sharing files across threads;
 carrying sent files through a handoff export or import; downloading pictures; download all;
-in-app previews of sent non-image files; keeping sent files after archive; making the
+in-app previews of sent non-image files; opening pictures of a live thread whose worktree is
+only on another machine (Deferred D6; they are listed as today and open as today); keeping sent files after archive; making the
 archived-document read work for projects that exist only on another machine (Deferred D5).
 
 ### Validation
@@ -208,7 +214,7 @@ New or changed tests:
 - `machine/test/`: `copyFile` accepts a text and a PDF file, refuses a relative path, a
   missing file, a directory, a symlink, a file over 25 MB, a file inside the state folder (but
   accepting one inside a worktree under `<stateDir>/worktrees/`),
-  a non-lead session and an extra field, leaving no upload behind for any refusal; the
+  a non-lead session, an extra field and a blank title, leaving no upload behind for any refusal; the
   documents route without a slug returns the one new plan directory as `slug` and null
   otherwise; a document over
   2 MiB is neither listed nor served; the document list and
@@ -242,11 +248,14 @@ npm --prefix viewer run test:browser
 | D3 | In-app preview for sent documents other than images | Download opens them with the phone's own viewer | planning | Markdown could reuse the doc page renderer |
 | D4 | Keep sent files after the thread is archived | User chose removal for now | planning | Needs a store outside the uploads folder and a cleanup rule |
 | D5 | Project documents of an archived thread whose project exists only on another machine | Live remote threads work; archived reads stay as today | review-round-1 | Archived reads run `git -C <project>` on the hub (`viewer/app/threads.js:251-265`); route them through the thread's machine like S3/S4 live reads |
+| D6 | Opening pictures (diagrams) of a live thread whose worktree is on another machine | Map, idea, plan work remotely; pictures already behave this way in chat today | review-round-2 | `viewer/pages/picture.js:31-41` and `viewer/pages/diagram.js:12-24` send the worktree path to a hub-local reader (`viewer/server.js:1673-1687`); read graphs through the machine like S4 |
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A plan folder that is itself a symlink out of the worktree passes the eligibility check | Needs an agent to plant the symlink (tampering); the lead can already read any such file | review-round-2 |
+| An archived plan document over 2 MiB is listed but its page fails | Plan documents are far smaller in ordinary use | review-round-2 |
 
 ## Review Rounds
 
@@ -287,6 +296,25 @@ npm --prefix viewer run test:browser
 | intent | blocking | State-folder refusal blocks files in agents' own worktrees | upheld | S5 exempts `<stateDir>/worktrees/`; test added |
 | intent | minor | Decide "remote" from `thread.machine`, not a missing path | declined | `discoverSlug` runs on every thread-list poll; the local path check keeps local threads on the existing Git path with no machine round trip, and a missing worktree on an unarchived thread is exactly the remote case |
 | intent | minor | `/plan-slug` duplicates `/documents`' worktree lookup | upheld | Machine `/documents` returns `{slug, documents}` and discovers the slug when none is given; `/plan-slug` removed |
+| mechanics | blocking | State-folder refusal blocks worktree files | upheld | Same fix as the intent finding above |
+| mechanics | blocking | Remote slug discovery widens the unlocked read–save window | downgraded → minor | Needs a save during the machine request; cheap to close: S3 saves under `hub.withThread` after re-reading |
+| mechanics | blocking | Symlinked plan folder escapes the worktree | accepted-risk | Rare path: needs a planted symlink; Accepted Risks |
+| mechanics | blocking | Live remote pictures listed but cannot open | upheld (major) | Existing behaviour of diagrams for remote threads; moved to Deferred D6, Non-goals point to it |
+| mechanics | minor | Archived list includes documents over 2 MiB | accepted-risk | Rare path; Accepted Risks |
+| mechanics | minor | Remote slug discovery ignores `default_branch` | upheld | S3 passes the lead record's `default_branch` |
+| mechanics | minor | Title validated only at the hub, after copy | upheld | S5 refuses blank title before copying; test added |
+
+### Round 3 — 2026-11-19
+
+**Lanes:** pending.
+
+**Changed since the last round:**
+- S5: state-folder refusal exempts `<stateDir>/worktrees/`; blank title refused on the machine before copying.
+- S3: slug discovery folded into the machine's `/documents` route (no `/plan-slug`); uses the lead record's `default_branch`; slug saved under the thread lock after a re-read.
+- Deferred D6 (pictures of remote live threads) and two Accepted Risks added; Non-goals updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
