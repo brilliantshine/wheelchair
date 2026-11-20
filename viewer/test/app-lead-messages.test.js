@@ -41,10 +41,11 @@ test('cross-thread refusals are ordered and store nothing', async () => {
 test('restart routes to latest lead; cross-thread question is hidden in agents and chat', async () => {
   const { hub, a, b, send } = await fixture();
   b.sessions[0].live = false; b.sessions.push({ name: 'lead-new', role: 'lead', live: true, queue: [] }); await hub.state.save(b);
+  a.title = undefined; a.slug = undefined; a.project = '/one'; await hub.state.save(a);
   const card = await send(a, 'lead-b', { asks: true });
   const sender = await hub.state.thread(a.id), target = await hub.state.thread(b.id);
   const text = target.sessions[1].queue[0].text;
-  assert.equal(text, `[wc:from lead-a] [thread ${a.id}: a] [question ${card.id}] hello`);
+  assert.equal(text, `[wc:from lead-a] [thread ${a.id}: one] [question ${card.id}] hello`);
   assert.deepEqual(target.queues['lead-new'], target.sessions[1].queue);
   assert.equal(buildAgents([sender])[0].session.question, null);
   const raw = [ { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: text } }, { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'hidden reply' }] } } ].map(JSON.stringify).join('\n');

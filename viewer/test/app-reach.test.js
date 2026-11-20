@@ -48,9 +48,12 @@ test('validation and ordered post refusals', async () => {
 });
 
 test('allow links only sender and permits reply, and handoff and Needs reflect state', async () => {
-  const { hub, a, b, post, press } = await fixture(); const card = await post();
+  const { hub, a, b, post, press } = await fixture(); b.title = undefined; b.slug = undefined; await hub.state.save(b); const card = await post();
   let current = await hub.state.thread(a.id); const needs = []; addNeeds(needs, current);
-  assert.equal(needs[0].title, 'Let this lead talk to b?');
+  assert.equal(card.target_title, 'two');
+  assert.equal(card.title, 'Let this lead talk to two?');
+  assert.equal(needs[0].title, 'Let this lead talk to two?');
+  assert.ok(!needs[0].title.includes('undefined'));
   assert.equal(quietReason(hub, current), 'A request to talk to another project is waiting');
   const before = await hub.state.thread(b.id); await press(card);
   current = await hub.state.thread(a.id); assert.deepEqual(current.lead_links, [b.id]);
@@ -58,7 +61,7 @@ test('allow links only sender and permits reply, and handoff and Needs reflect s
   const afterNeeds = []; addNeeds(afterNeeds, current); assert.deepEqual(afterNeeds, []);
   const file = buildHandoffFile(current, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/a/b' });
   assert.equal(validateHandoffFile(JSON.stringify(file)).ok, true);
-  assert.equal(file.history.find(e => e.kind === 'reach').text, 'Talk to b (two)\nCoordinate work\nallow');
+  assert.equal(file.history.find(e => e.kind === 'reach').text, 'Talk to two (two)\nCoordinate work\nallow');
   await hub.acceptCard({ thread_id: b.id, session: 'lead-b', kind: 'message', to: 'lead-a', text: 'reply' });
   assert.match((await hub.state.thread(a.id)).sessions[0].queue.at(-1).text, /reply/);
   await rejects(press(card), 422, 'card is already answered');

@@ -137,7 +137,8 @@ async function acceptCard(hub, payload) {
       if (reason) throw appError(422, reason);
       if (target.project === thread.project) throw appError(422, 'already in your project; no OK needed');
       if (peers.linked(thread, target)) throw appError(422, 'already allowed');
-      Object.assign(checked.card, { target_title: target.title, target_project: target.project, title: `Let this lead talk to ${target.title}?` });
+      const targetName = peers.threadName(target);
+      Object.assign(checked.card, { target_title: targetName, target_project: target.project, title: `Let this lead talk to ${targetName}?` });
     }
 
     let crossThread = null;
@@ -186,7 +187,7 @@ async function acceptCard(hub, payload) {
     if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
     // The card, queue and durable delivery id commit together. Delivery happens afterwards:
     // a dead target must not turn a valid card into a rejected one.
-    return { card, targetName, ...(crossThread ? { targetThread: crossThread, senderTitle: thread.title } : {}) };
+    return { card, targetName, ...(crossThread ? { targetThread: crossThread, senderTitle: require('./peers.js').threadName(thread) } : {}) };
   });
   if (result.duplicate) return result;
   if (result.targetName) {

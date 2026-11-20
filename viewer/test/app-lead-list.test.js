@@ -14,7 +14,7 @@ test('lead listing respects machine, project, reachability, links and summaries'
   await fs.writeFile(path.join(dir, 'machine.json'), JSON.stringify({ host: 'local', port: 7374 }));
   const make = (id, extra = {}) => ({ id: id.repeat(12), machine: 'hub', project: '/one', title: id, sessions: [{ name: id, role: 'lead', live: true }], pinned: {}, cards: [], ...extra });
   const caller = make('a', { sessions: [{ name: 'caller', role: 'lead', live: true }, { name: 'worker', role: 'worker', live: true }], lead_links: ['e'.repeat(12)] });
-  const records = [caller, make('b', { machine: 'host', last_status: 'building', branch: 'branch', pinned: { idea: { bullets: Array.from({ length: 7 }, (_, i) => ({ text: String(i) })) }, progress: { stage: 'verify', phase: 'fixing', pass: 2, found: 3, fixed: 1, machines: ['host'], choice_waiting: true } }, cards: [{ kind: 'done', pr_url: 'old' }, { kind: 'done', pr_url: 'new' }, { kind: 'done', pr_url: 'retracted', retracted_at: 'now' }] }), make('c', { slug: 'plan', sessions: [{ name: 'dead', role: 'lead', live: false }] }), make('d', { project: '/two' }), make('e', { project: '/two', sessions: [] }), make('f', { project: '/three', lead_links: [caller.id] }), make('1', { archived: true }), make('2', { handed_off: {} }), make('3', { machine: 'other' }), make('4', { sessions: [{ role: 'worker' }] })];
+  const records = [caller, make('b', { machine: 'host', last_status: 'building', branch: 'branch', pinned: { idea: { bullets: Array.from({ length: 7 }, (_, i) => ({ text: String(i) })) }, progress: { stage: 'verify', phase: 'fixing', pass: 2, found: 3, fixed: 1, machines: ['host'], choice_waiting: true } }, cards: [{ kind: 'done', pr_url: 'old' }, { kind: 'done', pr_url: 'new' }, { kind: 'done', pr_url: 'retracted', retracted_at: 'now' }] }), make('c', { slug: 'plan', sessions: [{ name: 'dead', role: 'lead', live: false }] }), make('d', { project: '/two', slug: 'fallback-slug', title: undefined }), make('e', { project: '/two', sessions: [] }), make('f', { project: '/three', lead_links: [caller.id] }), make('1', { archived: true }), make('2', { handed_off: {} }), make('3', { machine: 'other' }), make('4', { sessions: [{ role: 'worker' }] })];
   for (const record of records) await hub.state.save(record);
   const result = await listLeads(hub, caller, {});
   const byId = Object.fromEntries(result.leads.map(e => [e.thread[0], e]));
@@ -24,7 +24,7 @@ test('lead listing respects machine, project, reachability, links and summaries'
   assert.equal(byId.e.linked, true); assert.equal(byId.f.linked, true);
   const all = await listLeads(hub, caller, { allProjects: true });
   assert.equal(all.leads.length, 5);
-  assert.deepEqual(all.leads.find(e => e.thread === 'd'.repeat(12)), { thread: 'd'.repeat(12), lead: 'd', project: '/two', title: 'd', linked: false });
+  assert.deepEqual(all.leads.find(e => e.thread === 'd'.repeat(12)), { thread: 'd'.repeat(12), lead: 'd', project: '/two', title: 'fallback-slug', linked: false });
   assert.deepEqual(all.leads.filter(e => e.linked).length, 2);
   assert.deepEqual(all.leads.map(e => e.thread), (await hub.state.allThreads()).filter(t => all.leads.some(e => e.thread === t.id)).map(t => t.id));
   await assert.rejects(hub.sessionRequest({ action: 'leads', calling_session: 'worker' }), e => e.status === 403 && e.message === 'only a lead may list other leads');
