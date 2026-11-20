@@ -35,9 +35,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Read-only: wheelchair never renews, writes or locks Kimi's login; it reads usage only while the stored access token is unexpired, and otherwise skips without any network request | Zero sign-out risk; Kimi usage only moves while Kimi runs, which keeps the token fresh. Cost: use of the same account on another computer is not seen until Kimi runs here again | user |
 | 7 | The usage URL is fixed at `https://api.kimi.ai/coding/v1/usages`; `base_url` in config.toml and `KIMI_CODE_BASE_URL` are ignored, and only accounts whose `loginStatus` is `logged_in: true` (global region) are read | The token is only ever sent to Kimi's own global host, never to an address taken from a file or env var; wheelchair already refuses China-region logins | defaulted |
 | 8 | A window at `used_ratio >= 1` marks the reading `reached`, so the machine sets `limited_until` the same way it does for Codex | Reuses `limitedUntil` (machine/lib/limits.js); lets waiting sessions skip a spent Kimi account before it hits the limit | defaulted |
+| 9 | Monthly limits and the top-up balance in the response are ignored | IDEA.md Not doing | defaulted |
 | 10 | On a Kimi limit hit the machine reads usage once, so the stopped session resumes at Kimi's real reset | Review round 1: otherwise it retries hourly; the key is surely fresh at that moment | review-round-1 |
 | 11 | For Kimi, the poller tries each eligible machine until one reads | Review round 1: the same account may be signed in on several machines; only the one that ran Kimi lately has a fresh key | review-round-1 |
-| 9 | Monthly limits and the top-up balance in the response are ignored | IDEA.md Not doing | defaulted |
 
 ## Spec
 
@@ -194,6 +194,20 @@ Claude/GPT behaviour or to how the page looks.
 | mechanics (gpt) | minor | Check once built: a parse error could quote the response body into the forwarded error | upheld | Fixed error strings only, plus a malformed-body test |
 | mechanics (gpt) | minor | Live-Kimi poll test should assert the reading is stored | upheld | Test now asserts storage |
 | intent (claude) | minor | "Hub and page" asks the worker to hunt for a Kimi special case that doesn't exist | upheld | Section now says plainly nothing changes there, with evidence |
+
+### Round 2 — 2026-11-19
+
+**Lanes:** claude (intent); not-claude (mechanics); cross-family: yes.
+
+**Changed since Round 1:**
+- Kimi parser drops windows without a parseable `reset_time`; `redirect: 'error'`; fixed error strings, `invalid usage response` for bad bodies.
+- New section "Machine: Kimi limit hit": probe usage once on a Kimi `limit-hit` and use the real reset (Decision 10).
+- Poller tries each eligible machine for Kimi until one reads (Decision 11).
+- "Hub and page" now states nothing changes there.
+- Validation: limit-hit, malformed-body, redirect, two-machine and stored-reading tests.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
