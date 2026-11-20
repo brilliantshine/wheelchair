@@ -1,8 +1,7 @@
 (function () {
   'use strict';
   // The app's plan document page: one of a thread's MAP.md, IDEA.md or PLAN.md, rendered in
-  // the app. A live thread's file is read through the plan viewer's /doc route; an archived
-  // thread's from its branch through the hub.
+  // the app. Live and archived threads are both read through the hub's /doc route.
   const API = '/wheelchair/api';
   const FILES = ['MAP.md', 'IDEA.md', 'PLAN.md'];
   const params = new URLSearchParams(location.search);
@@ -13,6 +12,8 @@
   const messageEl = $('message'); const contentEl = $('content');
   $('doc-name').textContent = file;
   if (id) $('back').href = '/wheelchair/app/thread?id=' + encodeURIComponent(id);
+  const dl = $('doc-download');
+  if (id && FILES.includes(file)) dl.href = API + '/threads/' + encodeURIComponent(id) + '/doc?file=' + encodeURIComponent(file) + '&download=1'; else dl.hidden = true;
   document.title = (file || 'Plan document') + ' · wheelchair';
 
   function say(text) {
@@ -53,18 +54,11 @@
 
     let raw;
     try {
-      let res;
-      if (thread.archived) {
-        if (!thread.slug) return say(missing);
-        res = await fetch(API + '/threads/' + encodeURIComponent(id) + '/doc?file=' + encodeURIComponent(file));
-      } else {
-        if (!thread.slug || !thread.worktree) return say(missing);
-        const plan = thread.worktree + '/docs/plans/' + thread.slug;
-        res = await fetch('/wheelchair/doc?plan=' + encodeURIComponent(plan) + '&file=' + encodeURIComponent(file));
-      }
+      if (!thread.slug) return say(missing);
+      const res = await fetch(API + '/threads/' + encodeURIComponent(id) + '/doc?file=' + encodeURIComponent(file));
       if (res.status === 404 || res.status === 403) return say(missing);
       if (!res.ok) return say('Could not load ' + file + ' (status ' + res.status + ').');
-      raw = thread.archived ? (await res.json()).content : await res.text();
+      raw = (await res.json()).content;
     } catch (e) { return say('Could not load ' + file + '.'); }
 
     messageEl.hidden = true;
