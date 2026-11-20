@@ -11,7 +11,8 @@ let ctx;
 test.beforeEach(async ({ page }) => { ctx = await startWorld(); await signIn(page, ctx); });
 test.afterEach(async () => { await ctx.close(); });
 
-const SHOTS = process.env.FILES_SHOTS || path.join(__dirname, '..', '..', 'docs/plans/thread-sidebar-files/reports');
+let shots = process.env.FILES_SHOTS;
+async function shotDir() { return shots || (shots = await makeTemp('wc-files-shots-')); }
 
 async function seed(extra = {}) {
   const made = await ctx.make({ cli: 'claude' });
@@ -60,7 +61,7 @@ test.describe('desktop', () => {
     await expect(sent.nth(1).locator('a.file')).toHaveAttribute('target', '_blank');
     await expect(side).not.toContainText('Retracted one');
     await expect(side).not.toContainText("This thread's files");
-    await page.screenshot({ path: path.join(SHOTS, 'T3-sidebar.png') });
+    await page.screenshot({ path: path.join(await shotDir(), 'T3-sidebar.png') });
   });
 
   test('an archived thread keeps the names and drops the links', async ({ page }) => {
@@ -71,7 +72,10 @@ test.describe('desktop', () => {
     await expect(sent.first()).toContainText('Big sheet');
     await expect(sent.first()).toContainText('Removed when the thread was archived');
     await expect(page.locator('#files .sent-row a')).toHaveCount(0);
-    await expect(page.locator('.card-file .btn, #chat a', { hasText: 'Download' })).toHaveCount(0);
+    const card = page.locator('#card-f1');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('Removed when the thread was archived');
+    await expect(card.getByRole('link', { name: 'Download' })).toHaveCount(0);
   });
 
   test('a card from before an import is not listed', async ({ page }) => {
@@ -105,7 +109,7 @@ test.describe('phone', () => {
     await button.click();
     await expect(panel.locator('h3')).toHaveText(['Project documents', 'Sent to you']);
     await expect(panel.locator('.sent-row')).toHaveCount(3);
-    await page.screenshot({ path: path.join(SHOTS, 'T3-phone-panel.png') });
+    await page.screenshot({ path: path.join(await shotDir(), 'T3-phone-panel.png') });
     for (const a of await panel.locator('a').all()) {
       expect((await a.boundingBox()).height).toBeGreaterThanOrEqual(44);
     }

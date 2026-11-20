@@ -252,7 +252,7 @@
   function humanSize(n) {
     if (!(n >= 0)) return '';
     if (n < 1024) return n + ' B';
-    if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+    if (n < 1000 * 1024) return Math.round(n / 1024) + ' KB';
     return (n / 1024 / 1024).toFixed(1) + ' MB';
   }
   // The `file` and `image` cards the user was sent, newest first; retracted and pre-import cards are skipped.
