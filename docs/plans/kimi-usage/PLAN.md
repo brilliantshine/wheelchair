@@ -145,6 +145,15 @@ Claude/GPT behaviour or to how the page looks.
 
 ## Review Rounds
 
+### Round 1 — 2026-11-19
+
+**Lanes:** pending.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
