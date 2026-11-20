@@ -327,7 +327,7 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 
 ### Round 2 — 2026-11-19
 
-**Lanes:** to be filled when reviewers start.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt (model per hub); cross-family: yes.
 
 **Changed since Round 1:** copies keyed by worktree and seeded from another copy (D21, D22); stdio-on-Windows as the supported tool route (D23); Windows entries dropped on non-WSL (D24); one reconcile instead of push then pull (D25); letter case (D26); app wrapper, PID plus creation time, sweep (D27); file modes (D28); `WSL_INTEROP` repair (D29); copy ready before tools start (D30); stop/sweep reconcile, conflicts kept on archive (D31); `.exe` only (D32); Unity in the live check (D33); `status` returns `sync`.
 
