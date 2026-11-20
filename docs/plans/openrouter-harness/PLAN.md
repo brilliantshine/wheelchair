@@ -49,6 +49,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 19 | Extends 16: every provider's code submission targets its login pane exactly; only Pi refuses a submission once its key prompt is gone | Exact targeting is invisible; the visible refusal is limited to the new provider | review-round-3 |
 | 20 | After three unclean rounds, keep the plan as is and run another review round | User's choice over simplifying sign-in or building now | user |
 | 21 | If Pi needs `extended-keys`, set the tmux server option to `on` | tmux has no per-session scope for it; `on` only affects programs that request it | review-round-4 |
+| 22 | Extends 21: set only when the current value is `off`, accepting that it also applies to the user's own tmux sessions on the default server | Harmless with `on`; a user's own setting is kept | review-round-5 |
 
 ## Spec
 
@@ -156,10 +157,12 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   what `copyTranscript` reads. A missing transcript does not hold up the event: it is
   forwarded and the hub ends the turn without a report. If Pi's API offers tool start/end events, map them to
   `step` events as Claude does; otherwise send none.
-- tmux: if the dry run shows Pi needs `extended-keys`, the machine sets the server option
-  `extended-keys on` (not `always`) when it starts a Pi session. tmux scopes this option to
-  the whole server; with `on`, tmux sends extended key sequences only to programs that ask
-  for them, so the other CLIs see no change. The existing machine readiness tests for the
+- tmux: if the dry run shows Pi needs `extended-keys`, the machine, when it starts a Pi
+  session, sets the server option `extended-keys on` (not `always`) only if its current value
+  is `off`; a value the user already set is left alone. Wheelchair uses the user's default
+  tmux server (`machine/service.js:828-834`), so this also reaches the user's own tmux
+  sessions; with `on`, tmux sends extended key sequences only to programs that ask for them,
+  so other programs see no change. The existing machine readiness tests for the
   other CLIs must still pass with the option set.
 - `readyText`/`answerPrompts`: from the dry run's screens. There are no per-tool approval
   prompts.
@@ -379,7 +382,7 @@ its result, and checks spend is non-zero.
 
 ### Round 5 — 2026-11-19
 
-**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 4:**
 - Outside-order placement limited to `openrouter`.
@@ -390,6 +393,7 @@ its result, and checks spend is non-zero.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `extended-keys` also reaches the user's own tmux sessions on the shared server | upheld | Spec: set only when `off`; shared server named; Decision 21 consequence recorded |
 
 ## Implementation Tasks
 
