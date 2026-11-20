@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Spend is summed from the `cost` Pi records on each reply in its session logs, offline; no call to OpenRouter's API | No key handling beyond Pi's own; the dry run confirms the cost is recorded | defaulted |
 | 13 | OpenRouter is not auto-added to the placement orders; the user adds it in Settings | Avoids silent pay-per-use spend | review-round-1 |
 | 14 | Sign-in status reads only Pi's `auth.json`; the `OPENROUTER_API_KEY` env route is dropped | Keeps the key out of every pane's environment | review-round-1 |
+| 15 | Supersedes 5: OpenRouter model ids follow one grammar, `^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$`, at most 128 characters in total | One rule, testable at the edges | review-round-1 |
 
 ## Spec
 
@@ -83,24 +84,30 @@ build task confirms them with a dry run and records any difference in the Log):
 
 ### Model ids
 
-`openrouter` pins accept `^[a-z0-9][a-z0-9._-]{0,63}/[a-z0-9][a-z0-9._:-]{0,63}$` (OpenRouter's
-`vendor/model[:variant]`), total at most 128 characters, enforced identically in
-`codex/model.sh`, `viewer/app/routes.js` and `viewer/pages/settings.js`. Other providers'
+`openrouter` pins match `^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$`
+and are at most 128 characters in total (OpenRouter's `vendor/model[:variant]`), enforced
+identically in `codex/model.sh`, `viewer/app/routes.js` and `viewer/pages/settings.js`, each
+tested with: 128 accepted, 129 refused, no slash refused, two slashes refused, `a/b:` and
+`a/b::c` refused, `a/b:free` accepted. Other providers'
 rules are unchanged. Defaults: `openrouter/auto` for light, standard, heavy, critical and
 lead.
 
 ### Dry run (first build task)
 
-Before writing the adapter, install nothing; if `pi` is installed and an OpenRouter key is
-present, run Pi once in a scratch directory under tmux and record in the plan's Log: the exact
+Pi installed on the machine and an OpenRouter key saved in Pi (the user runs `pi` then
+`/login openrouter` once by hand) are prerequisites for building. If either is missing, the
+sub-lead stops and asks the lead, who asks the user; nothing is built from guesses. Install
+nothing. Run Pi once in a scratch directory under tmux and record in the plan's Log: the exact
 launch flags for provider and model (does `--model openrouter/auto` with `--provider
 openrouter` work), the ready-screen text, whether `--approve` removes the trust prompt,
 whether `extended-keys` is needed, the extension API shape for `agent_settled` and tool events,
 the transcript path and the assistant `usage`/`cost` fields for an OpenRouter reply, whether
 Pi has a read-only tool set flag, whether it takes a system-prompt file, and what `/login
-openrouter` shows (URL, key prompt, or both). If `pi` or a key is missing, record that and
-build from the documented facts above; the live smoke (Validation) is then reported as not
-run. Any fact that differs from this Spec is reported to the lead before building on it.
+openrouter` shows (URL, key prompt, or both) and what it shows once signed in. To see the
+login screens on a machine already signed in, use a scratch `PI_CODING_AGENT_DIR`. Save a
+sample transcript (with a completed turn, an aborted turn and a failed turn if one can be
+produced, e.g. with an invalid model id) under `docs/plans/openrouter-harness/samples/`, with
+nothing secret in it. Any fact that differs from this Spec is reported to the lead before building on it.
 
 ### Machine adapter `machine/adapters/pi.js`
 
@@ -111,10 +118,15 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   --session-id <cli_session_id> --approve -e <extension>` plus the role prompt per the dry run.
   Reviewers get Pi's read-only tool set when one exists. Account dirs use
   `PI_CODING_AGENT_DIR=<account dir>`; the default account uses `~/.pi/agent`.
+- `machine/hook.sh` gets a `pi)` case (session name in `$2`, payload on stdin) dispatching
+  to the `pi` adapter through `machine/lib/hook-post.js`.
 - The extension, on `agent_settled`, runs `machine/hook.sh pi <session name>` with a JSON
-  payload naming the event and the transcript path; `hookEvent` maps it to
-  `{ type: 'turn-ended', transcript_path }` (aborted maps to the same turn-ended with the
-  outcome noted, as Claude's Stop does). If Pi's API offers tool start/end events, map them to
+  payload naming the event, the transcript path, the id of the last assistant entry in the
+  session, its `stopReason` and error text if any. `hookEvent` maps it like Kimi's turn ends
+  (`machine/service.js:936-945`): completed → `{ type: 'turn-ended', turn_id: <entry id>,
+  transcript_path }`; aborted → the same with `interrupted: true`; an error stop →
+  `limit-hit` when the error mentions a rate limit, quota or 429, otherwise `turn-failed` with
+  the error text. If Pi's API offers tool start/end events, map them to
   `step` events as Claude does; otherwise send none.
 - tmux: if the dry run shows Pi needs `extended-keys`, the machine turns it on for Pi sessions
   without changing behaviour for other CLIs.
@@ -125,24 +137,34 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
 - `loginStatus(dir)`: signed in when the account's `auth.json` has an `openrouter` entry.
   `OPENROUTER_API_KEY` in the environment is ignored for status and never set by wheelchair. It reads `auth.json` only to test
   for the key's presence and returns booleans and fixed problem strings, never the key.
-- `loginCommand`/`parseLogin`/`loginPrompt`: open Pi and drive `/login openrouter` in the
-  existing login pane flow, exposing whatever Pi presents: a URL to open and/or a prompt to
-  paste a key (the existing `wantsCode` path).
-- Machine restart: recovery recognises a Pi pane (`machine/service.js:488`) and carries on
-  with hook-delivered turn ends.
+- `loginCommand`/`parseLogin`/`loginPrompt`/`loginDone`: open Pi and drive `/login
+  openrouter` in the existing login pane flow, exposing whatever Pi presents: a URL to open
+  and/or a prompt to paste a key (`wantsCode`). `loginDone(pane)` recognises Pi's signed-in
+  text, since Pi stays open after login (`machine/service.js:1508`).
+- Settings (`viewer/pages/settings.js` login view) shows the paste field whenever
+  `wantsCode` is true, with or without a URL; with no URL it reads "Paste your OpenRouter
+  key".
+- Code submission (`machine/service.js` `/code`, used by every provider) pastes with
+  `paste-buffer -d` and runs `delete-buffer` on any failure, so no pasted text stays in tmux.
+- Machine restart: Pi sessions in the saved registry carry on with hook-delivered turn ends
+  (the hook command and its token are per session and persisted). A Pi pane found without a
+  registry entry is recognised (`machine/service.js:488`) and ended with "Lost track of this
+  Pi session after a machine restart; restart it", as Kimi's are.
 - `usageFrom` returns null (no rate windows).
 
 ### Hub
 
 - `viewer/app/chat.js`: a Pi transcript parser showing user and assistant text and tool calls
-  like the other parsers, and a report selector that returns the final assistant text of the
-  turn that ended (reviewer and verifier results).
-- Spend: a machine endpoint (documented in `machine/API.md`) returns, per OpenRouter account,
+  like the other parsers, and a report selector (like `kimiReport`, `chat.js:244,314`) that
+  returns the text of the assistant entry named by the event's `turn_id`, never a later one.
+- Spend: a machine endpoint (documented in `machine/API.md`) returns, per OpenRouter account on that machine,
   the sum of `cost.total` over assistant messages whose `provider` is `openrouter` in that account's Pi session files for today
   (machine local time), the last 7 days and the last 30 days, in US dollars, read offline.
   The hub's usage view shows these three figures on the OpenRouter provider card in place of
   the percentage bars, e.g. "$0.42 today · $3.10 this week · $11.80 this month", with
-  "no spend yet" when zero.
+  "no spend yet" when zero. The figures are the sum over every OpenRouter account on every
+  reachable machine. If any machine with an OpenRouter account is unreachable, the line adds
+  "· <machine> not reachable" and never shows "no spend yet".
 - Settings shows one line under OpenRouter: "Counts as its own family for cross-checked
   reviews, even when it runs a Claude or GPT model." Missing or unparseable cost fields count as zero. OpenRouter
   accounts never count as out of room.
@@ -173,7 +195,11 @@ binding by session id; chat parsing and report selection from a sample Pi transc
 under `docs/plans/openrouter-harness/samples/`); login status present/absent without the key
 in any output; login pane redaction; model id rule in all three places; spend sums over a
 sample transcript set including missing cost fields; Settings showing OpenRouter; and a fake
-Pi CLI driving a full start → ready → turn-ended → report cycle in the machine tests.
+Pi CLI driving a full start → ready → turn-ended cycle in the machine tests, with the
+fake's extension calling the real `machine/hook.sh`; and a hub test (like
+`viewer/test/app-kimi-hub.test.js`) taking a Pi turn-ended event with the sample transcript
+through to the result delivered to the starting session, for a completed, an aborted (no
+report) and a failed turn. Code submission tests assert no tmux buffer remains.
 The live smoke starts a Pi session through the machine service, waits for one turn end, and
 checks that the chat shows the reply, the report is delivered and spend is non-zero.
 
@@ -190,12 +216,13 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A Pi pane left running after its registry entry is lost can't be reattached; it is ended with a restart reason | Needs a restart plus lost state; matches Kimi | review-round-1 |
 
 ## Review Rounds
 
 ### Round 1 — 2026-11-19
 
-**Lanes:** intent lens and mechanics lens, families recorded at start; cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
@@ -205,6 +232,17 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 | intent | minor | Spend sums non-OpenRouter Pi sessions in `~/.pi/agent` | upheld | Spec Spend: only messages with provider `openrouter` |
 | intent | minor | `OPENROUTER_API_KEY` env branch exposes the key to every pane | upheld | Spec loginStatus: auth.json only; Decision 14 |
 | intent | minor | `openrouter/auto` defaults make "cross-family" reviews possibly same-family without notice | upheld | Spec Hub: Settings note on OpenRouter |
+| mechanics | blocking | `hook.sh pi` exits 64 before dispatch | upheld | Spec adapter: `pi` case in `machine/hook.sh`; lifecycle test calls the real bridge |
+| mechanics | blocking | Turn-end payload doesn't identify the completed turn; replay can deliver a later reply | downgraded (major): same exposure Claude has today, but cheap to close | Spec: payload carries the last assistant entry id; report selector stops at it |
+| mechanics | blocking | Abort/failure mapping undefined; hub needs `interrupted: true` | upheld | Spec: aborted → `interrupted: true`; error stop → `turn-failed`/`limit-hit` as Kimi |
+| mechanics | blocking | Key-only paste field not shown without a URL; no completion while Pi stays open | upheld | Spec: Settings shows paste field when `wantsCode` without URL; adapter `loginDone` |
+| mechanics | blocking | Pasted key left in a tmux paste buffer | upheld | Spec: `paste-buffer -d`, `delete-buffer` on failure, for every provider |
+| mechanics | blocking | Env-var key may not reach Pi's tmux pane | upheld | Already fixed by Decision 14 (env route dropped) |
+| mechanics | major | Rare path: orphaned Pi pane missing from the registry can't recover hook completion | accepted-risk | Accepted Risks; Spec says such panes end with a restart reason, like Kimi |
+| mechanics | major | Model id limits contradict (64/128/129) and allow repeated colons | upheld | Spec Model ids: one grammar; Decision 15 supersedes 5 |
+| mechanics | major | Spend aggregation across machines/accounts undefined | upheld | Spec Spend: sum of reachable machines, partial marker |
+| mechanics | major | Dry-run fallback lacks evidence for ready screen and login | upheld | Spec Dry run: Pi + key are prerequisites; lead asks the user if missing |
+| mechanics | major | Report delivery tested only at machine level | upheld | Spec Validation: hub test for the Pi report path |
 
 ## Implementation Tasks
 
