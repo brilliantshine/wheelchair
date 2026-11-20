@@ -244,6 +244,25 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 | mechanics | major | Dry-run fallback lacks evidence for ready screen and login | upheld | Spec Dry run: Pi + key are prerequisites; lead asks the user if missing |
 | mechanics | major | Report delivery tested only at machine level | upheld | Spec Validation: hub test for the Pi report path |
 
+### Round 2 — 2026-11-19
+
+**Lanes:** intent — (recorded at start); mechanics — (recorded at start); cross-family: yes.
+
+**Changed since Round 1:**
+- OpenRouter not auto-added to placement orders (Decision 13).
+- Sign-in status reads only `auth.json`; env-var route dropped (Decision 14).
+- Spend counts only `provider: openrouter` replies; summed across reachable machines with a not-reachable marker.
+- Settings note on cross-family reviews.
+- `hook.sh` `pi` case; turn-end payload carries the last assistant entry id, stop reason and error; aborted/failed/limit mappings; report selector by entry id.
+- Login: paste field without URL, `loginDone`, `paste-buffer -d` and `delete-buffer` for every provider.
+- Machine restart handling for Pi panes; orphaned panes accepted risk.
+- One model-id grammar (Decision 15) with boundary tests.
+- Dry run: Pi and a saved key are prerequisites; samples saved.
+- Validation: hub report-path test, real `hook.sh` in the fake lifecycle, buffer test.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
