@@ -89,12 +89,14 @@ test.describe('desktop', () => {
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 } });
-  test('the header strip lists the pictures', async ({ page }) => {
+  test('the Files button opens a panel that lists the pictures', async ({ page }) => {
     const made = await seed();
     await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
-    const strip = page.locator('#head-files');
-    await expect(strip.getByRole('link', { name: 'Flow latest' })).toBeVisible();
-    await expect(strip.getByRole('link', { name: 'Flow static' })).toBeVisible();
-    await expect(strip.getByRole('link', { name: 'Flow first' })).toHaveCount(0);
+    await expect(page.locator('#files-panel')).toBeHidden();
+    await page.getByRole('button', { name: /^Files \(\d+\)$/ }).click();
+    const panel = page.locator('#files-panel');
+    await expect(panel.getByRole('link', { name: 'Flow latest' })).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Flow static' })).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Flow first' })).toHaveCount(0);
   });
 });

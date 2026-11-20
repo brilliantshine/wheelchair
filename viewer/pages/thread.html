@@ -23,7 +23,8 @@
   <main class="col-main">
     <section id="head" class="thread-head"></section>
     <p id="export-reason" class="dim" hidden></p>
-    <div id="head-files" class="head-files" hidden></div>
+    <div id="head-files" class="head-files" hidden><button type="button" id="files-toggle" aria-controls="files-panel" aria-expanded="false">Files (0)</button></div>
+    <section id="files-panel" class="files-panel" aria-label="Files" hidden></section>
     <div id="error" class="error-banner" hidden></div>
     <section id="stub-open" class="card" hidden></section>
     <section id="handoff" class="card amber" hidden></section>
@@ -57,6 +58,6 @@
   </main>
   <aside class="col-side" aria-label="Files">
     <section id="aside-panel" hidden></section>
-    <section id="files" aria-label="This thread's files" hidden></section>
+    <section id="files" aria-label="Files" hidden></section>
   </aside>
 </div>
