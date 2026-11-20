@@ -1,6 +1,6 @@
 ---
 slug: windows-bridge
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -113,8 +113,31 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D81 | Supersedes D77: a copy with unresolved paths is deleted after saving its Windows snapshot as a kept conflict ref | Nothing is lost and no several-GB copy stays forever | review-round-7 |
 | D82 | A copy whose last reconcile failed is never deleted at archive | It otherwise read as "needed none" | review-round-7 |
 | D83 | Newly ignored, untracked paths are dropped from the bridge indexes before each snapshot | A `.gitignore` added mid-thread (common for a new Unity project) must stop caches syncing | review-round-7 |
+| D84 | Plan approved after round 7 without a further round; the last fixes (D82, D83) go unreviewed | User's pick: findings had shrunk to small rule gaps and rare corners, and the build is checked on real Windows | user |
 
 ## Spec
+
+### The flow at a glance
+
+```mermaid
+flowchart TD
+  A[Agent runs wc.js win sync, run or start] --> B{Machine is WSL?}
+  B -- no --> X[Refused: bridge only works in WSL]
+  B -- yes --> C[Copy for this worktree exists?]
+  C -- no --> D[Create a git repo on Windows, seed Unity cache from another copy]
+  C -- yes --> E
+  D --> E[Snapshot both sides as git commits]
+  E --> F{Changed on both sides?}
+  F -- one side --> G[Take that side]
+  F -- both --> H[Merge with git; conflicts keep Linux, Windows version kept in a ref]
+  G --> I[Write result to Linux and to Windows; move the shared base]
+  H --> I
+  I --> J[Run or start the Windows program in a job]
+  J --> K[After it ends or is stopped: sync again]
+  K --> L[At stop, crash sweep or archive: final sync, then copy deleted only when safe]
+```
+
+The words above are the full Spec; the picture only shows the order: every Windows step is wrapped by a sync, and copies are deleted only after their changes are safe.
 
 ### What it is
 
