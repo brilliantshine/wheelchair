@@ -373,7 +373,7 @@ npm --prefix viewer run test:browser
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S5 machine half: `file` card checks, `copyFile`, upload GET filename header, tests | `machine/service.js`, `machine/test/` | gpt standard / gpt-6.1-terra | wc-620b2787c998-worker | `bash machine/test/run.sh` | done |
 | T2 | S3, S4, S5 hub half, S6: `file` kind, `documents` in chat, live+archived `/doc` with download, protocol text, unit tests | `viewer/app/{card,cards,chat,routes,threads,documents}.js`, `viewer/AGENTS.md`, `viewer/test/*.test.js`, `protocol/app/{cards,cards-lead,lead,sub-lead,worker}.md` | gpt standard / gpt-6.1-terra | wc-620b2787c998-worker-2 | `node --test viewer/test/*.test.js` | done |
-| T3 | S1, S2, S4 page half, S5 chat card: sidebar sections, phone Files panel, doc page via hub route + Download, browser specs (after T2) | `viewer/pages/`, `viewer/test/*.spec.js` | claude standard / claude-sonnet-5-5 | wc-620b2787c998-worker-3 | `npm --prefix viewer run test:browser`, `node --test viewer/test/*.test.js` | in progress |
+| T3 | S1, S2, S4 page half, S5 chat card: sidebar sections, phone Files panel, doc page via hub route + Download, browser specs (after T2) | `viewer/pages/`, `viewer/test/*.spec.js` | claude standard / claude-sonnet-5-5 | wc-620b2787c998-worker-3 | `npm --prefix viewer run test:browser`, `node --test viewer/test/*.test.js` | done |
 
 ## Log
 
@@ -397,3 +397,16 @@ Build accepted: approval 4ceb0129-efd9-4063-a1da-9603a9f82e9b
 - 2026-11-19 — Choice: T2, protocol: the sub-lead and worker sentences sit at the end of their Finishing sections.
 - 2026-11-19 — Choice: T2, tests: archived cases use a fake `git` on `PATH` that intercepts `cat-file` and `show`.
 - 2026-11-19 — T2 accepted (band: scout): viewer unit suite 704/704 rerun by sub-lead.
+- 2026-11-19 — Choice: T3, phone: `Files (N)` counts every row in both sections (documents, pictures, sent files); `#head-files` stays as the button's wrapper and the panel is a new `#files-panel` section after it.
+- 2026-11-19 — Choice: T3, browser tests seed `file` cards by editing the thread record, since the hub accepts `name`/`size` only from the machine relay.
+- 2026-11-19 — Choice: T3, browser tests write their screenshots to the shared test run folder (`FILES_SHOTS` overrides); the two committed PNGs in reports/ came from the first run.
+- 2026-11-19 — T3 reported 3 choices (excluding the screenshot fix); the scout listed more from the diff, logged below.
+- 2026-11-19 — Choice: T3, right column's aside label is now `Files`.
+- 2026-11-19 — Choice: T3, Sent to you sorts by `created_at` (ties: later card first) and skips cards with no stored `file`.
+- 2026-11-19 — Choice: T3, layout: document rows are one line with Download inline; sent rows stack title, name/size, link.
+- 2026-11-19 — Choice: T3, archived image rows show the title as plain text (no link).
+- 2026-11-19 — Choice: T3, doc page: Download is a small button beside the title, shown only for MAP/IDEA/PLAN; the live path no longer needs `thread.worktree` on the page (the hub checks).
+- 2026-11-19 — Choice: T3, `humanSize`: bytes under 1 KiB as `B`, KB below 1000 KiB, then MB to one decimal.
+- 2026-11-19 — Choice: T3, existing specs (`app-ui`, `app-threads`) now create temp worktrees with real plan files.
+- 2026-11-19 — T3 sent back once for small test fixes (screenshots wrote into the repo; a vacuous archived-card assertion); fixed by the same worker.
+- 2026-11-19 — T3 accepted (band: bigger-scout): full browser suite 1060 passed on the first commit, rerun by sub-lead; touched specs pass after the fix; full validation run on the merged branch below.
