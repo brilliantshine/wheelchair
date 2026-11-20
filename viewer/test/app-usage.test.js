@@ -356,6 +356,70 @@ test('idle poll probes eligible accounts in order and records the selected machi
   } finally { await close(c); }
 });
 
+test('idle poll stores default and named Kimi account readings', async () => {
+  const fs = require('node:fs/promises'), path = require('node:path');
+  const { c, hub } = await pollSetup();
+  try {
+    await settings.update(hub, s => { s.accounts.find(a => a.id === 'default-claude').paused = true; s.accounts.push({ ...account, id: 'other-kimi', provider: 'kimi', plan: 'unknown' }); });
+    c.machine.status.kimi = { installed: true, logged_in: true };
+    c.machine.status.accounts.push({ id: 'default-kimi', cli: 'kimi', logged_in: true }, { id: 'other-kimi', cli: 'kimi', logged_in: true });
+    await hub.pollIdle();
+    assert.deepEqual(usageCalls(c).map(x => x.body), [
+      { account: 'default-kimi', cli: 'kimi', dir: null },
+      { account: 'other-kimi', cli: 'kimi', dir: '~/.wheelchair/accounts/other-kimi' },
+    ]);
+    const saved = JSON.parse(await fs.readFile(path.join(c.state, 'usage.json'))).readings;
+    assert.equal(saved['default-kimi'].machine, 'hub');
+    assert.equal(saved['other-kimi'].machine, 'hub');
+  } finally { await close(c); }
+});
+
+test('idle poll stores a Kimi reading while its session is live', async () => {
+  const { c, hub } = await pollSetup(); const g = gate(); c.machine.usageReply = g.respond;
+  try {
+    await settings.update(hub, s => { s.accounts.find(a => a.id === 'default-claude').paused = true; });
+    c.machine.status.kimi = { installed: true, logged_in: true };
+    c.machine.status.accounts.push({ id: 'default-kimi', cli: 'kimi', logged_in: true });
+    await hub.save({ id: 'kimi-live', sessions: [{ live: true, account: 'default-kimi' }] });
+    const poll = hub.pollIdle(); await g.called; g.release(); await poll;
+    assert.equal(usageCalls(c)[0].body.cli, 'kimi');
+    assert.equal((await usage.readings(hub))['default-kimi'].week.used, 20);
+  } finally { g.release(); await close(c); }
+});
+
+test('idle poll tries another machine when a Kimi probe fails', async () => {
+  const fs = require('node:fs/promises'), path = require('node:path');
+  const { startMachine } = require('./helpers/app-machine.js');
+  const { c, hub } = await pollSetup(); const second = await startMachine();
+  try {
+    await settings.update(hub, s => { s.accounts.find(a => a.id === 'default-claude').paused = true; });
+    for (const machine of [c.machine, second]) {
+      machine.status.kimi = { installed: true, logged_in: true };
+      machine.status.accounts.push({ id: 'default-kimi', cli: 'kimi', logged_in: true });
+    }
+    c.machine.usageReply = { status: 502 };
+    second.usageReply = { reading: { account: 'default-kimi', week: { used: 42, resets_at: null } } };
+    const machinesPath = path.join(c.state, 'machines.json');
+    const machines = JSON.parse(await fs.readFile(machinesPath));
+    machines.second = { name: 'second', address: '127.0.0.1', port: second.port, secret: second.secret };
+    await fs.writeFile(machinesPath, JSON.stringify(machines));
+    await hub.pollIdle();
+    assert.equal(usageCalls(c).length, 1);
+    assert.equal(second.calls.filter(call => call.path === '/v1/usage').length, 1);
+    const saved = (await usage.readings(hub))['default-kimi'];
+    assert.equal(saved.week.used, 42); assert.equal(saved.machine, 'second');
+  } finally { await second.stop(); await close(c); }
+});
+
+test('idle poll skips a live Claude account', async () => {
+  const { c, hub } = await pollSetup();
+  try {
+    await hub.save({ id: 'claude-live', sessions: [{ live: true, account: 'default-claude' }] });
+    await hub.pollIdle();
+    assert.equal(usageCalls(c).length, 0);
+  } finally { await close(c); }
+});
+
 test('idle poll drops a reading when the account becomes live', async () => {
   const { c, hub } = await pollSetup(); const g = gate(); c.machine.usageReply = g.respond;
   try { const poll = hub.pollIdle(); await g.called; await hub.save({ id: 'during', sessions: [{ live: true, account: 'default-claude' }] }); g.release(); await poll; assert.equal((await usage.readings(hub))['default-claude'], undefined); } finally { g.release(); await close(c); }
