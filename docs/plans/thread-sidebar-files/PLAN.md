@@ -265,6 +265,9 @@ npm --prefix viewer run test:browser
 | An archived plan document with non-UTF-8 bytes downloads re-encoded | Agents write UTF-8 Markdown | review-round-3 |
 | An archived thread advanced by a handoff import and archived again can show a cached document list from before | Needs an import that advances an archived thread, a change in which plan files exist, and a re-archive, with the hub still running | review-round-5 |
 | An archived plan document over 2 MiB is listed but its page fails | Plan documents are far smaller in ordinary use | review-round-2 |
+| A Git failure on an archived thread's first document poll caches an empty list until the hub restarts (`viewer/app/documents.js:40-47`) | Needs Git to fail on a healthy machine at exactly the first lookup | verification-1 |
+| A live plan document swapped for a symlink between the eligibility check and the read is followed (`viewer/app/documents.js:17-29`) | Needs a file swapped mid-operation (tampering, sub-second window); the lead can already read such files | verification-1 |
+| A sent file's source swapped between `copyFile`'s checks and its copy is copied (`machine/service.js:376-392`) | Needs a file swapped mid-operation by the sending lead itself, which can already read those files | verification-1 |
 
 ## Review Rounds
 
@@ -411,3 +414,4 @@ Build accepted: approval 4ceb0129-efd9-4063-a1da-9603a9f82e9b
 - 2026-11-19 — T3 sent back once for small test fixes (screenshots wrote into the repo; a vacuous archived-card assertion); fixed by the same worker.
 - 2026-11-19 — T3 accepted (band: bigger-scout): full browser suite 1060 passed on the first commit, rerun by sub-lead; touched specs pass after the fix; full validation run on the merged branch below.
 - 2026-11-19 — Full validation on the merged branch: machine 375/375, unit 704/704, browser 1060 passed (34 skipped). Status verifying; verification attempt 1.
+- 2026-11-19 — Verification attempt 1 on be04e1b1: claude verifier PASS; gpt verifier FAIL with 3 gaps, all judged rare paths and recorded in Accepted Risks (verification-1). Merged list empty: PASS. Verification lanes: claude-opus-5-5 and gpt-6.2-sol.
