@@ -109,6 +109,10 @@ test.describe('phone', () => {
     await button.click();
     await expect(panel.locator('h3')).toHaveText(['Project documents', 'Sent to you']);
     await expect(panel.locator('.sent-row')).toHaveCount(3);
+    // The panel opens directly under its button, with nothing (such as Your copy) between them.
+    expect(await page.evaluate(() => document.getElementById('head-files').nextElementSibling.id)).toBe('files-panel');
+    const below = (await panel.boundingBox()).y - ((await button.boundingBox()).y + (await button.boundingBox()).height);
+    expect(below).toBeLessThan(40);
     await page.screenshot({ path: path.join(await shotDir(), 'T3-phone-panel.png') });
     for (const a of await panel.locator('a').all()) {
       expect((await a.boundingBox()).height).toBeGreaterThanOrEqual(44);

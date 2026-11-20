@@ -235,7 +235,8 @@
   // Fetched on load, after each action and on its own button; never on the page's poll timer.
   // While a switch runs it re-reads every 3 seconds on a timer of its own.
   const copyEl = el('section', 'card copy-panel'); copyEl.id = 'copy'; copyEl.setAttribute('aria-label', 'Your copy');
-  $('head-files').after(copyEl);
+  // After the phone Files panel, so the panel opens right under its button.
+  $('files-panel').after(copyEl);
   const copy = { status: null, error: '', ask: null, sending: false, waiting: false, loading: false, started: false, timer: null, seq: 0 };
   const plural = (list, total) => {
     const ul = el('ul', 'copy-files');
