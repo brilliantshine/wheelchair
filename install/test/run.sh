@@ -273,7 +273,7 @@ run_case codex_only
 assert 'codex-only install succeeds and reports Codex' bash -c '[[ $1 == 0 && $2 == *"harness found: codex"* ]]' _ "${status[codex_only]}" "${output[codex_only]}"
 assert 'codex-only install creates no retired wrappers' no_retired_wrappers "${claude[codex_only]}" "${codex[codex_only]}"
 assert 'codex-only install does not create the absent Claude home' test ! -e "${claude[codex_only]}"
-assert 'codex-only install creates the default model pins' cmp -s <(printf "# wheelchair's model pins. Change them with codex/model.sh.\nclaude.light = claude-haiku-5-5\nclaude.standard = claude-sonnet-5-5\nclaude.heavy = claude-opus-5-5\nclaude.critical = claude-fable-5-2\nclaude.lead = claude-opus-5-5\nclaude.sub-lead = claude-opus-5-5\ngpt.light = gpt-6-luna\ngpt.standard = gpt-5.6-terra\ngpt.heavy = gpt-6.1-sol\ngpt.critical = gpt-6-astra\ngpt.lead = gpt-6.1-sol\ngpt.sub-lead = gpt-6.1-sol\ngemini.light = gemini-3.8-flash-low\ngemini.standard = gemini-3.8-flash-medium\ngemini.heavy = gemini-3.8-flash-high\ngemini.critical = gemini-3.8-flash-high\ngemini.lead = gemini-3.8-flash-high\ngemini.sub-lead = gemini-3.8-flash-high\nkimi.light = kimi-code/kimi-for-coding\nkimi.standard = kimi-code/k3\nkimi.heavy = kimi-code/k3.1-pro\nkimi.critical = kimi-code/k3.1-pro\nkimi.lead = kimi-code/k3.1-pro\nkimi.sub-lead = kimi-code/k3.1-pro\n") "${home[codex_only]}/.wheelchair/models"
+assert 'codex-only install creates the default model pins' cmp -s <(printf "# wheelchair's model pins. Change them with codex/model.sh.\nclaude.light = claude-haiku-5-5\nclaude.standard = claude-sonnet-5-5\nclaude.heavy = claude-opus-5-5\nclaude.critical = claude-fable-5-2\nclaude.lead = claude-opus-5-5\nclaude.sub-lead = claude-opus-5-5\ngpt.light = gpt-6-luna\ngpt.standard = gpt-5.6-terra\ngpt.heavy = gpt-6.1-sol\ngpt.critical = gpt-6-astra\ngpt.lead = gpt-6.1-sol\ngpt.sub-lead = gpt-6.1-sol\ngemini.light = gemini-3.8-flash-low\ngemini.standard = gemini-3.8-flash-medium\ngemini.heavy = gemini-3.8-flash-high\ngemini.critical = gemini-3.8-flash-high\ngemini.lead = gemini-3.8-flash-high\ngemini.sub-lead = gemini-3.8-flash-high\nkimi.light = kimi-code/kimi-for-coding\nkimi.standard = kimi-code/k3\nkimi.heavy = kimi-code/k3.1-pro\nkimi.critical = kimi-code/k3.1-pro\nkimi.lead = kimi-code/k3.1-pro\nkimi.sub-lead = kimi-code/k3.1-pro\nopenrouter.light = openrouter/auto\nopenrouter.standard = openrouter/auto\nopenrouter.heavy = openrouter/auto\nopenrouter.critical = openrouter/auto\nopenrouter.lead = openrouter/auto\nopenrouter.sub-lead = openrouter/auto\n") "${home[codex_only]}/.wheelchair/models"
 
 new_case kimi_only
 present[kimi_only]=kimi
@@ -284,6 +284,46 @@ new_case agy_only
 present[agy_only]=agy
 run_case agy_only
 assert 'agy-only install succeeds and initializes model pins' bash -c '[[ $1 == 0 && $2 == *"harness found: agy"* && -f $3 ]]' _ "${status[agy_only]}" "${output[agy_only]}" "${home[agy_only]}/.wheelchair/models"
+
+new_case pi_on_path
+detect_path[pi_on_path]=1
+args[pi_on_path]=--serve
+printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[pi_on_path]}/pi"
+chmod +x "${shim[pi_on_path]}/pi"
+run_case pi_on_path
+assert 'pi on PATH is detected alone' bash -c '[[ $1 == 0 && $2 == *"harness found: pi"* && $2 != *"harness found: kimi"* ]]' _ "${status[pi_on_path]}" "${output[pi_on_path]}"
+assert 'PATH pi directory leads the machine service PATH' grep -Fq "PATH=${shim[pi_on_path]}:" "$(machine_unit_path pi_on_path)"
+
+new_case pi_fallback
+detect_path[pi_fallback]=1
+args[pi_fallback]=--serve
+mkdir -p "${home[pi_fallback]}/.local/bin" "${home[pi_fallback]}/target"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${home[pi_fallback]}/target/pi"
+chmod +x "${home[pi_fallback]}/target/pi"
+ln -s "${home[pi_fallback]}/target/pi" "${home[pi_fallback]}/.local/bin/pi"
+run_case pi_fallback
+assert 'fallback pi symlink is detected alone' bash -c '[[ $1 == 0 && $2 == *"harness found: pi"* ]]' _ "${status[pi_fallback]}" "${output[pi_fallback]}"
+assert 'fallback pi symlink directory leads the machine service PATH' grep -Fq "PATH=${home[pi_fallback]}/.local/bin:" "$(machine_unit_path pi_fallback)"
+
+new_case pi_with_others
+present[pi_with_others]=claude,codex,kimi,pi
+restricted_path[pi_with_others]=1
+args[pi_with_others]=--serve
+mkdir -p "${home[pi_with_others]}/.local/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${home[pi_with_others]}/.local/bin/pi"
+chmod +x "${home[pi_with_others]}/.local/bin/pi"
+run_case pi_with_others
+assert 'presence override reports pi alongside other harnesses' bash -c '[[ $1 == 0 && $2 == *"harness found: pi"* && $2 == *"harness found: claude"* && $2 == *"harness found: codex"* && $2 == *"harness found: kimi"* ]]' _ "${status[pi_with_others]}" "${output[pi_with_others]}"
+assert 'pi alongside others reaches the machine service PATH' grep -Fq "PATH=${home[pi_with_others]}/.local/bin:" "$(machine_unit_path pi_with_others)"
+
+new_case no_pi
+detect_path[no_pi]=1
+args[no_pi]=--serve
+printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[no_pi]}/codex"
+chmod +x "${shim[no_pi]}/codex"
+run_case no_pi
+assert 'absent pi is not reported' bash -c '[[ $1 == 0 && $2 != *"harness found: pi"* ]]' _ "${status[no_pi]}" "${output[no_pi]}"
+assert 'absent pi fallback directory is not on the machine service PATH' bash -c '! grep -Fq "$2" "$1"' _ "$(machine_unit_path no_pi)" "${home[no_pi]}/.local/bin"
 
 new_case kimi_fallback
 detect_path[kimi_fallback]=1
@@ -390,7 +430,7 @@ assert 'malformed settings survive with warning and successful install' bash -c 
 new_case neither
 present[neither]=''
 run_case neither
-assert 'no provider exits non-zero and names all missing commands' bash -c '[[ $1 != 0 && $2 == *"no claude, codex, agy or kimi found"* ]]' _ "${status[neither]}" "${output[neither]}"
+assert 'no provider exits non-zero and names all missing commands' bash -c '[[ $1 != 0 && $2 == *"no claude, codex, agy, kimi or pi found"* ]]' _ "${status[neither]}" "${output[neither]}"
 assert 'neither harness writes no homes' bash -c '[[ ! -e $1 && ! -e $2 ]]' _ "${claude[neither]}" "${codex[neither]}"
 assert 'neither harness does not run the stale-viewer check' test ! -e "$(log_path neither)"
 
