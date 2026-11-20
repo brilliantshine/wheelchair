@@ -18,7 +18,7 @@ None.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| W1 | Machine service runs as a systemd user service | Whether WSL interop works from it | no | Settled: `win info` probes interop and reports the reason when it fails; README setup step; live script checks it (D15, D20) |
+| W1 | Machine service runs as a systemd user service | Whether WSL interop works from it | no | Settled: D29, and the live script runs through the service |
 | W2 | Codex screen apps run sandboxed | Whether Codex's sandbox blocks interop | no | Settled: all bridge commands run in the machine service, outside any agent sandbox (D11). Codex-launched Windows MCP servers go to Check Once Built |
 | W3 | Per-thread Unity Editors | Mapping a Windows MCP server to the thread's Editor | yes (Q3) | Settled by D8 and D12 |
 | W4 | Image cards need a Linux path | Windows screenshots | no | Settled: screenshots are written to a Linux path (Spec) |
@@ -54,13 +54,22 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D22 | A newly created copy is first seeded on the Windows side with the ignored files (such as Unity's `Library/`) of the thread's most recently synced other copy, then pushed as usual. Pulls Deferred #3 into the Spec | Verifiers get a fresh worktree each; without seeding every one waits through a full Unity import | review-round-1 |
 | D23 | The supported way to reach a Windows-side tool is to run its MCP server on Windows as a stdio entry launched through interop; it then reaches its app (such as the Unity Editor) over Windows' own localhost, so no networking settings change. HTTP and SSE servers on Windows stay Deferred #1 | Meets IDEA's "without hand-editing networking settings" for any tool with a stdio server, which both known Unity MCPs offer | review-round-1 |
 | D24 | On a machine that is not WSL, `.mcp.json` stdio entries whose command is a Windows program are left out of the session's project tools and are not reported as missing programs | IDEA: machines without WSL are unaffected; a committed `.mcp.json` may carry Windows entries | review-round-1 |
+| D25 | Sync is one reconcile that reads both sides against the manifest before writing either, instead of push then pull | A push could overwrite a Windows edit before the pull saw it | review-round-1 |
+| D26 | Letter case: Linux case collisions refused; case-only renames applied as renames | Windows storage is case-insensitive; delete-plus-copy would delete the file | review-round-1 |
+| D27 | Apps run under a PowerShell wrapper the service holds, and are identified by PID plus creation time; a 60 s sweep kills apps of dead sessions | Exit codes need a waiting parent; PIDs get reused; crashed sessions must not leave apps on the desktop | review-round-1 |
+| D28 | Modes never come from Windows; new pulled files get 0644 | The Windows mount cannot round-trip Linux modes | review-round-1 |
+| D29 | Repair a missing `WSL_INTEROP` from `/run/WSL/*_interop` for each Windows call; the setup check runs through the installed service | systemd user services often lack it | review-round-1 |
+| D30 | When `.mcp.json` has a Windows program, session start readies the copy before the CLI launches | Tools start before the agent could sync | review-round-1 |
+| D31 | Stop and the sweep reconcile before the copy is left; archive keeps the conflicts folder | Archive must not lose Windows-side changes or saved conflicts | review-round-1 |
+| D32 | Only `.exe` counts as a Windows program; other tools go through `cmd.exe` or `powershell.exe` | Interop launches only PE executables | review-round-1 |
+| D33 | The live check exercises Unity on a fixture project when `WHEELCHAIR_UNITY` is set, and rejects single-colour screenshots | A blank PNG must not pass, and Unity is the main use | review-round-1 |
 
 ## Spec
 
 ### What it is
 
 On a machine where Wheelchair runs inside WSL2, agents get `wc.js win <op>`: a bridge to the
-Windows side of the same PC. Each session gets its own Windows copy of its worktree, kept in
+Windows side of the same PC. Each worktree gets its own Windows copy, kept in
 step around every bridge command, and can run Windows programs, start Windows apps, list and
 screenshot their windows, and stop them. Windows-side MCP tools reach the session's copy
 through an environment variable. Nothing changes on Linux machines without WSL or on Macs.
@@ -75,8 +84,13 @@ through an environment variable. Nothing changes on Linux machines without WSL o
   Windows action is a `powershell.exe -NoProfile -NonInteractive -EncodedCommand <base64>`
   child of the machine service (D11), with a timeout.
 - Not WSL: every `win` op returns 422 `the Windows bridge only works when Wheelchair runs in WSL`.
-- WSL but PowerShell missing or failing to start: 422 naming what failed, including the
-  hint `check that interop is enabled in /etc/wsl.conf`.
+- **Interop from the service (D29):** before every Windows call, if `WSL_INTEROP` is unset
+  or names a socket that does not exist, the service sets it, for that child only, to the
+  newest socket matching `/run/WSL/*_interop`. A systemd user service often lacks it while
+  an interactive shell has it.
+- WSL but PowerShell missing or failing to start: 422 naming what failed, the `WSL_INTEROP`
+  value tried, and the hint `check that interop is enabled in /etc/wsl.conf, then run
+  wsl --shutdown from Windows and reopen WSL`. `win info` reports the same as `reason`.
 
 ### Commands (D9, D10)
 
@@ -89,24 +103,33 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 | Op | Args | Does | Returns |
 |---|---|---|---|
 | `info` | none | Probes PowerShell; does not create the copy | `{wsl, ok, reason?, copy_windows, copy_linux}` |
-| `sync` | none | Both sync directions (below) | `{pushed, pulled, deleted, conflicts}` |
-| `run` | `[--timeout <s>] [--env K=V]... -- <program> [args...]` | Push, run in the copy, wait, pull | `{exit_code, timed_out, output, log, sync}` |
-| `start` | `[--env K=V]... -- <program> [args...]` | Push, start without waiting | `{id, pid, log, sync}` |
-| `status` | `[<id>]` | Running or exited, with exit code; pulls once when it sees an exit | `{apps: [{id, program, running, exit_code, log}]}` |
+| `sync` | none | Reconcile (below) | `{pushed, pulled, deleted, conflicts, skipped}` |
+| `run` | `[--timeout <s>] [--env K=V]... -- <program> [args...]` | Reconcile, run in the copy, wait, reconcile | `{exit_code, timed_out, output, log, sync}` |
+| `start` | `[--env K=V]... -- <program> [args...]` | Reconcile, start without waiting | `{id, pid, log, sync}` |
+| `status` | `[<id>]` | Running or exited, with exit code; reconciles once when it first sees an exit | `{apps: [{id, program, running, exit_code, log}], sync?}`; `sync` present when a reconcile ran |
 | `windows` | none | Top-level visible windows of this session's started apps and their child processes | `{windows: [{handle, title, pid, app_id, minimized}]}` |
 | `shot` | `<handle>` | Screenshot one of those windows | `{path}`: a Linux PNG path |
-| `stop` | `[<id>]` | Kill an app's process tree (all apps if no id), then pull | `{stopped, sync}` |
+| `stop` | `[<id>]` | Kill an app's process tree (all apps if no id), then reconcile | `{stopped, sync}` |
 | `path` | `<path>` | Translate a Linux path to Windows or back (`wslpath -w` / `-u`) | `{path}` |
 
 - `program` is a Windows program name resolved by PowerShell on the Windows PATH, or a full
-  Windows path. Working directory is the session's copy. `--env` sets variables for that
+  Windows path. Working directory is the worktree's copy. `--env` sets variables for that
   program only. `WHEELCHAIR_SESSION_TOKEN` is never passed to Windows.
 - `run`: default timeout 540 s, maximum 540 s (D15); on timeout the process tree is killed,
-  `timed_out: true`, and the pull still happens. `output` is the last 64 KiB of combined
+  `timed_out: true`, and the reconcile still happens. `output` is the last 64 KiB of combined
   stdout and stderr; the full output is in `log`, a Linux file under
   `<stateDir>/win/<session>/logs/`. Programs started by `run` and `start` get no console window.
-- `start` returns once the process exists; its output goes to its log. At most 4 started
-  apps per session at once; a fifth gets 422.
+- **Process tracking (D27):** `run` and `start` launch a PowerShell wrapper as a child of the
+  machine service. The wrapper starts the program, prints one JSON line with the program's
+  PID and its process creation time, waits for it, and exits with its exit code; the service
+  keeps the wrapper and so learns the exit code when it closes. Each app is recorded in
+  `<stateDir>/win/apps.json` with session, PID and creation time. Every later action on a
+  recorded process (`windows`, `shot`, `stop`, a sweep kill) first checks that a process with
+  that PID still has that creation time; if not, the app counts as exited and nothing is
+  touched. After a service restart the exit code of an app the service no longer holds is
+  `null` with `running: false`.
+- `start` returns once the wrapper has printed its line; output goes to the log. At most 4
+  started apps per session at once; a fifth gets 422.
 - `windows` and `shot` only see windows owned by processes this session started (or their
   descendants). Any other handle gets 400.
 - `shot` uses `PrintWindow` with `PW_RENDERFULLCONTENT` so GPU-drawn windows capture; it never
@@ -115,44 +138,61 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   posted with an `image` card.
 - No op sends mouse or keyboard input (D7).
 
-### The Windows copy and sync (D3–D6, D14, D16)
+### The Windows copy and sync (D3, D4, D5, D14, D16, D21, D22, D25, D26, D28)
 
 - Copy path: `%LOCALAPPDATA%\Wheelchair\copies\<thread-id>\<worktree-key>` (D21), reached
   from Linux through the mount. One copy per worktree: sessions sharing a worktree share its
-  copy. Created on the first `sync`, `run` or `start` from that worktree.
+  copy. Created on the first `sync`, `run` or `start` from that worktree, or at session start
+  (D30).
 - **Seeding (D22):** when a copy is created and the thread has another copy, the one whose
   last sync is newest gives its ignored files: one Windows-side `robocopy` of every path that
   is not in that copy's manifest (so only ignored files) into the new copy, before the first
-  push. With no other copy, the new copy starts empty.
-- A manifest per copy at `<stateDir>/win/copies/<worktree-key>/manifest.json` records, for every synced
-  path, size, Linux mtime, Windows last-write time and SHA-256 at the last sync.
+  reconcile. With no other copy, the new copy starts empty.
+- A manifest per copy at `<stateDir>/win/copies/<worktree-key>/manifest.json` records, for
+  every synced path, size, Linux mtime, Windows last-write time and SHA-256 at the last sync.
 - **Synced set:** paths git would see in the worktree (`git ls-files --cached --others
   --exclude-standard`) plus, on the Windows side, new paths that `git check-ignore --stdin`
   (run in the worktree) does not ignore. `.git` is never synced. Ignored paths on Windows are
   never read, copied or deleted.
-- **Push (before run, start, sync):** for each synced Linux path that is new or differs from
-  the manifest, copy it to the copy; delete in the copy each manifest path gone from Linux.
-- **Pull (after run, after an observed exit, stop, sync):** list the copy from Windows in one
-  PowerShell call (D16); every non-ignored path that is new or whose size or last-write time
-  differs from the manifest is copied back to the worktree; manifest paths missing in the copy
-  are deleted in the worktree.
-- **Conflict:** a path changed on both sides since the last sync keeps the Linux file; the
-  Windows file is moved to `%LOCALAPPDATA%\Wheelchair\conflicts\<thread-id>\<worktree-key>\<path>`
-  and listed in `conflicts` (D5).
-- All sync and `win` ops on one copy are serialized, across every session sharing it. Line endings and file modes
-  are copied byte for byte; no conversion. A symlink in the worktree is copied as the file it
-  points to if that is inside the worktree, otherwise skipped and listed in a `skipped` field.
-- Copies are kept when a session ends. Archiving a thread stops its apps and deletes
-  `copies\<thread-id>` and `conflicts\<thread-id>` (D14), alongside the existing archive
-  cleanup (`machine/service.js:1188`).
+- **Reconcile (D25)** is the only sync step; every op above that syncs runs it. It reads
+  both sides before writing either:
+  1. List the Linux synced set and the Windows copy (one PowerShell call, D16). Classify
+     every path against the manifest as unchanged, changed or new, or deleted, on each side.
+  2. Changed on one side only: copy it to the other side. Deleted on one side only and
+     unchanged on the other: delete it on the other side.
+  3. Changed or new on both sides with different content: the Windows file is moved to
+     `%LOCALAPPDATA%\Wheelchair\conflicts\<thread-id>\<worktree-key>\<path>`, then the Linux
+     file is copied over; the path is listed in `conflicts`. Deleted on Linux but changed on
+     Windows: the Windows file goes to conflicts and the path is deleted; changed on Linux but
+     deleted on Windows: the Linux file is copied over. Linux always wins (D5); the Windows
+     version is never discarded without being saved.
+  4. Write the new manifest.
+- **Letter case (D26):** two Linux paths that differ only in letter case make the reconcile
+  fail with 422 naming them, before anything is written. A case-only rename on Linux (old
+  path deleted, new path added, equal ignoring case) is applied on Windows as a rename, never
+  as delete plus copy, and the Windows listing is matched to Linux paths ignoring case.
+- **File modes (D28):** modes never come from Windows. A pulled file that already exists on
+  Linux keeps its Linux mode; a new file pulled from Windows gets 0644. Push writes content
+  only. Line endings are copied byte for byte.
+- A symlink in the worktree is copied as the file it points to if that is inside the
+  worktree, otherwise skipped and listed in `skipped`. Reparse points (junctions, symlinks)
+  in the Windows copy are skipped and listed in `skipped`, never followed.
+- All reconciles and `win` ops on one copy are serialized, across every session sharing it
+  (lead and sub-lead share the thread worktree).
+- Copies are kept when a session ends. Archive deletes `copies\<thread-id>` after the final
+  reconcile (Lifecycle) and keeps `conflicts\<thread-id>` (D14, D31).
+### Lifecycle (D27, D31)
 
-### Lifecycle
-
-- When a session is killed or ends (`machine/service.js:1085`), its started apps' process
-  trees are killed; no pull happens.
-- On service start, any Windows process recorded as started by a session that is not live
-  is killed (records kept in `<stateDir>/win/apps.json`).
-
+- **Session stop** (an explicit stop, including the stops archive makes before committing
+  worktrees, `machine/service.js:1122-1135`): kill the session's started apps, then, if no
+  other live session shares the copy, reconcile it before the stop returns, so archive's WIP
+  commit includes Windows changes. A reconcile failure is logged and does not block the stop.
+- **Sweep** every 60 s, like the screen sweep (`machine/lib/screen.js:105-110`): for each
+  recorded app whose session is not live in tmux (a crash or a natural exit), kill it and
+  reconcile its copy if no live session shares it. A `run` in flight for such a session is
+  killed the same way. On service start the same sweep runs once.
+- Archive deletes the thread's copies but keeps its conflicts folder, so a saved Windows
+  version is never deleted by Wheelchair.
 ### Windows-side tools (D8, D12)
 
 - On WSL machines, every session's tmux environment gets `WHEELCHAIR_WINDOWS_PROJECT` set to
@@ -161,21 +201,27 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 - The supported route for a Windows-side tool (D23): its MCP server runs on Windows as a
   stdio entry, so it reaches its app over Windows' own localhost. Example for a tool on the
   Windows PATH: `"command": "/mnt/c/Windows/System32/cmd.exe", "args": ["/c", "<tool>"]`.
-- A `.mcp.json` stdio entry whose `command` is a Windows program (an absolute `/mnt/<drive>/...`
-  path ending in `.exe`, `.cmd` or `.bat`) is launched by the agent's CLI through interop as
-  today. The project-programs check (`machine/lib/project-programs.js`) treats such a path as
-  found when the file exists, regardless of the execute bit.
+- A **Windows program** in `.mcp.json` is a stdio entry whose `command` is an absolute
+  `/mnt/<drive>/...` path ending in `.exe` (case-insensitive) (D32). Interop runs only `.exe`
+  files directly, so a `.cmd`, `.bat` or `.ps1` tool goes through `cmd.exe` or
+  `powershell.exe` as in the example. On WSL the project-programs check
+  (`machine/lib/project-programs.js`) treats such a path as found when it is an existing
+  regular file; any other command is checked as today.
 - On a machine that is not WSL, such entries are left out of the session's project tools
   and not reported as missing (D24); `cmd.exe` and `powershell.exe` paths count as Windows
   programs too.
-- Such a tool may be used before the copy exists; README tells projects to have the agent run
-  `wc.js win sync` first.
+- **Ready before tools start (D30):** on WSL, when the worktree's `.mcp.json` has at least
+  one Windows-program entry, session start creates (and seeds) the copy and reconciles it
+  before launching the agent's CLI, so a tool that needs the project finds it. A failure there
+  does not block the start; it is added to the session's `project_tools.problems` as
+  `Windows copy not ready: <reason>`, which shows the existing "Project tools problem" card.
 
 ### Agent instructions (D18)
 
 Add to `protocol/app/worker.md` and `protocol/app/verifier.md`, next to the screen paragraph:
 on a WSL machine, use `wc.js win` to run or look at things on Windows; your Windows copy is
-synced around each command; run `win sync` before using a Windows-side tool; Windows apps
+synced around each command; after editing files, run `win sync` before asking a Windows-side
+tool to look at them; Windows apps
 appear on the user's desktop, so never leave them running and never try to type into them;
 use `win stop` when done. Unity tests: `win run -- <Unity.exe path> -batchmode -runTests
 -projectPath <copy> -testResults <copy>\results.xml` with no Editor open on that copy (Unity
@@ -186,8 +232,10 @@ COULD NOT TRY. The first Unity open in a thread imports the whole project and ca
 ### Setup (D19)
 
 README "On Windows" gains: interop must be on (`[interop] enabled=true`, the default); check
-with `node <wheelchair>/viewer/app/wc.js win info` from a thread; Windows-side tools use full
-`/mnt/c/...` paths; `WHEELCHAIR_WINDOWS_PROJECT` names the session's copy. `machine/API.md`
+from a thread by asking the lead to run `wc.js win info`, which runs inside the installed
+machine service (D29); if it fails, run `wsl --shutdown` from Windows, reopen WSL and check
+again; Windows-side tools use full
+`/mnt/c/...` paths to an `.exe`, with `.cmd`/`.bat` tools wrapped in `cmd.exe /c`; `WHEELCHAIR_WINDOWS_PROJECT` names the session's copy. `machine/API.md`
 documents `/v1/agent/win`; `machine/AGENTS.md` lists the new files.
 
 ### Not in this build
@@ -203,16 +251,30 @@ node --test viewer/test/*.test.js        # wc.js win argument building
 bash machine/test/windows-live.sh        # on a WSL machine only; exit 77 elsewhere (D20)
 ```
 
-The tests must cover: non-WSL 422; reviewer and mapper 403; push of new, changed and deleted
-files; pull of new, changed and deleted files; ignored files never copied either way; a
-conflict keeps Linux and moves the Windows file; `run` timeout kills and still pulls; `run`
+The tests must cover: non-WSL 422; reviewer and mapper 403; reconcile of new, changed and
+deleted files in each direction; ignored files never copied either way; every both-sides case
+in Reconcile step 3 saves the Windows version before writing; a Windows edit made between
+commands is not overwritten by the next command's reconcile; case-only rename kept as one
+file on both sides; Linux case collision refused before writing; pulled files keep Linux
+modes and new ones get 0644; `status` returns `sync` with conflicts; `WSL_INTEROP` repaired
+from `/run/WSL`; a recorded PID with a different creation time is never killed; the sweep
+kills apps of a dead session and reconciles; stop reconciles before returning;
+session start readies the copy when `.mcp.json` has a Windows `.exe` entry and reports a
+failure as a project tools problem; `.cmd` entries are not treated as Windows programs; `run` timeout kills and still pulls; `run`
 output cap and log; `start` limit of 4; `windows`/`shot` refuse handles of other processes;
 session end kills apps; a second session on the same worktree shares the copy; a new copy is
 seeded with another copy's ignored files only; Windows-program `.mcp.json` entries dropped
-without warnings on non-WSL; archive deletes the thread's copies; `WHEELCHAIR_WINDOWS_PROJECT` and
+without warnings on non-WSL; archive deletes the thread's copies and keeps its conflicts; `WHEELCHAIR_WINDOWS_PROJECT` and
 `WSLENV` set only on WSL; the token never reaches a Windows program's environment.
-`windows-live.sh` runs on real WSL: `info` ok, `sync` round trip, `run -- cmd.exe /c echo hi`,
-`start -- notepad.exe`, `windows`, `shot` produces a PNG, `stop`.
+`windows-live.sh` runs on real WSL from the installed service's environment (through
+`wc.js win`): `info` ok, `sync` round trip, `run -- cmd.exe /c echo hi`, `start --
+notepad.exe`, `windows`, `shot` produces a PNG that is not a single colour, `stop`. With
+`WHEELCHAIR_UNITY=<path to Unity.exe>` set it also runs the Unity part (D33) on the fixture
+project `machine/test/fixtures/unity-min` (one passing EditMode test): `win run` of
+batchmode tests returns exit 0 and the results XML appears in the Linux worktree; `win
+start` of the Editor on the fixture, wait for its window, `shot` is not a single colour,
+`stop`. Without `WHEELCHAIR_UNITY` it prints `Unity part skipped` and exits 77 after the rest
+passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 
 ## Deferred
 
@@ -227,6 +289,7 @@ without warnings on non-WSL; archive deletes the thread's copies; `WHEELCHAIR_WI
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A junction or symlinked parent directory inside a copy or worktree could make sync read or write outside it | Rare path: projects do not contain them in ordinary use; reparse points in the copy are skipped | review-round-1 |
 
 ## Check Once Built
 
@@ -248,6 +311,28 @@ without warnings on non-WSL; archive deletes the thread's copies; `WHEELCHAIR_WI
 | intent | major | HTTP Windows tools deferred, yet IDEA promises no networking tweaks | downgraded: minor | A stdio server run on Windows reaches its app over Windows localhost with no networking change; both known Unity MCPs offer stdio. Stated as the supported route (D23) |
 | intent | minor | Lead and sub-lead get two copies pulling into one worktree | upheld | Removed by D21 |
 | intent | minor | Committed Windows paths in `.mcp.json` flagged on non-WSL machines | upheld | D24 |
+| mechanics | blocking | Push can overwrite a Windows edit before the pull notices the conflict | upheld | D25 reconcile reads both sides first |
+| mechanics | blocking | Archive can discard unsynced Windows edits and saved conflicts | downgraded: major | Real, small fix: D31 reconcile on stop and sweep; conflicts kept |
+| mechanics | blocking | Junctions or symlinked parents could send sync outside the roots | accepted-risk | Rare path: needs a junction or symlinked parent inside a project copy; reparse points are skipped anyway |
+| mechanics | blocking | `.cmd`/`.bat` cannot launch directly through interop; exec-bit check wrong | upheld | D32 |
+| mechanics | major | Lead and sub-lead pull into one worktree from two copies | upheld | Already removed by D21; serialization stated |
+| mechanics | major | Apps outlive a crashed session; in-flight work not cancelled | upheld | D27 sweep |
+| mechanics | major | Exit code and process ownership across separate PowerShell calls | upheld | D27 wrapper, PID plus creation time |
+| mechanics | major | Windows MCP server starts before the copy exists | upheld | D30 |
+| mechanics | major | Interop may fail from the systemd service even when enabled | upheld | D29 |
+| mechanics | major | Copying modes through the Windows mount breaks git's executable bit | upheld | D28 |
+| mechanics | major | Case-only rename deletes the file | upheld | D26 |
+| mechanics | major | `status` cannot report conflicts from its reconcile | downgraded: minor | One field; added `sync` to `status` |
+| mechanics | major | Live check passes with a blank PNG and never runs Unity | upheld | D33 |
+
+### Round 2 — 2026-11-19
+
+**Lanes:** to be filled when reviewers start.
+
+**Changed since Round 1:** copies keyed by worktree and seeded from another copy (D21, D22); stdio-on-Windows as the supported tool route (D23); Windows entries dropped on non-WSL (D24); one reconcile instead of push then pull (D25); letter case (D26); app wrapper, PID plus creation time, sweep (D27); file modes (D28); `WSL_INTEROP` repair (D29); copy ready before tools start (D30); stop/sweep reconcile, conflicts kept on archive (D31); `.exe` only (D32); Unity in the live check (D33); `status` returns `sync`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
