@@ -1828,3 +1828,30 @@ test('transcript stamps avoid all content reads on a match and detect replacemen
     assert.deepEqual(archived, { unchanged: true, gen: replaced.gen, end: replaced.end });
   } finally { await env.close(); }
 });
+
+test('Kimi usage route protects credentials and reports usage failures', async () => {
+  const root = await temp();
+  await withEnv({ HOME: root, KIMI_CODE_HOME: path.join(root, 'kimi-home') }, async () => {
+    const env = await service(root), requests = [], token = 'dummy-route-token';
+    let status = 200, payload = JSON.stringify({ usages: { limit_7d: { used_ratio: '1', reset_time: '2030-01-01T00:00:00Z' }, limit_5h: { used_ratio: 0.2, reset_time: '2030-01-02T00:00:00Z' } } });
+    const server = http.createServer((req, res) => { requests.push({ method: req.method, path: req.url, headers: req.headers }); res.writeHead(status, status === 302 ? { location: '/redirected' } : {}); res.end(payload); });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    env.instance.options.kimiUsageUrl = `http://127.0.0.1:${server.address().port}/coding/v1/usages`;
+    const config = path.join(root, 'kimi-home/config.toml'), credential = path.join(root, 'kimi-home/credentials/dummy.json');
+    const setConfig = host => write(config, `[providers."managed:kimi-code".oauth]\nkey = "oauth/dummy"\noauth_host = "${host}"\n`);
+    const setCredential = expires_at => write(credential, JSON.stringify({ access_token: token, expires_at }));
+    const request = () => api(env, 'POST', '/v1/usage', { account: 'default-kimi', cli: 'kimi', dir: null }, hubHeader);
+    try {
+      await setConfig('https://auth.kimi.ai'); await setCredential(Date.now() / 1000 + 600);
+      let result = await request(); assert.equal(result.status, 200); assert.equal(result.body.reading.week.used, 100); assert.equal(result.body.reading.five_hour.used, 20); assert.ok(result.body.reading.limited_until);
+      assert.equal(requests[0].method, 'GET'); assert.equal(requests[0].path, '/coding/v1/usages'); assert.equal(requests[0].headers.authorization, `Bearer ${token}`);
+      await setCredential(Date.now() / 1000 - 1); let count = requests.length; result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count);
+      await setCredential(Date.now() / 1000 + 600); await setConfig('https://auth.kimi.cn'); result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count);
+      await write(config, ''); result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count);
+      await setConfig('https://auth.kimi.ai'); status = 401; payload = token; result = await request(); assert.equal(result.status, 502); assert.equal(result.body.error, 'Kimi usage request failed (HTTP 401)'); assert.ok(!JSON.stringify(result).includes(token));
+      status = 200; payload = 'dummy-secret-not-json'; result = await request(); assert.equal(result.status, 502); assert.equal(result.body.error, 'invalid usage response'); assert.ok(!JSON.stringify(result).includes(payload));
+      status = 302; count = requests.length; result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count + 1);
+      assert.equal((await api(env, 'POST', '/v1/usage', { account: 'default-kimi', cli: 'agy', dir: null }, hubHeader)).status, 400);
+    } finally { await new Promise(resolve => server.close(resolve)); await env.close(); }
+  });
+});
