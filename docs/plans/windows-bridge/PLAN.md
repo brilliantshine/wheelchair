@@ -63,6 +63,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D31 | Stop and the sweep reconcile before the copy is left; archive keeps the conflicts folder | Archive must not lose Windows-side changes or saved conflicts | review-round-1 |
 | D32 | Only `.exe` counts as a Windows program; other tools go through `cmd.exe` or `powershell.exe` | Interop launches only PE executables | review-round-1 |
 | D33 | The live check exercises Unity on a fixture project when `WHEELCHAIR_UNITY` is set, and rejects single-colour screenshots | A blank PNG must not pass, and Unity is the main use | review-round-1 |
+| D34 | Supersedes D17's clause on warm-starting copies: that is in the Spec as D22, not Deferred | D17 contradicted D22 | review-round-2 |
+| D35 | A copy is deleted when Wheelchair removes its worktree (verifier at stop, worker at merge) | Seeded copies are several GB each; their worktrees are gone | review-round-2 |
+| D36 | The Unity fixture has its own `.gitignore`; the live check confirms the worktree stays clean | Unity's generated folders would otherwise be pulled into the worktree | review-round-2 |
+| D37 | `WHEELCHAIR_WINDOWS_PROJECT` and the start-time copy only for `TOOL_ROLES` | Reviewers and mappers cannot use the copy | review-round-2 |
 
 ## Spec
 
@@ -179,7 +183,10 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   in the Windows copy are skipped and listed in `skipped`, never followed.
 - All reconciles and `win` ops on one copy are serialized, across every session sharing it
   (lead and sub-lead share the thread worktree).
-- Copies are kept when a session ends. Archive deletes `copies\<thread-id>` after the final
+- Copies are kept when a session ends, and deleted when Wheelchair removes their worktree
+  (D35): a verifier's worktree at its stop (`machine/service.js:864`, after the stop's
+  reconcile) and a worker's at merge (`machine/service.js:1400`, its apps already killed and
+  copy reconciled at its stop). Archive deletes `copies\<thread-id>` after the final
   reconcile (Lifecycle) and keeps `conflicts\<thread-id>` (D14, D31).
 ### Lifecycle (D27, D31)
 
@@ -195,7 +202,8 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   version is never deleted by Wheelchair.
 ### Windows-side tools (D8, D12)
 
-- On WSL machines, every session's tmux environment gets `WHEELCHAIR_WINDOWS_PROJECT` set to
+- On WSL machines, every lead, sub-lead, worker and verifier session's tmux environment
+  (the roles in `TOOL_ROLES`, `machine/lib/project-mcp.js:8`) gets `WHEELCHAIR_WINDOWS_PROJECT` set to
   its copy's Windows path. The value is already a Windows path, so `WSLENV` gains `WHEELCHAIR_WINDOWS_PROJECT` (appended to any
   existing value with `:`). Not set on other machines.
 - The supported route for a Windows-side tool (D23): its MCP server runs on Windows as a
@@ -210,7 +218,7 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 - On a machine that is not WSL, such entries are left out of the session's project tools
   and not reported as missing (D24); `cmd.exe` and `powershell.exe` paths count as Windows
   programs too.
-- **Ready before tools start (D30):** on WSL, when the worktree's `.mcp.json` has at least
+- **Ready before tools start (D30):** on WSL, for the same roles only, when the worktree's `.mcp.json` has at least
   one Windows-program entry, session start creates (and seeds) the copy and reconciles it
   before launching the agent's CLI, so a tool that needs the project finds it. A failure there
   does not block the start; it is added to the session's `project_tools.problems` as
@@ -224,8 +232,10 @@ synced around each command; after editing files, run `win sync` before asking a 
 tool to look at them; Windows apps
 appear on the user's desktop, so never leave them running and never try to type into them;
 use `win stop` when done. Unity tests: `win run -- <Unity.exe path> -batchmode -runTests
--projectPath <copy> -testResults <copy>\results.xml` with no Editor open on that copy (Unity
-refuses a second instance on one project). A verifier reports a `win` 422 for "not WSL" as
+-projectPath <copy> -testResults <copy>\Logs\wheelchair-results.xml` with no Editor open on
+that copy (Unity refuses a second instance on one project); `Logs/` is ignored in a Unity
+project, so read the results through `copy_linux` from `win info` rather than expecting them
+in the worktree. A verifier reports a `win` 422 for "not WSL" as
 COULD NOT TRY. The first Unity open in a thread imports the whole project and can outlast
 `run`'s limit: use `win start` and poll `win status` for it.
 
@@ -270,8 +280,13 @@ without warnings on non-WSL; archive deletes the thread's copies and keeps its c
 `wc.js win`): `info` ok, `sync` round trip, `run -- cmd.exe /c echo hi`, `start --
 notepad.exe`, `windows`, `shot` produces a PNG that is not a single colour, `stop`. With
 `WHEELCHAIR_UNITY=<path to Unity.exe>` set it also runs the Unity part (D33) on the fixture
-project `machine/test/fixtures/unity-min` (one passing EditMode test): `win run` of
-batchmode tests returns exit 0 and the results XML appears in the Linux worktree; `win
+project `machine/test/fixtures/unity-min` (one passing EditMode test). The fixture carries
+its own `.gitignore` ignoring `Library/`, `Temp/`, `Logs/`, `UserSettings/`, `obj/`,
+`*.csproj`, `*.sln` and `Packages/packages-lock.json`, so nothing Unity generates is pulled
+into the worktree (D36). `win run` of batchmode tests with `-testResults` at the fixture's
+(not ignored) `wheelchair-live-results.xml` returns exit 0, the file appears in the Linux
+worktree, the script deletes it and runs `win sync`, and afterwards `git status --porcelain`
+on the fixture is empty; `win
 start` of the Editor on the fixture, wait for its window, `shot` is not a single colour,
 `stop`. Without `WHEELCHAIR_UNITY` it prints `Unity part skipped` and exits 77 after the rest
 passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
@@ -282,7 +297,7 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 |---|------|-----------------|--------|-------------------------|
 | 1 | Windows-side tools that use HTTP or SSE on Windows `localhost` | Stdio tools cover normal use; WSL's default networking does not forward to Windows localhost | planning | Options: rewrite `localhost` to the Windows host address, or a per-session port forward |
 | 2 | Ready-made setup for a specific Unity MCP | The general hook (D8, D12) lets any stdio Unity MCP target the copy | planning | Pick once the user chooses one; Unity's own and MCP for Unity both target an Editor by project path |
-| 4 | Disk use report and limits for copies | Archive cleans up | planning | Show size in `win info`; warn past a threshold |
+| 4 | Disk use report and limits for copies | Copies of removed worktrees are deleted (D35) and archive removes the rest | planning | Show size in `win info`; warn past a threshold |
 | 5 | Warning at session start when the bridge is broken on a WSL machine | `win info` reports it | planning | Mirror the screen tools warning at `machine/service.js:1999` |
 
 ## Accepted Risks
@@ -333,6 +348,11 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Unity fixture's generated folders would be pulled into the worktree | upheld | D36 |
+| intent | major | Seeded copies of removed worktrees pile up until archive; Deferred #4's reason gone | upheld | D35; Deferred #4 reason updated |
+| intent | minor | Copy and env var made for reviewers and mappers too | upheld | D37 |
+| intent | minor | `results.xml` at the copy root gets pulled and maybe committed | upheld | Results under ignored `Logs/`, read through `copy_linux` |
+| intent | minor | D17 contradicts D22 | upheld | D34 |
 
 ## Implementation Tasks
 
