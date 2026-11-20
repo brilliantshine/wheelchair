@@ -12,11 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: Where do agents' Windows apps appear, and may agents send them mouse and keyboard input?
-- **Context:** Linux screens are invisible (Xvfb). Windows client editions allow one active desktop; a hidden Win32 desktop is unreliable for GPU apps such as Unity and for input.
-- **Options:** (A) apps open on the user's desktop; agents screenshot windows but send no input, and drive apps through their own tools (Unity's MCP, command-line modes); (B) A plus mouse/keyboard input on the user's desktop; (C) research a hidden desktop.
-- **Recommendation:** A.
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -38,6 +33,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D3 | Sync around each Windows step, not live: Linux edits copied to the Windows copy right before any bridge command, Windows changes copied back right after, plus an explicit sync command | User's pick; live two-way sync left out | user |
 | D4 | What syncs is what git would see: tracked files plus untracked files git does not ignore; deletions sync too. Ignored files (Unity's `Library/`, `Temp/`) live only on the Windows side | Keeps caches on Windows and never pollutes the thread's worktree | defaulted |
 | D5 | A file changed on both sides since the last sync: the Linux version wins, the Windows version is saved to a conflicts folder beside the copy, and the command's result names each conflict | Agent edits are the source of truth; nothing is lost silently | defaulted |
+| D7 | Windows apps open on the user's desktop. Agents may list their windows and screenshot them, but never send mouse or keyboard input; they drive apps through the apps' own tools (MCP, command-line modes) | User's pick: never take over the user's PC | user |
 | D6 | Each session's Windows copy lives at `%LOCALAPPDATA%\Wheelchair\copies\<thread-id>\<session-name>` | Fast local drive, per session so workers and verifiers do not collide | defaulted |
 
 ## Spec
@@ -57,6 +53,13 @@ To be completed as decisions land.
 - An explicit sync command does both directions without running anything.
 - The copy is not watched between commands: an app left open on Windows sees Linux edits
   only at the next bridge command or sync.
+
+### Windows apps (D7)
+
+- Agents can start a Windows app (working directory: their Windows copy), list the windows
+  of apps they started, take a screenshot of one of those windows, and stop those apps.
+- Apps appear on the user's normal desktop. No mouse or keyboard input is ever sent.
+- A screenshot ends up as a PNG at a Linux path the agent can post with an `image` card.
 
 ## Deferred
 
