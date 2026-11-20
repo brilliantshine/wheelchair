@@ -2,7 +2,19 @@
 slug: openrouter-harness
 date: 2026-11-20
 implemented-by: "sub-lead (claude-opus-5-5): T1 dry run; standard (gpt-6.1-terra): T2, T3, T4, T5, T6, T9, T10, T8 attempt 1; standard (claude-sonnet-5-5): T7, T8 attempt 2"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: heavy (claude-opus-5-5) PASS; heavy (gpt-6.2-sol) FAIL
+    checks: standard (gpt-6.1-terra, claude-sonnet-5-5)
+  - round: 2
+    lane: heavy (claude-opus-5-5) PASS; heavy (gpt-6.2-sol) FAIL
+    checks: standard (gpt-6.1-terra, claude-sonnet-5-5)
+  - round: 3
+    lane: heavy (claude-opus-5-5) PASS; heavy (gpt-6.2-sol) FAIL
+    checks: standard (gpt-6.1-terra, claude-sonnet-5-5)
+  - round: 4
+    lane: heavy (claude-opus-5-5) PASS; heavy (gpt-6.2-sol) FAIL, its one gap judged a rare path
+    checks: standard (gpt-6.1-terra, claude-sonnet-5-5)
 ---
 
 # Completion Report — OpenRouter models as wheelchair agents
@@ -200,3 +212,9 @@ exit 0
 ```
 
 Machine, codex, installer and test-support code is unchanged since `0e934ff5` (their results are under Remediation 2).
+
+### Verification attempt 4 (on `5739ec0c`)
+
+Claude verifier PASS with no gaps. GPT verifier FAIL with one gap (Settings' Start again replaced by the generic failure message on the next poll after a cancelled Pi sign-in and a stale paste), judged a rare path and recorded in PLAN.md Accepted Risks (`verification-4`). No gaps remain: verification passed on `5739ec0c`. Both verifiers re-ran every suite; the GPT verifier's full browser run passed 1090, 34 skipped; each live smoke run passed 4/4.
+
+Rare paths accepted during verification: 6 (`verification-1`: 1, `verification-2`: 3, `verification-3`: 1, `verification-4`: 1).
