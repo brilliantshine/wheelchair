@@ -45,6 +45,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | Supersedes 5: OpenRouter model ids follow one grammar, `^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$`, at most 128 characters in total | One rule, testable at the edges | review-round-1 |
 | 16 | Code submission for every provider deletes its tmux buffer after pasting (`paste-buffer -d`, `delete-buffer` on failure) | A deliberate exception to IDEA's "not changing the existing providers": it only removes leftover pasted secrets and changes nothing users see | review-round-2 |
 | 17 | An explicit provider request places on that provider even when it is outside the placement orders | Makes Decision 13 workable: OpenRouter is used only when asked or added to an order | review-round-2 |
+| 18 | OpenRouter rate-limit and credit errors are turn failures, never `limit-hit` | No usage windows to cool down against; the account stays usable | review-round-2 |
 
 ## Spec
 
@@ -93,10 +94,12 @@ build task confirms them with a dry run and records any difference in the Log):
 ### Model ids
 
 `openrouter` pins match `^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$`
-and are at most 128 characters in total (OpenRouter's `vendor/model[:variant]`), enforced
+and are at most 128 characters in total (OpenRouter's `vendor/model[:variant]`); the `none`
+sentinel ("Not used", `viewer/app/routes.js:266`, `codex/model.sh:94,371,442`) stays valid in
+both the writer and the pin-file parser. Enforced
 identically in `codex/model.sh`, `viewer/app/routes.js` and `viewer/pages/settings.js`, each
 tested with: 128 accepted, 129 refused, no slash refused, two slashes refused, `a/b:` and
-`a/b::c` refused, `a/b:free` accepted. Other providers'
+`a/b::c` refused, `a/b:free` accepted, `none` saved and reloaded. Other providers'
 rules are unchanged. Defaults: `openrouter/auto` for light, standard, heavy, critical and
 lead.
 
@@ -129,12 +132,24 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
 - `machine/hook.sh` gets a `pi)` case (session name in `$2`, payload on stdin) dispatching
   to the `pi` adapter through `machine/lib/hook-post.js`.
 - The extension, on `agent_settled`, runs `machine/hook.sh pi <session name>` with a JSON
-  payload naming the event, the transcript path, the id of the last assistant entry in the
-  session, its `stopReason` and error text if any. `hookEvent` maps it like Kimi's turn ends
-  (`machine/service.js:936-945`): completed → `{ type: 'turn-ended', turn_id: <entry id>,
-  transcript_path }`; aborted → the same with `interrupted: true`; an error stop →
-  `limit-hit` when the error mentions a rate limit, quota or 429, otherwise `turn-failed` with
-  the error text. If Pi's API offers tool start/end events, map them to
+  payload holding:
+  - `turn`: the number of user-message entries in the session so far (1 for the first turn).
+    It only grows, survives a Pi restart on the same session file, and is the event's
+    `turn_id`, which the hub uses as an increasing watermark (`viewer/app/sessions.js:567`).
+  - `entry_id`: the id of the last assistant entry **after the last user entry**, or null if
+    this turn wrote none (aborted or failed before any reply).
+  - `aborted` (from the event), and the `stopReason` and error text of that entry if any.
+  The payload carries no transcript path.
+- `hookEvent` maps it like Kimi's turn ends (`machine/service.js:936-945`): completed →
+  `{ type: 'turn-ended', turn_id, entry_id }`; aborted → the same with `interrupted: true`;
+  an error stop, or `entry_id` null without `aborted` → `turn-failed` with the error text (or
+  "Pi ended the turn without a reply"). OpenRouter never emits `limit-hit`: rate limits and
+  exhausted credits arrive as `turn-failed` with OpenRouter's message, so no cooldown is
+  recorded and the account stays eligible.
+- The transcript is bound only by `findTranscript` (the account's `sessions/` tree, file name
+  ending `_<cli_session_id>.jsonl`), never from a path in a hook payload, and the bound path is
+  what `copyTranscript` reads. A missing transcript does not hold up the event: it is
+  forwarded and the hub ends the turn without a report. If Pi's API offers tool start/end events, map them to
   `step` events as Claude does; otherwise send none.
 - tmux: if the dry run shows Pi needs `extended-keys`, the machine turns it on for Pi sessions
   without changing behaviour for other CLIs.
@@ -154,6 +169,12 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
   key".
 - Code submission (`machine/service.js` `/code`, used by every provider) pastes with
   `paste-buffer -d` and runs `delete-buffer` on any failure, so no pasted text stays in tmux.
+  It targets the login pane exactly (`=wc-login-<account>:`, as Kimi's paths do) and refuses
+  with 409 "the sign-in screen has moved on; start again" unless the adapter's `parseLogin`
+  on a fresh capture of that pane still reports `wantsCode`.
+- The Settings sign-in view treats a `waiting` state with `wantsCode` and no URL exactly like
+  one with a URL: the 30-second startup timeout (`viewer/pages/settings.js:976`) stops once
+  `waiting` is seen, and polling continues for the normal sign-in window.
 - Machine restart: Pi sessions in the saved registry carry on with hook-delivered turn ends
   (the hook command and its token are per session and persisted). A Pi pane found without a
   registry entry is recognised (`machine/service.js:488`) and ended with "Lost track of this
@@ -164,15 +185,17 @@ Same contract as the others (`machine/adapters/index.js:2-4`):
 
 - `viewer/app/chat.js`: a Pi transcript parser showing user and assistant text and tool calls
   like the other parsers, and a report selector (like `kimiReport`, `chat.js:244,314`) that
-  returns the text of the assistant entry named by the event's `turn_id`, never a later one.
+  returns the text of the assistant entry named by the event's `entry_id`, never a later
+  one; with `entry_id` null there is no report.
 - Spend: a machine endpoint (documented in `machine/API.md`) returns, per OpenRouter account on that machine,
   the sum of `cost.total` over assistant messages whose `provider` is `openrouter` in that account's Pi session files for today
   (machine local time), the last 7 days and the last 30 days, in US dollars, read offline.
   The hub's usage view shows these three figures on the OpenRouter provider card in place of
   the percentage bars, e.g. "$0.42 today · $3.10 this week · $11.80 this month", with
   "no spend yet" when zero. The figures are the sum over every OpenRouter account on every
-  reachable machine. If any machine with an OpenRouter account is unreachable, the line adds
-  "· <machine> not reachable" and never shows "no spend yet". Missing or unparseable cost
+  reachable machine. If any machine the hub knows is unreachable, or its spend request fails,
+  the line adds "· total may be incomplete" and never shows "no spend yet". Nothing is kept
+  between hub restarts. Missing or unparseable cost
   fields count as zero. OpenRouter accounts never count as out of room.
 - Settings shows one line under OpenRouter: "Counts as its own family for cross-checked
   reviews, even when it runs a Claude or GPT model."
@@ -207,7 +230,11 @@ Pi CLI driving a full start → ready → turn-ended cycle in the machine tests,
 fake's extension calling the real `machine/hook.sh`; and a hub test (like
 `viewer/test/app-kimi-hub.test.js`) taking a Pi turn-ended event with the sample transcript
 through to the result delivered to the starting session, for a completed, an aborted (no
-report) and a failed turn. Code submission tests assert no tmux buffer remains.
+report) and a failed turn; two successive turns where the second is delivered; a replayed
+earlier event ignored; an aborted turn with no assistant entry after a successful turn (no
+report, the earlier reply is not reused); and an OpenRouter rate-limit failure leaving the
+account eligible. Code submission tests also cover a stale submission refused once the key
+prompt is gone. A hook payload carrying a `transcript_path` is ignored. Code submission tests assert no tmux buffer remains.
 The live smoke starts a Pi session through the machine service, waits for one turn end, and
 checks that the chat shows the reply, the report is delivered and spend is non-zero.
 
@@ -273,6 +300,15 @@ checks that the chat shows the reply, the report is delivered and spend is non-z
 | intent | major | Explicit `--provider openrouter` can't place: balancer only considers `worker_order` | upheld | Spec Identity: requested provider evaluated outside the order; Decision 17 |
 | intent | minor | `/code` buffer change touches existing providers without a recorded exception | upheld | Decision 16 |
 | intent | minor | Spend/room rules sat in the Settings-note bullet | upheld | Moved into the Spend bullet |
+| mechanics | blocking | Explicit `--provider openrouter` can't place outside `worker_order` | upheld | Same as the intent finding; Decision 17 |
+| mechanics | blocking | Entry id used as `turn_id` watermark has no ordering | upheld | Spec: `turn` = user-message count; `entry_id` separate |
+| mechanics | blocking | Abort/error before any reply reuses the previous turn's entry; missing transcript blocks dispatch | upheld | Spec: entry after last user entry or null; event forwarded without transcript |
+| mechanics | major | `limit-hit` conflicts with "never out of room" | upheld | Decision 18 |
+| mechanics | blocking | Hook-supplied transcript path copied before validation | downgraded (major): needs a forged hook call with the session token, but cheap to close | Spec: bind only via `findTranscript`; payload path ignored |
+| mechanics | blocking | `/code` prefix-matched target can paste a key into another login | downgraded (major): needs two sign-ins at once and a stale card | Spec: exact target, refuse when key prompt gone |
+| mechanics | major | Key-only login hits the 30-second startup timeout | upheld | Spec: `waiting` without URL ends the startup timeout |
+| mechanics | major | Unreachable machines' account membership is lost | upheld | Spec: conservative "total may be incomplete" |
+| mechanics | major | Grammar rejects the `none` sentinel | upheld | Spec Model ids: `none` kept |
 
 ## Implementation Tasks
 
