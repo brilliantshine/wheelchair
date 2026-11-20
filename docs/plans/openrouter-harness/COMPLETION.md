@@ -151,3 +151,32 @@ key isolation | PASS | no key marker in hub, cache and machine state files, chat
 The browser suite was not re-run: R1-1 changed only machine code and machine tests.
 
 Residual: the installer suite's "real wheelchair directory is byte-identical after suite" check fails when the live hub writes the real state folder during the run (environmental; a verifier saw 205/206 with the inherited HOME, 206/206 isolated).
+
+### Remediation 2 (verification attempt 2 on `cbbaa212`)
+
+Verifiers: Claude PASS; GPT FAIL with 5 gaps (verbatim in `REMEDIATION-2.md`). Gaps 3–5 judged rare paths and recorded in PLAN.md Accepted Risks (`verification-2`). Gaps 1 and 2 (secret leaks) fixed by task R2-1 (standard, gpt-6.1-terra; two attempts, the second at effort xhigh), merged at `c8f3c28d`; Decision 28 (lead) logged for exact pane targets on every CLI.
+
+| Gap | Fix (on `0e934ff5`) | Validated by |
+|-----|---------------------|--------------|
+| 1. A stopped session's agent or login pane request prefix-matched a live sibling (`wc-x-worker` → `wc-x-worker-2`), and redaction followed the stopped record's CLI | `machine/service.js` `pane()`, `loginPane()`, `loginState()`: exact `=name:` targets for every CLI and `sk-or-` redaction on every capture (Decision 28); `machine/API.md` agent pane row and login section updated | `machine/test/pane-target.test.js` (private tmux server: stopped `wc-x-worker` record beside a live `wc-x-worker-2` showing a synthetic key; the same for `wc-login-work`/`wc-login-work-2`; a live Claude pane redacted). Fails with the old `-t name` target |
+| 2. After Pi's sign-in exited, the old prompt still sat in parseLogin's five-line window, so `/code` returned 200 and the key reached the leftover pane | `machine/adapters/pi.js` `parseLogin` (prompt must be the last non-empty line; null on Saved or `__wc_login_exit`); `machine/service.js` `/code` refuses on the exit marker before any tmux write | `machine/test/pi-login.test.js`: raw-mode fake Pi, cancel with `C-c` through `/keys`, then `/code` → 409, key absent from the pane, no tmux buffer; "Pi login prompt must be the last nonempty line". Fails with `parseLogin` reverted |
+
+Validation on `0e934ff5`:
+
+```text
+bash codex/test/run.sh                RESULT 147 passed, 0 failed
+bash machine/test/run.sh              # tests 478  # pass 478  # fail 0
+node --test viewer/test/*.test.js     # tests 723  # pass 723  # fail 0
+bash install/test/run.sh              RESULT 206 passed, 0 failed
+node --test test-support/test/*.test.js   # pass 9  # fail 0
+PATH without ~/.kimi-code/bin (no fd): node test-support/smoke/pi-live.js
+lead chat | PASS | Pi lead ready and assistant text appears in chat
+reviewer result | PASS | Pi reviewer result card has a summary and is delivered to the lead
+spend | PASS | machine today $0.000564708; hub today $0.000564708
+key isolation | PASS | no key marker in hub, cache and machine state files, chat, or logs
+4 passed; 0 failed
+```
+
+The browser suite was not re-run: R2-1 changed only machine code, machine tests and `machine/API.md`.
+
+Residual, pre-existing on the base `dbb0a6b3` and not part of these gaps: `stop()` (`kill-session -t name`), `raw()` (`send-keys -t name`) and Claude/Codex/Antigravity `startLogin`'s kill still use prefix targets; on a record whose tmux session is gone they could reach a `-2` sibling. The restart-recovery capture keeps `-t name` because its names come from tmux's own session list.
