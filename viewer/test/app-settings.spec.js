@@ -147,12 +147,12 @@ test.describe('desktop', () => {
 
   test('sub-lead models and scout tiers render and save independently', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
-    for (const provider of ['Claude', 'GPT', 'Antigravity', 'Kimi Code']) {
+    for (const provider of ['Claude', 'GPT', 'Antigravity', 'Kimi Code', 'OpenRouter']) {
       await expect(page.getByLabel(`${provider} lead model`, { exact: true })).toBeVisible();
       await expect(page.getByLabel(`${provider} sub-lead model`, { exact: true })).toBeVisible();
     }
-    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(4);
-    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(4);
+    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(5);
+    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(5);
     const modelRequest = page.waitForRequest((request) => request.url().endsWith('/api/settings/models') && request.method() === 'PUT');
     await page.getByLabel('GPT sub-lead effort', { exact: true }).selectOption('high');
     expect((await modelRequest).postDataJSON()).toMatchObject({ provider: 'gpt', slot: 'sub-lead', effort: 'high' });

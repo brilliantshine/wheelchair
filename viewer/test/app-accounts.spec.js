@@ -318,7 +318,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await mock(page, state);
       await open(page, 'models');
       const group = page.getByRole('radiogroup', { name: 'Reviewers and checkers' });
-      await expect(group.getByRole('radio')).toHaveText(['Mix families', 'Claude', 'GPT', 'Antigravity', 'Kimi Code']);
+      await expect(group.getByRole('radio')).toHaveText(['Mix families', 'Claude', 'GPT', 'Antigravity', 'Kimi Code', 'OpenRouter']);
       await group.getByRole('radio', { name: 'Antigravity' }).click();
       await expect(group.getByRole('radio', { name: 'Antigravity' })).toHaveAttribute('aria-checked', 'true');
       expect(state.calls.find((c) => c[1] === '/settings/preferences')[2]).toEqual({ review_families: 'gemini' });
@@ -496,7 +496,7 @@ test.describe('accounts interface paths', () => {
     await mock(page, state);
     await page.clock.install();
     await open(page, 'accounts');
-    await expect(page.locator('.acct')).toHaveCount(5);
+    await expect(page.locator('.acct')).toHaveCount(6);
     let seen = state.usageGets;
     await page.clock.runFor(30500);
     await expect.poll(() => state.usageGets).toBeGreaterThan(seen);
