@@ -584,7 +584,7 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | `session leads` listing + shared `peers.js` helpers (§1, Terms) | viewer/app/peers.js, sessions.js (leads action), wc.js, viewer/AGENTS.md, API.md, test/app-lead-list.test.js, wc-cli.test.js | standard / gpt-6.1-terra | wc-ed3eb67e1cfc-worker | app-lead-list test, full node suite, machine suite | running |
+| T1 | `session leads` listing + shared `peers.js` helpers (§1, Terms) | viewer/app/peers.js, sessions.js (leads action), wc.js, viewer/AGENTS.md, API.md, test/app-lead-list.test.js, wc-cli.test.js | standard / gpt-6.1-terra | wc-ed3eb67e1cfc-worker | app-lead-list test, full node suite, machine suite | done |
 | T2 | Cross-thread lead `message` with two-lock delivery (§2) — tricky | cards.js (message path), hub.js (acceptCard), agents.js (questionFor), peers.js (additions), test/app-lead-messages.test.js | standard | | app-lead-messages test, full node suite, machine suite | not started (after T1) |
 | T3 | `reach` card hub side: schema, accept/refusals, press, Needs you, handoff (§3) | card.js, cards.js (reach), threads.js (reach press), views.js (addNeeds), handoff.js, API.md, peers.js (additions), test/app-reach.test.js | standard | | app-reach test, full node suite, machine suite | not started (after T2) |
 | T4 | `reach` card on the thread page + browser test (§3 display) | viewer/pages/thread.js, thread.css, test/app-reach.spec.js | standard / claude-sonnet-5-5 | wc-ed3eb67e1cfc-worker-2 | app-reach spec, browser suite, node suite | running |
@@ -604,3 +604,6 @@ anything a future session needs that fits nowhere above.
 - 2026-11-19 — Choice: T5, viewer/test/protocol-rules.test.js: the no-plan-reference test checks `lead-chat`, `Decision Log`, `Decision ` and `PLAN.md of lead-chat` (bare `PLAN.md` is allowed: lead.md names the file generically).
 - 2026-11-19 — Choice: T5, lead.md "Leads inform" bullet: dropped the Spec's "under lead.md's existing rules" phrase (wording only).
 - 2026-11-19 — T5 accepted (band: scout): all §4 bullets, cards.md and cards-lead.md items present; protocol-rules 36/36 re-run by sub-lead. Report summarized rather than pasted its output.
+- 2026-11-19 — Choice: T1, viewer/app/peers.js: the progress folded-label formatter is a copy of the page's private one in viewer/pages/thread.js (wording checked identical against cards.md), not a shared import.
+- 2026-11-19 — Choice: T1, viewer/app/peers.js: linked threads are listed even with no lead session (Terms allow it); `sameMachine` is false when neither name resolves; `pr_url` uses `cards.currentDone`, which skips done cards from before a handoff import; ordering relies on `state.allThreads()` sorting by `updated_at`. Worker reported 1 of these; the scout listed the rest.
+- 2026-11-19 — T1 accepted (band: scout): listing matches §1 and Terms; test gaps noted (all-projects filters on other-project archived/frozen threads, other progress branches) left for verification.
