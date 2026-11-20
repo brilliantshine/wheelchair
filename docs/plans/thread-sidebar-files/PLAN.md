@@ -86,9 +86,9 @@ link and button in it is at least 44px tall.
 
 ### S3. Which plan documents exist
 
-New hub route `GET /wheelchair/api/threads/<id>/documents` (in `viewer/app/routes.js`,
-same auth as the other thread GETs) returns `{ "documents": [ "MAP.md", ... ] }`: only the
-names that exist, in MAP, IDEA, PLAN order. No sizes.
+The thread's chat response (`GET /wheelchair/api/threads/<id>/chat`, built by `chat()` in
+`viewer/app/chat.js:335-376`) gains a top-level `documents` field: an array of the names
+among `MAP.md`, `IDEA.md`, `PLAN.md` that exist, in that order. No sizes, no new route.
 
 - **Live thread** (not archived): the hub checks its own filesystem at
   `<thread.worktree>/docs/plans/<slug>/<FILE>` for each name and lists those that pass the
@@ -97,14 +97,14 @@ names that exist, in MAP, IDEA, PLAN order. No sizes.
   computer) gives `[]` (Deferred D7).
 - **Archived thread:** the hub runs `git -C <project> cat-file -e <branch>:docs/plans/<slug>/<FILE>`
   for each name (as `archivedDocument` reads them, `viewer/app/threads.js:251-265`) and lists
-  those that succeed.
-- No slug or no worktree → `{ "documents": [] }`.
+  those that succeed. The result is cached in memory per thread id and branch (an archived
+  branch does not change), so polling does not start Git each time.
+- No slug or no worktree → `[]`.
 
 Slug discovery is unchanged (`viewer/app/views.js:71-112`).
 
-The page fetches this list when the thread loads and again whenever the render signature's
-card part changes (a new card arrived) and at most once every 30 seconds otherwise while
-the page is visible. A failed fetch keeps the last list.
+The page reads `data.documents` from the chat poll it already makes; S1's render signature
+includes it, so a document appearing shows on the next poll.
 
 ### S4. Reading and downloading a plan document
 
@@ -196,13 +196,11 @@ New or changed tests:
 - `machine/test/`: `copyFile` accepts a text and a PDF file, refuses a relative path, a
   missing file, a directory, a symlink, a file over 25 MB, a file inside the state folder (but
   accepting one inside a worktree under `<stateDir>/worktrees/`),
-  a non-lead session, an extra field and a blank title, leaving no upload behind for any refusal;  the document list and
-  document routes return existing names only, refuse a bad slug, a symlinked document and a
-  path escaping the plan folder, and return `[]` with no lead record; the upload GET sends
+  a non-lead session, an extra field and a blank title, leaving no upload behind for any refusal; the upload GET sends
   `content-disposition: attachment; filename="report.pdf"` for `3-report.pdf`.
 - `viewer/test/` unit: `card.js` accepts a valid `file` card and refuses it from non-leads
-  and with extra fields; the hub stores `file`, `name`, `size`; `/documents` and `/doc` for
-  live and archived threads, a document over 2 MiB and a symlinked document neither listed
+  and with extra fields; the hub stores `file`, `name`, `size`; the chat response's `documents`
+  and `/doc` for live and archived threads, a document over 2 MiB and a symlinked document neither listed
   nor served, a worktree not on the hub's filesystem giving `[]`; `download=1` headers.
 - `viewer/test/` browser spec: the sidebar shows `Project documents` with only the existing
   plan files and a Download link carrying `download=1`, then pictures; `Sent to you` lists a
@@ -227,8 +225,8 @@ npm --prefix viewer run test:browser
 | D2 | Download all documents at once (zip) | Per-file download works | planning | |
 | D3 | In-app preview for sent documents other than images | Download opens them with the phone's own viewer | planning | Markdown could reuse the doc page renderer |
 | D4 | Keep sent files after the thread is archived | User chose removal for now | planning | Needs a store outside the uploads folder and a cleanup rule |
-| D5 | Project documents of an archived thread whose project exists only on another machine | Live remote threads work; archived reads stay as today | review-round-1 | Archived reads run `git -C <project>` on the hub (`viewer/app/threads.js:251-265`); route them through the thread's machine like S3/S4 live reads |
-| D6 | Opening pictures (diagrams) of a live thread whose worktree is on another machine | Map, idea, plan work remotely; pictures already behave this way in chat today | review-round-2 | `viewer/pages/picture.js:31-41` and `viewer/pages/diagram.js:12-24` send the worktree path to a hub-local reader (`viewer/server.js:1673-1687`); read graphs through the machine like S4 |
+| D5 | Project documents of an archived thread whose project exists only on another machine | Archived reads stay as today | review-round-1 | Archived reads run `git -C <project>` on the hub (`viewer/app/threads.js:251-265`); pair with D7 and read through the thread's machine |
+| D6 | Opening pictures (diagrams) of a live thread whose worktree is on another machine | Pictures already behave this way in chat today | review-round-2 | `viewer/pages/picture.js:31-41` and `viewer/pages/diagram.js:12-24` send the worktree path to a hub-local reader (`viewer/server.js:1673-1687`); pair with D7 and read graphs through the machine |
 | D7 | Map, idea, plan of a live thread running on another computer | User chose to save it for the follow-up | user | Review rounds 1–3 show the hard part: finding the slug on that machine (`viewer/app/views.js:71-112` runs Git on the hub) without nesting `hub.withThread` (every `discoverSlug` caller already holds it: `viewer/app/routes.js:442-447`, `viewer/app/hub.js:266-268`, `viewer/app/routes.js:482`) or holding the list-poll lock across a machine request. Read documents through a hub-authenticated machine route with the same eligibility check as S4 |
 
 ## Accepted Risks
@@ -317,6 +315,9 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Validation still lists tests for removed machine document routes | upheld | Removed from the `machine/test/` bullet; the hub tests already cover them |
+| intent | minor | D5/D6 notes describe the superseded remote design | upheld | Reworded; both point to D7 |
+| intent | minor | Separate `/documents` route and refetch schedule is more than needed | upheld | S3: `documents` added to the chat response; archived result cached per thread and branch |
 
 ## Implementation Tasks
 
