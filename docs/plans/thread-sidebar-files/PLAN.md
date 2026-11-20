@@ -99,7 +99,11 @@ among `MAP.md`, `IDEA.md`, `PLAN.md` that exist, in that order. No sizes, no new
   for each name (as `archivedDocument` reads them, `viewer/app/threads.js:251-265`) and lists
   those that succeed. The result is cached in memory per thread id and branch (an archived
   branch does not change), so polling does not start Git each time.
-- No slug or no worktree → `[]`.
+- No slug → `[]`. A live thread with no worktree → `[]`. An archived thread needs no
+  worktree (it reads the branch).
+- **Slug check:** before using `thread.slug` for a path, a Git object name or a download
+  filename, the hub checks it matches `^[a-z0-9][a-z0-9._-]{0,79}$` and is not `.` or `..`;
+  otherwise it is treated as no slug (`[]` here, 404 in S4).
 
 Slug discovery is unchanged (`viewer/app/views.js:71-112`).
 
@@ -200,7 +204,8 @@ New or changed tests:
   `content-disposition: attachment; filename="report.pdf"` for `3-report.pdf`.
 - `viewer/test/` unit: `card.js` accepts a valid `file` card and refuses it from non-leads
   and with extra fields; the hub stores `file`, `name`, `size`; the chat response's `documents`
-  and `/doc` for live and archived threads, a document over 2 MiB and a symlinked document neither listed
+  and `/doc` for live and archived threads (including an archived record with no worktree),
+  a slug failing the slug check giving `[]` and 404, a document over 2 MiB and a symlinked document neither listed
   nor served, a worktree not on the hub's filesystem giving `[]`; `download=1` headers.
 - `viewer/test/` browser spec: the sidebar shows `Project documents` with only the existing
   plan files and a Download link carrying `download=1`, then pictures; `Sent to you` lists a
@@ -318,6 +323,23 @@ npm --prefix viewer run test:browser
 | intent | major | Validation still lists tests for removed machine document routes | upheld | Removed from the `machine/test/` bullet; the hub tests already cover them |
 | intent | minor | D5/D6 notes describe the superseded remote design | upheld | Reworded; both point to D7 |
 | intent | minor | Separate `/documents` route and refetch schedule is more than needed | upheld | S3: `documents` added to the chat response; archived result cached per thread and branch |
+| mechanics | blocking | "No worktree → []" contradicts archived listing from the branch | upheld (major) | S3: worktree required only for live threads; archived-with-no-worktree test added |
+| mechanics | blocking | Validation still lists removed machine document tests | upheld | Same fix as the intent finding above |
+| mechanics | blocking | Slug never validated before path and filename use | downgraded → minor | The hub writes the slug itself from Git directory names (`viewer/app/views.js:76-82`), so a bad one needs tampering; still cheap: S3 adds a slug check used by S3 and S4, with a test |
+| mechanics | minor | Document list not refreshed when the thread is archived | upheld | Resolved by the round-4 intent change: `documents` comes with every chat poll and is in the render signature |
+
+### Round 5 — 2026-11-19
+
+**Lanes:** pending.
+
+**Changed since the last round:**
+- S3: `documents` is a field of the chat response (no `/documents` route, no refetch schedule); archived result cached per thread and branch.
+- S3: worktree required only for live threads; new slug check used by S3 and S4.
+- Validation: stale machine document tests removed; archived-no-worktree and slug-check tests added.
+- Deferred D5/D6 notes reworded to point to D7.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
