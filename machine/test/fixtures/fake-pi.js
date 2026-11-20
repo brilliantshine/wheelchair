@@ -12,16 +12,17 @@ const { pathToFileURL } = require('node:url');
   const handlers = {}, entries = [];
   (await import(pathToFileURL(value('-e')).href)).default({ on: (name, handler) => { handlers[name] = handler; } });
   const ctx = { sessionManager: { getEntries: () => entries } };
-  const downloadMode = process.env.FAKE_PI_DOWNLOAD_MS !== undefined;
+  const downloadMode = /^\d+$/.test(process.env.FAKE_PI_DOWNLOAD_MS || '');
   let downloading = downloadMode, pending = null;
   if (downloadMode) {
     console.log('fd not found. Downloading...');
-    setTimeout(() => { downloading = false; console.log('fd installed to /tmp/fake/fd'); }, Number(process.env.FAKE_PI_DOWNLOAD_MS));
+    setTimeout(() => { downloading = false; console.log('fd installed to /tmp/fake/fd'); fs.appendFileSync(`${file}.events`, 'download-done\n'); }, Number(process.env.FAKE_PI_DOWNLOAD_MS));
   }
   console.log('escape interrupt · ctrl+c/ctrl+d clear/exit · / commands\n──────\n      \n──────\nopenrouter/auto • medium');
   for await (let line of readline.createInterface({ input: process.stdin })) {
-    if (downloading) { pending = line; console.log('Startup is still in progress'); continue; }
-    if (downloadMode && line === '' && pending !== null) { line = pending; pending = null; }
+    if (downloadMode) fs.appendFileSync(`${file}.events`, `line:${line}\n`);
+    if (downloading) { if (line.trim()) { pending = line; console.log('Startup is still in progress'); } continue; }
+    if (downloadMode && !line.trim()) { if (pending === null) continue; line = pending; pending = null; }
     entries.push({ type: 'message', id: `u${entries.length}`, message: { role: 'user', content: line === 'hello' ? 'sk-or-v1-0000synthetic0000' : line } });
     await handlers.tool_execution_start({ toolCallId: 'tool', toolName: 'read', args: { path: 'file' } }, ctx);
     await handlers.tool_execution_end({ toolCallId: 'tool', toolName: 'read', isError: false }, ctx);

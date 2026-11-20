@@ -155,11 +155,18 @@ for (const forced of [false, true]) test(`Pi startup download delivers queued fi
   if (forced) machine.readyText = () => true;
   machine.checkReady = async session => { if (!child) { child = spawn('sh', ['-c', fs.readFileSync(commandFile, 'utf8')], { env: process.env, stdio: ['pipe', 'pipe', 'pipe'] }); child.stderr.resume(); await new Promise((resolve, reject) => { child.stdout.on('data', chunk => { pane += chunk.toString(); resolve(); }); child.once('error', reject); }); } return MachineService.prototype.checkReady.call(machine, session); };
   try {
-    const session = await machine.start({ cli: 'pi', role: 'worker', thread_id: 'test', token: 'token', first_message: 'hello', role_prompt: 'rules' });
+    const session = await machine.start({ cli: 'pi', role: 'worker', thread_id: 'test', token: 'token', first_message: 'queued first message', role_prompt: 'rules' });
     if (!forced) { assert.notEqual(session.status, 'ready'); for (let i = 0; i < 100 && session.status !== 'ready'; i++) { await new Promise(resolve => setTimeout(resolve, 20)); await machine.checkReady(machine.sessions[session.name]); } }
     for (let i = 0; i < 250 && !events.some(e => e.type === 'turn-ended'); i++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.ok(events.some(e => e.type === 'turn-ended' && e.entry_id === 'a1'));
-    if (forced) assert.match(pane, /Startup is still in progress/);
+    const transcript = path.join(root, 'sessions', 'fake-work', `2026-01-01_${machine.sessions[session.name].cli_session_id}.jsonl`);
+    const users = fs.readFileSync(transcript, 'utf8').trim().split('\n').map(JSON.parse).filter(row => row.message?.role === 'user');
+    assert.deepEqual(users.map(row => row.message.content), ['queued first message']);
+    const timeline = fs.readFileSync(`${transcript}.events`, 'utf8').trim().split('\n');
+    const done = timeline.indexOf('download-done'), message = timeline.indexOf('line:queued first message');
+    assert.ok(done >= 0 && message >= 0);
+    if (forced) assert.ok(message < done, `expected early message: ${timeline}`);
+    else { assert.ok(message > done, `expected message after download: ${timeline}`); assert.ok(!timeline.slice(0, done).includes('line:queued first message')); }
   } finally {
     if (machine.sessions['wc-test-worker']) machine.sessions['wc-test-worker'].status = 'stopped';
     if (child) { child.stdin.end(); await new Promise(resolve => child.once('exit', resolve)); } await new Promise(resolve => server.close(resolve));
