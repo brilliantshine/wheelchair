@@ -42,7 +42,7 @@ function questionChain(card, cards) {
   return unique;
 }
 function questionFor(session, cards, sessions) {
-  const index = cards.findLastIndex(c => c.kind === 'message' && c.asks === true && c.session === session.name);
+  const index = cards.findLastIndex(c => c.kind === 'message' && c.asks === true && c.session === session.name && sessions.some(s => s.name === c.to));
   if (index < 0) return null;
   const asked = cards[index];
   if (cards.slice(index + 1).some(c => c.session === asked.to && ((c.kind === 'message' && c.to === session.name) || (c.kind === 'result' && sessions.find(s => s.name === c.session)?.started_by === session.name)))) return null;
