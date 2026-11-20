@@ -18,13 +18,34 @@ test('Pi login state waits for exit and redacts joined pane', () => {
 test('fake Pi completes a sign-in in an isolated tmux server without touching prefix sibling', async () => {
   const { spawnSync } = require('node:child_process'), http = require('node:http');
   const root = makeTempSync('pi-login-real-'), bin = path.join(root, 'bin'), socket = path.join(root, 'tmux.sock'); fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'pi'), `#!/bin/sh
-stty -echo
-printf 'Enter OpenRouter API key: '
-IFS= read -r value
-stty echo
-mkdir -p "$PI_CODING_AGENT_DIR"
-if [ "$value" = 'sk-or-v1-0000synthetic0000' ]; then printf '{"openrouter":{}}' > "$PI_CODING_AGENT_DIR/auth.json"; printf '\\nSaved API key for OpenRouter. Credentials saved to %s\\n' "$PI_CODING_AGENT_DIR/auth.json"; fi
+  fs.writeFileSync(path.join(bin, 'pi'), `#!/usr/bin/env node
+const fs = require('node:fs'), path = require('node:path');
+process.stdout.write('Enter OpenRouter API key: ');
+process.stdin.setRawMode(true);
+process.stdin.resume();
+let value = '';
+process.stdin.on('data', bytes => {
+  for (const byte of bytes) {
+    if (byte === 3) {
+      process.stdin.setRawMode(false);
+      process.stdout.write('\\n^C\\n');
+      process.exit(130);
+    }
+    if (byte === 13 || byte === 10) {
+      process.stdin.setRawMode(false);
+      if (value === 'sk-or-v1-0000synthetic0000') {
+        const dir = process.env.PI_CODING_AGENT_DIR, auth = path.join(dir, 'auth.json');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(auth, '{"openrouter":{}}');
+        process.stdout.write('\\nSaved API key for OpenRouter. Credentials saved to ' + auth + '\\n');
+        process.exit(0);
+      }
+      process.stdout.write('\\nFailed to save API key for OpenRouter.\\n');
+      process.exit(1);
+    }
+    value += String.fromCharCode(byte);
+  }
+});
 `, { mode: 0o755 });
   const old = { HOME: process.env.HOME, PATH: process.env.PATH }; process.env.HOME = root; process.env.PATH = `${bin}:${old.PATH}`;
   const tmux = (args, options = {}) => { const r = spawnSync('tmux', ['-S', socket, ...args], { encoding: 'utf8', input: options.input }); return { ok: r.status === 0, stdout: r.stdout, stderr: r.stderr }; };
@@ -40,6 +61,13 @@ if [ "$value" = 'sk-or-v1-0000synthetic0000' ]; then printf '{"openrouter":{}}' 
     await wait(() => machine.loginState('work').wantsCode); const result = await request('POST', '/v1/logins/work/code', { code: 'sk-or-v1-0000synthetic0000' }); assert.equal(result.status, 200); assert.doesNotMatch(JSON.stringify(result.body), /sk-or-/);
     await wait(() => machine.loginState('work').state === 'done'); assert.doesNotMatch(JSON.stringify(await request('GET', '/v1/logins/work/pane')), /sk-or-/);
     assert.ok(tmux(['has-session', '-t', '=wc-login-work-2']).ok); assert.equal(tmux(['capture-pane', '-p', '-t', '=wc-login-work-2:']).stdout, sibling); assert.equal(tmux(['list-buffers']).stdout.trim(), '');
+    await machine.startLogin({ account: 'cancel', cli: 'pi', dir: '~/.wheelchair/accounts/cancel' }); await wait(() => machine.loginState('cancel').wantsCode);
+    assert.equal ( (await request('POST', '/v1/logins/cancel/keys', { keys: 'C-c' })).status, 200);
+    await wait(() => tmux(['capture-pane', '-p', '-t', '=wc-login-cancel:']).stdout.includes('__wc_login_exit'));
+    const refused = await request('POST', '/v1/logins/cancel/code', { code: 'sk-or-v1-0000synthetic0000' });
+    assert.equal(refused.status, 409); assert.equal(refused.body.error, 'the sign-in screen has moved on; start again');
+    assert.doesNotMatch(tmux(['capture-pane', '-p', '-t', '=wc-login-cancel:']).stdout, /sk-or-v1-0000synthetic0000/);
+    assert.doesNotMatch(tmux(['list-buffers']).stdout, /wc-/);
     await machine.startLogin({ account: 'fail', cli: 'pi', dir: '~/.wheelchair/accounts/fail' }); await wait(() => machine.loginState('fail').wantsCode);
     assert.equal((await request('POST', '/v1/logins/fail/code', { code: 'invalid' })).status, 200); await wait(() => machine.loginState('fail').state === 'failed');
   } finally { tmux(['kill-server']); await new Promise(resolve => server.close(resolve)); process.env.HOME = old.HOME; process.env.PATH = old.PATH; }
@@ -67,4 +95,11 @@ test('joined wrapped Pi key is redacted from pane and state responses', async ()
   const server = http.createServer((req, res) => machine.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try { for (const suffix of ['/pane', '']) { const body = await (await fetch(`http://127.0.0.1:${server.address().port}/v1/logins/work${suffix}`)).text(); assert.doesNotMatch(body, /sk-or-/); if (suffix) assert.match(body, /\[redacted key\]/); } }
   finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('Pi login prompt must be the last nonempty line', () => {
+  const prompt = 'Enter OpenRouter API key:';
+  assert.equal(pi.parseLogin(`previous\n${prompt} \n\n`).wantsCode, true);
+  for (const suffix of ['^C', '__wc_login_exit 130', '$ ']) assert.equal(pi.parseLogin(`${prompt}\n${suffix}\n`), null);
+  assert.equal(pi.parseLogin(`Saved API key for OpenRouter\n${prompt}`), null);
 });
