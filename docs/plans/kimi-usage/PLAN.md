@@ -1,6 +1,6 @@
 ---
 slug: kimi-usage
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -41,6 +41,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Supersedes 10: the Kimi limit-hit probe and `kimiLimitedUntil` are split off to their own thread; Kimi limit hits keep today's one-hour retry | That part drew a new upheld timing finding in rounds 1–3 while the rest settled; the user chose to split | user |
 
 ## Spec
+
+### Flow
+
+```mermaid
+flowchart TD
+  A[Every minute: hub looks for accounts with no reading in 9 minutes] --> B{Kimi account?}
+  B -- Claude or GPT --> C[Today's probe, skipped while a session is live]
+  B -- Kimi, even with a live session --> D[Ask the first eligible machine]
+  D --> E{Signed in, global region, key not expired?}
+  E -- no --> F[Fail with no web request]
+  E -- yes --> G[One GET to Kimi's usage service with the stored key]
+  G -- weekly and 5-hour use --> H[Store the reading]
+  G -- error --> F
+  F --> I{Another eligible machine?}
+  I -- yes --> E
+  I -- no --> J[Keep the previous reading]
+  H --> K[Usage page, forecast and account choice use it like any other]
+```
 
 ### Behaviour in one paragraph
 
