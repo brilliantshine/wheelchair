@@ -74,6 +74,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D42 | Stop does not wait for its reconcile; archive returns `pending` until the thread's reconciles finish | The hub gives machine calls 5 s; archive already has a retry contract | review-round-2 |
 | D43 | The live check drives the candidate bridge module from the worktree with a stub service, and runs once without `WSL_INTEROP` | The installed service runs the canonical clone's code, not the build under test | review-round-2 |
 | D44 | Workers run `win sync` and commit before reporting done | The merge happens before the worker is stopped | review-round-2 |
+| D45 | `used_since_ok` is set at session start only when the worktree's copy exists or is being readied | Otherwise every worktree on a WSL machine would get a copy | review-round-3 |
+| D46 | A verifier's copy is deleted after its apps stop, with no reconcile | Its worktree is force-removed, so a reconcile is wasted | review-round-3 |
+| D47 | Start-time readying waits at most 20 s, then continues in the background with a project tools line | The hub's start limit is 60 s; a Unity copy can take longer | review-round-3 |
 
 ## Spec
 
@@ -169,8 +172,10 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 - A manifest per copy at `<stateDir>/win/copies/<worktree-key>/manifest.json` records, for
   every synced path, its exact spelling, size, Linux mtime, Windows last-write time and SHA-256
   at the last sync, plus `last_ok` (time of the last successful reconcile), `last_failed`
-  (reason of the last failed one, cleared on success) and `used_since_ok` (set by any `win` op
-  or a tool-role session start on this worktree, cleared by a successful reconcile).
+  (reason of the last failed one, cleared on success) and `used_since_ok` (D45: set by any
+  `win` op, and by a tool-role session start on a worktree whose copy already exists or is
+  being readied by D30; cleared by a successful reconcile). A worktree with no copy gets no
+  manifest and no flag, so projects that never use Windows never get a copy.
 - **Synced set:** paths git would see in the worktree (`git ls-files --cached --others
   --exclude-standard`) plus, on the Windows side, new paths that `git check-ignore --stdin`
   (run in the worktree) does not ignore. `.git` is never synced. Ignored paths on Windows are
@@ -206,11 +211,12 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 - All reconciles and `win` ops on one copy are serialized, across every session sharing it
   (lead and sub-lead share the thread worktree).
 - **Deleting a copy (D35, D41)** happens only after a successful reconcile with that worktree
-  (or when the worktree is already gone and `used_since_ok` is clear). A copy whose final
-  reconcile failed is never deleted by Wheelchair: it is left in place and the machine log
-  names it. Copies are kept when a session ends, and deleted when Wheelchair removes their
-  worktree: a verifier's after its stop's reconcile (the removal at `machine/service.js:864`
-  moves to after that reconcile) and a worker's at merge (`machine/service.js:1400`): the merge
+  (or when the worktree is already gone and `used_since_ok` is clear), except a verifier's. A
+  copy whose final reconcile failed is never deleted by Wheelchair: it is left in place and
+  the machine log names it. Copies are kept when a session ends, and deleted when Wheelchair
+  removes their worktree. A verifier's worktree is force-removed at its stop (both sites,
+  `machine/service.js:864` and `:1087`), so its copy is deleted right after its apps' jobs are
+  terminated, with no reconcile (D46). A worker's is deleted at merge (`machine/service.js:1400`): the merge
   cleanup first reconciles; if that changes the worktree, git's existing refusal to remove a
   dirty worktree reports it to the sub-lead. Archive deletes the thread's copies after their
   final reconciles and keeps `conflicts\<thread-id>` (D14, D31).
@@ -219,8 +225,8 @@ Ops act only on the caller's own session; no op takes a session or thread argume
 
 - **Session stop** (an explicit stop, including the stops archive makes,
   `machine/service.js:1122-1135`): terminate the session's apps' jobs and return at once.
-  If no other live session shares the copy, a reconcile of it starts in the background; the
-  verifier worktree removal and the copy deletion wait for it (D41).
+  If no other live session shares the copy and the session is not a verifier, a reconcile of
+  it starts in the background (D41). A verifier's copy is deleted instead (D46).
 - **Archive (D42):** if any of the thread's copies has a reconcile running or
   `used_since_ok` set, archive starts or waits for those reconciles and returns the existing
   `pending` result (`viewer/app/threads.js:217-222`) naming the sessions that last used them,
@@ -253,7 +259,12 @@ Ops act only on the caller's own session; no op takes a session or thread argume
   programs too.
 - **Ready before tools start (D30):** on WSL, for the same roles only, when the worktree's `.mcp.json` has at least
   one Windows-program entry, session start creates (and seeds) the copy and reconciles it
-  before launching the agent's CLI, so a tool that needs the project finds it. A failure there
+  before launching the agent's CLI, so a tool that needs the project finds it. The start
+  waits for this at most 20 s (D47; the hub allows a start 60 s,
+  `viewer/app/sessions.js:218`). If it is not done by then, the CLI launches anyway, the
+  readying carries on in the background, and the start response carries the line `Windows
+  copy still being prepared; Windows-side tools may fail until it is ready` in the same way as
+  a failure (below). Any `win` op on that copy waits for the readying to finish. A failure there
   does not block the start; it is added as a line `{names: [], text: "Windows copy not ready:
   <reason>"}` to the start response's `project_tools.programs` list, which the hub already
   turns into the "Project tools problem" card (`viewer/app/sessions.js:144-168`).
@@ -306,7 +317,7 @@ from `/run/WSL`; a recorded PID with a different creation time is never killed; 
 comes from the `done` line (a fake exit code of 256 reports 256); an app whose launcher
 exited stays running while its job has processes; the sweep terminates a dead session's jobs
 and reconciles copies with `used_since_ok` and no live session, including ones with no apps;
-stop returns at once and its reconcile runs after; archive returns `pending` while a
+stop returns at once and its reconcile runs after; a verifier's copy is deleted at stop without a reconcile; a session start on a worktree with no copy and no Windows `.exe` entry creates no copy or manifest; start-time readying past 20 s launches the CLI and reports the line; archive returns `pending` while a
 reconcile runs or a used copy is unreconciled; a copy whose reconcile failed is never
 deleted; two conflicts on one path in separate reconciles are both kept; the Linux-changed,
 Windows-deleted case recreates the Windows file; seeding copies only paths the new worktree's
@@ -420,6 +431,9 @@ passes. On the user's PC, the verifier sets `WHEELCHAIR_UNITY`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Every worktree on a WSL machine would get a copy through `used_since_ok` | upheld | D45 |
+| intent | major | Start-time readying can exceed the hub's 60 s start limit | upheld | D47 |
+| intent | minor | Reconciling a verifier copy is wasted; second removal site missed | upheld | D46 |
 
 ## Implementation Tasks
 
