@@ -260,6 +260,7 @@ npm --prefix viewer run test:browser
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A `file` card title with a line break is accepted | Same check as the `image` title; leads write one-line titles and the card wraps text; already declined in review round 5 | lead-check |
 | A plan folder that is itself a symlink out of the worktree passes the eligibility check | Needs an agent to plant the symlink (tampering); the lead can already read any such file | review-round-2 |
 | A `file` card carrying a `warnings` field passes the machine's extra-field check | `card.js` refuses unknown fields; needs a client bypassing it | review-round-3 |
 | An archived plan document with non-UTF-8 bytes downloads re-encoded | Agents write UTF-8 Markdown | review-round-3 |
