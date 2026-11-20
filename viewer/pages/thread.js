@@ -1274,13 +1274,14 @@
   function syncStickyHeights() {
     const root = document.documentElement.style;
     root.setProperty('--head-h', headEl.offsetHeight + 'px');
+    root.setProperty('--dead-h', deadEl.offsetHeight + 'px');
     root.setProperty('--pins-h', pinnedEl.offsetHeight + 'px');
     root.setProperty('--composer-h', composerEl.offsetHeight + 'px');
   }
   syncStickyHeights();
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(syncStickyHeights);
-    for (const n of [headEl, pinnedEl, composerEl]) ro.observe(n);
+    for (const n of [headEl, deadEl, pinnedEl, composerEl]) ro.observe(n);
   } else window.addEventListener('resize', syncStickyHeights);
 
   // One line above the pinned cards while the live lead is waiting for room or rate-limited.
