@@ -459,3 +459,4 @@ unrounded spend must be greater than zero and comes only from this run.
 
 ## Log
 - 2026-11-20 Ready check: hub and machine service answer; Codex preflight passes; Pi not installed and no OpenRouter key saved in Pi (`~/.pi/agent/auth.json` absent). Not ready.
+- Build accepted: approval 45a125d7-5ca6-4324-bb5f-b7778fe4cba8
