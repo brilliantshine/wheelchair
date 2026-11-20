@@ -44,6 +44,26 @@ test('completed Pi event delivers the named report to the starter', async () => 
   assert.equal(c.thread.cards[0].summary,'first report');
 });
 
+test('Pi sample completed entry reaches the starting session', async () => {
+  const entry = sample.trim().split('\n').map(JSON.parse).find(x => x.id === '83d2881d');
+  assert.equal(entry.message.stopReason, 'stop');
+  const text = entry.message.content.filter(x => x.type === 'text').map(x => x.text).join('');
+  const c = context(sample);
+  await c.event({type:'turn-ended',turn_id:1,entry_id:entry.id});
+  assert.equal(c.lead.queue.length,1);
+  assert.equal(c.lead.queue[0].text,`[wc:from reviewer] result: ${text}`);
+  assert.equal(c.thread.cards[0].summary,text);
+});
+
+test('Pi sample aborted entry delivers no report', async () => {
+  const entry = sample.trim().split('\n').map(JSON.parse).find(x => x.id === '3ed91fce');
+  assert.equal(entry.message.stopReason,'aborted');
+  const c = context(sample);
+  await c.event({type:'turn-ended',turn_id:1,entry_id:entry.id,interrupted:true});
+  assert.equal(c.lead.queue.length,0);
+  assert.equal(c.thread.cards.filter(x => x.kind === 'result').length,0);
+});
+
 test('aborted and failed Pi turns deliver no report', async () => {
   for (const event of [{type:'turn-ended',turn_id:1,entry_id:'a1',interrupted:true},{type:'turn-failed',turn_id:1,error:'failed'}]) {
     const c = context(); await c.event(event);
