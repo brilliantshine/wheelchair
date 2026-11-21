@@ -106,6 +106,46 @@ class WinBridge {
     try { return await task; } finally { if (this.running.get(ctx.key) === task) this.running.delete(ctx.key); }
   }
 
+  async beforeLaunch(session, { windowsTools } = {}) {
+    try {
+      if (!this.detected.wsl || !TOOL_ROLES.has(session.role)) return;
+      const ctx = await this.context(session);
+      if (!windowsTools && !this.exists(ctx) && !this.readying.has(ctx.key)) return;
+      if (windowsTools) this.toolSessions.add(session.name);
+      if (this.exists(ctx)) {
+        this.register(ctx, session);
+        this.markKey(ctx.key);
+      }
+      if (!windowsTools) return;
+      let task = this.readying.get(ctx.key);
+      if (!task) {
+        task = (async () => {
+          try {
+            await this.create(ctx, session);
+            await this.sync(ctx);
+            this.readyErrors.delete(ctx.key);
+          } catch (err) {
+            this.readyErrors.set(ctx.key, err.message);
+            this.service.log(err);
+          } finally {
+            this.readying.delete(ctx.key);
+          }
+        })();
+        this.readying.set(ctx.key, task);
+      }
+      let timer;
+      await Promise.race([task, new Promise(resolve => {
+        timer = setTimeout(() => {
+          this.readyErrors.set(ctx.key, 'Windows copy is still being readied');
+          resolve();
+        }, this.readyTimeoutMs);
+      })]);
+      clearTimeout(timer);
+    } catch (err) {
+      this.service.log(err);
+    }
+  }
+
   async sessionEnv(session, baseEnv = {}) {
     if (!this.detected.wsl || !TOOL_ROLES.has(session.role)) return {};
     const ctx = await this.context(session);

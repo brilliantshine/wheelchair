@@ -103,3 +103,22 @@ test('run timeout syncs, status syncs an exit and launch environment excludes th
   assert.equal(status.sync.conflicts.length, 1);
   assert.equal('exited' in status, false);
 });
+
+test('readying times out without blocking launch and does not create copies for ordinary sessions', async () => {
+  const { bridge, session, root } = realFixture();
+  await bridge.beforeLaunch(session, { windowsTools: false });
+  assert.equal(fs.existsSync(path.join(root, 'state')), false);
+  bridge.readyTimeoutMs = 5;
+  let release;
+  const original = bridge.create.bind(bridge);
+  const gate = new Promise(resolve => { release = resolve; });
+  bridge.create = async (...args) => { await gate; return original(...args); };
+  await bridge.beforeLaunch(session, { windowsTools: true });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  assert.equal(info.ready, false);
+  assert.match(info.reason, /still being readied/);
+  const ready = [...bridge.readying.values()][0];
+  release();
+  await ready;
+  assert.equal((await bridge.handle(session, { op: 'info', args: [] })).ready, true);
+});
