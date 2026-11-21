@@ -98,10 +98,13 @@ before `commandFor` (`:847`):
    `mcp.windows` that are also in `mcp.servers` (the entries this session may load).
 2. For each forwarded tool, get its forward (section 4) and its private port. A tool whose
    forward cannot be had is withheld (section 3).
-3. Build the config once, passing `context.windowsUrls`: `{<name>: <rewritten URL>}` for each
-   tool with a forward, and `context.windowsWithheld`: `[names]`. The rewritten URL is the
-   tool's URL with host `127.0.0.1` and port the private port; scheme, path, query and
-   fragment unchanged. Headers are unchanged.
+3. Build the config once, passing the shared `context.replaceEntries` (D17): for each tool
+   with a forward, `{<name>: <the .mcp.json entry with only url replaced>}`; for each
+   withheld tool, `{<name>: null}`. The rewritten URL is made by **text** replacement of the
+   origin, never by re-serializing a parsed URL: the original `url` string's leading
+   `http://<host>[:<port>]` (exactly as written) becomes `http://127.0.0.1:<private port>`, and
+   everything after it (path, query, fragment, including any `${...}` text) is kept byte for
+   byte. Headers and other fields are unchanged.
 
 A forward got for a tool the CLI then does not load (for example Codex skipping all project
 tools because the overrides grew too large) is left as is: forwards are not owned by sessions
@@ -109,19 +112,26 @@ tools because the overrides grew too large) is left as is: forwards are not owne
 readying for Windows stdio programs) is unchanged: a forwarded HTTP tool needs no worktree
 copy.
 
-### 3. Putting the rewritten URL in each CLI's config (D2, D5, D8)
+### 3. Putting the rewritten entry in each CLI's config (D2, D5, D8, D17)
 
-- **Claude:** for each forwarded or withheld tool, add its name to `disabledMcpjsonServers`.
-  For forwarded tools, write `<stateDir>/mcp-config/<session>.json` (atomic, mode 0600, since
-  headers may carry keys) as `{"mcpServers": {<name>: {"type": "http", "url": <rewritten>,
-  "headers": <as in .mcp.json, if any>}}}` and add `--mcp-config <that path>` to argv. Stale
-  files are removed by the existing stale-file sweep pattern (`sweepAgyTools`,
-  `service.js:477-535`: no matching live session, older than 60 s).
-- **Codex:** `codexOverrides` (`machine/adapters/codex.js:52-100`) uses the rewritten URL for
-  forwarded tools and omits withheld ones.
-- **Antigravity:** `machine/adapters/agy.js:39-43` uses the rewritten URL; withheld tools are
+`context.replaceEntries` is shared with thread 135e4c312559 (Windows stdio go-between); if
+that thread has already added it to main when this is built, reuse it and only fill it;
+otherwise add it as below. Each adapter first applies its existing validation to the
+**original** `.mcp.json` entry (for example the `${` checks, `machine/adapters/codex.js:39`,
+`machine/adapters/agy.js:42`); an entry the adapter would skip stays skipped, whatever
+`replaceEntries` says. For an entry that passes:
+
+- **Claude:** every name in `replaceEntries` is added to `disabledMcpjsonServers`. Names with
+  an entry go into `<stateDir>/mcp-config/<session>.json` (atomic, mode 0600, since headers may
+  carry keys) as `{"mcpServers": {<name>: <entry>}}`, and `--mcp-config <that path>` is added
+  to argv. One file per session, holding every replaced entry. Stale files are removed by the
+  existing stale-file sweep pattern (`sweepAgyTools`, `service.js:477-535`: no matching live
+  session, older than 60 s).
+- **Codex:** `codexOverrides` (`machine/adapters/codex.js:52-100`) uses the replacement entry
+  for named tools and omits `null` ones.
+- **Antigravity:** `machine/adapters/agy.js:39-43` uses the replacement entry; `null` ones are
   omitted.
-- **Withheld:** a tool in `context.windowsWithheld` is not given to the CLI in any form, and
+- **Withheld:** a tool mapped to `null` is not given to the CLI in any form, and
   a line is printed to the machine service's log (stderr, `service.js:850`, as other project
   tools warnings are; it is a diagnostic, not a user surface):
   `<tool>: couldn't reach Windows (<reason>); left out of this session`. Reasons: `Windows
@@ -202,15 +212,16 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   serialized through one in-process queue; each write snapshots the table when it runs, so the
   last write holds the latest state.
 - **Machine service restart:** tmux sessions and their CLIs survive a restart and still hold
-  private URLs. In `WinBridge.startup` (`service.js:447`), read `forwards.json`. If
-  `liveTmux()` is not `null` and lists no wheelchair session (no name starting `wc-`), nothing
-  can hold a private URL (for example after a reboot): rewrite the record empty and restore
-  nothing. Otherwise, for each entry, listen on `127.0.0.1:<recorded private port>` again as the `ok` current forward for
+  private URLs. In `WinBridge.startup` (`service.js:447`), read `forwards.json`. `liveTmux()`
+  is consulted for one decision only: if it is not `null` and lists no wheelchair session (no
+  name starting `wc-`), nothing can hold a private URL (for example after a reboot), so rewrite
+  the record empty and restore nothing. If it is `null` (unknown) or lists any `wc-` session,
+  restore every recorded entry: for each entry, listen on `127.0.0.1:<recorded private port>` again as the `ok` current forward for
   its tool port, whether or not the relay can run (keeping the port bound for existing URLs;
   gets still check relay readiness). A port that can no longer be bound becomes a stale
   forward (section 4) and the tool port has no current forward, so the next get creates a new
   one (and the record write then drops the stale entry). A missing or unreadable file means no
-  forwards to restore. No tmux state is consulted.
+  forwards to restore. Individual sessions are never matched against the record.
 
 ### 6. Visibility
 
@@ -224,8 +235,9 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   current forward's relay, or a one-off check, section 4). It never creates or replaces a
   forward. Reply `{wsl, status: {<name>: {state, reason?, note?}}}` with `state` `reachable` or
   `unreachable` (reason from `check-result`, or `couldn't check Windows for port <n>` on
-  timeout). `note` is set when a stale forward exists for that tool port: `sessions started
-  before the machine service restarted can't use this tool; start a new session`. Off WSL:
+  timeout). `note` is set when a stale forward exists for that tool port: `after the machine
+  service restarted, port <private port> couldn't be reopened; sessions started before that
+  restart can't use this tool (new sessions can)`. Off WSL:
   `{wsl: false, status: {}}`.
 - In `viewer/pages/project-tools.js`, each entry whose **Runs on Windows** switch is on shows a
   status line under the switch: "Checking…", then "Reachable on Windows", "Not reachable:
@@ -238,7 +250,8 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   dropped, and a reply is applied only if it is still `fresh()`, is the latest request for that
   entry, and the entry still has the same URL and the switch on (a rename moves the entry's
   sequence with it). Turning the switch off
-  hides the line.
+  hides the line. If the request itself fails (HTTP error, machine unreachable), every entry
+  it covered shows "Couldn't check: <error>"; Check again stays available in every state.
 - `win info` is unchanged. No thread cards, per-session warning state or session-record
   fields are added.
 
@@ -251,7 +264,9 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   when the read reply has `wsl: true` and the URL is eligible by the shared rule in Terms
   (so `http://localhost:8080/mcp` shows it). Help text: "Turn on if this tool's server runs on Windows. Agents
   here reach it through wheelchair." Hidden otherwise; a mark on a hidden entry is kept as is.
-- Saving sends `windows: [names]` next to `tools`. The dirty check (`:713`) and the machine's
+- Saving sends `windows: [names]` next to `tools` whenever the page sends `tools`. On the
+  machine, an absent `windows` field keeps the existing `wheelchair.windows` as is (older
+  callers and the key-only save path send none); an explicit `[]` clears the marks. The dirty check (`:713`) and the machine's
   nothing-changed shortcut (`machine/lib/project-tools.js:100-103`) compare both `mcpServers`
   and `wheelchair.windows`. The machine writes `wheelchair.windows` (keeping other keys under
   `wheelchair`), removes `windows` when empty and `wheelchair` when it then has no keys, and
@@ -278,6 +293,10 @@ frames and dialling a local test server (these cover the Linux side and the fram
   malformed `wheelchair` cases and their warnings; `wheelchair: {}` and
   `wheelchair: {"other": 1}` give no warning; off WSL nothing forwards and no mark warnings;
   WSL kernel with interop off withholds marked tools.
+- URL rewrite is textual: `http://localhost:8080/mcp/${PROJECT}?a=b#c` becomes
+  `http://127.0.0.1:<p>/mcp/${PROJECT}?a=b#c`, and Codex and Antigravity still skip it as
+  they skip the original. A request that fails shows "Couldn't check". A save without
+  `windows` keeps the marks; `windows: []` clears them.
 - Claude settings/argv: marked tool in `disabledMcpjsonServers`, `--mcp-config` file contents
   and mode 0600; Codex and Antigravity rewritten URLs; withheld tools absent from all three
   and never present with the original URL. The config is built once.
@@ -473,6 +492,24 @@ Risks (local failures not on the page); C4.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Stale note outlives the sessions it warns about | upheld | §6 note reworded to say what happened and that new sessions work |
+| mechanics | blocking | Re-serializing the URL escapes `${...}`, bypassing provider checks | upheld | §2 textual origin replacement; §3 validate the original entry first |
+| mechanics | major | Restart says tmux is and isn't consulted | upheld | §5 one decision only; unknown restores all |
+| mechanics | minor | No status for a failed request | upheld | §6 "Couldn't check" |
+| mechanics | minor | Absent `windows` in save undefined | upheld | §7 absent keeps, `[]` clears |
+
+### Round 7 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 6:** D17 (user): §2 step 3 and §3 rewritten around the shared
+`context.replaceEntries` (`null` = withhold), one Claude `--mcp-config` file per session;
+§2 textual URL rewrite; §3 adapters validate the original entry first; §5 restart wording
+(tmux used for one decision, unknown restores all); §6 stale note wording, failed request
+state; §7 absent `windows` keeps marks, `[]` clears; Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
@@ -481,4 +518,4 @@ Risks (local failures not on the page); C4.
 
 ## Log
 
-- 2026-11-21: D17 logged during round 6; fold into Spec §2-§3 after round 6 triage and list it in the next round's changes.
+- 2026-11-21: D17 logged during round 6; folded into Spec §2-§3 after round 6 triage (listed in Round 7 changes).
