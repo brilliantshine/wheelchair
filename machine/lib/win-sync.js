@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
+const SEED_TIMEOUT_MS = 30 * 60 * 1000;
 const EMPTY = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const locks = new Map();
 
@@ -81,19 +82,35 @@ async function ensureCopy(ctx) {
     const source = [...sources].sort((a, b) => String(b.last_ok || '').localeCompare(String(a.last_ok || '')))[0];
     seeded_from = source.copy;
     await command(ctx, true, ['fetch', source.copy.windows, 'refs/wheelchair/base'], { cwd: copy.linux });
-    const files = await command(ctx, true, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'], { cwd: source.copy.linux });
+    const files = await command(ctx, true, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], { cwd: source.copy.linux });
     if (files.stdout.length) {
       const ignored = await command(ctx, false, ['check-ignore', '--stdin', '-z'], { cwd: ctx.worktree, input: files.stdout, allowFailure: true });
       if (ignored.code > 1) throw Object.assign(new Error(`git check-ignore failed: ${ignored.stderr}`), { status: 422 });
       const paths = ignored.stdout.toString().split('\0').filter(Boolean);
       if (paths.length) {
-        const args = { source: source.copy.windows, destination: copy.windows, paths };
-        const body = paths.map(relative => {
-          const dir = path.win32.dirname(relative.replace(/\//g, '\\'));
-          const name = path.win32.basename(relative);
-          return `robocopy (${shellLiteral(path.win32.join(source.copy.windows, dir))}.TrimEnd('\\')) (${shellLiteral(path.win32.join(copy.windows, dir))}.TrimEnd('\\')) ${shellLiteral(name)} /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null\nif ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }`;
-        }).join('\n') + '\nexit 0';
-        const result = await winEnv.ps(script('seed', args, body));
+        const listPath = path.join(copy.linux, '.git', 'wheelchair-seed-list');
+        const args = { source: source.copy.windows, destination: copy.windows, list: winEnv.toWindows(listPath) };
+        fs.writeFileSync(listPath, paths.map(relative => relative.replace(/\//g, '\\')).join('\n') + '\n', 'utf8');
+        const body = `$source = ${shellLiteral(args.source)}
+$destination = ${shellLiteral(args.destination)}
+Get-Content -LiteralPath ${shellLiteral(args.list)} -Encoding UTF8 | ForEach-Object {
+  $relative = $_
+  if ($relative.EndsWith('\\')) {
+    robocopy ((Join-Path $source $relative).TrimEnd('\\')) ((Join-Path $destination $relative).TrimEnd('\\')) /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+  } else {
+    $parent = Split-Path $relative -Parent
+    $name = Split-Path $relative -Leaf
+    robocopy ((Join-Path $source $parent).TrimEnd('\\')) ((Join-Path $destination $parent).TrimEnd('\\')) $name /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+  }
+  if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
+}
+exit 0`;
+        let result;
+        try {
+          result = await winEnv.ps(script('seed', args, body), { timeoutMs: SEED_TIMEOUT_MS });
+        } finally {
+          fs.rmSync(listPath, { force: true });
+        }
         if (result.code) throw Object.assign(new Error(`seed failed (exit ${result.code}): ${result.stderr}`), { status: 422 });
       }
     }
@@ -129,20 +146,19 @@ function entries(output) {
   return output.toString().split('\0').filter(Boolean);
 }
 
-async function snapshot(ctx, win, protectedPaths = new Set()) {
+async function snapshot(ctx, win, trackedPaths) {
   const options = indexOptions(ctx, win);
   const indexPath = win ? path.join(ctx.copy.linux, '.git/wheelchair.index') : options.env.GIT_INDEX_FILE;
   if (!fs.existsSync(indexPath)) {
     await command(ctx, win, win ? ['read-tree', '--empty'] : ['read-tree', 'HEAD'], options);
   }
-  const real = await command(ctx, win, ['ls-files', '-z'], { cwd: options.cwd });
   const indexed = await command(ctx, win, ['ls-files', '-z'], options);
-  const realPaths = new Set(entries(real.stdout));
+  const realPaths = trackedPaths;
   const indexPaths = new Set(entries(indexed.stdout));
   const force = [...realPaths].filter(file => !indexPaths.has(file) && fs.existsSync(path.join(options.cwd, file)));
   if (force.length) await command(ctx, win, ['add', '-f', '--', ...force], options);
   const ignored = await command(ctx, win, ['ls-files', '-ci', '--exclude-standard', '-z'], options);
-  const remove = entries(ignored.stdout).filter(file => !realPaths.has(file) && !protectedPaths.has(file));
+  const remove = entries(ignored.stdout).filter(file => !realPaths.has(file));
   if (remove.length) await command(ctx, win, ['rm', '--cached', '--ignore-unmatch', '--', ...remove], options);
   await command(ctx, win, ['add', '-A'], options);
   const skipped = [];
@@ -220,7 +236,10 @@ async function isTextConflict(ctx, file, base, linuxTree, windowsTree) {
   for (const tree of [base, linuxTree, windowsTree]) {
     const entry = await command(ctx, false, ['ls-tree', '-z', tree, '--', file], { cwd: ctx.worktree });
     const match = entry.stdout.toString().match(/^(100644|100755) blob ([a-f0-9]+)\t/);
-    if (!match) return false;
+    if (!match) {
+      if (tree === base && entry.stdout.length === 0) continue;
+      return false;
+    }
     const blob = await command(ctx, false, ['cat-file', 'blob', match[2]], { cwd: ctx.worktree });
     blobs.push(blob.stdout);
   }
@@ -241,7 +260,9 @@ async function reconcileAttempt(ctx, hooks, state) {
   const baseRef = `refs/wheelchair/${ctx.key}/base`;
   const windowsRef = `refs/wheelchair/${ctx.key}/windows`;
   const base = await resolveRef(ctx, baseRef);
-  const linux = await snapshot(ctx, false);
+  const tracked = await command(ctx, false, ['ls-files', '-z'], { cwd: ctx.worktree });
+  const trackedPaths = new Set(entries(tracked.stdout));
+  const linux = await snapshot(ctx, false, trackedPaths);
   const linuxSnapshot = linux.tree;
   const listing = await command(ctx, false, ['ls-tree', '-r', '--name-only', '-z', linuxSnapshot], { cwd: ctx.worktree });
   const folded = new Map();
@@ -254,8 +275,7 @@ async function reconcileAttempt(ctx, hooks, state) {
   }
   let windowsSnapshot;
   if (base) {
-    const tracked = await command(ctx, false, ['ls-files', '-z'], { cwd: ctx.worktree });
-    windowsSnapshot = (await snapshot(ctx, true, new Set(entries(tracked.stdout)))).tree;
+    windowsSnapshot = (await snapshot(ctx, true, trackedPaths)).tree;
   } else {
     // No Windows snapshot is taken before the first checkout installs ignore rules.
     windowsSnapshot = (await command(ctx, true, ['mktree'], { cwd: ctx.copy.linux, input: '' })).stdout.toString().trim();

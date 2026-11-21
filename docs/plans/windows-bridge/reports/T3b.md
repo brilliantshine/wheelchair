@@ -1,5 +1,173 @@
 # T3b — Windows bridge manager
 
+## Feature-branch merge and validation
+
+Merged `wc/c833faa8e033` and resolved the conflicts. `win-sync.js` retains T1b's list-file seed, ignored-directory collapsing, recursive robocopy and 30-minute timeout, with trimmed robocopy folder arguments, explicit success and exit-code failures; reconcile passes the Linux tracked paths to both snapshots and uses an empty Windows tree when there is no base. The PowerShell fixture retains T3a's app operations and T1b's list-file seed behavior plus the robocopy exit-code simulation; all seeding regression tests from both branches remain.
+
+### Choices
+
+None beyond those recorded under the previous attempt.
+
+### Validation
+
+`node --test machine/test/win.test.js machine/test/win-sync.test.js machine/test/win-apps.test.js`:
+
+```text
+exit 0
+✔ run reads the done code, caps output, and does not leak the token (150.122073ms)
+✔ wrapper exit without done has null code, and closure is reported (106.460281ms)
+✔ job remains running until the wrapper closes; timeout terminates it (756.398402ms)
+✔ four started jobs are allowed and stop returns their copy keys (166.763073ms)
+✔ windows and shots are restricted to the session and reject minimized windows (389.579416ms)
+✔ shots retain only the newest 50 (129.2866ms)
+✔ startup kills a matching wrapper first and never kills reused PIDs (72.964276ms)
+✔ sweep terminates dead sessions and returns their copy keys (230.491031ms)
+✔ state is persisted and unresolved paths are reported (4.224772ms)
+✔ reconcile transfers additions, edits, deletions, renames and independent changes (2126.793784ms)
+✔ text conflicts preserve the Windows version and mask markers until resolved (1739.589999ms)
+✔ add/add text conflicts hold markers back from Windows until resolved (1752.398536ms)
+✔ binary and modify/delete conflicts choose Linux and save Windows (910.498332ms)
+✔ refuses case collisions and leaves external symlinks out (495.489456ms)
+✔ refuses after two changes during apply without losing edits (1003.462723ms)
+✔ interrupted Windows apply is resumed after another Linux edit (1030.3202ms)
+✔ raw bytes, executable mode, force-added and newly ignored files (1077.356145ms)
+✔ seeding copies only ignored paths accepted by the new worktree (639.393349ms)
+✔ seeding accepts robocopy success code 1 and reports failure code 8 (847.717342ms)
+✔ first and second reconciles preserve seeded ignored files outside both indexes and base (1270.696601ms)
+✔ seeding collapses a large ignored folder and keeps the command short (796.929934ms)
+✔ deleting unresolved copies saves the Windows snapshot and removes copy refs (746.853013ms)
+✔ concurrent reconciles for the same copy are serialized (792.644976ms)
+✔ interrupted conflict application retains marker masking on the next sync (1069.243419ms)
+✔ later force-add, repeated tracked deletion, and successive Windows edits sync (1607.150533ms)
+✔ clean checkout LFS and eol attributes do not transform bridge bytes (421.781926ms)
+✔ a force-tracked ignored file survives repeated syncs and edits in both directions (2506.880247ms)
+✔ availability, role, session and argument checks are ordered (11.475465ms)
+✔ session environment applies to tool roles without creating state (1.336676ms)
+✔ run timeout syncs, status syncs an exit and launch environment excludes the token (2859.806763ms)
+✔ readying times out without blocking launch and does not create copies for ordinary sessions (640.73488ms)
+✔ worker merge cleanup deletes its copy and stop does not reconcile (612.162004ms)
+✔ verifier stop returns immediately and deletes after its apps stop (629.400321ms)
+✔ failed copies survive ordinary removal and archive, but verifier and merge removal delete them (2490.369239ms)
+✔ archive waits for successful final sync then deletes the copy (955.319145ms)
+✔ archive waits once for a final sync and retains a failed copy (553.723913ms)
+✔ sweep reconciles a dead lead with no apps (871.946129ms)
+✔ sweep marks dead app copies and reconciles a shared thread worktree after a worker registered (1191.604233ms)
+✔ tracker close callback marks the copy used (454.970624ms)
+✔ sessions sharing a worktree share the copy and Windows tool use triggers stop sync (780.669701ms)
+✔ archive deletes copies while retaining conflict refs (972.95403ms)
+✔ cleanup removes a vanished linked worktree copy without a reconcile (534.720037ms)
+✔ info reports a PowerShell startup failure and environment names are case insensitive (0.662123ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 43
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20977.750577
+```
+
+`bash machine/test/run.sh` (only the known pre-existing Kimi installation failure):
+
+```text
+exit 1
+✔ kept entries show missing and old_identity flags (52.90125ms)
+✔ Status runs no content filter while active (232.365816ms)
+✔ required smudge filter failing on a move between threads records exact interrupted paths (307.594185ms)
+✔ real git switch unable to unlink warning is interrupted (136.01106ms)
+✔ commit subject containing unable to unlink gives plain success (134.019571ms)
+✔ hanging filter subprocess outlives deadline and its whole process group is killed (585.319362ms)
+✔ delayed process filter failing after HEAD moved records files across reload (208.548462ms)
+✔ run reads the done code, caps output, and does not leak the token (98.737699ms)
+✔ wrapper exit without done has null code, and closure is reported (94.81312ms)
+✔ job remains running until the wrapper closes; timeout terminates it (750.434879ms)
+✔ four started jobs are allowed and stop returns their copy keys (177.74127ms)
+✔ windows and shots are restricted to the session and reject minimized windows (381.26152ms)
+✔ shots retain only the newest 50 (127.070858ms)
+✔ startup kills a matching wrapper first and never kills reused PIDs (67.708056ms)
+✔ sweep terminates dead sessions and returns their copy keys (219.786899ms)
+✔ parses every operation (1.845586ms)
+✔ rejects invalid operations and arguments with 400 (0.727844ms)
+✔ detects WSL and its mount root (4.071369ms)
+✔ repairs interop without leaking token or mutating the input (0.457338ms)
+✔ PowerShell startup failure includes interop guidance (6.708263ms)
+✔ gitWin translates a Windows path and runs real git in the copy (142.058323ms)
+✔ state is persisted and unresolved paths are reported (7.27005ms)
+✔ reconcile transfers additions, edits, deletions, renames and independent changes (1811.493725ms)
+✔ text conflicts preserve the Windows version and mask markers until resolved (1756.620828ms)
+✔ add/add text conflicts hold markers back from Windows until resolved (1688.091673ms)
+✔ binary and modify/delete conflicts choose Linux and save Windows (925.091913ms)
+✔ refuses case collisions and leaves external symlinks out (475.112118ms)
+✔ refuses after two changes during apply without losing edits (992.69921ms)
+✔ interrupted Windows apply is resumed after another Linux edit (1030.450272ms)
+✔ raw bytes, executable mode, force-added and newly ignored files (1050.149598ms)
+✔ seeding copies only ignored paths accepted by the new worktree (617.867438ms)
+✔ seeding accepts robocopy success code 1 and reports failure code 8 (861.886905ms)
+✔ first and second reconciles preserve seeded ignored files outside both indexes and base (1275.81391ms)
+✔ seeding collapses a large ignored folder and keeps the command short (780.528667ms)
+✔ deleting unresolved copies saves the Windows snapshot and removes copy refs (742.329752ms)
+✔ concurrent reconciles for the same copy are serialized (797.061226ms)
+✔ interrupted conflict application retains marker masking on the next sync (1069.216053ms)
+✔ later force-add, repeated tracked deletion, and successive Windows edits sync (1605.070849ms)
+✔ clean checkout LFS and eol attributes do not transform bridge bytes (431.32867ms)
+✔ a force-tracked ignored file survives repeated syncs and edits in both directions (2494.899205ms)
+✔ availability, role, session and argument checks are ordered (7.00672ms)
+✔ session environment applies to tool roles without creating state (1.408708ms)
+✔ run timeout syncs, status syncs an exit and launch environment excludes the token (2526.688148ms)
+✔ readying times out without blocking launch and does not create copies for ordinary sessions (637.92693ms)
+✔ worker merge cleanup deletes its copy and stop does not reconcile (640.091401ms)
+✔ verifier stop returns immediately and deletes after its apps stop (618.65177ms)
+✔ failed copies survive ordinary removal and archive, but verifier and merge removal delete them (2495.009868ms)
+✔ archive waits for successful final sync then deletes the copy (914.351791ms)
+✔ archive waits once for a final sync and retains a failed copy (545.049516ms)
+✔ sweep reconciles a dead lead with no apps (880.009784ms)
+✔ sweep marks dead app copies and reconciles a shared thread worktree after a worker registered (1178.891653ms)
+✔ tracker close callback marks the copy used (457.848601ms)
+✔ sessions sharing a worktree share the copy and Windows tool use triggers stop sync (821.989291ms)
+✔ archive deletes copies while retaining conflict refs (949.228532ms)
+✔ cleanup removes a vanished linked worktree copy without a reconcile (525.403003ms)
+✔ info reports a PowerShell startup failure and environment names are case insensitive (0.606851ms)
+ℹ tests 495
+ℹ suites 0
+ℹ pass 494
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 38371.505961
+
+✖ failing tests:
+
+test at machine/test/kimi.test.js:164:1
+✖ new login clears previous result and uses exact target (120.41487ms)
+  Error: Kimi Code is not installed
+      at MachineService.startLogin (/home/gleam/.local/state/wheelchair/worktrees/wheelchair/wc-c833faa8e033-w7/machine/service.js:1471:70)
+      at TestContext.<anonymous> (/home/gleam/.local/state/wheelchair/worktrees/wheelchair/wc-c833faa8e033-w7/machine/test/kimi.test.js:168:17)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    status: 409
+  }
+```
+
+Real WSL check using the list-file seed script:
+
+```text
+exit 0
+info {"wsl":true,"ok":true,"ready":true,"copy_windows":"C:\\Users\\Collin\\AppData\\Local\\Wheelchair\\copies\\real-650444\\2e69f03dc41b","copy_linux":"/mnt/c/Users/Collin/AppData/Local/Wheelchair/copies/real-650444/2e69f03dc41b","sandboxed":false}
+initial sync {"to_windows":[".gitignore","initial"],"to_linux":[],"conflicts":[],"unresolved":[],"skipped":[]}
+two-sided sync {"to_windows":["linux-file"],"to_linux":["windows-file"],"conflicts":[],"unresolved":[],"skipped":[]}
+round trip linux windows
+second info {"wsl":true,"ok":true,"ready":true,"copy_windows":"C:\\Users\\Collin\\AppData\\Local\\Wheelchair\\copies\\real-650444\\6e1f497de2a7","copy_linux":"/mnt/c/Users/Collin/AppData/Local/Wheelchair/copies/real-650444/6e1f497de2a7","sandboxed":false}
+seed seeded
+archive initial {"pending":["wc-real-worker"]}
+archive final {"pending":[]}
+deleted [true,true]
+```
+
 ## Attempt 2 — completed after ownership extension
 
 ### Outcome: done
