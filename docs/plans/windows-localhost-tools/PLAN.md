@@ -186,9 +186,15 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   changed. The listener only accepts on `127.0.0.1`. Each accepted socket gets one relay
   connection (`open` frame). Bytes the client sends before `opened` are buffered, at most
   1 MiB (more → close the socket), and sent in order after it. On `refused` the socket is
-  closed. The tool therefore sees `Host: 127.0.0.1:<private port>`, so any absolute URL it
-  builds from `Host` (redirects, links) points back through the forward. A tool that accepts
-  only its exact original host and port is not supported (Not doing).
+  closed. **Flow control:** the shared stdin/stdout pipe is never paused for one connection.
+  Each side bounds what it has queued for one connection: on Linux, if a socket's
+  `writableLength` exceeds 4 MiB, that connection is closed (and `close` sent); the relay does
+  the same for its write queue to a Windows socket. Other connections and checks on the forward
+  are unaffected. The tool therefore sees `Host: 127.0.0.1:<private port>`, so any absolute URL it
+  builds from `Host` (redirects, links) points back through the forward. The host is always
+  `127.0.0.1`, even when the user wrote `localhost`: the listener binds only IPv4 loopback, and
+  Linux `localhost` may resolve to `::1` first. A tool that checks the host name or port it is
+  reached at is not supported (Not doing).
 - **Relay:** one `powershell.exe` per forward, started with `spawnPs`
   (`machine/lib/win-env.js:57-61`) running a script shipped in the repo
   (`machine/lib/win-relay.ps1`, embedded by reading the file, never written at run time),
@@ -278,7 +284,10 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   dropped, and a reply is applied only if it is still `fresh()`, is the latest request for that
   entry, and the entry still has the same URL and the switch on (a rename moves the entry's
   sequence with it). Turning the switch off
-  hides the line. If the request itself fails (HTTP error, machine unreachable), every entry
+  hides the line. Each status request is also tied to the entry's current form instance (a
+  token created when the edit form or the project view is rendered): Cancel, a post-save reread
+  or any re-render clears that entry's pending debounce timer and drops replies for older
+  tokens. If the request itself fails (HTTP error, machine unreachable), every entry
   it covered shows "Couldn't check: <error>"; Check again stays available in every state.
 - `win info` is unchanged. No thread cards, per-session warning state or session-record
   fields are added.
@@ -303,8 +312,8 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 
 ### Not doing
 
-As IDEA.md. Also: no rewriting of requests or replies (D19), so tools that accept only their
-exact original `Host` (host and port) and OAuth-protected Windows tools are not supported; no
+As IDEA.md. Also: no rewriting of requests or replies (D19), so tools that check the host name or
+port they are reached at, and OAuth-protected Windows tools, are not supported; no
 change to `.mcp.json` beyond the switch; no networking-mode detection
 (D3); no IPv6 Windows servers; no restart of Windows tool servers.
 
@@ -343,8 +352,11 @@ frames and dialling a local test server (these cover the Linux side and the fram
   built from the request's `Host` sends the client back to `127.0.0.1:<private port>` and the
   follow-up goes through the forward; a streamed response arrives in pieces as sent; a
   restored forward pipes connections.
-- Status page: editing a URL A → B → A before the check fires does not apply A's old reply;
+- Status page: Cancel and a same-project reload while a check is pending leave no stale status;
+  editing a URL A → B → A before the check fires does not apply A's old reply;
   renaming or changing kind during a check schedules a new check or hides the line.
+- Flow control: a client that stops reading a streamed response gets its connection closed at
+  4 MiB queued while a second connection and a status check on the same forward keep working.
 - Relay frames: `opened` before data, client bytes buffered until then; `refused` closes the
   socket and sets `last_refusal`; `opened` clears it; relay death restarts at most once per
   10 s and finishes pending checks; an idle relay ends after 5 minutes; a check timed out at
@@ -377,6 +389,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A client that half-closes its side (TCP FIN) before the reply loses the reply, since `close` ends both directions | Rare path: the HTTP clients the CLIs use do not half-close | review-round-10 |
 | A tool withheld because the local port could not be opened or the record could not be saved is not reflected on the Project tools page, which may show "Reachable on Windows" | Rare path: local bind or state-file write failures on a healthy machine; the reason is in the machine service log | review-round-5 |
 | Port 0 can pick a port that an unmarked Linux tool is configured for while its server is down; that tool then reaches the Windows forward | Rare path: needs a Linux tool configured on a port in the kernel's ephemeral range, its server down, and the kernel picking exactly that port | review-round-4 |
 | After a stale forward is replaced, its old private port is no longer reserved; if the Linux holder exits, a later forward could get that port and receive old sessions' requests | Rare path: needs a service restart, a Linux program in the restart gap, that program exiting, and the kernel picking the same port again | review-round-4 |
@@ -391,7 +404,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 | C1 | Live on WSL default networking: a Windows HTTP MCP server on `127.0.0.1:<port>`, marked, is callable from Claude, Codex and Antigravity sessions | planning |
 | C2 | With the Windows server stopped and a Linux listener on the tool port, connections are refused (no loop, nothing reaches the Linux listener), and work again once the Windows server starts | planning |
 | C4 | A cold relay start (powershell.exe plus loading the NetTCPIP module for the first `Get-NetTCPConnection`) fits the 3 s lookup limit and the 10 s status cap; if not, the limit counts from after the module loads | review-round-5 |
-| C5 | Per-request owner lookup (one `Get-NetTCPConnection` per relay connection) adds acceptable latency to tool calls (well under 1 s on a warm relay) | review-round-8 |
+| C5 | The owner lookup (one `Get-NetTCPConnection` per new TCP connection; keep-alive connections carry many requests) adds acceptable latency when a connection opens (well under 1 s on a warm relay) | review-round-8 |
 | C3 | Mirrored networking: same as C1 and C2 | planning |
 
 ## Review Rounds
@@ -602,6 +615,12 @@ hides the status.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Redirects built from a hardcoded address (not `Host`) still leave the forward; custom headers could reach a Linux program on the tool port | user-decision | Question to the user (fix needs rewriting, reversed by D19) |
+| intent | minor | `127.0.0.1` replaces `localhost`; Not doing too narrow | upheld | §4 why `127.0.0.1`; Not doing widened |
+| intent | minor | C5 still says per request | upheld | C5 reworded |
+| mechanics | blocking | Rare path: TCP half-close not forwarded | accepted-risk | Accepted Risks (clients don't half-close) |
+| mechanics | major | No flow control after `opened` | upheld | §4 per-connection 4 MiB bound, shared pipe never paused |
+| mechanics | major | Status checks survive Cancel/reload | upheld | §6 per-render token |
 
 ## Implementation Tasks
 
