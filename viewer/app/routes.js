@@ -65,7 +65,7 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'project-tools' &&
-      ['read', 'save', 'remove-key'].includes(bits[1])) {
+      ['read', 'save', 'remove-key', 'unity-prep'].includes(bits[1])) {
     if (!body || typeof body.path !== 'string') return send(response, 400, { error: 'path is required' });
     const { machine, ...input } = body;
     const name = typeof machine === 'string' && machine ? machine : 'hub';
@@ -204,6 +204,17 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (request.method === 'POST') { const result = await diagramSensitivity.write(hub, body); return send(response, result.status, result.body); }
   }
   if (bits.length === 1 && request.method === 'GET') return send(response, 200, { ...await settings.describe(hub), reserved_provider: await reservedLabel(hub, await settings.load(hub)) });
+  if (bits[1] === 'lessons' && bits.length === 3 && request.method === 'PUT') {
+    const role = bits[2];
+    if (!settings.ROLES.has(role) || !body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !['edits', 'removals'].includes(key)) || !Array.isArray(body.edits) || !Array.isArray(body.removals) || body.edits.some((edit) => !edit || typeof edit !== 'object' || Array.isArray(edit) || Object.keys(edit).some((key) => !['id', 'text'].includes(key)) || typeof edit.id !== 'string' || !settings.validLessonText(edit.text)) || body.removals.some((id) => typeof id !== 'string')) throw appError(400, 'invalid lesson edits');
+    const value = await settings.update(hub, (current) => {
+      const list = current.lessons[role];
+      if (body.edits.some((edit) => !list.some((item) => item.id === edit.id))) throw appError(409, 'an agent removed a lesson you edited; reload to see the current list');
+      for (const edit of body.edits) { const item = list.find((entry) => entry.id === edit.id); item.text = edit.text; item.saved_by = 'user'; item.saved_at = new Date().toISOString(); }
+      current.lessons[role] = list.filter((item) => !body.removals.includes(item.id));
+    });
+    return send(response, 200, { lessons: value.lessons[role] });
+  }
   if (bits[1] === 'accounts') {
     if (bits.length === 2 && request.method === 'POST') {
       let account;

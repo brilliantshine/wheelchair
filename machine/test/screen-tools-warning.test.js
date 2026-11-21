@@ -43,5 +43,18 @@ test('approval card reports missing screen tools and respects platform', async (
     process.env.PATH = partial; assert.deepEqual((await post()).warnings, [warning(TOOLS.filter(n => n !== TOOLS[1] && n !== TOOLS[6]))]);
     process.env.PATH = full; assert.equal('warnings' in await post(), false);
     process.env.PATH = empty; service.platform = 'darwin'; assert.equal('warnings' in await post(), false);
+    service.platform = 'linux'; process.env.PATH = full;
+    const worktree = path.join(root, 'work'); await fs.mkdir(worktree);
+    service.sessions.lead.worktree = worktree;
+    service.win.detected = { kernel: true, wsl: true, interop: true, mount: '/mnt' };
+    service.win.bridgeHealth = () => ({ ok: false, reason: 'broken' });
+    await fs.writeFile(path.join(worktree, '.mcp.json'), JSON.stringify({ mcpServers: { windows: { command: '/mnt/c/tools/tool.exe' } } }));
+    assert.deepEqual((await post()).warnings, [`The Windows bridge won't work on ${os.hostname()}: broken. Builds that don't use Windows are unaffected.`]);
+    await fs.writeFile(path.join(worktree, '.mcp.json'), JSON.stringify({ mcpServers: { linux: { command: 'tool' } } }));
+    assert.equal('warnings' in await post(), false);
+    await fs.writeFile(path.join(worktree, '.mcp.json'), JSON.stringify({ mcpServers: { windows: { command: '/mnt/c/tools/tool.exe' } } }));
+    service.win.detected.kernel = false; assert.equal('warnings' in await post(), false);
+    service.win.detected.kernel = true; service.win.bridgeHealth = () => ({ ok: null }); service.win.bridgeHealthWait = async () => ({ ok: null });
+    assert.equal('warnings' in await post(), false);
   } finally { process.env.PATH = oldPath; if (service.server.listening) await close(service.server); await close(hub); }
 });

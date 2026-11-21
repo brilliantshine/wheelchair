@@ -128,3 +128,5 @@ A blocked verdict is not a `GAP` and never starts remediation.
 One `GAP` line per gap, each with evidence (a `file:line`, or a command and what it
 printed). A gap you cannot support with evidence is not a gap. Say what you ran in a
 sentence or two after the verdict if it helps; keep the verdict lines first.
+
+The lessons in your instructions are kept by the lead; you do not save lessons.

@@ -190,6 +190,10 @@ async function main(argv) {
   if (result.status < 200 || result.status >= 300) {
     throw new Error(result.status === 503 ? 'hub unavailable' : result.output);
   }
+  if (group === 'win' && operation === 'info') {
+    const response = JSON.parse(result.output);
+    for (const warning of response.disk?.warnings || []) process.stderr.write(`${warning}\n`);
+  }
   if (group === 'session' && operation === 'start') {
     const response = JSON.parse(result.output);
     if (response.note) process.stderr.write(`${response.note}\n`);

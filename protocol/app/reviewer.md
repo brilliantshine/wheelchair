@@ -83,3 +83,5 @@ SEVERITY: blocking|major|minor — LENS: mechanics|intent — <finding> — <evi
 Evidence is a `file:line` or the text of the Spec or code you checked. If you found
 nothing, say so in one line (`No findings.`) after naming what you read. Do not add
 a summary of your reasoning; the lead reads the lines.
+
+The lessons in your instructions are kept by the lead; you do not save lessons.

@@ -80,7 +80,7 @@ test('account and balancing routes and usage shape', async () => {
 test('normalization supplies defaults and all plan weights', () => {
   assert.equal(settings.normalize({ save_claude_for_leads: false }).save_for_leads, false);
   assert.equal(settings.normalize({ review_families: 'bad' }).review_families, 'both');
-  const plans = [['claude', 'pro', 1], ['claude', 'max5', 5], ['claude', 'max20', 20], ['gpt', 'plus', 1], ['gpt', 'pro', 6], ['gpt', 'unknown', 1]];
+  const plans = [['claude', 'pro', 1], ['claude', 'max5', 5], ['claude', 'max20', 20], ['gpt', 'plus', 1], ['gpt', 'prolite', 5], ['gpt', 'pro', 10], ['gpt', 'promax', 25], ['gpt', 'unknown', 1]];
   const value = settings.defaults();
   value.accounts = plans.map(([provider, plan], i) => ({ ...account, id: `p${i}`, provider, plan, weight: undefined }));
   value.accounts.push({ ...account, id: 'explicit', weight: 42 });
@@ -471,4 +471,25 @@ test('idle poll promotes a waiting start when usage frees room', async () => {
     await hub.pollIdle();
     assert.equal((await hub.thread(made.id)).sessions.find(s => s.name === waiting.name).status, 'ready');
   } finally { await close(c); }
+});
+
+test('a reported GPT plan sets the account plan and weight unless the weight was typed in', async () => {
+  const { State } = require('../app/state.js');
+  const hub = { state: new State(await makeTemp('usage-plan-')) };
+  const gptReading = (plan_type) => ({ account: 'default-gpt', at: new Date().toISOString(), week: { used: 10, resets_at: reset }, five_hour: null, plan_type });
+  const gpt = async () => (await settings.load(hub)).accounts.find((a) => a.id === 'default-gpt');
+  await usage.record(hub, gptReading('prolite'));
+  assert.deepEqual([(await gpt()).plan, (await gpt()).weight], ['prolite', 5]);
+  await usage.record(hub, gptReading('promax'));
+  assert.deepEqual([(await gpt()).plan, (await gpt()).weight], ['promax', 25]);
+  await usage.record(hub, { ...gptReading('prolite'), at: '2020-01-01T00:00:00Z' });
+  assert.equal((await gpt()).plan, 'promax');
+  await usage.record(hub, gptReading('constructor'));
+  await usage.record(hub, gptReading('enterprise'));
+  assert.equal((await gpt()).plan, 'promax');
+  await settings.update(hub, (v) => { v.accounts.find((a) => a.id === 'default-gpt').weight = 3; });
+  await usage.record(hub, gptReading('plus'));
+  assert.deepEqual([(await gpt()).plan, (await gpt()).weight], ['promax', 3]);
+  assert.deepEqual(settings.reportedPlan({ provider: 'gpt', plan: 'pro', weight: 6 }, 'pro'), { plan: 'pro', weight: 10 });
+  assert.equal(settings.reportedPlan({ provider: 'claude', plan: 'pro', weight: 1 }, 'max'), null);
 });
