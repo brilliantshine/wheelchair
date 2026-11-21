@@ -154,3 +154,4 @@ No change to when an agent counts as quiet or to the reminders before the card; 
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+- 2026-11-21 Ready check at approval: hub and machine answer session list; Claude and GPT sessions started this thread (both logged in); codex/preflight.sh: token fresh. Ready.
