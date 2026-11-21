@@ -440,6 +440,7 @@ npm --prefix viewer run test:browser
 | After a failed install, a machine outage during the next poll keeps "Install failed" instead of "Can't reach …, retrying…" | Needs a failed install and an outage together; polling continues and recovers; rare path | verification-1 |
 | An older `/onboarding` response arriving after a newer one can briefly bring the checklist back | Race between two 5 s polls inside one response time; the next poll corrects it; rare path | verification-1 |
 | An Add account form left open in one tab can still save a provider that was switched off in another tab | Needs two Settings tabs, an open draft and a switch-off in the other tab; the same-tab case is fixed (R2-1); rare path, like the round-12 stale-tab risk | verification-3 |
+| A sign-in card opened under Accounts in one tab stays usable when its harness is switched off in another tab | Needs two Settings tabs open at once; the same-tab case is fixed (R1-2, R2-1); the lead judged it a rare path | verification-3 |
 | The only signed-in harness has its Lead model set to None, so the checklist completes but no lead starts | Every provider ships default models (`codex/model.sh:33-38`); needs a deliberate None on the only harness; rare path | review-round-5 |
 
 ## Review Rounds
@@ -666,6 +667,7 @@ npm --prefix viewer run test:browser
 | R1-1 | Remediation 1: S2.3 Node check reads the recipe's PATH node | `machine/lib/harness-install.js`, `machine/test/harness-install.test.js` | standard, gpt | wc-ff891978fb1d-worker-7 | `bash machine/test/run.sh` | done |
 | R1-2 | Remediation 1: S4.6 hidden order positions; S4.1–4.3 Install targets the shown machine; S4.2 sign-in closes on switch-off | `viewer/pages/settings.{js,css}`, `viewer/test/app-harnesses.spec.js` | standard, claude | wc-ff891978fb1d-worker-8 | `npm --prefix viewer run test:browser` | done |
 | R2-1 | Remediation 2: Add account offers only switched-on providers; switch-off closes every sign-in card for that provider (second attempt on the sign-in gap) | `viewer/pages/settings.js`, `viewer/test/app-harnesses.spec.js` | standard, claude | wc-ff891978fb1d-worker-9 | `npm --prefix viewer run test:browser` | done |
+| R3-1 | Remediation 3: make the Add account browser tests stop racing their settings reload (test only) | `viewer/test/app-harnesses.spec.js` | light, claude | wc-ff891978fb1d-worker-10 | `--repeat-each=10` on app-harnesses.spec.js; `npm --prefix viewer run test:browser` | running |
 
 ## Log
 
@@ -714,3 +716,4 @@ Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
 - 2026-11-21 — Choice: R2-1, app-harnesses.spec.js: test (b) clicks "Add anyway" when the reset lands on Claude; new `stubAccounts`/`switchOff` helpers.
 - 2026-11-21 — Remediation 2 complete; validation on `abb50e71`: installer 209/209, machine 486/486, node 764/764, browser 1197 passed / 1 flaky (app-send-now, passes alone 12/12). Verification attempt 3 started.
 - 2026-11-21 — Verification attempt 3 on `2cf9fa84`: both verifiers FAIL on the same must-fix gap, the R2-1 test `switching off the provider chosen in an open Add account form resets it` is flaky (its `stubAccounts` `route.fetch` is still in flight at test end), which fails `npm --prefix viewer run test:browser`. The GPT verifier also found two-tab variants: the Add draft one recorded as a rare path; the sign-in card one sent to the lead, as it touches the sign-in gap that has had two fix attempts.
+- 2026-11-21 — Lead's answer on attempt 3: fix the flaky test; both two-tab cases are rare paths. REMEDIATION-3.md written; R3-1 dispatched (light: the brief names the exact change).
