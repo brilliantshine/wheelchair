@@ -71,6 +71,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 42 | New information about an open card is told in the reply and saved to its Open Question at once; an answer is checked against it before acting; a waiting card is rechecked against a finished peer before posting; a withdrawn card's Open Question is removed before the retract; moot Accepted Risks removed | Round 20 findings | review-round-20 |
 | 43 | An answer given after the new-information line is acted on as it is; only an earlier answer is checked; a posted card stays valid if the peer finishes; moot Accepted Risks removed | Round 21 findings | review-round-21 |
 | 44 | Supersedes the checking parts of Decisions 41-43: new information while an overlap card is open is only mentioned in one line beside it; the answer is acted on as given, with no re-check or follow-up card | The last recurring findings came from the re-check; the user picked "Just mention it" (card d9a87c36) | user |
+| 45 | A re-ask needs information learned after the answer was acted on; a card is withdrawn only by this thread's decision or the user's instruction, never by news about the other thread; a follow-up card for an unsettled answer inherits the original's validity | Round 22 findings | review-round-22 |
 
 ## Spec
 
@@ -89,7 +90,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   overlap is held and asked first after confirmation.
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
   thread and not in a Decision Log entry of this plan. An overlap already asked is asked again,
-  inside the card window, only when new information changes what the answered option would do.
+  inside the card window, only when information learned after its answer was acted on (its Done
+  marker is committed, or for a small fix after the fix went ahead) changes what that answer
+  would do. Information mentioned beside an open card never starts a re-ask.
 - **Late overlap:** a new overlap learned outside the card window (status `ready-for-review` or
   later, or once a small fix's edits are made). It never gets a card: the lead says in one line
   of its next visible reply which thread overlaps, what it is doing, and that a follow-up thread
@@ -139,8 +142,8 @@ paths:
   a small fix the latest instruction
   that settles it under "Settling an answer"; a vague or conditional answer awaiting a follow-up
   is not settled, so the in-window path applies): answer
-  the peer from that decision, with no new card, unless the question brings new information that
-  changes what the answered option would do (then it is a re-ask, inside the card window only);
+  the peer from that decision, with no new card, unless the question brings information that would start a re-ask under
+  Terms "New overlap" (inside the card window only);
 - before IDEA.md is confirmed: held, like any overlap, and asked first after confirmation;
 - inside the card window: it becomes (or joins) the overlap card for that thread;
 - after the card window: the late-overlap mention, and the lead answers the peer from what it
@@ -155,7 +158,9 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   IDEA.md confirmation), so status stays `planning` until it is settled. The commit that logs
   its Decision removes it. Before posting a waiting overlap card (live or on restart), the lead
   rechecks the other thread in `session leads`: if it has finished (Terms "Overlap"), it removes
-  the Open Question with a Log line and gives the one-line mention instead.
+  the Open Question with a Log line and gives the one-line mention instead. A follow-up card for
+  an unsettled answer (Terms "Settling an answer") skips this recheck: it inherits the original
+  card's validity, live and on restart.
 - **Card text:** `fits` names the other thread by its title; each option's `consequence` says
   what the answer does to this thread. At most four options.
 - **Small fix, before edits:** post the card and edit nothing until it is answered. Options:
@@ -172,11 +177,15 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   PLAN.md created with `status: planning`, it is the first Open Question asked.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
-- **New information while a card is open:** the open card is never retracted or re-checked. The
+- **New information while a card is open:** the open card is never retracted to re-ask it, and
+  its answer is never re-checked. The
   lead says the new information in one line of its next visible reply, beside the open card, and
   acts on the answer as the user gives it. A card stays valid even if the other thread finishes
   meanwhile; the finished-peer recheck applies only before posting.
-- **Withdrawn card:** when an overlap card no longer applies, the lead first commits the removal
+- **Withdrawn card:** an overlap card is withdrawn only when the question itself no longer
+  applies because of this thread's own decision or the user's instruction (for example they
+  cancel it in chat); new information about the other thread never withdraws it (it is only
+  mentioned). The lead first commits the removal
   of its Open Question with a Log line `Overlap with <thread id> dropped: <why>`, then retracts the
   card.
 
@@ -251,9 +260,19 @@ merging of branches; no sub-lead or worker rule changes.
 | A late-overlap mention learned in a hidden turn is lost if the lead dies before its next visible reply and the peer list does not reveal it | Needs a restart inside that window; the restart re-look covers the usual case | review-round-13 |
 | A session that puts its own `delivery_id` in a card file can choose the card's id, or have its card dropped as a duplicate | Needs an agent tampering with its own card file; it only affects its own thread | review-round-17 |
 | An answer given in the seconds while the lead withdraws an obsolete overlap card (or a restart between the drop commit and the retract) is acted on as a live answer | A race within seconds, or a restart in that gap | review-round-21 |
+| During an upgrade, a card queued by an updated machine and drained by a hub still on the old version gets a fresh id, so a retract with the printed id finds nothing | Needs mixed versions mid-upgrade plus an app outage; the Ready check requires matching versions | review-round-22 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 
 ## Review Rounds
+
+### Round 23 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 22:** Decision 45: Terms "New overlap" re-ask limited to information after the answer was acted on; §1 peer settled path points to it; §1 follow-up cards skip the finished-peer recheck; §1 "New information" and "Withdrawn card" reconciled; one Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 22 — 2026-11-21
 
@@ -263,6 +282,11 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Re-ask rule conflicts with "just mention it" | upheld | Re-ask only after the answer was acted on (Decision 45) |
+| intent | minor | No named trigger for withdrawing a card | upheld | Only this thread's decision or the user's instruction (Decision 45) |
+| mechanics | major | "Never retracted" vs "Withdrawn card" | upheld | Same fix (Decision 45) |
+| mechanics | major | Follow-up for a conditional answer after the peer finished | upheld | Follow-ups inherit validity (Decision 45) |
+| mechanics | major | Queued id across a mixed-version upgrade | accepted-risk | Rare path; Accepted Risks |
 
 ### Round 21 — 2026-11-21
 
