@@ -67,6 +67,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 38 | Supersedes the retry part of 37: a retract 503 gets one retry after a minute, then a `needs` card and the turn ends (lead.md's existing pattern); a terminal refusal ends retrying and the waiting step is rechecked; a re-ask writes its new information to the Open Question first; an open re-ask takes precedence over an older decision when a peer asks | Round 17 findings | review-round-17 |
 | 39 | Retract retries: the sudo "try again" refusal is retryable; one `needs` card covers all failed retracts that something waits on; Talk about it posts no new question while the card is open; an answered refusal is handled from the press that follows | Round 18 findings | review-round-18 |
 | 40 | Supersedes Decisions 12 (retract part), 13, 20 (refusal), 34-35 and 37-39 (retract retries): retracts stay queued as today; no new refusals; no retry or `needs` rules. A re-ask retracts and reposts in queue order. Knowing whether Start building won when an approval is withdrawn belongs to the split-off thread (Decision 32) | Rounds 16-18 drew findings only on the synchronous retract; the user picked "Keep them queued" (card 291fb31d) | user |
+| 41 | An open overlap card is never retracted to re-ask it: new information waits for its answer and then gets a follow-up card; restart rediscovery uses the held/in-window/late paths; lead.md wording avoids the words the protocol-rules test forbids; Accepted Risks rows made moot by Decision 40 removed | Round 19 findings | review-round-19 |
 
 ## Spec
 
@@ -166,11 +167,11 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   PLAN.md created with `status: planning`, it is the first Open Question asked.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
-- **Re-asking an open card:** to re-ask an open overlap card with new information, first (for a
-  feature) commit the new information to its `Overlap with` Open Question, then retract the card
-  and post the new one (the machine's queue keeps them in order). If the user answers the old
-  card before the retract lands, their press arrives as a message: act on it against the old
-  card's options, and retract the new card if that answer settles it.
+- **New information while a card is open:** the open card is never retracted to re-ask it. The
+  lead lets it be answered; if the new information changes what the answer would do, it then
+  posts a follow-up overlap card for the same thread (for a feature, after committing the new
+  information to its `Overlap with` Open Question), which makes the original handled (Terms,
+  "Settling an answer").
 - **Withdrawn card:** when the lead retracts an overlap card because it no longer applies, it
   removes its Open Question in the same commit, with a Log line `Overlap with <thread id>
   dropped: <why>`.
@@ -185,7 +186,8 @@ On `[wc:context restart]`, after rereading the plan and cards:
   `Overlap with` Open Question is still in PLAN.md is asked again, unless a later overlap card
   with the same `about_thread` exists.
 - Run `wc.js session leads` once and treat any overlap not covered by an overlap card or a
-  Decision Log entry as new (a card inside the window, else a late overlap). A planned thread
+  Decision Log entry as new, using the same paths as live discovery: held before IDEA.md is
+  confirmed, a card inside the window, else a late overlap. A planned thread
   also asks any `Overlap with` Open Question not yet asked.
 
 ### 3. Card ids (machine, hub, card.js)
@@ -207,6 +209,9 @@ On `[wc:context restart]`, after rereading the plan and cards:
 - `protocol/app/lead.md`: where it says to retract a card it posted (approval on a mode change,
   pull-back or talk instead of building; offers; questions that no longer apply), the id is the
   one `card.js` printed for it, or from the restart context.
+- Wording: lead.md's "Other leads on this machine" section must not contain `Decision Log`,
+  `Decision ` or `lead-chat` (`viewer/test/protocol-rules.test.js:96`); the rules there say "the
+  plan's logged decisions" instead, or point to a new section placed after it.
 - Docs: `protocol/app/cards.md` "Posting a card" documents the output, and its rule that cards
   never carry a thread id names `question.about_thread` as an exception alongside `reach`.
   `cards-lead.md`: the `reach` field description no longer says it is the only card field
@@ -237,7 +242,6 @@ merging of branches; no sub-lead or worker rule changes.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | An overlap learned from a peer message before PLAN.md exists, still waiting to be asked, is lost if the lead also restarts before asking, and the peer's summary in `session leads` does not reveal it | Needs a restart inside a short window plus a peer summary that hides the overlap; the restart re-look covers the usual case | review-round-1 |
-| A retract saved by the hub whose reply is lost in a network drop returns 503; the retry then gets `card was already withdrawn`, which the lead treats as success | Handled by the distinct refusal; listed so later rounds don't re-raise | review-round-4 |
 | A lead that dies while launching round N+1's reviewers may restart the round under the pinned pass N | Needs a death within the seconds of a launch; a misnumbered round is cosmetic | review-round-6 |
 | An item marked `late` in §1 Approved stays on the Watch List with no Decision | Needs Start building to cross the retract; the item is harmless text | review-round-7 |
 | A fresh question for an already-answered overlap, still waiting behind another card at a restart, can look already asked | Needs an obsolete answer, a waiting re-ask and a restart together | review-round-7 |
@@ -246,13 +250,20 @@ merging of branches; no sub-lead or worker rule changes.
 | On a small fix, a later chat instruction overriding a card answer can be missed if the lead dies before edits and the message has fallen out of the last 20 in the restart context | Needs a reversal, a restart and many messages in between, before a small fix's edits | review-round-11 |
 | A chat answer resolved while the app is down is queued; if the user presses an option on the same card before the queue drains, the hub keeps the press and drops the resolve silently | Needs an app outage, a chat answer and a press on the same card inside the reconnect window | review-round-12 |
 | A late-overlap mention learned in a hidden turn is lost if the lead dies before its next visible reply and the peer list does not reveal it | Needs a restart inside that window; the restart re-look covers the usual case | review-round-13 |
-| On a small fix, a re-ask whose original card was withdrawn is lost if the lead dies before posting the replacement | Needs a restart within seconds of the retract | review-round-13 |
-| A small-fix re-ask whose retract got a 503 is lost if the lead restarts while it waits; the old card stays open with its old options (a feature keeps the new information in its Open Question) | Needs an app outage and a restart while the small fix waits | review-round-15, updated review-round-17 |
 | A session that puts its own `delivery_id` in a card file can choose the card's id, or have its card dropped as a duplicate | Needs an agent tampering with its own card file; it only affects its own thread | review-round-17 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 20 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 19:** Decision 41: §1 "Re-asking an open card" replaced by "New information while a card is open" (no retract); §2 rediscovery uses held/in-window/late; §3 Wording bullet; three moot Accepted Risks removed.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 19 — 2026-11-21
 
@@ -262,6 +273,12 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Moot retract rows still in Accepted Risks | upheld | Removed (Decision 41) |
+| intent | minor | Re-ask posts a new card after an on-the-spot refusal | upheld | Moot: open cards are no longer retracted to re-ask (Decision 41) |
+| mechanics | blocking | Old and replacement cards both answered | downgraded (major) | No retract-and-repost; follow-up after the answer (Decision 41) |
+| mechanics | major | Chat answer lost when the retract lands first | upheld | Same fix (Decision 41) |
+| mechanics | major | Restart rediscovery skips the held path | upheld | Same paths as live discovery |
+| mechanics | minor | Wording would fail the protocol-rules test | upheld | §3 Wording bullet |
 
 ### Round 18 — 2026-11-21
 
