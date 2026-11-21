@@ -229,6 +229,19 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 | mechanics | major | Pi empty first read: absent vs missing entry conflict | upheld | S5: for Pi with entry_id the entry rule wins; test added |
 | mechanics | minor | Blank thinking is not "model default" | upheld | S2 wording: left to Pi |
 
+### Round 2 — 2026-11-20
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 1:**
+- S2: blank thinking leaves the level to Pi.
+- S3: success judged from the settled outcome; redaction of reply/error/stderr; version gate inside the aside runner as a terminal failure.
+- S4: spend scan dedupes forked entries; unknown-version wording; stuck event and "Pi exited before it was ready" end reason carry the version note.
+- S5: inline retries (3 attempts, 1s apart) then the existing quiet reminder; no persisted pending state; for Pi with an entry_id, an empty read is retried.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
