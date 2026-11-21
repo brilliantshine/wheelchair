@@ -101,6 +101,28 @@ test('text conflicts preserve the Windows version and mask markers until resolve
   assert.equal(fs.readFileSync(windows('conflict'), 'utf8'), 'resolved\n');
 });
 
+test('add/add text conflicts hold markers back from Windows until resolved', async () => {
+  const ctx = await fixture();
+  await reconcile(ctx);
+  const linux = path.join(ctx.worktree, 'added');
+  const windows = path.join(ctx.copy.linux, 'added');
+  fs.writeFileSync(linux, 'linux\n');
+  fs.writeFileSync(windows, 'windows\n');
+  const result = await reconcile(ctx);
+  assert.equal(result.conflicts.length, 1);
+  assert.deepEqual(result.unresolved, ['added']);
+  assert.match(fs.readFileSync(linux, 'utf8'), /^<<<<<<< /m);
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'linux\n');
+  fs.writeFileSync(windows, 'waiting\n');
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'waiting\n');
+  assert.match(fs.readFileSync(linux, 'utf8'), /^<<<<<<< /m);
+  fs.writeFileSync(windows, 'linux\n');
+  fs.writeFileSync(linux, 'resolved\n');
+  assert.deepEqual((await reconcile(ctx)).unresolved, []);
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'resolved\n');
+});
+
 test('binary and modify/delete conflicts choose Linux and save Windows', async () => {
   const ctx = await fixture();
   const linux = file => path.join(ctx.worktree, file);
@@ -210,6 +232,25 @@ test('seeding copies only ignored paths accepted by the new worktree', async () 
   assert.equal(fs.existsSync(path.join(newCopy.linux, 'cache-two')), false);
 });
 
+test('seeding collapses a large ignored folder and keeps the command short', async () => {
+  const source = await fixture();
+  fs.writeFileSync(path.join(source.worktree, '.gitignore'), 'Library/\nignored-file\n');
+  await reconcile(source);
+  const library = path.join(source.copy.linux, 'Library');
+  fs.mkdirSync(library);
+  for (let i = 0; i < 3000; i++) fs.writeFileSync(path.join(library, `file-${i}`), 'x');
+  fs.writeFileSync(path.join(source.copy.linux, 'ignored-file'), 'ignored');
+  fs.writeFileSync(path.join(source.copy.linux, 'untracked'), 'untracked');
+  const newCopy = { linux: path.join(path.dirname(source.copy.linux), 'seeded'), windows: 'C:\\seeded' };
+  const lengthFile = path.join(path.dirname(source.copy.linux), 'seed-length');
+  const winEnv = createWinEnv({ mount: source.fakeEnv.WC_FAKE_MOUNT, env: { ...source.fakeEnv, WC_FAKE_SEED_LENGTH: lengthFile } });
+  await ensureCopy({ ...source, winEnv, copy: newCopy, key: 'seeded', sources: [{ copy: source.copy, last_ok: '2026-01-01' }] });
+  assert.equal(fs.readdirSync(path.join(newCopy.linux, 'Library')).length, 3000);
+  assert.equal(fs.readFileSync(path.join(newCopy.linux, 'ignored-file'), 'utf8'), 'ignored');
+  assert.equal(fs.existsSync(path.join(newCopy.linux, 'untracked')), false);
+  assert.ok(Number(fs.readFileSync(lengthFile, 'utf8')) < 8000);
+});
+
 test('deleting unresolved copies saves the Windows snapshot and removes copy refs', async () => {
   const { deleteCopy } = require('../lib/win-sync');
   const ctx = await fixture();
@@ -310,4 +351,36 @@ test('clean checkout LFS and eol attributes do not transform bridge bytes', asyn
   await reconcile(ctx);
   assert.deepEqual(fs.readFileSync(windows('lfs')), lfs);
   assert.deepEqual(fs.readFileSync(windows('eol')), eol);
+});
+
+test('a force-tracked ignored file survives repeated syncs and edits in both directions', async () => {
+  const ctx = await fixture();
+  const linux = path.join(ctx.worktree, 'forced');
+  const windows = path.join(ctx.copy.linux, 'forced');
+  fs.writeFileSync(path.join(ctx.worktree, '.gitignore'), 'forced\n');
+  fs.writeFileSync(linux, 'linux one\n');
+  git(ctx.worktree, 'add', '-f', 'forced');
+
+  await reconcile(ctx);
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(linux, 'utf8'), 'linux one\n');
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'linux one\n');
+
+  fs.writeFileSync(windows, 'windows one\n');
+  await reconcile(ctx);
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(linux, 'utf8'), 'windows one\n');
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'windows one\n');
+
+  fs.writeFileSync(linux, 'linux two\n');
+  await reconcile(ctx);
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(linux, 'utf8'), 'linux two\n');
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'linux two\n');
+
+  fs.writeFileSync(windows, 'windows two\n');
+  await reconcile(ctx);
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(linux, 'utf8'), 'windows two\n');
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'windows two\n');
 });

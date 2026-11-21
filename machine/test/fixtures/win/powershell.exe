@@ -26,11 +26,12 @@ switch (match[1]) {
     console.log(process.env.WC_FAKE_GIT_PATH || '');
     break;
   case 'seed':
-    for (const relative of args.paths) {
-      const source = path.join(linuxPath(args.source), relative);
-      const destination = path.join(linuxPath(args.destination), relative);
+    if (process.env.WC_FAKE_SEED_LENGTH) fs.writeFileSync(process.env.WC_FAKE_SEED_LENGTH, String(process.argv[index + 1].length));
+    for (const relative of fs.readFileSync(linuxPath(args.list), 'utf8').split(/\r?\n/).filter(Boolean)) {
+      const source = path.join(linuxPath(args.source), ...relative.split('\\'));
+      const destination = path.join(linuxPath(args.destination), ...relative.split('\\'));
       fs.mkdirSync(path.dirname(destination), { recursive: true });
-      fs.copyFileSync(source, destination);
+      fs.cpSync(source, destination, { recursive: true });
     }
     break;
   default:
