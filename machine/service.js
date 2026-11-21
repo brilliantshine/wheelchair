@@ -838,7 +838,7 @@ class MachineService {
       } catch (error) { console.error("the key store on this machine can't be read"); }
     }
     const env = this.launchEnv(session, adapter);
-    env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
+    env.splice(adapter.sessionNameEnv ? 3 : 2, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
     const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
     const redactions = new Set(built.redactions || []);
     session.command = built.argv.map((arg, index) => redactions.has(index) ? `${arg.slice(0, arg.indexOf('=') + 1)}<redacted>` : arg);
