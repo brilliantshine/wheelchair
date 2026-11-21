@@ -13,14 +13,25 @@ function isExecutableFile(candidate) {
   }
 }
 
-function missingPrograms({ worktree, mcp, path }) {
+function isWindowsProgram(command, mount = '/mnt') {
+  if (typeof command !== 'string') return false;
+  return [mount, '/mnt'].some(root => {
+    const prefix = root.replace(/\/+$/, '') + '/';
+    return command.startsWith(prefix) && /^[A-Za-z]\/.+\.exe$/i.test(command.slice(prefix.length));
+  });
+}
+
+function missingPrograms({ worktree, mcp, path, wsl = false, mount = '/mnt' }) {
   if (!mcp) return [];
   const lines = [];
   for (const [name, server] of Object.entries(mcp.servers)) {
     if ((server.type !== undefined && server.type !== 'stdio') || server.command.includes('${')) continue;
     const command = server.command;
     let found;
-    if (command.includes('/')) {
+    if (isWindowsProgram(command, mount)) {
+      if (!wsl) found = true;
+      else { try { found = fs.statSync(command).isFile(); } catch { found = false; } }
+    } else if (command.includes('/')) {
       found = isExecutableFile(command.startsWith('/') ? command : `${worktree}/${command}`);
     } else {
       found = path.split(':').some(entry => {
@@ -33,4 +44,4 @@ function missingPrograms({ worktree, mcp, path }) {
   return lines;
 }
 
-module.exports = { missingPrograms };
+module.exports = { missingPrograms, isWindowsProgram };

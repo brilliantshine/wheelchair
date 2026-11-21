@@ -87,6 +87,12 @@ session. Turn that off in `%UserProfile%\.wslconfig`, then run `wsl --shutdown`:
 instanceIdleTimeout=-1
 ```
 
+#### Windows bridge
+
+Install Git for Windows on Windows and make sure both it and WSL's git are version 2.43 or newer. The bridge requires WSL interop enabled (the default): `[interop]` with `enabled=true` in `/etc/wsl.conf`. From a thread, ask the lead to run `wc.js win info`; it checks both git versions inside the installed machine service. If it fails, run `wsl --shutdown` from Windows, reopen WSL and check again.
+
+Windows-side project tools use full `/mnt/c/...` paths to an `.exe`; wrap `.cmd` or `.bat` tools with `cmd.exe /c`. `WHEELCHAIR_WINDOWS_PROJECT` names the session's Windows copy. Once conflict refs under `refs/wheelchair/conflicts/` are no longer needed, remove them with `git update-ref -d <ref>`.
+
 ### Doing a piece of work
 
 1. **+ New thread**. Pick the machine and the project (a git repository with an `origin`
