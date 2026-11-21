@@ -431,7 +431,24 @@ async function deliverReport(hub, thread, target, payload) {
   if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
   const chat = require('./chat.js');
   let text = target.cli === 'pi' ? '' : String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
-  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target), payload.turn_id, payload.entry_id);
+  if (!text) {
+    const now = hub.reportNow || Date.now;
+    const sleep = hub.reportSleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    const deadline = now() + 4000;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) {
+        if (deadline - now() < 750) break;
+        await sleep(500);
+      }
+      const remaining = deadline - now();
+      if (remaining <= 0) break;
+      try {
+        const raw = await chat.sessionTranscript(hub, thread, target, { strict: true, timeout: Math.min(attempt ? 1000 : 3000, remaining) });
+        text = chat.lastAssistantText(target.cli, raw, payload.turn_id, payload.entry_id);
+        if (!(target.cli === 'pi' && payload.entry_id && !chat.hasPiEntry(raw, payload.entry_id))) break;
+      } catch { /* retry transient read failures within the recovery budget */ }
+    }
+  }
   if (!text) return;
   const commit = text.match(/^COMMIT:\s*([0-9a-f]{7,40})/m)?.[1];
   addCard(
