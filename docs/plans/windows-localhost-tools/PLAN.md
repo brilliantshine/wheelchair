@@ -47,6 +47,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D15 | Forwards are not tied to sessions: once created, a forward stays open until the machine service stops (its relay ends after 5 idle minutes and restarts on demand); the user sees each Windows tool's live status on the Project tools page instead of thread warnings. Supersedes D7's release rule, D11, D12 and D14 | User chose to simplify after three unclean review rounds; idle private ports cost nothing | user |
 | D16 | Each session's config is built once; status checks never create forwards (a one-off relay checks ports without one); `win info` and the session record are not extended | Under D15 the double build and per-session fields serve nothing; typed-but-unsaved ports must not leave forwards behind | review-round-4 |
 | D17 | Share one per-session entry-replacement mechanism with thread 135e4c312559 (Windows stdio go-between): `context.replaceEntries = {<name>: <entry>}` applied by all three adapters, Claude via `disabledMcpjsonServers` plus one per-session `--mcp-config` file; whichever thread builds first adds it, the other reuses it | Same need in both threads; avoids two clashing mechanisms; the other thread's user agreed too | user |
+| D18 | The Linux side of a forward is an HTTP proxy that sets `Host` to the tool's original authority, one relay connection per request; refusals become `502` with the reason | Servers that check `Host` (DNS-rebinding protection) would reject the private authority; the 502 text tells the agent why | review-round-8 |
 | D10 | The Windows relay refuses a connection when no Windows process accepted it or the accepting process is `wslrelay` (mechanism superseded by D13) | Stops a Linux program on the same port receiving the headers through WSL localhostForwarding (parent C3) | defaulted |
 
 ## Spec
@@ -132,6 +133,9 @@ add whatever part below is missing (for example `null`):
   (Codex's `WHEELCHAIR_WINDOWS_PROJECT`/`WSLENV` passthrough, `codex.js:81`, and `loaded`'s
   `windows`, `machine/adapters/common.js:19`) is decided from the `.mcp.json` entry, not the
   replacement.
+- **Own keys only:** the map is created with `Object.create(null)` (or a `Map`), filled with
+  own-key assignment, and read with own-key checks (`Object.hasOwn`), so any tool name
+  (including `__proto__`, `constructor`) is replaced or withheld like any other.
 - A name mapped to **`null`**: the entry is omitted for that session (Codex and Antigravity
   leave it out; Claude only disables it).
 - **Claude** (`machine/adapters/claude.js`): every name in `replaceEntries` is added to
@@ -142,7 +146,7 @@ add whatever part below is missing (for example `null`):
   `service.js:477-535`) also removes files with no live session older than 60 s.
 - Pi and Kimi: unchanged.
 - Test: one launch with a replaced entry, a `null` entry and an untouched entry, for each of
-  the three CLIs; if the go-between is on main, include a wrapped stdio tool in that launch.
+  the three CLIs, repeated with the replaced and the withheld tool named `__proto__`; if the go-between is on main, include a wrapped stdio tool in that launch.
 
 - **Withheld:** a tool mapped to `null` is not given to the CLI in any form, and
   a line is printed to the machine service's log (stderr, `service.js:850`, as other project
@@ -176,9 +180,18 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   record.
 - **Lifetime:** a forward, once created, stays open until the machine service stops. It is not
   tied to sessions. On service stop, listeners close, open sockets are destroyed and relays end.
-- **Connections:** each accepted socket is relayed (below). The listener only accepts on
-  `127.0.0.1`. Bytes the client sends before `opened` (below) are buffered, at most 1 MiB
-  (more → close the socket), and sent in order after it.
+- **Requests (D18):** the listener is a Node `http.createServer` on `127.0.0.1` (not a raw
+  TCP pipe), so the tool sees the address it was set up with. For each incoming request the
+  machine opens one relay connection (a Duplex stream over the frames below; data written
+  before `opened` is buffered, at most 1 MiB, more → fail the request) and sends the request
+  through it with `http.request({createConnection: () => <that stream>, method, path,
+  headers})`, where `headers` are the incoming headers with `Host` set to the tool's original
+  authority (the host and port exactly as written in the origin text, e.g. `localhost:8080`, or
+  `localhost` when no port was written). Request and response bodies are streamed both ways
+  without buffering (long-lived streamed responses included); the response status and headers
+  are passed back as received. One relay connection per request; it closes when the exchange
+  ends. If the relay answers `refused`, the request gets `502` with a plain-text body `Windows
+  tool not reachable: <reason>`. If the client goes away, the relay connection is closed.
 - **Relay:** one `powershell.exe` per forward, started with `spawnPs`
   (`machine/lib/win-env.js:57-61`) running a script shipped in the repo
   (`machine/lib/win-relay.ps1`, embedded by reading the file, never written at run time),
@@ -201,7 +214,7 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
     `refused`, `couldn't check who holds port <n> on Windows` (fail closed). Otherwise it
     answers `opened`, and only then is any data passed either way. No caching.
   - `opened` clears the forward's `last_refusal`; `refused` sets it to `{reason, at}`.
-  - `refused` or `close` closes the Linux socket; a Linux socket closing sends `close`.
+  - `refused` or `close` ends the request's relay stream; the stream ending sends `close`.
   - `check` (with its own id) runs the same steps, closes the Windows connection without
     sending data, and answers `check-result` with the same id and the reason `refused` would
     carry, or none. The relay's own limits (5 s + 3 s) end every check within 8 s. The machine
@@ -248,7 +261,8 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   current forward's relay, or a one-off check, section 4). It never creates or replaces a
   forward. Reply `{wsl, status: {<name>: {state, reason?, note?}}}` with `state` `reachable` or
   `unreachable` (reason from `check-result`, or `couldn't check Windows for port <n>` on
-  timeout). `note` is set when a stale forward exists for that tool port: `after the machine
+  timeout). `reachable` means a TCP connection reached a Windows process on the port, not
+  that the tool accepts MCP requests. `note` is set when a stale forward exists for that tool port: `after the machine
   service restarted, port <private port> couldn't be reopened; sessions started before that
   restart can't use this tool (new sessions can)`. Off WSL:
   `{wsl: false, status: {}}`.
@@ -256,7 +270,9 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   status line under the switch: "Checking…", then "Reachable on Windows", "Not reachable:
   <reason>" or "Not available: <reason>", plus the note if any. The page requests it after
   load for the marks in the loaded file, again for one entry when its switch is turned on or
-  its URL changes (debounced 500 ms), and on a **Check again** button. It sends the form's
+  its URL changes (debounced 500 ms), and on a **Check again** button. Any edit to an
+  entry's URL, switch or name immediately advances that entry's sequence, so a reply for a
+  request made before the edit is never applied, even if the URL is edited back. It sends the form's
   current values, saved or not. Each request is tagged with the page's existing
   machine/path/generation guard (`tag()`/`fresh()`, `viewer/pages/project-tools.js:228-229`)
   and a sequence number per entry; a debounced request that fires after the guard changed is
@@ -322,6 +338,10 @@ frames and dialling a local test server (these cover the Linux side and the fram
   new session's get fails and the tool is withheld); a taken port gives a stale forward, the
   status reply carries the note, and the next get creates a new forward and drops the stale
   entry from the record.
+- HTTP layer: the Windows-side test server sees `Host: localhost:<tool port>` as written in
+  `.mcp.json`; a streamed response arrives in pieces as sent; a refused relay gives `502` with
+  the reason.
+- Status page: editing a URL A → B → A before the check fires does not apply A's old reply.
 - Relay frames: `opened` before data, client bytes buffered until then; `refused` closes the
   socket and sets `last_refusal`; `opened` clears it; relay death restarts at most once per
   10 s and finishes pending checks; an idle relay ends after 5 minutes; a check timed out at
@@ -368,6 +388,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 | C1 | Live on WSL default networking: a Windows HTTP MCP server on `127.0.0.1:<port>`, marked, is callable from Claude, Codex and Antigravity sessions | planning |
 | C2 | With the Windows server stopped and a Linux listener on the tool port, connections are refused (no loop, nothing reaches the Linux listener), and work again once the Windows server starts | planning |
 | C4 | A cold relay start (powershell.exe plus loading the NetTCPIP module for the first `Get-NetTCPConnection`) fits the 3 s lookup limit and the 10 s status cap; if not, the limit counts from after the module loads | review-round-5 |
+| C5 | Per-request owner lookup (one `Get-NetTCPConnection` per relay connection) adds acceptable latency to tool calls (well under 1 s on a warm relay) | review-round-8 |
 | C3 | Mirrored networking: same as C1 and C2 | planning |
 
 ## Review Rounds
@@ -538,6 +559,21 @@ shared `replaceEntries` contract aligned with the go-between plan (Claude file
 `<stateDir>/settings/<session name>.mcp.json`, removed at stop plus sweep; translation from
 the replacement entry; Windows classification from the original; `null` omits) with a combined
 launch test.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | Rare path: `__proto__` tool name lost in a plain-object map, Claude leaves original URL enabled | upheld | Always fixed (header leak): §3 own-key map, `__proto__` tests |
+| mechanics | major | Rewritten URL changes `Host`; authority-checking servers reject | upheld | §4 HTTP proxy sets original `Host` (D18); §6 says what `reachable` proves |
+| mechanics | minor | Stale reply window during debounce | upheld | §6 edits advance the sequence immediately |
+
+### Round 9 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 8:** §4 the Linux listener becomes an HTTP proxy that sets `Host` to
+the original authority, one relay connection per request, `502` on refusal (D18); §3 own-key
+map and `__proto__` tests; §6 sequence advanced on every edit, what `reachable` proves;
+Validation additions; C5.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
