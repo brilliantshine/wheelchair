@@ -48,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D16 | Each session's config is built once; status checks never create forwards (a one-off relay checks ports without one); `win info` and the session record are not extended | Under D15 the double build and per-session fields serve nothing; typed-but-unsaved ports must not leave forwards behind | review-round-4 |
 | D17 | Share one per-session entry-replacement mechanism with thread 135e4c312559 (Windows stdio go-between): `context.replaceEntries = {<name>: <entry>}` applied by all three adapters, Claude via `disabledMcpjsonServers` plus one per-session `--mcp-config` file; whichever thread builds first adds it, the other reuses it | Same need in both threads; avoids two clashing mechanisms; the other thread's user agreed too | user |
 | D18 | The Linux side of a forward is an HTTP proxy that sets `Host` to `localhost:<tool port>` (revised in round 9 from "original authority") and rewrites loopback origins at the tool port in `Location`, `Content-Location` and `WWW-Authenticate` to the private origin, one relay connection per request; refusals become `502` with the reason | Servers that check `Host` (DNS-rebinding protection) would reject the private authority; the 502 text tells the agent why | review-round-8 |
+| D19 | The forward is a plain byte pipe again: no `Host` or response rewriting; supersedes D18 | User's choice: all round 9 holes came from rewriting; tools built on the official MCP libraries accept localhost on any port, and `Host`-built redirects stay on the private port | user |
 | D10 | The Windows relay refuses a connection when no Windows process accepted it or the accepting process is `wslrelay` (mechanism superseded by D13) | Stops a Linux program on the same port receiving the headers through WSL localhostForwarding (parent C3) | defaulted |
 
 ## Spec
@@ -66,9 +67,9 @@ tree. Read `MAP.md` and `docs/maps/project-tools.md`, `docs/maps/windows-bridge-
   `new URL()` would also accept (`http:localhost:8080`, backslashes, `HTTP://LOCALHOST` with
   odd spacing, userinfo) are not eligible. The reader (section 1), the status route (section 6),
   the form (section 7) and the rewrite (section 2) use this one shared function.
-- **Forward:** for one tool port, a Linux HTTP proxy listener on `127.0.0.1:<private port>` in
-  the machine service plus one Windows relay process, sending each request to Windows
-  `127.0.0.1:<tool port>` (section 4).
+- **Forward:** for one tool port, a Linux TCP listener on `127.0.0.1:<private port>` in the
+  machine service plus one Windows relay process, piping each accepted connection, byte for
+  byte, to Windows `127.0.0.1:<tool port>` (section 4, D19).
 - **On WSL:** `this.win.detected.kernel` is true (`machine/lib/win-env.js:8-29`), whether
   or not interop is on. Interop being off only means getting a forward fails (section 4), so marked tools
   are withheld; it never lets a marked tool load with its original URL (D8).
@@ -171,8 +172,8 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 - **Get(tool port):** if the relay cannot run, fail with `Windows bridge not available`. If the
   current forward is `ok`, return its private port. If it is `unrecorded`, retry the record
   write; on success it becomes `ok` and is returned, else fail with `couldn't save the port
-  record`. Otherwise create one: the forward's HTTP proxy server (Requests, below; one constructor used
-  for creation and restore), listen on `127.0.0.1` port 0 (the kernel
+  record`. Otherwise create one: `net.createServer` with the connection handler below (the same
+  constructor is used for creation and restore), listen on `127.0.0.1` port 0 (the kernel
   picks a free port; a listen error fails with `couldn't open a local port`), add it to the
   table as `unrecorded`, write the record (section 5) and wait for the write; success → `ok`
   and return; failure → stays `unrecorded` and the get fails with `couldn't save the port
@@ -181,23 +182,13 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   record.
 - **Lifetime:** a forward, once created, stays open until the machine service stops. It is not
   tied to sessions. On service stop, listeners close, open sockets are destroyed and relays end.
-- **Requests (D18):** the listener is a Node `http.createServer` on `127.0.0.1` (not a raw
-  TCP pipe), so the tool sees the address it was set up with. For each incoming request the
-  machine opens one relay connection (a Duplex stream over the frames below; data written
-  before `opened` is buffered, at most 1 MiB, more → fail the request) and sends the request
-  through it with `http.request({createConnection: () => <that stream>, method, path,
-  headers})`, where `headers` are the incoming headers with `Host` set to `localhost:<tool
-  port>` (`localhost` when the tool port is 80), derived from the forward's tool port alone, so
-  it needs no per-tool state and survives a restart. Request and response bodies are streamed
-  both ways without buffering (long-lived streamed responses included). The response status
-  and headers are passed back as received, except that in `Location`, `Content-Location` and
-  `WWW-Authenticate` every absolute URL whose origin is `http://localhost`, `http://127.0.0.1`
-  or `http://[::1]` with the tool port (explicit, or none when the tool port is 80; host
-  case-insensitive) has that origin replaced by `http://127.0.0.1:<private port>`, so a
-  redirect or link from the tool keeps going through the forward and never points the CLI at
-  Linux's own port. One relay connection per request; it closes when the exchange
-  ends. If the relay answers `refused`, the request gets `502` with a plain-text body `Windows
-  tool not reachable: <reason>`. If the client goes away, the relay connection is closed.
+- **Connections (D19):** a plain byte pipe; nothing in requests or replies is read or
+  changed. The listener only accepts on `127.0.0.1`. Each accepted socket gets one relay
+  connection (`open` frame). Bytes the client sends before `opened` are buffered, at most
+  1 MiB (more → close the socket), and sent in order after it. On `refused` the socket is
+  closed. The tool therefore sees `Host: 127.0.0.1:<private port>`, so any absolute URL it
+  builds from `Host` (redirects, links) points back through the forward. A tool that accepts
+  only its exact original host and port is not supported (Not doing).
 - **Relay:** one `powershell.exe` per forward, started with `spawnPs`
   (`machine/lib/win-env.js:57-61`) running a script shipped in the repo
   (`machine/lib/win-relay.ps1`, embedded by reading the file, never written at run time),
@@ -220,7 +211,7 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
     `refused`, `couldn't check who holds port <n> on Windows` (fail closed). Otherwise it
     answers `opened`, and only then is any data passed either way. No caching.
   - `opened` clears the forward's `last_refusal`; `refused` sets it to `{reason, at}`.
-  - `refused` or `close` ends the request's relay stream; the stream ending sends `close`.
+  - `refused` or `close` closes the Linux socket; a Linux socket closing sends `close`.
   - `check` (with its own id) runs the same steps, closes the Windows connection without
     sending data, and answers `check-result` with the same id and the reason `refused` would
     carry, or none. The relay's own limits (5 s + 3 s) end every check within 8 s. The machine
@@ -249,7 +240,7 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   name starting `wc-`), nothing can hold a private URL (for example after a reboot), so rewrite
   the record empty and restore nothing. If it is `null` (unknown) or lists any `wc-` session,
   restore every recorded entry: for each entry, listen on `127.0.0.1:<recorded private port>` again as the `ok` current forward for
-  its tool port (same HTTP proxy constructor as creation), whether or not the relay can run (keeping the port bound for existing URLs;
+  its tool port (same constructor as creation), whether or not the relay can run (keeping the port bound for existing URLs;
   gets still check relay readiness). A port that can no longer be bound becomes a stale
   forward (section 4) and the tool port has no current forward, so the next get creates a new
   one (and the record write then drops the stale entry). A missing or unreadable file means no
@@ -312,8 +303,9 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 
 ### Not doing
 
-As IDEA.md. Also: no OAuth-protected Windows tools (response bodies such as OAuth metadata
-are not rewritten); no change to `.mcp.json` beyond the switch; no networking-mode detection
+As IDEA.md. Also: no rewriting of requests or replies (D19), so tools that accept only their
+exact original `Host` (host and port) and OAuth-protected Windows tools are not supported; no
+change to `.mcp.json` beyond the switch; no networking-mode detection
 (D3); no IPv6 Windows servers; no restart of Windows tool servers.
 
 ### Validation
@@ -347,13 +339,10 @@ frames and dialling a local test server (these cover the Linux side and the fram
   new session's get fails and the tool is withheld); a taken port gives a stale forward, the
   status reply carries the note, and the next get creates a new forward and drops the stale
   entry from the record.
-- HTTP layer: the Windows-side test server sees `Host: localhost:<tool port>` for entries
-  written with `localhost` and with `127.0.0.1`, before and after a restart; a `307 Location:
-  http://localhost:<tool port>/mcp/` (and the `127.0.0.1` form) reaches the client as
-  `http://127.0.0.1:<private port>/mcp/` and the follow-up request goes through the forward; a
-  `WWW-Authenticate` `resource_metadata` URL is rewritten the same way; a restored forward
-  serves requests through the proxy; a streamed response arrives in pieces as sent; a refused relay gives `502` with
-  the reason.
+- Pipe: bytes pass unchanged both ways; a test server that answers `307` with `Location`
+  built from the request's `Host` sends the client back to `127.0.0.1:<private port>` and the
+  follow-up goes through the forward; a streamed response arrives in pieces as sent; a
+  restored forward pipes connections.
 - Status page: editing a URL A → B → A before the check fires does not apply A's old reply;
   renaming or changing kind during a check schedules a new check or hides the line.
 - Relay frames: `opened` before data, client bytes buffered until then; `refused` closes the
@@ -599,6 +588,20 @@ Validation additions; C5.
 | mechanics | blocking | `net.createServer` vs `http.createServer`; restore unspecified | upheld | §4 one HTTP proxy constructor; §5 |
 | mechanics | blocking | Absolute redirects escape the forward | upheld | Same as intent finding 1 |
 | mechanics | minor | Rename/kind edits leave the status stuck | upheld | §6 every edit reschedules or hides |
+
+### Round 10 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 9:** User decision D19 supersedes D18: the forward is a plain byte pipe
+again (Terms; §4 "Connections" replaces "Requests"; one `net.createServer` constructor for
+creation and restore; no `Host` or response-header rewriting; Not doing gains tools that
+accept only their exact original `Host` and OAuth tools; Validation "Pipe" case with a
+`Host`-built redirect). Round 9 also: §6 every edit (URL, kind, switch, name) reschedules or
+hides the status.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
