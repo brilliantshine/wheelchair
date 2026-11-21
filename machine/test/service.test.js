@@ -1024,7 +1024,7 @@ test('login sessions start, expose state, accept code and stay out of session re
   const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
   const env = await service(root); try {
     const started = await api(env, 'POST', '/v1/logins', { account: 'test', cli: 'claude', dir: '~/.wheelchair/accounts/test' }, hubHeader);
-    assert.equal(started.status, 201); const cmd = await log(env); assert.doesNotMatch(cmd.split('\n').find(line => line.includes('new-session') && line.includes('wc-login-test')), / -c /); assert.match(cmd, /CLAUDE_CONFIG_DIR=/); assert.match(cmd, /auth.*login/); assert.doesNotMatch(cmd, /WHEELCHAIR_SESSION_TOKEN/);
+    assert.equal(started.status, 201); const cmd = await log(env); assert.doesNotMatch(cmd.split('\n').find(line => line.includes('new-session') && line.includes('wc-login-test')), / -c /); assert.match(cmd.split('\n').find(line => line.includes('new-session') && line.includes('wc-login-test')), /PATH=/); assert.match(cmd, /CLAUDE_CONFIG_DIR=/); assert.match(cmd, /auth.*login/); assert.doesNotMatch(cmd, /WHEELCHAIR_SESSION_TOKEN/);
     await write(env.fake.pane, 'starting'); assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'starting');
     await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude.txt'), 'utf8'));
     assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'waiting');
@@ -1066,7 +1066,7 @@ test('default Claude start preserves complete command and settings', async () =>
     const hook = `'${path.resolve(__dirname, '../hook.sh')}' claude 'wc-t-lead'`;
     const entry = [{ hooks: [{ type: 'command', command: hook }] }];
     assert.deepEqual(JSON.parse(await fs.readFile(settingsPath, 'utf8')), { cleanupPeriodDays: 30, promptSuggestionEnabled: false, hooks: { Stop: entry, Notification: entry, StopFailure: entry, ...Object.fromEntries(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'].map(name => [name, [{ matcher: '*', hooks: [{ type: 'command', command: hook, async: true }] }]])) }, statusLine: { type: 'command', command: `'${path.resolve(__dirname, '../statusline.sh')}' claude 'wc-t-lead'` } });
-    const expected = ['env', 'WHEELCHAIR_LANE=1', 'WHEELCHAIR_SESSION_TOKEN=alpha', `WHEELCHAIR_STATE_DIR=${env.state}`, `WHEELCHAIR_MACHINE_ORIGIN=http://127.0.0.1:${env.instance.config.port}`, ...session.command].map(x => `'${x}'`).join(' ');
+    const expected = ['env', `PATH=${process.env.PATH || ''}`, 'WHEELCHAIR_LANE=1', 'WHEELCHAIR_SESSION_TOKEN=alpha', `WHEELCHAIR_STATE_DIR=${env.state}`, `WHEELCHAIR_MACHINE_ORIGIN=http://127.0.0.1:${env.instance.config.port}`, ...session.command].map(x => `'${x}'`).join(' ');
     assert.ok((await log(env)).includes(`tmux new-session -d -s wc-t-lead -x 200 -y 50 -c ${session.worktree} ${expected}`));
   } finally { await env.close(); }
 });
