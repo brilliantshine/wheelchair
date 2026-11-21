@@ -441,6 +441,8 @@ npm --prefix viewer run test:browser
 | An older `/onboarding` response arriving after a newer one can briefly bring the checklist back | Race between two 5 s polls inside one response time; the next poll corrects it; rare path | verification-1 |
 | An Add account form left open in one tab can still save a provider that was switched off in another tab | Needs two Settings tabs, an open draft and a switch-off in the other tab; the same-tab case is fixed (R2-1); rare path, like the round-12 stale-tab risk | verification-3 |
 | A sign-in card opened under Accounts in one tab stays usable when its harness is switched off in another tab | Needs two Settings tabs open at once; the same-tab case is fixed (R1-2, R2-1); the lead judged it a rare path | verification-3 |
+| The connection drops after an install poll has received its headers but before its small body arrives: polling stops and Install shows while the job still runs | Needs a drop inside the few-millisecond gap between a tiny response's headers and body, a sub-second race; an outage between polls already shows the retry notice, and pressing Install again gets 409 and resumes polling the running job; rare path | verification-4 |
+| A thread whose lead has ended but still has one unplaced queued worker counts toward the thread's harness in `threads_using`, so switching that harness off asks one extra confirmation | Needs an ended lead and a still-queued worker together; the only effect is an extra "threads use it" confirmation, and nothing is blocked or lost; rare path | verification-4 |
 | The only signed-in harness has its Lead model set to None, so the checklist completes but no lead starts | Every provider ships default models (`codex/model.sh:33-38`); needs a deliberate None on the only harness; rare path | review-round-5 |
 
 ## Review Rounds
@@ -723,3 +725,4 @@ Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
 - 2026-11-21 — Choice: R3-1, `settingsGet`: waits for any GET ending `/api/settings` registered before the submit click, not one tied to the POST.
 - 2026-11-21 — Choice: R3-1, `afterEach` with `unrouteAll({ behavior: 'ignoreErrors' })` placed in each phone/desktop describe block, not at file level.
 - 2026-11-21 — Remediation 3 done; full validation on bb42466d (installer 208/209, with the live-folder check environmental; machine 486; node 764; browser 1198 passed). Verification attempt 4 next.
+- 2026-11-21 — Verification 4, GPT verifier (verifier-8): FAIL with 2 gaps. I judged both rare paths (a drop between a poll's headers and body; an unplaced queued worker counted after its lead ended) and recorded them in Accepted Risks (verification-4). Waiting on the Claude verifier.
