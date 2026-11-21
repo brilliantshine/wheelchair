@@ -80,6 +80,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 51 | A cancelled held overlap stays unasked also when a peer asks; a cancel's card suffix names only a card posted for that question; a peer missing from `session leads` counts as finished; restart honours recent cancels before PLAN.md exists | Round 27 findings | review-round-27 |
 | 52 | Supersedes the "held" rules (Decisions 3, 50-51 parts): a feature's first overlap look moves to right after IDEA.md confirmation, so nothing is held before it; a peer asking earlier gets an answer from what the lead knows | Rounds 25-27 kept finding gaps in the held state; the user picked "Look after confirming" (card 8a2638cf) | user |
 | 53 | Feature looks (including user-requested and restart ones) wait for PLAN.md; look (a) repeats when the map arrives; a confirmed IDEA without PLAN.md gets PLAN.md first on restart; a failed `session leads` is retried; a pre-confirmation chat decision is logged when PLAN.md is created | Round 28 findings | review-round-28 |
+| 54 | The first feature look runs right after PLAN.md is created (after the map and confirmation, as lead.md step 4 already orders); a failed `session leads` follows the existing "hub unavailable" rule; Terms "Card window" mentions logged chat decisions | Round 29 findings | review-round-29 |
 
 ## Spec
 
@@ -94,9 +95,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
   other thread's id. The app stores it and never shows it.
 - **Card window:** when overlap cards are asked: a small fix before its edits, and a feature
-  from IDEA.md confirmation while `status:` is `planning`. Before IDEA.md is confirmed a feature
-  asks nothing and records nothing about overlaps: its first look comes right after
-  confirmation (§1).
+  from IDEA.md confirmation while `status:` is `planning`. Before PLAN.md is created a feature asks
+  nothing and records nothing about overlaps: its first look comes right after PLAN.md is
+  created (§1), which then also logs any clear decision the user gave in chat.
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
   thread and not in a Decision Log entry of this plan. An overlap already asked is asked again,
   inside the card window, only for a feature, and only when information learned after its answer was
@@ -137,15 +138,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ### 1. Asking (protocol/app/lead.md, "Other leads on this machine")
 
-"When to look" (a) moves from "after the mapper's `result` arrives" to "right after IDEA.md is
-confirmed and PLAN.md is created, and again when the mapper's `result` arrives if that is later"
-(the peer message names the areas from IDEA.md, and from MAP.md once it exists); an overlap the
+"When to look" (a) moves from "after the mapper's `result` arrives" to "right after PLAN.md is
+created" (lead.md step 4 already creates PLAN.md only after the map's `result` and IDEA.md
+confirmation, so MAP.md exists then); an overlap the
 lead learned earlier (for example from a peer's message) is simply part of that look. Every
 feature look, including (c) when the user asks and the restart look, waits for PLAN.md: before
 it exists the lead may say what it finds, but asks and records nothing. A restarted lead whose
 IDEA.md is confirmed but has no PLAN.md creates it first (lead.md step 4), then looks. If
-`session leads` fails (the app is unreachable), the lead retries it after a minute, as for "hub
-unavailable", before deciding anything from it. A clear decision the user gave in chat about a
+`session leads` fails, the lead follows the existing "hub unavailable" rule (cards.md) and
+decides nothing from it until it answers; the step that needed it waits. A clear decision the user gave in chat about a
 thread before confirmation is logged as that thread's Decision (source `user`) in the commit
 that creates PLAN.md, instead of being asked again. Otherwise discovery and peer messaging stay as they are:
 the other "When to look" times and the small fix's look before edits, the "Overlap" message to a peer lead, "Replies", "Never wait",
@@ -201,8 +202,9 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   it: leave <shared area> out of this plan (it can come back later as a follow-up)", used when
   no other concrete change fits. Any other change the user types in the box or in chat. The
   answer is handled like any planning answer, with the Done marker.
-- **Feature, before IDEA.md is confirmed:** nothing is asked or recorded; the look right after
-  confirmation finds the overlap and makes it an Open Question.
+- **Feature, before PLAN.md is created:** nothing is asked or recorded; the look right after
+  PLAN.md is created finds the overlap and makes it an Open Question, unless a chat decision
+  about that thread was logged.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
 - **New information while a card is open:** the open card is never retracted to re-ask it, and
@@ -300,9 +302,19 @@ merging of branches; no sub-lead or worker rule changes.
 | During an upgrade, a card queued by an updated machine and drained by a hub still on the old version gets a fresh id, so a retract with the printed id finds nothing | Needs mixed versions mid-upgrade plus an app outage; the Ready check requires matching versions | review-round-22 |
 | On a small fix, an overlap the user cancelled before it was asked is asked again if the lead restarts before the edits | Needs a cancel and a restart before a small fix's edits; nothing records it on a small fix | review-round-24 |
 | If the user cancels in chat while also answering the card's box, the cancel can be committed before the stored answer is seen | Two conflicting answers by the user within seconds | review-round-26 |
+| A clear chat decision about a thread given before IDEA.md confirmation is lost if the lead restarts before PLAN.md exists and the message has left the last 20 | Needs a restart and a long conversation before confirmation; the user is asked once more | review-round-29 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 
 ## Review Rounds
+
+### Round 30 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 29:** Decision 54: Terms "Card window"; §1 look (a) runs right after PLAN.md is created (no separate map repeat); `session leads` failure points to the existing rule; "Feature, before PLAN.md is created" bullet; one Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 29 — 2026-11-21
 
@@ -312,6 +324,11 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Terms "Card window" contradicts chat-decision logging | upheld | Terms updated (Decision 54) |
+| intent | minor | Overlap-specific copy of the hub-unavailable rule | upheld | Pointer to the existing rule |
+| mechanics | major | First look before the map conflicts with the map gate | upheld | Look runs after PLAN.md, which follows the map (Decision 54) |
+| mechanics | major | Pre-confirmation chat decision lost on restart | accepted-risk | Rare path; Accepted Risks |
+| mechanics | major | `session leads` fails twice | upheld | Existing "hub unavailable" rule; the step waits (Decision 54) |
 
 ### Round 28 — 2026-11-21
 
