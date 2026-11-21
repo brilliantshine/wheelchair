@@ -342,7 +342,9 @@ class WinBridge {
     const versions = await this.winEnv.versions();
     const reason = this.readyErrors.get(ctx.key) || versions.reason;
     const ready = !this.readying.has(ctx.key) && !reason;
-    return { wsl: true, ok: versions.ok, ready, ...(reason ? { reason } : {}), copy_windows: ctx.copy.windows, copy_linux: ctx.copy.linux, sandboxed };
+    this.disk ||= new (require('./win-disk').WinDisk)(this.winEnv);
+    const disk = await this.disk.info(ctx);
+    return { wsl: true, ok: versions.ok, ready, ...(reason ? { reason } : {}), copy_windows: ctx.copy.windows, copy_linux: ctx.copy.linux, sandboxed, disk };
   }
 
   async handle(session, body) {
