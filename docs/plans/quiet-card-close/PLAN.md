@@ -41,26 +41,31 @@ The quiet card is the system needs card "An agent stopped without reporting" rai
 
 Whenever `s.quiet_card` is set (whether that card is still open or was dismissed by Collin, S2), the hub calls `quiet.reset(thread, s)` (normal reset, not `stopped`) when either happens:
 - **Starter sends a message:** `viewer/app/cards.js` accepts a `message` card (same thread, not cross-thread) posted by the session named `s.started_by` whose `to` is `s`. Call reset right after the message is pushed onto `s.queue` (~`cards.js:162-167`). Reset only strips quiet reminders, so the new message stays queued. App messages (`[wc:from app]` reminders, turn-failed and ended notices, card presses) are not `message` cards and do not count.
-- **Child started:** `s` calls the hub's session-start path (`viewer/app/sessions.js` ~686-718) and that call returns a session record: a new start (including one that comes back `waiting`), a `duplicate` live start, or a `resumeUnanswered()` retry. A call that throws (refused, 4xx, machine failure) does not count. Put the reset where all three returning branches pass, for example in the caller of this function, after it returns.
+- **Child started:** `s` calls the hub's session-start path (`viewer/app/sessions.js` ~686-718) and that call returns a session record: a new start (including one that comes back `waiting`), a `duplicate` live start, or a `resumeUnanswered()` retry. A call that throws (refused, 4xx, machine failure) does not count. Put the reset where all three returning branches pass, and save the thread with the reset under the same thread lock before the start call returns success (the duplicate branch saves nothing today, and the other branches have already saved).
 
 Reset already answers the card if still open, clears `quiet_card`, clears queued quiet reminders and returns `s` to stage 0, so a later quiet turn goes through the usual reminders and may raise a fresh card. When `s.quiet_card` is not set, neither event changes quiet state (the ladder before the card is unchanged); existing delivery bookkeeping, such as `deliver()` clearing `quiet_check_at`, stays as it is. The existing closers (message/result from `s`, a reviewer/verifier report, stop, death) are unchanged.
 
 ### S2. Dismiss button on app cards
-- **Which cards:** an unanswered, unreplaced `needs` card with `system: true`, unless it is **blocking**: some session in the thread has `needs_card` equal to its id and `needs_open` true (an open "Permission needed" or "Session stuck at startup" hold, `viewer/app/sessions.js:634-655`). Cards already in existing threads qualify the same way. The thread page needs to know which cards are blocking: expose it from the hub's thread view (for example a `blocking: true` flag on such cards in the data the page already gets), computed at read time, not stored.
+- **Which cards:** an unanswered, unreplaced `needs` card with `system: true`, unless it is **blocking**: some **live** session in the thread has `needs_card` equal to its id and `needs_open` true (a stopped or dead session's leftover hold does not count) (an open "Permission needed" or "Session stuck at startup" hold, `viewer/app/sessions.js:634-655`). Cards already in existing threads qualify the same way. The thread page needs to know which cards are blocking: expose it from the hub's thread view (for example a `blocking: true` flag on such cards in the data the page already gets), computed at read time, not stored.
 - **Thread page** (`viewer/pages/thread.js`, needs case ~1009): such a card shows a "Dismiss" button in its actions row, after the "Open terminal" link when that is present. It is disabled for an archived thread, like other card buttons. Pressing it posts to the existing route `POST /wheelchair/api/threads/<id>/cards/<card>/dismiss` (`viewer/app/routes.js:631`) and refreshes like other presses; an error is shown the way other press errors are.
 - **Hub** (`viewer/app/threads.js` `dismiss`, ~440): for a card that qualifies, mark it with `resolveCard(card, 'user', 'Dismissed')`, set `thread.user_at`, save, and enqueue nothing to any session. For a blocking card (same rule, checked at press time) return 422 `a session is waiting on this; it closes itself`. Non-system needs cards keep today's dismiss behaviour (resolved and the lead told `[card <id>] dismissed`). An already-answered card stays 422 `card is already answered`; frozen threads are refused as today.
 - **Not changed:** `resolvable`/`retractable` in `viewer/app/card.js` still refuse system cards for leads (lead `resolve` and `retract` keep "a system needs card closes itself"). The press route in `threads.js` (~394) still refuses Keep going / Talk about it on system cards. Dismissing never touches `needs_open`, `permission_open`, `quiet_stage`, `quiet_card`, `needs_card` or any queue. If a dismissed quiet card's session is later reset, reset finds the card already answered and leaves it.
 - **Result:** the card dims as resolved ("Dismissed") and drops out of the Needs you count (`viewer/app/views.js:140-149`), so the thread stops showing "needs you" for it.
 
+### S2b. Project-tools card stays dismissed
+`applyProjectTools` in `viewer/app/sessions.js` (~151-184) reposts its card whenever no open card exists. Change it so that when `stored.card` names a card Collin dismissed (resolved by `user`) and the problem names are unchanged (`card_names` equal), it updates nothing and posts no new card. A change in the names posts a fresh card as today; problems clearing still resets `stored.card` as today.
+
 ### S3. Docs
-`protocol/app/cards-lead.md` (needs section and `retract` rule 3) and `cards.md` say system needs cards close themselves; add one sentence that the user can dismiss any of them except "Permission needed" and "Session stuck at startup", and that the quiet card also closes when its agent's starter messages it or the agent starts another agent. Update `docs/maps/system-needs-quiet.md` closure lines, and the dismiss row in `viewer/app/API.md` (~line 23), which today says the page has no Dismiss button and system cards are refused: it accepts non-blocking system needs cards without telling the lead, refuses blocking ones with 422.
+`protocol/app/cards-lead.md` (needs section and `retract` rule 3) and `cards.md` say system needs cards close themselves; add one sentence that the user can dismiss any of them except a "Permission needed" or "Session stuck at startup" card while its live session is still held, and that the quiet card also closes when its agent's starter messages it or the agent starts another agent. Update `docs/maps/system-needs-quiet.md` closure lines, and the dismiss row in `viewer/app/API.md` (~line 23), which today says the page has no Dismiss button and system cards are refused: it accepts non-blocking system needs cards without telling the lead, refuses blocking ones with 422.
 
 ### Non-goals
 No change to when an agent counts as quiet or to the reminders before the card; no lead resolve/retract of system cards; no change to the blocking cards' own closing.
 
 ### Validation
 - New tests in `viewer/test/app-quiet.test.js`: a raised quiet card closes and the stage returns to 0 when (a) the starter posts a message card to the quiet session, (b) the quiet session starts a child (a new start and an unanswered-start retry), and a refused start does not; the same two events also reset a session whose quiet card was dismissed, after which a new quiet turn runs the ladder again and can raise a fresh card; an app reminder does not close it; with no card raised, a starter message leaves `quiet_stage` unchanged.
-- New tests in `viewer/test/app-hub.test.js` (next to the system dismiss refusal ~1805): dismissing a quiet card and a "Session ended" card succeeds, marks resolved by user with note "Dismissed", enqueues nothing to the lead; dismissing a card that is a session's current `needs_card` with `needs_open` true returns 422 and leaves `needs_open`/`permission_open` unchanged, while an old permission card no session holds open can be dismissed; lead resolve/retract of a system card still refused. Update the existing refusal test to the new behaviour.
+- In the starter-message test, hold delivery (for example the target's turn not ended) and assert that accepting the message card already closes the warning and the starter's message stays queued.
+- A test that the project-tools card, once dismissed, is not reposted by a later report with the same names, and is reposted when the names change.
+- New tests in `viewer/test/app-hub.test.js` (next to the system dismiss refusal ~1805): dismissing a quiet card and a "Session ended" card succeeds, marks resolved by user with note "Dismissed", enqueues nothing to the lead; dismissing a card that is a session's current `needs_card` with `needs_open` true returns 422 and leaves `needs_open`/`permission_open` unchanged, while an old permission card no session holds open can be dismissed, and so can a held session's card after that session is stopped; lead resolve/retract of a system card still refused. Update the existing refusal test to the new behaviour.
 - A browser test (extend `viewer/test/app-needs.spec.js`): an open non-blocking system needs card shows Dismiss, clicking it dims the card and shows "Dismissed"; a blocking card shows no Dismiss.
 - `node --test viewer/test/*.test.js` (unquoted glob) and `npm --prefix viewer run test:browser` pass.
 
@@ -104,6 +109,26 @@ No change to when an agent counts as quiet or to the reminders before the card; 
 - S2: blocking = a session's current `needs_card` with `needs_open` true (title rule dropped); page learns blocking from a read-time flag.
 - S3: `viewer/app/API.md` dismiss row added.
 - Validation: dismissed-card rearm tests, stale hold card test, browser test clicks Dismiss.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Dismissed project-tools card is reposted by the next report | upheld | S2b |
+| intent | minor | S3 doc sentence still uses the title rule | upheld | S3 says "while its live session is still held" |
+| mechanics | blocking | Stopped/dead session's hold card stays blocking forever | upheld | S2: blocking requires a live session; test added |
+| mechanics | minor | Child-start reset must be saved under the lock | upheld | S1 says so |
+| mechanics | minor | Starter-message test could pass with delivery-time reset | upheld | Validation holds delivery |
+| mechanics | minor | Same as intent minor on S3 doc wording | upheld | as above |
+
+### Round 3 — 2026-11-21
+
+**Lanes:** claude (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round 2:**
+- S2: blocking requires a live session holding the card.
+- S2b (new): a dismissed project-tools card is not reposted for the same problem names.
+- S1: child-start reset saved under the thread lock before returning.
+- S3: doc sentence uses the live-hold rule.
+- Validation: held-delivery starter test, project-tools repost test, stopped-session hold card test.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
