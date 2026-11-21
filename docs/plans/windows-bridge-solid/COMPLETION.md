@@ -2,7 +2,10 @@
 slug: windows-bridge-solid
 date: 2026-11-21
 implemented-by: "standard / gpt-6.1-terra (T1, T2, T3, T4, T5, T5b, T6); light / gpt-6-luna (T3b, T3c, T4b, T5c at effort high); sub-lead claude-opus-5-5 (integration, merge of main, routers)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (verifier, top tier)
+    checks: gpt-6.1-terra and gpt-6-luna workers
 ---
 
 # Completion Report — Make the Windows bridge solid

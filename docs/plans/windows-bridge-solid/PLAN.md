@@ -622,3 +622,4 @@ of copies or git data.
 - 2026-11-21 — Choice: T3c (from the diff; report said none): test fixture puts `O’Brien` beside `current` under one copies folder; `ps` stub returns `0`; an extra `doesNotMatch(/O''Brien/)` assertion.
 - 2026-11-21 — T3c accepted (band: scout): win-disk tests 4/4; machine suite 564/568, the four failures are the known pre-existing ones (Kimi not installed, Pi aside, plan-files on port 7374), all failing on `origin/main` too.
 - 2026-11-21 — All tasks done; status set to verifying.
+- 2026-11-21 — Verification attempt 1 (claude-opus-5-5, commit c51c9a8d): PASS, no gaps, 0 rare paths accepted. C1 and C5 unconfirmed: they need a real Unity Editor and `WHEELCHAIR_UNITY` is unset here.
