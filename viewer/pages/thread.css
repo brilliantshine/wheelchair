@@ -395,8 +395,9 @@ a.sent-file:hover { border-color: var(--accent-line); }
 .copy-panel .card-error { margin-top: 8px; }
 
 /* A saved-lesson notice: one compact line, no buttons. */
-.card-lesson { padding: 8px 14px; border-radius: 10px; background: var(--panel); display: flex; flex-direction: column; gap: 2px; }
-.card-lesson .lesson-line { font-size: 13px; overflow-wrap: anywhere; }
-.card-lesson .lesson-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 12px; color: var(--dim); overflow-wrap: anywhere; min-width: 0; }
+.card-lesson { padding: 8px 14px; border-radius: 10px; background: var(--panel); }
+.card-lesson .lesson-line { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.card-lesson .lesson-why, .card-lesson .lesson-mark, .card-lesson .lesson-link { font-size: 12px; margin-left: 10px; }
+.card-lesson .lesson-why, .card-lesson .lesson-mark { color: var(--dim); }
 .card-lesson .lesson-mark { font-style: italic; }
 .card-lesson .lesson-link { color: var(--accent-text); }

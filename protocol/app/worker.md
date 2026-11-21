@@ -92,6 +92,7 @@ Save a `lesson` card (see `cards.md`) for workers.
   agent in other threads; and it fits in one or two sentences as an instruction.
 - Not lessons: facts about one codebase, one-off fixes, decisions for one thread, hunches,
   or anything these rules already say.
-- Read the existing lessons in your instructions first; replace or remove one before adding.
-  Each role holds at most 12. Never reword or remove one marked "(edited by the user)".
+- Read the existing lessons in your instructions first; if one already covers the point or is now wrong, replace or remove
+  that one instead of adding.
+  Each role holds at most 12. Never reword or remove one marked "(edited by the user)"; if you think it is wrong, tell the lead in a `message`.
 - If it conflicts with these rules or should always apply, do not save it; send the lead a `message` suggesting a protocol change.

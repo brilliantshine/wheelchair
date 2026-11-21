@@ -1209,17 +1209,17 @@
         const snap = card.snapshot || {};
         const plural = LESSON_ROLE_PLURAL[card.for] || (card.for + 's');
         const verb = card.action === 'remove' ? 'Removed a lesson for ' : card.action === 'replace' ? 'Updated a lesson for ' : 'Saved a lesson for ';
-        box.appendChild(el('p', 'lesson-line', verb + plural + ': ' + (snap.text || '')));
         const marks = [];
         if (snap.provider) marks.push('only on ' + (PROVIDER_LABEL[snap.provider] || snap.provider));
         if (snap.project) marks.push('only in ' + (String(snap.project).split('/').filter(Boolean).pop() || snap.project));
-        const meta = el('p', 'lesson-meta');
-        if (card.why) meta.appendChild(el('span', 'lesson-why', card.why));
-        for (const m of marks) meta.appendChild(el('span', 'lesson-mark', m));
+        const line = el('p', 'lesson-line');
+        line.appendChild(el('span', 'lesson-text', verb + plural + ': ' + (snap.text || '')));
+        if (card.why) line.appendChild(el('span', 'lesson-why', card.why));
+        for (const m of marks) line.appendChild(el('span', 'lesson-mark', m));
         const link = el('a', 'lesson-link', 'Open in Settings');
         link.href = '/wheelchair/app/settings#templates/lessons/' + encodeURIComponent(card.for);
-        meta.appendChild(link);
-        box.appendChild(meta);
+        line.appendChild(link);
+        box.appendChild(line);
         break;
       }
       default:

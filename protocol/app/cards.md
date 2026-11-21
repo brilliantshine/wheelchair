@@ -63,7 +63,7 @@ thread). An approval unpins when Start building is accepted or it is retracted; 
 approval replaces an open pinned approval. The app also posts `needs` cards of its own (a session stuck at startup, a
 permission prompt, "Sessions ended"); you never post those.
 
-Sections for `progress`, `message` and `result` are below; all other kind sections are
+Sections for `progress`, `lesson`, `message` and `result` are below; all other kind sections are
 in `cards-lead.md`.
 
 ## The shown kinds
@@ -129,6 +129,8 @@ do exactly that. Refusals (422), each a sentence you can act on:
   `replace` or `remove` naming an id kept under another role.
 - `the user edited this lesson; agents leave it as it is`: a `replace` or `remove` of a
   lesson marked "(edited by the user)".
+- A field error (400) from validation, such as an unknown `only_ai` or a missing `why`: fix
+  the field and run the card again.
 
 ## The kinds never shown
 

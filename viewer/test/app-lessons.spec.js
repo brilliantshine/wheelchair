@@ -85,6 +85,24 @@ test.describe('Settings', () => {
     expect(saved[1].text).toBe('Keep commits small.');
   });
 
+  test('the fields are locked while a save is in flight', async ({ page }) => {
+    await seed({ worker: [lesson('L0000e1', 'One.')] });
+    await openSettings(page, '/app/settings#templates/lessons/worker');
+    const field = page.locator('.lesson-row[data-id="L0000e1"] textarea');
+    await field.fill('One, changed.');
+    let release;
+    const held = new Promise((r) => { release = r; });
+    await page.route('**/settings/lessons/worker', async (route) => { await held; await route.continue(); });
+    await page.locator('#save-lessons').click();
+    await expect(field).toBeDisabled();
+    await expect(page.locator('#save-lessons')).toBeDisabled();
+    await expect(page.locator('.lesson-row button')).toBeDisabled();
+    release();
+    await expect(page.locator('#save-lessons')).toBeEnabled();
+    await expect(field).toHaveValue('One, changed.');
+    expect((await api(page, '/settings')).lessons.worker[0].text).toBe('One, changed.');
+  });
+
   test('a lesson an agent removed meanwhile shows the 409 text', async ({ page }) => {
     await seed({ worker: [lesson('L0000c1', 'One.'), lesson('L0000c2', 'Two.')] });
     await openSettings(page, '/app/settings#templates/lessons/worker');
@@ -125,6 +143,9 @@ test.describe('thread notice', () => {
     await expect(notices.nth(1)).toContainText('Updated a lesson for sub-leads: Split big parts.');
     await expect(notices.nth(2)).toContainText('Removed a lesson for verifiers: Old advice.');
     await expect(notices.locator('button')).toHaveCount(0);
+    const textBox = await notices.nth(2).locator('.lesson-text').boundingBox();
+    const linkBox = await notices.nth(2).locator('.lesson-link').boundingBox();
+    expect(Math.abs(textBox.y - linkBox.y)).toBeLessThan(4);
     await expect(page.locator('.card-needs')).toHaveCount(0);
     await expect.poll(async () => (await api(page, '/features')).needs.length).toBe(0);
     await notices.nth(0).getByRole('link', { name: 'Open in Settings' }).click();

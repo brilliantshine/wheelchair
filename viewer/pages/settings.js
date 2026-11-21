@@ -864,6 +864,8 @@
       edits.push({ id: item.id, text });
     }
     const removals = [...lessonEdit.removals];
+    lessonEdit.saving = true;
+    setLessonsBusy(true);
     try {
       await api('/settings/lessons/' + encodeURIComponent(role), { method: 'PUT', body: { edits, removals } });
       await reload(false);
@@ -871,8 +873,18 @@
       setNote(SAVED, false);
       renderPanel();
     } catch (e) {
+      lessonEdit.saving = false;
+      setLessonsBusy(false);
       inlineErr(errHost, e.message);
     }
+  }
+
+  // While a save is in flight nothing can be typed, so no edit is lost.
+  function setLessonsBusy(busy) {
+    document.querySelectorAll('.lessons-edit .lesson-text, .lessons-edit .lesson-row button, #save-lessons').forEach((n) => {
+      if (busy) { n.dataset.wasDisabled = n.disabled ? '1' : ''; n.disabled = true; }
+      else { n.disabled = n.dataset.wasDisabled === '1'; delete n.dataset.wasDisabled; }
+    });
   }
 
   function renderLessonEditor() {
