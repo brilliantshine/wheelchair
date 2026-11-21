@@ -14,11 +14,6 @@ Parent: `docs/plans/windows-bridge/PLAN.md` (merged in PR #140). Map: `MAP.md`.
 
 ## Open Questions
 
-### Q1: Which Unity MCP gets the ready-made setup?
-- **Context:** Unity's own MCP ships in the AI Assistant package: a Windows relay program (`%USERPROFILE%\.unity\relay\`, run with `--mcp`) speaks stdio, so it already fits the bridge's stdio hook; it needs a Unity subscription and a one-time approval in the Editor. MCP for Unity (CoplayDev, free) defaults to an HTTP server the Editor starts on `localhost:8080`, or stdio through `uvx` on Windows.
-- **Options:** Unity's own; MCP for Unity; both.
-- **Recommendation:** MCP for Unity: free, and its default HTTP mode exercises item 1 end to end.
-
 ### Q2: How does the bridge know a `localhost` tool runs on Windows?
 - **Context:** On a WSL machine a `localhost` URL could equally mean a Linux service.
 - **Options:** a "runs on Windows" switch per tool in Project tools; automatic (forward when nothing on Linux listens on that port).
@@ -44,10 +39,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D2 | Windows `localhost` HTTP/SSE tools are reached through a forward: a Linux listener on `127.0.0.1:<port>` pipes each connection through a Windows-side process (over WSL interop) to Windows `127.0.0.1:<port>`; skipped when WSL uses mirrored networking | Works for tools that bind only to Windows 127.0.0.1 and needs no firewall rule; rewriting to the host address fails for those tools and does not reach Claude's file-loaded config | defaulted |
 | D3 | Disk report in `win info`: size of each copy of this thread, size of the repository's `.git`, count of kept conflict refs, and free space on the Windows drive. Warning when this thread's copies pass 20 GB, `.git` passes 10 GB, or the Windows drive has under 10 GB free. Warns only; never deletes | Measurable cheaply; unattributable shared objects are reported as one total; limits are generous so they fire only on real growth | defaulted |
 | D4 | Broken bridge warning: added to the approval card's `warnings`, like the screen tools warning, and shown to the agent at session start; fires only on a Microsoft (WSL) kernel. Detection is widened so a WSL kernel with missing interop counts as "WSL, bridge broken: interop off" instead of "not WSL" | Mirrors the existing warning path; the user sees it before building starts | defaulted |
+| D5 | The ready-made Unity setup is for MCP for Unity (CoplayDev), in its default HTTP mode (`http://localhost:8080/mcp`, served by the Editor on Windows) | User's choice; free, and it exercises the localhost forward end to end | user |
 
 ## Spec
 
-(Grown as decisions land.)
+### 1. Windows localhost tools
+Reached through the forward in D2. (How a tool is marked as Windows: pending Q2.)
+
+### 2. MCP for Unity preset
+Project tools gets a ready-made entry for MCP for Unity: an HTTP tool at `http://localhost:8080/mcp`, running on Windows, reached through item 1. Saving it goes through the existing Project tools save flow. The user still installs the MCP for Unity package in their Unity project and starts its server from the Editor (Window > MCP for Unity); the preset's help text says so.
+
+### 3. Disk report
+As D3.
+
+### 4. Tools started before the copy was ready
+Pending Q3.
+
+### 5. Broken bridge warning
+As D4.
 
 ## Accepted Risks
 
