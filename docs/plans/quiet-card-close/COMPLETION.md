@@ -9,6 +9,12 @@ verified-by:
   - round: 1
     lane: claude / claude-opus-5-5 (FAIL, 1 gap)
     checks: T1 gpt, T2 claude
+  - round: 2
+    lane: claude / claude-opus-5-5 (PASS)
+    checks: T1 gpt, T2 claude, R1 gpt
+  - round: 2
+    lane: gpt / gpt-6.2-sol (FAIL, 1 gap)
+    checks: T1 gpt, T2 claude, R1 gpt
 ---
 
 # Completion Report — Close the "agent stopped without reporting" card
@@ -97,6 +103,24 @@ Evidence (sub-lead re-run):
 $ for r in 1 2; do for i in 1 2 3 4 5 6; do node --test viewer/test/app-quiet.test.js > q-$r-$i.log 2>&1 & done; wait; grep -h '^# fail' q-$r-*.log | sort | uniq -c; done
       6 # fail 0
       6 # fail 0
+$ node --test viewer/test/*.test.js
+# tests 789
+# pass 789
+# fail 0
+```
+
+### Remediation 2
+
+Gap (GPT verifier, attempt 2): the duplicate-start case in "child starts reset quiet card on new and duplicate starts, but not refusal" (`viewer/test/app-quiet.test.js`) seeded an already-dismissed card, so closing an open card on the duplicate branch was untested. The verifier confirmed the behaviour by a direct API check; product code unchanged.
+
+Fix (R2, gpt light): the duplicate start now runs against an open quiet card and asserts `duplicate: true`, `quiet_card` cleared, `quiet_stage` 0 and the card answered on a fresh read (`viewer/test/app-quiet.test.js:109-113`).
+
+Evidence (sub-lead re-run after merge):
+
+```text
+$ node --test viewer/test/app-quiet.test.js
+# pass 24
+# fail 0
 $ node --test viewer/test/*.test.js
 # tests 789
 # pass 789
