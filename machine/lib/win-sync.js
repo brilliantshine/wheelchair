@@ -301,6 +301,8 @@ async function reconcileAttempt(ctx, hooks, state) {
   const windowsApplyCommit = await commitTree(ctx, false, windowsApplyTree, base);
   const toWindows = await changedPaths(ctx, windowsSnapshot, windowsApplyTree);
   const toLinux = await changedPaths(ctx, linuxSnapshot, linuxApplyTree);
+  state.unresolved = unresolved;
+  writeState(ctx.stateDir, ctx.key, state);
   const linuxApply = await command(ctx, false, ['read-tree', '-m', '-u', linuxCommit, linuxApplyCommit], { ...indexOptions(ctx, false), allowFailure: true });
   if (linuxApply.code) throw applyError('Linux', linuxApply.stderr);
   await command(ctx, false, ['push', ctx.copy.linux, `+${windowsApplyCommit}:refs/wheelchair/linux`], { cwd: ctx.worktree });

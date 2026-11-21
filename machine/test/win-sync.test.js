@@ -249,3 +249,19 @@ test('concurrent reconciles for the same copy are serialized', async () => {
   await Promise.all([first, second]);
   assert.deepEqual(order, ['first', 'second']);
 });
+
+test('interrupted conflict application retains marker masking on the next sync', async () => {
+  const ctx = await fixture();
+  const linux = path.join(ctx.worktree, 'initial');
+  const windows = path.join(ctx.copy.linux, 'initial');
+  await reconcile(ctx);
+  fs.writeFileSync(linux, 'linux\n');
+  fs.writeFileSync(windows, 'windows\n');
+  ctx.fakeEnv.WC_FAKE_GIT_FAIL_ONCE = 'read-tree';
+  ctx.fakeEnv.WC_FAKE_GIT_FAULT_FILE = path.join(ctx.stateDir, 'fault');
+  await assert.rejects(reconcile(ctx), /injected read-tree failure/);
+  assert.match(fs.readFileSync(linux, 'utf8'), /^<<<<<<< /m);
+  const result = await reconcile(ctx);
+  assert.deepEqual(result.unresolved, ['initial']);
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'windows\n');
+});
