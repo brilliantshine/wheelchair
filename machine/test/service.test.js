@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -64,7 +66,7 @@ async function service(root, options = {}) {
   await write(path.join(state, 'machine.json'), JSON.stringify({ secret_file: secret, host: '127.0.0.1', port: listen, ...(options.config || {}) }));
   const prior = { PATH: process.env.PATH, FAKE_LOG: process.env.FAKE_LOG, FAKE_PANE: process.env.FAKE_PANE };
   process.env.PATH = `${fake.bin}:${prior.PATH}`; process.env.FAKE_LOG = fake.log; process.env.FAKE_PANE = fake.pane;
-  let instance = new MachineService({ stateDir: state, host: '127.0.0.1', port: listen });
+  let instance = new MachineService({ win: noWsl, stateDir: state, host: '127.0.0.1', port: listen });
   try { await instance.listen(); } catch (error) { Object.assign(process.env, prior); throw error; }
   return { instance, state, fake, base: `http://127.0.0.1:${listen}`, async close() {
     // A test that fails mid-start ends with that start still running. Wait for it before PATH
@@ -1408,7 +1410,7 @@ test('hook-post sends both status events individually to the service', async () 
 
 test('Codex rollout reads persist complete lines, serialize reads, and flush before turn end', async () => {
   const root = await temp(), file = path.join(root,'rollout.jsonl');
-  const svc = new MachineService({stateDir:root});
+  const svc = new MachineService({ win: noWsl, stateDir:root});
   const session = {name:'wc-test',cli:'codex',thread_id:'thread',codex_thread_id:'codex-id',source_transcript:file};
   svc.sessions[session.name] = session;
   const seen = []; let active=0, peak=0;
@@ -1425,7 +1427,7 @@ test('Codex rollout reads persist complete lines, serialize reads, and flush bef
   assert.equal(svc.sessions['wc-unbound'].steps_offset,undefined);
   await fs.appendFile(file,'\n'); await svc.readCodexSteps(session);
   const saved=JSON.parse(await fs.readFile(svc.sessionsPath,'utf8')); assert.equal(saved['wc-test'].steps_state.yielded,'a');
-  const restarted=new MachineService({stateDir:root}); restarted.sessions=saved; restarted.emitEvent=svc.emitEvent; restarted.spool=svc.spool;
+  const restarted=new MachineService({ win: noWsl, stateDir:root}); restarted.sessions=saved; restarted.emitEvent=svc.emitEvent; restarted.spool=svc.spool;
   const poll=row('p','function_call',{name:'wait',arguments:'{}'}), finish=row('p','function_call_output',{output:'Script completed'});
   await fs.appendFile(file,poll+'\n'+finish+'\n');
   await restarted.hook('wc-test',{type:'turn-ended',thread_id:'codex-id'});
@@ -1435,7 +1437,7 @@ test('Codex rollout reads persist complete lines, serialize reads, and flush bef
 
 test('Codex rollout reader tails bounded chunks, reads appends once, and resets after truncation', async () => {
   const root = await temp(), file = path.join(root,'rollout.jsonl');
-  const svc = new MachineService({stateDir:root});
+  const svc = new MachineService({ win: noWsl, stateDir:root});
   const session = {name:'wc-tail',cli:'codex',thread_id:'thread',codex_thread_id:'codex-id',source_transcript:file};
   svc.sessions[session.name] = session; svc.emitEvent = async () => {};
   const row = (id,type,extra={}) => JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type,call_id:id,...extra}});
@@ -1462,7 +1464,7 @@ test('Codex rollout reader tails bounded chunks, reads appends once, and resets 
 
 test('spooled Codex turn end drains without blocking later Claude events', async () => {
   const root = await temp(), file = path.join(root, 'rollout.jsonl'), hub = await hubServer();
-  const svc = new MachineService({stateDir: root}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
+  const svc = new MachineService({ win: noWsl, stateDir: root}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
   const session = {name:'wc-x-worker',cli:'codex',thread_id:'t',codex_thread_id:'cid',source_transcript:file};
   svc.sessions[session.name] = session;
   svc.sessions['wc-x-lead'] = {name:'wc-x-lead',cli:'claude',thread_id:'t'};
@@ -1487,7 +1489,7 @@ test('spooled Codex turn end drains without blocking later Claude events', async
 
 test('live Codex turn end flushes every bounded chunk before the turn event', async () => {
   const root = await temp(), file = path.join(root, 'rollout.jsonl'), hub = await hubServer();
-  const svc = new MachineService({stateDir:root, codexStepChunkSize:256}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
+  const svc = new MachineService({ win: noWsl, stateDir:root, codexStepChunkSize:256}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
   const session = {name:'wc-x-worker',cli:'codex',thread_id:'t',codex_thread_id:'cid',source_transcript:file}; svc.sessions[session.name] = session;
   const row = id => JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type:'function_call',call_id:id,name:'exec_command',arguments:'{"cmd":"npm test"}'}}) + '\n';
   const data = row('one') + row('two') + row('three');
@@ -1692,7 +1694,7 @@ test('archive ownership markers survive restart and reopening clears them', asyn
   const root = await temp(); const env = await service(root, { realGit: true }); try {
     const id = '012345abcdef'; const repo = await project(root); const head = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
     let response = await api(env, 'POST', '/v1/archive', { thread_id: id }, hubHeader); assert.equal(response.status, 200, JSON.stringify(response.body));
-    const restarted = new MachineService({ stateDir: env.state, host: '127.0.0.1', port: await port() }); await restarted.init();
+    const restarted = new MachineService({ win: noWsl, stateDir: env.state, host: '127.0.0.1', port: await port() }); await restarted.init();
     try {
       assert.equal(restarted.archivedThreads.has(id), true);
       let result = await restarted.handoff({ action: 'known', thread_id: id, project: repo, head }); assert.equal(result.known, true, JSON.stringify(result));

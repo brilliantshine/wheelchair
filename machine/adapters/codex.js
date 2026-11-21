@@ -6,6 +6,7 @@ const usual = () => c.home('CODEX_HOME', '.codex');
 const loginEnv = dir => dir ? { CODEX_HOME: dir } : {};
 const { run } = require('../lib/usage-probe');
 const { DUPLICATE_HEADERS, serverLabel } = require('../lib/project-mcp');
+const { isWindowsProgram } = require('../lib/project-programs');
 function parseUsage(response) {
   if (response?.error || !response?.result?.rateLimits) throw new Error('invalid Codex usage response');
   const limits = response.result.rateLimits; let five_hour = null, week = null;
@@ -48,7 +49,7 @@ function codexEntryReason(name, entry) {
   return null;
 }
 // The -c overrides for every server Codex can take, measured against the budget as a whole.
-function codexOverrides(mcp) {
+function codexOverrides(mcp, { wsl = false, mount = '/mnt' } = {}) {
   const args = [], warnings = [], included = [];
   for (const name of Object.keys(mcp?.servers || {})) {
     const entry = mcp.servers[name];
@@ -76,6 +77,12 @@ function codexOverrides(mcp) {
       for (const [key, value] of Object.entries(entry.env || {})) {
         if (value === `\${${key}}` && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) passthrough.push(tomlString(key));
         else literal.push(`${tomlString(key)}=${tomlString(value)}`);
+      }
+      if (wsl && isWindowsProgram(entry.command, mount)) {
+        for (const name of ['WHEELCHAIR_WINDOWS_PROJECT', 'WSLENV']) {
+          const quoted = tomlString(name);
+          if (!passthrough.includes(quoted)) passthrough.push(quoted);
+        }
       }
       add('command', tomlString(entry.command));
       add('args', `[${(entry.args || []).map(tomlString).join(',')}]`);
@@ -127,7 +134,7 @@ module.exports = {
     const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
     const argv = ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
     const projectStart = argv.length;
-    const { args, warnings } = codexOverrides(context?.tools ? context.mcp : null);
+    const { args, warnings } = codexOverrides(context?.tools ? context.mcp : null, context);
     argv.push(...args);
     // Every project override is redacted in the stored command (Spec §3): '-c' then 'key=value'.
     const redactions = [];

@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -20,7 +22,7 @@ case "$1" in
  *) echo "set $1" ;;
 esac
 `, { mode: 0o755 });
-  const service = new MachineService({ stateDir: dir, sensitivityScript: script });
+  const service = new MachineService({ win: noWsl, stateDir: dir, sensitivityScript: script });
   service.config.secret_file = secret;
   const server = http.createServer((req, res) => service.handle(req, res));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('node:path');
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+
+function translate(value) {
+  return value.replace(/([A-Za-z]):\\([^\0]*)/g, (_, drive, rest) =>
+    path.join(process.env.WC_FAKE_MOUNT, drive.toLowerCase(), ...rest.split('\\')));
+}
+
+const args = process.argv.slice(2).map(translate);
+const env = Object.fromEntries(Object.entries(process.env).map(([key, value]) => [key, translate(value)]));
+const fault = process.env.WC_FAKE_GIT_FAIL_ONCE;
+const faultFile = process.env.WC_FAKE_GIT_FAULT_FILE;
+if (fault && faultFile && args.includes(fault) && !fs.existsSync(faultFile)) {
+  fs.writeFileSync(faultFile, 'failed');
+  process.stderr.write(`injected ${fault} failure\n`);
+  process.exit(1);
+}
+const result = spawnSync('git', args, { env, stdio: 'inherit' });
+if (result.error) process.stderr.write(`${result.error.message}\n`);
+process.exit(result.status === null ? 1 : result.status);

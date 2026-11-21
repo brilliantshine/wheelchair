@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -15,7 +17,7 @@ test('project tools launch privately and stale Antigravity files are swept', asy
   for (const name of ['git', 'tmux', 'systemd-run']) await fsp.writeFile(path.join(bin, name), script, { mode: 0o755 });
   const oldPath = process.env.PATH, oldLog = process.env.FAKE_TOOLS_LOG, oldPrepare = agy.prepare, oldError = console.error, lines = [];
   process.env.PATH = `${bin}:${oldPath}`; process.env.FAKE_TOOLS_LOG = log; agy.prepare = () => {}; console.error = (...args) => lines.push(args.join(' '));
-  const service = new MachineService({ stateDir: state, host: '127.0.0.1', port: 0 });
+  const service = new MachineService({ win: noWsl, stateDir: state, host: '127.0.0.1', port: 0 });
   try {
     await service.init();
     await fsp.writeFile(path.join(work, '.mcp.json'), JSON.stringify({ mcpServers: { gh: { type: 'http', url: 'https://example.test/?x=secret', headers: { Authorization: 'Bearer ${TOK}', 'X-Literal': 'literal-secret' } }, local: { command: 'runner', args: ['https://example.test/secret'] } } }));
@@ -54,7 +56,7 @@ async function sweepFixture(names, live = ['wc-name_part-worker']) {
   fs.mkdirSync(base);
   const old = new Date(Date.now() - 600000);
   for (const name of names) { fs.mkdirSync(path.join(base, encodeURIComponent(name))); fs.utimesSync(path.join(base, encodeURIComponent(name)), old, old); }
-  const service = new MachineService({ stateDir: state });
+  const service = new MachineService({ win: noWsl, stateDir: state });
   service.liveTmux = () => live === null ? null : new Set(live);
   service.sessions = {};
   return { service, dir: name => path.join(base, encodeURIComponent(name)), exists: name => fs.existsSync(path.join(base, encodeURIComponent(name))) };

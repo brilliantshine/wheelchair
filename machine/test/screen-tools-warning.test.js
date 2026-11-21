@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -25,7 +27,7 @@ test('approval card reports missing screen tools, preserves startup order, and r
   const hub = http.createServer((req, res) => { let body = ''; req.on('data', chunk => { body += chunk; }); req.on('end', () => { cards.push(JSON.parse(body)); res.end('{}'); }); });
   await listen(hub, 0, '127.0.0.1');
   const probe = http.createServer(); await listen(probe, 0, '127.0.0.1'); const port = probe.address().port; await close(probe);
-  const service = new MachineService({ stateDir: path.join(root, 'state'), host: '127.0.0.1', port, secretFile, hubUrl: `http://127.0.0.1:${hub.address().port}` });
+  const service = new MachineService({ win: noWsl, stateDir: path.join(root, 'state'), host: '127.0.0.1', port, secretFile, hubUrl: `http://127.0.0.1:${hub.address().port}` });
   service.tmux = () => ({ ok: true, stdout: '', stderr: '' });
   const oldPath = process.env.PATH;
   try {
