@@ -37,6 +37,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Saving a lesson shows a one-line notice in the thread it came from (which agent type, the lesson text, link to Settings); it takes effect for agents started afterwards with no approval | Collin picked "A short notice" | user |
 | 13 | Worker lessons are saved by workers themselves and by the sub-lead, from what it sees across worker tasks | Collin picked "Sub-lead too" | user |
 | 14 | The lead also writes mapper lessons; mappers may still save their own | Collin picked "Lead writes them": mappers stop after their map, so only the lead sees a map turn out wrong | idea-change |
+| 15 | Supersedes 2 and 3: a lesson reaches agents of the type it is saved for (S2: lead, sub-lead, worker, mapper save for themselves; the lead also for reviewers, verifiers and mappers; the sub-lead also for workers), and `only_ai` names any AI, usually the one the mistaken agent ran on | Decisions 11, 13, 14 and review-round-1 finding on `only_ai` | review-round-1 |
 
 ## Spec
 
@@ -114,7 +115,7 @@ and mapper. It is **shown** (it is the thread notice, decision 12) and **not pin
 | `for` | role | yes | Whose lessons (must be allowed by S2) |
 | `text` | string | `add`, `replace` | 1–300 characters, one line |
 | `lesson` | string | `replace`, `remove` | The id of the lesson to change, as shown in the agent's instructions |
-| `only_ai` | string | no | `add`/`replace`: `any` or a `PROVIDERS` key (`claude`, `gpt`, `gemini`, `kimi`, `openrouter`); sets `provider`, so the lesson reaches only agents on that AI. Name the AI of the agent that made the mistake, which for a reviewer, verifier or worker lesson is often not the saver's own |
+| `only_ai` | string | no | `add`/`replace`: `any` or a `PROVIDERS` key (`claude`, `gpt`, `gemini`, `kimi`, `openrouter`); sets `provider`, so the lesson reaches only agents on that AI. Name the AI of the agent that made the mistake, which for a reviewer, verifier, mapper or worker lesson is often not the saver's own |
 | `only_project` | boolean | no | `add`/`replace`: true sets `project` to the thread's project path |
 | `why` | string | `add`, `replace`, `remove` | One line, shown on the notice: what went wrong and how it was proven |
 
@@ -137,13 +138,13 @@ Refusals (422 unless noted), each a sentence the agent can act on:
 
 - `a <saver> may not save lessons for <target>s` (S2).
 - `lessons for <role>s are full (12): replace or remove one instead`, followed by every
-  lesson for that role, one per line as `[<id>] <first 80 characters>` with its markers,
+  lesson for that role, one per line as `[<id>] <first 80 characters>` with its markers, including "(edited by the user)",
   so an agent whose instructions showed none of them (other AI or project) can still pick
   one. If none is worth dropping, the agent does not save the new lesson.
 - `no lesson <id> for <role>s` for a `replace` naming an id not present for that role,
   and for a `replace` or `remove` naming an id that exists under another role. (A `remove`
   of an id present under no role succeeds silently, as above.)
-- `Collin edited this lesson; agents leave it as it is` for a `replace` or `remove` of a
+- `the user edited this lesson; agents leave it as it is` for a `replace` or `remove` of a
   lesson whose current `saved_by` is `user`. The hub checks the stored value inside the
   queued settings update, so this holds even for an agent started before Collin's edit.
 - field errors (400) from `card.js` validation as for other kinds.
@@ -180,7 +181,7 @@ every provider (`viewer/app/sessions.js:324`), so all five AIs get it at session
 Running sessions keep what they started with (decision 9). A session started with a
 `role_prompt` override gets no lessons, as today it gets no layers.
 
-The lead also gets the reviewer and verifier lessons (so it can replace or remove them):
+The lead also gets the reviewer, verifier and mapper lessons (so it can replace or remove them):
 its layer adds, after its own block, the same format headed
 `Lessons you keep for reviewers:`, `Lessons you keep for verifiers:` and
 `Lessons you keep for mappers:` (all of them,
@@ -249,7 +250,7 @@ his templates). The `GET /settings` payload includes `lessons`.
   replace or remove before adding", the 12 cap, the rule-conflict path, and that a lesson
   marked "(edited by the user)" is never reworded or removed by an agent. The lead's
   section says when it writes reviewer, verifier and mapper lessons (naming, in `only_ai`, the AI
-  the reviewer or verifier ran on when the mistake is that AI's habit), and that a lesson card is a
+  the reviewer, verifier or mapper ran on when the mistake is that AI's habit), and that a lesson card is a
   notice the user sees, so `why` is in the user's words. The sub-lead's says it writes
   worker lessons, naming the worker's AI in `only_ai` the same way.
 - `protocol/app/reviewer.md`, `verifier.md`: one sentence that the lessons in their
@@ -371,6 +372,10 @@ stays as review history.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Mapper lessons not named in S5's "so it can replace" sentence or the S8/S4 `only_ai` guidance | upheld (minor) | S4, S5, S8 name mappers |
+| intent | minor | Refusal hard-codes "Collin" | upheld (minor) | S4: "the user edited this lesson…" |
+| intent | minor | Full-list refusal doesn't say it shows "(edited by the user)" | upheld (minor) | S4: included |
+| intent | minor | Decision Log rows 2 and 3 contradict the Spec | upheld (minor) | Decision 15 supersedes them |
 
 ## Prior Work
 
