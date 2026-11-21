@@ -36,10 +36,11 @@ created: 2026-11-20
 | 14 | A recipe that can't be confirmed at build time ships as a vendor-docs link, not an Install button | Review round 1 | review-round-1 |
 | 15 | (superseded by 17) Supersedes 13: a harness is added to Workers try first only when nothing in Lead order is installed, at most once, however it was installed | Review round 2: Settings-only trigger missed terminal and vendor-link installs; avoid silently adding pay-per-token OpenRouter for users who already have a working lead | review-round-2 |
 | 16 | Install result survives a service restart (job writes a result file); was Deferred D4 | Review round 2: setup steps must run inside the job, which makes the result file free | review-round-2 |
-| 17 | (refined by 19) Supersedes 13 and 15: the hub never changes Lead or Worker order on its own. A harness that is signed in but not reachable from Lead order shows "Add to Lead order" in Settings and as a checklist step | Review round 3: the automatic append raced Settings drafts, missed a Lead order without `any`, and depended on a page being open; an explicit button avoids all three | review-round-3 |
-| 18 | Keep the one-tap "Add to Lead order" button (over a plain link, or leaving Pi out) | Collin picked it after the review budget stopped | user |
-| 19 | (refined by 20) The one-tap button is "Let agents use <Harness>": it adds the harness to Workers try first, and also to Lead order when Lead order has no `any`. Refines 18 | Review round 4: adding to Lead order alone let a lead start but left every worker and reviewer waiting | review-round-4 |
-| 20 | The row button shows only for a signed-in harness missing from Workers try first; it adds to Lead order only when Lead order reaches no working harness. Refines 19 | Review round 5: a deliberate Lead order like `['claude']` is normal and must not be flagged or changed | review-round-5 |
+| 17 | (superseded by 21) Supersedes 13 and 15: the hub never changes Lead or Worker order on its own. A harness that is signed in but not reachable from Lead order shows "Add to Lead order" in Settings and as a checklist step | Review round 3: the automatic append raced Settings drafts, missed a Lead order without `any`, and depended on a page being open; an explicit button avoids all three | review-round-3 |
+| 18 | (superseded by 21) Keep the one-tap "Add to Lead order" button (over a plain link, or leaving Pi out) | Collin picked it after the review budget stopped | user |
+| 19 | (superseded by 21) The one-tap button is "Let agents use <Harness>": it adds the harness to Workers try first, and also to Lead order when Lead order has no `any`. Refines 18 | Review round 4: adding to Lead order alone let a lead start but left every worker and reviewer waiting | review-round-4 |
+| 20 | (superseded by 21) The row button shows only for a signed-in harness missing from Workers try first; it adds to Lead order only when Lead order reaches no working harness. Refines 19 | Review round 5: a deliberate Lead order like `['claude']` is normal and must not be flagged or changed | review-round-5 |
+| 21 | Supersedes 17–20: no button changes the orders. The app asks the real placement code whether a new thread's lead and a worker could start on the default machine; if not, the checklist and Settings say why and link to the order lists. The checklist is retired for good once complete | Collin picked "Check and point" after the review budget stopped on the button | user |
 
 ## Spec
 
@@ -214,35 +215,44 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    machine name. `GET /harnesses?fresh=1` drops the status cache for all machines first
    (`cache.delete(hub)` in `usage.js`); the page asks for it after an install or sign-in ends
    (S4.3, S4.4). The hub keeps no per-install memory.
-8. **Letting agents use a harness.** `/harnesses` reports, per provider, `in_worker_order`
-   (the provider is in `worker_order`), and at top level `lead_reachable`: some enabled
-   provider in `lead_order`, expanded as the balancer does (`any` → `worker_order`), is
-   installed and `signed_in` on a reachable machine. New route `POST
-   /settings/harnesses/<provider>/use` → appends the provider to `worker_order` if missing;
-   and, only when `lead_reachable` was false and `lead_order` has no `any` and lacks the
-   provider, appends it to `lead_order` too (a Lead order that already reaches a working
-   harness is never touched). Returns `describe()`. Unknown provider → 404. The hub never
-   changes either order on its own.
+8. **Can agents start?** `/harnesses` adds
+   ```
+   can_start: { machine: "hub", lead: {ok, reason?}, worker: {ok, reason?} }
+   ```
+   computed by calling the real placement code, `balancer.choose(hub, {machine: "hub",
+   sessions: []}, role, "top")` (`viewer/app/balancer.js:27`; it only reads), once with role
+   `lead` and once with `worker`. `hub` is the machine a new thread starts on by default
+   (`viewer/app/threads.js:63`). A returned provider → `ok: true`. A wait → `ok: false` with a
+   plain reason built by the hub:
+   - when no provider in the order `choose` used (lead: the enabled, expanded Lead order;
+     worker: the enabled Workers try first) is installed and signed in on that machine:
+     `New leads try <names>; none is installed and signed in on <machine>.` (workers: `New
+     workers try …`), followed, when some other enabled harness is installed and signed in
+     there, by `Add <names> to Lead order` (or `Workers try first`) ` under Settings → Usage.`;
+   - otherwise: `Every account they would use is at its usage limit right now.`
+   If `choose` throws (for example no model at the slot), `ok: false` and the reason is its
+   message. The hub never changes either order on its own; there is no button that does.
 9. **Onboarding status** `GET /onboarding` → `{show, steps:[{id:"install", label:"Install an
-   agent harness", done}, {id:"signin", label:"Sign in to it", done}]}`, from `GET
-   /harnesses` data. `install` is done when some reachable machine has an enabled harness
-   installed. `signin` is done when some reachable machine has a provider that is enabled,
-   installed and `signed_in` on that same machine. A third step `{id:"use", label:"Let agents
-   use it", done}` is included only when `signin` is done for some provider but either no
-   signed-in provider is `in_worker_order` or `lead_reachable` is false; it is done otherwise. Each step not done carries `provider`
-   (the first matching one, display order) so the card can act.
-   `show` is true when not every included step is done and at least one machine is reachable; false when
-   none is reachable.
+   agent harness", done}, {id:"signin", label:"Sign in to it", done}, {id:"start",
+   label:"Agents can start", done, reason?}]}`, from `GET /harnesses` data. `install` is done
+   when some reachable machine has an enabled harness installed. `signin` is done when some
+   reachable machine has a provider that is enabled, installed and `signed_in` on that same
+   machine. `start` is done when `can_start.lead.ok` and `can_start.worker.ok`; when not done
+   it carries the first failing reason. The first time all three are done, the hub saves a new
+   boolean setting `onboarding_done: true` (default `false`, normalized like other booleans);
+   from then on `show` is false for good, so the checklist never comes back over a usage limit
+   or a later change. Otherwise `show` is true when some step is not done and at least one
+   machine is reachable; false when none is.
 10. **Tests** in `viewer/test/`: normalize defaults and bad values; `describe` includes
    `harnesses`; PUT 200/400/404 and the lead-order 409 (default `['claude','any']` with only
    claude off → 200); balancer never places a new session on a switched-off provider, falls
    back for a switched-off review family, and does not block an aside or an unanswered-start
    retry; Ready reason; `/harnesses` shape with one reachable and one unreachable machine;
-   forwarders pass through and 502; `?fresh=1` clears the cache; `harnesses/<p>/use` (with and
-   without `any` in Lead order; Lead order `['claude']` with Claude signed in → only
-   `worker_order` changes; already in; unknown); onboarding's `use` step for Pi-only
-   with default orders and with saved Lead order `['claude']`; after pressing use on a Pi-only
-   setup, the balancer places both a lead and an ordinary worker on Pi; balancer skips a provider whose CLI is not installed
+   forwarders pass through and 502; `?fresh=1` clears the cache; `can_start` (Pi-only with default orders → lead and worker not ok, reasons name Pi and the
+   order to add it to; after adding `openrouter` to `worker_order` → both ok; Lead order
+   `['claude']` with Claude signed out and Codex signed in → lead not ok; a switched-off
+   harness never makes it ok; all accounts at their limit → the limit reason); onboarding's
+   `start` step and `onboarding_done` (set once, checklist stays hidden afterwards); balancer skips a provider whose CLI is not installed
    though its account is logged in; order writes refused when they empty the enabled Lead order;
    reservation skips a switched-off provider; onboarding for no CLI, installed-not-signed-in, installed on one machine
    with sign-in only on another (not done), and done.
@@ -263,14 +273,11 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    - not installed, or the last install on this machine `failed` → **Install** (or **Try
      again** after a failure);
    - installed, not signed in → **Sign in**;
-   - installed, signed in, not `in_worker_order` → the note `Agents won't start on this
-     yet.` and **Let agents use <Harness>** (`POST /settings/harnesses/<p>/use`). On success
-     the page replaces its settings data with the response and, in the existing drafts
-     (`balDraft`, `settings.js:1336-1371`), adds the provider to the `worker_order` and
-     `lead_order` drafts where the response added it and the draft lacks it (in `lead_order`,
-     before `any` when the draft has it), leaving every other draft edit as it was, so a later
-     save on this page keeps both and is accepted. It then re-fetches `GET /settings` for the
-     derived fields `describe()` lacks (such as `reserved_provider`) without touching drafts.
+   - installed and signed in → no action.
+   Above the rows, when `can_start.lead.ok` or `can_start.worker.ok` is false, a notice
+   `Agents can't start yet on <machine>:` with each failing reason and a link **Open Usage**
+   to `#usage` (the section holding Lead order and Workers try first). The notice reflects
+   the hub's default machine (`can_start.machine`) whichever machine is picked.
    No action when the switch is off.
 3. **Install state on load.** On page load and whenever the picked machine changes, the page
    GETs install state for each enabled provider on that machine. `running` → shows
@@ -305,12 +312,11 @@ Antigravity, Kimi Code, Pi (OpenRouter).
 1. On load and on each existing 5 s poll, fetch `GET /onboarding`. When `show` is true, render a
    card at the top of the thread list titled "Set up an agent", its steps with a tick when
    done, the line "Leave out the ones you don't use.", and a button **Open Settings** to
-   `settings#harnesses`. When the `use` step is shown and not done, it has its own **Let
-   agents use <Harness>** button (the S3.8 route), after which the card refetches. When `show` is false or the fetch fails, render nothing.
+   `settings#harnesses`. A not-done `start` step shows its reason under it. When `show` is false or the fetch fails, render nothing.
 2. Browser tests (`npm --prefix viewer run test:browser`) with stubbed responses: the card
    shows and hides; the Harnesses section renders five rows, the vendor-link case, Install
    flow states (running on load, succeeded, failed with Try again), Sign in, the
-   switch-off confirmation, Let agents use (and that the order editors then show it),
+   the switch-off confirmation, the "can't start yet" notice and its reason,
    reopening Settings while the machine is unreachable and a job runs then the machine
    answering (row shows `Installing…`); switching a harness off hides its account row, review-family
    option and order-editor entries.
@@ -343,7 +349,6 @@ npm --prefix viewer run test:browser
 |------|--------------|-------|
 | A CLI removed from a machine less than 15 s before a new start can still be chosen once (status cache) | Removing a harness CLI is unusual, and the start then fails with the machine's existing missing-CLI error; rare path | review-round-5 |
 | The only signed-in harness has its Lead model set to None, so the checklist completes but no lead starts | Every provider ships default models (`codex/model.sh:33-38`); needs a deliberate None on the only harness; rare path | review-round-5 |
-| A second Settings tab opened before "Let agents use" was pressed elsewhere can save its older order back | Needs two open tabs plus an unrelated save in the stale one; rare path | review-round-4 |
 
 ## Review Rounds
 
@@ -448,15 +453,24 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | minor | Row flags Pi by default, though OpenRouter is left out of the rotation on purpose | user-decision | Part of the "Let agents use" fork |
-| intent | minor | Settings and checklist disagree when Lead order reaches nothing | user-decision | Part of the "Let agents use" fork |
+| intent | minor | Row flags Pi by default, though OpenRouter is left out of the rotation on purpose | user-decision | Collin chose "Check and point" (Decision 21); the button is gone |
+| intent | minor | Settings and checklist disagree when Lead order reaches nothing | user-decision | Collin chose "Check and point" (Decision 21); the button is gone |
 | intent | minor | 404 means too many things; old service detection | upheld | S2.6, S3.6 `recipe: null`, S4.2–S4.3 |
-| mechanics | blocking | Checklist button may target a harness that repairs nothing | user-decision | Part of the "Let agents use" fork |
-| mechanics | blocking | Switched-off harness satisfies the worker test | user-decision | Part of the "Let agents use" fork |
+| mechanics | blocking | Checklist button may target a harness that repairs nothing | user-decision | Collin chose "Check and point" (Decision 21); the button is gone |
+| mechanics | blocking | Switched-off harness satisfies the worker test | user-decision | Collin chose "Check and point" (Decision 21); the button is gone |
 | mechanics | major | Draft merge breaks `any` being last | upheld | S4.2 insert before `any` |
-| mechanics | major | Hub-wide check vs the machine a thread starts on | user-decision | Part of the "Let agents use" fork |
+| mechanics | major | Hub-wide check vs the machine a thread starts on | user-decision | Collin chose "Check and point" (Decision 21); the button is gone |
 | mechanics | major | Removed recipe → POST 404 misread as old service | upheld | S4.3 `no recipe` → vendor link |
 | mechanics | minor | `use` response drops `reserved_provider` | upheld | S4.2 re-fetch settings |
+
+### Round 7 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 6:** S2.6 (`no recipe` 404; GET for every provider); S3.6 (`recipe: null` for an old service); S3.8 replaced by `can_start` from `balancer.choose`; S3.9 `start` step and `onboarding_done`; S3.10 tests; S4.2 (old-service notice, no row action for signed-in, "can't start yet" notice); S4.3 (`no recipe` → vendor link); S5 (reason under `start`); Accepted Risks row for the second tab removed; Decision 21.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
