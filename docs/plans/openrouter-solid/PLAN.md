@@ -55,7 +55,9 @@ Four OpenRouter (Pi) items plus one all-provider report fix. Evidence: `MAP.md`,
 ### S2. Thinking levels for OpenRouter agents
 
 The app's levels low, medium, high, xhigh, max map 1:1 to Pi's `--thinking <level>`. Pi's
-`off` and `minimal` are not offered. Absent effort means no `--thinking` flag (model default).
+`off` and `minimal` are not offered. A blank setting passes no `--thinking` flag and leaves the
+level to Pi (its saved session level on resume or fork, its configured default, or a model
+suffix). Pi clamps an explicit level the model cannot do; wheelchair does not check capability.
 
 Change every gate that drops effort for OpenRouter:
 - `viewer/app/providers.js:3`: openrouter `effort: true` (drives `routes.js:263`,
@@ -90,15 +92,26 @@ first turn forks the lead's Pi session, later turns resume the fork.
   (`cli.md`). Login env comes from `adapter.loginEnv(dir)` as for other providers.
 - Output parsing (Pi JSON mode, `json.md`): the first record is the session header
   `{"type":"session","id":...}`; its `id` is the `conversation_id` (for fork, the new session;
-  for resume, it must equal `from`). The reply is the text content of the last assistant
-  `message_end` record. Failure: non-zero exit, no assistant text, or an assistant message with
-  `stopReason: "error"` → `state: failed` with Pi's error message (redacted with
-  `adapters/pi.js` `redact`), else stderr's last line. `limit` is true on an HTTP 402/429 or
-  "credit" / "rate limit" text.
+  for resume, it must equal `from`). Success is judged from the settled outcome only: Pi retries
+  rate limits and network errors itself (`json.md:38-48`), so an earlier errored assistant
+  message followed by a successful retry is a success. The reply is the text of the last
+  assistant `message_end`. Failure: non-zero exit, no assistant text after settling, or the
+  last assistant message has `stopReason: "error"` → `state: failed` with Pi's error message,
+  else stderr's last line. `limit` is true only when the run ends failed and that final error
+  is an HTTP 402/429 or "credit" / "rate limit" text.
+- Redaction: `reply`, `error` and any stderr text are passed through `adapters/pi.js`
+  `redact` before the aside result is stored or returned, so an OpenRouter key never reaches
+  hub state.
+- Version gate: an OpenRouter aside on a machine whose Pi is refused by S4 (older than 1.5.2,
+  or not installed) finishes at once as `state: failed` with S4's problem text. It is checked
+  inside the runner, not at request validation, so the hub gets a terminal result and does not
+  retry the dispatch.
 - Asides fork and resume in the lead's worktree (`i.cwd`), the same directory as the lead's
   session, so Pi finds the session by id.
 - Tests: machine tests with a fake `pi` on PATH emitting JSON-mode records for fork, resume,
-  error and read-only argv (pattern of existing aside tests); hub test that an OpenRouter lead
+  error, an error followed by a successful retry (success), a key in reply and stderr (redacted),
+  an old Pi (terminal failure, no dispatch retry), read-only argv, and a spend scan over a lead
+  file plus its fork counting copied entries once (pattern of existing aside tests); hub test that an OpenRouter lead
   allows an aside (update `viewer/test/app-asides.test.js` where it pins the refusal).
 - Live check (costs money; keep it to one fork turn and one resume turn, model
   `deepseek/deepseek-v4.1-flash-1017`): extend `test-support/smoke/pi-live.js` or add a sibling,
@@ -108,13 +121,19 @@ first turn forks the lead's Pi session, later turns resume the fork.
 
 - Tested version: `1.5.2`. Older than 1.5.2 is refused; 1.5.2 up to any 1.5.x patch is
   tested; anything newer is untested but allowed (Decision 7).
+- Spend from forks (S1's totals): Pi copies the lead's entries, cost records included, into a
+  forked session file (`dist/core/session-manager.js:1409-1425`). The spend scan
+  (`machine/adapters/pi.js:24-46`) counts each assistant entry once per account, keyed by entry
+  `id` plus `timestamp`, so aside forks add only their own new turns. (Listed here because S3
+  creates the forks.)
 - Machine: probe `pi --version` cached by executable and mtime, exactly as
   `checkKimiVersion` (`machine/service.js:1601-1619`), warmed at startup. A failed or
-  unparseable probe counts as untested (warning), not refused.
+  unparseable probe counts as unknown (warning), not refused.
 - `cliStatus('pi')` (`service.js:1636`) returns `version`, plus `problem`
   ("Pi 1.5.2 or newer is needed (found X)") when older, or `warning`
   ("Pi X is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail,
-  this may be why.") when untested. A problem blocks OpenRouter starts like Kimi's
+  this may be why.") when untested, or ("Pi's version couldn't be read. If OpenRouter agents
+  fail, this may be why.") when unknown. A problem blocks OpenRouter starts like Kimi's
   (`service.js:772`) and marks OpenRouter accounts signed out; a warning blocks nothing.
 - Hub: `viewer/app/usage.js` `machineAccounts` passes the Pi problem the same way as Kimi's
   (`usage.js:59-72,126`) and the warning as its own non-blocking field; `viewer/app/ready.js`
@@ -122,12 +141,20 @@ first turn forks the lead's Pi session, later turns resume the fork.
 - Settings shows the problem or warning in plain words on each OpenRouter account's machine
   line (where `settings.js:1232` shows Kimi's problem); the warning is styled as a note,
   not an error.
-- On an untested version, a Pi session's `turn-failed` error and a Pi session that fails to
-  start (its stuck/start-failure message) end with: " Pi X is newer than the version wheelchair
-  was tested with (1.5.2); that may be the cause."
+- On an untested or unknown version, these messages end with a note: " Pi X is newer than the
+  version wheelchair was tested with (1.5.2); that may be the cause." (unknown: " Pi's version
+  couldn't be read; that may be the cause."):
+  - a Pi session's `turn-failed` error;
+  - a Pi session that never reaches its ready screen: the `stuck` event after 30s
+    (`machine/service.js:1053-1057`) carries the note, and when Pi's pane is gone before ready,
+    the machine ends the session with `end_reason` "Pi exited before it was ready" plus the note,
+    which the hub already shows in its "Session ended" card and to the starter
+    (`viewer/app/sessions.js:773-789`). This exit reason applies on every Pi version; only the
+    note depends on the version.
 - Tests in `machine/test/pi.test.js` with a fake `pi --version` (pattern of
   `machine/test/kimi.test.js:175-235`): old → problem and start refused; 1.5.2 and 1.5.9 → clean;
-  1.6.0 → warning, start allowed; probe failure → warning; turn-failed text carries the note on
+  1.6.0 → warning, start allowed; probe failure → unknown-version warning; Pi pane gone before
+  ready → session ended with "Pi exited before it was ready"; turn-failed text carries the note on
   an untested version only. Hub test that the warning reaches `/usage` and does not block Ready.
 
 ### S5. A report survives a brief failure reading the agent's log (every provider)
@@ -139,18 +166,19 @@ already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
 - `chat.sessionTranscript` gets a strict mode for report readers: a failed or timed-out machine
   call throws; a transcript that is genuinely absent (machine answers with no data, or 404)
   returns `''`.
-- `deliverReport`: when the read throws, or when the CLI is `pi` and the turn's `entry_id` is
-  not yet in the transcript (the machine's copy can lag or fail, `machine/service.js:1403-1407`),
+- `deliverReport`: when the read throws, or when the CLI is `pi`, the event carries an
+  `entry_id`, and the read (empty or absent included) does not contain that entry (the machine's copy can lag or fail, `machine/service.js:1403-1407`),
   retry the read inline: up to 3 more attempts, 1 second apart, within the same event handling.
   A text found inline in the hook payload (non-Pi) is used at once, as today.
 - If every attempt fails, behave as today for a missing report: no result, and `quiet.arm`
   reminds the agent to repeat its report (`viewer/app/quiet.js:8-9`). That reminder is the
   recovery path; nothing is persisted and no timer is added.
-- A genuinely absent or empty transcript behaves as today (no retries). A delivered report is
+- For non-Pi sessions, a genuinely absent or empty transcript behaves as today (no retries).
+  For Pi with an `entry_id`, the entry rule above wins: an empty first read is retried. A delivered report is
   never delivered twice (`target.finished` guard stays).
 - Tests in `viewer/test/` (pattern of `app-chat.test.js:362-375`): a reviewer whose first
   transcript read fails and second succeeds gets exactly one result delivered; a Pi verifier
-  whose entry appears on a later read gets its report; an absent transcript makes one read only,
+  whose first read is empty and whose entry appears on a later read gets its report; an absent transcript makes one read only,
   produces no report and arms the quiet check; all attempts failing arms the quiet check.
 
 ### Non-goals
@@ -191,6 +219,15 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 |------|----------|---------|--------------|------------|
 | intent | minor | S5 over-built: the quiet reminder already recovers the report; persisted pending + 2-minute timer not needed | upheld | S5 now retries inline (3 attempts, 1s apart) then falls to the quiet reminder; IDEA's "never recovered" overstates: today recovery costs an extra agent turn (noted in Log) |
 | intent | minor | Pi missing-entry rule would delay the quiet reminder ~2 minutes | upheld | Resolved by the same change: at most ~3s delay |
+| mechanics | blocking | Aside forks copy cost records; spend counts them twice | upheld | S4 spend scan dedupes by entry id + timestamp |
+| mechanics | blocking | Pi auto-retry: an early error would fail a reply that later succeeded | upheld (major: worker would have to ask) | S3 judges the settled outcome; fixture added |
+| mechanics | blocking | Aside reply and stderr not redacted | upheld | S3 redacts reply, error, stderr |
+| mechanics | blocking | Aside bypasses the old-Pi gate; refused dispatch retried forever | upheld (major) | S3 version gate inside runner, terminal failed result |
+| mechanics | major | No visible path for Pi exiting before ready | upheld | S4: stuck event and "Pi exited before it was ready" end_reason carry the note |
+| mechanics | minor | Unknown version worded as "newer" | upheld | S4 separate unknown wording |
+| mechanics | blocking | S5 pending record vs queued input | declined | Reviewed a superseded S5: after the intent finding S5 retries inline (~3s) with no pending record, so no later turn can interleave |
+| mechanics | major | Pi empty first read: absent vs missing entry conflict | upheld | S5: for Pi with entry_id the entry rule wins; test added |
+| mechanics | minor | Blank thinking is not "model default" | upheld | S2 wording: left to Pi |
 
 ## Implementation Tasks
 
