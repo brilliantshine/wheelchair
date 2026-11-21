@@ -311,7 +311,7 @@ stays as review history.
 
 ### Round 2 — 2026-11-21
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:**
 - S4: `only_ai` names an AI (`any` or a provider key); markers kept on `replace` unless explicitly cleared.
