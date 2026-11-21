@@ -31,6 +31,7 @@ created: 2026-11-20
 | 9 | Turning off the harness the lead model runs on is refused until another lead model is picked | Otherwise every new thread would be stuck | defaulted |
 | 10 | Checklist has two steps (install, sign in); no "choose" step | Choosing is optional: all harnesses default on | defaulted |
 | 15 | Supersedes 13: a harness is added to Workers try first only when nothing in Lead order is installed, at most once, however it was installed | Review round 2: Settings-only trigger missed terminal and vendor-link installs; avoid silently adding pay-per-token OpenRouter for users who already have a working lead | review-round-2 |
+| 17 | Supersedes 13 and 15: the hub never changes Lead or Worker order on its own. A harness that is signed in but not reachable from Lead order shows "Add to Lead order" in Settings and as a checklist step | Review round 3: the automatic append raced Settings drafts, missed a Lead order without `any`, and depended on a page being open; an explicit button avoids all three | review-round-3 |
 | 16 | Install result survives a service restart (job writes a result file); was Deferred D4 | Review round 2: setup steps must run inside the job, which makes the result file free | review-round-2 |
 | 11 | Supersedes 9: switching a harness off is refused only when Lead order (with `any` expanded) would have no enabled harness | Review round 1: the "lead model setting" does not exist; the old rule blocked Codex-only users from leaving Claude out | review-round-1 |
 | 12 | The switch stops new placements only; running agents, asides and retries of an unanswered start continue | Review round 1 | review-round-1 |
@@ -72,9 +73,10 @@ Antigravity, Kimi Code, Pi (OpenRouter).
      assertions with: exit 0; prints the "No agent CLI yet" line; writes no Claude or Codex
      homes; runs the stale-viewer check; machine unit PATH contains `$HOME/.local/bin` and
      `$HOME/.kimi-code/bin`.
-   - Restricted-PATH cases (`run_case`, `163-169`): also shim each S1.1 prerequisite (`node
-     npm tmux git gh curl`), linking the real tool when present and otherwise writing a stub
-     script that exits 0, so those cases still reach what they test.
+   - Restricted-PATH cases (`run_case`, `163-169`): also shim the S1.1 prerequisites `npm tmux
+     git gh curl`, linking the real tool when present and otherwise writing a stub script that
+     exits 0, so those cases still reach what they test. Never replace a shim
+     `install_shims` (`99-103`) already writes: the existing `node` shim stays as it is.
    - `no_pi` (`326`): keep "absent pi is not reported"; replace the PATH assertion with
      "`$HOME/.local/bin` is on the machine unit PATH even with pi absent".
    - New case: `tmux` absent from the shim → exit 1, output names `tmux`, no state files
@@ -143,7 +145,9 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    - `GET /v1/status` adds `recipes: {<provider>: true|false}` for the five providers.
 7. **Tests** in `machine/test/run.sh` using `WHEELCHAIR_HARNESS_RECIPES` with fake commands that
    drop a fake executable into a temp `$HOME/.local/bin`: success; non-zero exit; 409 on a
-   second start; a simulated service restart while a fake recipe is still running, after which
+   second start; a service restart while a fake recipe is still running — the test kills the
+   original service process (not only its listener, unlike `machine/test/service.test.js:243`)
+   and starts a new one on the same state; the new one refuses a second start with 409; then
    the recipe exits 0 and the job still runs the (shimmed) setup step and validation and GET
    reports `succeeded`; unknown provider 404; a failed download in a script recipe →
    `failed`;
@@ -173,7 +177,10 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    enabled provider → 409 with the same message.
 4. **Placement.** In `viewer/app/balancer.js`, a provider whose switch is off is never
    eligible: drop it from the expanded order before the provider loop (`58-63`) and in the
-   worker check (`48`). A review family whose harness is off counts as unavailable, so the
+   worker check (`48`). A provider also counts as signed in on a machine only when that
+   machine reports its CLI installed (from the `installed` kept in S3.6's status fetch), so
+   `signedIn` (`balancer.js:19-22`) and everything built on it — placement, the worker check
+   and the reservation — skip a harness whose executable is gone even if its login remains. A review family whose harness is off counts as unavailable, so the
    existing fallback (`38-47`) applies. `usage.rank` gives such accounts the reason `skipped:
    left out in Settings`. `reservedProvider` (`balancer.js:23-26`) uses the same enabled
    order, so a switched-off provider is never the one saved for leads.
@@ -193,35 +200,36 @@ Antigravity, Kimi Code, Pi (OpenRouter).
 7. **Install forwarders** in `viewer/app/routes.js`, following the sign-in pattern
    (`412-421`): `POST` and `GET /machines/<machine>/harnesses/<provider>/install` →
    `hub.call(machine, '/v1/harnesses/<provider>/install', method)`. Unreachable → 502 with the
-   machine name. When a GET returns `succeeded` for the first time for that start, the hub (a)
-   drops the status cache for all machines (`cache.delete(hub)` in `usage.js`). `GET
-   /harnesses?fresh=1` also drops it first.
-8. **Making sure a lead can start.** Each time the hub builds `/harnesses` data (also used by
-   `/onboarding`), if no provider in the enabled, expanded Lead order is installed on any
-   reachable machine, but some enabled provider is installed somewhere and is neither in
-   `worker_order` nor in the new settings list `worker_order_auto_added`, the hub appends the
-   first such provider (display order) to `worker_order` and to `worker_order_auto_added`
-   (array of provider keys, normalized like `worker_order_seen`, default `[]`). So a Pi-only
-   machine works however Pi got installed, a provider is added at most once (removing it
-   later sticks), and nothing is added for a user whose Lead order already reaches an
-   installed harness. `/harnesses` returns `auto_added: [...]`.
+   machine name. `GET /harnesses?fresh=1` drops the status cache for all machines first
+   (`cache.delete(hub)` in `usage.js`); the page asks for it after an install or sign-in ends
+   (S4.3, S4.4). The hub keeps no per-install memory.
+8. **Reaching a harness from Lead order.** `/harnesses` reports, per provider, `in_lead_order`:
+   true when the provider is in `lead_order` expanded as the balancer does (`any` →
+   `worker_order`). New route `POST /settings/lead-order/add` body `{provider}` → appends the
+   provider to `lead_order`, before `any` when present, else at the end, unless already
+   reachable; returns `describe()`. Unknown provider → 404. The hub never changes either order
+   on its own.
 9. **Onboarding status** `GET /onboarding` → `{show, steps:[{id:"install", label:"Install an
    agent harness", done}, {id:"signin", label:"Sign in to it", done}]}`, from `GET
    /harnesses` data. `install` is done when some reachable machine has an enabled harness
    installed. `signin` is done when some reachable machine has a provider that is enabled,
-   installed and `signed_in` on that same machine, and appears in the expanded `lead_order`.
-   `show` is true when not both are done and at least one machine is reachable; false when
+   installed and `signed_in` on that same machine. A third step `{id:"lead", label:"Let agents
+   start on it", done}` is included only when `signin` is done for some provider but no such
+   provider is `in_lead_order`; it is done otherwise. Each step not done carries `provider`
+   (the first matching one, display order) so the card can act.
+   `show` is true when not every included step is done and at least one machine is reachable; false when
    none is reachable.
 10. **Tests** in `viewer/test/`: normalize defaults and bad values; `describe` includes
    `harnesses`; PUT 200/400/404 and the lead-order 409 (default `['claude','any']` with only
    claude off → 200); balancer never places a new session on a switched-off provider, falls
    back for a switched-off review family, and does not block an aside or an unanswered-start
    retry; Ready reason; `/harnesses` shape with one reachable and one unreachable machine;
-   forwarders pass through, 502, and on first `succeeded` clear the cache; the S3.8 append
-   (Pi-only: appended once; removed later: not re-added; Claude installed with default orders:
-   nothing appended); order writes refused when they empty the enabled Lead order;
+   forwarders pass through and 502; `?fresh=1` clears the cache; `lead-order/add` (with and
+   without `any`, already reachable, unknown); onboarding's `lead` step for Pi-only with default
+   orders and with saved `['claude']`; balancer skips a provider whose CLI is not installed
+   though its account is logged in; order writes refused when they empty the enabled Lead order;
    reservation skips a switched-off provider; onboarding for no CLI, installed-not-signed-in, installed on one machine
-   with sign-in only on another (not done), Pi-only after install (done), and done.
+   with sign-in only on another (not done), and done.
 
 ### S4. Settings page (`viewer/pages/settings.js`)
 
@@ -231,20 +239,25 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    rows.
 2. One row per harness, in display order: the name; its state on the picked machine: `Not
    installed`, `Installed <version>` (version omitted when null), or `Signed in`; a **Use**
-   switch (shared by all machines); when the provider is in `auto_added`, the note `Added to
-   Workers try first so agents can start on it.`; and an action:
+   switch (shared by all machines); and an action:
    - `recipe: false` and not installed → a link "Install from <vendor>'s site" to the docs URL
      kept in a page constant per provider;
    - not installed, or the last install on this machine `failed` → **Install** (or **Try
      again** after a failure);
-   - installed, not signed in → **Sign in**.
+   - installed, not signed in → **Sign in**;
+   - installed, signed in, not `in_lead_order` → the note `Agents won't start on this yet.`
+     and **Add to Lead order** (`POST /settings/lead-order/add`; then the page reloads its
+     settings state, so the Lead and Worker order editors show the saved order).
    No action when the switch is off.
 3. **Install state on load.** On page load and whenever the picked machine changes, the page
    GETs install state for each enabled provider on that machine. `running` → shows
    `Installing…` with the output tail (monospace, scrolls, fits a phone) and polls every 2 s;
    `failed` → `Install failed`, the tail, and **Try again**, even when the CLI is now on disk;
-   `succeeded` → re-fetch `/harnesses`. Pressing Install POSTs, then polls the same way; a 409
-   just starts polling.
+   `succeeded` → re-fetch `/harnesses?fresh=1`. Pressing Install POSTs, then polls the same way;
+   a 409 just starts polling. If the POST or a poll fails (502, network error, no answer), the
+   row shows `Can't reach <machine>, retrying…` and keeps polling GET every 2 s until it
+   answers, then shows whatever state it reports, so a job that started or kept running
+   during the outage is picked up without a reload.
 4. **Sign in** uses the first account of that provider that is neither retired nor paused. It
    mounts the existing sign-in card (`viewer/pages/settings.js:1082-1140`) inline under that
    harness row, for the picked machine (not in the Accounts panel), and when the card closes
@@ -262,13 +275,14 @@ Antigravity, Kimi Code, Pi (OpenRouter).
 ### S5. Home checklist (`viewer/pages/threads.js`, `threads.html`)
 
 1. On load and on each existing 5 s poll, fetch `GET /onboarding`. When `show` is true, render a
-   card at the top of the thread list titled "Set up an agent", the two steps with a tick when
+   card at the top of the thread list titled "Set up an agent", its steps with a tick when
    done, the line "Leave out the ones you don't use.", and a button **Open Settings** to
-   `settings#harnesses`. When `show` is false or the fetch fails, render nothing.
+   `settings#harnesses`. When the `lead` step is shown and not done, it has its own **Add
+   <Harness> to Lead order** button (the S3.8 route), after which the card refetches. When `show` is false or the fetch fails, render nothing.
 2. Browser tests (`npm --prefix viewer run test:browser`) with stubbed responses: the card
    shows and hides; the Harnesses section renders five rows, the vendor-link case, Install
    flow states (running on load, succeeded, failed with Try again), Sign in, the
-   switch-off confirmation; switching a harness off hides its account row, review-family
+   switch-off confirmation, Add to Lead order; switching a harness off hides its account row, review-family
    option and order-editor entries.
 
 ### Non-goals
@@ -352,6 +366,15 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Per-start cache-drop memory is leftover | upheld | S3.7 `?fresh=1` only |
+| intent | minor | Order write as a side effect of reads | upheld | Removed with the append (Decision 17) |
+| mechanics | blocking | S1.6 would replace the existing `node` shim | upheld | S1.6 keeps `install_shims` shims |
+| mechanics | blocking | Append doesn't help a Lead order without `any` | upheld | S3.8 explicit Add to Lead order (Decision 17) |
+| mechanics | blocking | Append depends on a page request | upheld | Removed with the append |
+| mechanics | blocking | Settings draft can undo the append | upheld | Removed with the append; page reloads settings after Add |
+| mechanics | major | Placement ignores whether the CLI is installed | upheld | S3.4 |
+| mechanics | major | Restart test may not kill the service | upheld | S2.7 |
+| mechanics | major | Page doesn't recover from a machine blip during install | upheld | S4.3 |
 
 ## Implementation Tasks
 
