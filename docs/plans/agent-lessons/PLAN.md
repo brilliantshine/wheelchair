@@ -309,6 +309,24 @@ stays as review history.
 | mechanics | minor | Remove notice lacks the removed lesson's scope | upheld (minor) | S4/S6: card stores a snapshot; notice drawn from it |
 | mechanics | minor | Settings link has no destination after the last lesson is removed | upheld (minor) | S6/S7: fixed address opens the role's entry even when empty |
 
+### Round 2 — 2026-11-21
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 1:**
+- S4: `only_ai` names an AI (`any` or a provider key); markers kept on `replace` unless explicitly cleared.
+- S4: settings write first, then the notice card; crash between is an Accepted Risk.
+- S4: repeated add/replace/remove succeed without duplicates; new 503 wording.
+- S4: the full-cap refusal lists every lesson for the role.
+- S4/S6: the card stores a snapshot of the lesson; the notice uses it.
+- S3/S5: lessons are not counted by `assertFits()`.
+- S6/S7: a fixed Settings address opens a role's Lessons entry, even when empty.
+- S7: `PATCH /settings/lessons/<role>` with explicit `edits` and `removals`.
+- S8, S10: matching protocol and test changes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
