@@ -3,6 +3,8 @@
 Checked against: `92c2db2211096a2360b7b93f7bb1623805f6209d` (origin/main)
 Files covered: `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.md`, `protocol/app/cards-lead.md`, `viewer/app/wc.js`, `viewer/app/card.js`, `viewer/app/cards.js`, `viewer/app/routes.js`, `viewer/app/hub.js`, `viewer/app/threads.js`, `machine/service.js`, `.github/workflows/macos.yml`, `viewer/test/app-machines.test.js`, `viewer/test/app-merged.test.js`, `viewer/test/app-merged.spec.js`, `viewer/test/protocol-rules.test.js`, `machine/test/service.test.js`.
 
+> Finishing, check-card and merge-detection paths rechecked against `249d3a8ba14731806c3f2d40a25596b9294e6999` in [auto-merge-flow.md](auto-merge-flow.md); other historical claims retain their original checked commit.
+
 > Historical map: covered files changed since the checked commit. In particular, the claim below that no acceptance gate exists is obsolete; see [done-card.md](done-card.md) for the current done-card gate and finishing paths. Other paths here have not been revalidated.
 > Local-project paths rechecked against `4cfa20cd5aafa0418afabb829c9a4c73430a435f` in [local-project-runtime](local-project-runtime.md); other contents retain the historical checked-against commit above.
 
