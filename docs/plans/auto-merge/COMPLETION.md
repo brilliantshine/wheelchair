@@ -92,3 +92,24 @@ The full `npm run test:browser` suite was not run, only the four specs that touc
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 (after verification attempt 1 at `768b036e`)
+
+Gaps and judgment are in `REMEDIATION-1.md`. One rare path (a ready response just past the wait deadline) went to Accepted Risks as `verification-1`.
+
+| Gap | Fix | Evidence |
+|-----|-----|----------|
+| A held outcome added the notice even with a `merged` card for the PR (R1-a, gpt light / gpt-6-luna) | `viewer/app/auto-merge.js:39-40`: the held branch adds the card only when no `merged` card for `done.pr_url` exists | `viewer/test/app-auto-merge.test.js:51` ("held gate does not add notice when pull request already has a merged card") |
+| The switch's save note said "Saved, applies to new sessions" (R1-b, claude light / claude-haiku-5-5) | `viewer/pages/settings.js:495,507` `modeGroup` takes an optional saved note; `:594` passes `'Saved'` | `viewer/test/app-settings.spec.js:258` (clicks On, note is exactly `Saved`, On survives a reload) |
+
+Validation after both merges:
+
+```
+$ cd viewer && node --test test/*.test.js
+# tests 793
+# pass 793
+# fail 0
+
+$ cd viewer && npx playwright test test/app-settings.spec.js --reporter=line   (R1-b branch)
+  70 passed (34.3s)
+```
