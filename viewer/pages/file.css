@@ -1,0 +1,4 @@
+/* The sent-file preview page. Shell and Markdown styles come from doc.css; tokens from app.css. */
+#file-text { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
+  margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+#file-name { overflow-wrap: anywhere; }

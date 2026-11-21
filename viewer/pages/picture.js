@@ -28,6 +28,35 @@
     return res.json();
   }
 
+  // The Download button: a PNG drawn in this page for graphs and forms, a plain link for HTML.
+  const dlEl = $('download'); const noteEl = $('download-note');
+  let busy = false;
+  function note(text) { noteEl.hidden = !text; noteEl.textContent = text || ''; }
+  function offerPng(name, make) {
+    dlEl.hidden = false; dlEl.href = '#'; dlEl.removeAttribute('download');
+    dlEl.onclick = async (ev) => {
+      ev.preventDefault();
+      if (busy) return;
+      busy = true; note('');
+      try { await window.WCPictureExport.save(await make(), window.WCPictureExport.fileName(titleEl.textContent, name)); }
+      catch (e) { note(e.message || 'Could not make the PNG.'); }
+      busy = false;
+    };
+  }
+  function graphPng(name) {
+    offerPng(name, () => {
+      const f = pictureEl.querySelector('iframe.picture-frame');
+      return window.WCPictureExport.graphCanvas(f && f.contentDocument);
+    });
+  }
+  function formPng(src, name) {
+    offerPng(name, async () => {
+      const res = await fetch(src);
+      if (!res.ok) throw new Error('Could not load this diagram (status ' + res.status + ').');
+      return window.WCPictureExport.formCanvas(await res.json());
+    });
+  }
+
   async function showCard() {
     let chat;
     try { chat = await fetchJson(T() + '/chat', 'thread'); } catch (e) { return say(e.message); }
@@ -37,8 +66,13 @@
     const thread = chat.thread;
     messageEl.hidden = true;
     const ctx = { id: id, archived: !!thread.archived, worktree: thread.worktree };
-    if (card.format === 'form') window.WCDiagram.draw(card, pictureEl, ctx, new Map());
-    else frame(window.WCDiagram.source(card, ctx), card.title || card.graph, card.format === 'html');
+    const src = window.WCDiagram.source(card, ctx);
+    if (card.format === 'form') { window.WCDiagram.draw(card, pictureEl, ctx, new Map()); formPng(src, card.graph); }
+    else {
+      frame(src, card.title || card.graph, card.format === 'html');
+      if (card.format === 'html') { dlEl.hidden = false; dlEl.href = src + '&download=1'; }
+      else graphPng(card.graph);
+    }
   }
 
   async function showAside() {
@@ -50,6 +84,7 @@
     title('Aside: ' + quote.slice(0, 40));
     messageEl.hidden = true;
     frame('/wheelchair/?path=' + encodeURIComponent(item.graph), 'Aside diagram', false);
+    graphPng('aside');
   }
 
   if (!id) say('No thread was given.');
