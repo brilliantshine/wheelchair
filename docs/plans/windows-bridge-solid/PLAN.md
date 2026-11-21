@@ -132,7 +132,8 @@ is not rewritten: the agent CLI connects to the port in WSL as written.
   confirmed gone (absent from `liveTmux()`), not merely marked stopped: the stop path
   releases them after a successful `kill-session` check, and `WinBridge.sweep()` (every 60 s)
   releases the ports, reservations and launch record of any recorded session no longer in
-  `liveTmux()`, which covers handoff kills and crashes. The forward closes as soon as its last
+  `liveTmux()` and not still starting (names in the service's `startingNames` are skipped, as
+  the Antigravity tool-file sweep already does), which covers handoff kills and crashes. The forward closes as soon as its last
   user is released, or when its thread archives. Teardown closes the listeners, destroys every accepted connection still open
   (for example a long-lived SSE stream) and stops the relay; the port's `windows`
   reservation is released only after all of that has finished, so an opposite-meaning reservation can never reach a listener still open.
@@ -152,7 +153,8 @@ is not rewritten: the agent CLI connects to the port in WSL as written.
     warning `<tool>: port <port> is used by a Linux tool in another session, so it can't reach
     Windows; left out of this session`, and `win info` shows it as `"used by a Linux tool"`.
   Reservations are released in step (4) for entries not loaded, when a start fails or is
-  cancelled, and when the session stops (a `windows` one after its listeners close, above).
+  cancelled, and when the session is confirmed gone as in the Forward bullet above (a
+  `windows` one after its listeners close).
   They are recorded in the launch record (below) and rebuilt from it for live sessions at
   startup.
 - **Port taken on Linux.** If `127.0.0.1:<port>` (or `[::1]:<port>` when needed, see above)
@@ -176,7 +178,7 @@ binds a loopback URL can reach); if one exists the marked entry is withheld exac
 **Machine service restart and the launch record.** tmux sessions survive a service restart,
 so forwards and Windows tool state must too. In step (4), **before tmux is started**, the
 machine writes the session's launch record to `<stateDir>/win-sessions.json` (one entry per
-session name; written atomically, mode 0600; entry removed when the session stops or its start
+session name; written atomically, mode 0600; entry removed when the session is confirmed gone as in §1's Forward bullet, or its start
 fails): its port reservations with meanings, the addresses bound for each forwarded port
 (`127.0.0.1`, `::1`), each marked tool's name, port and launch outcome (the `forwards` state
 `win info` reports, including withheld ones), `wrapped` (has at least one go-between) and
@@ -319,8 +321,9 @@ it and never sees the stale copy.
 **Stop waits for wrapped tools.** While a go-between's real tool runs, the go-between keeps
 a file `<stateDir>/win-tools/<session name>/<go-between pid>` (created when it starts the real
 tool, removed after the tool's job has closed and its pipes are shut). `WinBridge.onStop` for a
-`wrapped` session waits until that directory is empty (polling, up to 15 s; entries whose pid
-is no longer alive are removed) before the final stop reconcile, so a tool's last writes are in
+`wrapped` session waits until the `win-tools` directories of **every** session registered on
+the same copy key are empty (polling, up to 15 s; entries whose pid is no longer alive are
+removed) before the final stop reconcile, so a tool's last writes are in
 the final Windows snapshot. A timeout logs it and reconciles anyway. The same gate applies to
 `WinBridge.sweep()`'s final reconcile: a copy is not swept-reconciled while any session sharing
 it (registered for that copy key) still has entries in its `win-tools` directory with live
@@ -502,6 +505,9 @@ copies or git data; no IPv6-only Windows servers.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| In mirrored mode, a Linux server started later on a marked tool's loopback port, while the Windows tool is down, receives that live CLI's requests | Rare path: needs the opt-in mirrored mode, the Windows tool down, and a Linux server on the same port; it is the user's own service | review-round-8 |
+| A go-between that crashes while its Windows tool keeps writing lets the shutdown gate pass early | Rare path: needs the go-between itself to crash mid-session | review-round-8 |
+| A service restart between tmux creation and session persistence can ready a different copy in recovery | Rare path: a restart inside that launch window plus a pane directory that differs from the worktree | review-round-8 |
 | An unmarked URL written with an IPv4-mapped address (`http://[::ffff:127.0.0.1]:<port>`) is not covered by port reservations and can reach a Windows forward | Rare path: unusual hand-written address form | review-round-5 |
 | While the machine service is down (restart or crash), a forwarded port is unbound; a Linux process that takes it in that window can receive a live CLI's requests and headers for that tool | Rare path: needs a service restart and another Linux process binding that exact port in the gap; startup re-claims it and reports a failure | review-round-2 |
 
@@ -660,6 +666,12 @@ copies or git data; no IPv6-only Windows servers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Sweep can release a starting session's ports before tmux exists | upheld | §1 sweep skips `startingNames` |
+| mechanics | blocking | Mirrored mode: a later Linux server takes the port | accepted-risk | Rare path |
+| mechanics | blocking | Dead go-between pid doesn't prove the Windows job ended | accepted-risk | Rare path: go-between crash |
+| mechanics | blocking | Two sessions on one copy stopping together reconcile before the other's tool ends | upheld | §4 stop gate is copy-wide |
+| mechanics | blocking | Rare path: restart between tmux and persistence readies another copy | accepted-risk | Rare path (self-labelled) |
+| intent | minor | Older "when the session stops" wording left in §1 | upheld | §1 points to the confirmed-gone rule |
 
 ## Implementation Tasks
 
