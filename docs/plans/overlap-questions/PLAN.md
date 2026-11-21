@@ -58,6 +58,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 29 | Pre-confirmation overlaps are held, not late; withdrawn overlap cards clear their Open Question; a Spec change asked in chat during a running round waits for triage and the next round; on a small fix the latest instruction wins and committed edits close its cards; a talk-instead retract refused by Start building leaves the build running | Round 10 findings | review-round-10 |
 | 30 | A Spec change asked in chat during a running round uses the pending pull-back pattern (`Pending change:` / `Applied change:` Log lines; not clean; counts as one found item; replayed on restart) | Round 11 findings | review-round-11 |
 | 31 | A chat Spec change logs `idea-change` when it drops promised scope; restart with live reviewers applies a pending change before restarting the same pass; a chat change to an approved plan retracts the approval first; re-asking an open card retracts and reposts it | Round 12 findings | review-round-12 |
+| 32 | Split off: how a Spec change the user asks for in chat during a running review or after approval is saved, counted, survives a restart and withdraws the approval moves to its own thread (stub). Supersedes Decisions 30 and the chat-change parts of 31; a late overlap here gets only the one-line mention and a follow-up offer | Rounds 10-12 kept finding gaps there, and they are gaps in the existing review rules, not about overlaps; the user picked "Split it off" (card 72ce279f) | user |
 
 ## Spec
 
@@ -82,17 +83,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   of its next visible reply which thread overlaps, what it is doing, and that a follow-up thread
   can be started; if the user asks for one, the lead posts a `stub` (`depends_on_parent` by the
   Stubs rule). If the user instead asks in chat to change this thread's plan or work, that is
-  handled like any other change they ask for at that step; during a running review round, such
-  a Spec change follows the pending pull-back pattern: commit `Pending change: <one line>` to
-  the Log at once; the round is not clean while it waits and counts it as one found item (so a
-  round with no other counted finding posts `phase: fixing`, `found: 1`); after triage, fold it
-  into the Spec with a Decision Log entry (source `user`, or `idea-change` with the item moved to
-  Not doing when it removes something IDEA.md promises) and an `Applied change: <same line>`
-  Log line in one commit, counting it fixed, and list it in the next round's "Changed since".
-  On restart, an unmatched `Pending change:` line is replayed like a pending pull-back: if
-  reviewers are live, stop them, apply it, and restart the same pass, which counts it. A chat
-  change to an approved plan first retracts the approval card; a `Start building was already
-  pressed` refusal means the build stands (late overlap). Repeating the line after a restart
+  handled like any other change they ask for at that step (this plan adds no rule for that; a separate thread covers chat changes during review and after approval, Decision 32). Repeating the line after a restart
   is harmless.
 - **Actionable answer** of an overlap card, in this order: `answered_value` when
   `answered_action` is `picked` or `answered` (a press or the card's own box); else
@@ -243,6 +234,15 @@ merging of branches; no sub-lead or worker rule changes.
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 13 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 12:** Round 12 fixes (Decision 31), then Decision 32 (split): Terms "Late overlap" no longer defines how a chat Spec change during review or after approval is handled (pending lines, counting, restart replay and approval retract removed); those cases are out of scope here.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 12 — 2026-11-21
 
