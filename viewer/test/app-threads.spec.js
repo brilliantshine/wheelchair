@@ -521,7 +521,7 @@ for (const [label, size] of SIZES) {
 
       // The link stays hidden until the line is hovered.
       const leftRow = page.locator('.card-done .bullet', { hasText: 'Resize terminal' });
-      await expect(leftRow.getByRole('button', { name: 'Start a thread about it' })).toBeHidden();
+      await expect(leftRow.getByRole('button', { name: 'Start a thread about it' })).toHaveCSS('opacity', '0');
       await leftRow.hover();
       req = pressTo(dn.id);
       await leftRow.getByRole('button', { name: 'Start a thread about it' }).click();
