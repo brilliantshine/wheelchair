@@ -114,7 +114,66 @@ test('readying uses the adapter loaded entries', async () => {
     write(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { windows: { command: e.exe } } }));
     const seen = [];
     e.instance.win.beforeLaunch = async (session, opts) => { seen.push([session.cli, opts.windowsTools]); };
-    for (const cli of ['claude', 'codex', 'agy']) await start(e, 'lead', dir, { cli });
-    assert.deepEqual(seen, [['claude', true], ['codex', true], ['agy', true]]);
+    write(path.join(e.root, 'bin/pi'), '#!/bin/sh\nexit 0\n', 0o755);
+    write(path.join(e.root, 'bin/kimi'), '#!/bin/sh\necho 2.6.3\n', 0o755);
+    for (const cli of ['claude', 'codex', 'agy', 'pi', 'kimi']) await start(e, 'lead', dir, { cli });
+    assert.deepEqual(seen, [['claude', true], ['codex', true], ['agy', true], ['pi', false], ['kimi', false]]);
+  } finally { await e.close(); }
+});
+
+
+test('Codex readying follows the override budget', async () => {
+  const e = await service(); try {
+    const dir = repo(e.root);
+    const servers = {};
+    for (let i = 0; i < 220; i++) servers[`windows_${i}`] = { command: '/mnt/c/a.exe', args: ['x'.repeat(40)] };
+    const json = JSON.stringify({ mcpServers: servers });
+    assert.ok(Buffer.byteLength(json) < 32 * 1024);
+    write(path.join(dir, '.mcp.json'), json);
+    let ready;
+    e.instance.win.beforeLaunch = async (session, opts) => { ready = opts.windowsTools; };
+    await start(e, 'lead', dir, { cli: 'codex' });
+    assert.equal(ready, false);
+  } finally { await e.close(); }
+});
+
+test('start writes Unity and cached bridge lines after the role prompt', async () => {
+  const e = await service(); try {
+    const dir = repo(e.root);
+    write(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { unity: { command: e.exe, args: ['mcp-for-unity'] } } }));
+    write(path.join(dir, 'ProjectSettings/ProjectVersion.txt'), 'm_EditorVersion: 2022.3.1f1\n');
+    const editor = path.join(e.mount, 'c/Program Files/Unity/Hub/Editor/2022.3.1f1/Editor/Unity.exe');
+    write(editor, '');
+    e.instance.win.bridgeHealth = () => ({ ok: false, reason: 'x' });
+    const first = await start(e, 'lead', dir);
+    const prompt = fs.readFileSync(path.join(e.state, 'prompts', `${first.name}.md`), 'utf8');
+    const copy = (await e.instance.win.sessionEnv(e.instance.sessions[first.name])).WHEELCHAIR_WINDOWS_PROJECT;
+    assert.ok(prompt.indexOf('Windows bridge:') > 0);
+    assert.match(prompt, /Windows bridge: not working.*\(x\)/);
+    assert.ok(prompt.includes(copy));
+    assert.ok(prompt.includes('C:\\Program Files\\Unity\\Hub\\Editor\\2022.3.1f1\\Editor\\Unity.exe'));
+    fs.unlinkSync(editor);
+    e.instance.win.bridgeHealth = () => ({ ok: null });
+    const second = await start(e, 'worker', dir);
+    const fallback = fs.readFileSync(path.join(e.state, 'prompts', `${second.name}.md`), 'utf8');
+    assert.match(fallback, /Open Unity 2022\.3\.1f1.*<Unity\.exe>/);
+    assert.doesNotMatch(fallback, /Windows bridge: not working/);
+    write(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { other: { command: e.exe } } }));
+    const third = await start(e, 'sub-lead', dir);
+    const ordinary = fs.readFileSync(path.join(e.state, 'prompts', `${third.name}.md`), 'utf8');
+    assert.doesNotMatch(ordinary, /Unity: your project copy|Before any other Unity MCP call/);
+  } finally { await e.close(); }
+});
+
+test('start does not wait for an unresolved bridge probe', async () => {
+  const e = await service(); try {
+    const dir = repo(e.root);
+    e.instance.win.health = { ok: null };
+    e.instance.win.winEnv.probe = () => new Promise(() => {});
+    e.instance.win.runBridgeProbe();
+    const startTime = Date.now();
+    const session = await start(e, 'lead', dir);
+    assert.ok(Date.now() - startTime < 5000);
+    assert.doesNotMatch(fs.readFileSync(path.join(e.state, 'prompts', `${session.name}.md`), 'utf8'), /Windows bridge: not working/);
   } finally { await e.close(); }
 });
