@@ -411,6 +411,9 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | `auto_merge` preference: settings, PUT preferences, Settings page row (Spec §1) | viewer/app/settings.js, viewer/app/routes.js, viewer/pages/settings.js, viewer/test/app-settings.test.js | light / claude-haiku-5-5 | wc-91de6c1c2eb1-worker | `node --test test/app-settings.test.js`; full `node --test test/*.test.js`; grep auto_merge; app-settings.spec.js | in progress |
+| T2 | tricky: hub auto-merge module, check trigger, `verified` validation, result commit delivery, card closing and dismiss (Spec §2 hub parts, §3) | viewer/app/auto-merge.js (new), viewer/app/cards.js, viewer/app/card.js, viewer/app/threads.js, viewer/pages/thread.js, viewer/test/app-auto-merge.test.js | standard / (assigned at start) | — | `node --test test/app-auto-merge.test.js`; full suite; needs/check-card/merged specs | not started (after T1) |
+| T3 | Lead protocol text (Spec §4) | protocol/app/lead.md, protocol/app/cards-lead.md | standard / claude-sonnet-5-5 | wc-91de6c1c2eb1-worker-2 | greps for verified / Never merge / Not merged automatically | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
