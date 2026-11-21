@@ -636,7 +636,7 @@ async function event(hub, payload) {
     target.needs_open = true;
     target.permission_open = permission;
     const title = type === 'stuck' ? 'Session stuck at startup' : 'Permission needed';
-    const body = `${target.name} needs attention before messages can continue.`;
+    const body = `${target.name} needs attention before messages can continue.${type === 'stuck' ? (payload.note || '') : ''}`;
     target.needs_card = addCard(
       thread,
       { kind: 'needs', title, body },

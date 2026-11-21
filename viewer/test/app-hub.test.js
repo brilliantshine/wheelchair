@@ -454,10 +454,11 @@ test('posts and clears a stuck-session need', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0];
-    await event(context, made.id, lead.name, 'stuck');
+    await event(context, made.id, lead.name, 'stuck', { note: ' Pi version note.' });
     await event(context, made.id, lead.name, 'ready');
     const chat = await api(context, `/threads/${made.id}/chat`);
     const need = chat.body.cards.find((item) => item.title === 'Session stuck at startup');
+    assert.match(need.body, /Pi version note/);
     assert.equal(need.answered, true);
   });
 });
