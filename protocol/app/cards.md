@@ -50,6 +50,7 @@ Rules for every card:
 | `stub` | yes | lead | no |
 | `sudo` | yes | lead | no |
 | `reach` | yes | lead | no |
+| `lesson` | yes | lead, sub-lead, worker, mapper | no |
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
 | `retract` | never | lead | no |
@@ -97,6 +98,32 @@ forbidden with `checking` and verify `clean`. Review `clean` carries both counts
 Review and verify have no segment bar; verify appends machines when non-empty. The folded
 label joins the label and text with " · ", adding ": choice for you" when waiting; the
 build folded label remains "Building D of T". Text wraps at phone widths.
+
+### `lesson`
+
+Saves, replaces or removes one lesson for a type of agent; the card is the notice the user
+sees. See your role's Lessons section for when to save one.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `action` | `add` \| `replace` \| `remove` | yes | What to do |
+| `for` | role | yes | Whose lessons: lead may save for lead, reviewer, verifier, mapper; sub-lead for sub-lead, worker; worker for worker; mapper for mapper |
+| `text` | string | `add`, `replace` | 1-300 characters, one line |
+| `lesson` | string | `replace`, `remove` | The id of the lesson, as shown in your instructions |
+| `only_ai` | string | no | `add`/`replace`: `any` or `claude`, `gpt`, `gemini`, `kimi`, `openrouter`; the lesson reaches only agents on that AI. Name the AI of the agent that made the mistake |
+| `only_project` | boolean | no | `add`/`replace`: true limits the lesson to this thread's project |
+| `why` | string | `add`, `replace`, `remove` | One line, shown to the user: what went wrong and how it was proven |
+
+A `lesson` card is never queued; the machine relays it synchronously. On the 503 (`the app
+did not confirm the lesson`), run the same card again in a minute (repeating is safe).
+Refusals (422), each a sentence you can act on:
+
+- `a <saver> may not save lessons for <target>s`.
+- `lessons for <role>s are full (12): replace or remove one instead`, then every lesson for
+  that role as `[<id>] <first 80 characters>`. If none is worth dropping, do not save.
+- `no lesson <id> for <role>s`: a `replace` naming an id not present for that role, or a
+  `replace` or `remove` naming an id kept under another role.
+- A lesson marked "(edited by the user)" cannot be replaced or removed by an agent.
 
 ## The kinds never shown
 
