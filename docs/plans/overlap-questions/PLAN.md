@@ -77,6 +77,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 48 | Supersedes the drop records in 46-47: cancelling an overlap question (or its becoming moot by this thread's decision) counts as the answer "Keep the plan as it is", logged as a Decision with the Done marker; a finished peer before posting is also logged as a Decision. No separate drop records | The last rounds drew findings on the separate drop record; the user picked "As 'keep the plan'" (card 09b79ae6) | user |
 | 49 | A cancel is settled: on a feature a Decision by thread id (card suffix only if a card was posted; `defaulted` when moot), on a small fix "Go ahead" unless chat says otherwise; a finished peer on a small fix is only mentioned | Round 25 findings | review-round-25 |
 | 50 | Done marker matched by its card suffix (sources `user`, `idea-change`, `defaulted`); a no-card Decision also allows a later re-ask; a held overlap cancelled before IDEA.md confirmation is not asked and is logged when PLAN.md is created | Round 26 findings | review-round-26 |
+| 51 | A cancelled held overlap stays unasked also when a peer asks; a cancel's card suffix names only a card posted for that question; a peer missing from `session leads` counts as finished; restart honours recent cancels before PLAN.md exists | Round 27 findings | review-round-27 |
 
 ## Spec
 
@@ -153,7 +154,8 @@ paths:
   is not settled, so the in-window path applies): answer
   the peer from that decision, with no new card, unless the question brings information that would start a re-ask under
   Terms "New overlap" (inside the card window only);
-- before IDEA.md is confirmed: held, like any overlap, and asked first after confirmation;
+- before IDEA.md is confirmed: held, like any overlap, and asked first after confirmation,
+  unless the user already cancelled it; then answer the peer from that cancel and keep it unasked;
 - inside the card window: it becomes the overlap card for that thread, or joins one: for an open
   card, the one-line mention beside it (§1 "New information while a card is open"); for a waiting
   one, its `Overlap with` Open Question is updated before posting;
@@ -168,7 +170,8 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   (`Overlap with <thread id>: <what>`; before PLAN.md exists, it is held and asked first after
   IDEA.md confirmation), so status stays `planning` until it is settled. The commit that logs
   its Decision removes it. Before posting a waiting overlap card (live or on restart), the lead
-  rechecks the other thread in `session leads`: if it has finished (Terms "Overlap"), it removes
+  rechecks the other thread in `session leads`: if it has finished (Terms "Overlap"), or is no
+  longer listed at all (archived), it removes
   the Open Question in the commit that logs a Decision `Overlap with <thread id>: the other thread
   finished; mentioned only` (source `defaulted`), and gives the one-line mention instead. On a
   small fix it just gives the one-line mention and records nothing. A follow-up card
@@ -200,9 +203,11 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   (Decision 48):
   - On a feature it counts as "Keep the plan as it is", logged as a Decision naming the other
     thread's id, in the commit that removes its Open Question: source `user` for a cancel,
-    `defaulted` for moot. If a card was posted, the entry ends `(overlap card <id>)` (the last
-    posted card for that thread, so a waiting follow-up is covered too); if none was, it has no
-    card suffix and Terms "New overlap" still excludes the thread.
+    `defaulted` for moot. If a card was posted for this question (the original card, when its
+    follow-up is still waiting), the entry ends `(overlap card <id>)` with that card's id; if
+    none was (including an unposted re-ask), it has no card suffix. Either way Terms "New
+    overlap" excludes the thread, and the latest settlement for that thread is the baseline for
+    any later re-ask.
   - Before IDEA.md is confirmed (no PLAN.md yet), a cancelled held overlap is simply not asked
     after confirmation; it is logged as that Decision in the commit that creates PLAN.md.
   - On a small fix it counts as "Go ahead with the fix" unless the user's chat says otherwise,
@@ -219,6 +224,8 @@ On `[wc:context restart]`, after rereading the plan and cards:
   is no longer in the card window (rare: the answer would have to cross the move to review),
   treat it as a late overlap.
 - An open overlap card stays open and is not asked again.
+- Before PLAN.md exists, a cancel of a held overlap found in `recent_messages` is honoured: that
+  overlap is not asked, and its Decision is written when PLAN.md is created.
 - Run `wc.js session leads` once and treat any new overlap (Terms "New overlap") using the same paths as live discovery: held before IDEA.md is
   confirmed, a card inside the window, else a late overlap. A planned thread
   also asks any `Overlap with` Open Question not yet asked.
@@ -297,6 +304,10 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Peer question re-holds a cancelled overlap | upheld | Stays unasked (Decision 51) |
+| mechanics | major | Restart ignores a recent cancel before PLAN.md | upheld | Honoured from recent messages (Decision 51) |
+| mechanics | major | Two Decisions share one Done marker | upheld | Suffix only for a card posted for that question (Decision 51) |
+| mechanics | major | Peer absent from `session leads` at recheck | upheld | Counts as finished (Decision 51) |
 
 ### Round 26 — 2026-11-21
 
