@@ -63,6 +63,9 @@ async function acceptCard(hub, payload) {
       return { ok: true, duplicate: true };
     }
     const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
+    if (payload.kind === 'lesson' && typeof input.for === 'string' && !['lead', 'sub-lead', 'worker', 'mapper'].includes(session.role)) {
+      throw appError(422, `a ${session.role} may not save lessons for ${input.for}s`);
+    }
     const checked = validate(payload.kind, input, session.role, { machine: true });
     if (!checked.ok) throw appError(payload.kind === 'lesson' ? 400 : 422, checked.reason);
 

@@ -165,7 +165,7 @@ function lessonLine(item) {
 }
 function lessonBlocks(settings, role, project, provider, preview = false) {
   const lessons = settings.lessons || {};
-  const own = (lessons[role] || []).filter((item) => (preview || !item.provider || item.provider === provider) && (!item.project || item.project === project));
+  const own = (lessons[role] || []).filter((item) => (preview || !item.provider || item.provider === provider) && ((preview && project === undefined) || !item.project || item.project === project));
   const lines = [];
   if (own.length) lines.push('', `Lessons learned by earlier ${role}s, saved by agents. Follow them unless the rules above or the user's template below say otherwise. To change one, see "Lessons" in your rules.`, ...own.map(lessonLine));
   const keeps = role === 'lead' ? ['reviewer', 'verifier', 'mapper'] : role === 'sub-lead' ? ['worker'] : [];
@@ -267,7 +267,7 @@ function normalize(saved) {
   const lessons = Object.fromEntries([...ROLES].map((role) => [role, []]));
   const ids = new Set();
   for (const role of ROLES) for (const item of Array.isArray(saved.lessons?.[role]) ? saved.lessons[role] : []) {
-    if (!item || typeof item.id !== 'string' || !/^L[0-9a-f]{6}$/.test(item.id) || ids.has(item.id) || !validLessonText(item.text) || !['agent', 'user'].includes(item.saved_by) || typeof item.saved_at !== 'string' || !Number.isFinite(Date.parse(item.saved_at)) || (item.provider !== undefined && !Object.hasOwn(PROVIDERS, item.provider)) || (item.project !== undefined && (typeof item.project !== 'string' || !item.project)) || (item.thread !== undefined && (typeof item.thread !== 'string' || !item.thread))) continue;
+    if (!item || typeof item.id !== 'string' || !/^L[0-9a-f]{6}$/.test(item.id) || ids.has(item.id) || !validLessonText(item.text) || !['agent', 'user'].includes(item.saved_by) || typeof item.saved_at !== 'string' || !Number.isFinite(Date.parse(item.saved_at)) || (item.provider !== undefined && (typeof item.provider !== 'string' || !Object.hasOwn(PROVIDERS, item.provider))) || (item.project !== undefined && (typeof item.project !== 'string' || !item.project)) || (item.thread !== undefined && (typeof item.thread !== 'string' || !item.thread))) continue;
     if (lessons[role].length >= 12) break;
     ids.add(item.id);
     lessons[role].push({ id: item.id, text: item.text, ...(item.provider !== undefined ? { provider: item.provider } : {}), ...(item.project !== undefined ? { project: item.project } : {}), saved_by: item.saved_by, ...(item.thread !== undefined ? { thread: item.thread } : {}), saved_at: item.saved_at });

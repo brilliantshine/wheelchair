@@ -87,7 +87,7 @@ const fields = {
     why: (v) => line(v) && !/[\v\f\u0085\u2028\u2029]/.test(v),
     text: (v) => v === undefined || (line(v) && v.length <= 300 && !/[\v\f\u0085\u2028\u2029]/.test(v)),
     lesson: (v) => v === undefined || (typeof v === 'string' && /^L[0-9a-f]{6}$/.test(v)),
-    only_ai: (v) => v === undefined || v === 'any' || Object.hasOwn(PROVIDERS, v),
+    only_ai: (v) => v === undefined || v === 'any' || (typeof v === 'string' && Object.hasOwn(PROVIDERS, v)),
     only_project: (v) => v === undefined || typeof v === 'boolean',
   },
   offer: { summary: text },

@@ -12,7 +12,7 @@ async function fixture() {
   const dir = await makeTemp('lessons-');
   const hub = new Hub({ stateDir: path.join(dir, 'state'), codeVersion: '' });
   await hub.state.init();
-  await hub.save({ id: 'one', project: '/project', sessions: [{ name: 'lead', role: 'lead' }, { name: 'worker', role: 'worker' }], cards: [], pinned: {}, queues: {}, asides: [], archived: false });
+  await hub.save({ id: 'one', project: '/project', sessions: [{ name: 'lead', role: 'lead', provider: 'claude' }, { name: 'worker', role: 'worker', provider: 'claude' }, { name: 'sub-lead', role: 'sub-lead', provider: 'claude' }, { name: 'reviewer', role: 'reviewer' }, { name: 'verifier', role: 'verifier' }], cards: [], pinned: {}, queues: {}, asides: [], archived: false });
   return hub;
 }
 const add = (extra = {}) => ({ kind: 'lesson', action: 'add', for: 'worker', text: 'Check the result.', why: 'A check failed twice.', ...extra });
@@ -20,6 +20,7 @@ const post = (hub, card, session = 'lead') => hub.acceptCard({ ...card, session,
 
 test('card schema and saver pairs', async () => {
   assert.equal(validate('lesson', add({ why: undefined }), 'lead').ok, false);
+  assert.equal(validate('lesson', add({ only_ai: ['gpt'] }), 'worker').ok, false);
   for (const role of ['reviewer', 'verifier']) assert.equal(validate('lesson', add(), role).ok, false);
   const hub = await fixture();
   await assert.rejects(post(hub, add(), 'lead'), /a lead may not save lessons for workers/);
@@ -27,6 +28,23 @@ test('card schema and saver pairs', async () => {
   assert.match(saved.lesson, /^L[0-9a-f]{6}$/);
   assert.equal(saved.snapshot.text, 'Check the result.');
   assert.equal((await hub.state.thread('one')).cards.length, 1);
+});
+
+test('sub-lead can save a worker lesson for another provider', async () => {
+  const hub = await fixture();
+  await post(hub, add({ only_ai: 'gpt' }), 'sub-lead');
+  const s = await settings.load(hub);
+  assert.equal(s.lessons.worker[0].provider, 'gpt');
+  assert.match(settings.roleLayers(s, 'worker', '/project', null, 'gpt').text, /Check the result\. \(only on GPT\)/);
+  assert.doesNotMatch(settings.roleLayers(s, 'worker', '/project', null, 'claude').text, /Check the result/);
+});
+
+test('reviewers and verifiers cannot save lessons through the hub', async () => {
+  const hub = await fixture();
+  for (const role of ['reviewer', 'verifier']) {
+    await assert.rejects(post(hub, add(), role), { status: 422, message: `a ${role} may not save lessons for workers` });
+  }
+  assert.equal((await hub.state.thread('one')).cards.length, 0);
 });
 
 test('scope, repeat safety, replacement, removal and user ownership', async () => {
@@ -90,6 +108,8 @@ test('normalization, cap, prompts and preview', async () => {
   s.lessons.worker[0].project = '/project';
   assert.doesNotMatch(settings.roleLayers(s, 'worker', '/other', null, 'gpt').text, /Lesson 0/);
   assert.match(settings.fullPrompt(hub, s, 'worker', '/project'), /Lesson 0/);
+  assert.match(settings.fullPrompt(hub, s, 'worker', undefined), /Lesson 0/);
+  assert.doesNotMatch(settings.fullPrompt(hub, s, 'worker', '/other'), /Lesson 0/);
   assert.match(settings.fullPrompt(hub, s, 'sub-lead', '/project'), /Lessons you keep for workers/);
   s.lessons.reviewer = [s.lessons.worker[0]];
   assert.match(settings.fullPrompt(hub, s, 'lead', '/project'), /Lessons you keep for reviewers/);
@@ -100,6 +120,9 @@ test('normalization, cap, prompts and preview', async () => {
   assert.doesNotThrow(() => settings.assertFits(oversizedLessons));
   s.lessons.worker.push({ id: 'bad', text: 'bad' });
   assert.equal(settings.normalize(s).lessons.worker.length, 12);
+  const invalidProvider = settings.defaults();
+  invalidProvider.lessons.worker = [{ id: 'L123456', text: 'Invalid provider', provider: ['gpt'], saved_by: 'agent', saved_at: new Date(0).toISOString() }];
+  assert.deepEqual(settings.normalize(invalidProvider).lessons.worker, []);
 });
 
 test('lead roleLayers keeps reviewer, verifier and mapper blocks', () => {
