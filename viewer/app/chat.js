@@ -335,7 +335,7 @@ function shownPins(thread) {
 async function chat(hub, id) {
   let thread = await hub.readSnapshot(id);
   const views = require('./views.js');
-  if (await views.discoverSlug(thread)) {
+  if (await views.discoverSlug(thread, hub)) {
     thread = await hub.thread(id);
     await views.findSlug(hub, thread);
   }
@@ -368,7 +368,7 @@ async function chat(hub, id) {
   return {
     thread: { ...publicThread, asides: (thread.asides || []).map(require('./asides.js').brief) },
     asides: (thread.asides || []).map(require('./asides.js').brief),
-    documents: await require('./documents.js').list(thread),
+    documents: await require('./documents.js').list(thread, hub),
     items: shown,
     cards: thread.cards.filter((card) => !card.replaced),
     pinned: shownPins(thread),

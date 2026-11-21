@@ -2027,6 +2027,9 @@ test('archived HTML route sends the static sandbox headers', async () => {
     assert.equal(response.headers['content-type'], 'text/html; charset=utf-8');
     assert.equal(response.headers['x-content-type-options'], 'nosniff');
     assert.equal(response.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox");
+    await routes.handle({}, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html&download=1'), false);
+    assert.equal(response.headers['content-disposition'], 'attachment; filename="picture.html"');
+    assert.match(response.body.toString(), /^<meta charset="utf-8">/);
   } finally { threads.archivedHtml = original; }
 });
 
