@@ -11,10 +11,7 @@ and `docs/maps/openrouter-hardening.md`. Prior plan: `docs/plans/openrouter-harn
 
 ## Open Questions
 
-### Q1: What happens when Pi updates to a version newer than the one wheelchair was tested with?
-- **Context:** Kimi's check only refuses versions older than a minimum (`machine/service.js:1630-1636`). Pi 1.5.2 is installed and known good. Pi updates on its own schedule; a change to its screens or hook fields breaks starts or turn endings (`machine/adapters/pi.js:62-84`).
-- **Options:** (a) Refuse older than 1.5.2; newer runs, and Settings shows a warning that it is untested. Breakage shows as a plain message when a start or turn fails in a Pi-specific way. (b) Refuse anything outside 1.5.x until wheelchair is updated.
-- **Recommendation:** (a).
+(none)
 
 ## Watch List
 
@@ -33,6 +30,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | OpenRouter thinking levels map 1:1 to Pi's `--thinking` for the app's existing low, medium, high, xhigh, max; Pi's off and minimal are not offered | Keeps one set of levels across providers | defaulted |
 | 5 | OpenRouter asides use Pi's `--fork` for the first turn and `--session` to resume, in non-interactive JSON mode, with read-only asides limited to Pi's read tools as reviewers are today | Mirrors Claude/Codex aside flow; reuses the existing reviewer tool allowlist | defaulted |
 | 6 | A failed transcript read when a turn ends is retried and never treated as an empty report; only a transcript that is truly absent or has no reply counts as empty | Losing a report in normal use is always fixed | defaulted |
+| 7 | Pi older than 1.5.2 is refused; newer versions run, Settings marks them untested, and a Pi start or turn failure on an untested version names the version as the likely cause | User picked run-with-warning over blocking | user |
 
 ## Spec
 
