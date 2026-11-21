@@ -69,9 +69,10 @@ function gitRequest(operation, tail) {
 }
 
 function sessionRequest(operation, tail) {
-  if (!['start', 'stop', 'list'].includes(operation)) {
+  if (!['start', 'stop', 'list', 'leads'].includes(operation)) {
     throw new Error('unsupported session operation');
   }
+  if (operation === 'leads') return { path: '/session', body: { action: 'leads', all_projects: tail.includes('--all-projects') } };
   const parsed = flags(tail);
   if (operation !== 'start') return { path: '/session', body: { action: operation, name: parsed._[0] } };
   if (!parsed.role || !parsed.attempt || !parsed['brief-file']) {
@@ -182,7 +183,7 @@ async function main(argv) {
         : group === 'win'
           ? winRequest(operation, tail)
       : null;
-  if (!input) throw new Error('usage: wc.js git|session|screen|win …');
+  if (!input) throw new Error('usage: wc.js git|session <start|stop|list|leads [--all-projects]>|screen|win …');
   const result = group === 'session'
     ? await postSessionWithRetry(`${base}${input.path}`, token, input.body)
     : await request(`${base}${input.path}`, token, input.body);

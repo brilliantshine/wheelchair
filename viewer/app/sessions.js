@@ -430,8 +430,8 @@ async function startSession(hub, thread, input) {
 async function deliverReport(hub, thread, target, payload) {
   if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
   const chat = require('./chat.js');
-  let text = String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
-  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target), payload.turn_id);
+  let text = target.cli === 'pi' ? '' : String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
+  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target), payload.turn_id, payload.entry_id);
   if (!text) return;
   const commit = text.match(/^COMMIT:\s*([0-9a-f]{7,40})/m)?.[1];
   addCard(
@@ -651,6 +651,10 @@ async function event(hub, payload) {
 async function sessionRequest(hub, payload) {
   const thread = await hub.threadBySession(payload.calling_session);
   const caller = session(thread, payload.calling_session);
+  if (payload.action === 'leads') {
+    if (caller.role !== 'lead') throw appError(403, 'only a lead may list other leads');
+    return require('./peers.js').listLeads(hub, thread, { allProjects: payload.all_projects === true });
+  }
   if (payload.action === 'list') {
     const problems = projectToolProblems(thread.project_tools && thread.project_tools.state).map((line) => line.text);
     const leadEntry = [...thread.sessions].reverse().find((item) => item.role === 'lead');

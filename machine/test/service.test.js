@@ -707,7 +707,7 @@ test('pane history captures requested scrollback and rejects invalid values', as
   const env = await service(await temp()); try {
     await start(env);
     assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane?history=2000', undefined, hubHeader)).status, 200);
-    assert.match(await log(env), /tmux capture-pane -p -e -S -2000 -t wc-t-lead/);
+    assert.match(await log(env), /tmux capture-pane -p -e -S -2000 -t =wc-t-lead:/);
     await fs.writeFile(env.fake.log, '');
     assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane', undefined, hubHeader)).status, 200);
     assert.doesNotMatch(await log(env), /capture-pane.* -S /);
@@ -980,7 +980,7 @@ test('account starts bind the CLI environment, validate directories, and report 
     const invalid = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'x', worktree: root, account: { id: 'bad', dir: '~/elsewhere/bad' } }, hubHeader);
     assert.equal(invalid.status, 400);
     const status = await api(env, 'GET', '/v1/status', undefined, hubHeader);
-    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'default-kimi', 'one', 'two']);
+    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'default-kimi', 'default-openrouter', 'one', 'two']);
     const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/elsewhere/bad' }, hubHeader); assert.equal(preflight.status, 400);
   } finally { await env.close(); process.env.HOME = oldHome; }
 });
@@ -1031,7 +1031,7 @@ test('login sessions start, expose state, accept code and stay out of session re
     await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude.txt'), 'utf8'));
     assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'waiting');
     assert.equal((await api(env, 'POST', '/v1/logins/test/code', { code: 'test-code' }, hubHeader)).status, 200);
-    assert.match(await log(env), /test-code[\s\S]*send-keys -t wc-login-test Enter/);
+    assert.match(await log(env), /test-code[\s\S]*paste-buffer -p -d -b \S+ -t =wc-login-test:[\s\S]*send-keys -t =wc-login-test: Enter/);
     await write(env.fake.pane, '__wc_login_exit 0'); assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'done');
     process.env.FAKE_CLAUDE_AUTH = '{"loggedIn":false}'; assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'failed'); delete process.env.FAKE_CLAUDE_AUTH;
     process.env.FAKE_SESSIONS = 'wc-login-test'; await env.instance.recoverFromTmux(); assert.equal(env.instance.sessions['wc-login-test'], undefined);
@@ -1217,8 +1217,9 @@ test('uploads sanitize, stream, serve, and enforce admission and size', async ()
     assert.equal((await fs.readdir(dir)).length, 5);
     await write(path.join(dir, '6-image.png'), 'png');
     let r = await fetch(`${env.base}/v1/uploads/t/6-image.png`, { headers: hubHeader });
-    assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.equal(await r.text(), 'png');
-    r = await fetch(`${env.base}/v1/uploads/t/3---x.txt`, { headers: hubHeader }); assert.equal(r.headers.get('content-type'), 'application/octet-stream'); assert.equal(r.headers.get('content-disposition'), 'attachment'); await r.text();
+    assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.equal(r.headers.get('content-disposition'), null); assert.equal(await r.text(), 'png');
+    await write(path.join(dir, '3-report.pdf'), 'pdf');
+    r = await fetch(`${env.base}/v1/uploads/t/3-report.pdf`, { headers: hubHeader }); assert.equal(r.headers.get('content-type'), 'application/octet-stream'); assert.equal(r.headers.get('content-disposition'), 'attachment; filename="report.pdf"'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); await r.text();
     assert.equal((await fetch(`${env.base}/v1/uploads/t/1-missing`, { headers: hubHeader })).status, 404);
     assert.equal((await fetch(`${env.base}/v1/uploads/t/bad`, { headers: hubHeader })).status, 400);
     env.instance.sessions['wc-t-lead'].archived_pending = true; assert.equal((await upload('x')).status, 409);
@@ -1245,6 +1246,45 @@ test('image cards are validated and copied before spooling, including archive or
     const late = api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: png, title: 'late' }, headers); await started;
     assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader)).body.uploads_removed, true); release(); assert.equal((await late).status, 409);
     await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+  } finally { await env.close(); }
+});
+
+test('file cards validate before copying and forward sanitized names and sizes', async () => {
+  const root = await temp(); const env = await service(root);
+  try {
+    await start(env); await start(env, { role: 'worker', thread_id: 't', token: 'worker-token' });
+    const txt = path.join(root, 'hello world.txt'); const pdf = path.join(root, 'report.pdf');
+    const secret = path.join(env.state, 'secret-file'); const worktreeFile = path.join(env.state, 'worktrees', 'checkout', 'work.txt');
+    const link = path.join(root, 'link'); const big = path.join(root, 'big');
+    await write(txt, 'hello'); await write(pdf, '%PDF'); await write(secret, 'secret'); await write(worktreeFile, 'work');
+    await fs.symlink(txt, link); await write(big, ''); await fs.truncate(big, 25 * 1024 * 1024 + 1);
+    const base = { kind: 'file', path: txt, title: 'Document' };
+    const cases = [
+      [{ ...base, path: 'relative' }, 'alpha', 422, 'file path must be absolute'],
+      [{ ...base, path: path.join(root, 'missing') }, 'alpha', 422, 'file does not exist'],
+      [{ ...base, path: root }, 'alpha', 422, 'file is not a regular file'],
+      [{ ...base, path: link }, 'alpha', 422, 'file is not a regular file'],
+      [{ ...base, path: big }, 'alpha', 422, 'file exceeds 25 MB'],
+      [{ ...base, path: secret }, 'alpha', 422, 'file is inside the wheelchair state folder'],
+      [base, 'worker-token', 403, 'only a lead may post a file card'],
+      [{ ...base, extra: true }, 'alpha', 422, 'field extra is not allowed'],
+      [{ ...base, warnings: [] }, 'alpha', 422, 'field warnings is not allowed'],
+      [{ ...base, title: '  \t ' }, 'alpha', 422, 'title is required'],
+      [{ kind: 'file', path: txt }, 'alpha', 422, 'title is required'],
+    ];
+    for (const [input, token, status, message] of cases) {
+      const response = await api(env, 'POST', '/v1/agent/cards', input, agentHeader(token));
+      assert.equal(response.status, status); assert.equal(response.body.error, message);
+      await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+    }
+    for (const [source, name, contents] of [[txt, 'hello-world.txt', 'hello'], [pdf, 'report.pdf', '%PDF'], [worktreeFile, 'work.txt', 'work']]) {
+      const response = await api(env, 'POST', '/v1/agent/cards', { ...base, path: source }, agentHeader('alpha'));
+      assert.equal(response.status, 202);
+      const spool = await fs.readdir(path.join(env.state, 'spool', 'cards'));
+      const cards = await Promise.all(spool.map(file => fs.readFile(path.join(env.state, 'spool', 'cards', file), 'utf8').then(JSON.parse)));
+      const card = cards.find(item => item.name === name);
+      assert.equal(card.title, 'Document'); assert.equal(card.size, Buffer.byteLength(contents)); assert.equal(path.basename(card.path).replace(/^\d+-/, ''), name); assert.equal(await fs.readFile(card.path, 'utf8'), contents);
+    }
   } finally { await env.close(); }
 });
 
@@ -1590,6 +1630,18 @@ test('handoff claims use exact leases, state checks, and safe revocation', async
   } finally { await env.close(); }
 });
 
+test('handoff claim commits even when git on the machine has no name or email set', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const id = '012345abcdef'; const repo = await project(root);
+    git(['-C', repo, 'config', '--unset', 'user.name']); git(['-C', repo, 'config', '--unset', 'user.email']);
+    const parent = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim(); const emptyConfig = path.join(root, 'empty-gitconfig'); await write(emptyConfig, '');
+    await withEnv({ GIT_CONFIG_GLOBAL: emptyConfig, GIT_CONFIG_NOSYSTEM: '1' }, async () => {
+      const response = await api(env, 'POST', '/v1/handoff', { action: 'claim-commit', thread_id: id, project: repo, parent, message: 'pickup' }, hubHeader);
+      assert.equal(response.status, 200, JSON.stringify(response.body)); assert.match(response.body.sha || '', /^[0-9a-f]{40}$/, JSON.stringify(response.body));
+    });
+  } finally { await env.close(); }
+});
+
 test('handoff local branch operations guard divergence and report ownership', async () => {
   const root = await temp(); const env = await service(root, { realGit: true }); try {
     const id = '012345abcdef'; const { repo, worktree } = await startedWorktree(env, root, id); const branch = `wc/${id}`;
@@ -1829,4 +1881,31 @@ test('transcript stamps avoid all content reads on a match and detect replacemen
     const archived = (await api(env, 'GET', `${route}?known=${encodeURIComponent(`${replaced.gen}:${replaced.end}`)}`, undefined, hubHeader)).body;
     assert.deepEqual(archived, { unchanged: true, gen: replaced.gen, end: replaced.end });
   } finally { await env.close(); }
+});
+
+test('Kimi usage route protects credentials and reports usage failures', async () => {
+  const root = await temp();
+  await withEnv({ HOME: root, KIMI_CODE_HOME: path.join(root, 'kimi-home') }, async () => {
+    const env = await service(root), requests = [], token = 'dummy-route-token';
+    let status = 200, payload = JSON.stringify({ usages: { limit_7d: { used_ratio: '1', reset_time: '2030-01-01T00:00:00Z' }, limit_5h: { used_ratio: 0.2, reset_time: '2030-01-02T00:00:00Z' } } });
+    const server = http.createServer((req, res) => { requests.push({ method: req.method, path: req.url, headers: req.headers }); res.writeHead(status, status === 302 ? { location: '/redirected' } : {}); res.end(payload); });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    env.instance.options.kimiUsageUrl = `http://127.0.0.1:${server.address().port}/coding/v1/usages`;
+    const config = path.join(root, 'kimi-home/config.toml'), credential = path.join(root, 'kimi-home/credentials/dummy.json');
+    const setConfig = host => write(config, `[providers."managed:kimi-code".oauth]\nkey = "oauth/dummy"\noauth_host = "${host}"\n`);
+    const setCredential = expires_at => write(credential, JSON.stringify({ access_token: token, expires_at }));
+    const request = () => api(env, 'POST', '/v1/usage', { account: 'default-kimi', cli: 'kimi', dir: null }, hubHeader);
+    try {
+      await setConfig('https://auth.kimi.ai'); await setCredential(Date.now() / 1000 + 600);
+      let result = await request(); assert.equal(result.status, 200); assert.equal(result.body.reading.week.used, 100); assert.equal(result.body.reading.five_hour.used, 20); assert.ok(result.body.reading.limited_until);
+      assert.equal(requests[0].method, 'GET'); assert.equal(requests[0].path, '/coding/v1/usages'); assert.equal(requests[0].headers.authorization, `Bearer ${token}`);
+      await setCredential(Date.now() / 1000 - 1); let count = requests.length; result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count);
+      await setCredential(Date.now() / 1000 + 600); await setConfig('https://auth.kimi.cn'); result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count);
+      await write(config, ''); result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count);
+      await setConfig('https://auth.kimi.ai'); status = 401; payload = token; result = await request(); assert.equal(result.status, 502); assert.equal(result.body.error, 'Kimi usage request failed (HTTP 401)'); assert.ok(!JSON.stringify(result).includes(token));
+      status = 200; payload = 'dummy-secret-not-json'; result = await request(); assert.equal(result.status, 502); assert.equal(result.body.error, 'invalid usage response'); assert.ok(!JSON.stringify(result).includes(payload));
+      status = 302; count = requests.length; result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count + 1);
+      assert.equal((await api(env, 'POST', '/v1/usage', { account: 'default-kimi', cli: 'agy', dir: null }, hubHeader)).status, 400);
+    } finally { await new Promise(resolve => server.close(resolve)); await env.close(); }
+  });
 });

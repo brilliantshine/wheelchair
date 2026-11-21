@@ -12,10 +12,11 @@
     ['heavy', 'Heavy', 'Leading, planning, review, checking'],
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
-  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI']];
+  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI'], ['openrouter', 'OpenRouter', 'Pi']];
   const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
   const KIMI_MODEL_VALUE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/;
+  const OPENROUTER_MODEL_VALUE = /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/;
   const NONE = '__none';
   const OTHER = '__other';
   const ROLES = [
@@ -42,6 +43,7 @@
   let diagram = null; // GET /settings/diagram-sensitivity, or null until read for this visit
   let diagramLoading = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
+  let nameDraft = null; // the typed Your name, kept across re-renders until saved
   // Lead name saves, kept across re-renders: they run one after another in the order made,
   // `choice` is the list last picked in the dropdown, which a save's answer never undoes, and
   // `reads` counts file picks so only the newest file is saved.
@@ -210,8 +212,8 @@
       const row = h('div', { class: 'other' }, input, use);
       const go = () => {
         const value = input.value.trim();
-        if (!(provider === 'kimi' ? KIMI_MODEL_VALUE : MODEL_VALUE).test(value)) {
-          inlineErr(wrap, 'Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.');
+        if (!(provider === 'openrouter' ? OPENROUTER_MODEL_VALUE : provider === 'kimi' ? KIMI_MODEL_VALUE : MODEL_VALUE).test(value)) {
+          inlineErr(wrap, provider === 'openrouter' ? 'Use vendor/model with an optional :variant, up to 128 lowercase letters, digits, dots, dashes and underscores.' : 'Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.');
           return;
         }
         commit(value, effort);
@@ -391,6 +393,30 @@
     showLeadNames();
   }
 
+  // Enter to send in a thread's message box. Saved in this browser only, so a phone and a
+  // computer can differ; unset, it is on unless the device is touch-first (thread.js reads it).
+  function enterSendsNow() {
+    let v = null; try { v = localStorage.getItem('enter-sends'); } catch (e) { /* default below */ }
+    if (v === '1' || v === '0') return v === '1';
+    return !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+  function enterRow() {
+    const on = enterSendsNow();
+    const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': 'Enter to send' },
+      [[true, 'On'], [false, 'Off']].map(([value, text]) => h('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(on === value), text,
+        onclick: () => {
+          if (on === value) return;
+          try { localStorage.setItem('enter-sends', value ? '1' : '0'); } catch (e) { setNote('This browser would not save it', true); return; }
+          renderPanel();
+          setNote('Saved for this browser', false);
+        },
+      })));
+    return h('div', { class: 'row-line' },
+      h('div', { class: 'what' }, h('span', { text: 'Enter to send' }), h('span', { class: 'hint', text: (on ? 'Enter sends a message; Shift+Enter starts a new line.' : 'Enter starts a new line; send with the button.') + ' Applies to this browser only.' })),
+      group);
+  }
+
   // The Default project folder: typed, then saved with the button. A refusal shows under the
   // input and the typed value stays.
   function folderRow() {
@@ -420,6 +446,34 @@
       host);
   }
 
+  // Your name: typed, then saved with the button. Blank means agents say "the user".
+  function nameRow() {
+    const saved = data.user_name || '';
+    const input = h('input', { type: 'text', id: 'user-name', 'aria-label': 'Your name', placeholder: 'the user', autocomplete: 'off', maxLength: 80, value: nameDraft === null ? saved : nameDraft });
+    const save = h('button', { type: 'button', text: 'Save' });
+    const status = h('p', { class: 'note', role: 'status' });
+    const host = h('div', { class: 'ctl wide' }, h('div', { class: 'folder' }, input, save), status);
+    input.addEventListener('input', () => { nameDraft = input.value; status.textContent = ''; inlineErr(host, ''); });
+    const go = async () => {
+      save.disabled = true;
+      inlineErr(host, '');
+      status.textContent = '';
+      try {
+        const res = await api('/settings/preferences', { method: 'PUT', body: { user_name: input.value.trim() } });
+        data.user_name = res.user_name || '';
+        nameDraft = null;
+        input.value = data.user_name;
+        status.textContent = 'Saved';
+      } catch (e) { inlineErr(host, e.message); }
+      save.disabled = false;
+    };
+    save.addEventListener('click', go);
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
+    return h('div', { class: 'row-line' },
+      h('div', { class: 'what' }, h('span', { text: 'Your name' }), h('span', { class: 'hint', text: 'Agents call you by it. Blank means they say "the user". Agents started after you save use it.' })),
+      host);
+  }
+
   function renderModels() {
     const items = (data.heads_up || []).slice();
     if (data.models.malformed && !items.some((i) => i.kind === 'malformed')) items.unshift({ kind: 'malformed' });
@@ -429,7 +483,7 @@
     const head = h('tr', {}, h('th', { scope: 'col', text: 'Provider' }),
       TIERS.map(([, label, desc]) => h('th', { scope: 'col' }, h('span', { class: 'tier-name', text: label }), h('span', { class: 'tier-desc', text: desc }))));
     const body = PROVIDERS.map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
-      h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli })),
+      h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli }), provider === 'openrouter' && h('span', { class: 'hint', text: 'Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.' })),
       TIERS.map(([slot, label]) => {
         const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
         if (provider === 'gpt') for (const item of tierItems(slot)) td.append(headsUpLine(item));
@@ -534,7 +588,9 @@
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
-          folderRow())),
+          enterRow(),
+          folderRow(),
+          nameRow())),
       h('section', { 'aria-labelledby': 'diagrams' },
         h('h2', { id: 'diagrams', text: 'Diagrams' }),
         h('div', { class: 'box', id: 'diagram-choices' })),
@@ -543,7 +599,7 @@
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
-            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code']])),
+            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']])),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
@@ -943,9 +999,10 @@
     gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
     gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
     kimi: [['unknown', 'Not sure']],
+    openrouter: [['unknown', 'Not sure']],
   };
   const planLabel = (provider, plan) => ((PLAN_OPTIONS[provider] || []).find((p) => p[0] === plan) || [0, plan])[1];
-  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
+  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
   const WITHIN = [['soonest', 'Soonest refill first'], ['spread', 'Spread evenly'], ['one', 'Stay on one account']];
   const CLAUDE_TERMS = "Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.";
   const SIGNIN_WAIT_MS = 30000;
@@ -977,6 +1034,15 @@
   const dayTime = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'long' }) + ' '
     + new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   const pct = (n) => Math.round(n) + '%';
+  const usd = (n) => (n > 0 && n < 0.005 ? '<$0.01' : '$' + n.toFixed(2));
+  const spendText = (sp) => {
+    const none = !sp.today && !sp.last_7_days && !sp.last_30_days;
+    const line = none && !sp.incomplete ? 'no spend yet' : `${usd(sp.today)} today · ${usd(sp.last_7_days)} last 7 days · ${usd(sp.last_30_days)} last 30 days`;
+    return line + (sp.incomplete ? ' · total may be incomplete' : '');
+  };
+  // OpenRouter sign-in is key only: waiting, no link, and the machine wants the key pasted.
+  const keyOnlySignin = (st) => st.state === 'waiting' && !st.url && st.wantsCode === true;
+  const signinHint = (st) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : 'Paste your OpenRouter key');
   const safeHref = (u) => (/^https?:\/\//i.test(String(u)) ? String(u) : '#');
 
   async function refreshUsage() {
@@ -1028,12 +1094,23 @@
     const actions = h('div', { class: 'actions signin-actions' });
     const codeBox = h('div', { class: 'signin-code' });
     const paste = h('textarea', { rows: 2, 'aria-label': 'Paste the code from the sign-in page', placeholder: 'Paste the code here' });
+    const keyInput = h('input', { type: 'password', class: 'ctl', autocomplete: 'off', 'aria-label': 'Paste your OpenRouter key', placeholder: 'Paste your OpenRouter key', hidden: true });
+    const activeField = () => (keyInput.hidden ? paste : keyInput);
     const send = h('button', { type: 'button', class: 'primary small', text: 'Send code', onclick: async () => {
-      const code = paste.value.trim();
+      const field = activeField();
+      const code = field.value.trim();
       if (!code) return;
-      try { await api(`/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}/code`, { method: 'POST', body: { code } }); paste.value = ''; status.textContent = 'Code sent.'; } catch (e) { inlineErr(codeBox, e.message); }
+      try { await api(`/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}/code`, { method: 'POST', body: { code } }); field.value = ''; status.textContent = 'Code sent.'; inlineErr(codeBox, ''); }
+      catch (e) {
+        inlineErr(codeBox, e.message);
+        if (e.status === 409 && account.provider === 'openrouter') {
+          field.value = '';
+          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine) }));
+        }
+      }
     } });
-    const pasteWrap = h('div', { class: 'paste', hidden: true }, h('label', { text: 'Paste the code' }), paste, send);
+    const pasteLabel = h('label', { text: 'Paste the code' });
+    const pasteWrap = h('div', { class: 'paste', hidden: true }, pasteLabel, paste, keyInput, send);
     const termLink = h('a', { class: 'small-link', href: terminal, target: '_blank', rel: 'noopener', text: 'Open terminal' });
     const closeBtn = h('button', { type: 'button', class: 'small', text: 'Close', onclick: closeSignin });
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
@@ -1064,12 +1141,15 @@
         return;
       }
       if (st.state === 'failed') return fail();
-      if ((card.hadUrl || !st.url) && expired()) return fail();
-      if (st.url) {
+      const keyOnly = keyOnlySignin(st);
+      if ((card.hadUrl || !(st.url || keyOnly)) && expired()) return fail();
+      if (st.url || keyOnly) {
         if (!card.hadUrl) card.firstUrl = Date.now();
         card.hadUrl = true;
-        status.className = 'hint'; status.textContent = st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.';
-        if (account.provider === 'claude' || account.provider === 'gemini') {
+        status.className = 'hint'; status.textContent = signinHint(st);
+        keyInput.hidden = !keyOnly; paste.hidden = keyOnly; pasteLabel.textContent = keyOnly ? 'Paste your OpenRouter key' : 'Paste the code';
+        if (keyOnly) actions.replaceChildren();
+        else if (account.provider === 'claude' || account.provider === 'gemini') {
           actions.replaceChildren(h('a', { class: 'btn-link primary', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: 'Open sign-in link' }));
         } else {
           actions.replaceChildren(h('a', { class: 'btn-link', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: st.url }));
@@ -1085,7 +1165,7 @@
       } else if (card.hadUrl) {
         status.className = 'hint waiting';
         status.replaceChildren(h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Finishing sign-in on ' + machine + '…'));
-        actions.replaceChildren(); codeBox.replaceChildren(); paste.value = ''; pasteWrap.hidden = true;
+        actions.replaceChildren(); codeBox.replaceChildren(); paste.value = ''; keyInput.value = ''; pasteWrap.hidden = true;
       }
     };
     (async () => {
@@ -1308,6 +1388,12 @@
     if (f.amber && f.runs_out_at) lines.push(h('p', { class: 'usage-line amber', text: `Runs out ${dayPart(f.runs_out_at)}, before the first refill ${f.first_refill ? dayTime(f.first_refill) : ''}`.trim() }));
     if (f.below_notify) lines.push(h('p', { class: 'usage-line amber', text: 'Under your notify line for this week.' }));
     const open = openProvider === provider;
+    if (f.spend) {
+      return h('div', { class: 'usage-prov', 'data-provider': provider },
+        h('div', { class: 'usage-toggle' },
+          h('span', { class: 'usage-name', text: f.label }),
+          h('span', { class: 'usage-left usage-spend', text: spendText(f.spend) })));
+    }
     return h('div', { class: 'usage-prov' + (f.amber ? ' amber' : ''), 'data-provider': provider },
       h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; renderPanel(); } },
         h('span', { class: 'usage-name', text: f.label }),

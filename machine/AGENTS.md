@@ -7,7 +7,7 @@ agents own neither tmux nor the machine secret.
 | File | Role |
 |---|---|
 | `service.js` | Dependency-free Node HTTP service, session registry, tmux/git boundary, worktrees (each new one links the clone's installed `node_modules` and lists the links in git's exclude file; `from_remote_branch` builds one at an exact pushed commit), the hub-only `/v1/handoff` actions (claims, branch inspection, kill/running) and durable archive markers, readiness, transcript copies, and durable spools. |
-| `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`, `kimi.js`). |
+| `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`, `kimi.js`, `pi.js`; Pi also reads offline OpenRouter spend). |
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
 | `lib/try.js` | Folder-local Try records, checks, Git switches and metadata-only status. |
 | `test/try.test.js` | Try endpoint, record, switching and status tests against isolated repositories. |

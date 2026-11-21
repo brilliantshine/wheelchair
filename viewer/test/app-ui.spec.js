@@ -42,14 +42,17 @@ test.describe('thread page layout', () => {
   test('desktop: thread list, chat and the files column sit side by side', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const made = await ctx.make({ cli: 'claude' });
-    await ctx.patch(made.id, (t) => { t.title = 'Layout thread'; t.slug = 'dark'; t.worktree = '/tmp/wt-dark'; });
+    const wt = await require('../../test-support/run-dir').makeTemp('wc-ui-');
+    await require('node:fs/promises').mkdir(wt + '/docs/plans/dark', { recursive: true });
+    await require('node:fs/promises').writeFile(wt + '/docs/plans/dark/PLAN.md', '# p');
+    await ctx.patch(made.id, (t) => { t.title = 'Layout thread'; t.slug = 'dark'; t.worktree = wt; });
     await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
     const list = page.locator('.col-list'); const chat = page.locator('.col-main'); const side = page.locator('.col-side');
     await expect(list.locator('li.row', { hasText: 'Layout thread' })).toBeVisible();
     await expect(chat.locator('#head h1')).toHaveText('Layout thread');
     await expect(side.locator('#new-form')).toHaveCount(0);
     await expect(list.locator('#new-toggle')).toHaveAttribute('href', '/wheelchair/app/new');
-    await expect(side.locator('#files a', { hasText: 'PLAN.md' })).toBeVisible();
+    await expect(side.locator('#files a', { hasText: 'PLAN.md' }).first()).toBeVisible();
     const [a, b, c] = await Promise.all([list.boundingBox(), chat.boundingBox(), side.boundingBox()]);
     expect(a.x + a.width).toBeLessThanOrEqual(b.x + 1);
     expect(b.x + b.width).toBeLessThanOrEqual(c.x + 1);

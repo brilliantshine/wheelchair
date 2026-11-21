@@ -332,9 +332,9 @@ test('lead name list choice saves, validates and migrates', async () => {
 test('gemini settings migrate and enforce account and model rules', async () => {
   const saved = settings.normalize({ worker_order: ['claude', 'gpt'], lead_order: ['gpt', 'any'], review_families: 'gemini', accounts: [] });
   assert.deepEqual(saved.worker_order, ['claude', 'gpt', 'gemini', 'kimi']);
-  assert.deepEqual(saved.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi']);
+  assert.deepEqual(saved.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi', 'openrouter']);
   assert.deepEqual(settings.normalize(saved).worker_order, saved.worker_order);
-  assert.deepEqual(settings.defaults().worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi']);
+  assert.deepEqual(settings.defaults().worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi', 'openrouter']);
   assert.deepEqual(saved.lead_order, ['gpt', 'any']);
   assert.ok(saved.accounts.some((account) => account.id === 'default-gemini'));
   assert.equal(saved.review_families, 'gemini');
@@ -358,7 +358,7 @@ test('removed worker providers stay removed after saving', async () => {
       assert.equal(saved.status, 200);
       assert.deepEqual((await api(context, '/settings')).body.worker_order, worker_order);
       const stored = JSON.parse(await fs.readFile(path.join(context.state, 'settings.json'), 'utf8'));
-      assert.deepEqual(stored.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi']);
+      assert.deepEqual(stored.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi', 'openrouter']);
     }
   });
 });
@@ -416,5 +416,25 @@ test('model ID limits protect near-limit scout role layers', async () => {
     const subLayers = context.machine.sessions.get(sub.body.session.name).role_layers;
     assert.ok(subLayers.includes(model));
     assert.ok(subLayers.length <= 12000);
+  });
+});
+
+test('your name is saved, validated, and told to every agent only when set', async () => {
+  const defaults = settings.defaults();
+  for (const role of settings.ROLES) assert.doesNotMatch(settings.roleLayers(defaults, role).text, /The user’s name is/);
+  const named = { ...defaults, user_name: 'Sam' };
+  for (const role of settings.ROLES) assert.ok(settings.roleLayers(named, role).text.includes('The user’s name is Sam. Where these rules say "the user", that is Sam; call them by it.'));
+  assert.equal(settings.normalize({ user_name: 'x\ny' }).user_name, '');
+  assert.equal(settings.normalize({ user_name: 7 }).user_name, '');
+  await withContext(async (context) => {
+    assert.equal((await api(context, '/settings')).body.user_name, '');
+    const put = (user_name) => api(context, '/settings/preferences', { method: 'PUT', body: { user_name } });
+    assert.equal((await put('  Sam  ')).body.user_name, 'Sam');
+    assert.equal((await api(context, '/settings')).body.user_name, 'Sam');
+    assert.equal((await put('a'.repeat(81))).status, 400);
+    assert.equal((await put('two\nlines')).status, 400);
+    assert.equal((await put(5)).status, 400);
+    assert.equal((await api(context, '/settings')).body.user_name, 'Sam');
+    assert.equal((await put('')).body.user_name, '');
   });
 });

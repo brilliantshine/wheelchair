@@ -622,6 +622,15 @@ for (const [label, size] of SIZES) {
       await ctx.patch(made.id, (x) => { x.sessions[0].live = false; });
       await open(page, made.id);
       await expect(page.locator('#dead')).toContainText('The lead has stopped');
+      // It sticks under the thread header, so Restart stays in sight in a long chat.
+      expect(await page.locator('#dead').evaluate((n) => getComputedStyle(n).position)).toBe('sticky');
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await expect(page.getByRole('button', { name: 'Restart lead' })).toBeInViewport();
+      // A refused restart says so inside the box, which is in sight, not only in the banner up top.
+      await page.route(`**/threads/${made.id}/restart`, (r) => r.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: 'start refused' }) }), { times: 1 });
+      await page.getByRole('button', { name: 'Restart lead' }).click();
+      await expect(page.locator('#dead .dead-error')).toHaveText(/Restart failed: .*start refused/);
+      await expect(page.locator('#dead .dead-error')).toBeInViewport();
       await expect(page.locator('#msg')).toBeDisabled();
       const req = page.waitForRequest((r) => r.url().endsWith(`/threads/${made.id}/restart`));
       await page.getByRole('button', { name: 'Restart lead' }).click();
@@ -657,10 +666,13 @@ for (const [label, size] of SIZES) {
     test('plan links use the slug the API returns, not a diagram card plan', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.post(made.id, { kind: 'diagram', plan: 'other-plan', graph: 'flow', title: 'Flow' });
-      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
+      const wt = await makeTemp('wc-plan-links-');
+      await fs.mkdir(path.join(wt, 'docs/plans/dark'), { recursive: true });
+      for (const f of ['MAP', 'IDEA', 'PLAN']) await fs.writeFile(path.join(wt, 'docs/plans/dark', f + '.md'), '# ' + f);
+      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = wt; });
       await open(page, made.id);
       for (const f of ['MAP', 'IDEA', 'PLAN']) {
-        await expect(page.locator('#files a', { hasText: f })).toHaveAttribute(
+        await expect(page.locator('#files a', { hasText: f + '.md' }).first()).toHaveAttribute(
           'href', `/wheelchair/app/doc?thread=${made.id}&file=${f}.md`);
       }
     });
@@ -907,12 +919,16 @@ for (const [label, size] of SIZES) {
 
     test('plan document links open the in-app document page', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
-      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
+      const wt = await makeTemp('wc-plan-docs-');
+      await fs.mkdir(path.join(wt, 'docs/plans/dark'), { recursive: true });
+      await fs.writeFile(path.join(wt, 'docs/plans/dark/PLAN.md'), '# plan');
+      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = wt; });
       await open(page, made.id);
-      const plan = page.locator('#files a', { hasText: 'PLAN' });
+      const plan = page.locator('#files a', { hasText: 'PLAN.md' }).first();
       await expect(plan).toHaveAttribute('href', `/wheelchair/app/doc?thread=${made.id}&file=PLAN.md`);
-      await expect(page.locator('#files a', { hasText: 'MAP' })).toHaveCount(1);
-      await expect(page.locator('#files a', { hasText: 'IDEA' })).toHaveCount(1);
+      // Only the documents that exist are listed.
+      await expect(page.locator('#files a', { hasText: 'MAP' })).toHaveCount(0);
+      await expect(page.locator('#files a', { hasText: 'IDEA' })).toHaveCount(0);
     });
   });
 }

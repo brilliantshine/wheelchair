@@ -147,12 +147,12 @@ test.describe('desktop', () => {
 
   test('sub-lead models and scout tiers render and save independently', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
-    for (const provider of ['Claude', 'GPT', 'Antigravity', 'Kimi Code']) {
+    for (const provider of ['Claude', 'GPT', 'Antigravity', 'Kimi Code', 'OpenRouter']) {
       await expect(page.getByLabel(`${provider} lead model`, { exact: true })).toBeVisible();
       await expect(page.getByLabel(`${provider} sub-lead model`, { exact: true })).toBeVisible();
     }
-    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(4);
-    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(4);
+    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(5);
+    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(5);
     const modelRequest = page.waitForRequest((request) => request.url().endsWith('/api/settings/models') && request.method() === 'PUT');
     await page.getByLabel('GPT sub-lead effort', { exact: true }).selectOption('high');
     expect((await modelRequest).postDataJSON()).toMatchObject({ provider: 'gpt', slot: 'sub-lead', effort: 'high' });
@@ -385,12 +385,34 @@ test.describe('phone', () => {
     await noSideScroll(page);
   });
 
+  test('Your name saves and survives a reload, and a too-long name is refused with the typed value kept', async ({ page }) => {
+    await openPage(page, context, '/app/settings');
+    const row = page.locator('.row-line', { hasText: 'Your name' });
+    const input = page.getByLabel('Your name', { exact: true });
+    await expect(input).toHaveValue('');
+    await input.fill('Sam');
+    await row.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(row.getByRole('status')).toHaveText('Saved');
+    expect((await settings(page)).user_name).toBe('Sam');
+    await page.reload();
+    await expect(page.getByLabel('Your name', { exact: true })).toHaveValue('Sam');
+    await page.evaluate(() => { document.getElementById('user-name').removeAttribute('maxlength'); });
+    await page.getByLabel('Your name', { exact: true }).fill('a'.repeat(81));
+    await page.locator('.row-line', { hasText: 'Your name' }).getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.locator('.row-line', { hasText: 'Your name' }).locator('.inline-err')).toBeVisible();
+    expect((await settings(page)).user_name).toBe('Sam');
+    await page.getByLabel('Your name', { exact: true }).fill('');
+    await page.locator('.row-line', { hasText: 'Your name' }).getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.locator('.row-line', { hasText: 'Your name' }).getByRole('status')).toHaveText('Saved');
+    expect((await settings(page)).user_name).toBe('');
+  });
+
   test('the Default project folder saves, and a refusal shows under it with the typed value kept', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const input = page.getByLabel('Default project folder', { exact: true });
     await expect(input).toHaveValue('');
     await input.fill('~/projects');
-    await page.getByRole('button', { name: 'Save', exact: true }).last().click();
+    await page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('status')).toHaveText('Saved');
     expect((await settings(page)).default_project_folder).toBe('~/projects');
     await page.reload();

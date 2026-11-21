@@ -55,7 +55,13 @@ default_pins() {
     "kimi.heavy = kimi-code/k3.1-pro" \
     "kimi.critical = kimi-code/k3.1-pro" \
     "kimi.lead = kimi-code/k3.1-pro" \
-    "kimi.sub-lead = kimi-code/k3.1-pro"
+    "kimi.sub-lead = kimi-code/k3.1-pro" \
+    "openrouter.light = openrouter/auto" \
+    "openrouter.standard = openrouter/auto" \
+    "openrouter.heavy = openrouter/auto" \
+    "openrouter.critical = openrouter/auto" \
+    "openrouter.lead = openrouter/auto" \
+    "openrouter.sub-lead = openrouter/auto"
 }
 json_assert() { python3 -c "$1" <<<"$output"; }
 
@@ -117,6 +123,32 @@ run_model effort gemini heavy
 assert 'Gemini pin line reads effort' bash -c '[[ $1 == 0 && $2 == xhigh ]]' _ "$status" "$output"
 run_model show --json
 assert 'show JSON includes Gemini' json_assert 'import json,sys; assert json.load(sys.stdin)["gemini"]["heavy"] == {"model":"gemini-x","effort":"xhigh"}'
+
+# OpenRouter model IDs and the none sentinel.
+new_case
+for slot in light standard heavy critical lead sub-lead; do
+  run_model openrouter "$slot"
+  assert "OpenRouter $slot default" bash -c '[[ $1 == 0 && $2 == openrouter/auto ]]' _ "$status" "$output"
+done
+or128="a/$(printf '%0126d' 0 | tr 0 x)"
+for value in "$or128" 'a/b:free'; do
+  run_model set openrouter light "$value"
+  assert "OpenRouter accepts $value" test "$status" -eq 0
+  run_model openrouter light
+  assert "OpenRouter reloads $value" equals "$output" "$value"
+done
+for value in "${or128}x" 'ab' 'a/b/c' 'a/b:' 'a/b::c'; do
+  run_model set openrouter light "$value"
+  assert "OpenRouter rejects $value" test "$status" -eq 2
+  printf 'openrouter.light = %s\n' "$value" > "$pins"
+  run_model show --json
+  assert "OpenRouter rejects pin $value" json_assert 'import json,sys; assert json.load(sys.stdin)["malformed"] is True'
+  printf 'openrouter.light = openrouter/auto\n' > "$pins"
+done
+run_model set openrouter light none
+assert 'OpenRouter saves none' test "$status" -eq 0
+run_model openrouter light
+assert 'OpenRouter reloads none' test "$status" -eq 3
 
 # Kimi defaults and slashed aliases (slashes only for Kimi).
 new_case

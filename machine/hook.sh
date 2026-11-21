@@ -3,7 +3,7 @@
 # session token, never the machine secret, and spools if its local service is down.
 set -euo pipefail
 
-kind=${1:?usage: hook.sh claude\|codex\|agy [session-name] [codex-notify-json]}
+kind=${1:?usage: hook.sh claude\|codex\|agy\|pi [session-name] [codex-notify-json]}
 root=$(cd "$(dirname "$0")/.." && pwd)
 state=${WHEELCHAIR_STATE_DIR:-"$HOME/.local/state/wheelchair"}
 token=${WHEELCHAIR_SESSION_TOKEN:-}
@@ -13,7 +13,7 @@ if [[ -z "$token" ]]; then
 fi
 
 case "$kind" in
-  claude)
+  claude|pi)
     session=${2:?usage: hook.sh claude session-name}
     payload=$(cat)
     ;;

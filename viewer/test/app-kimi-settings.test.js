@@ -28,7 +28,7 @@ test('Kimi settings: defaults, plans, migration and review families', () => {
   // A current save whose seen list lacks kimi gets kimi appended without reordering.
   const current = settings.normalize({ worker_order: ['gemini', 'gpt', 'claude'], worker_order_seen: ['claude', 'gpt', 'gemini'] });
   assert.deepEqual(current.worker_order, ['gemini', 'gpt', 'claude', 'kimi']);
-  assert.deepEqual(current.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi']);
+  assert.deepEqual(current.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi', 'openrouter']);
   // Already seen and removed: stays removed.
   assert.deepEqual(settings.normalize({ worker_order: ['claude'], worker_order_seen: ['claude', 'gpt', 'gemini', 'kimi'] }).worker_order, ['claude']);
   assert.equal(settings.normalize({ review_families: 'kimi' }).review_families, 'kimi');
@@ -43,7 +43,7 @@ test('Kimi through the Settings API: accounts, preferences, effort and slashed m
     assert.equal((await api(context, '/settings')).body.accounts.filter((a) => a.provider === 'kimi').length, 3);
     assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { review_families: 'kimi' } })).body.review_families, 'kimi');
     const bad = await api(context, '/settings/preferences', { method: 'PUT', body: { review_families: 'nope' } });
-    assert.equal(bad.body.detail, 'review_families must be both, claude, gpt, gemini or kimi');
+    assert.equal(bad.body.detail, 'review_families must be both, claude, gpt, gemini, kimi or openrouter');
     const saved = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'kimi', slot: 'heavy', model: 'kimi-code/k3-custom' } });
     assert.equal(saved.status, 200);
     assert.deepEqual(saved.body.models.kimi.heavy, { model: 'kimi-code/k3-custom', effort: null });

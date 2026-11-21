@@ -55,7 +55,7 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   }
   const available = {};
   const margin = {};
-  for (const p of order) {
+  for (const p of provider === 'openrouter' && !order.includes(provider) ? [...order, provider] : order) {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, slot]); } catch (e) { if (e.code === 3) continue; throw e; }
     const accounts = settings.accounts.filter((a) => a.provider === p).map((a) => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter((s) => s.live && s.account === a.id).length, 0) }));
     margin[p] = p === reserved && !['lead', 'sub-lead'].includes(role) && settings.held_back[role] === true && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);

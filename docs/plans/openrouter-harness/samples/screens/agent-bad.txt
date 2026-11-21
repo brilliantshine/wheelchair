@@ -1,0 +1,50 @@
+
+ ▀▀█  v1.5.2
+ █▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Extensions]
+  ext.js
+
+
+ Warning: Model "nosuchvendor/nosuchmodel" not found for provider "openrouter". Using custom model id.
+
+ Warning: tmux extended-keys-format is xterm. Pi works best with csi-u. Add `set -g extended-keys-format csi-u` to ~/.tmux.conf and restart tmux.
+
+
+ Say hi.
+
+
+ Error: 400: {"message":"nosuchvendor/nosuchmodel is not a valid model ID","code":400}
+ If this looks like a pi bug, /bug sends a report to the developers.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+<scratch path>
+0.5%/262k (auto)                                                                                                                                                       nosuchvendor/nosuchmodel • medium

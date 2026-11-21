@@ -219,6 +219,18 @@ The machine copies the file into the thread's uploads folder, so the original ma
 deleted afterwards. Only the lead posts it: a screenshot another session took reaches
 the user when the lead posts it. Images are removed when the thread is archived.
 
+### `file`
+
+A document sent to the user.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | yes | Absolute path to a regular file on the lead's machine, at most 25 MB |
+| `title` | string | yes | One line: what the document is |
+
+The machine copies the file at send time, so later edits to the source do not reach the user.
+It shows in chat and in the sidebar's Sent to you section. Archiving the thread deletes it.
+
 ### `stub`
 
 New work that belongs in its own thread.
@@ -270,6 +282,27 @@ What reaches you, once per card (the output follows `ran` on the next lines):
 
 The password is never in any of these.
 
+### `reach`
+
+Asks the user to let this thread's lead talk to the lead of a thread in another project. Only a lead posts it.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `thread` | string | yes | The other thread's id, from `session leads --all-projects`; the one card field that holds a thread id |
+| `why` | string | yes | One line, in the user's terms, on why the leads should talk |
+
+The user sees "Let this thread's lead talk to the lead of **<thread title>** (<last path segment of its project>)?", the `why`, and two buttons, **Allow** and **Don't allow**. One answer only; a second press is refused `card is already answered`. An open `reach` card counts in "Needs you". Only one `reach` card may be open per thread (`a reach request is already open`).
+
+The hub refuses it at post time (422): `no such thread`, `that is this thread`, `that thread is on another machine`, `that thread is archived`, `that thread was handed off`, `already in your project; no OK needed`, `already allowed`, `a reach request is already open`.
+
+What reaches you, once per card:
+
+- `[card <id>] picked: allow`: the link exists; message that lead.
+- `[card <id>] picked: don't allow`: drop it and say so in a line.
+- `[card <id>] allow failed: <reason>`: the other thread went away before the press (reasons as above); nothing is linked. Drop it and say so in a line.
+
+The link lasts until either thread is archived and works both ways: the other lead can message you back without a card of its own.
+
 ## The kinds never shown
 
 ### `retract`
@@ -287,7 +320,7 @@ Only a lead may retract, and any lead of the thread may retract an earlier lead'
 The hub checks these refusals in order (422):
 
 1. `no such card in this thread`: missing, in another thread, or replaced.
-2. `only a question, offer, approval, needs, sudo or deferred card can be retracted`.
+2. `only a question, offer, approval, needs, sudo, deferred or reach card can be retracted`.
 3. `a system needs card closes itself`.
 4. `card is already answered`: including a previous retraction, resolution or press; sudo
    cards are checked by state instead.
