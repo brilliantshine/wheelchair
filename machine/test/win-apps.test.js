@@ -24,7 +24,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 test('run reads the done code, caps output, and does not leak the token', async () => {
   const { tracker } = setup();
-  const result = await tracker.run(session, opts({ exitCode: 256, outputBytes: 70000, echoEnv: true }));
+  const result = await tracker.run(session, { ...opts({ exitCode: 256, outputBytes: 70000, echoEnv: true }), env: [['WHEELCHAIR_SESSION_TOKEN', 'explicit-secret']] });
   assert.equal(result.exit_code, 256);
   assert.equal(Buffer.byteLength(result.output), 65536);
   const log = fs.readFileSync(result.log, 'utf8');
@@ -40,9 +40,10 @@ test('wrapper exit without done has null code, and closure is reported', async (
   assert.equal(closed[0].copyKey, 'copy');
 });
 test('job remains running until the wrapper closes; timeout terminates it', async () => {
-  const { tracker } = setup();
-  const app = await tracker.start(session, opts({ duration: 400 }));
+  const { tracker, fakeDir } = setup();
+  const app = await tracker.start(session, opts({ duration: 400, launcherDuration: 20 }));
   await wait(100);
+  assert.equal(fs.existsSync(path.join(fakeDir, app.id + '.launcher-exited')), true);
   assert.equal(tracker.status(session, app.id).apps[0].running, true);
   await wait(450);
   const status = tracker.status(session, app.id);

@@ -28,6 +28,7 @@ switch (match[1]) {
     fs.writeFileSync(linuxPath(args.log), settings.output || 'x'.repeat(settings.outputBytes || 0));
     if (settings.echoEnv) fs.appendFileSync(linuxPath(args.log), JSON.stringify({ wrapper: process.env.WHEELCHAIR_SESSION_TOKEN || null, program: Object.fromEntries(args.env).WHEELCHAIR_SESSION_TOKEN || null }));
     console.log(JSON.stringify({ started: { pid: process.pid + 10000, created: '133000000000000001', wrapper_pid: process.pid, wrapper_created: '133000000000000002' } }));
+    if (settings.launcherDuration != null) setTimeout(() => fs.writeFileSync(path.join(dir, args.id + '.launcher-exited'), ''), settings.launcherDuration);
     setTimeout(() => { if (!settings.noDone) console.log(JSON.stringify({ done: { exit_code: settings.exitCode || 0 } })); }, settings.duration ?? 50);
     break;
   }
