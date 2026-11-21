@@ -1355,7 +1355,17 @@
     const left = all.filter((p) => !harnessOn(p)); // switched off: hidden here, kept in the saved order
     const hasAny = balDraft[key].includes('any');
     const missing = Object.keys(PROVIDER_NAME).filter((p) => harnessOn(p) && !real.includes(p));
-    const commit = (list) => { balDraft[key] = hasAny && key === 'lead_order' ? [...list, ...left, 'any'] : [...list, ...left]; renderPanel(); };
+    // Switched-off providers keep their saved index; the visible ones fill the other slots in their new order.
+    const commit = (list) => {
+      const total = left.length + list.length;
+      const out = new Array(total).fill(null);
+      const rest = [];
+      for (const p of left) { const i = all.indexOf(p); if (i < total && out[i] === null) out[i] = p; else rest.push(p); }
+      const vis = list.slice();
+      for (let i = 0; i < total; i++) if (out[i] === null) out[i] = vis.length ? vis.shift() : rest.shift();
+      balDraft[key] = hasAny && key === 'lead_order' ? [...out, 'any'] : out;
+      renderPanel();
+    };
     const move = (i, d) => { const next = real.slice(); const [item] = next.splice(i, 1); next.splice(i + d, 0, item); commit(next); };
     return h('div', { class: 'order', 'data-order': key, role: 'group', 'aria-label': label },
       h('ol', {}, real.map((p, i) => h('li', {}, h('span', { text: PROVIDER_NAME[p] }),
@@ -1364,7 +1374,7 @@
         real.length > 1 && h('button', { type: 'button', class: 'small', text: 'Remove', 'aria-label': `Leave ${PROVIDER_NAME[p]} out`, onclick: () => commit(real.filter((x) => x !== p)) })))),
       missing.map((p) => h('button', { type: 'button', class: 'small', text: `+ ${PROVIDER_NAME[p]}`, onclick: () => commit([...real, p]) })),
       key === 'lead_order' && h('label', { class: 'check' },
-        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...real, ...left, 'any'] : [...real, ...left]; renderPanel(); } }),
+        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...all, 'any'] : all.slice(); renderPanel(); } }),
         h('span', { text: "then whatever's left" })));
   }
 
@@ -1481,7 +1491,7 @@
 
   // hz: the Harnesses section's own state. `jobs` holds the last install state per "machine/provider",
   // `polls` the running install pollers.
-  const hz = { data: null, error: '', machine: null, seq: 0, jobs: {}, polls: {}, reachTimer: null, checked: null, confirmOff: null, rowErr: {}, active: false };
+  const hz = { data: null, error: '', machine: null, seq: 0, jobs: {}, polls: {}, reachTimer: null, checked: null, confirmOff: null, rowErr: {}, active: false, pending: null };
 
   function harnessMachine() {
     const list = (hz.data && hz.data.machines) || [];
@@ -1516,11 +1526,13 @@
     let res;
     try { res = await api('/harnesses' + (fresh ? '?fresh=1' : '')); } catch (e) {
       if (seq !== hz.seq) return;
+      hz.pending = null;
       hz.error = e.message; paintHarnesses();
       if (hz.active) { clearTimeout(hz.reachTimer); hz.reachTimer = setTimeout(() => loadHarnesses(true), 5000); }
       return;
     }
     if (seq !== hz.seq) return;
+    hz.pending = null;
     hz.data = res; hz.error = '';
     if (data && res.switches) data.harnesses = { ...(data.harnesses || {}), ...res.switches };
     const machine = harnessMachine();
@@ -1549,12 +1561,14 @@
     const again = () => { if (!run.stopped) run.timer = setTimeout(() => step('GET'), 2000); };
     async function step(method) {
       if (run.stopped) return;
+      if (machine !== hz.machine) { finish(); return; }
       let res = null; let body = {};
       try {
         res = await fetch(url, { method, signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
         body = await res.json().catch(() => ({}));
       } catch { res = null; }
       if (run.stopped) return;
+      if (machine !== hz.machine) { finish(); return; }
       if (!res || res.status >= 500) {
         hz.jobs[key] = { ...(hz.jobs[key] || { state: 'running', tail: '' }), offline: true };
         paintHarnesses(); return again();
@@ -1579,6 +1593,7 @@
       const res = await api('/settings/harnesses/' + encodeURIComponent(provider), { method: 'PUT', body: { enabled } });
       if (data && res && res.harnesses) data.harnesses = res.harnesses;
     } catch (e) { hz.rowErr[provider] = e.message; paintHarnesses(); return; }
+    if (!enabled && signCard && signCard.harness === provider) closeSignin();
     paintHarnesses();
     await loadHarnesses(true);
     const machine = harnessMachine();
@@ -1606,8 +1621,10 @@
     const actions = h('div', { class: 'h-actions' });
     const extra = [];
     const install = (label) => h('button', { type: 'button', class: 'small primary', text: label, 'aria-label': `${label} ${name}`, onclick: () => {
-      hz.jobs[machine.name + '/' + provider] = { state: 'running', tail: '' };
-      pollInstall(machine.name, provider, 'POST'); paintHarnesses();
+      const target = hz.machine; // always the machine the picker shows
+      if (!target || hz.pending) return;
+      hz.jobs[target + '/' + provider] = { state: 'running', tail: '' };
+      pollInstall(target, provider, 'POST'); paintHarnesses();
     } });
     if (on) {
       if (job && job.state === 'running') {
@@ -1666,8 +1683,9 @@
     if (machines.length > 1) {
       parts.push(h('label', { class: 'h-picker' }, h('span', { text: 'Machine' }),
         h('select', { 'aria-label': 'Machine', onchange: (ev) => {
-          hz.machine = ev.target.value; hz.checked = null; hz.confirmOff = null;
+          hz.machine = ev.target.value; hz.checked = null; hz.confirmOff = null; hz.pending = hz.machine;
           for (const key of Object.keys(hz.polls)) stopPoll(key);
+          paintHarnesses();
           loadHarnesses(false);
         } }, machines.map((m) => h('option', { value: m.name, text: m.name, selected: m.name === hz.machine })))));
     }
@@ -1679,7 +1697,9 @@
         [...new Set(reasons)].map((r) => h('p', {}, linkReasons(r)))));
     }
     if (!machine) parts.push(h('p', { class: 'v-empty', text: 'No machines are known yet.' }));
-    else if (!machine.reachable) {
+    else if (hz.pending === machine.name) {
+      parts.push(h('p', { class: 'v-empty waiting', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode(`Checking ${machine.name}…`)));
+    } else if (!machine.reachable) {
       parts.push(h('p', { class: 'hint waiting h-offline', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode(`Can't reach ${machine.name}, retrying…`)));
     } else {
       const old = HARNESSES.some(([p]) => ((machine.harnesses || {})[p] || {}).recipe === null);
