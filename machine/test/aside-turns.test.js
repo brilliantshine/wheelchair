@@ -155,6 +155,8 @@ const fs=require('fs'), a=process.argv.slice(2), input=fs.readFileSync(0,'utf8')
 fs.appendFileSync(process.env.PI_TEST_LOG,JSON.stringify({a,input})+'\\n');
 const id=a.includes('--fork')?get('--session-id'):get('--session');
 const emit=x=>console.log(JSON.stringify(x));
+if(input.includes('PREHEADER')) { process.stderr.write('Error: 429 rate limit exceeded' + (input.includes('KEY') ? ' sk-or-secret' : '') + '\\n'); process.exit(1); }
+if(input.includes('SPLIT')) { emit({type:'session',id}); const b=Buffer.from(JSON.stringify({type:'message_end',message:{role:'assistant',stopReason:'stop',content:[{type:'text',text:'café'}]}})+'\\n'); const n=b.indexOf(Buffer.from('é')); process.stdout.write(b.subarray(0,n+1)); setTimeout(()=>process.stdout.write(b.subarray(n+1)),50); return; }
 if(!input.includes('MISSING')) emit({type:'session',id:input.includes('MISMATCH')?'wrong':id});
 const msg=(stopReason,text,errorMessage)=>emit({type:'message_end',message:{role:'assistant',stopReason,content:text?[{type:'text',text}]:[],errorMessage}});
 if(input.includes('RETRY')) msg('error','','429 rate limit');
@@ -174,10 +176,12 @@ else msg('stop','answer sk-or-secret');
     assert.deepEqual(args.slice(0,11), ['--provider','openrouter','--model',i.model,'--mode','json','-p','--fork',i.from,'--session-id',i.new_id]);
     assert.equal(args[args.indexOf('--thinking')+1], 'high'); assert.equal(args[args.indexOf('--tools')+1], 'read,grep,find,ls'); assert.equal(args[args.indexOf('-e')+1],path.join(__dirname,'../adapters/pi-guard.js')); assert.ok(fs.existsSync(args[args.indexOf('-e')+1]));
     for (const access of ['read-only','full']) { [i,t] = await run({ mode:'resume', from:base.new_id, access }); assert.equal(t.conversation_id,base.new_id); args=records().at(-1).a; assert.equal(args[args.indexOf('--session')+1],base.new_id); assert.equal(args[args.indexOf('--tools')+1],access==='full'?'read,bash,edit,write,grep,find,ls':'read,grep,find,ls'); assert.equal(args.includes('-e'),access!=='full'); }
+    [,t]=await run({prompt:'SPLIT'}); assert.equal(t.state,'ok'); assert.equal(t.reply,'café');
+    for (const prompt of ['PREHEADER','PREHEADER KEY']) { [,t]=await run({prompt}); assert.equal(t.state,'failed'); assert.match(t.error,/Error: 429 rate limit exceeded/); assert.equal(t.limit,true); assert.ok(!JSON.stringify(t).includes('sk-or-')); }
     [,t]=await run({prompt:'ERROR'}); assert.equal(t.state,'failed'); assert.equal(t.limit,true); assert.equal(t.error,'HTTP 402 credit');
     [,t]=await run({prompt:'RETRY'}); assert.equal(t.state,'ok'); assert.equal(t.limit,false);
     [,t]=await run({prompt:'ABORT'}); assert.equal(t.state,'failed');
-    for (const prompt of ['MISSING','MISMATCH']) { [,t]=await run({prompt}); assert.equal(t.state,'failed'); assert.equal(t.conversation_id,null); }
+    for (const prompt of ['MISSING','MISMATCH']) { [,t]=await run({prompt}); assert.equal(t.state,'failed'); assert.equal(t.conversation_id,null); assert.equal(t.error,'invalid Pi session header'); }
     // stderr is used when the final assistant has no error message.
     await fsp.writeFile(cli, (await fsp.readFile(cli,'utf8')).replace("msg('error','','HTTP 402 credit')", "msg('error','','')"));
     [,t]=await run({prompt:'ERROR'}); assert.equal(t.error,'[redacted key]'); assert.ok(!JSON.stringify(t).includes('sk-or-'));

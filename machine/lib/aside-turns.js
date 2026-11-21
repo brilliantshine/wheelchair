@@ -102,6 +102,7 @@ class AsideTurns {
     const runChild = (argv, stdin, onSpawn) => new Promise(resolve => {
       let out = '', err = '', error = null, child;
       try { child = spawn(argv[0], argv.slice(1), { cwd: i.cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] }); } catch (e) { return resolve({ code: -1, out, err: e.message }); }
+      child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
       onSpawn(child);
       child.stdout.on('data', x => { out += x; }); child.stderr.on('data', x => { err += x; });
       child.on('error', e => { error = e; }); child.stdin.on('error', () => {});
@@ -130,12 +131,13 @@ class AsideTurns {
         const records = r.out.split('\n').filter(line => line.trim()).map(line => { try { return JSON.parse(line); } catch { return null; } });
         const expected = i.mode === 'fork' ? i.new_id : i.from;
         const header = records[0];
-        if (header?.type !== 'session' || header.id !== expected || (i.mode === 'fork' && header.id === i.from)) return await this.finish(t, { state: 'failed', error: 'invalid Pi session header' });
+        const validHeader = header?.type === 'session' && header.id === expected && !(i.mode === 'fork' && header.id === i.from);
         let message = null;
         for (const event of records) if (event?.type === 'message_end' && event.message?.role === 'assistant') message = event.message;
         const reply = (Array.isArray(message?.content) ? message.content.filter(x => x.type === 'text').map(x => x.text || '').join('') : '').trim();
         const error = adapter.redact(message?.errorMessage || last(adapter.redact(r.err)) || `Pi exited ${r.code}`);
-        const failed = r.code !== 0 || !reply || ['error', 'aborted'].includes(message?.stopReason);
+        if (!validHeader && r.code === 0 && !r.err.trim()) return await this.finish(t, { state: 'failed', error: 'invalid Pi session header' });
+        const failed = !validHeader || r.code !== 0 || !reply || ['error', 'aborted'].includes(message?.stopReason);
         const limit = failed && /(?:\b(?:402|429)\b|credit|rate[ _-]?limit)/i.test(error);
         return await this.finish(t, failed ? { state: 'failed', error, limit } : { state: 'ok', reply: adapter.redact(reply), conversation_id: expected, limit: false });
       }
