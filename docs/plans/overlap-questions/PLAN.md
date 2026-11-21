@@ -65,6 +65,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 36 | Supersedes the reply-back parts of Decisions 34-35: a peer's overlap question is answered at once from what the lead knows (saying it is asking its user when held or carded); the user's decision is not sent back later. Unrelated peer questions keep today's "send the answer back" rule | After rounds 13-15, the last two drew findings only about the reply-back; the user picked "No, answer it right away" (card fd19b88f) | user |
 | 37 | A retract 503 is retried within the same turn, anything depending on the withdrawal waits, and after 10 minutes a `needs` card offers Keep going; a peer's "settled" means settled under "Settling an answer" | Round 16 findings | review-round-16 |
 | 38 | Supersedes the retry part of 37: a retract 503 gets one retry after a minute, then a `needs` card and the turn ends (lead.md's existing pattern); a terminal refusal ends retrying and the waiting step is rechecked; a re-ask writes its new information to the Open Question first; an open re-ask takes precedence over an older decision when a peer asks | Round 17 findings | review-round-17 |
+| 39 | Retract retries: the sudo "try again" refusal is retryable; one `needs` card covers all failed retracts that something waits on; Talk about it posts no new question while the card is open; an answered refusal is handled from the press that follows | Round 18 findings | review-round-18 |
 
 ## Spec
 
@@ -201,14 +202,18 @@ On `[wc:context restart]`, after rereading the plan and cards:
   the hub is unreachable). Its success and refusals come straight from the hub. Every retract a
   lead makes (overlap, approval, deferred, offer, question, needs, sudo) that gets this 503 is
   retried once after a minute, as lead.md already does for an operation that fails because
-  something is unreachable. If it fails again, the lead posts a `needs` card naming the card it
-  could not withdraw and what waits on it, and ends its turn; "Keep going" retries the retract and
-  then the waiting step; "Talk about it" explains in a line and posts a `question` card if
-  something must be decided. Anything that replaces or depends on the withdrawn card (a re-ask, a
+  something is unreachable. The sudo refusal `couldn't reach <machine> to cancel the sudo
+  request; try again` is retried the same way; its already-running or finished refusals are
+  final. If it fails again and a step waits on it, the lead posts one `needs` card naming every
+  card it could not withdraw and what waits on each, and ends its turn; "Keep going" retries the
+  retracts and then the waiting steps; "Talk about it" is explained in the reply, with no new
+  `question` card while the card being withdrawn is still open. A retract nothing waits on is
+  noted in the reply and retried on the next turn. Anything that replaces or depends on the withdrawn card (a re-ask, a
   fresh offer or reach card, the approval retract at "talk instead of building") waits for the
   retract. Any other refusal ends the retrying: `card is already answered` (or `card was already
-  withdrawn`) means the card is closed; the lead handles its recorded answer, if any, and then
-  goes on with the waiting step if the old card no longer blocks it. `cards-lead.md` `retract` says so, so
+  withdrawn`) means the card is closed; the lead ends its turn, handles the user's press (it
+  arrives as the next message, by card id), and then goes on with the waiting step if the old
+  card no longer blocks it. `cards-lead.md` `retract` says so, so
   the existing retract steps (for example the deferred card on a switch to thorough) keep working
   through an outage.
 - `viewer/app/card.js` `retractable`, before the generic `card is already answered`: an approval
@@ -286,6 +291,10 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | A `needs` card per tidy-up retract | upheld | One card, only when a step waits (Decision 39) |
+| mechanics | major | Answered refusal has no answer to read | upheld | Press arrives next; handled then (Decision 39) |
+| mechanics | major | Sudo "try again" refusal treated as final | upheld | Retryable (Decision 39) |
+| mechanics | major | Talk about it adds a second open question | upheld | No new question while the card is open (Decision 39) |
 
 ### Round 17 — 2026-11-21
 
