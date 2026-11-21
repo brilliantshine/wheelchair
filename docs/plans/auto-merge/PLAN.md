@@ -413,7 +413,7 @@ Filled by Stage 3. One row per worker brief.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | `auto_merge` preference: settings, PUT preferences, Settings page row (Spec §1) | viewer/app/settings.js, viewer/app/routes.js, viewer/pages/settings.js, viewer/test/app-settings.test.js | light / claude-haiku-5-5 | wc-91de6c1c2eb1-worker | `node --test test/app-settings.test.js`; full `node --test test/*.test.js`; grep auto_merge; app-settings.spec.js | in progress |
 | T2 | tricky: hub auto-merge module, check trigger, `verified` validation, result commit delivery, card closing and dismiss (Spec §2 hub parts, §3) | viewer/app/auto-merge.js (new), viewer/app/cards.js, viewer/app/card.js, viewer/app/threads.js, viewer/pages/thread.js, viewer/test/app-auto-merge.test.js | standard / (assigned at start) | — | `node --test test/app-auto-merge.test.js`; full suite; needs/check-card/merged specs | not started (after T1) |
-| T3 | Lead protocol text (Spec §4) | protocol/app/lead.md, protocol/app/cards-lead.md | standard / claude-sonnet-5-5 | wc-91de6c1c2eb1-worker-2 | greps for verified / Never merge / Not merged automatically | in progress |
+| T3 | Lead protocol text (Spec §4) | protocol/app/lead.md, protocol/app/cards-lead.md | standard / claude-sonnet-5-5 | wc-91de6c1c2eb1-worker-2 | greps for verified / Never merge / Not merged automatically | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -421,3 +421,9 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+
+- 2026-11-21 — Choice: T3, lead.md §1/§8/§9: the full `verified` rule is written once in Making the pull request mergeable step 3; the other done sites point to it ("setting `verified` as that section says").
+- 2026-11-21 — Choice: T3, lead.md §10 Writing: lead-in "Otherwise phrase it so it holds either way" for the `update` merge wording.
+- 2026-11-21 — Choice: T3, lead.md §10 Posting: the "Not merged automatically" line sits after the `leave it` sentence.
+- 2026-11-21 — Choice: T3, lead.md:139: line left unwrapped to keep the diff small.
+- 2026-11-21 — T3 accepted (band: scout): all §4 edits present; one-line reply on dismissed is consistent with cards-lead.md's older dismissed rule. Sub-lead added "or nothing" to rule (b) so an empty diff (small fix, done head = verified commit) counts as passing; Spec §2's "both hold" introduces three bullets, read as all three.
