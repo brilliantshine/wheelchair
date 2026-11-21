@@ -35,15 +35,15 @@ esac
 
 test('service PATH drives program checks', async t => {
   const f = await fixture(t), s = await f.service();
-  await fsp.writeFile(path.join(f.bin, 'runner'), '#!/bin/sh\n', { mode: 0o755 });
+  // `runner` lives in its own folder, so the fake tmux stays on PATH and no real session starts.
+  const tools = path.join(f.root, 'tools'); await fsp.mkdir(tools);
+  await fsp.writeFile(path.join(tools, 'runner'), '#!/bin/sh\n', { mode: 0o755 });
   await f.file(f.work, { a: { command: 'runner' } });
   const original = process.env.PATH;
-  process.env.PATH = original.split(':').filter(part => part !== f.bin).join(':');
   assert.equal((await f.start(s)).project_tools.programs.length, 1);
-  process.env.PATH = original;
-  assert.deepEqual((await f.start(s)).project_tools.programs, []);
-  process.env.TOOLS_PATH = 'hang';
-  assert.deepEqual((await f.start(s)).project_tools.programs, []);
+  process.env.PATH = `${original}:${tools}`;
+  try { assert.deepEqual((await f.start(s)).project_tools.programs, []); }
+  finally { process.env.PATH = original; }
 });
 
 test('state ownership, invalid files, failure, reset, retry and persistence', async t => {

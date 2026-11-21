@@ -7,7 +7,7 @@ const { providers, loadRecipes } = require('./harness-recipes');
 const adapters = require('../adapters');
 const root = path.resolve(__dirname, '../..');
 const names = { claude: 'claude', gpt: 'codex', gemini: 'agy', kimi: 'kimi', openrouter: 'pi' };
-const labels = { claude: 'Claude', gpt: 'GPT', gemini: 'Gemini', kimi: 'Kimi', openrouter: 'OpenRouter' };
+const labels = { claude: 'Claude Code', gpt: 'Codex', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'Pi (OpenRouter)' };
 const dir = () => path.join(os.homedir(), '.wheelchair', 'installs');
 const file = (p, ext) => path.join(dir(), `${p}.${ext}`);
 function read(p, ext) { try { return JSON.parse(fs.readFileSync(file(p, ext), 'utf8')); } catch { return null; } }

@@ -19,7 +19,7 @@ test('detached install routes persist through service restart and validate', asy
   fs.writeFileSync(path.join(bin, 'bash'), `#!/bin/sh\ncase "$1" in */sensitivity/set.sh) echo "$WHEELCHAIR_PRESENT $2" >> '${mark}.dial'; [ "$2" = --json ] && echo '{"level":"high"}' && exit 0; exit 1;; esac\nexec /bin/bash "$@"\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(bin, 'curl'), '#!/bin/sh\nexit 22\n', { mode: 0o755 });
   fs.writeFileSync(recipes, JSON.stringify({ openrouter: script('https://example.invalid/install.sh'), claude: `while [ ! -f "$HOME/release" ]; do sleep 0.1; done; printf '#!/bin/sh\\necho fake\\n' > "$HOME/.local/bin/claude"; chmod +x "$HOME/.local/bin/claude"`, gemini: 'exit 17', kimi: 'true' }));
-  const env = { ...process.env, HOME: root, PATH: `${bin}:${process.env.PATH}`, WHEELCHAIR_HARNESS_RECIPES: recipes };
+  const env = { ...process.env, HOME: root, PATH: `${bin}:/usr/local/bin:/usr/bin:/bin`, WHEELCHAIR_HARNESS_RECIPES: recipes };
   // Start a service with a reserved port.
   const net = require('node:net'); const sock = net.createServer(); await new Promise(r => sock.listen(0, '127.0.0.1', r)); const port = sock.address().port; await new Promise(r => sock.close(r));
   fs.writeFileSync(path.join(state, 'machine.json'), JSON.stringify({ secret_file: secret, host: '127.0.0.1', port }));
@@ -51,5 +51,5 @@ test('npm recipe refuses an old Node before running', async () => {
   assert.equal(result.status, 0, result.stderr);
   let state; for (let i = 0; i < 100; i++) { await delay(30); const f = path.join(root, '.wheelchair/installs/openrouter.result'); if (fs.existsSync(f)) { state = JSON.parse(fs.readFileSync(f)); break; } }
   assert.equal(state.state, 'failed'); assert.equal(fs.existsSync(path.join(root, 'ran')), false);
-  assert.match(fs.readFileSync(path.join(root, '.wheelchair/installs/openrouter.log'), 'utf8'), /OpenRouter needs Node 22\.19\.0 or newer; this machine has 22\.18\.9\. Update Node, then try again\./);
+  assert.match(fs.readFileSync(path.join(root, '.wheelchair/installs/openrouter.log'), 'utf8'), /Pi \(OpenRouter\) needs Node 22\.19\.0 or newer; this machine has 22\.18\.9\. Update Node, then try again\./);
 });
