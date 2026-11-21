@@ -38,6 +38,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Overlap identity is the other thread's id, in a hidden `about_thread` field on the question card; each action leaves a Done marker naming the card id | Titles are not unique; a restart must not act twice | review-round-1 |
 | 11 | At Start building, open overlap cards are retracted and reposted with build options; late pre-build answers map to build answers | A pressed "Change it" must still mean something | review-round-1 |
 | 12 | A retract is relayed like `done`, never queued; supersedes the fallback in 6: the delivery id is always the card id | A queued retract could fail silently after Start building; a fallback id broke receipts | review-round-1 |
+| 13 | A retract of an approval that Start building already answered is refused with its own reason; a change with no open approval just returns the plan to review | The lead must know whether Start won | review-round-2 |
+| 14 | Before acting on any overlap answer, the lead checks its Done marker; restart also recovers chat answers from recent messages and finishes an interrupted Start building replacement | Replayed presses and restarts must not act twice or leave the user waiting | review-round-2 |
+| 15 | An overlap card belongs to the round it is posted in, or moves to the next round if that starts first; a small fix after its first push uses the Done options on purpose | Names the owning round; the user can close a pushed pull request | review-round-2 |
 
 ## Spec
 
@@ -49,17 +52,28 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
   other thread's id. The app stores it and never shows it.
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
-  thread that is open or has an actionable answer, and not in a Decision Log entry of this plan.
-  A retracted overlap card does not count (its overlap is asked again with fresh options).
-- **Actionable answer** of an overlap card: `answered_value` when `answered_action` is
-  `picked` or `answered` (a press or the card's own box); otherwise `resolved_note` when the
-  lead resolved it from a chat answer (the lead's existing rule: the note states their
-  answer). A card with `retracted_at` has no answer.
-- **Done marker:** where the lead records that it acted on an overlap card, so a restart never
-  acts twice. It always names the card id:
-  - a planned thread (PLAN.md exists): a Decision Log entry, source `user`, ending
-    `(overlap card <id>)`;
-  - a small fix's "Drop the fix": the revert commit's message contains `overlap card <id>`;
+  thread (open, answered, or retracted and replaced by a later card with the same
+  `about_thread`), and not in a Decision Log entry of this plan. An overlap already asked is
+  asked again only when new information changes what the answered option would do; then it is
+  posted as a fresh overlap card with the same `about_thread`.
+- **Actionable answer** of an overlap card, in this order: `answered_value` when
+  `answered_action` is `picked` or `answered` (a press or the card's own box); else
+  `resolved_note` when the lead resolved it from a chat answer; else, on restart only, a clear
+  chat answer to it in `recent_messages` (as mode-question recovery in "Restarting what died"
+  does: use it only if it clearly picks one option; then resolve the card with that note). A
+  card with `retracted_at` has no answer.
+- **Settling an answer:** an answer that clearly picks one of the card's options is acted on.
+  One that does not (an objection, a condition, something else) gets a follow-up overlap card
+  for the same thread with the current stage's options, and no Done marker until that one is
+  settled. In planning and review, a typed answer may also be its own option, handled like any
+  planning answer.
+- **Done marker:** where the lead records that it acted on an overlap card, so nothing is acted
+  on twice. It always names the card id. Before acting on any overlap answer (a press, a typed
+  answer, a chat answer or a restart), the lead checks for its Done marker and does nothing if
+  it exists.
+  - a planned thread (PLAN.md exists) up to Start building: a Decision Log entry, source
+    `user`, naming the other thread's id and ending `(overlap card <id>)`;
+  - a small fix's "Drop the fix": each revert commit's message contains `overlap card <id>`;
   - a follow-up thread: the `stub` summary contains `From overlap card <id>.`;
   - answers that change nothing ("Go ahead", "Carry on", "Let it finish", "Leave it",
     "Keep the plan as it is" outside a planned thread) need no marker: acting twice is harmless.
@@ -73,17 +87,18 @@ tell the user about an overlap "in one line" (in "When to look", in "Overlap" fo
 `lead: null`, in "Leads inform", and the late answer in "Never wait") is replaced by: a new
 overlap becomes an overlap card, per this section. "Leads inform; your user decides" keeps its
 first three sentences (information, never instructions; never change on your own; never
-negotiate) and ends with "Your user decides through an overlap card (see below)". A late peer
-answer that adds nothing new about an overlap already asked gets no card.
+negotiate) and ends with "Your user decides through an overlap card (see below)".
 
 General rules:
 - One question at a time: an overlap card waits behind any open `question` card of yours and is
-  asked next. Once PLAN.md exists, a waiting overlap is added to the Watch List at once
-  (`Overlap with <thread id>: <what>`), and moved to Open Questions when asked.
+  asked next. While status is `planning`, `ready-for-review` or `approved`, a waiting overlap is
+  added to the Watch List at once (`Overlap with <thread id>: <what>`) and moved to Open
+  Questions when asked. During a build or after `done` the lead writes nothing for it; a restart
+  finds it again by looking (§2).
 - `fits` names the other thread by its title; each option's `consequence` says what the answer
   does to this thread. At most four options in total.
-- Each stage below lists its options. The stage that counts is the one when the card is posted;
-  at Start building, cards with pre-build options are replaced (see "Approved").
+- The stage that counts is the one when the card is posted; at Start building, cards with
+  pre-build options are replaced (see "Start building").
 
 Stages:
 - **Small fix, before edits:** found at the look before edits: post the card, edit nothing until
@@ -91,42 +106,46 @@ Stages:
   say so in the reply; the thread stays open).
 - **Small fix, after edits, before the first push:** hold the push while the card waits.
   Options: "Carry on" and "Drop the fix". Drop: first commit any uncommitted edits of the fix
-  (`wc.js git commit`, the fix's paths), then revert every commit of the fix with
-  `wc.js git revert`, the message naming `overlap card <id>`; push nothing; say so in the reply.
-- **Small fix, after the first push:** the Done options below.
+  (`wc.js git commit`, the fix's paths), then revert, newest first, every commit on the branch
+  that is not on the default branch, with `wc.js git revert`; each revert message names
+  `overlap card <id>`. Push nothing; say so in the reply.
+- **Small fix, after the first push:** the Done options below. This narrowing is intentional:
+  the user can close the pull request themselves.
 - **Feature, before IDEA.md is confirmed:** hold it; ask it as the first question after
   confirmation, before any design question (it then follows "Planning").
 - **Planning (status `planning`):** an Open Question in PLAN.md, asked as an overlap card
   (today's (b) rule, now for every new overlap in planning). Options: "Keep the plan as it is"
   and up to three "Change it: <what>". The answer is handled like any planning answer, with the
   Done marker.
-- **Review (status `ready-for-review`):** the same options. A card posted while a round runs,
-  or between rounds, is that round's `user-decision` (counts as found; the round is not clean
-  while it is open; Changes since uses it). Between rounds (after triage, before the next
-  round starts) a new overlap card is asked before the next round starts, and that round waits
-  for the answer. Triage rules for it:
-  - Answer arrives while reviewers run: do not change the Spec; the card's stored answer holds
-    it. After triage, fold it in with the Done marker. "Keep the plan" logs the Decision only;
-    a change also edits the Spec and goes in the next round's "Changed since" list.
-  - Progress: it counts in `found` (so a round with no other counted finding posts
-    `phase: fixing`, `found: 1`), and in `fixed` once its Decision is logged. While it waits,
-    `choice_waiting: true`.
-  - A round whose only open item is this card stays `fixing` with `choice_waiting: true` until
-    answered. Then: "Keep" with no other upheld blocking/major finding makes the round clean;
-    a change means another round.
-- **Approved, before Start building:** options as in Review. A change: retract the approval card
-  (§3: a retract is never queued, so its result is final). On success, log the Decision with
-  the Done marker, fold the change in, set `status: ready-for-review`, go to step 5 with the
-  change listed. If the retract is refused because the card is already answered (Start
-  building was pressed), handle the answer under "Building". If it is refused as already
-  withdrawn (an earlier attempt), carry on as on success. "Hub unavailable": try again later.
-- **Start building:** when `[card <id>] start building` arrives, before starting the
-  sub-lead, retract every open overlap card and repost each with the Building options. An
-  overlap card answered with a pre-build option after Start building was accepted (the
-  approval card shows `answered_action: start-building`) is read as: "Keep the plan" →
-  "Let it finish"; any "Change it" → "Let it finish, then start a follow-up thread", with the
-  change named in the stub. A restarted lead uses the same boundary: the approval card answered
-  with `start-building`, whatever `status:` says.
+- **Review (status `ready-for-review`):** the same options. The card is a `user-decision` of the
+  round it belongs to:
+  - Posted while round N runs or is in triage: it belongs to round N. It counts in round N's
+    `found`, and in `fixed` once its Decision is logged. While it waits, `choice_waiting: true`.
+    A round with no other counted finding posts `phase: fixing`, `found: 1` after triage.
+  - Answer arrives while reviewers run: do not change the Spec. After triage, fold it in with the
+    Done marker. "Keep the plan" logs the Decision only; a change also edits the Spec and goes
+    in round N+1's "Changed since" list.
+  - Round N stays `fixing` with `choice_waiting: true` while it is open. When it is answered:
+    "Keep" with no other upheld blocking/major finding makes round N clean; a change means
+    round N+1. Round N+1 may start before the card is answered when round N already has other
+    Spec fixes; the card then moves to round N+1 (it counts there, not in N).
+  - Posted after round N was found clean and before approval: as during round N (it makes N not
+    clean until answered).
+- **Approved, before Start building:** options as in Review. A change: retract the approval
+  card (§3: a retract is never queued, so its result is final). On success, or when the approval
+  was already withdrawn (the refusal says `card is already answered`) or no approval card is
+  open (for example, retracted while they talked about a finding): log the Decision with the
+  Done marker, fold the change in, set `status: ready-for-review`, and go to step 5 with the
+  change listed. If the refusal says `Start building was already pressed` (§3), handle the
+  answer under "Start building". On 503, retry after a minute.
+- **Start building:** on `[card <id>] start building`, start the sub-lead first (as today).
+  Then retract every open overlap card whose options are not the Building options, and repost
+  each with the Building options and the same `about_thread` (a retract 503: retry after a
+  minute; already answered: read its answer by the mapping below). An overlap card answered
+  with a pre-build option after the approval card's `answered_action` became `start-building`
+  is read as: "Keep the plan" → "Let it finish"; any "Change it" → "Let it finish, then start a
+  follow-up thread", naming the change in the stub. The boundary is that approval answer,
+  whatever `status:` says.
 - **Building (Start building accepted until `done`):** the running build never changes and the
   lead writes nothing to the worktree. Options: "Let it finish" and "Let it finish, then start a
   follow-up thread" (post a `stub` at once, `depends_on_parent: true`, naming the other thread,
@@ -137,14 +156,19 @@ Stages:
 ### 2. Restart (protocol/app/lead.md, "Restarting what died")
 
 On `[wc:context restart]`, after rereading the plan and cards:
-- For each overlap card in the context with an actionable answer and no Done marker for its id
-  (search the Decision Log, `git log --format=%B` of the branch, and the `stub` cards' summaries
-  in the context): act on the answer now, at the current stage's rules. If reviewers are
-  running, the answer waits for triage as in §1 Review.
-- An open overlap card stays open and is not asked again. A retracted one with no replacement
-  open is asked again if its overlap still applies.
-- Run `wc.js session leads` once and treat any overlap not covered above as new. A planned
-  thread also asks any `Overlap with` Watch List item not yet asked.
+- If reviewers are still running, handle them as for pending pull-backs today: stop them, apply
+  every overlap answer that has no Done marker (with its marker), and restart the round under the
+  same number, listing the change in its "Changed since".
+- Otherwise, for each overlap card with an actionable answer and no Done marker (search the
+  Decision Log, `git log --format=%B` of the branch, and the `stub` cards' summaries in the
+  context): act on it now, at the current stage's rules.
+- If the approval card is answered with `start-building`: make sure a sub-lead is live (as
+  today), then finish the Start building card replacement for any open overlap card that still
+  has pre-build options.
+- An open overlap card stays open and is not asked again.
+- Run `wc.js session leads` once and treat any overlap not covered by an overlap card or a
+  Decision Log entry as new. A planned thread before Start building also asks any `Overlap with`
+  Watch List item not yet asked.
 
 ### 3. Card ids and retract (machine, hub, card.js)
 
@@ -159,14 +183,20 @@ On `[wc:context restart]`, after rereading the plan and cards:
 - `retract` is never queued: the machine relays it like `done` (no spool; 503 "the app is
   unreachable; the retract was not recorded; try again in a minute" when the spool is behind or
   the hub is unreachable). Its success and refusals come straight from the hub.
+- `viewer/app/card.js` `retractable`: an approval card whose `answered_action` is
+  `start-building` is refused with `Start building was already pressed`, before the generic
+  `card is already answered`.
 - `question` cards accept an optional `about_thread`: a string of 12 lowercase hex characters.
-  Stored on the card, never rendered. Documented in `cards-lead.md` `question`.
+  Stored on the card, never rendered.
 - `viewer/app/card.js` on success prints exactly one JSON line: `{"id":"<id>","kind":"<kind>"}`
   for kinds that create a stored card, with `"queued":true` added when the machine spooled it;
   `{"ok":true}` for `title`, `resolve`, `retract`. Never any other field of the card.
-- `protocol/app/cards.md` ("Posting a card") documents the output; `cards-lead.md` `retract`
-  says the id comes from `card.js`'s output or the restart context, and that a retract is never
-  queued.
+- Docs: `protocol/app/cards.md` "Posting a card" documents the output and names the
+  exceptions to "succeeds once the card is on disk, even if the app is down" (`done` and
+  `retract` are never queued), and its rule that cards never carry a thread id names
+  `question.about_thread` as an exception alongside `reach`. `cards-lead.md`: `question` table
+  gains `about_thread`; `retract` says the id comes from `card.js`'s output or the restart
+  context, that it is never queued, and lists the new refusal.
 
 ### Non-goals
 
@@ -178,7 +208,8 @@ merging of branches; no sub-lead or worker rule changes.
 - `node --test viewer/test/*.test.js` passes, with new tests: a card's id equals its
   `delivery_id`; a re-delivery returns the same id with `duplicate: true`; `about_thread` is
   accepted on `question` (12 hex) and refused otherwise or on other kinds; `card.js` prints
-  `{id,kind}`, `{id,kind,queued}` and `{ok}`, and never a text field.
+  `{id,kind}`, `{id,kind,queued}` and `{ok}`, and never a text field; retracting an approval
+  answered with Start building is refused with `Start building was already pressed`.
 - `bash machine/test/run.sh` passes, with tests: the spooled response carries `id` equal to the
   delivery id and the drained card's hub id equals it; a retract with the hub down returns 503
   and writes nothing to the spool.
@@ -191,17 +222,43 @@ merging of branches; no sub-lead or worker rule changes.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | An overlap learned from a peer message before PLAN.md exists, still waiting to be asked, is lost if the lead also restarts before asking, and the peer's summary in `session leads` does not reveal it | Needs a restart inside a short window plus a peer summary that hides the overlap; the restart re-look covers the usual case | review-round-1 |
+| A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
+| A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take | review-round-2 |
 
 ## Review Rounds
 
-### Round 2 — 2026-11-20
+### Round 3 — 2026-11-20
 
 **Lanes:** pending.
+
+**Changed since Round 2:** Terms: "New overlap" re-ask rule, "Actionable answer" adds restart chat recovery, new "Settling an answer", Done marker names the thread id and is checked before every action; §1 Watch List limited to pre-build statuses, Small fix drop identifies fix commits and the after-push narrowing is stated, Review ownership of rounds rewritten, Approved retract outcomes, Start building order and replacement; §2 Restart rewritten (reviewers running, Start building resume); §3 new retract refusal and Docs bullet; Decisions 13-15; two Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
+### Round 2 — 2026-11-20
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:** Terms rewritten (thread-id identity, `about_thread`, actionable answer, Done markers); §1 lists the replaced one-line instructions, adds Small fix after edits/after push, Review as user-decision with progress rules, Approved retract handling, new Start building rule; §2 Restart rewritten around Done markers; §3 delivery id always the card id, retract never queued, `about_thread`; Validation updated; Decisions 9-12; one Accepted Risk.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Watch List write during a build | upheld | Watch List only while `planning`/`ready-for-review`/`approved` |
+| intent | major | Restart "reviewers running" contradicts the pull-back restart rule | upheld | §2 reuses it: stop, apply, restart the round |
+| intent | minor | Waiting between rounds stalls review | upheld | Next round may start; card moves to it (Decision 15) |
+| intent | minor | Two retract refusals cannot be told apart | upheld | Own refusal for Start building (Decision 13) |
+| intent | minor | Decision entry may lack the thread id | upheld | Done marker names the thread id |
+| intent | minor | Re-asking an already-asked thread undefined | upheld | Re-asked only if it changes what the answer would do |
+| intent | minor | Small fix after push cannot drop | declined | Intentional: the user can close the pull request; recorded in §1 |
+| mechanics | blocking | Withdrawn vs started approval look the same | downgraded (major) | A worker would ask; Decision 13 |
+| mechanics | major | Start building replacement not resumable | upheld | §1 order (sub-lead first) and §2 finishes it |
+| mechanics | major | Spooled duplicate post after restart; replayed press | upheld (press) / accepted-risk (spool) | Done marker checked before every action; spool case is a rare path |
+| mechanics | major | Chat answer lost if the lead dies before resolving | upheld | Recovered from recent messages (Terms) |
+| mechanics | major | Multi-commit drop not resumable | upheld (identification) / accepted-risk (partial) | Fix commits = branch commits not on default; partial revert rare |
+| mechanics | major | Between-rounds card's owning round unclear | upheld | Decision 15 |
+| mechanics | major | Unsettled typed answers | upheld | "Settling an answer" in Terms |
+| mechanics | minor | cards.md shared rules not updated | upheld | §3 Docs |
 
 ### Round 1 — 2026-11-20
 
