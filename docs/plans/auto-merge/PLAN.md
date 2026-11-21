@@ -59,6 +59,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 22 | A lead never sets `verified` in a thread where the user ever chose to push something that failed its check; the question card answer is the durable record a restarted lead reads | One push-as-is holds the PR for good, whatever happens next | review-round-3 |
 | 23 | Imported threads are never auto-merged | Their earlier push-as-is answers and checks can't be established after a handoff | review-round-4 |
 | 24 | Supersedes the committed-pass part of #22's §2 wording: only a `result` the lead holds counts; a lead restarted before `done` omits `verified` | No committed record ties a pass to the pushed head; the cost is today's manual merge | review-round-4 |
+| 25 | After four review rounds, keep the design (later verified fixes can still auto-merge) and run another round | Collin chose "One more round" over "first finish only" | user |
 
 ## Spec
 
@@ -309,6 +310,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | minor | Card added after its closing event | upheld | Finishing checks the reloaded thread |
 | mechanics | minor | Same-head repost closes the card | upheld | Only a different head closes it |
 | mechanics | minor | Committed-pass record undefined | upheld | Cut: only a held `result` counts (#24) |
+
+### Round 5 — 2026-11-21
+
+**Lanes:** claude (intent); non-claude (mechanics); cross-family: yes.
+
+**Changed since Round 4:** §2: only a `result` the lead holds counts (#24); "Defer them and finish" is not shipping a gap. §3: imported threads never merge (gate 3, #23); gate 4 counts every non-retracted done; Finishing skips the card when the reloaded thread already has the `merged` card or a done at another head; only a done at a different head closes the card. Summary paragraph points to §3. Accepted Risks: handoff during the wait. Decision 25 (Collin).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
