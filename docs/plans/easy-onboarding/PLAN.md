@@ -664,7 +664,7 @@ npm --prefix viewer run test:browser
 | T4 | Pages: S4 Harnesses section, S5 home checklist, browser tests | `viewer/pages/settings.{js,css,html}`, `viewer/pages/threads.{js,html}`, new `viewer/test/*.spec.js` | standard, claude-sonnet-5-5 | wc-ff891978fb1d-worker-4 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
 | R1-1 | Remediation 1: S2.3 Node check reads the recipe's PATH node | `machine/lib/harness-install.js`, `machine/test/harness-install.test.js` | standard, gpt | wc-ff891978fb1d-worker-7 | `bash machine/test/run.sh` | done |
 | R1-2 | Remediation 1: S4.6 hidden order positions; S4.1–4.3 Install targets the shown machine; S4.2 sign-in closes on switch-off | `viewer/pages/settings.{js,css}`, `viewer/test/app-harnesses.spec.js` | standard, claude | wc-ff891978fb1d-worker-8 | `npm --prefix viewer run test:browser` | done |
-| R2-1 | Remediation 2: Add account offers only switched-on providers; switch-off closes every sign-in card for that provider (second attempt on the sign-in gap) | `viewer/pages/settings.js`, `viewer/test/app-harnesses.spec.js` | standard, claude | wc-ff891978fb1d-worker-9 | `npm --prefix viewer run test:browser` | running |
+| R2-1 | Remediation 2: Add account offers only switched-on providers; switch-off closes every sign-in card for that provider (second attempt on the sign-in gap) | `viewer/pages/settings.js`, `viewer/test/app-harnesses.spec.js` | standard, claude | wc-ff891978fb1d-worker-9 | `npm --prefix viewer run test:browser` | done |
 
 ## Log
 
@@ -708,3 +708,6 @@ Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
 - 2026-11-21 — Remediation 1 complete; validation on `9e1a29cd`: installer 208/1 (pre-existing), machine 486/486, node 764/764, browser 1186 passed / 34 skipped. Verification attempt 2 started.
 - 2026-11-21 — Verification attempt 2 on `279fc36b`: Claude verifier PASS; GPT verifier FAIL with 2 gaps (Add account defaults to a switched-off Claude; an Accounts-panel sign-in card survives switch-off). Neither is a rare path; sent to the lead.
 - 2026-11-21 — Lead's answer: fix both attempt-2 gaps. REMEDIATION-2.md written; R2-1 (claude) dispatched.
+- 2026-11-21 — R2-1 accepted (band: scout). Add account uses one `addProviders()` list for its default and its picker, and resets when switches change; a switch-off closes any sign-in card whose provider matches, wherever it was opened. The scout confirmed every `openSignin` caller sets the card's provider. Its stale-data concern doesn't apply: `PUT /settings/harnesses` always returns `describe()` with `harnesses` (S3.3). Targeted specs on the worker branch: 256 passed.
+- 2026-11-21 — Choice: R2-1, settings.js: added a `provider` field to the sign-in card, because `account` holds the id string; when nothing can be added after a switch, an open Add form closes.
+- 2026-11-21 — Choice: R2-1, app-harnesses.spec.js: test (b) clicks "Add anyway" when the reset lands on Claude; new `stubAccounts`/`switchOff` helpers.
