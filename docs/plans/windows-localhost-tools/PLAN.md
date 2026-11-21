@@ -16,35 +16,23 @@ Review Rounds and Accepted Risks on `wc/d5233e17e73d`), summarised in `MAP.md`.
 
 ## Open Questions
 
-### Q1: Same port, or a private port per forwarded tool?
-- **Context:** The parent design listened on Linux `127.0.0.1:<the tool's own port>` and
-  left the URL unchanged. Almost every review problem came from that: a port means Windows
-  for one project and Linux for another; a Linux program already on the port blocks the tool;
-  WSL's localhostForwarding can publish our listener back on Windows at that same port and
-  loop; a freed port can be taken by an unrelated program that then gets the headers.
-- **Options:** (a) same port, URL unchanged (parent design); (b) the machine picks a free
-  private port per forward and the session's config points the tool at it (Codex and
-  Antigravity build their own config already; Claude gets the original entry disabled and a
-  same-name entry via `--mcp-config`, to be checked live).
-- **Recommendation:** (b). Removes port ownership across projects, the Linux-port clash and
-  the relay loop (our port is never the Windows tool's port); the restart gap shrinks to
-  "another program grabs a random high port in seconds", a rare path.
-
-### Q2: Mirrored networking: relay too, or connect directly?
-- **Context:** In mirrored mode Linux can reach Windows 127.0.0.1 directly, but a Linux
-  program on the same port would get the requests instead.
-- **Recommendation:** decide after Q1.
-
-### Q3: Where the switch is stored
-- **Recommendation:** parent D7 (top-level `"wheelchair": {"windows": [...]}` in `.mcp.json`),
-  defaulted unless Q1 changes it.
+### Q4: SSE tools with the private port
+- **Context:** Old-style SSE tools tell the client where to send messages in an `endpoint`
+  event. Servers that send a full address (`http://localhost:<tool port>/messages`) make the
+  client post to the tool's own port in Linux, bypassing the forward: the tool fails, or an
+  unrelated Linux program on that port gets the headers.
+- **Options:** (a) support `http` (streamable) tools only; SSE stays as today (not sent to
+  Windows) with a warning; (b) the forwarder reads SSE streams and rewrites a full `endpoint`
+  address to the private port.
+- **Recommendation:** (a). SSE is deprecated in MCP, the form cannot edit SSE entries, and (b)
+  turns a byte pipe into an HTTP-aware proxy. Changes IDEA's "(or SSE)": scope change.
 
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
 | W1 | 2026-11-21 | Thread "Windows bridge: Unity setup, disk use, warnings" (`wc/d5233e17e73d`, verifying, not merged) changes adapters (`loaded: [{name, windows}]`), startIn readying, restart recovery of `WinBridge.toolSessions`, `detectWsl` and the Project tools page. Plan should build on it; confirm whether it merges before build | yes | |
-| W2 | 2026-11-21 | Claude: does a `--mcp-config` entry with the same name as a disabled `.mcp.json` entry load (parent C2)? Needed if Q1 = private port | no | |
+| W2 | 2026-11-21 | Claude: does a `--mcp-config` entry with the same name as a disabled `.mcp.json` entry load (parent C2)? Needed if Q1 = private port | no | Checked live 2026-11-21 (claude -p, two stub HTTP servers): with the `.mcp.json` entry in `disabledMcpjsonServers` and a same-name `--mcp-config` entry, only the `--mcp-config` URL is contacted; control without disabling contacts the `.mcp.json` URL. D5 |
 
 ## Decision Log
 
@@ -53,10 +41,20 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | D1 | Mode thorough | User's choice | user |
+| D2 | A marked tool is reached through a private Linux port the machine picks, not the tool's own port; each session's built config points the tool at `http://127.0.0.1:<private port><path>`; the user's `.mcp.json` is never changed | Removes cross-project port meaning, Linux-port clashes and the localhostForwarding loop; restart gap becomes a rare path | user |
+| D3 | The forward (Linux private-port listener → Windows relay → Windows `127.0.0.1:<tool port>`) is used in every WSL networking mode, mirrored included; no networking-mode detection | Mirrored-mode direct access could reach a Linux listener on the tool's port; one path is simpler and always safe | defaulted |
+| D4 | The switch is stored as parent D7: top-level `"wheelchair": {"windows": ["<name>", ...]}` in `.mcp.json` | CLIs that read `mcpServers` never see an unknown field; save flow already keeps other top-level keys | defaulted |
+| D5 | Claude: the marked `.mcp.json` entry is added to `disabledMcpjsonServers` and a same-name entry with the private URL is passed with `--mcp-config <file>`; tool names stay unchanged | Verified live (W2) | defaulted |
 
 ## Spec
 
 (Grown as decisions land.)
+
+- **Private port (D2).** Marked tools are not reached at their own port. The machine
+  listens on a free `127.0.0.1` port it picks and each session's built config gets the
+  tool's URL with host `127.0.0.1` and that port, path and query unchanged. `.mcp.json` is
+  not modified. Claude per D5; Codex and Antigravity already build their config.
+- **All networking modes (D3).** Same forward in NAT and mirrored mode.
 
 ## Accepted Risks
 
