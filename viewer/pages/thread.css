@@ -186,8 +186,9 @@ button.picked { border-color: var(--good-line); }
 /* "Start a thread about it" shows only on the line under the pointer, or a tapped (focused) line on touch. */
 /* Faded out rather than hidden, so the keyboard can still Tab onto it; it takes no clicks while faded. */
 .card-done .bullet button.link { opacity: 0; pointer-events: none; }
-.card-done .bullet:hover button.link, .card-done .bullet:focus-visible button.link,
+.card-done .bullet:focus-visible button.link,
 .card-done .bullet button.link:focus-visible { opacity: 1; pointer-events: auto; }
+@media (hover: hover) { .card-done .bullet:hover button.link { opacity: 1; pointer-events: auto; } }
 @media (hover: none) { .card-done .bullet:focus-within button.link { opacity: 1; pointer-events: auto; } }
 .card-done .bullet:focus:not(:focus-visible) { outline: none; }
 .bullet { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }

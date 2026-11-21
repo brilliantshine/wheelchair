@@ -58,6 +58,21 @@
     if (onclick) b.addEventListener('click', onclick);
     return b;
   }
+  // A done-card line whose "Start a thread about it" link shows only on hover, or on a tapped
+  // (focused) line on touch. A tap that lands where the link was still faded only reveals it:
+  // the press counts only if the link was showing when the pointer went down.
+  function threadLinkRow(card, text) {
+    const row = el('div', 'bullet'); row.tabIndex = 0;
+    row.appendChild(el('span', 'bullet-text', text));
+    let shownAtDown = false;
+    const link = button('Start a thread about it', 'link', (ev) => {
+      if (ev.detail !== 0 && !shownAtDown) return; // detail 0: keyboard activation
+      press(card, 'start-thread', text);
+    }, thread().archived);
+    row.addEventListener('pointerdown', () => { shownAtDown = getComputedStyle(link).opacity === '1'; });
+    row.appendChild(link);
+    return row;
+  }
   const SVG = 'http://www.w3.org/2000/svg';
   // A fixed-path line icon, built as nodes.
   function icon(d, size) {
@@ -1062,17 +1077,13 @@
         if (card.note) inset.appendChild(prose('dim', card.note));
         inset.appendChild(el('div', 'eyebrow', 'What you can do now'));
         for (const c of card.can_do || []) {
-          const row = el('div', 'bullet'); row.tabIndex = 0; row.appendChild(el('span', 'bullet-text', c));
-          row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', c), thread().archived));
-          inset.appendChild(row);
+          inset.appendChild(threadLinkRow(card, c));
         }
         if ((card.left_as_is || []).length) {
           const left = el('div', 'left-as-is');
           left.appendChild(el('div', 'eyebrow', 'Left as is · ' + card.left_as_is.length + (card.left_as_is.length === 1 ? ' thing' : ' things')));
           for (const l of card.left_as_is) {
-            const row = el('div', 'bullet'); row.tabIndex = 0; row.appendChild(el('span', 'bullet-text', l));
-            row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', l), thread().archived));
-            left.appendChild(row);
+            left.appendChild(threadLinkRow(card, l));
           }
           inset.appendChild(left);
         }
