@@ -148,3 +148,47 @@ test('ps process backend matches exact markers and handles failures', async () =
   await atomic(store.file, JSON.stringify({ [id]: { state: 'running', pid: 11, pid_start: 'old', started_at: new Date().toISOString() } }));
   await assert.doesNotReject(store.load()); assert.equal(store.get(id).error, 'the machine restarted');
 });
+
+test('Pi asides validate, fork, resume, settle and redact', async () => {
+  const dir = await makeTemp('aside-pi-'), bin = path.join(dir, 'bin'), log = path.join(dir, 'pi-log'); await fsp.mkdir(bin);
+  const cli = path.join(bin, 'pi');
+  await fsp.writeFile(cli, `#!/usr/bin/env node
+const fs=require('fs'), a=process.argv.slice(2), input=fs.readFileSync(0,'utf8'), get=k=>a[a.indexOf(k)+1];
+fs.appendFileSync(process.env.PI_TEST_LOG,JSON.stringify({a,input})+'\\n');
+const id=a.includes('--fork')?get('--session-id'):get('--session');
+const emit=x=>console.log(JSON.stringify(x));
+if(input.includes('PREHEADER')) { process.stderr.write('Error: 429 rate limit exceeded' + (input.includes('KEY') ? ' sk-or-secret' : '') + '\\n'); process.exit(1); }
+if(input.includes('SPLIT')) { emit({type:'session',id}); const b=Buffer.from(JSON.stringify({type:'message_end',message:{role:'assistant',stopReason:'stop',content:[{type:'text',text:'café'}]}})+'\\n'); const n=b.indexOf(Buffer.from('é')); process.stdout.write(b.subarray(0,n+1)); setTimeout(()=>process.stdout.write(b.subarray(n+1)),50); return; }
+if(!input.includes('MISSING')) emit({type:'session',id:input.includes('MISMATCH')?'wrong':id});
+const msg=(stopReason,text,errorMessage)=>emit({type:'message_end',message:{role:'assistant',stopReason,content:text?[{type:'text',text}]:[],errorMessage}});
+if(input.includes('RETRY')) msg('error','','429 rate limit');
+if(input.includes('ERROR')) { msg('error','','HTTP 402 credit'); process.stderr.write('sk-or-secret\\n'); }
+else if(input.includes('ABORT')) msg('aborted','partial','aborted');
+else msg('stop','answer sk-or-secret');
+`); await fsp.chmod(cli, 0o755);
+  const old = { ...process.env }; Object.assign(process.env, { PATH: bin + ':' + old.PATH, PI_TEST_LOG: log });
+  const store = new AsideTurns(dir, atomic, x => x); const base = { provider:'openrouter', mode:'fork', from:uuid(), new_id:uuid(), cwd:dir, model:'vendor/model:variant', effort:'high', prompt:'hello', account_dir:null };
+  const run = async changes => { const i = { ...base, ...changes, turn_id:uuid() }; await store.start(i); return [i, await wait(store,i.turn_id)]; };
+  try {
+    assert.throws(() => store.validate({ ...base, turn_id:uuid(), provider:'other' }), /invalid provider/);
+    assert.throws(() => store.validate({ ...base, turn_id:uuid(), model:'invalid' }), /model/);
+    assert.throws(() => store.validate({ ...base, turn_id:uuid(), new_id:'bad' }), /new_id/);
+    let [i,t] = await run({}); assert.equal(t.state,'ok'); assert.equal(t.conversation_id,i.new_id); assert.equal(t.reply,'answer [redacted key]');
+    let records = () => fs.readFileSync(log,'utf8').trim().split('\n').map(JSON.parse); let args = records().at(-1).a;
+    assert.deepEqual(args.slice(0,11), ['--provider','openrouter','--model',i.model,'--mode','json','-p','--fork',i.from,'--session-id',i.new_id]);
+    assert.equal(args[args.indexOf('--thinking')+1], 'high'); assert.equal(args[args.indexOf('--tools')+1], 'read,grep,find,ls'); assert.equal(args[args.indexOf('-e')+1],path.join(__dirname,'../adapters/pi-guard.js')); assert.ok(fs.existsSync(args[args.indexOf('-e')+1]));
+    for (const access of ['read-only','full']) { [i,t] = await run({ mode:'resume', from:base.new_id, access }); assert.equal(t.conversation_id,base.new_id); args=records().at(-1).a; assert.equal(args[args.indexOf('--session')+1],base.new_id); assert.equal(args[args.indexOf('--tools')+1],access==='full'?'read,bash,edit,write,grep,find,ls':'read,grep,find,ls'); assert.equal(args.includes('-e'),access!=='full'); }
+    [,t]=await run({prompt:'SPLIT'}); assert.equal(t.state,'ok'); assert.equal(t.reply,'café');
+    for (const prompt of ['PREHEADER','PREHEADER KEY']) { [,t]=await run({prompt}); assert.equal(t.state,'failed'); assert.match(t.error,/Error: 429 rate limit exceeded/); assert.equal(t.limit,true); assert.ok(!JSON.stringify(t).includes('sk-or-')); }
+    [,t]=await run({prompt:'ERROR'}); assert.equal(t.state,'failed'); assert.equal(t.limit,true); assert.equal(t.error,'HTTP 402 credit');
+    [,t]=await run({prompt:'RETRY'}); assert.equal(t.state,'ok'); assert.equal(t.limit,false);
+    [,t]=await run({prompt:'ABORT'}); assert.equal(t.state,'failed');
+    for (const prompt of ['MISSING','MISMATCH']) { [,t]=await run({prompt}); assert.equal(t.state,'failed'); assert.equal(t.conversation_id,null); assert.equal(t.error,'invalid Pi session header'); }
+    // stderr is used when the final assistant has no error message.
+    await fsp.writeFile(cli, (await fsp.readFile(cli,'utf8')).replace("msg('error','','HTTP 402 credit')", "msg('error','','')"));
+    [,t]=await run({prompt:'ERROR'}); assert.equal(t.error,'[redacted key]'); assert.ok(!JSON.stringify(t).includes('sk-or-'));
+    await store.writes;
+    const blockedDir = path.join(dir, 'blocked'); await fsp.mkdir(blockedDir);
+    const blocked = new AsideTurns(blockedDir,atomic,x=>x,{piProblem:async()=> 'Pi 1.5.2 or newer is needed (found 1.0.0)'}); i={...base,turn_id:uuid()}; const count=records().length; await blocked.start(i); t=await wait(blocked,i.turn_id); assert.match(t.error,/1.5.2/); assert.equal((await blocked.start(i)).status,200); assert.equal(records().length,count);
+  } finally { process.env = old; }
+});
