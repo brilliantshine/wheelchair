@@ -5,7 +5,7 @@
   --ink: #e6e8ec; --ink-2: #c5cad3; --dim: #8b929e;
   --accent: #5b9dd9; --accent-hi: #a9cdf0; --accent-ink: #0e1114;
   --warn: #d9a441; --warn-bg: #241f15; --warn-line: #5c4a24;
-  --bad: #c4645f; --bad-text: #e09a96; --bad-bg: #2a1a19; --code-bg: #23262d;
+  --code-bg: #23262d;
   --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   color-scheme: dark; background: var(--bg); color: var(--ink);
   font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -23,7 +23,7 @@ pre:empty { display: none; }
 #editable-section { margin-top: 1.2rem; padding: .7rem 1rem; border-radius: 8px;
   background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn); }
 #editable-section p { color: var(--warn); }
-#editable-section li { font-family: var(--mono); font-size: .9rem; }
+#editable-section li { font-family: var(--mono); font-size: .9rem; overflow-wrap: anywhere; }
 form { margin-top: 1.4rem; padding: 1rem; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 label { display: block; font-weight: 600; margin-bottom: .4rem; }
 input { display: block; width: 100%; padding: .7rem; font: inherit; font-size: 1rem; color: var(--ink);
@@ -33,7 +33,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 button { margin-top: .4rem; padding: .75rem 1.3rem; font: inherit; font-size: 1rem; font-weight: 600; cursor: pointer;
   background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); border-radius: 8px; }
 button:hover { background: var(--accent-hi); border-color: var(--accent-hi); }
-button.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
-button.confirm:hover { background: var(--bad-text); border-color: var(--bad-text); color: var(--accent-ink); }
+button.confirm { background: #b0443f; border-color: #b0443f; color: #fff; }
+button.confirm:hover { background: #9e3b36; border-color: #9e3b36; color: #fff; }
 #status { margin-top: 1rem; font-weight: 600; color: var(--ink); }
 #status:empty { display: none; }
