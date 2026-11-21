@@ -86,6 +86,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 57 | Overlap cards need a matching `project` (linked threads elsewhere get the mention); the peer settled path is just a Decision entry; waiting Open Questions store the title; small fixes store nothing for waiting overlaps; Accepted Risks and D4 notes tidied | Round 31 findings | review-round-31 |
 | 58 | The same-project gate also covers Open Questions; another project's thread gets the late-overlap line once, in any window; waiting Open Questions count as already known; the peer settled path uses the latest Decision | Round 32 findings | review-round-32 |
 | 59 | Overlap Decisions start `Overlap with <thread id>:` and only they settle a thread; new information from any source updates a waiting Open Question; only an incoming peer question gets an immediate reply | Round 33 findings | review-round-33 |
+| 60 | After the review budget was reached again (rounds 31-33), run one more round with the plan as it is | User's pick (card 4dbee8da) | user |
 
 ## Spec
 
@@ -319,6 +320,15 @@ merging of branches; no sub-lead or worker rule changes.
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 
 ## Review Rounds
+
+### Round 34 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 33:** Decision 59: Terms new "Overlap Decision" (only `Overlap with <thread id>:` entries settle a thread), "New overlap" (new information updates a waiting entry), "This project only" (immediate reply only to an incoming peer question); §1 peer settled path uses overlap Decisions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 33 — 2026-11-21
 
