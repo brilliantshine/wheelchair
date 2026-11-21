@@ -14,14 +14,6 @@ Review Rounds) and this plan's `MAP.md`.
 
 ## Open Questions
 
-### Q1: How long are sent files kept after a thread is archived?
-- **Context:** Today archive deletes the whole uploads folder (`machine/service.js:1209-1217`).
-  There is no thread deletion, so "kept" with no rule means kept for good. Each sent file is
-  at most 25 MiB (`machine/service.js:38`).
-- **Options:** for good; 30 days after archive, then removed; for good, with a way to delete
-  them by hand.
-- **Recommendation:** for good. Agent-sent files are few and small; a timer would surprise.
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -39,6 +31,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | In-app preview covers Markdown (rendered like the doc page) and plain text types (.txt, .log, .csv, .json and similar, shown as text) | IDEA's "text or Markdown"; other types keep downloading | defaulted |
 | 5 | Threads on another computer read documents and pictures through that thread's machine service, with the network call made outside the per-thread locks | Required by IDEA's "must not freeze the thread list" and the lock rules in MAP.md | defaulted |
 | 6 | Files already deleted by past archives are not recovered | They no longer exist anywhere | defaulted |
+| 7 | Files agents sent are kept for good after archive; no timer, no delete button | User's pick; few, small files (25 MiB cap each) | user |
+| 8 | HTML pictures download as their .html file, not PNG; graphs and forms download as PNG | HTML pictures run in a sandboxed frame the page cannot draw from; they are the rare fallback form | defaulted |
+| 9 | The zip is built on the hub with a small built-in writer (stored, no compression), no new dependency | Three small Markdown files; the package has no zip library | defaulted |
 
 ## Spec
 
