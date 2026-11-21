@@ -51,6 +51,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 23 | Overlap Watch List items stay until their Decision is logged; a bare general "Change it" gets a follow-up card; the approval retract is skipped when none was posted | Round 6 findings | review-round-6 |
 | 24 | After the review budget was reached again (rounds 4-6), run another review round with the plan as it is | User's pick (card 4bcb64a3) | user |
 | 25 | No general "Change it" button: overlap cards offer "Keep the plan as it is" plus one to three concrete changes, and the box takes any other; a concrete typed answer settles in approved too; a round restarted by recovery counts the answer applied in it | Round 7 findings | review-round-7 |
+| 26 | Approved-stage withdrawal applies to every overlap card, re-asks included; one fallback change option always exists; a split offer goes before waiting overlap cards but after an open one; a typed change follows its stage's change rules | Round 8 findings | review-round-8 |
 
 ## Spec
 
@@ -79,8 +80,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   One that does not (an objection, a condition, something else) gets a follow-up overlap card
   for the same thread with the current stage's options, and no Done marker until that one is
   settled. The original card counts as handled once a later overlap card with the same
-  `about_thread` exists. In planning, review and approved, a concrete typed or chat answer may also be its own option, handled like any
-  planning answer.
+  `about_thread` exists. In planning, review and approved, a concrete typed or chat answer may also be its own option, handled by the
+  current stage's rules for a change (§1 Planning, Review or Approved).
 - **Late overlap:** a new overlap learned once a build has started (the approval card's
   `answered_action` is `start-building`) or once a small fix's edits are made. It never gets a
   card: the lead says in one line of its next visible reply which thread overlaps, what it is
@@ -126,7 +127,9 @@ Stages:
 - **Planning (status `planning`):** an Open Question in PLAN.md, asked as an overlap card
   (today's (b) rule, now for every new overlap in planning). Options: "Keep the plan as it is"
   and one to three concrete "Change it: <what>" options; any other change the user types in the
-  card's box or in chat. The answer is handled like any planning answer, with the
+  card's box or in chat. When the other thread's scope is unclear, one option is always
+  available: "Change it: leave <shared area> out of this plan until you've checked with
+  <other thread>". The answer is handled like any planning answer, with the
   Done marker.
 - **Review (status `ready-for-review`):** the same options. The card is a `user-decision` of the
   round it belongs to:
@@ -137,6 +140,8 @@ Stages:
     posts `phase: fixing`, `found: 1` after triage.
   - Answer arrives while reviewers run: do not change the Spec; fold it in after triage, with the
     Done marker. "Keep the plan" logs the Decision only; a change also edits the Spec.
+  - A split offer (Review, "Offer a split") goes before overlap cards still waiting their turn;
+    an overlap card already open keeps its place, and the split offer waits for it.
   - A round restarted under §2 counts an answer applied during that recovery: its row and its
     `found`/`fixed` go in the restarted round's triage, once.
   - A round whose triage is done stays `fixing` while the card is open. When it is answered:
@@ -145,7 +150,8 @@ Stages:
     has other Spec fixes; the card then counts in the round whose triage folds it in.
   - Posted after round N was found clean and before approval: as during round N (it makes N not
     clean until answered).
-- **Approved (status `approved`, before Start building):** as soon as a new overlap is learned
+- **Approved (status `approved`, before Start building):** as soon as an overlap needs a card
+  (a new overlap, or a re-ask of an answered one under Terms "New overlap") is learned
   (whether its card can be posted now or must wait behind another question), add it to the
   Watch List and commit, then withdraw the approval: retract the last approval card this
   thread's leads posted (§3: a retract is never queued, so its result is final); if no approval
@@ -245,10 +251,20 @@ merging of branches; no sub-lead or worker rule changes.
 | An item marked `late` in §1 Approved stays on the Watch List with no Decision | Needs Start building to cross the retract; the item is harmless text | review-round-7 |
 | A fresh question for an already-answered overlap, still waiting behind another card at a restart, can look already asked | Needs an obsolete answer, a waiting re-ask and a restart together | review-round-7 |
 | An approval card still queued on the machine at a restart can be missed, so the retract is skipped and the approval arrives beside an overlap question | Needs an app outage at approval, an overlap and a restart together | review-round-7 |
+| A lead that dies twice, the second time while a restarted round's reviewers run, may count a recovery-applied answer in the wrong round | Needs two lead deaths in one round; counts are display only | review-round-8 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 9 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 8:** Decision 26: Terms "Settling an answer" points a typed change at each stage's rules; §1 Planning fallback option; §1 Approved covers re-asks; §1 Review split-offer ordering; one Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 8 — 2026-11-21
 
@@ -258,6 +274,12 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Typed change in approved left at `approved` | upheld | Terms point at each stage's change rules |
+| intent | minor | No concrete option when scope is unclear | upheld | Fallback option (Decision 26) |
+| mechanics | blocking | Re-asked overlap skips approval withdrawal | downgraded (major) | Applies to every overlap card (Decision 26) |
+| mechanics | major | Keep-only card fails validation | upheld | Fallback option (Decision 26) |
+| mechanics | major | Split offer vs open overlap card ordering | upheld | Ordering stated (Decision 26) |
+| mechanics | minor | Round of a recovery-applied answer after a second death | accepted-risk | Rare path; Accepted Risks |
 
 ### Round 7 — 2026-11-21
 
