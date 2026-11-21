@@ -10,11 +10,6 @@ created: 2026-11-20
 
 ## Open Questions
 
-### Q2: What does the first run look like?
-- **Context:** Today a fresh install lands you on the app with no guidance; README carries the steps.
-- **Options:** (a) a setup checklist on the home page until at least one harness is installed and signed in, linking into Settings; (b) a separate step-by-step setup screen; (c) no first-run screen, just the Settings section.
-- **Recommendation:** (a).
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -31,6 +26,7 @@ created: 2026-11-20
 | 4 | After a harness is installed from Settings, the machine runs that harness's own setup steps the installer would have done (instruction-file block, old-hook cleanup, model pins) | Otherwise a later-installed Claude or Codex misses its setup | defaulted |
 | 5 | `install.sh` no longer refuses when no harness CLI is present; it skips harness-specific steps and points to Settings | IDEA "one install command succeeds with no agent CLI" | defaulted |
 | 6 | Leaving a harness out is one hub-wide switch per harness, applying to every machine | Machines lacking a harness are already skipped; fewer controls | user |
+| 7 | First run: a setup checklist on the home page linking into Settings, gone once one harness is installed and signed in | Guides without duplicating Settings | user |
 
 ## Spec
 
