@@ -3,6 +3,8 @@
 Checked against: `3dcb10dc929cb44d7c2b181535e9f689edf131c4` (origin/main; covered files match this worktree)
 Files covered: `viewer/app/state.js`, `viewer/app/threads.js`, `viewer/app/sessions.js`, `viewer/app/cards.js`, `viewer/app/routes.js`, `viewer/pages/new.js`, `viewer/pages/thread.js`, `viewer/server.js`, `machine/service.js`, `viewer/app/wc.js`, `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/templates/PLAN.md`, `protocol/templates/IDEA.md`
 
+> Overlap, card receipt and restart paths are rechecked at origin/main in [overlap decision flow](overlap-decision-flow.md); other claims retain their historical checks.
+
 > Lead-chat paths rechecked against `1ee9ad1487d2a3f8b6ceda7f73cf7218657f52c2`; see [lead-chat/MAP.md](../plans/lead-chat/MAP.md). Other claims retain their historical checked commit.
 
 ## Flow
