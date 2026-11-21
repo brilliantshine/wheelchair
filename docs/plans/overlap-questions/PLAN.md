@@ -78,6 +78,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 49 | A cancel is settled: on a feature a Decision by thread id (card suffix only if a card was posted; `defaulted` when moot), on a small fix "Go ahead" unless chat says otherwise; a finished peer on a small fix is only mentioned | Round 25 findings | review-round-25 |
 | 50 | Done marker matched by its card suffix (sources `user`, `idea-change`, `defaulted`); a no-card Decision also allows a later re-ask; a held overlap cancelled before IDEA.md confirmation is not asked and is logged when PLAN.md is created | Round 26 findings | review-round-26 |
 | 51 | A cancelled held overlap stays unasked also when a peer asks; a cancel's card suffix names only a card posted for that question; a peer missing from `session leads` counts as finished; restart honours recent cancels before PLAN.md exists | Round 27 findings | review-round-27 |
+| 52 | Supersedes the "held" rules (Decisions 3, 50-51 parts): a feature's first overlap look moves to right after IDEA.md confirmation, so nothing is held before it; a peer asking earlier gets an answer from what the lead knows | Rounds 25-27 kept finding gaps in the held state; the user picked "Look after confirming" (card 8a2638cf) | user |
 
 ## Spec
 
@@ -92,8 +93,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
   other thread's id. The app stores it and never shows it.
 - **Card window:** when overlap cards are asked: a small fix before its edits, and a feature
-  from IDEA.md confirmation while `status:` is `planning`. Before IDEA.md is confirmed an
-  overlap is held and asked first after confirmation.
+  from IDEA.md confirmation while `status:` is `planning`. Before IDEA.md is confirmed a feature
+  asks nothing and records nothing about overlaps: its first look comes right after
+  confirmation (§1).
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
   thread and not in a Decision Log entry of this plan. An overlap already asked is asked again,
   inside the card window, only for a feature, and only when information learned after its answer was
@@ -134,8 +136,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ### 1. Asking (protocol/app/lead.md, "Other leads on this machine")
 
-Discovery and peer messaging stay as they are: the "When to look" times (a)-(c) and the small
-fix's look before edits, the "Overlap" message to a peer lead, "Replies", "Never wait",
+"When to look" (a) moves from "after the mapper's `result` arrives" to "right after IDEA.md is
+confirmed and PLAN.md is created"; an overlap the lead learned earlier (for example from a peer's
+message) is simply part of that look. Otherwise discovery and peer messaging stay as they are:
+the other "When to look" times and the small fix's look before edits, the "Overlap" message to a peer lead, "Replies", "Never wait",
 "Another project", "Passing a question on" and "Only leads talk". Every instruction there to
 tell the user about an overlap "in one line" (in "When to look", in "Overlap" for a thread with
 `lead: null`, in "Leads inform", and the late answer in "Never wait") is replaced by: a new
@@ -154,21 +158,20 @@ paths:
   is not settled, so the in-window path applies): answer
   the peer from that decision, with no new card, unless the question brings information that would start a re-ask under
   Terms "New overlap" (inside the card window only);
-- before IDEA.md is confirmed: held, like any overlap, and asked first after confirmation,
-  unless the user already cancelled it; then answer the peer from that cancel and keep it unasked;
+- before IDEA.md is confirmed: the lead answers the peer from what it knows and asks its user
+  nothing yet; the look after confirmation covers it;
 - inside the card window: it becomes the overlap card for that thread, or joins one: for an open
   card, the one-line mention beside it (§1 "New information while a card is open"); for a waiting
   one, its `Overlap with` Open Question is updated before posting;
 - after the card window: the late-overlap mention, and the lead answers the peer from what it
   knows, saying its user was not asked.
-On every path the lead answers the peer at once, from what it knows; when the question is held
-or carded it adds that it is asking its user. The user's later decision is not sent back to the
+On every path the lead answers the peer at once, from what it knows; when the question is
+carded it adds that it is asking its user. The user's later decision is not sent back to the
 peer (Decision 36), so nothing records who asked. Unrelated peer questions pass on as today.
 
 - **One question at a time:** an overlap card waits behind any open `question` card of yours
   and is asked next. For a feature, a waiting or asked overlap is in PLAN.md's Open Questions
-  (`Overlap with <thread id>: <what>`; before PLAN.md exists, it is held and asked first after
-  IDEA.md confirmation), so status stays `planning` until it is settled. The commit that logs
+  (`Overlap with <thread id>: <what>`), so status stays `planning` until it is settled. The commit that logs
   its Decision removes it. Before posting a waiting overlap card (live or on restart), the lead
   rechecks the other thread in `session leads`: if it has finished (Terms "Overlap"), or is no
   longer listed at all (archived), it removes
@@ -189,8 +192,8 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   it: leave <shared area> out of this plan (it can come back later as a follow-up)", used when
   no other concrete change fits. Any other change the user types in the box or in chat. The
   answer is handled like any planning answer, with the Done marker.
-- **Feature, before IDEA.md is confirmed:** held, not late: once IDEA.md is confirmed and
-  PLAN.md created with `status: planning`, it is the first Open Question asked.
+- **Feature, before IDEA.md is confirmed:** nothing is asked or recorded; the look right after
+  confirmation finds the overlap and makes it an Open Question.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
 - **New information while a card is open:** the open card is never retracted to re-ask it, and
@@ -208,8 +211,6 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
     none was (including an unposted re-ask), it has no card suffix. Either way Terms "New
     overlap" excludes the thread, and the latest settlement for that thread is the baseline for
     any later re-ask.
-  - Before IDEA.md is confirmed (no PLAN.md yet), a cancelled held overlap is simply not asked
-    after confirmation; it is logged as that Decision in the commit that creates PLAN.md.
   - On a small fix it counts as "Go ahead with the fix" unless the user's chat says otherwise,
     and nothing is recorded.
   - An open card is then resolved with that note (a user cancel) or retracted (moot); a waiting
@@ -224,10 +225,9 @@ On `[wc:context restart]`, after rereading the plan and cards:
   is no longer in the card window (rare: the answer would have to cross the move to review),
   treat it as a late overlap.
 - An open overlap card stays open and is not asked again.
-- Before PLAN.md exists, a cancel of a held overlap found in `recent_messages` is honoured: that
-  overlap is not asked, and its Decision is written when PLAN.md is created.
-- Run `wc.js session leads` once and treat any new overlap (Terms "New overlap") using the same paths as live discovery: held before IDEA.md is
-  confirmed, a card inside the window, else a late overlap. A planned thread
+- Run `wc.js session leads` once and treat any new overlap (Terms "New overlap") using the same paths as live discovery: nothing before IDEA.md is
+  confirmed (the look after confirmation covers it), a card inside the window, else a late
+  overlap. A planned thread
   also asks any `Overlap with` Open Question not yet asked.
 
 ### 3. Card ids (machine, hub, card.js)
@@ -291,10 +291,18 @@ merging of branches; no sub-lead or worker rule changes.
 | During an upgrade, a card queued by an updated machine and drained by a hub still on the old version gets a fresh id, so a retract with the printed id finds nothing | Needs mixed versions mid-upgrade plus an app outage; the Ready check requires matching versions | review-round-22 |
 | On a small fix, an overlap the user cancelled before it was asked is asked again if the lead restarts before the edits | Needs a cancel and a restart before a small fix's edits; nothing records it on a small fix | review-round-24 |
 | If the user cancels in chat while also answering the card's box, the cancel can be committed before the stored answer is seen | Two conflicting answers by the user within seconds | review-round-26 |
-| A held overlap cancelled before IDEA.md is confirmed is asked anyway if the lead restarts before PLAN.md exists and the cancel has left the recent messages | Needs a cancel, a restart and many messages before confirmation | review-round-26 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 
 ## Review Rounds
+
+### Round 28 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 27:** Round 27 fixes (Decision 51), then Decision 52: "When to look" (a) moves to right after IDEA.md confirmation; every "held" rule removed (Terms "Card window", §1 peer path, "One question at a time", feature-before-confirmation stage, cancel before confirmation, §2 restart bullet); one Accepted Risk removed.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 27 — 2026-11-21
 
