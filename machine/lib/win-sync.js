@@ -129,20 +129,19 @@ function entries(output) {
   return output.toString().split('\0').filter(Boolean);
 }
 
-async function snapshot(ctx, win, protectedPaths = new Set()) {
+async function snapshot(ctx, win, trackedPaths) {
   const options = indexOptions(ctx, win);
   const indexPath = win ? path.join(ctx.copy.linux, '.git/wheelchair.index') : options.env.GIT_INDEX_FILE;
   if (!fs.existsSync(indexPath)) {
     await command(ctx, win, win ? ['read-tree', '--empty'] : ['read-tree', 'HEAD'], options);
   }
-  const real = await command(ctx, win, ['ls-files', '-z'], { cwd: options.cwd });
   const indexed = await command(ctx, win, ['ls-files', '-z'], options);
-  const realPaths = new Set(entries(real.stdout));
+  const realPaths = trackedPaths;
   const indexPaths = new Set(entries(indexed.stdout));
   const force = [...realPaths].filter(file => !indexPaths.has(file) && fs.existsSync(path.join(options.cwd, file)));
   if (force.length) await command(ctx, win, ['add', '-f', '--', ...force], options);
   const ignored = await command(ctx, win, ['ls-files', '-ci', '--exclude-standard', '-z'], options);
-  const remove = entries(ignored.stdout).filter(file => !realPaths.has(file) && !protectedPaths.has(file));
+  const remove = entries(ignored.stdout).filter(file => !realPaths.has(file));
   if (remove.length) await command(ctx, win, ['rm', '--cached', '--ignore-unmatch', '--', ...remove], options);
   await command(ctx, win, ['add', '-A'], options);
   const skipped = [];
@@ -241,7 +240,9 @@ async function reconcileAttempt(ctx, hooks, state) {
   const baseRef = `refs/wheelchair/${ctx.key}/base`;
   const windowsRef = `refs/wheelchair/${ctx.key}/windows`;
   const base = await resolveRef(ctx, baseRef);
-  const linux = await snapshot(ctx, false);
+  const tracked = await command(ctx, false, ['ls-files', '-z'], { cwd: ctx.worktree });
+  const trackedPaths = new Set(entries(tracked.stdout));
+  const linux = await snapshot(ctx, false, trackedPaths);
   const linuxSnapshot = linux.tree;
   const listing = await command(ctx, false, ['ls-tree', '-r', '--name-only', '-z', linuxSnapshot], { cwd: ctx.worktree });
   const folded = new Map();
@@ -252,8 +253,7 @@ async function reconcileAttempt(ctx, hooks, state) {
     }
     folded.set(lower, file);
   }
-  const tracked = await command(ctx, false, ['ls-files', '-z'], { cwd: ctx.worktree });
-  const windowsSnapshot = (await snapshot(ctx, true, new Set(entries(tracked.stdout)))).tree;
+  const windowsSnapshot = (await snapshot(ctx, true, trackedPaths)).tree;
   const windowsCommit = await commitTree(ctx, true, windowsSnapshot);
   await command(ctx, true, ['update-ref', 'refs/wheelchair/snapshot', windowsCommit], { cwd: ctx.copy.linux });
   await command(ctx, false, ['fetch', ctx.copy.linux, `+refs/wheelchair/snapshot:${windowsRef}`], { cwd: ctx.worktree });

@@ -311,3 +311,35 @@ test('clean checkout LFS and eol attributes do not transform bridge bytes', asyn
   assert.deepEqual(fs.readFileSync(windows('lfs')), lfs);
   assert.deepEqual(fs.readFileSync(windows('eol')), eol);
 });
+
+test('a force-tracked ignored file survives repeated syncs and edits in both directions', async () => {
+  const ctx = await fixture();
+  const linux = path.join(ctx.worktree, 'forced');
+  const windows = path.join(ctx.copy.linux, 'forced');
+  fs.writeFileSync(path.join(ctx.worktree, '.gitignore'), 'forced\n');
+  fs.writeFileSync(linux, 'linux one\n');
+  git(ctx.worktree, 'add', '-f', 'forced');
+
+  await reconcile(ctx);
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(linux, 'utf8'), 'linux one\n');
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'linux one\n');
+
+  fs.writeFileSync(windows, 'windows one\n');
+  await reconcile(ctx);
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(linux, 'utf8'), 'windows one\n');
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'windows one\n');
+
+  fs.writeFileSync(linux, 'linux two\n');
+  await reconcile(ctx);
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(linux, 'utf8'), 'linux two\n');
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'linux two\n');
+
+  fs.writeFileSync(windows, 'windows two\n');
+  await reconcile(ctx);
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(linux, 'utf8'), 'windows two\n');
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'windows two\n');
+});
