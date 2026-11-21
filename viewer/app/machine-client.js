@@ -35,8 +35,10 @@ function requestJson(urlText, method, headers = {}, body, timeout = 5000, strict
         response.on('data', (chunk) => { output += chunk; });
         response.on('end', () => {
           try {
-            resolve({ status: response.statusCode, body: strict && response.statusCode === 404 ? {} : (strict ? JSON.parse(output) : (output ? JSON.parse(output) : {})) });
+            resolve({ status: response.statusCode, body: strict ? JSON.parse(output) : (output ? JSON.parse(output) : {}) });
           } catch {
+            // A strict 404 with a non-JSON body still means "absent", not a broken machine.
+            if (strict && response.statusCode === 404) return resolve({ status: 404, body: {} });
             if (strict) return reject(new Error('machine returned invalid JSON'));
             resolve({ status: response.statusCode, body: { raw: output } });
           }
