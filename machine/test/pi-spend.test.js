@@ -20,3 +20,10 @@ test('spend route requires hub authorization and lists Pi accounts including sig
   try { const url=`http://127.0.0.1:${server.address().port}/v1/spend`; assert.equal((await fetch(url)).status,401); const res=await fetch(url,{headers:{authorization:'hub'}}); assert.equal(res.status,200); assert.deepEqual(await res.json(),{accounts:[{account:'default-openrouter',today:0,last_7_days:0,last_30_days:0},{account:'work',today:0,last_7_days:0,last_30_days:0}]}); }
   finally { await new Promise(resolve=>server.close(resolve)); process.env.HOME=old; }
 });
+test('Pi spend deduplicates copied fork entries per account', async () => {
+  const dir = makeTempSync('pi-spend-fork-'), folder = path.join(dir,'sessions'); fs.mkdirSync(folder);
+  const timestamp = '2026-11-20T10:00:00.000Z';
+  const row = (id,cost) => JSON.stringify({type:'message',id,timestamp,message:{role:'assistant',provider:'openrouter',usage:{cost:{total:cost}}}});
+  fs.writeFileSync(path.join(folder,'lead.jsonl'),row('lead',1)); fs.writeFileSync(path.join(folder,'fork.jsonl'),[row('lead',1),row('fork',2)].join('\n'));
+  assert.deepEqual(await pi.spend(dir,new Date('2026-11-20T12:00:00.000Z')),{today:3,last_7_days:3,last_30_days:3});
+});
