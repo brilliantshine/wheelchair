@@ -93,11 +93,14 @@ first turn forks the lead's Pi session, later turns resume the fork.
   (`cli.md`). Login env comes from `adapter.loginEnv(dir)` as for other providers.
 - Output parsing (Pi JSON mode, `json.md`): the first record is the session header
   `{"type":"session","id":...}`; `conversation_id` is `new_id` for fork and `from` for resume, as
-  for Claude (`aside-turns.js:125`); a header id that differs is a failure. Success is judged from the settled outcome only: Pi retries
+  for Claude (`aside-turns.js:125`); a missing header, or a header id that differs
+  (fork: must equal `new_id` and differ from `from`; resume: must equal `from`), is a failure, so a
+  bad id is never saved as the aside's `cli_id` (`viewer/app/asides.js:138`). Success is judged from the settled outcome only: Pi retries
   rate limits and network errors itself (`json.md:38-48`), so an earlier errored assistant
   message followed by a successful retry is a success. The reply is the text of the last
   assistant `message_end`. Failure: non-zero exit, no assistant text after settling, or the
-  last assistant message has `stopReason: "error"` → `state: failed` with Pi's error message,
+  last assistant message has `stopReason` `"error"` or `"aborted"` (a partial reply from an
+  aborted run is never accepted, even with exit 0) → `state: failed` with Pi's error message,
   else stderr's last line. `limit` is true only when the run ends failed and that final error
   is an HTTP 402/429 or "credit" / "rate limit" text.
 - Redaction: `reply`, `error` and any stderr text are passed through `adapters/pi.js`
@@ -147,10 +150,16 @@ first turn forks the lead's Pi session, later turns resume the fork.
   - a Pi session's `turn-failed` error;
   - a Pi session that never reaches its ready screen: the `stuck` event after 30s
     (`machine/service.js:1053-1057`) carries the note, and when Pi's pane is gone before ready,
-    the machine ends the session with `end_reason` "Pi exited before it was ready" plus the note,
+    the machine ends the session with `end_reason` "Pi exited before it was ready" plus the note.
+    The reason is set wherever the machine first finds a not-yet-ready Pi session's pane gone
+    (the readiness check and the session list/status path alike) and persisted before any
+    response reports the session as not running, so the hub never sees it ended without the reason;
     which the hub already shows in its "Session ended" card and to the starter
     (`viewer/app/sessions.js:773-789`). This exit reason applies on every Pi version; only the
     note depends on the version.
+  - The hub's "Session stuck at startup" card (`viewer/app/sessions.js:618-621`) is built from a
+    fixed string today; it appends the `stuck` event's `note` field when present. Hub test
+    asserts the card text includes the note.
 - Tests in `machine/test/pi.test.js` with a fake `pi --version` (pattern of
   `machine/test/kimi.test.js:175-235`): old → problem and start refused; 1.5.2 and 1.5.9 → clean;
   1.6.0 → warning, start allowed; probe failure → unknown-version warning; Pi pane gone before
@@ -163,13 +172,17 @@ Today a failed transcript read becomes `''` (`viewer/app/chat.js:330-334`), `del
 returns without a report (`viewer/app/sessions.js:435`), and the turn and delivery ids are
 already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
 
-- `chat.sessionTranscript` gets a strict mode for report readers: each machine call in it uses a
-  2-second timeout (not the 5s default, `viewer/app/machine-client.js:67`), so four attempts stay
-  well under the machine's 5s event POST timeout in the common case; a failed or timed-out call throws; a transcript that is genuinely absent (machine answers with no data, or 404)
+- `chat.sessionTranscript` gets a strict mode for report readers: all its machine calls share one
+  budget of 4 seconds from the first read (each call's timeout is the time left, at least 250ms), so
+  the whole retry fits inside the machine's 5-second event POST deadline (`machine/service.js:207`);
+  retries stop when the budget is spent. Its requests use the strict HTTP path
+  (`viewer/app/machine-client.js:33`), so a connection dropped after headers rejects instead of
+  hanging. A failed, timed-out or dropped call throws; a transcript that is genuinely absent (machine answers with no data, or 404)
   returns `''`.
 - `deliverReport`: when the read throws, or when the CLI is `pi`, the event carries an
   `entry_id`, and the read (empty or absent included) does not contain that entry (the machine's copy can lag or fail, `machine/service.js:1403-1407`),
-  retry the read inline: up to 3 more attempts, 1 second apart, within the same event handling.
+  retry the read inline: up to 3 more attempts, 500ms apart, within the same event handling and
+  the 4-second budget.
   A text found inline in the hook payload (non-Pi) is used at once, as today.
 - If every attempt fails, behave as today for a missing report: no result, and `quiet.arm`
   reminds the agent to repeat its report (`viewer/app/quiet.js:8-9`). That reminder is the
@@ -180,7 +193,9 @@ already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
 - Tests in `viewer/test/` (pattern of `app-chat.test.js:362-375`): a reviewer whose first
   transcript read fails and second succeeds gets exactly one result delivered; a Pi verifier
   whose first read is empty and whose entry appears on a later read gets its report; an absent transcript makes one read only,
-  produces no report and arms the quiet check; all attempts failing arms the quiet check.
+  produces no report and arms the quiet check; all attempts failing arms the quiet check; a first read that times out
+  followed by a successful one delivers once; a connection dropped after headers fails that
+  attempt and is retried; total time stays under 5 seconds.
 
 ### Non-goals
 
@@ -207,6 +222,7 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A custom OpenRouter model pin ending in a Pi thinking-level suffix (e.g. `:high`) combined with a thinking level in Settings may send a different model id than with the setting blank | Rare path: OpenRouter's own variants (`:free`, `:nitro`, ...) are not thinking-level names, so it needs a deliberately odd pin plus a level | review-round-2 |
 
 ## Review Rounds
 
@@ -245,6 +261,25 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 | intent | minor | Use hub-supplied new_id with --fork/--session-id like Claude | upheld | S3 adopts it |
 | intent | minor | Strict read timeouts could hold the lock ~40s | upheld | S5 strict reads use a 2s timeout |
 | intent | minor | Fork spend dedupe sits under S4 | upheld | Moved to S3, source named |
+| mechanics | blocking | Thinking suffix on a custom model id changes the model when --thinking is set | accepted-risk | Rare path (see Accepted Risks) |
+| mechanics | blocking | Aborted partial reply or missing/bad fork id accepted | upheld | S3 rejects aborted and checks header ids |
+| mechanics | blocking | Stuck card ignores the version note | upheld (major) | S4 hub appends the note; test |
+| mechanics | major | Exit reason may land after the hub sees the session ended | upheld | S4 sets and persists reason wherever first detected |
+| mechanics | blocking | Strict reads could hang on a dropped connection | upheld (major) | S5 uses the strict HTTP path; test |
+| mechanics | major | Retry budget can exceed the machine's 5s event deadline | upheld | S5 shared 4s budget, 500ms gaps; test |
+
+### Round 3 — 2026-11-20
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 2:**
+- S3: hub-supplied `new_id` with `--fork --session-id`; header id checks; aborted replies rejected; fork spend dedupe moved here from S4.
+- S4: stuck card shows the version note; "Pi exited before it was ready" reason set and persisted wherever first detected.
+- S5: strict reads on the strict HTTP path, one 4-second budget, 500ms gaps.
+- Accepted Risks: thinking-suffix model pin.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
