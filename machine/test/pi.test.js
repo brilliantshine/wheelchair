@@ -150,14 +150,14 @@ test('Pi launch records tested version across restart and allows newer version',
   const version = value => { fs.writeFileSync(file, `#!/bin/sh\necho ${value}\n`, { mode: 0o755 }); tick += 2000; fs.utimesSync(file, tick / 1000, tick / 1000); };
   try {
     process.env.PATH = `${bin}:/usr/bin:/bin`;
-    const machine = new MachineService({ stateDir: root });
+    const machine = new MachineService({ stateDir: root }); machine.win = null;
     machine.config = { host: '127.0.0.1', port: 0 }; machine.createWorktree = async () => ({ worktree: root }); machine.checkReady = async () => {};
     version('1.5.2');
     const input = { cli: 'pi', role: 'worker', thread_id: 'test', token: 'token', role_prompt: 'rules' };
     const session = await machine.start(input);
     assert.equal(machine.sessions[session.name].pi_version, '1.5.2');
     version('1.6.0');
-    const restarted = new MachineService({ stateDir: root });
+    const restarted = new MachineService({ stateDir: root }); restarted.win = null;
     restarted.sessions = JSON.parse(fs.readFileSync(restarted.sessionsPath, 'utf8'));
     await restarted.checkPiVersion(); assert.match(restarted.cliStatus('pi').warning, /1.6.0/);
     const events = []; restarted.emitEvent = async e => events.push(e);
