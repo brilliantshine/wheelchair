@@ -60,6 +60,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 23 | Imported threads are never auto-merged | Their earlier push-as-is answers and checks can't be established after a handoff | review-round-4 |
 | 24 | Supersedes the committed-pass part of #22's §2 wording: only a `result` the lead holds counts; a lead restarted before `done` omits `verified` | No committed record ties a pass to the pushed head; the cost is today's manual merge | review-round-4 |
 | 25 | After four review rounds, keep the design (later verified fixes can still auto-merge) and run another round | Collin chose "One more round" over "first finish only" | user |
+| 26 | A pass covers the done head when the commit the pass names, and the done head, differ only in files under `docs/plans/` (checked with `git diff --name-only <passed> <head>`); anything else omits `verified` | The planned build's `status: done` commit and Accepted Risks records follow verification; someone else's fast-forwarded commits do not count | review-round-5 |
+| 27 | The hub's delivered `result` message carries the result's `commit` | The lead needs the verified commit to apply #26 | review-round-5 |
+| 28 | If `card.js` refuses a done card with `unknown field: verified`, the lead posts it again without the field | An older hub must not stop the thread from finishing | review-round-5 |
+| 29 | Imported threads get the `held` card too; the "Not merged automatically" card can be dismissed by Collin | Nobody waits for a merge that won't come; a card for a PR closed by hand can be cleared | review-round-5 |
 
 ## Spec
 
@@ -82,7 +86,8 @@ today. Leads never merge.
 - `viewer/pages/settings.js`: one on/off control, label "Merge pull requests when done",
   help text: "When on, a thread merges its own pull request once an agent has seen at least one
   Check it yourself step work and none broke. A thread where you chose to push something
-  that failed its check is never merged automatically. It never merges past failing checks, conflicts or
+  that failed its check, or a thread handed over from another machine, is never merged
+  automatically. It never merges past failing checks, conflicts or
   GitHub's rules." Saved like the other preference controls.
 - Nothing is written into agents' instructions.
 
@@ -91,16 +96,25 @@ today. Leads never merge.
 `verified` (boolean, optional; `cards-lead.md` done table; `card.js` validation accepts it).
 The lead sets `verified: true` only when both hold:
 
-- it holds, in its own context, a passing check for the commits this done card covers: the
-  sub-lead's build `result` (planned build), or a
-  passing verifier `result` for the small fix, after-done fix or repair at this head
-  (including a lead-check pass whose only gaps were rare paths);
+- it holds, in its own context, a passing check naming a commit: the sub-lead's build
+  `result` and its `commit` (planned build), or a passing verifier `result` and the commit
+  it names (small fix, after-done fix or repair; a lead-check pass whose only gaps were rare
+  paths counts);
+- `git diff --name-only <that commit> <done head>` lists only files under `docs/plans/`
+  (for example the `status: done` commit or an Accepted Risks record). Commits brought in
+  without a verifier (such as a fast-forward in Making the pull request mergeable step 6)
+  fail this;
 - no `question` card in this thread was ever answered with "push it as it is" or with
   shipping a gap that survived its checks. Deferring hardening ("Defer them and finish" in
   a lighter mode) is not shipping a surviving gap.
 
 Otherwise, and whenever it cannot tell (for example a restarted lead with no such result in
-its context), it omits it.
+its context), it omits it. If `card.js` refuses the done card with `unknown field: verified`
+(an older hub), the lead posts it again without the field.
+
+`viewer/app/cards.js` result delivery (the `kind === 'result'` branch): when the result has
+a `commit`, the delivered text is `[wc:from <session>] result (commit <sha>): <summary>`;
+otherwise unchanged.
 
 ### 3. The hub's auto-merge (new module `viewer/app/auto-merge.js`)
 
@@ -111,10 +125,12 @@ thread and check, in order:
 1. `auto_merge` setting is `on`. Else stop, silently.
 2. The check card's `head` equals the current done card's `head` (`currentDone`). Else stop,
    silently.
-3. `thread.auto_merge_attempts` has no entry for this `head`, and the thread was not
-   imported (`thread.imported` absent). Else stop, silently.
-4. Every non-retracted done card in the thread has `verified: true`. Else outcome
-   `held`, reason "a change in this pull request was pushed without passing its check".
+3. `thread.auto_merge_attempts` has no entry for this `head`. Else stop, silently.
+4. The thread was not imported (`thread.imported` absent). Else outcome `held`, reason
+   "this thread was handed over from another machine, so its earlier checks can't be
+   confirmed".
+4a. Every done card in the thread has `verified: true`. Else outcome `held`, reason "not
+   every change in this pull request has a recorded passing check".
 5. The check card has no step `agent: "broken"`. Else stop, silently (the check card's
    own Fix it now / Leave it already asks Collin).
 6. The check card has at least one step `agent: "matched"`. Else outcome `held`, reason "no
@@ -148,7 +164,10 @@ still open; you can merge it on GitHub." (`unknown`: "GitHub didn't answer in ti
 the pull request on GitHub."). Its id is stored on the attempt record. Success adds
 nothing: the merged sweep posts the `merged` card.
 
-The card closes itself (marked answered with a note, as other system cards) when the merged
+The card is stored with `auto_merge: true` and shows a Dismiss button; the existing
+dismiss route (`viewer/app/threads.js` `dismiss`) accepts it (today `resolvable` refuses
+system needs cards; allow those with `auto_merge: true`). It also closes itself (marked
+answered with a note) when the merged
 sweep posts the `merged` card for this thread (note "Merged") or a done card at a
 different head is accepted (note "Replaced by a newer version").
 
@@ -160,7 +179,9 @@ own `gh` login is used; if it cannot merge, step 8 fails and the card says so.
 - Step 8: replace "Never merge." with "Never merge: the app merges finished pull requests
   itself when the user's auto-merge setting is on."
 - Every place the lead posts `done` (steps 1, 8, 9, and Making the pull request mergeable)
-  states the `verified` rule from §2.
+  states the `verified` rule from §2, including the repost without it on an older hub.
+- On `[card <id>] dismissed` for a "Not merged automatically" card, the lead says nothing
+  beyond one line.
 - Check card `update` text: phrase the merge so it holds either way ("Once the pull
   request is merged, …"), never "merge the pull request".
 - A "Not merged automatically" card is the app's own; the lead does not resolve it and
@@ -184,6 +205,7 @@ the open pull request, and that fix's own done and check card go through the sam
 - A check failing on the same commit after done: step 7's `judgePr` stops it.
 - Check card posted while the hub is down (queued): the merge happens when the hub accepts
   the card, since the trigger is the hub's acceptance.
+- PR closed by hand after a "Not merged automatically" card: Collin dismisses it.
 - A thread with any earlier done lacking `verified` (pushed as is, or posted by an older
   lead): gate 4 holds it for the rest of the thread.
 
@@ -191,7 +213,7 @@ the open pull request, and that fix's own done and check card go through the sam
 
 - `cd viewer && npm test` passes, including new tests (stubbed `gh` on PATH) for:
   preferences round-trip and validation of `auto_merge`; gates 1–3 and 5 stop with no
-  `gh` call and no card; gates 4 and 6 give a `held` record and card with no `gh` call;
+  `gh` call and no card; gates 4, 4a and 6 give a `held` record and card with no `gh` call;
   one attempt per head; step 7 retries "still working out" then gives `not-ready`; step 7
   `MERGED`/`CLOSED` give no card; step 7 `BLOCKED` gives `not-ready` and no merge call;
   switching the setting off during the step 7 wait gives no merge call; the card closes
@@ -313,9 +335,25 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 5 — 2026-11-21
 
-**Lanes:** claude (intent); non-claude (mechanics); cross-family: yes.
+**Lanes:** claude / opus 5.5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 4:** §2: only a `result` the lead holds counts (#24); "Defer them and finish" is not shipping a gap. §3: imported threads never merge (gate 3, #23); gate 4 counts every non-retracted done; Finishing skips the card when the reloaded thread already has the `merged` card or a done at another head; only a done at a different head closes the card. Summary paragraph points to §3. Accepted Risks: handoff during the wait. Decision 25 (Collin).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Fast-forwarded commits counted as verified | upheld | Diff rule (#26) |
+| intent | minor | `held` reason untrue for restarts | upheld | Reworded |
+| intent | minor | Imported threads stop silently | upheld | `held` card and help text (#29) |
+| mechanics | minor | Done cards can't be retracted | upheld | "non-retracted" removed |
+| mechanics | blocking | Planned build head ≠ verified commit; result omits commit | upheld | #26, #27 |
+| mechanics | major | Older hub refuses `verified` | upheld | Repost without it (#28) |
+| mechanics | minor | Card stays after PR closed by hand | upheld | Dismissable (#29) |
+
+### Round 6 — 2026-11-21
+
+**Lanes:** claude (intent); non-claude (mechanics); cross-family: yes.
+
+**Changed since Round 5:** §2: the pass names a commit and the diff to the done head may touch only `docs/plans/` (#26); result delivery carries the commit (#27); repost without `verified` on an older hub (#28). §3: imported threads give `held` (gate 4, #29); gate 4a wording; the card is dismissable. §4 lines for the above. Help text, edge cases and validation updated.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
