@@ -134,3 +134,16 @@ $ npm --prefix viewer run test:browser
   1144 passed (11.9m)
 EXIT 0
 ```
+
+### Verification attempt 2 — 2026-11-21
+
+At `bd1d90f9`. The Claude verifier (claude-opus-5-5) PASSED: all three Remediation 1 fixes
+were confirmed against the code, and Check Once Built #1 passed. The GPT verifier
+(gpt-6.2-sol) confirmed S1–S5 and the three fixes, and reported only two test-run failures:
+`app-quiet.test.js` "6 message clears debt" and Firefox `app-views.spec.js:111` (tree
+viewport). Neither test, nor the code under it, is changed on this branch. Both pass alone,
+and the first is already recorded as load-sensitive
+(`docs/plans/owner-name-identifiers/COMPLETION.md:23,41`). The Claude verifier's clean-copy
+run of the full viewer suite gave exit 0 with 733/733 at the tip (and 724/724 at the merge
+base). The lead ruled both failures timing flakes outside this build: attempt 2 counts as a
+pass, and the tests are not hardened here.
