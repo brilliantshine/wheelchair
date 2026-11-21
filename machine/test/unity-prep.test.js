@@ -1,7 +1,10 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createUnityPrep } = require('../lib/unity-prep');
+const fs = require('node:fs');
+const path = require('node:path');
+const { makeTempSync } = require('../../test-support/run-dir');
+const { createUnityPrep, runFetch } = require('../lib/unity-prep');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 test('Unity prep detects platforms and caches Windows lookup while fetching', async () => {
   let calls = 0, finish, time = 0;
@@ -22,4 +25,23 @@ test('Unity prep reports lookup and fetch failures', async () => {
   const prep = createUnityPrep({ detected, winEnv: { ps: async () => ({ code: 0, stdout: 'x' }), toLinux: () => '/x.exe' }, run: async () => { throw Error('network'); } });
   assert.equal((await prep({})).fetch.state, 'running'); await tick();
   assert.deepEqual((await prep({ poll: true })).fetch, { state: 'failed', reason: 'network' });
+});
+test('Unity lookup carries its operation header', async () => {
+  let script;
+  const prep = createUnityPrep({ detected: { kernel: true, interop: true }, winEnv: {
+    ps: async value => { script = value; return { code: 0, stdout: 'C:\\uvx.exe' }; }, toLinux: () => '/mnt/c/uvx.exe',
+  }, run: async () => {} });
+  await prep({ poll: true });
+  assert.match(script, /^# wc:uvxpath /);
+});
+test('runFetch invokes uvx with the expected arguments and reports the last stderr line', async () => {
+  const dir = makeTempSync('unity-fetch-');
+  const argsFile = path.join(dir, 'args');
+  const program = path.join(dir, 'fake-uvx');
+  fs.writeFileSync(program, `#!/bin/sh\nprintf '%s\\n' "$@" > '${argsFile}'\nexit "${'${FAKE_EXIT:-0}'}"\n`);
+  fs.chmodSync(program, 0o755);
+  await runFetch(program);
+  assert.deepEqual(fs.readFileSync(argsFile, 'utf8').trim().split('\n'), ['--from', 'mcpforunityserver', 'mcp-for-unity', '--help']);
+  fs.writeFileSync(program, `#!/bin/sh\nprintf 'first line\\nsecond line\\nlast failure\\n' >&2\nexit 1\n`);
+  await assert.rejects(runFetch(program), error => error.message === 'last failure');
 });

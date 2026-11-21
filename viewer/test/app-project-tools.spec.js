@@ -36,7 +36,7 @@ const readBody = (over = {}) => ({
 });
 
 // Stubs the picker and /project-tools/*; `replies` queues [status, body] for save/remove-key.
-async function stub(page, { read = readBody(), replies = [], gate = null, unity = [] } = {}) {
+async function stub(page, { read = readBody(), replies = [], gate = null, unity = [], unityGate = null } = {}) {
   const calls = { read: [], save: [], remove: [], unity: [] };
   await page.route('**/wheelchair/api/new-thread*', (route) => route.fulfill({ json: {
     machine: 'hub', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'alpha', path: '/tmp/proj-alpha' }, { name: 'beta', path: '/tmp/proj-beta' }], found: [], previous: [] } }));
@@ -48,7 +48,7 @@ async function stub(page, { read = readBody(), replies = [], gate = null, unity 
       const out = typeof read === 'function' ? await read(calls.read.length, body) : read;
       return Array.isArray(out) ? route.fulfill({ status: out[0], json: out[1] }) : route.fulfill({ json: out });
     }
-    if (kind === 'unity-prep') { calls.unity.push(body); return route.fulfill({ json: unity.shift() || { command: 'uvx' } }); }
+    if (kind === 'unity-prep') { calls.unity.push(body); if (unityGate && !body.poll) await unityGate; return route.fulfill({ json: unity.shift() || { command: 'uvx' } }); }
     (kind === 'save' ? calls.save : calls.remove).push(body);
     if (gate) await gate;
     const [status, json] = replies.shift() || [200, { outcome: 'saved', key_revision: 1, keys: ['API_KEY'], warnings: [] }];
@@ -1049,4 +1049,18 @@ test('Unity preset reports a failed fetch', async ({ page }) => {
   await open(page, { unity: [{ command: 'uvx', fetch: { state: 'failed', reason: 'network' } }] });
   await page.getByRole('button', { name: 'Add MCP for Unity' }).click();
   await expect(page.getByText("Couldn't fetch it: network; the first agent will fetch it instead")).toBeVisible();
+});
+
+test('Unity button ignores a double press while the first request is held', async ({ page }) => {
+  let release;
+  const unityGate = new Promise(resolve => { release = resolve; });
+  const calls = await open(page, { unityGate, unity: [{ command: 'uvx' }] });
+  const button = page.getByRole('button', { name: 'Add MCP for Unity' });
+  await button.click();
+  await expect(button).toBeDisabled();
+  await button.dispatchEvent('click');
+  expect(calls.unity).toHaveLength(1);
+  release();
+  await expect(tool(page, 'unity')).toBeVisible();
+  expect(calls.unity).toHaveLength(1);
 });
