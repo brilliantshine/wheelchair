@@ -121,8 +121,8 @@ synchronously and returns the hub's answer; if the hub cannot be reached or does
 safe)`. Repeats are made safe by the hub, not by a delivery id: an `add` whose `for` and
 `text` exactly match an existing lesson for that role returns success with that lesson's
 id and records no second notice; a `replace` that leaves the lesson exactly as stored
-returns success with no new notice; a `remove` of an id that the most recent `lesson`
-card in this thread already removed returns success with no new notice. The hub first
+returns success with no new notice; a `remove` of an id that is no longer present returns
+success with no new notice (as Settings removals do, S7). The hub first
 applies the change to `settings.lessons` through `settings.update()`, then records the card
 in the thread. If the settings write fails or is refused, no card is recorded and the
 refusal goes back to the agent. (A hub crash between the two writes leaves a saved lesson
@@ -160,7 +160,12 @@ Lessons learned by earlier <role>s, saved by agents. Follow them unless the rule
 the user's template below say otherwise. To change one, see "Lessons" in your rules.
 - [L1a2b3c] <text>
 - [L4d5e6f] <text> (only on <AI name>)
+- [L7a8b9c] <text> (edited by the user)
 ```
+
+A lesson with `saved_by: user` carries "(edited by the user)". Agents do not reword or
+remove such a lesson; if they think it is wrong, the lead raises it with Collin (a sub-lead,
+worker or mapper tells the lead in a `message`).
 
 No block when nothing applies. The hub already passes `role_layers` to the machine for
 every provider (`viewer/app/sessions.js:324`), so all five AIs get it at session start.
@@ -178,7 +183,8 @@ next to a 64,000-character `lead.md`). `assertFits()` builds its sample layers w
 lessons.
 
 The Settings "See it in full" preview (`fullPrompt`) shows the lessons block with every
-lesson for the role and its markers, filtered only by the template's project scope.
+lesson for the role and its markers, filtered only by the template's project scope, and,
+for the lead and sub-lead previews, their "Lessons you keep for …" blocks as well.
 
 ### S6. The notice in the thread
 
@@ -229,7 +235,8 @@ his templates). The `GET /settings` payload includes `lessons`.
   by lead, sub-lead, worker, mapper) and its section (S4 fields, never queued, refusals).
 - `protocol/app/lead.md`, `sub-lead.md`, `worker.md`, `mapper.md`: a short "Lessons"
   section with the bar (S1), whom it saves for (S2), "read the existing lessons first;
-  replace or remove before adding", the 12 cap, and the rule-conflict path. The lead's
+  replace or remove before adding", the 12 cap, the rule-conflict path, and that a lesson
+  marked "(edited by the user)" is never reworded or removed by an agent. The lead's
   section says when it writes reviewer and verifier lessons (naming, in `only_ai`, the AI
   the reviewer or verifier ran on when the mistake is that AI's habit), and that a lesson card is a
   notice the user sees, so `why` is in the user's words. The sub-lead's says it writes
@@ -251,7 +258,7 @@ thread handoffs.
   `normalize()` dropping malformed lessons; `roleLayers` including only matching lessons,
   placing the block before the template text, and the lead's/sub-lead's "you keep" blocks;
   `only_ai` naming another AI than the saver's; `assertFits` ignoring lessons blocks; the `PATCH /settings/lessons/<role>` rules (only changed rows applied, a concurrent agent add kept, 409 on an edited-then-removed id);
-  repeat-safe `add`/`replace`/`remove`; marker preservation on `replace`; the full-list refusal text; the machine returning 503 for a `lesson` card when the hub is unreachable
+  repeat-safe `add`/`replace`/`remove`; the "(edited by the user)" marker in the block; lead and sub-lead previews showing their "you keep" blocks; marker preservation on `replace`; the full-list refusal text; the machine returning 503 for a `lesson` card when the hub is unreachable
   instead of spooling.
 - `cd viewer && npx playwright test test/app-settings.spec.js test/app-lessons.spec.js`
   passes, with `app-lessons.spec.js` covering: the "Lessons learned" entry and its tag
@@ -326,6 +333,10 @@ stays as review history.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Mappers start fresh and are stopped after their result, so they can never meet the bar; mapper lessons would never be written | user-decision | Asked Collin whether the lead also writes mapper lessons |
+| intent | minor | Agents can reword Collin's edited lessons without knowing they are his | upheld (minor) | S5: "(edited by the user)" marker; agents never reword or remove those; S8 |
+| intent | minor | Repeat-safe `remove` tied to thread card history; simpler to succeed on any missing id | upheld (minor) | S4: missing id on `remove` succeeds silently |
+| intent | minor | Lead and sub-lead Settings previews don't say whether "you keep" blocks show | upheld (minor) | S5: previews include them |
 
 ## Prior Work
 
