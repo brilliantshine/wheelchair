@@ -52,7 +52,9 @@ Antigravity, Kimi Code, Pi (OpenRouter).
 ### S1. Installer (`install.sh`, `install/test/run.sh`, `README.md`)
 
 1. **Prerequisite check, first thing after the clone guard.** Check `node`, `npm`, `tmux`,
-   `git`, `gh`, `python3`, `curl` with `command -v`. If any is missing, print one line per
+   `git`, `gh`, `python3`, `curl` with `command -v`, and that `node --version` is 20 or newer
+   (the viewer's Playwright needs it); an older Node is reported like a missing tool, with its
+   version. If any is missing, print one line per
    missing tool with how to get it (macOS: `brew install <pkg>`; Linux: "install <pkg> with
    your package manager", plus `https://cli.github.com` for gh), and exit 1 before writing
    anything. Tailscale stays checked only when serving, as today.
@@ -85,7 +87,7 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    - `no_pi` (`326`): keep "absent pi is not reported"; replace the PATH assertion with
      "`$HOME/.local/bin` is on the machine unit PATH even with pi absent".
    - New case: `tmux` absent from the shim → exit 1, output names `tmux`, no state files
-     written.
+     written. New case: a `node` shim reporting `v18.0.0` → exit 1, output names Node 20.
    - The bookmark-last assertions (`651`, `730`) stay unchanged and must pass (S1.4).
    All other existing fixtures still pass.
 
@@ -139,8 +141,9 @@ Antigravity, Kimi Code, Pi (OpenRouter).
      sensitivity/set.sh --json` (`<other>` is `codex` when installing claude, and vice
      versa; its `level`, or `default` when that is null or the command fails), then write only
      the new harness's file with `WHEELCHAIR_PRESENT=<installed> sensitivity/set.sh <level>`
-     (`sensitivity/set.sh:16-19` seam), so the other harness's file or a Codex override never
-     blocks the install;
+     (`sensitivity/set.sh:16-19` seam), so the other harness's file never blocks the install.
+     If this dial step itself fails (for example a non-empty Codex `AGENTS.override.md`), its
+     output goes to the log as a warning and the install still counts as succeeded;
    - the CLI resolves the way `cliStatus` does (`service.js:1636-1650`) and, for claude, codex,
      agy and kimi, `<cli> --version` exits 0 (pi: resolve only).
    All pass → `succeeded`. Recipe non-zero → `failed` with its exit code. Recipe passed but the
@@ -183,9 +186,10 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    pinned to the thread's own provider (`balancer.js:50`: a lead or sub-lead of a thread that
    already has a provider) wait, with the reason `<Harness> is left out in Settings`, when
    that provider is off. The wait carries that reason in the session's `waiting_reason`
-   (`sessions.js:284`), and the thread's waiting line (`viewer/pages/thread.js:1300`) shows
+   (`sessions.js:284`), and, for a lead, the thread's waiting line (`viewer/pages/thread.js:1300`) shows
    `<Harness> is left out in Settings. Turn it back on under Settings → Harnesses.` instead of
-   the refill wording. Sessions already running keep running. Two dispatches continue an already-placed session and are
+   the refill wording (a waiting sub-lead's reason shows where sub-lead waits already
+   show; the thread banner is unchanged for it). Sessions already running keep running. Two dispatches continue an already-placed session and are
    not new placements, so the switch does not affect them: an aside fork of a live lead
    (`viewer/app/asides.js:34-46`) and a retry of an unanswered start
    (`viewer/app/sessions.js:232-241`). Turning the switch back on lets waiting starts proceed.
@@ -394,6 +398,7 @@ npm --prefix viewer run test:browser
 |------|--------------|-------|
 | A CLI removed from a machine less than 15 s before a new start can still be chosen once (status cache) | Removing a harness CLI is unusual, and the start then fails with the machine's existing missing-CLI error; rare path | review-round-5 |
 | After a failed Settings install, an update removes that harness's recipe and the user installs it from the vendor site: the row may show Try again (→ vendor link) instead of Sign in | Needs a failed install, a recipe removed by an update, and a vendor install, in that order; sign-in is still reachable under Accounts; rare path | review-round-9 |
+| The only signed-in worker harness has its Standard tier set to Not used, so the start step gives the no-room reason | Variant of the Lead-model-None risk: needs a deliberate Not used on the only harness; rare path | review-round-11 |
 | The only signed-in harness has its Lead model set to None, so the checklist completes but no lead starts | Every provider ships default models (`codex/model.sh:33-38`); needs a deliberate None on the only harness; rare path | review-round-5 |
 
 ## Review Rounds
@@ -572,6 +577,19 @@ npm --prefix viewer run test:browser
 **Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
 
 **Changed since Round 10:** S1.5 (README macOS steps); S2.2 (worker checks each script's install folder); S2.5 (dial level kept, only the new harness's file written); S3.2 (left-out reason shown on the thread's waiting line); S3.10 test; S4.2 (switch-off line moved into the action list); S5.2 wording.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | major | Codex override vs dial step when installing Codex | downgraded (minor) | S2.5 dial failure is a logged warning |
+| mechanics | major | Sub-lead wait reason not on the thread banner | downgraded (minor: banner shows leads only today) | S3.2 scoped to the lead |
+| mechanics | major | Node older than 20 passes the prerequisite check | upheld | S1.1 Node ≥ 20 |
+| mechanics | major | Only worker harness with Standard set to Not used | accepted-risk | Rare path (Accepted Risks) |
+
+### Round 12 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 11:** S1.1 (Node 20 or newer) and S1.6 fixture; S2.5 (dial failure is a warning); S3.2 (waiting-line wording for leads only); one Accepted Risks row.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
