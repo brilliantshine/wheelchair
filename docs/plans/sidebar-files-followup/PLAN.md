@@ -230,7 +230,7 @@ New tests, at least:
 
 ### Round 1 — 2026-11-20
 
-**Lanes:** pending.
+**Lanes:** intent: claude; mechanics: gpt (gpt-6.2-sol); cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
