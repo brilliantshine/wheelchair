@@ -134,3 +134,23 @@ bash machine/test/run.sh          # tests 486 / # pass 486 / # fail 0
 node --test viewer/test/*.test.js # tests 764 / # pass 764 / # fail 0
 npm --prefix viewer run test:browser   34 skipped / 1186 passed (15.4m) / exit 0
 ```
+
+### Remediation 2 — 2026-11-21
+
+Verification attempt 2 on `279fc36b`: the Claude verifier passed it; the GPT verifier failed it with 2 gaps, none rare. The lead had both fixed (`REMEDIATION-2.md`). The sign-in gap is the same gap as attempt 1's S4.2 sign-in gap, so this is its second fix attempt.
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| S4.6: Add account submitted a hidden `claude` default | One `addProviders()` list drives the default and the picker; it resets when switches change; nothing offered → no Add account button | `viewer/pages/settings.js` `addProviders`/`addForm` (~`:1288-1302`), `setHarness` (~`:1601`) | `viewer/test/app-harnesses.spec.js` tests (a) and (b) |
+| S4.2/S4.6: a sign-in card opened from Accounts survived switch-off | The card records `provider`; a successful switch-off closes any card for that provider, wherever it was opened | `viewer/pages/settings.js` card (~`:1122`), `setHarness` (~`:1600`) | `app-harnesses.spec.js` test (c) |
+
+Lane: R2-1 standard claude-sonnet-5-5.
+
+Validation on `abb50e71`:
+```
+bash install/test/run.sh          RESULT 209 passed, 0 failed / exit 0
+bash machine/test/run.sh          # tests 486 / # pass 486 / # fail 0
+node --test viewer/test/*.test.js # tests 764 / # pass 764 / # fail 0
+npm --prefix viewer run test:browser   1 failed / 34 skipped / 1197 passed (16.2m)
+```
+The one browser failure was `app-send-now.spec.js:84` (chromium, a 30 s timeout), which this build does not touch. Run alone it passed: `12 passed (17.2s)`. The GPT verifier saw the same test time out in attempt 2.
