@@ -101,4 +101,35 @@ $ pi --version
 
 ## Remediation rounds
 
-(none yet)
+### Remediation 1 (after verification attempt 1 on 1a9e3781)
+
+Attempt 1: Claude verifier PASS; GPT verifier FAIL with 4 gaps (see `REMEDIATION-1.md`). One (S4 tmux snapshot window) judged a rare path and recorded in PLAN.md Accepted Risks; the lead answered fix for the other three.
+
+| Gap | Fix (file:line) | Validated by |
+|-----|-----------------|--------------|
+| S1 spend spec flaked (empty computed flex-grow during a re-render) | `viewer/test/app-openrouter-spend.spec.js:34-42` retrying `toHaveCSS` / `not.toHaveClass` / `expect.poll` | spec x20 per browser by worker (40/40), x10 per browser by sub-lead (20/20) |
+| S3 aside output split multi-byte UTF-8 characters at chunk boundaries | `machine/lib/aside-turns.js:105` `setEncoding('utf8')` on child stdout/stderr (all providers) | `machine/test/aside-turns.test.js` split-write fixture returns `café` |
+| S3 Pi failure before the session header lost Pi's error and limit flag | `machine/lib/aside-turns.js:134-141`: no valid header + non-zero exit or stderr → redacted Pi error and limit rule; exit 0 with no header and no stderr keeps `invalid Pi session header`; a bad header is never saved | aside-turns tests: stderr 429 exit 1 → failed, limit true; key redacted; exit-0 missing header |
+
+Validation on the merged tip after remediation (run by the sub-lead):
+
+```
+$ bash codex/test/run.sh
+RESULT 159 passed, 0 failed
+$ bash machine/test/run.sh
+# tests 488
+# pass 488
+# fail 0
+$ node --test viewer/test/*.test.js
+# tests 755
+# pass 755
+# fail 0
+$ bash install/test/run.sh
+RESULT 206 passed, 0 failed
+$ node test-support/smoke/pi-guard.js
+Pi guard offline check passed
+$ npm --prefix viewer run test:browser
+  34 skipped
+  1116 passed (11.7m)
+```
+The live aside check was not re-run (paid; the remediation does not change argv or the success path).
