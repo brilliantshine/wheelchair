@@ -292,7 +292,7 @@ New tests, at least:
 | intent | minor | Decision 10's rationale is wrong; mid-turn lag on remote threads unrecorded | upheld | Decision 11 |
 | intent | minor | Background refresh is heavier than on-demand listing | declined | The sidebar list already rides the chat poll; an on-demand route adds a request per poll and still needs stored discovery |
 | mechanics | blocking | Older machine ignores `keep` and deletes uploads | downgraded (minor) | Same as today's behaviour on that machine, not a wrong build; S4 now treats missing `kept_files` as 0 |
-| mechanics | blocking | Retry accounting for `kept_files` undefined | upheld (major) | S4: count requested names present in `kept/` |
+| mechanics | blocking | Retry accounting for `kept_files` undefined | downgraded (major) | S4: count requested names present in `kept/` |
 | mechanics | blocking | Exported HTML can run script when opened | upheld | S1: hub prefixes a CSP meta; download is a hub route |
 | mechanics | major | Remote graph names have no defined path to picture rows | upheld | S5: rows stay card-driven, `list` drops graphs, reads use thread slug like archived |
 | mechanics | major | ZIP error handling for remote reads unspecified | upheld | S2: live `list` then `read`; any failure is 502, never a partial ZIP |
@@ -316,12 +316,25 @@ New tests, at least:
 | intent | minor | S1 "local, archived or remote" HTML download contradicts S5 "local threads exactly as today" | upheld | S1: download reuses the displayed URL + `download=1`; named as the one new local behaviour |
 | intent | minor | S1 "works for all threads" no longer true for HTML | upheld | S1 limited to graph and form PNGs |
 | mechanics | blocking | Pan/zoom transform left on cloned group crops export | upheld | S1: remove transform, bbox in group coordinates; test pans/zooms first |
-| mechanics | blocking | Saved HTML policy weaker than in-app (form-action, base-uri) | upheld (major) | S1: meta carries every meta-capable directive; behaviour test |
+| mechanics | blocking | Saved HTML policy weaker than in-app (form-action, base-uri) | downgraded (major) | S1: meta carries every meta-capable directive; behaviour test |
 | mechanics | major | Local-live HTML download can't resolve the card's file | upheld | S1: download = displayed URL + `download=1` on both routes |
 | mechanics | major | Kept count can't say which files survived | upheld | S4: `kept` names list; per-file links |
-| mechanics | blocking | Remote picture 404 vs 502 mapping undefined | upheld (major) | S5: status mapping |
-| mechanics | blocking | Remote live graph hash from length misses same-length edits | upheld (major) | S5: SHA-1 content hash from route |
+| mechanics | blocking | Remote picture 404 vs 502 mapping undefined | downgraded (major) | S5: status mapping |
+| mechanics | blocking | Remote live graph hash from length misses same-length edits | downgraded (major) | S5: SHA-1 content hash from route |
 | mechanics | minor | Failed refresh retried every poll | upheld | S5: 30 s from last attempt |
+
+### Round 3 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 2:**
+- S1: export removes the pan/zoom transform and uses the group's bbox; saved HTML meta policy adds font-src, base-uri, form-action; HTML download is the displayed URL plus `download=1` on both the local-live and thread-scoped routes.
+- S4: archive returns `kept: [names]`; `thread.kept_files` is that list; archived links per file.
+- S5: 404 vs 502 status mapping for remote reads; graph route returns a SHA-1 content `hash` used by `getArchivedGraph`; refresh retry 30 s from last attempt.
+- Validation: pan/zoom export test, saved-HTML behaviour test, status-mapping, hash and per-file tests.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
