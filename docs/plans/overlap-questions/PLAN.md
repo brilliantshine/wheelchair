@@ -882,6 +882,7 @@ merging of branches; no sub-lead or worker rule changes.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Card id = delivery id; duplicate receipt id; `about_thread` on question; spooled 202 id; `card.js` receipt; tests (Spec §3 code) | viewer/app/cards.js, viewer/app/card.js, machine/service.js, viewer/test/, machine/test/ | standard / gpt-6.1-terra | wc-ebf1a18d38b1-worker | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | done |
 | T2 | Protocol text: lead.md overlap rules, restart, retract ids; cards.md; cards-lead.md; machine/API.md (Spec Terms, §1, §2, §3 docs) | protocol/app/lead.md, protocol/app/cards.md, protocol/app/cards-lead.md, machine/API.md | standard / claude-sonnet-5-5 | wc-ebf1a18d38b1-worker-2 | `node --test viewer/test/*.test.js`; Validation greps | done |
+| R1 | Remediation 1: three text fixes (first look includes earlier overlaps; cancel marker names the original card; API.md `done` never spooled) | protocol/app/lead.md, machine/API.md | light / claude-haiku-5-5 | wc-ebf1a18d38b1-worker-3 | protocol-rules test; section grep | in progress |
 
 ## Log
 
@@ -900,3 +901,4 @@ merging of branches; no sub-lead or worker rule changes.
 - 2026-11-21 — Choice: T1, tests: new `viewer/test/card-receipt.test.js`; machine spool test extended in `machine/test/service.test.js`
 - 2026-11-21 — Choice: T1, machine/service.js: agent-supplied `delivery_id` still passed through (already an Accepted Risk, review-round-17)
 - 2026-11-21 — T1 accepted (band: scout): Spec §3 code matches; viewer suite's one failure (`app-uploads-archive.test.js` stalled upload) passes alone twice, load flake; sub-lead adds a delivered-202 receipt test case the worker's test lacked
+- 2026-11-21 — Verification 1: Claude PASS, GPT FAIL; 3 gaps to remediation (1 must-fix, 2 hardening fixed at lead's choice), 0 rare paths; full-viewer-suite load failures judged pre-existing (server.test.js:599 race fails 1 in 6 on base d5e5d1e7), not a gap
