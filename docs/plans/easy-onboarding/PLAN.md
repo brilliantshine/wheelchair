@@ -219,8 +219,11 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    ```
    can_start: { machine: "hub", lead: {ok, reason?}, worker: {ok, reason?} }
    ```
-   `hub` is the machine a new thread starts on by default (`viewer/app/threads.js:63`). The
-   hub decides each role in this order:
+   `hub` is the machine a new thread starts on by default (`viewer/app/threads.js:63`). It is
+   an alias: resolve it to its configured machine key exactly as `choose` does
+   (`hub.state.resolveMachine`, `balancer.js:32-34`), since the installer registers the hub
+   machine under its hostname (`install.sh:172`); every check below and `can_start.machine`
+   use the resolved key and name. The hub decides each role in this order:
    1. `hub` unreachable → `ok: false`, `<machine> isn't reachable.`
    2. Its service version differs from the hub's (`outOfDate`, `viewer/app/ready.js:11-16`) →
       `ok: false`, `<machine> needs updating: re-run ./install.sh on it.`
@@ -239,7 +242,10 @@ Antigravity, Kimi Code, Pi (OpenRouter).
         then fixes both) or `Leads try` when it does not;
       - otherwise: `No account has room for a new <lead|worker> right now (usage limits, or
         the share saved for leads).`
-   The hub never changes either order on its own; there is no button that does.
+   `start` therefore means "placement would pick a harness", not a full start: checks that
+   run only when a session really starts (such as the Codex preflight, `sessions.js:292`)
+   still report their own errors in the thread. The hub never changes either order on its
+   own; there is no button that does.
 9. **Onboarding status** `GET /onboarding` → `{show, steps:[{id:"install", label:"Install an
    agent harness", done}, {id:"signin", label:"Sign in to it", done}, {id:"start",
    label:"Agents can start", done, reason?}]}`, from `GET /harnesses` data. `install` is done
@@ -249,9 +255,11 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    it carries the first failing reason. The first time all three are done, the hub saves a new
    boolean setting `onboarding_done: true`; from then on `/onboarding` answers `{show: false,
    steps: []}` at once, without building `/harnesses` data or calling `choose`, so the
-   checklist never comes back and the home poll costs nothing. In `normalize()`: a fresh
-   install (no saved settings file) gets `false`; a saved settings file without the key (an
-   install from before this feature) gets `true`. Otherwise `show` is true when some step is not done and at least one
+   checklist never comes back and the home poll costs nothing. `defaults()` carries
+   `onboarding_done: false` (a fresh install with no settings file); `normalize(saved)` always
+   writes the key: a non-boolean or missing value in a saved file (an install from before this
+   feature) becomes `true`. Because every write goes through `normalize` from `defaults()` or
+   the saved file, a fresh user's first save keeps `false`. Otherwise `show` is true when some step is not done and at least one
    machine is reachable; false when none is.
 10. **Tests** in `viewer/test/`: normalize defaults and bad values; `describe` includes
    `harnesses`; PUT 200/400/404 and the lead-order 409 (default `['claude','any']` with only
@@ -268,7 +276,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    `choose`; a saved settings file without the key normalizes to `true`); balancer skips a provider whose CLI is not installed
    though its account is logged in; order writes refused when they empty the enabled Lead order;
    reservation skips a switched-off provider; onboarding for no CLI, installed-not-signed-in, installed on one machine
-   with sign-in only on another (not done), and done.
+   with sign-in only on another (not done), a test registering the hub machine under a hostname key (as `install.sh:172` does) so
+   `can_start` resolves the `hub` alias; and done.
 
 ### S4. Settings page (`viewer/pages/settings.js`)
 
@@ -281,9 +290,10 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    switch (shared by all machines); and an action:
    - `recipe: null` (old service) → the whole machine shows `This machine needs updating:
      re-run ./install.sh on it.` above the rows, and no row offers Install;
-   - `recipe: false` → when not installed, a link "Install from <vendor>'s site" to the docs
-     URL kept in a page constant per provider; when installed, no action. This holds even if
-     an earlier install on this machine failed: `recipe: false` wins over Try again;
+   - `recipe: false` and not installed → a link "Install from <vendor>'s site" to the docs URL
+     kept in a page constant per provider. `recipe: false` only ever replaces Install and Try
+     again (even after an earlier failed install); once the CLI is installed the rules below
+     apply as for any harness;
    - not installed, or the last install on this machine `failed` → **Install** (or **Try
      again** after a failure);
    - installed, not signed in → **Sign in**;
@@ -333,7 +343,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
 2. Browser tests (`npm --prefix viewer run test:browser`) with stubbed responses: the card
    shows and hides; the Harnesses section renders five rows, the vendor-link case, Install
    flow states (running on load, succeeded, failed with Try again), Sign in, the
-   the switch-off confirmation, the "can't start yet" notice and its reason,
+   the switch-off confirmation, the "can't start yet" notice and its reason, an installed
+   `recipe: false` harness that is signed out shows Sign in,
    reopening Settings while the machine is unreachable and a job runs then the machine
    answering (row shows `Installing…`); switching a harness off hides its account row, review-family
    option and order-editor entries.
@@ -504,6 +515,19 @@ npm --prefix viewer run test:browser
 **Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
 
 **Changed since Round 7:** S3.8 rewritten (unreachable and out-of-date checks, worker probed at `standard`, reasons point at the right list, no-room reason); S3.9 (`/onboarding` short-circuits once done; old settings files → `onboarding_done: true`); S3.10 tests; S4.2 (`recipe: false` wins; links to Workers try first in Usage and Leads try in Models; re-fetch on return and after order saves).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Fresh install's first save could drop `onboarding_done` and retire the checklist | upheld | S3.9 `defaults()` carries `false` |
+| mechanics | blocking | `hub` alias not resolved to the hostname key | upheld | S3.8 resolve as `choose` does; test |
+| mechanics | blocking | Placement can pass while Codex preflight later fails | downgraded (minor) | S3.8 states `start` is placement eligibility; start-time checks report in the thread |
+| mechanics | blocking | `recipe: false` hides Sign in after a vendor install | upheld | S4.2 recipe only replaces Install/Try again; test |
+
+### Round 9 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 8:** S3.8 (`hub` alias resolved; `start` means placement eligibility); S3.9 (`onboarding_done` in `defaults()`); S3.10 hostname-key test; S4.2 (`recipe: false` only replaces Install/Try again); S5.2 test.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
