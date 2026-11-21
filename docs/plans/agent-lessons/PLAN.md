@@ -1,6 +1,6 @@
 ---
 slug: agent-lessons
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -45,6 +45,20 @@ Lessons are short instructions that agents save for later agents of a given type
 stores them with the other settings, adds the applicable ones to every agent's starting
 instructions, shows a notice in the thread when one is saved, and lets Collin edit them in
 Settings › Behavior templates.
+
+```mermaid
+flowchart TD
+  A[An agent's mistake cost time and was proven wrong] --> B{Does it conflict with the rules, or should it always apply?}
+  B -- yes --> C[Lead suggests a protocol change in a new thread]
+  B -- no --> D[Agent posts a lesson: add, replace or remove]
+  D --> E{Hub checks: allowed for that agent type, not full, not edited by the user}
+  E -- refused --> F[Agent gets the reason and adjusts or drops it]
+  E -- accepted --> G[Lesson saved with the settings]
+  G --> H[One-line notice in the thread, linking to Settings]
+  G --> I[Next agent of that type, on a matching AI and project, gets it in its starting instructions]
+  G --> J[Collin reads, edits or removes it in Settings, Behavior templates]
+  J --> K[Edited lessons are marked as the user's; agents leave them alone]
+```
 
 ### S1. What a lesson is (the bar)
 
@@ -194,7 +208,9 @@ lessons.
 
 The Settings "See it in full" preview (`fullPrompt`) shows the lessons block with every
 lesson for the role and its markers, filtered only by the template's project scope, and,
-for the lead and sub-lead previews, their "Lessons you keep for …" blocks as well.
+for the lead and sub-lead previews, their "Lessons you keep for …" blocks as well. The
+preview caption (`viewer/pages/settings.js:709`) gains: "Lessons marked for one AI or one
+project reach only agents on that AI or in that project."
 
 ### S6. The notice in the thread
 
@@ -203,7 +219,10 @@ question): "Saved a lesson for <role plural>: <text>" (`add`), "Updated a lesson
 <role plural>: <text>" (`replace`), "Removed a lesson for <role plural>: <removed text>"
 (`remove`), followed by the `why` in muted text and the snapshot's markers ("only on GPT", "only in
 <last path segment of the project>"), and an "Open in Settings" link to `/wheelchair/app/settings#templates/lessons/<role>` (the
-viewer serves app pages under `/wheelchair/app/`, `viewer/server.js:1748`). That address
+viewer serves app pages under `/wheelchair/app/`, `viewer/server.js:1748`). The Settings
+page's hash handling (today it recognises only section names, `viewer/pages/settings.js:1493`)
+is extended so `#templates/lessons/<role>` opens the Behavior templates section with that
+role's Lessons entry selected. That address
 always opens the role's Lessons entry, even with no lessons; empty, it says "No lessons
 for <role plural> right now." (S7). It needs no
 answer, never counts under "Needs you" and has no buttons.
@@ -252,7 +271,10 @@ his templates). The `GET /settings` payload includes `lessons`.
   section says when it writes reviewer, verifier and mapper lessons (naming, in `only_ai`, the AI
   the reviewer, verifier or mapper ran on when the mistake is that AI's habit), and that a lesson card is a
   notice the user sees, so `why` is in the user's words. The sub-lead's says it writes
-  worker lessons, naming the worker's AI in `only_ai` the same way.
+  worker lessons, naming the worker's AI in `only_ai` the same way. Because the sub-lead,
+  not the lead, reads verifier reports during a build, its section also says: when a
+  verifier mistake meets the bar (S1), send the lead a `message` with the proposed lesson
+  text, the proof, and the verifier's AI; the lead decides and saves it.
 - `protocol/app/reviewer.md`, `verifier.md`: one sentence that the lessons in their
   instructions are kept by the lead and they do not save lessons.
 
@@ -296,6 +318,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Two agents in different threads replacing or removing the same lesson at nearly the same time: the later one wins, on a lesson it read at its own start | Rare path: lessons are few and rarely changed, and both changes show as notices; no lesson versioning | review-round-3 |
 | If an `add` lands, its reply is lost, and Collin removes the lesson before the agent repeats the card, the repeat saves it again | Rare path: a lost reply and a removal within the same minute; Collin can remove it again | review-round-2 |
 | A hub crash between saving a lesson and recording its notice leaves the lesson active with no notice | Rare path (crash mid-operation, sub-second window); the lesson still shows in Settings | review-round-1 |
 
@@ -376,6 +399,10 @@ stays as review history.
 | intent | minor | Refusal hard-codes "Collin" | upheld (minor) | S4: "the user edited this lesson…" |
 | intent | minor | Full-list refusal doesn't say it shows "(edited by the user)" | upheld (minor) | S4: included |
 | intent | minor | Decision Log rows 2 and 3 contradict the Spec | upheld (minor) | Decision 15 supersedes them |
+| mechanics | major | `replace`/`remove` act on a startup snapshot; two threads changing the same lesson can overwrite each other | accepted-risk (rare path) | Accepted Risks |
+| mechanics | minor | Sub-lead triages verifier reports in builds but can't pass a verifier lesson to the lead | upheld (minor) | S8: sub-lead messages the lead with lesson, proof and AI |
+| mechanics | minor | Preview caption says agents get what's shown, but markers filter lessons | upheld (minor) | S5: caption sentence added |
+| mechanics | minor | Hash parser only knows section names; link could open Models | upheld (minor) | S6: hash handling extended; S10 asserts the right entry opens |
 
 ## Prior Work
 
