@@ -52,6 +52,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 24 | After the review budget was reached again (rounds 4-6), run another review round with the plan as it is | User's pick (card 4bcb64a3) | user |
 | 25 | No general "Change it" button: overlap cards offer "Keep the plan as it is" plus one to three concrete changes, and the box takes any other; a concrete typed answer settles in approved too; a round restarted by recovery counts the answer applied in it | Round 7 findings | review-round-7 |
 | 26 | Approved-stage withdrawal applies to every overlap card, re-asks included; one fallback change option always exists; a split offer goes before waiting overlap cards but after an open one; a typed change follows its stage's change rules | Round 8 findings | review-round-8 |
+| 27 | Several overlaps on a small fix are all settled before edits; an answer that removes promised scope is an `idea-change` (its own Done marker); chat answers are resolved at once; a split settles waiting overlaps it made moot; the fallback option is always one of the change options and points to a follow-up | Round 9 findings | review-round-9 |
 
 ## Spec
 
@@ -120,16 +121,23 @@ General rules:
 Stages:
 - **Small fix, before edits:** found at the look before edits: post the card, edit nothing until
   it is answered. Options: "Go ahead with the fix" and "Leave it to <other thread>" (no edits;
-  say so in the reply; the thread stays open).
+  say so in the reply; the thread stays open). With several overlaps, every card is settled
+  (one at a time) before any edit; one "Leave it" stops the fix unless the user later says
+  otherwise.
 - **Small fix, after edits:** a late overlap (see Terms); no card.
 - **Feature, before IDEA.md is confirmed:** hold it; ask it as the first question after
   confirmation, before any design question (it then follows "Planning").
 - **Planning (status `planning`):** an Open Question in PLAN.md, asked as an overlap card
   (today's (b) rule, now for every new overlap in planning). Options: "Keep the plan as it is"
   and one to three concrete "Change it: <what>" options; any other change the user types in the
-  card's box or in chat. When the other thread's scope is unclear, one option is always
-  available: "Change it: leave <shared area> out of this plan until you've checked with
-  <other thread>". The answer is handled like any planning answer, with the
+  card's box or in chat. One of the change options is always "Change it: leave <shared area> out of
+  this plan (it can come back later as a follow-up)"; use it when no other concrete change fits.
+  An answer that takes away something IDEA.md's What or What good looks like promises is the
+  user's agreement to that scope change: move it to Not doing and log it with source
+  `idea-change` instead of `user`; that entry, naming the card id, is the Done marker.
+  A chat answer is resolved on the card as soon as it arrives (the Spec edit still waits for
+  triage during a review); if the resolve is refused because the card was already answered, the
+  stored card answer wins. The answer is handled like any planning answer, with the
   Done marker.
 - **Review (status `ready-for-review`):** the same options. The card is a `user-decision` of the
   round it belongs to:
@@ -141,7 +149,9 @@ Stages:
   - Answer arrives while reviewers run: do not change the Spec; fold it in after triage, with the
     Done marker. "Keep the plan" logs the Decision only; a change also edits the Spec.
   - A split offer (Review, "Offer a split") goes before overlap cards still waiting their turn;
-    an overlap card already open keeps its place, and the split offer waits for it.
+    an overlap card already open keeps its place, and the split offer waits for it. After a
+    split, a waiting overlap that only touched the split-off part is removed from the Watch List
+    with Outcome "settled by the split" (noted in the Log) and not asked.
   - A round restarted under §2 counts an answer applied during that recovery: its row and its
     `found`/`fixed` go in the restarted round's triage, once.
   - A round whose triage is done stays `fixing` while the card is open. When it is answered:
@@ -216,7 +226,8 @@ On `[wc:context restart]`, after rereading the plan and cards:
 - Docs: `protocol/app/cards.md` "Posting a card" documents the output and names the
   exceptions to "succeeds once the card is on disk, even if the app is down" (`done` and
   `retract` are never queued), and its rule that cards never carry a thread id names
-  `question.about_thread` as an exception alongside `reach`. `cards-lead.md`: `question` table
+  `question.about_thread` as an exception alongside `reach`. `cards-lead.md`: the `reach` field
+  description no longer says it is the only card field holding a thread id; `question` table
   gains `about_thread`; `retract` says the id comes from `card.js`'s output or the restart
   context, that it is never queued, and lists the two new refusals in its refusal order.
 
@@ -265,6 +276,13 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Fallback option wording reads as conditional or a fifth option | upheld | Always one of the change options (Decision 27) |
+| intent | minor | Fallback "until checked" has no follow-through | upheld | Points to a follow-up instead |
+| mechanics | major | Waiting overlaps after a split | upheld | Settled by the split (Decision 27) |
+| mechanics | major | Overlap answer that changes scope | upheld | `idea-change` entry is the Done marker (Decision 27) |
+| mechanics | major | When to resolve a chat answer during review | upheld | Resolved at once; stored answer wins on refusal |
+| mechanics | major | Several overlaps on a small fix | upheld | All settled before edits; "Leave it" stops the fix |
+| mechanics | minor | `reach` field text still says sole thread id | upheld | §3 Docs |
 
 ### Round 8 — 2026-11-21
 
