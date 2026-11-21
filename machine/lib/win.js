@@ -58,6 +58,7 @@ class WinBridge {
     const state = readState(this.stateDir, ctx.key);
     const gitDir = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: ctx.worktree, encoding: 'utf8' });
     Object.assign(state, { thread_id: ctx.threadId, worktree: ctx.worktree, copy: ctx.copy, last_session: session.name, role: session.role });
+    if (session.role === 'lead' || session.role === 'sub-lead') state.thread_worktree = true;
     if (gitDir.status === 0) state.git_dir = gitDir.stdout.trim();
     writeState(this.stateDir, ctx.key, state);
     return state;
@@ -193,8 +194,9 @@ class WinBridge {
     return result;
   }
 
+  // T4 calls this once per stop, possibly after setting session.status to stopped.
   onStop(session) {
-    if (session.status === 'stopped' || this.stopped.has(session.name)) return;
+    if (this.stopped.has(session.name)) return;
     this.stopped.add(session.name);
     this.toolSessions.delete(session.name);
     const termination = this.killSession(session.name);
@@ -262,7 +264,7 @@ class WinBridge {
     const result = await this.apps.sweep(live);
     for (const key of result.copyKeys) this.markKey(key);
     for (const ctx of this.registry()) {
-      if ((ctx.state.role === 'lead' || ctx.state.role === 'sub-lead') && !this.liveSharing(ctx) && this.needsFinal(ctx) && !this.running.has(ctx.key)) {
+      if (ctx.state.thread_worktree && !this.liveSharing(ctx) && this.needsFinal(ctx) && !this.running.has(ctx.key)) {
         try { await this.sync(ctx); } catch (err) { this.service.log(err); }
       }
     }

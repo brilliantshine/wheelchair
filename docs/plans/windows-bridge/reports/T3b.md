@@ -1,5 +1,176 @@
 # T3b — Windows bridge manager
 
+## Attempt 2
+
+### Outcome: blocked
+
+The requested real WSL check still fails: the second copy reports ready, but the seeded ignored cache is absent after its first reconcile. A separate diagnostic established that robocopy did copy the cache; the first reconcile snapshots the new copy before its `.gitignore` is present, and the initial checkout then removes that cache. Fixing this requires work outside the brief's seed-script-only ownership of `win-sync.js`; I asked the lead whether to expand ownership or assign it to T1b. The real check stopped before archive and removed its copies and temporary repository. The launch/stop race noted in Attempt 1 also remains open and outside the stated robustness changes.
+
+### Changes
+
+- `machine/lib/win-sync.js`: seed folder arguments trim trailing backslashes, exit explicitly succeeds after robocopy codes 0–7, and report a failure exit code.
+- `machine/lib/win.js`: stop idempotence uses the manager's stopped set even if the service already marked the session stopped; the persisted `thread_worktree` flag identifies shared lead/sub-lead copies for sweep.
+- `machine/test/fixtures/win/powershell.exe` and `machine/test/win-sync.test.js`: the seed fake checks the generated script and simulates robocopy success and failure codes.
+- `machine/test/win.test.js`: covers sandboxed start and info, token exclusion, stopped-status handling and idempotence, dead-app sweep and shared worktree, close notifications, failure cleanup exceptions, both archive outcomes, and the extra unresolved conflict ref.
+
+### Choices
+
+- `machine/test/win.test.js`: intercepted the tracker module only during construction to exercise its close callback while `win-apps.js` is being built in parallel.
+
+### Validation
+
+`node --test machine/test/win.test.js machine/test/win-sync.test.js`:
+
+```text
+exit 0
+✔ state is persisted and unresolved paths are reported (2.949686ms)
+✔ reconcile transfers additions, edits, deletions, renames and independent changes (1595.467818ms)
+✔ text conflicts preserve the Windows version and mask markers until resolved (1696.831976ms)
+✔ binary and modify/delete conflicts choose Linux and save Windows (947.765039ms)
+✔ refuses case collisions and leaves external symlinks out (573.255851ms)
+✔ refuses after two changes during apply without losing edits (1090.839793ms)
+✔ interrupted Windows apply is resumed after another Linux edit (1176.150588ms)
+✔ raw bytes, executable mode, force-added and newly ignored files (1211.856467ms)
+✔ seeding copies only ignored paths accepted by the new worktree (756.930906ms)
+✔ seeding accepts robocopy success code 1 and reports failure code 8 (987.357917ms)
+✔ deleting unresolved copies saves the Windows snapshot and removes copy refs (917.899978ms)
+✔ concurrent reconciles for the same copy are serialized (948.775046ms)
+✔ interrupted conflict application retains marker masking on the next sync (1254.324112ms)
+✔ later force-add, repeated tracked deletion, and successive Windows edits sync (1874.116472ms)
+✔ clean checkout LFS and eol attributes do not transform bridge bytes (553.618645ms)
+✔ availability, role, session and argument checks are ordered (4.233272ms)
+✔ session environment applies to tool roles without creating state (0.873986ms)
+✔ run timeout syncs, status syncs an exit and launch environment excludes the token (2231.272852ms)
+✔ readying times out without blocking launch and does not create copies for ordinary sessions (709.585929ms)
+✔ worker merge cleanup deletes its copy and stop does not reconcile (673.270555ms)
+✔ verifier stop returns immediately and deletes after its apps stop (668.04629ms)
+✔ failed copies survive ordinary removal and archive, but verifier and merge removal delete them (2781.828936ms)
+✔ archive waits for successful final sync then deletes the copy (1030.861778ms)
+✔ archive waits once for a final sync and retains a failed copy (671.14167ms)
+✔ sweep reconciles a dead lead with no apps (1039.240038ms)
+✔ sweep marks dead app copies and reconciles a shared thread worktree after a worker registered (1404.92469ms)
+✔ tracker close callback marks the copy used (627.131062ms)
+✔ sessions sharing a worktree share the copy and Windows tool use triggers stop sync (963.487436ms)
+✔ archive deletes copies while retaining conflict refs (1089.99011ms)
+✔ cleanup removes a vanished linked worktree copy without a reconcile (662.145924ms)
+✔ info reports a PowerShell startup failure and environment names are case insensitive (0.52116ms)
+ℹ tests 31
+ℹ suites 0
+ℹ pass 31
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15659.984988
+```
+
+`bash machine/test/run.sh` (the known pre-existing Kimi installation failure):
+
+```text
+exit 1
+✔ required smudge filter failing on Back is interrupted, files recorded and no file deleted (302.830375ms)
+✔ re-cloning after a completed Back allows Try (428.353811ms)
+✔ tracked path colliding with an ignored file on Back is refused with the file intact (296.110286ms)
+✔ Try keeps an ignored directory intact when the thread tracks its path as a file (190.005198ms)
+✔ Back keeps an ignored directory intact when the earlier branch tracks its path as a file (321.598078ms)
+✔ folder under state worktrees is refused (65.511667ms)
+✔ real git am in progress is refused (103.691582ms)
+✔ a long switch does not delay the same project agent worktree queue (2161.857313ms)
+✔ two symlink spellings of one folder pressed together are refused (1183.37235ms)
+✔ index.lock is shown after nothing moved and hidden while a switch runs (208.047914ms)
+✔ Status for stale, moved, trying-other and mismatch includes the right fields (262.079109ms)
+✔ capped file lists retain full files_count and appeared_count (542.204498ms)
+✔ kept entries show missing and old_identity flags (59.249031ms)
+✔ Status runs no content filter while active (239.532866ms)
+✔ required smudge filter failing on a move between threads records exact interrupted paths (321.019728ms)
+✔ real git switch unable to unlink warning is interrupted (184.281104ms)
+✔ commit subject containing unable to unlink gives plain success (176.278882ms)
+✔ hanging filter subprocess outlives deadline and its whole process group is killed (593.523644ms)
+✔ delayed process filter failing after HEAD moved records files across reload (219.112662ms)
+✔ parses every operation (1.676112ms)
+✔ rejects invalid operations and arguments with 400 (0.924719ms)
+✔ detects WSL and its mount root (3.658661ms)
+✔ repairs interop without leaking token or mutating the input (0.607872ms)
+✔ PowerShell startup failure includes interop guidance (6.528506ms)
+✔ gitWin translates a Windows path and runs real git in the copy (133.33943ms)
+✔ state is persisted and unresolved paths are reported (6.962144ms)
+✔ reconcile transfers additions, edits, deletions, renames and independent changes (1934.863759ms)
+✔ text conflicts preserve the Windows version and mask markers until resolved (2010.995137ms)
+✔ binary and modify/delete conflicts choose Linux and save Windows (1065.133719ms)
+✔ refuses case collisions and leaves external symlinks out (600.346841ms)
+✔ refuses after two changes during apply without losing edits (1160.162393ms)
+✔ interrupted Windows apply is resumed after another Linux edit (1169.466828ms)
+✔ raw bytes, executable mode, force-added and newly ignored files (1221.76426ms)
+✔ seeding copies only ignored paths accepted by the new worktree (759.83133ms)
+✔ seeding accepts robocopy success code 1 and reports failure code 8 (978.987431ms)
+✔ deleting unresolved copies saves the Windows snapshot and removes copy refs (954.423798ms)
+✔ concurrent reconciles for the same copy are serialized (983.893885ms)
+✔ interrupted conflict application retains marker masking on the next sync (1274.383133ms)
+✔ later force-add, repeated tracked deletion, and successive Windows edits sync (1879.329076ms)
+✔ clean checkout LFS and eol attributes do not transform bridge bytes (563.326513ms)
+✔ availability, role, session and argument checks are ordered (7.005526ms)
+✔ session environment applies to tool roles without creating state (1.303575ms)
+✔ run timeout syncs, status syncs an exit and launch environment excludes the token (2714.657705ms)
+✔ readying times out without blocking launch and does not create copies for ordinary sessions (825.925334ms)
+✔ worker merge cleanup deletes its copy and stop does not reconcile (798.462744ms)
+✔ verifier stop returns immediately and deletes after its apps stop (727.889839ms)
+✔ failed copies survive ordinary removal and archive, but verifier and merge removal delete them (2859.852827ms)
+✔ archive waits for successful final sync then deletes the copy (1039.040356ms)
+✔ archive waits once for a final sync and retains a failed copy (694.924394ms)
+✔ sweep reconciles a dead lead with no apps (1034.394838ms)
+✔ sweep marks dead app copies and reconciles a shared thread worktree after a worker registered (1431.289135ms)
+✔ tracker close callback marks the copy used (640.531441ms)
+✔ sessions sharing a worktree share the copy and Windows tool use triggers stop sync (972.913103ms)
+✔ archive deletes copies while retaining conflict refs (1097.827962ms)
+✔ cleanup removes a vanished linked worktree copy without a reconcile (691.368424ms)
+✔ info reports a PowerShell startup failure and environment names are case insensitive (0.51143ms)
+ℹ tests 483
+ℹ suites 0
+ℹ pass 482
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 38897.263307
+
+✖ failing tests:
+
+test at machine/test/kimi.test.js:164:1
+✖ new login clears previous result and uses exact target (92.079334ms)
+  Error: Kimi Code is not installed
+      at MachineService.startLogin (/home/gleam/.local/state/wheelchair/worktrees/wheelchair/wc-c833faa8e033-w7/machine/service.js:1471:70)
+      at TestContext.<anonymous> (/home/gleam/.local/state/wheelchair/worktrees/wheelchair/wc-c833faa8e033-w7/machine/test/kimi.test.js:168:17)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    status: 409
+  }
+```
+
+Real WSL check, two worktrees with real PowerShell and Git for Windows:
+
+```text
+exit 1
+info {"wsl":true,"ok":true,"ready":true,"copy_windows":"C:\\Users\\Collin\\AppData\\Local\\Wheelchair\\copies\\real-551449\\daaa51045f6c","copy_linux":"/mnt/c/Users/Collin/AppData/Local/Wheelchair/copies/real-551449/daaa51045f6c","sandboxed":false}
+initial sync {"to_windows":[".gitignore","initial"],"to_linux":[],"conflicts":[],"unresolved":[],"skipped":[]}
+two-sided sync {"to_windows":["linux-file"],"to_linux":["windows-file"],"conflicts":[],"unresolved":[],"skipped":[]}
+round trip linux windows
+second info {"wsl":true,"ok":true,"ready":true,"copy_windows":"C:\\Users\\Collin\\AppData\\Local\\Wheelchair\\copies\\real-551449\\1eeb9692ad84","copy_linux":"/mnt/c/Users/Collin/AppData/Local/Wheelchair/copies/real-551449/1eeb9692ad84","sandboxed":false}
+Error: ENOENT: no such file or directory, open '/mnt/c/Users/Collin/AppData/Local/Wheelchair/copies/real-551449/1eeb9692ad84/Library/cache'
+    at Object.readFileSync (node:fs:624:20)
+    at /tmp/wc-t3b-attempt2/real.js:48:21
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+```
+
+A diagnostic run showed the seed script received `Library/cache`; a second diagnostic observed that file immediately after PowerShell returned and before the first reconcile. It was absent once readying completed. The real-check script and diagnostics live only in scratch space and are not committed.
+
+## Attempt 1
+
+# T3b — Windows bridge manager
+
 ## Outcome: blocked
 
 Implemented and committed the bridge manager and its focused tests. The real WSL check did not pass: its second worktree copied the seed cache successfully but `ensureCopy` returned `seed failed`, because the existing PowerShell seeding script passed robocopy's success exit code 1 through as a process failure. This function is owned by parallel task T1b and was not modified here; the lead has been notified. The full machine suite was run twice and failed both times only on the brief's known pre-existing Kimi installation failure; I stopped further iteration after the second failure, as required.

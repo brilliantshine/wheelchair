@@ -37,6 +37,7 @@ test('availability, role, session and argument checks are ordered', async () => 
   await assert.rejects(bridge.handle(session, { op: 'bogus', args: [] }), { status: 400 });
   session.cli = 'codex';
   await assert.rejects(bridge.handle(session, { op: 'run', args: ['--', 'cmd.exe'] }), { status: 403 });
+  await assert.rejects(bridge.handle(session, { op: 'start', args: ['--', 'cmd.exe'] }), { status: 403 });
   assert.equal((await bridge.handle(session, { op: 'info', args: [] })).sandboxed, true);
 });
 
@@ -97,6 +98,16 @@ test('run timeout syncs, status syncs an exit and launch environment excludes th
   assert.equal(result.timed_out, true);
   assert.equal(fs.readFileSync(path.join(session.worktree, 'win-file'), 'utf8'), 'windows');
   assert.deepEqual(calls[0].env, [['SAFE', 'yes']]);
+  const originalToken = process.env.WHEELCHAIR_SESSION_TOKEN;
+  process.env.WHEELCHAIR_SESSION_TOKEN = 'session-secret';
+  try {
+    await bridge.handle(session, { op: 'start', args: ['--env', 'SAFE=yes', '--', 'test.exe'] });
+    assert.deepEqual(calls[1].env, [['SAFE', 'yes']]);
+  } finally {
+    if (originalToken === undefined) delete process.env.WHEELCHAIR_SESSION_TOKEN;
+    else process.env.WHEELCHAIR_SESSION_TOKEN = originalToken;
+  }
+  await assert.rejects(bridge.handle(session, { op: 'start', args: ['--env', 'WHEELCHAIR_SESSION_TOKEN=secret', '--', 'test.exe'] }), { status: 400 });
   fs.writeFileSync(path.join(session.worktree, 'file'), 'linux\n');
   fs.writeFileSync(path.join(info.copy_linux, 'file'), 'windows\n');
   const status = await bridge.handle(session, { op: 'status', args: [] });
@@ -139,13 +150,45 @@ test('worker merge cleanup deletes its copy and stop does not reconcile', async 
 test('verifier stop returns immediately and deletes after its apps stop', async () => {
   const { bridge, session, apps } = realFixture('verifier');
   let release;
-  apps.killSession = () => new Promise(resolve => { release = () => resolve({ wasRunning: false, copyKeys: [] }); });
+  let calls = 0;
+  apps.killSession = () => { calls++; return new Promise(resolve => { release = () => resolve({ wasRunning: false, copyKeys: [] }); }); };
   await bridge.handle(session, { op: 'sync', args: [] });
   const info = await bridge.handle(session, { op: 'info', args: [] });
+  session.status = 'stopped';
   assert.equal(bridge.onStop(session), undefined);
+  assert.equal(bridge.onStop(session), undefined);
+  assert.equal(calls, 1);
   assert.equal(fs.existsSync(info.copy_linux), true);
   release();
   for (let i = 0; i < 100 && fs.existsSync(info.copy_linux); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(fs.existsSync(info.copy_linux), false);
+});
+
+test('failed copies survive ordinary removal and archive, but verifier and merge removal delete them', async () => {
+  for (const kind of ['other', 'archive', 'verifier', 'merge']) {
+    const { bridge, session } = realFixture();
+    await bridge.handle(session, { op: 'sync', args: [] });
+    const info = await bridge.handle(session, { op: 'info', args: [] });
+    fs.writeFileSync(path.join(session.worktree, 'Case'), 'a');
+    fs.writeFileSync(path.join(session.worktree, 'case'), 'b');
+    await assert.rejects(bridge.handle(session, { op: 'sync', args: [] }));
+    if (kind === 'archive') await bridge.archiveFinish(session.thread_id);
+    else await bridge.onWorktreeRemoved(session, { kind });
+    assert.equal(fs.existsSync(info.copy_linux), kind === 'other' || kind === 'archive', kind);
+  }
+});
+
+test('archive waits for successful final sync then deletes the copy', async () => {
+  const { bridge, session } = realFixture();
+  await bridge.handle(session, { op: 'sync', args: [] });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  fs.writeFileSync(path.join(info.copy_linux, 'final'), 'windows');
+  assert.deepEqual(bridge.archiveCheck(session.thread_id).pending, [session.name]);
+  assert.deepEqual(bridge.archiveCheck(session.thread_id).pending, [session.name]);
+  await Promise.all([...bridge.running.values()]);
+  assert.deepEqual(bridge.archiveCheck(session.thread_id).pending, []);
+  assert.equal(fs.readFileSync(path.join(session.worktree, 'final'), 'utf8'), 'windows');
+  await bridge.archiveFinish(session.thread_id);
   assert.equal(fs.existsSync(info.copy_linux), false);
 });
 
@@ -173,6 +216,50 @@ test('sweep reconciles a dead lead with no apps', async () => {
   assert.equal(fs.readFileSync(path.join(session.worktree, 'new-file'), 'utf8'), 'windows');
 });
 
+test('sweep marks dead app copies and reconciles a shared thread worktree after a worker registered', async () => {
+  const { bridge, session, service, apps } = realFixture('sub-lead');
+  await bridge.handle(session, { op: 'sync', args: [] });
+  const ctx = await bridge.context(session);
+  const worker = { ...session, name: 'wc-test-worker', role: 'worker' };
+  service.sessions[worker.name] = worker;
+  service.liveTmux = () => new Set([session.name, worker.name]);
+  await bridge.handle(worker, { op: 'info', args: [] });
+  await bridge.sync(ctx);
+  const { readState } = require('../lib/win-sync');
+  assert.equal(readState(service.stateDir, ctx.key).thread_worktree, true);
+  assert.equal(readState(service.stateDir, ctx.key).used_since_ok, false);
+  fs.writeFileSync(path.join(ctx.copy.linux, 'dead-app'), 'windows');
+  service.liveTmux = () => new Set();
+  apps.sweep = async live => { assert.equal(live.size, 0); return { copyKeys: [ctx.key] }; };
+  const originalSync = bridge.sync.bind(bridge);
+  bridge.sync = async copy => {
+    assert.equal(readState(service.stateDir, ctx.key).used_since_ok, true);
+    return originalSync(copy);
+  };
+  await bridge.sweep();
+  assert.equal(fs.readFileSync(path.join(session.worktree, 'dead-app'), 'utf8'), 'windows');
+});
+
+test('tracker close callback marks the copy used', async () => {
+  const f = realFixture();
+  const Module = require('node:module');
+  const originalLoad = Module._load;
+  let onAppClosed;
+  try {
+    Module._load = function (request, ...args) {
+      if (request === './win-apps') return { AppTracker: class { constructor(options) { onAppClosed = options.onAppClosed; } } };
+      return originalLoad.call(this, request, ...args);
+    };
+    const bridge = new WinBridge(f.service, { procRoot: path.join(f.root, 'proc'), etcRoot: path.join(f.root, 'etc'), winEnv: f.bridge.winEnv });
+    await f.bridge.handle(f.session, { op: 'sync', args: [] });
+    const ctx = await bridge.context(f.session);
+    const { readState } = require('../lib/win-sync');
+    assert.equal(readState(f.service.stateDir, ctx.key).used_since_ok, false);
+    onAppClosed({ copyKey: ctx.key });
+    assert.equal(readState(f.service.stateDir, ctx.key).used_since_ok, true);
+  } finally { Module._load = originalLoad; }
+});
+
 test('sessions sharing a worktree share the copy and Windows tool use triggers stop sync', async () => {
   const { bridge, session, service, apps } = realFixture();
   apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
@@ -197,10 +284,15 @@ test('archive deletes copies while retaining conflict refs', async () => {
   fs.writeFileSync(path.join(info.copy_linux, 'file'), 'windows\n');
   const conflict = await bridge.handle(session, { op: 'sync', args: [] });
   const ref = conflict.conflicts[0].ref;
+  assert.deepEqual(conflict.unresolved, ['file']);
+  const before = git(session.worktree, 'for-each-ref', '--format=%(refname)', 'refs/wheelchair/conflicts').split('\n');
   await bridge.archiveFinish(session.thread_id);
   assert.equal(fs.existsSync(info.copy_linux), false);
   assert.equal(git(session.worktree, 'show', `${ref}:file`), 'windows');
-  assert.ok(git(session.worktree, 'for-each-ref', '--format=%(refname)', 'refs/wheelchair/conflicts').split('\n').length >= 2);
+  const after = git(session.worktree, 'for-each-ref', '--format=%(refname)', 'refs/wheelchair/conflicts').split('\n');
+  const saved = after.filter(item => !before.includes(item));
+  assert.equal(saved.length, 1);
+  assert.equal(git(session.worktree, 'show', `${saved[0]}:file`), 'windows');
 });
 
 test('cleanup removes a vanished linked worktree copy without a reconcile', async () => {

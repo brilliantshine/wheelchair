@@ -91,10 +91,10 @@ async function ensureCopy(ctx) {
         const body = paths.map(relative => {
           const dir = path.win32.dirname(relative.replace(/\//g, '\\'));
           const name = path.win32.basename(relative);
-          return `robocopy ${shellLiteral(path.win32.join(source.copy.windows, dir))} ${shellLiteral(path.win32.join(copy.windows, dir))} ${shellLiteral(name)} /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null\nif ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }`;
-        }).join('\n');
+          return `robocopy (${shellLiteral(path.win32.join(source.copy.windows, dir))}.TrimEnd('\\')) (${shellLiteral(path.win32.join(copy.windows, dir))}.TrimEnd('\\')) ${shellLiteral(name)} /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null\nif ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }`;
+        }).join('\n') + '\nexit 0';
         const result = await winEnv.ps(script('seed', args, body));
-        if (result.code) throw Object.assign(new Error(`seed failed: ${result.stderr}`), { status: 422 });
+        if (result.code) throw Object.assign(new Error(`seed failed (exit ${result.code}): ${result.stderr}`), { status: 422 });
       }
     }
   }

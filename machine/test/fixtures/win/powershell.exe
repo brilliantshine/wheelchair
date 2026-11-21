@@ -26,6 +26,11 @@ switch (match[1]) {
     console.log(process.env.WC_FAKE_GIT_PATH || '');
     break;
   case 'seed':
+    if (!script.trimEnd().endsWith('exit 0') || (script.match(/\.TrimEnd\('\\'\)/g) || []).length !== args.paths.length * 2) {
+      process.stderr.write('seed script lacks explicit success or trimmed folder arguments\n');
+      process.exit(1);
+    }
+    if (Number(process.env.WC_FAKE_ROBOCOPY_CODE || 0) >= 8) process.exit(Number(process.env.WC_FAKE_ROBOCOPY_CODE));
     for (const relative of args.paths) {
       const source = path.join(linuxPath(args.source), relative);
       const destination = path.join(linuxPath(args.destination), relative);

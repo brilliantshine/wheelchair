@@ -210,6 +210,20 @@ test('seeding copies only ignored paths accepted by the new worktree', async () 
   assert.equal(fs.existsSync(path.join(newCopy.linux, 'cache-two')), false);
 });
 
+test('seeding accepts robocopy success code 1 and reports failure code 8', async () => {
+  const source = await fixture();
+  fs.writeFileSync(path.join(source.worktree, '.gitignore'), 'cache\n');
+  await reconcile(source);
+  fs.writeFileSync(path.join(source.copy.linux, 'cache'), 'seeded');
+  source.fakeEnv.WC_FAKE_ROBOCOPY_CODE = '1';
+  const seeded = { ...source, copy: { linux: path.join(path.dirname(source.copy.linux), 'seed-one'), windows: 'C:\\seed-one' }, key: 'seed-one', sources: [{ copy: source.copy, last_ok: 'now' }] };
+  assert.equal((await ensureCopy(seeded)).created, true);
+  assert.equal(fs.readFileSync(path.join(seeded.copy.linux, 'cache'), 'utf8'), 'seeded');
+  source.fakeEnv.WC_FAKE_ROBOCOPY_CODE = '8';
+  const failed = { ...seeded, copy: { linux: path.join(path.dirname(source.copy.linux), 'seed-eight'), windows: 'C:\\seed-eight' }, key: 'seed-eight' };
+  await assert.rejects(ensureCopy(failed), /seed failed \(exit 8\)/);
+});
+
 test('deleting unresolved copies saves the Windows snapshot and removes copy refs', async () => {
   const { deleteCopy } = require('../lib/win-sync');
   const ctx = await fixture();
