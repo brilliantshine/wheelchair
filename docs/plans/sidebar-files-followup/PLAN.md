@@ -44,7 +44,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 Five parts, independent of each other except where noted. "Remote thread" means a thread
 whose `thread.machine` does not resolve to the hub's own machine (resolution as in
 `viewer/app/state.js:212-220`, compared like `viewer/app/peers.js:6-10`). Everything else is a
-"local thread" and keeps today's code paths unchanged.
+"local thread" and keeps today's code paths, apart from what S1–S4 change.
 
 ### S1. Picture download (D1)
 
@@ -65,12 +65,12 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
 - **Form pictures** (timeline, before-after, layers, side-by-side): draw the form onto a
   canvas from its JSON with a small drawer per form, following the same reading order and
   text as the on-screen form (`viewer/pages/diagram.js:28-80`), wrapping long text, at 2×
-  scale, then save as PNG. Pixel-identical styling is not required; every string shown on
+  scale (scaled down if either side would exceed 8192 px, as for graphs), then save as PNG. Pixel-identical styling is not required; every string shown on
   screen appears in the image.
 - **HTML pictures:** download the `.html` file itself (Decision 8), with
   `content-disposition: attachment`. The saved file must stay inert when opened: the hub
-  inserts, immediately after a leading `<!doctype ...>` if the file starts with one (after
-  optional whitespace or BOM), otherwise as the very first bytes, `<meta charset="utf-8">`
+  inserts, immediately after the `<!doctype ...>` if one appears before any element (after
+  optional BOM, whitespace and `<!-- -->` comments), otherwise as the very first bytes, `<meta charset="utf-8">`
   followed by `<meta http-equiv="Content-Security-Policy"
   content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;
   base-uri 'none'; form-action 'none'">`: every directive of the in-app policy
@@ -108,7 +108,9 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
 - A document qualifies for the ZIP exactly when the sidebar would list it: it exists and is
   at most 2 MiB. Local archived listing (`documents.list`, `viewer/app/documents.js:40-47`)
   changes to check the blob size (`git cat-file -s`) as well as existence, so an oversized
-  archived document is no longer listed (matching local live and remote listing).
+  archived document is no longer listed (matching local live and remote listing). Its cache
+  key adds the branch tip commit (`git rev-parse <branch>`), so a branch that moved (for
+  example an imported thread archived again) is listed afresh.
 - 404 when the thread has no slug or no document qualifies.
 - For a remote thread the route first calls `list` live (not the cache), then `read` for
   each listed file. If any machine call fails (unreachable, timeout, or an error status,
@@ -190,9 +192,11 @@ today.
   under `docs/plans` in `base..wc/<id>`, minus directories present at the base. Returns
   `{slug}` when exactly one, else `{slug: null}`.
 - `action: "list"`: `slug` required and valid (`documents.validSlug` rules). Returns
-  `{files: [...]}`: which of the three plan files exist at `wc/<id>` and are at most 2 MiB
-  (`git cat-file -s`), matching the local 2 MiB rule (`viewer/app/documents.js:13`); an
-  oversized file is not listed, so it never appears in the sidebar or the ZIP.
+  `{files: [...], status}`: which of the three plan files exist at `wc/<id>` and are at most
+  2 MiB (`git cat-file -s`), matching the local 2 MiB rule (`viewer/app/documents.js:13`);
+  an oversized file is not listed, so it never appears in the sidebar or the ZIP. `status`
+  is the value of PLAN.md's `status:` front-matter line at `wc/<id>` (same regex as
+  `viewer/app/views.js:115-118`), or `null` when PLAN.md is not listed.
 - `action: "read"`: `slug` and `file` required. `file` is one of the three plan files
   (the follow-up thread for pictures may extend this). Returns the blob
   via `git show wc/<id>:docs/plans/<slug>/<file>` (with `maxBuffer` of at least 3 MiB), as
@@ -208,8 +212,9 @@ rejects (a new `MachineClient` helper may be added for this; `requestJson` today
 reject on an abort after headers, `viewer/app/machine-client.js:30-46`). The in-flight flag
 of a background refresh is cleared in a `finally`, so no failure leaves it set:
 
-- **Discovery and listing, never under a lock.** `discoverSlug`/`findSlug` and
-  `documents.list` skip remote threads (return null / use the cache). After the chat lock is
+- **Discovery and listing, never under a lock.** `discoverSlug`/`findSlug`, the Features
+  page's own discovery (`viewer/app/views.js:38-41`) and `documents.list` skip remote threads
+  (return null / use the cache). After the chat lock is
   released (as `refreshHandoffStatus` does: `viewer/app/hub.js:267-295`), and after the
   thread-list poll finishes its per-thread section, the hub fires a background refresh for
   each remote thread whose last refresh **attempt** (successful or not) started more than
@@ -217,8 +222,12 @@ of a background refresh is cleared in a `finally`, so no failure leaves it set:
   refresh snapshots `machine`, `project`, `default_branch`, `slug`; calls `discover` if no
   slug, then `list`; then takes `withThread`, re-reads the thread and stores the result only
   if `machine`, `project` and `slug` (when it had one) still match. A discovered slug is
-  saved to `thread.slug`; `{files}` goes into an in-memory cache keyed by thread id.
-  Failures keep the last good cache and are not shown as errors.
+  saved to `thread.slug`; a non-null `status` that differs from `thread.last_status` is saved
+  to `thread.last_status` in the same locked section; `{files}` goes into an in-memory cache
+  keyed by thread id. Failures keep the last good cache and are not shown as errors.
+- **Features page stage:** `currentStatus` (`viewer/app/views.js:123-130`) returns
+  `thread.last_status` for a remote thread without reading any file, so a remote thread is
+  grouped by its committed plan status once a refresh has seen it.
 - The chat response and thread list use the cached file list for remote threads.
 - **Document reads** (doc route view and download, S2 ZIP) for a remote thread call `read`
   outside any lock. Status mapping for the doc route: a machine **404** (missing ref or
@@ -260,9 +269,11 @@ New tests, at least:
   background refresh started after a lock was released may still be in flight when the lock
   is taken again; that is allowed). Chat's existing transcript fetch is unchanged.
 - Browser tests also: an exported graph keeps
-  its group shading translucent (`fill-opacity`); a saved HTML file with a doctype keeps it
+  its group shading translucent (`fill-opacity`); a saved HTML file with a doctype (also one preceded by a comment) keeps it
   first and has no refresh meta.
-- Viewer route tests also: an oversized local archived document is not listed and not
+- Viewer route tests also: a remote thread's Features page group follows the `status`
+  from `list`; an archived listing is recomputed after the branch tip moves; an oversized
+  local archived document is not listed and not
   zipped; archived rows show
   links only for names in `thread.kept_files`; a rebase-kept archive still stays unarchived.
 - Machine tests: `/v1/plan-files` discover/list/read on a temp repo, input refusals, a
@@ -289,6 +300,8 @@ New tests, at least:
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A saved HTML picture could still navigate away through refresh tricks the tag match misses | Needs an agent writing deliberately evasive HTML (tampering, a rare path); the file opens from disk, not the app's origin, so it cannot reach the app or its secrets | review-round-3 |
+| A remote thread merged before the hub learned its slug never shows its documents | Same limitation local discovery has today; slugs are learned within about 30 s of a plan appearing, so it affects only threads older than this feature | review-round-6 |
+| A plan document path committed as a directory or symlink could be listed or zipped as its listing or link text | Rare path: agents write plan files as regular files | review-round-6 |
 
 ## Check Once Built
 
@@ -420,6 +433,27 @@ New tests, at least:
 - S5: `read` uses maxBuffer ≥ 3 MiB and answers over-2 MiB as 404; `remote: true` dropped.
 - Validation: lock test rephrased (no start/await inside lock callbacks); size and encoding tests; byte-zero test uses a doctype-free fixture.
 - New Check Once Built section (1 row).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Spec opening says local code paths unchanged; S2 changes archived listing | upheld | Opening says "apart from S1–S4" |
+| mechanics | blocking | Remote discovery fails for a branch merged before its slug was learned | accepted-risk | Same limitation as today's local discovery (`viewer/app/views.js:71-97`); only threads merged before the hub learned their slug, in practice threads older than this feature (Accepted Risks) |
+| mechanics | major | Features page reads remote stage from the hub filesystem | upheld | S5: `list` returns `status`; refresh stores `last_status`; `currentStatus` uses it for remote threads |
+| mechanics | minor | Archived listing cache ignores branch tip | upheld | S2: cache key adds tip commit |
+| mechanics | minor | Rare path: tree or symlink entry at a plan document path | accepted-risk | Rare path (a plan file committed as a directory or symlink); Accepted Risks |
+| mechanics | minor | Comment before doctype puts metas first | upheld | S1: skip leading comments |
+| mechanics | minor | Form canvas has no size cap | upheld | S1: same 8192 px cap |
+
+### Round 7 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 6:**
+- S1: metas go after a doctype preceded only by BOM, whitespace or comments; form canvas gets the 8192 px cap.
+- S2: archived listing cache key adds the branch tip commit.
+- S5: `list` returns PLAN.md `status`; refresh saves it to `last_status`; Features page discovery skips remote threads and `currentStatus` uses `last_status` for them.
+- Spec opening: local threads change only where S1–S4 say.
+- Accepted Risks: two new rows (merged-before-discovery, non-regular plan file entries).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
