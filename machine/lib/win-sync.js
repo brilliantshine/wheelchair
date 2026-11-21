@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
+const SEED_TIMEOUT_MS = 30 * 60 * 1000;
 const EMPTY = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const locks = new Map();
 
@@ -81,19 +82,34 @@ async function ensureCopy(ctx) {
     const source = [...sources].sort((a, b) => String(b.last_ok || '').localeCompare(String(a.last_ok || '')))[0];
     seeded_from = source.copy;
     await command(ctx, true, ['fetch', source.copy.windows, 'refs/wheelchair/base'], { cwd: copy.linux });
-    const files = await command(ctx, true, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'], { cwd: source.copy.linux });
+    const files = await command(ctx, true, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], { cwd: source.copy.linux });
     if (files.stdout.length) {
       const ignored = await command(ctx, false, ['check-ignore', '--stdin', '-z'], { cwd: ctx.worktree, input: files.stdout, allowFailure: true });
       if (ignored.code > 1) throw Object.assign(new Error(`git check-ignore failed: ${ignored.stderr}`), { status: 422 });
       const paths = ignored.stdout.toString().split('\0').filter(Boolean);
       if (paths.length) {
-        const args = { source: source.copy.windows, destination: copy.windows, paths };
-        const body = paths.map(relative => {
-          const dir = path.win32.dirname(relative.replace(/\//g, '\\'));
-          const name = path.win32.basename(relative);
-          return `robocopy ${shellLiteral(path.win32.join(source.copy.windows, dir))} ${shellLiteral(path.win32.join(copy.windows, dir))} ${shellLiteral(name)} /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null\nif ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }`;
-        }).join('\n');
-        const result = await winEnv.ps(script('seed', args, body));
+        const listPath = path.join(copy.linux, '.git', 'wheelchair-seed-list');
+        const args = { source: source.copy.windows, destination: copy.windows, list: winEnv.toWindows(listPath) };
+        fs.writeFileSync(listPath, paths.map(relative => relative.replace(/\//g, '\\')).join('\n') + '\n', 'utf8');
+        const body = `$source = ${shellLiteral(args.source)}
+$destination = ${shellLiteral(args.destination)}
+Get-Content -LiteralPath ${shellLiteral(args.list)} -Encoding UTF8 | ForEach-Object {
+  $relative = $_
+  if ($relative.EndsWith('\\')) {
+    robocopy (Join-Path $source $relative) (Join-Path $destination $relative) /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+  } else {
+    $parent = Split-Path $relative -Parent
+    $name = Split-Path $relative -Leaf
+    robocopy (Join-Path $source $parent) (Join-Path $destination $parent) $name /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+  }
+  if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
+}`;
+        let result;
+        try {
+          result = await winEnv.ps(script('seed', args, body), { timeoutMs: SEED_TIMEOUT_MS });
+        } finally {
+          fs.rmSync(listPath, { force: true });
+        }
         if (result.code) throw Object.assign(new Error(`seed failed: ${result.stderr}`), { status: 422 });
       }
     }
@@ -219,7 +235,10 @@ async function isTextConflict(ctx, file, base, linuxTree, windowsTree) {
   for (const tree of [base, linuxTree, windowsTree]) {
     const entry = await command(ctx, false, ['ls-tree', '-z', tree, '--', file], { cwd: ctx.worktree });
     const match = entry.stdout.toString().match(/^(100644|100755) blob ([a-f0-9]+)\t/);
-    if (!match) return false;
+    if (!match) {
+      if (tree === base && entry.stdout.length === 0) continue;
+      return false;
+    }
     const blob = await command(ctx, false, ['cat-file', 'blob', match[2]], { cwd: ctx.worktree });
     blobs.push(blob.stdout);
   }
