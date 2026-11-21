@@ -138,7 +138,7 @@ stop { stopped: [ 'f4282766-98a4-4a5a-9bbf-306e71043ece' ], wasRunning: true, co
 Error: No window
 ```
 
-A diagnostic showed the launched PID had no main window, while another Notepad PID held the visible window. Two known test-created launcher PIDs still existed after stop and were terminated after matching their recorded creation times. The first test also created an initially blank Notepad window within 84 ms of its launcher; a normal close was requested but its process remained present. No Notepad screenshot was produced; the required no-Notepad-process assertion was not met.
+A diagnostic showed the launched PID had no main window, while another Notepad PID held the visible window. Two known test-created launcher PIDs still existed after stop and were terminated after matching their recorded creation times. The first test also created an initially blank Notepad window within 84 ms of its launcher; a normal close was requested, then the blank test window process was terminated after matching its creation time. A subsequent `Get-Process notepad` reported `Remaining Notepad processes: 0`. No Notepad screenshot was produced, and stop itself did not leave the Notepad processes terminated.
 
 A separate job-contained WinForms window yielded:
 
