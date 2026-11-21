@@ -15,6 +15,12 @@ verified-by:
   - round: 2
     lane: gpt / gpt-6.2-sol (FAIL, 1 gap)
     checks: T1 gpt, T2 claude, R1 gpt
+  - round: 3
+    lane: claude / claude-opus-5-5 (PASS)
+    checks: T1 gpt, T2 claude, R1 gpt, R2 gpt
+  - round: 3
+    lane: gpt / gpt-6.2-sol (PASS)
+    checks: T1 gpt, T2 claude, R1 gpt, R2 gpt
 ---
 
 # Completion Report — Close the "agent stopped without reporting" card
