@@ -70,6 +70,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 41 | An open overlap card is never retracted to re-ask it: new information waits for its answer and then gets a follow-up card; restart rediscovery uses the held/in-window/late paths; lead.md wording avoids the words the protocol-rules test forbids; Accepted Risks rows made moot by Decision 40 removed | Round 19 findings | review-round-19 |
 | 42 | New information about an open card is told in the reply and saved to its Open Question at once; an answer is checked against it before acting; a waiting card is rechecked against a finished peer before posting; a withdrawn card's Open Question is removed before the retract; moot Accepted Risks removed | Round 20 findings | review-round-20 |
 | 43 | An answer given after the new-information line is acted on as it is; only an earlier answer is checked; a posted card stays valid if the peer finishes; moot Accepted Risks removed | Round 21 findings | review-round-21 |
+| 44 | Supersedes the checking parts of Decisions 41-43: new information while an overlap card is open is only mentioned in one line beside it; the answer is acted on as given, with no re-check or follow-up card | The last recurring findings came from the re-check; the user picked "Just mention it" (card d9a87c36) | user |
 
 ## Spec
 
@@ -171,14 +172,10 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   PLAN.md created with `status: planning`, it is the first Open Question asked.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
-- **New information while a card is open:** the open card is never retracted to re-ask it. The
+- **New information while a card is open:** the open card is never retracted or re-checked. The
   lead says the new information in one line of its next visible reply, beside the open card, and
-  for a feature commits it to the card's `Overlap with` Open Question at once (with the time it
-  was added). An answer given after that line is acted on as it is. Only an answer given before
-  the line was shown is checked against the information: if it no longer fits, the lead posts a
-  follow-up overlap card for the same thread instead, which makes the original handled (Terms,
-  "Settling an answer"). Once posted, a card is answered and acted on even if the other thread
-  finishes meanwhile; the finished-peer recheck applies only before posting.
+  acts on the answer as the user gives it. A card stays valid even if the other thread finishes
+  meanwhile; the finished-peer recheck applies only before posting.
 - **Withdrawn card:** when an overlap card no longer applies, the lead first commits the removal
   of its Open Question with a Log line `Overlap with <thread id> dropped: <why>`, then retracts the
   card.
@@ -187,7 +184,7 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
 
 On `[wc:context restart]`, after rereading the plan and cards:
 - For each overlap card with an actionable answer, no Done marker and no later overlap card for
-  the same thread: act on it as §1 "New information while a card is open" says, then as usual. If status
+  the same thread: act on it now. If status
   is no longer in the card window (rare: the answer would have to cross the move to review),
   treat it as a late overlap.
 - An open overlap card stays open and is not asked again.
@@ -253,11 +250,19 @@ merging of branches; no sub-lead or worker rule changes.
 | A chat answer resolved while the app is down is queued; if the user presses an option on the same card before the queue drains, the hub keeps the press and drops the resolve silently | Needs an app outage, a chat answer and a press on the same card inside the reconnect window | review-round-12 |
 | A late-overlap mention learned in a hidden turn is lost if the lead dies before its next visible reply and the peer list does not reveal it | Needs a restart inside that window; the restart re-look covers the usual case | review-round-13 |
 | A session that puts its own `delivery_id` in a card file can choose the card's id, or have its card dropped as a duplicate | Needs an agent tampering with its own card file; it only affects its own thread | review-round-17 |
-| On a small fix, new information about an open overlap card is lost if the lead restarts before the answer (nothing records it) | Needs new information and a restart while a small fix waits on its card | review-round-20 |
 | An answer given in the seconds while the lead withdraws an obsolete overlap card (or a restart between the drop commit and the retract) is acted on as a live answer | A race within seconds, or a restart in that gap | review-round-21 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 
 ## Review Rounds
+
+### Round 22 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 21:** Round 21 fixes (Decision 43), then Decision 44: §1 "New information while a card is open" is a one-line mention only; §2 restart acts on answers directly; one moot Accepted Risk removed.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 21 — 2026-11-21
 
