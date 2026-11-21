@@ -132,11 +132,16 @@ test('binary and modify/delete conflicts choose Linux and save Windows', async (
   await reconcile(ctx);
   fs.writeFileSync(linux('binary'), Buffer.from([0, 2]));
   fs.unlinkSync(linux('deleted'));
-  fs.writeFileSync(windows('binary'), Buffer.from([0, 3]));
+  const windowsBinary = Buffer.from([0, 3, 255, 10]);
+  fs.writeFileSync(windows('binary'), windowsBinary);
   fs.writeFileSync(windows('deleted'), 'windows');
   const result = await reconcile(ctx);
   assert.equal(result.conflicts.length, 2);
   assert.deepEqual(fs.readFileSync(linux('binary')), Buffer.from([0, 2]));
+  const binaryRef = result.conflicts.find(conflict => conflict.path === 'binary').ref;
+  const savedBinary = spawnSync('git', ['show', `${binaryRef}:binary`], { cwd: ctx.worktree });
+  assert.equal(savedBinary.status, 0, savedBinary.stderr.toString());
+  assert.deepEqual(savedBinary.stdout, windowsBinary);
   assert.equal(fs.existsSync(linux('deleted')), false);
   assert.equal(git(ctx.worktree, 'show', `${result.conflicts[0].ref}:deleted`), 'windows');
 });
