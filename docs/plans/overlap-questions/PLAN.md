@@ -81,6 +81,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 52 | Supersedes the "held" rules (Decisions 3, 50-51 parts): a feature's first overlap look moves to right after IDEA.md confirmation, so nothing is held before it; a peer asking earlier gets an answer from what the lead knows | Rounds 25-27 kept finding gaps in the held state; the user picked "Look after confirming" (card 8a2638cf) | user |
 | 53 | Feature looks (including user-requested and restart ones) wait for PLAN.md; look (a) repeats when the map arrives; a confirmed IDEA without PLAN.md gets PLAN.md first on restart; a failed `session leads` is retried; a pre-confirmation chat decision is logged when PLAN.md is created | Round 28 findings | review-round-28 |
 | 54 | The first feature look runs right after PLAN.md is created (after the map and confirmation, as lead.md step 4 already orders); a failed `session leads` follows the existing "hub unavailable" rule; Terms "Card window" mentions logged chat decisions | Round 29 findings | review-round-29 |
+| 55 | "Before PLAN.md" is its own branch ahead of the card-window and late rules (peers included); pre-PLAN chat decisions are logged during the first look, once the thread is identified; the pre-post recheck uses the scope that found the thread | Round 30 findings | review-round-30 |
 
 ## Spec
 
@@ -95,9 +96,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
   other thread's id. The app stores it and never shows it.
 - **Card window:** when overlap cards are asked: a small fix before its edits, and a feature
-  from IDEA.md confirmation while `status:` is `planning`. Before PLAN.md is created a feature asks
-  nothing and records nothing about overlaps: its first look comes right after PLAN.md is
-  created (§1), which then also logs any clear decision the user gave in chat.
+  while PLAN.md's `status:` is `planning`.
+- **Before PLAN.md:** a feature asks nothing and records nothing about overlaps before PLAN.md is
+  created, whatever it learns (a peer's message or question, the user's words); its first look
+  comes right after PLAN.md is created (§1). This comes before the card-window and late rules.
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
   thread and not in a Decision Log entry of this plan. An overlap already asked is asked again,
   inside the card window, only for a feature, and only when information learned after its answer was
@@ -105,7 +107,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   mentioned beside an open card never starts a re-ask. A small fix never re-asks: news about an
   answered small-fix overlap before the edits gets the one-line mention, and the user's latest
   instruction in chat wins.
-- **Late overlap:** a new overlap learned outside the card window (status `ready-for-review` or
+- **Late overlap:** a new overlap learned after the card window has closed (status `ready-for-review` or
   later, or once a small fix's edits are made). It never gets a card: the lead says in one line
   of its next visible reply which thread overlaps, what it is doing, and that a follow-up thread
   can be started; if the user asks for one, the lead posts a `stub` (`depends_on_parent` by the
@@ -146,9 +148,9 @@ feature look, including (c) when the user asks and the restart look, waits for P
 it exists the lead may say what it finds, but asks and records nothing. A restarted lead whose
 IDEA.md is confirmed but has no PLAN.md creates it first (lead.md step 4), then looks. If
 `session leads` fails, the lead follows the existing "hub unavailable" rule (cards.md) and
-decides nothing from it until it answers; the step that needed it waits. A clear decision the user gave in chat about a
-thread before confirmation is logged as that thread's Decision (source `user`) in the commit
-that creates PLAN.md, instead of being asked again. Otherwise discovery and peer messaging stay as they are:
+decides nothing from it until it answers; the step that needed it waits. During the first look, a clear decision the user gave in
+chat before PLAN.md about a thread that look identifies is logged as that thread's Decision
+(source `user`) instead of being asked. Otherwise discovery and peer messaging stay as they are:
 the other "When to look" times and the small fix's look before edits, the "Overlap" message to a peer lead, "Replies", "Never wait",
 "Another project", "Passing a question on" and "Only leads talk". Every instruction there to
 tell the user about an overlap "in one line" (in "When to look", in "Overlap" for a thread with
@@ -168,8 +170,8 @@ paths:
   is not settled, so the in-window path applies): answer
   the peer from that decision, with no new card, unless the question brings information that would start a re-ask under
   Terms "New overlap" (inside the card window only);
-- before IDEA.md is confirmed: the lead answers the peer from what it knows and asks its user
-  nothing yet; the look after confirmation covers it;
+- before PLAN.md is created: the lead answers the peer from what it knows and asks its user
+  nothing yet; the first look covers it;
 - inside the card window: it becomes the overlap card for that thread, or joins one: for an open
   card, the one-line mention beside it (§1 "New information while a card is open"); for a waiting
   one, its `Overlap with` Open Question is updated before posting;
@@ -183,7 +185,8 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   and is asked next. For a feature, a waiting or asked overlap is in PLAN.md's Open Questions
   (`Overlap with <thread id>: <what>`), so status stays `planning` until it is settled. The commit that logs
   its Decision removes it. Before posting a waiting overlap card (live or on restart), the lead
-  rechecks the other thread in `session leads`: if it has finished (Terms "Overlap"), or is no
+  rechecks the other thread in `session leads`, in the same scope that found it (`--all-projects`
+  for a thread from another project; a thread listed without a stage counts as active): if it has finished (Terms "Overlap"), or is no
   longer listed at all (archived), it removes
   the Open Question in the commit that logs a Decision `Overlap with <thread id>: the other thread
   finished; mentioned only` (source `defaulted`), and gives the one-line mention instead. On a
@@ -236,9 +239,8 @@ On `[wc:context restart]`, after rereading the plan and cards:
   is no longer in the card window (rare: the answer would have to cross the move to review),
   treat it as a late overlap.
 - An open overlap card stays open and is not asked again.
-- Run `wc.js session leads` once and treat any new overlap (Terms "New overlap") using the same paths as live discovery: nothing before IDEA.md is
-  confirmed (the look after confirmation covers it), a card inside the window, else a late
-  overlap. A planned thread
+- Run `wc.js session leads` once and treat any new overlap (Terms "New overlap") using the same paths as live discovery: nothing before PLAN.md exists (§1: if IDEA.md is
+  confirmed, create it first, then look), a card inside the window, else a late overlap. A planned thread
   also asks any `Overlap with` Open Question not yet asked.
 
 ### 3. Card ids (machine, hub, card.js)
@@ -309,12 +311,18 @@ merging of branches; no sub-lead or worker rule changes.
 
 ### Round 30 — 2026-11-21
 
-**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: started without a provider preference after waiting for room; cross-family: likely.
 
 **Changed since Round 29:** Decision 54: Terms "Card window"; §1 look (a) runs right after PLAN.md is created (no separate map repeat); `session leads` failure points to the existing rule; "Feature, before PLAN.md is created" bullet; one Accepted Risk.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | §2 restart still gated on confirmation | upheld | Gated on PLAN.md (Decision 55) |
+| intent | minor | Peer path still gated on confirmation | upheld | Gated on PLAN.md (Decision 55) |
+| intent | minor | "Card window" names the old trigger | upheld | Reworded |
+| mechanics | major | Chat decision logged before the thread id is known | upheld | Logged during the first look (Decision 55) |
+| mechanics | major | Pre-PLAN information vs late rules | upheld | "Before PLAN.md" branch first (Decision 55) |
+| mechanics | major | Cross-project thread rechecked in the wrong scope | upheld | Same scope; no stage counts as active (Decision 55) |
 
 ### Round 29 — 2026-11-21
 
