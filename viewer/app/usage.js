@@ -55,20 +55,24 @@ async function machineAccounts(hub) {
       try {
         const status = await Promise.race([hub.call(name, '/v1/status', 'GET', undefined, 3000), new Promise((_, reject) => { const t = setTimeout(() => reject(new Error('timeout')), 3000); t.unref(); })]);
         const accounts = {};
+        const logins = {};
         const problems = {};
         const cliProblem = (cli) => (typeof status[cli]?.problem === 'string' && status[cli].problem ? status[cli].problem : null);
         if (Array.isArray(status.accounts)) {
           for (const row of status.accounts) {
-            accounts[row.id] = Boolean(row.logged_in);
+            logins[row.id] = Boolean(row.logged_in);
+            accounts[row.id] = Boolean(logins[row.id] && status[row.cli]?.installed);
             const text = cliProblem('kimi') && row.cli === 'kimi' ? cliProblem('kimi') : (!row.logged_in && typeof row.problem === 'string' && row.problem ? row.problem : null);
             if (text) problems[row.id] = text;
           }
         } else for (const [provider, info] of Object.entries(PROVIDERS)) {
-          accounts[`default-${provider}`] = Boolean(status[info.cli]?.logged_in);
+          logins[`default-${provider}`] = Boolean(status[info.cli]?.logged_in);
+          accounts[`default-${provider}`] = Boolean(logins[`default-${provider}`] && status[info.cli]?.installed);
           if (provider === 'kimi' && cliProblem('kimi')) problems['default-kimi'] = cliProblem('kimi');
         }
         const cliProblems = cliProblem('kimi') ? { kimi: cliProblem('kimi') } : {};
-        return [name, { reachable: true, accounts, problems, cliProblems }];
+        const harnesses = Object.fromEntries(Object.entries(PROVIDERS).map(([p, info]) => [p, { installed: Boolean(status[info.cli]?.installed), version: status[info.cli]?.version || null, recipe: status.recipes ? Boolean(status.recipes[p]) : null }]));
+        return [name, { reachable: true, accounts, logins, problems, cliProblems, harnesses, status }];
       } catch { return [name, { reachable: false, accounts: {}, problems: {}, cliProblems: {} }]; }
     }));
     return Object.fromEntries(entries);
@@ -97,7 +101,8 @@ function rank(accounts, readingsById, machineState, settings, machine, now = Dat
     const reading = effective(readingsById[account.id], now);
     const loggedIn = state.reachable === false ? undefined : state.accounts?.[account.id];
     let reason = 'has room';
-    if (account.paused) reason = 'skipped: paused';
+    if (settings.harnesses?.[account.provider] === false) reason = 'skipped: left out in Settings';
+    else if (account.paused) reason = 'skipped: paused';
     else if (loggedIn !== true) reason = `skipped: signed out on ${machine}`;
     else if (reading?.limited_until && Date.parse(reading.limited_until) > millis(now)) reason = `skipped: limit until ${new Date(reading.limited_until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
     else if (!hasRoom(account, reading, { loggedIn, leave: settings.leave, now })) reason = `skipped: under the ${settings.leave}% left for you`;
@@ -137,4 +142,5 @@ function weekKey(now) {
 }
 async function alert(hub, now = Date.now()) { const { providers, seen } = await summary(hub, false, now); return { dot: Object.entries(providers).some(([p, f]) => (f.amber || f.below_notify) && seen[p] !== weekKey(now)) }; }
 async function seen(hub, now = Date.now()) { const { providers } = await summary(hub, false, now); await change(hub, (data) => { for (const [p, f] of Object.entries(providers)) if (f.amber || f.below_notify) data.seen[p] = weekKey(now); }); return { ok: true }; }
-module.exports = { effective, hasRoom, forecast, belowMargin, record, readings, lastChosen, recordChosen, machineAccounts, spend, rank, summary, alert, seen };
+function clearCache(hub) { cache.delete(hub); }
+module.exports = { clearCache, effective, hasRoom, forecast, belowMargin, record, readings, lastChosen, recordChosen, machineAccounts, spend, rank, summary, alert, seen };
