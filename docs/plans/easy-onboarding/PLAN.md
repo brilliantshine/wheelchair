@@ -137,7 +137,9 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    S1.3). A failing setup step → `failed` with that step's output.
 6. **Routes** (hub auth, beside `GET /v1/status`, `service.js:1953`):
    - `POST /v1/harnesses/<provider>/install` → starts the job; 202 `{state:"running"}`.
-     Unknown provider or `recipe: false` → 404. Running → 409 `{error:"already installing"}`.
+     Unknown provider → 404. `recipe: false` → 404 `{error:"no recipe"}`. Running → 409
+     `{error:"already installing"}`. GET works for every known provider, including
+     `recipe: false` ones (they report `idle` unless a job ran).
    - `GET /v1/harnesses/<provider>/install` → `{state, exit_code, output_tail, started_at,
      finished_at}`; `state` is `idle | running | succeeded | failed`; `output_tail` is the last
      40 lines of the log. Running = the pid file names a live process (`process.kill(pid,
@@ -198,7 +200,9 @@ Antigravity, Kimi Code, Pi (OpenRouter).
        harnesses: {<provider>: { installed, version|null, signed_in, recipe }} }] }
    ```
    Built from the same cached per-machine `/v1/status` fetch as `usage.js:49-77` (extend that
-   fetch to keep, per CLI, `installed`, `version`, and `recipes`); `signed_in` is true when the
+   fetch to keep, per CLI, `installed`, `version`, and `recipes`; a machine whose status has no
+   `recipes` field runs a service from before this feature, and every `recipe` there is
+   `null`); `signed_in` is true when the
    machine reports a logged-in account for that provider that is not paused in hub settings.
    An unreachable machine is `{name, reachable:false, harnesses:{}}`.
 7. **Install forwarders** in `viewer/app/routes.js`, resolving the machine as the sign-in
@@ -252,6 +256,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
 2. One row per harness, in display order: the name; its state on the picked machine: `Not
    installed`, `Installed <version>` (version omitted when null), or `Signed in`; a **Use**
    switch (shared by all machines); and an action:
+   - `recipe: null` (old service) → the whole machine shows `This machine needs updating:
+     re-run ./install.sh on it.` above the rows, and no row offers Install;
    - `recipe: false` and not installed → a link "Install from <vendor>'s site" to the docs URL
      kept in a page constant per provider;
    - not installed, or the last install on this machine `failed` → **Install** (or **Try
@@ -261,8 +267,10 @@ Antigravity, Kimi Code, Pi (OpenRouter).
      yet.` and **Let agents use <Harness>** (`POST /settings/harnesses/<p>/use`). On success
      the page replaces its settings data with the response and, in the existing drafts
      (`balDraft`, `settings.js:1336-1371`), adds the provider to the `worker_order` and
-     `lead_order` drafts where the response added it and the draft lacks it, leaving every
-     other draft edit as it was, so a later save on this page keeps both.
+     `lead_order` drafts where the response added it and the draft lacks it (in `lead_order`,
+     before `any` when the draft has it), leaving every other draft edit as it was, so a later
+     save on this page keeps both and is accepted. It then re-fetches `GET /settings` for the
+     derived fields `describe()` lacks (such as `reserved_provider`) without touching drafts.
    No action when the switch is off.
 3. **Install state on load.** On page load and whenever the picked machine changes, the page
    GETs install state for each enabled provider on that machine. `running` → shows
@@ -272,9 +280,9 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    a 409 just starts polling. If the POST or a poll fails with 502, a network error or no
    answer, the row shows `Can't reach <machine>, retrying…` and keeps polling GET every 2 s until it
    answers, then shows whatever state it reports, so a job that started or kept running
-   during the outage is picked up without a reload. A 404 from the install routes on a
-   reachable machine means its service predates this feature: the row shows `This machine
-   needs updating: re-run ./install.sh on it.` and does not retry. Likewise, while `/harnesses` reports the
+   during the outage is picked up without a reload. A POST answered 404 `no recipe` re-fetches
+   `/harnesses?fresh=1`, so the row falls back to its vendor link; no install route 404 is
+   read as an old service (that comes from `recipe: null`, S3.6). Likewise, while `/harnesses` reports the
    picked machine `reachable:false` (on opening Settings or on a refresh), the section shows
    `Can't reach <machine>, retrying…` and re-fetches `/harnesses?fresh=1` every 5 s; when it is
    reachable again the rows render and step 3's load-time install check runs.
@@ -440,6 +448,15 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Row flags Pi by default, though OpenRouter is left out of the rotation on purpose | user-decision | Part of the "Let agents use" fork |
+| intent | minor | Settings and checklist disagree when Lead order reaches nothing | user-decision | Part of the "Let agents use" fork |
+| intent | minor | 404 means too many things; old service detection | upheld | S2.6, S3.6 `recipe: null`, S4.2–S4.3 |
+| mechanics | blocking | Checklist button may target a harness that repairs nothing | user-decision | Part of the "Let agents use" fork |
+| mechanics | blocking | Switched-off harness satisfies the worker test | user-decision | Part of the "Let agents use" fork |
+| mechanics | major | Draft merge breaks `any` being last | upheld | S4.2 insert before `any` |
+| mechanics | major | Hub-wide check vs the machine a thread starts on | user-decision | Part of the "Let agents use" fork |
+| mechanics | major | Removed recipe → POST 404 misread as old service | upheld | S4.3 `no recipe` → vendor link |
+| mechanics | minor | `use` response drops `reserved_provider` | upheld | S4.2 re-fetch settings |
 
 ## Implementation Tasks
 
