@@ -320,6 +320,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 |------|--------------|-------|
 | Two agents in different threads replacing or removing the same lesson at nearly the same time: the later one wins, on a lesson it read at its own start | Rare path: lessons are few and rarely changed, and both changes show as notices; no lesson versioning | review-round-3 |
 | If an `add` lands, its reply is lost, and Collin removes the lesson before the agent repeats the card, the repeat saves it again | Rare path: a lost reply and a removal within the same minute; Collin can remove it again | review-round-2 |
+| `normalize()` keeps a lesson whose `saved_at` is a non-ISO date string `Date.parse()` accepts (e.g. "2020") | Rare path: the hub always writes ISO times; only a hand-edited settings.json produces it, and the field is display-only | verification-1 |
 | A hub crash between saving a lesson and recording its notice leaves the lesson active with no notice | Rare path (crash mid-operation, sub-second window); the lesson still shows in Settings | review-round-1 |
 
 ## Check Once Built
