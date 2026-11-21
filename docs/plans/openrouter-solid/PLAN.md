@@ -423,7 +423,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S1 spend line + S2 thinking levels | settings.js/.css, providers.js, routes.js, codex/model.sh + tests, service.js effort line, pi.js command(), pi.test.js, openrouter settings tests | standard (claude, claude-sonnet-5-5) | wc-32fed9258dca-worker | codex, machine, viewer node, browser | in progress |
-| T2 | S5 report survives a failed log read — tricky | chat.js, sessions.js deliverReport, machine-client.js, report tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-2 | viewer node | in progress |
+| T2 | S5 report survives a failed log read — tricky | chat.js, sessions.js deliverReport, machine-client.js, report tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-2 | viewer node | done |
 | T3 | S3 read-only aside path guard extension — tricky | machine/adapters/pi-guard.js, machine/test/pi-guard.test.js, test-support/smoke/pi-guard.js | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-3 | machine, pi-guard smoke | done |
 | T4 | S4 Pi version check (after T1, T2) | service.js version probe/cliStatus/launch version/exit reason, usage.js, ready.js, settings.js machine line, sessions.js stuck card, pi tests | standard | | machine, viewer node | not started |
 | T5 | S3 aside wiring, spend dedupe, live check (after T3, T4) — tricky | providers.js, asides.js, aside-turns.js, pi.js asideArgv/spend, aside tests, pi-live smoke | standard | | machine, viewer node, live aside | not started |
@@ -437,3 +437,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 - 2026-11-21 — Choice: T3, test-support/smoke/pi-guard.js: drives Pi's own extension loader/runner and real read/ls tools, no model call.
 - 2026-11-21 — Choice: T3, guard fixtures: the narrow-space case is a symlink to a real path containing U+202F, so refusal is tested after realpath.
 - 2026-11-21 — T3 accepted (band: self): guard re-tested (unit 1/1 pass, real-Pi offline check passed); grep/find/ls/read all use `path`.
+- 2026-11-21 — Choice: T2, viewer/app/chat.js: a Pi entry counts as present when its assistant row exists, even with empty text (no further retries then).
+- 2026-11-21 — Choice: T2, viewer/app/machine-client.js: the hard wall-clock cap applies to every strict pass-through (also project-tools, 120s), and a pending credential lookup is cancelled before a late request starts.
+- 2026-11-21 — Choice: T2, viewer/app/sessions.js: clock and sleep injectable via hub.reportNow / hub.reportSleep.
+- 2026-11-21 — T2 accepted (band: self): retry/report/chat/openrouter-hub tests re-run, 41 pass. Sub-lead integration fix: a strict 404 is treated as empty only when its body is not JSON, so project-tools 404 error text still reaches the caller.
