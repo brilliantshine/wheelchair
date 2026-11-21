@@ -1,6 +1,6 @@
 ---
 slug: sidebar-files-followup
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-20
 ---
 
@@ -45,6 +45,20 @@ Five parts, independent of each other except where noted. "Remote thread" means 
 whose `thread.machine` does not resolve to the hub's own machine (resolution as in
 `viewer/app/state.js:212-220`, compared like `viewer/app/peers.js:6-10`). Everything else is a
 "local thread" and keeps today's code paths, apart from what S1–S4 change.
+
+```mermaid
+flowchart TD
+  P[Picture page] -->|graph or form| PNG[Draw it on a canvas, save as PNG]
+  P -->|interactive page| H[App adds a script block and charset, saves the .html]
+  T[Sidebar or phone Files panel] --> Z[Download all: one zip of map, idea, plan]
+  T --> F[Sent text or Markdown file opens a preview page]
+  A[Archive a thread] --> K[Machine sets agent-sent files aside, removes the rest]
+  K --> L[Archived thread still lists and downloads them]
+  R{Thread on another computer?} -->|no| LOC[Read documents from this computer, as today]
+  R -->|yes| BG[Background check, never inside a lock: find the plan, list documents]
+  BG --> C[Sidebar shows the last committed map, idea, plan]
+  C --> RD[Open, download or zip asks that computer for the file]
+```
 
 ### S1. Picture download (D1)
 
@@ -225,9 +239,10 @@ of a background refresh is cleared in a `finally`, so no failure leaves it set:
   saved to `thread.slug`; a non-null `status` that differs from `thread.last_status` is saved
   to `thread.last_status` in the same locked section; `{files}` goes into an in-memory cache
   keyed by thread id. Failures keep the last good cache and are not shown as errors.
-- **Features page stage:** `currentStatus` (`viewer/app/views.js:123-130`) returns
-  `thread.last_status` for a remote thread without reading any file, so a remote thread is
-  grouped by its committed plan status once a refresh has seen it.
+- **Features and Agents page stage:** no code change. `readStatus` already falls back to
+  `thread.last_status` when PLAN.md is not on the hub's disk (`viewer/app/views.js:115-118`,
+  used by `viewer/app/agents.js:133`), which is the case for a remote thread, so both pages
+  group a remote thread by its committed plan status once a refresh has saved it.
 - The chat response and thread list use the cached file list for remote threads.
 - **Document reads** (doc route view and download, S2 ZIP) for a remote thread call `read`
   outside any lock. Status mapping for the doc route: a machine **404** (missing ref or
@@ -302,6 +317,9 @@ New tests, at least:
 | A saved HTML picture could still navigate away through refresh tricks the tag match misses | Needs an agent writing deliberately evasive HTML (tampering, a rare path); the file opens from disk, not the app's origin, so it cannot reach the app or its secrets | review-round-3 |
 | A remote thread merged before the hub learned its slug never shows its documents | Same limitation local discovery has today; slugs are learned within about 30 s of a plan appearing, so it affects only threads older than this feature | review-round-6 |
 | A plan document path committed as a directory or symlink could be listed or zipped as its listing or link text | Rare path: agents write plan files as regular files | review-round-6 |
+| A remote thread's stage could read a hub-local file if the hub has a checkout at that thread's worktree path | Rare path: worktree paths carry the thread id and live on the thread's own machine | review-round-7 |
+| After undoing a handoff archived before files were kept, a new attachment could reuse an old file card's numbered name and be kept or served as it | Rare path: needs an undone handoff of a thread archived before this feature, then a numbering collision | review-round-7 |
+| A very large graph or form may exceed older iOS Safari's canvas area limit and fail to download | Rare path: older browser versions with unusually large pictures | review-round-7 |
 
 ## Check Once Built
 
@@ -457,6 +475,11 @@ New tests, at least:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `currentStatus` change unneeded; `readStatus` already falls back to `last_status` | upheld | S5: no stage-reader change; both pages use the fallback |
+| mechanics | blocking | RE-RAISE: a thread can merge before the hub ever polls | declined | Not normal use: between a plan appearing and merging, the user must use the app (plan questions, Start building, Done card), and each chat poll triggers a refresh within 30 s; the accepted-risk rationale stands |
+| mechanics | minor | Agents view reads a hub path before `last_status` | accepted-risk | Rare path: needs a checkout on the hub at the remote thread's own worktree path |
+| mechanics | minor | Rare path: undone handoff reuses upload numbers of old cards | accepted-risk | Rare path; Accepted Risks |
+| mechanics | minor | Rare path: older iOS canvas area limit | accepted-risk | Rare path; Accepted Risks |
 
 ## Implementation Tasks
 
