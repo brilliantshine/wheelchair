@@ -63,6 +63,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 34 | Peer overlap questions get four explicit paths (settled, held, in window, late) and the answer goes back to the peer, recorded on the Open Question for restarts; every retract 503 is retried after a minute | Round 14 findings | review-round-14 |
 | 35 | Peer replies are best effort and never hold the plan: the Decision carries who asked and the reply follows its commit; a small fix does not reply after a restart; only a re-ask and the talk-instead approval retract wait for a retract to succeed | Round 15 findings | review-round-15 |
 | 36 | Supersedes the reply-back parts of Decisions 34-35: a peer's overlap question is answered at once from what the lead knows (saying it is asking its user when held or carded); the user's decision is not sent back later. Unrelated peer questions keep today's "send the answer back" rule | After rounds 13-15, the last two drew findings only about the reply-back; the user picked "No, answer it right away" (card fd19b88f) | user |
+| 37 | A retract 503 is retried within the same turn, anything depending on the withdrawal waits, and after 10 minutes a `needs` card offers Keep going; a peer's "settled" means settled under "Settling an answer" | Round 16 findings | review-round-16 |
 
 ## Spec
 
@@ -126,7 +127,9 @@ the sentence that turns a new overlap into an Open Question with "keep the plan 
 change it" options is replaced by a pointer to this section; (b) keeps only its timing. In
 "Passing a question on", a peer's question about an overlap with this thread takes one of these
 paths:
-- the overlap is already settled (a Decision Log entry, or an answered small-fix card): answer
+- the overlap is already settled (a Decision Log entry, or on a small fix the latest instruction
+  that settles it under "Settling an answer"; a vague or conditional answer awaiting a follow-up
+  is not settled, so the in-window path applies): answer
   the peer from that decision, with no new card, unless the question brings new information that
   changes what the answered option would do (then it is a re-ask, inside the card window only);
 - before IDEA.md is confirmed: held, like any overlap, and asked first after confirmation;
@@ -194,9 +197,12 @@ On `[wc:context restart]`, after rereading the plan and cards:
   unreachable; the retract was not recorded; try again in a minute" when the spool is behind or
   the hub is unreachable). Its success and refusals come straight from the hub. Every retract a
   lead makes (overlap, approval, deferred, offer, question, needs, sudo) that gets this 503 is
-  retried after a minute until it succeeds or is refused. The lead holds only where it needs the
-  result (a re-ask, the approval retract at "talk instead of building"); elsewhere it carries on
-  and retries later in the same turn or the next. `cards-lead.md` `retract` says so, so
+  retried after a minute until it succeeds or is refused, within the same turn (other work that
+  does not need the result may go on between tries). Anything that replaces or depends on the
+  withdrawn card (a re-ask, a fresh offer or reach card, the approval retract at "talk instead of
+  building") waits for the retract to succeed. After 10 minutes of failures the lead posts a
+  `needs` card saying which card could not be withdrawn because the app was unreachable, and
+  "Keep going" retries it. `cards-lead.md` `retract` says so, so
   the existing retract steps (for example the deferred card on a switch to thorough) keep working
   through an outage.
 - `viewer/app/card.js` `retractable`, before the generic `card is already answered`: an approval
@@ -265,6 +271,15 @@ merging of branches; no sub-lead or worker rule changes.
 
 ## Review Rounds
 
+### Round 17 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 16:** Decision 37: §3 retract retry (same turn, dependents wait, `needs` card after 10 minutes); §1 "Passing a question on" settled path defined by "Settling an answer".
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ### Round 16 — 2026-11-21
 
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
@@ -273,6 +288,9 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Replacement offer or reach card posted before the retract succeeds | upheld | Anything depending on the withdrawal waits (Decision 37) |
+| mechanics | major | Retry deferred to a turn that never comes | upheld | Same-turn retries, then a `needs` card (Decision 37) |
+| mechanics | major | Vague small-fix answer reported to a peer as settled | upheld | "Settled" per "Settling an answer" (Decision 37) |
 
 ### Round 15 — 2026-11-21
 
