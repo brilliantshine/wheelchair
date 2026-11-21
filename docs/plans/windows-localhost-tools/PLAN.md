@@ -234,6 +234,15 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 
 ## Review Rounds
 
+### Round 1 — 2026-11-21
+
+**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+
+**Changed since the last round:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
