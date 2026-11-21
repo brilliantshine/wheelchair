@@ -57,6 +57,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 28 | Supersedes the review, approved, Start building and restart-round parts of Decisions 4, 9, 11, 13-15, 17, 19-23, 25-27: overlap cards are asked only in the card window (before a small fix's edits; a feature while `planning`). From `ready-for-review` on, an overlap is a late overlap: one line and an offered follow-up thread. IDEA.md What we're building, What good looks like and Not doing changed to match. The card-id and retract changes (§3) stay | After rounds 7-9 again found new corners where overlap cards meet review, approval and splits, the user picked "Cards only while planning" (card 8d02e56a) | idea-change |
 | 29 | Pre-confirmation overlaps are held, not late; withdrawn overlap cards clear their Open Question; a Spec change asked in chat during a running round waits for triage and the next round; on a small fix the latest instruction wins and committed edits close its cards; a talk-instead retract refused by Start building leaves the build running | Round 10 findings | review-round-10 |
 | 30 | A Spec change asked in chat during a running round uses the pending pull-back pattern (`Pending change:` / `Applied change:` Log lines; not clean; counts as one found item; replayed on restart) | Round 11 findings | review-round-11 |
+| 31 | A chat Spec change logs `idea-change` when it drops promised scope; restart with live reviewers applies a pending change before restarting the same pass; a chat change to an approved plan retracts the approval first; re-asking an open card retracts and reposts it | Round 12 findings | review-round-12 |
 
 ## Spec
 
@@ -85,9 +86,13 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   a Spec change follows the pending pull-back pattern: commit `Pending change: <one line>` to
   the Log at once; the round is not clean while it waits and counts it as one found item (so a
   round with no other counted finding posts `phase: fixing`, `found: 1`); after triage, fold it
-  into the Spec with a Decision Log entry (source `user`) and an `Applied change: <same line>`
+  into the Spec with a Decision Log entry (source `user`, or `idea-change` with the item moved to
+  Not doing when it removes something IDEA.md promises) and an `Applied change: <same line>`
   Log line in one commit, counting it fixed, and list it in the next round's "Changed since".
-  On restart, an unmatched `Pending change:` line is replayed like a pending pull-back. Repeating the line after a restart
+  On restart, an unmatched `Pending change:` line is replayed like a pending pull-back: if
+  reviewers are live, stop them, apply it, and restart the same pass, which counts it. A chat
+  change to an approved plan first retracts the approval card; a `Start building was already
+  pressed` refusal means the build stands (late overlap). Repeating the line after a restart
   is harmless.
 - **Actionable answer** of an overlap card, in this order: `answered_value` when
   `answered_action` is `picked` or `answered` (a press or the card's own box); else
@@ -144,6 +149,8 @@ through an overlap card, or in chat for a late overlap (see below)".
   PLAN.md created with `status: planning`, it is the first Open Question asked.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
+- **Re-asking an open card:** to re-ask an open overlap card with new information, retract it
+  and post the new card; its Open Question stays and is updated in the same commit.
 - **Withdrawn card:** when the lead retracts an overlap card because it no longer applies, it
   removes its Open Question in the same commit, with a Log line `Overlap with <thread id>
   dropped: <why>`.
@@ -186,7 +193,7 @@ On `[wc:context restart]`, after rereading the plan and cards:
   talk instead of building), the id is the one `card.js` printed for it, or from the restart
   context. At the "talk instead of building" retract, `Start building was already pressed`
   means the build stands: the lead says so in a line, noting that archiving the thread stops
-  it, and keeps talking, without stopping the
+  it and closes the thread, and keeps talking, without stopping the
   sub-lead.
 - Docs: `protocol/app/cards.md` "Posting a card" documents the output and names the
   exceptions to "succeeds once the card is on disk, even if the app is down" (`done` and
@@ -195,8 +202,9 @@ On `[wc:context restart]`, after rereading the plan and cards:
   description no longer says it is the only card field holding a thread id; `question` table
   gains `about_thread`; `retract` says the id comes from `card.js`'s output or the restart
   context, that it is never queued, and lists the two new refusals in its refusal order.
-  `machine/API.md`: the card route documents the queued `id` and that `retract` is relayed
-  synchronously (503 when the app is unreachable).
+  `machine/API.md`: the card route's sentence on when a spooled 202 is returned is replaced to
+  cover every case (no answer, HTTP 500/502/503/504, a backlog, no hub configured), documents the
+  queued `id`, and says `retract` is relayed synchronously (503 when the app is unreachable).
 
 ### Non-goals
 
@@ -230,6 +238,7 @@ merging of branches; no sub-lead or worker rule changes.
 | An approval card still queued on the machine at a restart can be missed, so the retract is skipped and the approval arrives beside an overlap question | Needs an app outage at approval, an overlap and a restart together | review-round-7 |
 | A lead that dies twice, the second time while a restarted round's reviewers run, may count a recovery-applied answer in the wrong round | Needs two lead deaths in one round; counts are display only | review-round-8 |
 | On a small fix, a later chat instruction overriding a card answer can be missed if the lead dies before edits and the message has fallen out of the last 20 in the restart context | Needs a reversal, a restart and many messages in between, before a small fix's edits | review-round-11 |
+| A chat answer resolved while the app is down is queued; if the user presses an option on the same card before the queue drains, the hub keeps the press and drops the resolve silently | Needs an app outage, a chat answer and a press on the same card inside the reconnect window | review-round-12 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
@@ -243,6 +252,13 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Chat change that drops scope logged as `user` | upheld | `idea-change` (Decision 31) |
+| intent | minor | When a successor card exists is undefined | upheld | Re-asking an open card rule |
+| intent | minor | "Archiving stops it" may read as a pause | upheld | Says it closes the thread |
+| mechanics | major | Pending change with live reviewers at restart | upheld | Applied before restarting the same pass (Decision 31) |
+| mechanics | blocking | Chat change to an approved plan leaves Start live | downgraded (major) | Retract the approval first (Decision 31) |
+| mechanics | major | Queued chat resolve dropped after a press | accepted-risk | Rare path; Accepted Risks |
+| mechanics | minor | machine/API.md spool sentence incomplete | upheld | §3 Docs |
 
 ### Round 11 — 2026-11-21
 
