@@ -24,15 +24,32 @@ function reservedProvider(settings, machines, machineName) {
   const order = [...new Set(settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]))];
   return order.find((p) => signedIn(settings, machines, machineName, p)) || null;
 }
+async function machineNameOf(hub, thread) {
+  const configured = await hub.machines();
+  const resolvedMachine = await hub.state.resolveMachine(configured, thread.machine);
+  return Object.keys(configured).find((name) => configured[name] === resolvedMachine || configured[name].name === resolvedMachine?.name) || thread.machine;
+}
+// What the lead is told about review families. "Mix families" with only one family signed in
+// and used at the reviewer tier means one reviewer per round on that family, not two on it.
+async function reviewFamilies(hub, thread) {
+  const settings = await settingsStore.load(hub);
+  if (settings.review_families !== 'both') return settings.review_families;
+  const [machines, machineName] = await Promise.all([usage.machineAccounts(hub), machineNameOf(hub, thread)]);
+  const usable = [];
+  for (const p of Object.keys(PROVIDERS)) {
+    if (!signedIn(settings, machines, machineName, p)) continue;
+    try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, settings.other_agents.reviewer]); } catch (e) { if (e.code === 3) continue; throw e; }
+    usable.push(p);
+  }
+  return usable.length === 1 ? usable[0] : 'both';
+}
 async function choose(hub, thread, role, tier, constraints = {}) {
   let { provider, not_provider: excluded } = constraints;
   if ((provider || excluded) && (!['worker', 'reviewer', 'verifier'].includes(role) || (provider && excluded) || (provider && !Object.hasOwn(PROVIDERS, provider)) || (excluded && !Object.hasOwn(PROVIDERS, excluded)))) throw appError(400, 'invalid provider constraint');
   const slot = await slotFor(hub, role, tier);
   const [settings, readings, machines, last, threads] = await Promise.all([settingsStore.load(hub), usage.readings(hub), usage.machineAccounts(hub), usage.lastChosen(hub), hub.allThreads()]);
   const now = Date.now();
-  const configured = await hub.machines();
-  const resolvedMachine = await hub.state.resolveMachine(configured, thread.machine);
-  const machineName = Object.keys(configured).find((name) => configured[name] === resolvedMachine || configured[name].name === resolvedMachine?.name) || thread.machine;
+  const machineName = await machineNameOf(hub, thread);
   const reserved = reservedProvider(settings, machines, machineName);
   let fallbackReview = null, droppedProvider = null, strictReview = null;
   if (['reviewer', 'verifier'].includes(role) && settings.review_families !== 'both') {
@@ -94,4 +111,4 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   const waitingProvider = strictReview || (['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? settings.lead_order.find((p) => p !== 'any') || null : null);
   return { wait: { provider: waitingProvider, until: resets[0] || new Date(now + 60000).toISOString(), reason: `no ${relevant.length === 1 ? relevant[0] + ' account' : 'account'} has room` } };
 }
-module.exports = { choose, slotFor, reservedProvider };
+module.exports = { choose, slotFor, reservedProvider, reviewFamilies };
