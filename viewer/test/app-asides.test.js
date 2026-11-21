@@ -152,7 +152,11 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
     const unavailable = await request('POST', '/asides', data);
     assert.equal(unavailable.status, 400);
     assert.equal(unavailable.error, "Side conversations aren't available on Antigravity sessions yet");
-    before.sessions[0].provider = 'claude'; await hub.save(before);
+    before.sessions[0].provider = 'kimi'; await hub.save(before);
+    assert.equal((await request('POST', '/asides', data)).error, "Side conversations aren't available on Kimi Code sessions yet");
+    before.sessions[0].provider = 'openrouter'; before.sessions[0].cli_session_id = 'pi-parent'; await hub.save(before);
+    const piAside = await request('POST', '/asides', data); assert.equal(piAside.status, 201); assert.equal(piAside.body.fork_parent, 'pi-parent');
+    before = await hub.thread('routes'); before.asides = []; before.sessions[0].provider = 'claude'; before.sessions[0].cli_session_id = null; await hub.save(before);
     assert.equal((await request('POST', '/asides', data)).error, "the lead isn't ready yet");
     before.sessions[0].cli_session_id = 'parent'; await hub.save(before);
     settings.modelCommand = async () => { const error = new Error('unused'); error.code = 3; throw error; };
