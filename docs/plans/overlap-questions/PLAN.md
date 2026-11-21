@@ -64,6 +64,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 35 | Peer replies are best effort and never hold the plan: the Decision carries who asked and the reply follows its commit; a small fix does not reply after a restart; only a re-ask and the talk-instead approval retract wait for a retract to succeed | Round 15 findings | review-round-15 |
 | 36 | Supersedes the reply-back parts of Decisions 34-35: a peer's overlap question is answered at once from what the lead knows (saying it is asking its user when held or carded); the user's decision is not sent back later. Unrelated peer questions keep today's "send the answer back" rule | After rounds 13-15, the last two drew findings only about the reply-back; the user picked "No, answer it right away" (card fd19b88f) | user |
 | 37 | A retract 503 is retried within the same turn, anything depending on the withdrawal waits, and after 10 minutes a `needs` card offers Keep going; a peer's "settled" means settled under "Settling an answer" | Round 16 findings | review-round-16 |
+| 38 | Supersedes the retry part of 37: a retract 503 gets one retry after a minute, then a `needs` card and the turn ends (lead.md's existing pattern); a terminal refusal ends retrying and the waiting step is rechecked; a re-ask writes its new information to the Open Question first; an open re-ask takes precedence over an older decision when a peer asks | Round 17 findings | review-round-17 |
 
 ## Spec
 
@@ -127,7 +128,9 @@ the sentence that turns a new overlap into an Open Question with "keep the plan 
 change it" options is replaced by a pointer to this section; (b) keeps only its timing. In
 "Passing a question on", a peer's question about an overlap with this thread takes one of these
 paths:
-- the overlap is already settled (a Decision Log entry, or on a small fix the latest instruction
+- the overlap is already settled and not reopened (a Decision Log entry with no later open
+  `Overlap with` Open Question or open overlap card for that thread, which take precedence; or on
+  a small fix the latest instruction
   that settles it under "Settling an answer"; a vague or conditional answer awaiting a follow-up
   is not settled, so the in-window path applies): answer
   the peer from that decision, with no new card, unless the question brings new information that
@@ -161,11 +164,11 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   PLAN.md created with `status: planning`, it is the first Open Question asked.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
-- **Re-asking an open card:** to re-ask an open overlap card with new information, retract it
-  and post the new card only once the retract succeeds (or is refused as `card was already
-  withdrawn`); for a feature, its Open Question stays and is updated in the same commit. If the retract is
-  refused because the card was answered, act on that answer against its own options instead.
-  On a 503, retry after a minute before posting anything.
+- **Re-asking an open card:** to re-ask an open overlap card with new information, first (for a
+  feature) commit the new information to its `Overlap with` Open Question, then retract the card
+  and post the new one only once the retract succeeds (or is refused as `card was already
+  withdrawn`). If the retract is refused because the card was answered, act on that answer
+  against its own options instead. On a 503, retry as in §3; post nothing until it succeeds.
 - **Withdrawn card:** when the lead retracts an overlap card because it no longer applies, it
   removes its Open Question in the same commit, with a Log line `Overlap with <thread id>
   dropped: <why>`.
@@ -197,12 +200,15 @@ On `[wc:context restart]`, after rereading the plan and cards:
   unreachable; the retract was not recorded; try again in a minute" when the spool is behind or
   the hub is unreachable). Its success and refusals come straight from the hub. Every retract a
   lead makes (overlap, approval, deferred, offer, question, needs, sudo) that gets this 503 is
-  retried after a minute until it succeeds or is refused, within the same turn (other work that
-  does not need the result may go on between tries). Anything that replaces or depends on the
-  withdrawn card (a re-ask, a fresh offer or reach card, the approval retract at "talk instead of
-  building") waits for the retract to succeed. After 10 minutes of failures the lead posts a
-  `needs` card saying which card could not be withdrawn because the app was unreachable, and
-  "Keep going" retries it. `cards-lead.md` `retract` says so, so
+  retried once after a minute, as lead.md already does for an operation that fails because
+  something is unreachable. If it fails again, the lead posts a `needs` card naming the card it
+  could not withdraw and what waits on it, and ends its turn; "Keep going" retries the retract and
+  then the waiting step; "Talk about it" explains in a line and posts a `question` card if
+  something must be decided. Anything that replaces or depends on the withdrawn card (a re-ask, a
+  fresh offer or reach card, the approval retract at "talk instead of building") waits for the
+  retract. Any other refusal ends the retrying: `card is already answered` (or `card was already
+  withdrawn`) means the card is closed; the lead handles its recorded answer, if any, and then
+  goes on with the waiting step if the old card no longer blocks it. `cards-lead.md` `retract` says so, so
   the existing retract steps (for example the deferred card on a switch to thorough) keep working
   through an outage.
 - `viewer/app/card.js` `retractable`, before the generic `card is already answered`: an approval
@@ -265,11 +271,21 @@ merging of branches; no sub-lead or worker rule changes.
 | A chat answer resolved while the app is down is queued; if the user presses an option on the same card before the queue drains, the hub keeps the press and drops the resolve silently | Needs an app outage, a chat answer and a press on the same card inside the reconnect window | review-round-12 |
 | A late-overlap mention learned in a hidden turn is lost if the lead dies before its next visible reply and the peer list does not reveal it | Needs a restart inside that window; the restart re-look covers the usual case | review-round-13 |
 | On a small fix, a re-ask whose original card was withdrawn is lost if the lead dies before posting the replacement | Needs a restart within seconds of the retract | review-round-13 |
-| A re-ask whose retract got a 503 is lost if the lead restarts during the retry wait; the old card stays open with its old options | Needs an app outage and a restart within that minute | review-round-15 |
+| A small-fix re-ask whose retract got a 503 is lost if the lead restarts while it waits; the old card stays open with its old options (a feature keeps the new information in its Open Question) | Needs an app outage and a restart while the small fix waits | review-round-15, updated review-round-17 |
+| A session that puts its own `delivery_id` in a card file can choose the card's id, or have its card dropped as a duplicate | Needs an agent tampering with its own card file; it only affects its own thread | review-round-17 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 18 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 17:** Decision 38: §3 retract retry rewritten (one retry, `needs` card, turn ends, terminal refusals); §1 re-ask commits new information first and points to §3; §1 peer settled path yields to an open re-ask; Accepted Risks: one updated, one added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 17 — 2026-11-21
 
@@ -279,6 +295,13 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Second retry pattern; reuse lead.md's | upheld | One retry then `needs` (Decision 38) |
+| intent | minor | §1 re-ask retry doesn't match §3 | upheld | Points to §3 |
+| intent | minor | Re-ask risk window longer than accepted | upheld | New information committed first; risk row updated |
+| mechanics | blocking | Keep going can't arrive while the turn retries | downgraded (major) | Turn ends after the `needs` card (Decision 38) |
+| mechanics | major | Terminal refusal leaves the dependent step waiting | upheld | Recheck after any refusal (Decision 38) |
+| mechanics | major | Older decision cited over an open re-ask | upheld | Open re-ask takes precedence (Decision 38) |
+| mechanics | major | Rare path: caller-supplied delivery id | accepted-risk | Rare path; Accepted Risks |
 
 ### Round 16 — 2026-11-21
 
