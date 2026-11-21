@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 const { TryService } = require('./lib/try');
-const { startupWarning } = require('./lib/startup-warning');
 const { createProjectTools } = require('./lib/project-tools');
 const { TOOL_ROLES, readProjectMcp, hasWindowsProgram } = require('./lib/project-mcp');
 const { missingPrograms } = require('./lib/project-programs');
@@ -242,11 +241,6 @@ class MachineService {
     this.projectToolsState = new Map();
     this.projectToolsWrites = new Map();
     this.platform = process.platform;
-    this.startupWarning = null;
-    this.startupSamples = new Map();
-    this.startupWarningRunning = false;
-    this.startupWarningRerun = false;
-    this.scanStartupWarning = startupWarning;
     this.stepReads = new Map();
     this.codexStepChunkSize = options.codexStepChunkSize || 8 * 1024 * 1024;
     this.startingWorktrees = new Set();
@@ -275,17 +269,6 @@ class MachineService {
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
     this.screens = new ScreenManager(this);
     this.win = new WinBridge(this, options.win || {});
-  }
-
-  async refreshStartupWarning() {
-    if (this.startupWarningRunning) { this.startupWarningRerun = true; return; }
-    this.startupWarningRunning = true;
-    do {
-      this.startupWarningRerun = false;
-      try { this.startupWarning = await this.scanStartupWarning(this.stateDir, this.startupSamples); }
-      catch (error) { this.startupWarning = null; this.log(error); }
-    } while (this.startupWarningRerun);
-    this.startupWarningRunning = false;
   }
 
   async withThreadLock(id, fn) {
@@ -2161,13 +2144,11 @@ class MachineService {
         if (input.kind !== 'file') delete input.warnings;
         if (input.kind === 'approval' && agent.role === 'lead') {
           const warnings = [];
-          if (typeof this.startupWarning === 'string') warnings.push(this.startupWarning);
           if (this.platform === 'linux') {
             const { missing } = screenTools();
             if (missing.length) warnings.push(`Screens won't work on ${os.hostname()}: missing ${missing.join(', ')}. Builds that don't use a screen are unaffected.`);
           }
           if (warnings.length) input.warnings = warnings.slice(0, 10);
-          this.refreshStartupWarning();
         }
         if (input.kind === 'image') input = await this.copyImage(agent, input);
         if (input.kind === 'file') {
@@ -2229,12 +2210,9 @@ class MachineService {
     // Spec "Machine service on the hub": spools are retried until the hub acknowledges them.
     this.spoolTimer = setInterval(() => { for (const kind of ['events', 'cards']) this.drainSpool(kind).catch(error => this.log(error)); }, this.spoolInterval);
     this.spoolTimer.unref();
-    this.refreshStartupWarning();
-    this.startupWarningTimer = setInterval(() => this.refreshStartupWarning(), 10 * 60 * 1000);
-    this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

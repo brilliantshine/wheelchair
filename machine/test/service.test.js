@@ -1770,32 +1770,20 @@ test('archive saves the in-progress marker before stopping and clears it on fail
   } finally { await env.close(); }
 });
 
-test('approval warnings are machine owned and never await a refresh', async () => {
+test('agents cannot set approval warnings', async () => {
   const env = await service(await temp());
   try {
     await start(env);
     await start(env, { role: 'worker', thread_id: 'w', token: 'worker-token' });
-    let release; let scans = 0;
-    env.instance.scanStartupWarning = async () => { scans++; if (scans === 1) await new Promise(r => { release = r; }); return null; };
-    env.instance.startupWarning = 'machine warning';
+    env.instance.platform = 'darwin';
     const headers = agentHeader('alpha');
     await api(env, 'POST', '/v1/agent/cards', { kind: 'approval', warnings: ['forged'] }, headers);
-    assert.equal(env.instance.startupWarningRerun, false);
-    await api(env, 'POST', '/v1/agent/cards', { kind: 'approval', warnings: ['forged'] }, headers);
-    assert.equal(env.instance.startupWarningRerun, true);
     await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', warnings: ['forged'] }, headers);
     await api(env, 'POST', '/v1/agent/cards', { kind: 'approval', warnings: ['forged'] }, agentHeader('worker-token'));
     const files = (await fs.readdir(path.join(env.state, 'spool', 'cards'))).sort();
     const cards = await Promise.all(files.map(file => fs.readFile(path.join(env.state, 'spool', 'cards', file), 'utf8').then(JSON.parse)));
-    assert.equal(cards.filter(c => c.warnings?.[0] === 'machine warning').length, 2);
-    assert.equal(cards.filter(c => !('warnings' in c)).length, 2);
-    release();
-    while (env.instance.startupWarningRunning) await new Promise(resolve => setImmediate(resolve));
-    assert.equal(scans, 2);
-    await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', warnings: ['forged'] }, headers);
-    const after = (await fs.readdir(path.join(env.state, 'spool', 'cards'))).sort();
-    const last = JSON.parse(await fs.readFile(path.join(env.state, 'spool', 'cards', after.at(-1)), 'utf8'));
-    assert.equal('warnings' in last, false);
+    assert.equal(cards.length, 3);
+    assert.equal(cards.filter(c => !('warnings' in c)).length, 3);
   } finally { await env.close(); }
 });
 
