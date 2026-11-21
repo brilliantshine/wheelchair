@@ -184,28 +184,41 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 - **Lifetime:** a forward, once created, stays open until the machine service stops. It is not
   tied to sessions. On service stop, listeners close, open sockets are destroyed and relays end.
 - **Connections (D19):** a plain byte pipe; nothing in requests or replies is read or
-  changed. The listener only accepts on `127.0.0.1`. Each accepted socket gets one relay
-  connection (`open` frame). Bytes the client sends before `opened` are buffered, at most
-  1 MiB (more → close the socket), and sent in order after it. On `refused` the socket is
-  closed. **Flow control:** `data` frames carry at most 64 KiB. Each side bounds the shared
-  pipe it writes: when its pending write queue to the pipe (Linux: relay stdin
-  `writableLength`; relay: its stdout buffer) exceeds 1 MiB, it pauses reading from all its
-  local sockets until the pipe drains below 256 KiB, then resumes them, reading round-robin so
-  one connection cannot starve others. Control frames (`open`, `opened`, `close`, `refused`,
-  `check`, `check-result`) are always written at once, ahead of queued data, so connection
-  setup and status checks are never held behind data. Each side also bounds what it has queued
-  for one destination socket: if that exceeds 4 MiB, the connection is closed (and `close`
-  sent). The shared pipe is never paused for one slow connection. The tool therefore sees `Host: 127.0.0.1:<private port>`, so any absolute URL it
+  changed. The tool therefore sees `Host: 127.0.0.1:<private port>`, so any absolute URL it
   builds from `Host` (redirects, links) points back through the forward. The host is always
   `127.0.0.1`, even when the user wrote `localhost`: the listener binds only IPv4 loopback, and
   Linux `localhost` may resolve to `::1` first. A tool that checks the host name or port it is
-  reached at is not supported (Not doing).
+  reached at is not supported (Not doing). The listener only accepts on `127.0.0.1`. Each
+  accepted socket gets one relay connection (`open` frame). Bytes the client sends before
+  `opened` are queued for that connection (subject to the per-connection bound below) and sent
+  in order after it. On `refused` the socket is closed.
+- **Flow control (both sides, same rules; the relay implements them in PowerShell):**
+  - Nothing is written straight to the shared pipe (Linux: relay stdin; relay: its stdout).
+    Frames go into queues in front of it: one **control queue** (`open`, `opened`, `refused`,
+    `check`, `check-result`, and `abort`) and one **FIFO queue per connection** holding that
+    connection's `data` frames (at most 64 KiB each) followed, when its local socket ends, by
+    its `close`. A connection's `close` is therefore only sent after all its earlier data
+    (graceful close).
+  - A single writer moves frames from the queues to the pipe only while the pipe's own
+    buffered bytes are below 256 KiB (Linux: `writableLength`, resuming on `drain`): first any
+    control frame, then one frame from the next non-empty connection queue, round-robin. So
+    checks and connection setup wait behind at most 256 KiB, never behind a long backlog, and
+    no connection starves the others.
+  - Reading a local socket is paused while its connection queue holds more than 1 MiB and
+    resumed below 256 KiB; other connections are not paused.
+  - If the bytes waiting to be written to one destination socket (received from the pipe but
+    not yet accepted by that socket) exceed 4 MiB, that connection is **aborted**: its queue is
+    dropped, the local socket destroyed, and an `abort` frame (control queue) tells the other
+    side to destroy its socket at once, discarding queued data. `abort` is the only way
+    queued data is discarded.
+  - Receiving `close` ends the destination socket after writing everything received before
+    it; receiving `abort` destroys it.
 - **Relay:** one `powershell.exe` per forward, started with `spawnPs`
   (`machine/lib/win-env.js:57-61`) running a script shipped in the repo
   (`machine/lib/win-relay.ps1`, embedded by reading the file, never written at run time),
   started on demand. It multiplexes all connections for the forward over its stdin/stdout with
   binary frames `[type:1][id:4][len:4][payload]`, types `open`, `opened`, `data`, `close`,
-  `refused`, `check`, `check-result`. A new connection never starts a new Windows process
+  `abort`, `refused`, `check`, `check-result`. A new connection never starts a new Windows process
   while the relay runs. The machine ends a relay (close stdin, kill after 5 s) once it has had
   no open connections and no pending check for 5 minutes; the next connection or check starts
   it again.
@@ -262,12 +275,14 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 - **Project tools page status (D15).** New machine route `POST /v1/project-tools/windows-status`
   (hub-authorized like `/v1/project-tools/read`, `service.js:2084`), reached from the page via
   the viewer's pass-through (`viewer/app/routes.js:68-73`: add `windows-status` to the allowed
-  list). Body `{machine, path, token, tools: [{name, type, url}]}`. On a WSL machine, for each tool
+  list). Body `{machine, path, token, tools: [{id, name, type, url}]}`, `id` a string the page
+  makes unique within the request. On a WSL machine, for each tool
   that is eligible by the shared rule in Terms (applied by the machine to `type` and `url`;
   ineligible tools are left out of the reply), all in parallel, each capped at 10 s: if the relay cannot
   run → `unavailable`, `Windows bridge not available`; otherwise run one `check` (through the
   current forward's relay, or a one-off check, section 4). It never creates or replaces a
-  forward. Reply `{wsl, status: {<name>: {state, reason?, note?}}}` with `state` `reachable` or
+  forward. Reply `{wsl, status: {<id>: {state, reason?, note?}}}` (keyed by `id`, so two
+  rows with the same name and different URLs each get their own result) with `state` `reachable` or
   `unreachable` (reason from `check-result`, or `couldn't check Windows for port <n>` on
   timeout), or `unavailable` (reason `Windows bridge not available`). `reachable` means a TCP connection reached a Windows process on the port, not
   that the tool accepts MCP requests. `note` is set when a stale forward exists for that tool port: `after the machine
@@ -290,6 +305,8 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   entries whose values have since changed simply no longer read it. A request that fails
   (HTTP error, machine unreachable) stores "Couldn't check: <error>" for each key it covered.
   Check again removes the stored result for that entry's key and schedules a check at once.
+  A stored result older than 30 s counts as missing at the next render (so it is re-checked).
+  A save reread clears the store.
   Turning the switch off hides the line; turning it on, or editing the URL or kind, reads (or
   schedules) the key for the new values. Store entries for a stale guard are discarded.
 - `win info` is unchanged. No thread cards, per-session warning state or session-record
@@ -337,8 +354,7 @@ frames and dialling a local test server (these cover the Linux side and the fram
   WSL kernel with interop off withholds marked tools.
 - URL rewrite is textual: `http://localhost:8080/mcp/${PROJECT}?a=b#c` becomes
   `http://127.0.0.1:<p>/mcp/${PROJECT}?a=b#c`, and Codex and Antigravity still skip it as
-  they skip the original. A request that fails shows "Couldn't check". A save without
-  `windows` keeps the marks; `windows: []` clears them.
+  they skip the original.
 - Claude settings/argv: marked tool in `disabledMcpjsonServers`, `--mcp-config` file contents
   and mode 0600; Codex and Antigravity rewritten URLs; withheld tools absent from all three
   and never present with the original URL. The config is built once.
@@ -355,14 +371,17 @@ frames and dialling a local test server (these cover the Linux side and the fram
   built from the request's `Host` sends the client back to `127.0.0.1:<private port>` and the
   follow-up goes through the forward; a streamed response arrives in pieces as sent; a
   restored forward pipes connections.
-- Status page: Cancel, Keep changes, a same-project reload and the Unity poll's re-render while
+- Status page: a request that fails shows "Couldn't check"; a result older than 30 s is
+  re-checked at the next render and a save clears all results; two rows with the same name and
+  different URLs in one request each get their own result; Cancel, Keep changes, a same-project reload and the Unity poll's re-render while
   a check is pending all end with a line for the current values (no stuck "Checking…", no
-  stale result); Keep changes before the debounce fires still gets a result; editing a URL A → B → A before the check fires shows A's stored result only if it is still fresh;
+  stale result); Keep changes before the debounce fires still gets a result; editing a URL A → B → A before the check fires shows A's stored result only if it is under 30 s old;
   renaming or changing kind during a check schedules a new check or hides the line.
-- Flow control: a client that stops reading a streamed response gets its connection closed at
-  4 MiB queued while a second connection and a status check on the same forward keep working;
-  a fast sender filling the shared pipe pauses local reads at 1 MiB and resumes after drain,
-  and a status check still answers meanwhile.
+- Flow control: a client that stops reading a streamed response gets its connection aborted
+  at 4 MiB waiting while a second connection and a status check on the same forward keep
+  working; a fast sender has its socket reads paused at 1 MiB queued and resumed after; a check
+  sent while the pipe is busy is answered after at most 256 KiB of earlier frames; a server
+  that sends its last bytes and closes delivers them all before the client sees the close.
 - Relay frames: `opened` before data, client bytes buffered until then; `refused` closes the
   socket and sets `last_refusal`; `opened` clears it; relay death restarts at most once per
   10 s and finishes pending checks; an idle relay ends after 5 minutes; a check timed out at
@@ -374,6 +393,7 @@ frames and dialling a local test server (these cover the Linux side and the fram
 - `windows-status`: ineligible `type` (for example `sse`) left out; reachable, each unreachable reason, timeout, unavailable (interop off), off
   WSL; a port with no forward uses a one-off relay and leaves no forward or record; passes
   through the viewer route.
+- Save: a save without `windows` keeps the marks; `windows: []` clears them.
 - Project tools page: switch shown only on WSL and for eligible URLs; dirty on switch change
   alone; rename/delete update the list; save keeps other keys; status line states, Check
   again, and a stale reply for an old URL is not applied (browser test).
@@ -653,6 +673,25 @@ two Accepted Risks (hardcoded redirects, user-accepted; TCP half-close); Validat
 bound pausing local reads, control frames first); §6 status line rewritten around a page-state
 store keyed by guard and current values, read by every render (per-render token dropped),
 `unavailable` in the reply schema; Validation updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | Control frames can't overtake data already in a FIFO stream | upheld | §4 queues in front of the pipe, writer hands at most 256 KiB to it |
+| mechanics | blocking | Prioritised `close` truncates completed responses | upheld | §4 `close` ordered after the connection's data; separate `abort` |
+| mechanics | major | Batched checks keyed by name collide | upheld | §6 per-request `id` |
+| intent | minor | Status results never expire; save doesn't clear | upheld | §6 30 s age, save clears |
+| intent | minor | Host sentences misplaced after flow control | upheld | §4 reordered |
+| intent | minor | Validation items under the wrong bullet | upheld | Validation moved |
+
+### Round 13 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 12:** §4 Connections reordered (Host first); §4 flow control rewritten
+as queues in front of the shared pipe (control queue, per-connection FIFO with ordered
+`close`, single writer bounded at 256 KiB in the pipe, per-connection read pause, `abort`
+frame); §6 status request/reply keyed by per-request `id`, results expire after 30 s, save
+clears the store; Validation regrouped.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
