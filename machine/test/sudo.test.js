@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -53,7 +55,7 @@ test('sudo registration, delivery, recovery and cancel preserve outcomes', async
   const options = { stateDir, host: '127.0.0.1', port, secretFile, hubUrl: `http://127.0.0.1:${hub.address().port}`, sudoIntake: socket };
   let service;
   async function start() {
-    service = new MachineService(options); service.log = value => logs.push(String(value));
+    service = new MachineService({ ...options, win: noWsl }); service.log = value => logs.push(String(value));
     service.tmux = () => ({ ok: true, stdout: '', stderr: '' });
     await service.listen();
     service.sessions = { lead: { name: 'wc-t-lead', thread_id: 't', role: 'lead', token: 'lead' }, worker: { name: 'wc-t-worker', thread_id: 't', role: 'worker', token: 'worker' } };

@@ -104,6 +104,13 @@ function screenRequest(operation, tail) {
   return { path: '/screen', body: { op: operation, args: tail } };
 }
 
+function winRequest(operation, tail) {
+  if (!['info', 'sync', 'run', 'start', 'status', 'windows', 'shot', 'stop', 'path'].includes(operation)) {
+    throw new Error('unsupported win operation');
+  }
+  return { path: '/win', body: { op: operation, args: tail } };
+}
+
 const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'round', 'title', 'branch', 'worktree', 'project_tools'];
 function compact(session) {
   return Object.fromEntries(compactFields.filter(key => Object.hasOwn(session, key)).map(key => [key, session[key]]));
@@ -173,8 +180,10 @@ async function main(argv) {
       ? sessionRequest(operation, requestTail)
       : group === 'screen'
         ? screenRequest(operation, tail)
+        : group === 'win'
+          ? winRequest(operation, tail)
       : null;
-  if (!input) throw new Error('usage: wc.js git|session <start|stop|list|leads [--all-projects]>|screen …');
+  if (!input) throw new Error('usage: wc.js git|session <start|stop|list|leads [--all-projects]>|screen|win …');
   const result = group === 'session'
     ? await postSessionWithRetry(`${base}${input.path}`, token, input.body)
     : await request(`${base}${input.path}`, token, input.body);
@@ -202,4 +211,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { flags, gitRequest, sessionRequest, screenRequest };
+module.exports = { flags, gitRequest, sessionRequest, screenRequest, winRequest };

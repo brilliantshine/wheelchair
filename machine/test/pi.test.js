@@ -167,3 +167,12 @@ test('Pi launch records tested version across restart and allows newer version',
     assert.equal(machine.sessions[newer.name].pi_version, '1.6.0');
   } finally { process.env.PATH = old; }
 });
+
+test('Pi warns that project tools, including Windows-side ones, are not loaded', () => {
+  const root = makeTempSync('pi-adapter-mcp-');
+  const session = { name: 'wc-test-worker', cli_session_id: '123' };
+  const mcp = { names: ['unity'] };
+  assert.deepEqual(pi.command({ role: 'worker' }, session, root, { stateDir: root, promptPath: '/prompt', tools: true, mcp }).warnings, [{ names: ['unity'], text: "project tools aren't supported on Pi yet; this agent runs without them" }]);
+  assert.equal(pi.command({ role: 'reviewer' }, session, root, { stateDir: root, promptPath: '/prompt', tools: false, mcp }).warnings, undefined);
+  assert.equal(pi.command({ role: 'worker' }, session, root, { stateDir: root, promptPath: '/prompt', tools: true, mcp: { names: [] } }).warnings, undefined);
+});
