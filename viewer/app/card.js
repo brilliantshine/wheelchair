@@ -91,6 +91,7 @@ const fields = {
   },
   question: {
     fits: text,
+    about_thread: (value) => value === undefined || (typeof value === 'string' && /^[0-9a-f]{12}$/.test(value)),
     question: text,
     options: (value) => (
       array(value, (item) => (
@@ -302,6 +303,10 @@ async function main(argv) {
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`machine refused card (${result.status}): ${result.body}`);
   }
+  const body = JSON.parse(result.body);
+  const receipt = ['title', 'resolve', 'retract'].includes(kind) ? { ok: true } : { id: body.id, kind };
+  if (body.spooled === true) receipt.queued = true;
+  process.stdout.write(`${JSON.stringify(receipt)}\n`);
 }
 
 if (require.main === module) {
