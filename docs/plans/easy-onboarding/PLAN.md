@@ -41,6 +41,7 @@ created: 2026-11-20
 | 19 | (superseded by 21) The one-tap button is "Let agents use <Harness>": it adds the harness to Workers try first, and also to Lead order when Lead order has no `any`. Refines 18 | Review round 4: adding to Lead order alone let a lead start but left every worker and reviewer waiting | review-round-4 |
 | 20 | (superseded by 21) The row button shows only for a signed-in harness missing from Workers try first; it adds to Lead order only when Lead order reaches no working harness. Refines 19 | Review round 5: a deliberate Lead order like `['claude']` is normal and must not be flagged or changed | review-round-5 |
 | 21 | Supersedes 17–20: no button changes the orders. The app asks the real placement code whether a new thread's lead and a worker could start on the default machine; if not, the checklist and Settings say why and link to the order lists. The checklist is retired for good once complete | Collin picked "Check and point" after the review budget stopped on the button | user |
+| 22 | Keep reviewing the whole plan as is (no split, no trim) | Collin picked "Keep going" after the third budget stop | user |
 
 ## Spec
 
@@ -611,6 +612,15 @@ npm --prefix viewer run test:browser
 | mechanics | major | `signed_in` counts retired accounts | downgraded (minor) | S3.6 active accounts only |
 | mechanics | major | Enabling a harness doesn't load its install state | downgraded (minor) | S4.3 loads on switch-on |
 | mechanics | minor | Dial warning invisible after success | accepted-risk | Rare path (Accepted Risks) |
+
+### Round 13 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 12:** S1.1 (Node read via `node -e`, reason) and S1.6 Node 18 case; S3.2 (`wc.js` prints the left-out reason); S3.6 (`signed_in` counts active accounts only); S4.3 (load install state on switch-on); two Accepted Risks rows; Decision 22.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
