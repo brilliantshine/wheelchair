@@ -1062,7 +1062,7 @@
         if (card.note) inset.appendChild(prose('dim', card.note));
         inset.appendChild(el('div', 'eyebrow', 'What you can do now'));
         for (const c of card.can_do || []) {
-          const row = el('div', 'bullet'); row.appendChild(el('span', 'bullet-text', c));
+          const row = el('div', 'bullet'); row.tabIndex = 0; row.appendChild(el('span', 'bullet-text', c));
           row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', c), thread().archived));
           inset.appendChild(row);
         }
@@ -1070,7 +1070,7 @@
           const left = el('div', 'left-as-is');
           left.appendChild(el('div', 'eyebrow', 'Left as is · ' + card.left_as_is.length + (card.left_as_is.length === 1 ? ' thing' : ' things')));
           for (const l of card.left_as_is) {
-            const row = el('div', 'bullet'); row.appendChild(el('span', 'bullet-text', l));
+            const row = el('div', 'bullet'); row.tabIndex = 0; row.appendChild(el('span', 'bullet-text', l));
             row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', l), thread().archived));
             left.appendChild(row);
           }
