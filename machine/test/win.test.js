@@ -15,7 +15,7 @@ function fixture(wsl = true) {
   fs.mkdirSync(path.join(procRoot, 'sys/fs/binfmt_misc'), { recursive: true });
   fs.mkdirSync(etcRoot);
   fs.writeFileSync(path.join(procRoot, 'sys/kernel/osrelease'), wsl ? 'microsoft' : 'linux');
-  if (wsl) fs.writeFileSync(path.join(procRoot, 'sys/fs/binfmt_misc/WSLInterop'), '');
+  if (wsl) fs.writeFileSync(path.join(procRoot, 'sys/fs/binfmt_misc/WSLInterop'), 'enabled\n');
   const session = { name: 'wc-test-lead', thread_id: 'test', role: 'lead', cli: 'claude', worktree: path.join(root, 'work'), status: 'ready' };
   const service = { stateDir: path.join(root, 'state'), sessions: { [session.name]: session }, liveTmux: () => new Set([session.name]), archivingThreads: new Set(), archivedThreads: new Set(), closingThreads: new Set(), log() {} };
   const winEnv = { localAppData: async () => 'C:\\Users\\Test', toLinux: p => path.join(root, 'drive', p.replace(/[:\\]/g, '/')), toWindows: p => `W:${p}`, versions: async () => ({ ok: true }) };
@@ -346,4 +346,76 @@ test('info reports a PowerShell startup failure and environment names are case i
   assert.equal(info.ready, false);
   assert.equal(info.reason, 'PowerShell unavailable');
   await assert.rejects(bridge.handle(session, { op: 'run', args: ['--env', 'wheelchair_session_token=secret', '--', 'cmd.exe'] }), { status: 400 });
+});
+
+test('launch and restart mark existing copies used and recover only live copies', async () => {
+  const { bridge, session, service } = fixture();
+  const ctx = await bridge.context(session);
+  fs.mkdirSync(path.join(ctx.copy.linux, '.git'), { recursive: true });
+  bridge.register(ctx, session);
+  writeState(bridge.stateDir, ctx.key, { ...readState(bridge.stateDir, ctx.key), used_since_ok: false });
+  bridge.afterLaunch(session);
+  assert.equal(readState(bridge.stateDir, ctx.key).used_since_ok, true);
+  writeState(bridge.stateDir, ctx.key, { ...readState(bridge.stateDir, ctx.key), used_since_ok: false });
+  const missing = { ...session, name: 'wc-missing', worktree: session.worktree + '-missing' };
+  service.sessions[missing.name] = missing;
+  service.liveTmux = () => new Set([session.name, missing.name]);
+  bridge.apps = { startup: async () => {}, sweep: async () => ({ copyKeys: [] }) };
+  bridge.runBridgeProbe = () => {};
+  await bridge.startup();
+  clearInterval(bridge.healthTimer);
+  assert.equal(bridge.toolSessions.has(session.name), true);
+  assert.equal(bridge.toolSessions.has(missing.name), false);
+  assert.equal(readState(bridge.stateDir, ctx.key).used_since_ok, true);
+});
+
+
+test('launch marking causes a final reconcile after readying', async () => {
+  const { bridge, session, service, apps } = realFixture();
+  apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
+  await bridge.beforeLaunch(session, { windowsTools: true });
+  const ctx = await bridge.context(session);
+  writeState(service.stateDir, ctx.key, { ...readState(service.stateDir, ctx.key), used_since_ok: false });
+  let reconciles = 0;
+  const sync = bridge.sync.bind(bridge);
+  bridge.sync = async (...args) => { reconciles++; return sync(...args); };
+  bridge.afterLaunch(session);
+  bridge.onStop(session);
+  await bridge.stopTasks.get(session.name).task;
+  assert.equal(reconciles, 1);
+});
+
+test('without launch marking, readying does not cause a final reconcile', async () => {
+  const { bridge, session, service, apps } = realFixture();
+  apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
+  await bridge.beforeLaunch(session, { windowsTools: true });
+  const ctx = await bridge.context(session);
+  writeState(service.stateDir, ctx.key, { ...readState(service.stateDir, ctx.key), used_since_ok: false });
+  let reconciles = 0;
+  const sync = bridge.sync.bind(bridge);
+  bridge.sync = async (...args) => { reconciles++; return sync(...args); };
+  bridge.onStop(session);
+  await bridge.stopTasks.get(session.name).task;
+  assert.equal(reconciles, 0);
+});
+
+test('restart recovery tracks a live lead and reconciles on stop', async () => {
+  const { bridge, session, service, apps } = realFixture();
+  await bridge.beforeLaunch(session, { windowsTools: true });
+  const ctx = await bridge.context(session);
+  writeState(service.stateDir, ctx.key, { ...readState(service.stateDir, ctx.key), used_since_ok: false });
+  bridge.toolSessions.clear();
+  apps.startup = async () => {};
+  apps.sweep = async () => ({ copyKeys: [] });
+  apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
+  bridge.runBridgeProbe = () => {};
+  await bridge.startup();
+  clearInterval(bridge.healthTimer);
+  assert.equal(bridge.toolSessions.has(session.name), true);
+  let reconciles = 0;
+  const sync = bridge.sync.bind(bridge);
+  bridge.sync = async (...args) => { reconciles++; return sync(...args); };
+  bridge.onStop(session);
+  await bridge.stopTasks.get(session.name).task;
+  assert.equal(reconciles, 1);
 });

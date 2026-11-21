@@ -838,7 +838,6 @@ class MachineService {
     if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); session.pi_version = status.version || null; }
     const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
     const read = await readProjectMcp(worktree, { wsl, mount });
-    const windowsTools = hasWindowsProgram((wsl ? read : await readProjectMcp(worktree, { wsl: true, mount })).mcp, { mount });
     const { mcp, warnings } = read;
     const tools = TOOL_ROLES.has(input.role);
     const thread = tools && this.threadWorktree(input, worktree);
@@ -846,6 +845,8 @@ class MachineService {
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
     const context = { wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
+    const loaded = built.loaded || [];
+    const windowsTools = loaded.some(entry => entry.windows);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
     if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
@@ -897,6 +898,11 @@ class MachineService {
       ]);
       clearTimeout(timer);
       env.push(...Object.entries(extra));
+      let version;
+      try { version = (await fsp.readFile(path.join(worktree, 'ProjectSettings', 'ProjectVersion.txt'), 'utf8')).match(/^m_EditorVersion:\s*(\S+)/m)?.[1]; } catch {}
+      const unityExists = !!version && fs.existsSync(path.join(mount, 'c/Program Files/Unity/Hub/Editor', version, 'Editor/Unity.exe'));
+      const lines = require('./lib/win-prompt').promptLines({ health: this.win?.bridgeHealth(), wsl, loaded, mcp, copy: extra.WHEELCHAIR_WINDOWS_PROJECT, cli: session.cli, codexMode: session.codex_mode, version, unityExists });
+      if (lines.length) await atomicWrite(promptPath, rolePrompt + "\n\n" + lines.join("\n"));
     }
     env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
     const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
@@ -913,6 +919,7 @@ class MachineService {
     if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
     if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
     this.sessions[name] = session;
+    if (windowsTools) this.win?.afterLaunch(session);
     await this.persistSessions();
     try {
       await fsp.appendFile(path.join(this.stateDir, 'session-ledger.jsonl'), `${json({ at: new Date().toISOString(), name, role: input.role, provider: adapter.provider, model: input.model || null, account_dir: dir, cli_session_id: session.cli_session_id, thread_id: input.thread_id })}\n`);
@@ -2068,6 +2075,12 @@ class MachineService {
         } finally { this.sensitivityWriting = false; }
       }
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); await this.reconcilePiExits(); return send(response, 200, this.status()); }
+      if (request.method === 'POST' && url.pathname === '/v1/project-tools/unity-prep') {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        this.unityPrep ||= require('./lib/unity-prep').createUnityPrep({ detected: this.win.detected, winEnv: this.win.winEnv });
+        return send(response, 200, await this.unityPrep(input));
+      }
       if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
@@ -2203,6 +2216,15 @@ class MachineService {
           if (this.platform === 'linux') {
             const { missing } = screenTools();
             if (missing.length) warnings.push(`Screens won't work on ${os.hostname()}: missing ${missing.join(', ')}. Builds that don't use a screen are unaffected.`);
+            if (this.win.detected.kernel && agent.worktree) {
+              const { mount } = this.win.detected;
+              const { mcp } = await readProjectMcp(agent.worktree, { wsl: true, mount });
+              if (hasWindowsProgram(mcp, { mount })) {
+                let health = this.win.bridgeHealth();
+                if (health.ok === null) health = await this.win.bridgeHealthWait(15000);
+                if (health.ok === false) warnings.push(`The Windows bridge won't work on ${os.hostname()}: ${health.reason}. Builds that don't use Windows are unaffected.`);
+              }
+            }
           }
           if (warnings.length) input.warnings = warnings.slice(0, 10);
         }
@@ -2237,18 +2259,18 @@ class MachineService {
             return send(response, relay.status, body);
           } catch { return send(response, 503, unavailable); }
         }
-        if (behind) { await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true }); }
+        if (behind) { const queued = await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id }); }
         const queued = await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id });
-        if (!this.config.hub_url) return send(response, 202, { ok: true, spooled: true });
+        if (!this.config.hub_url) return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id });
         try {
           const relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/cards`, 'POST', { [HUB_HEADER]: await this.secret() }, queued.payload);
           let body; try { body = JSON.parse(relay.body || '{}'); } catch { body = { error: relay.body || 'hub returned invalid JSON' }; }
           if (relay.status >= 200 && relay.status < 300) { await this.sudo.accepted(queued.payload); await fsp.unlink(queued.file); return send(response, relay.status, body); }
-          if ([500, 502, 503, 504].includes(relay.status)) return send(response, 202, { ok: true, spooled: true });
+          if ([500, 502, 503, 504].includes(relay.status)) return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id });
           if (relay.status >= 400 && relay.status < 500) { await this.sudo.dropped(queued.payload); await this.rejectSpool('cards', path.basename(queued.file), body.error || `hub refused (${relay.status})`); }
           return send(response, relay.status, body);
         } catch {
-          return send(response, 202, { ok: true, spooled: true });
+          return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id });
         }
       }
       if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, agent.cli === 'kimi' ? { ignored: true } : await this.hook(agent.name, input)); }
@@ -2268,7 +2290,7 @@ class MachineService {
     this.spoolTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.win.healthTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

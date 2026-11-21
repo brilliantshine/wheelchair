@@ -68,3 +68,25 @@ test('agents hides raw activity state', async () => {
   const result = await agents(hub); const worker = node(result.leads[0].session, 'worker');
   for (const key of ['steps', 'pending_ends', 'turns', 'step_counts']) assert.equal(Object.hasOwn(worker, key), false);
 });
+
+test('delivery ids identify stored cards and both duplicate paths', async () => {
+  const thread = { id: 't', sessions: sessions(), cards: [], queues: {}, pinned: {} };
+  const hub = { updateThread: async (_, fn) => fn(thread), session: (t, name) => t.sessions.find(s => s.name === name) };
+  const payload = { thread_id: 't', session: 'lead', kind: 'question', ...question, about_thread: '012345abcdef', delivery_id: 'delivery-one' };
+  const card = await acceptCard(hub, payload);
+  assert.equal(card.id, payload.delivery_id);
+  assert.equal(card.about_thread, payload.about_thread);
+  const duplicate = { ok: true, duplicate: true, id: payload.delivery_id };
+  assert.deepEqual(await acceptCard(hub, payload), duplicate);
+  thread.delivered_ids = [];
+  assert.deepEqual(await acceptCard(hub, payload), duplicate);
+  assert.equal(thread.cards.length, 1);
+});
+
+test('about_thread is a question-only lowercase thread id', () => {
+  assert.equal(validate('question', { ...question, about_thread: '012345abcdef' }).ok, true);
+  for (const about_thread of ['012345ABCDEf', '012345abcde', '012345abcdef0', 123456789012, null]) {
+    assert.equal(validate('question', { ...question, about_thread }).ok, false);
+  }
+  assert.equal(validate('message', { to: 'lead', text: 'hello', about_thread: '012345abcdef' }).ok, false);
+});

@@ -110,3 +110,11 @@ test('winRequest rejects unknown and missing operations', () => {
   assert.throws(() => winRequest('fly', []), /unsupported win operation/);
   assert.throws(() => winRequest(undefined, []), /unsupported win operation/);
 });
+
+test('win info writes disk warnings to stderr and preserves JSON stdout', async () => {
+  const body = JSON.stringify({ disk: { warnings: ['First warning.', 'Second warning.'] } });
+  const result = await runWithServer(['win', 'info'], { status: 200, body });
+  assert.equal(result.stdout, `${body}\n`);
+  assert.equal(result.stderr, 'First warning.\nSecond warning.\n');
+  assert.equal(result.code, 0);
+});
