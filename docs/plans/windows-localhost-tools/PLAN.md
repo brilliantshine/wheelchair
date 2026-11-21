@@ -90,9 +90,11 @@ the warnings in this section.
 
 In `startIn` (`machine/service.js:832`), on WSL only, after `readProjectMcp` (`:840`) and
 before `commandFor` (`:847`):
-1. Kimi sessions forward nothing (they load no project tools). For any other CLI, the
-   session's **forwarded tools** are the names in `mcp.windows` that are also in
-   `mcp.servers` (the entries this session may load).
+1. A session forwards nothing unless its role is in `TOOL_ROLES` (the same gate `commandFor`
+   passes as `context.tools`, `service.js:717-720`; reviewers and mappers get no project tools)
+   and its CLI is `claude`, `codex` or `agy` (Kimi and Pi load no project tools,
+   `machine/adapters/pi.js:61`). Otherwise the session's **forwarded tools** are the names in
+   `mcp.windows` that are also in `mcp.servers` (the entries this session may load).
 2. For each forwarded tool, get its forward (section 4) and its private port. A tool whose
    forward cannot be had is withheld (section 3).
 3. Build the config once, passing `context.windowsUrls`: `{<name>: <rewritten URL>}` for each
@@ -122,8 +124,9 @@ copy.
   a line is printed to the machine service's log (stderr, `service.js:850`, as other project
   tools warnings are; it is a diagnostic, not a user surface):
   `<tool>: couldn't reach Windows (<reason>); left out of this session`. Reasons: `Windows
-  bridge not available`, `couldn't open a local port`. The user sees the same reason as the
-  tool's status on the Project tools page (section 6).
+  bridge not available`, `couldn't open a local port`, `couldn't save the port record`. The
+  Project tools page shows the first as the tool's status (section 6); the other two are local
+  failures it does not show (Accepted Risks).
 - `loaded` reports withheld tools as not loaded.
 
 ### 4. Forwards (D15)
@@ -198,8 +201,10 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   serialized through one in-process queue; each write snapshots the table when it runs, so the
   last write holds the latest state.
 - **Machine service restart:** tmux sessions and their CLIs survive a restart and still hold
-  private URLs. In `WinBridge.startup` (`service.js:447`), read `forwards.json` and, for each
-  entry, listen on `127.0.0.1:<recorded private port>` again as the `ok` current forward for
+  private URLs. In `WinBridge.startup` (`service.js:447`), read `forwards.json`. If
+  `liveTmux()` is not `null` and lists no wheelchair session (no name starting `wc-`), nothing
+  can hold a private URL (for example after a reboot): rewrite the record empty and restore
+  nothing. Otherwise, for each entry, listen on `127.0.0.1:<recorded private port>` again as the `ok` current forward for
   its tool port, whether or not the relay can run (keeping the port bound for existing URLs;
   gets still check relay readiness). A port that can no longer be bound becomes a stale
   forward (section 4) and the tool port has no current forward, so the next get creates a new
@@ -211,8 +216,9 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 - **Project tools page status (D15).** New machine route `POST /v1/project-tools/windows-status`
   (hub-authorized like `/v1/project-tools/read`, `service.js:2084`), reached from the page via
   the viewer's pass-through (`viewer/app/routes.js:68-73`: add `windows-status` to the allowed
-  list). Body `{machine, path, token, tools: [{name, url}]}`. On a WSL machine, for each tool
-  whose URL is eligible (shared rule), all in parallel, each capped at 10 s: if the relay cannot
+  list). Body `{machine, path, token, tools: [{name, type, url}]}`. On a WSL machine, for each tool
+  that is eligible by the shared rule in Terms (applied by the machine to `type` and `url`;
+  ineligible tools are left out of the reply), all in parallel, each capped at 10 s: if the relay cannot
   run → `unavailable`, `Windows bridge not available`; otherwise run one `check` (through the
   current forward's relay, or a one-off check, section 4). It never creates or replaces a
   forward. Reply `{wsl, status: {<name>: {state, reason?, note?}}}` with `state` `reachable` or
@@ -225,9 +231,12 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   <reason>" or "Not available: <reason>", plus the note if any. The page requests it after
   load for the marks in the loaded file, again for one entry when its switch is turned on or
   its URL changes (debounced 500 ms), and on a **Check again** button. It sends the form's
-  current values, saved or not. Each request carries a sequence number per entry; a reply is
-  applied only if it is the latest request for that entry and the entry still has the same
-  URL and the switch on (a rename moves the entry's sequence with it). Turning the switch off
+  current values, saved or not. Each request is tagged with the page's existing
+  machine/path/generation guard (`tag()`/`fresh()`, `viewer/pages/project-tools.js:228-229`)
+  and a sequence number per entry; a debounced request that fires after the guard changed is
+  dropped, and a reply is applied only if it is still `fresh()`, is the latest request for that
+  entry, and the entry still has the same URL and the switch on (a rename moves the entry's
+  sequence with it). Turning the switch off
   hides the line.
 - `win info` is unchanged. No thread cards, per-session warning state or session-record
   fields are added.
@@ -273,8 +282,8 @@ frames and dialling a local test server (these cover the Linux side and the fram
   and never present with the original URL. The config is built once.
 - Two sessions with tools on one tool port get the same private port and one listener; the
   listener stays open after both sessions stop.
-- Two concurrent starts on different tool ports: both forwards are in `forwards.json` before
-  either tmux starts. A failing record write fails the get (tool withheld); the next get
+- Two concurrent starts on different tool ports: each session's forward is in `forwards.json`
+  before its own tmux starts, and the final record holds both. A failing record write fails the get (tool withheld); the next get
   retries and succeeds.
 - Restart: forwards restored on their recorded private ports, also with interop off (then a
   new session's get fails and the tool is withheld); a taken port gives a stale forward, the
@@ -284,7 +293,11 @@ frames and dialling a local test server (these cover the Linux side and the fram
   socket and sets `last_refusal`; `opened` clears it; relay death restarts at most once per
   10 s and finishes pending checks; an idle relay ends after 5 minutes; a check timed out at
   10 s no longer blocks idle shutdown and its late result is ignored.
-- `windows-status`: reachable, each unreachable reason, timeout, unavailable (interop off), off
+- Role gate: a reviewer or mapper session, and Kimi and Pi sessions, get no forward and no
+  `--mcp-config`.
+- Restart with no live wheelchair tmux session empties the record and restores nothing.
+- Page: a reply arriving after switching machine or project is not applied.
+- `windows-status`: ineligible `type` (for example `sse`) left out; reachable, each unreachable reason, timeout, unavailable (interop off), off
   WSL; a port with no forward uses a one-off relay and leaves no forward or record; passes
   through the viewer route.
 - Project tools page: switch shown only on WSL and for eligible URLs; dirty on switch change
@@ -308,11 +321,12 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A tool withheld because the local port could not be opened or the record could not be saved is not reflected on the Project tools page, which may show "Reachable on Windows" | Rare path: local bind or state-file write failures on a healthy machine; the reason is in the machine service log | review-round-5 |
 | Port 0 can pick a port that an unmarked Linux tool is configured for while its server is down; that tool then reaches the Windows forward | Rare path: needs a Linux tool configured on a port in the kernel's ephemeral range, its server down, and the kernel picking exactly that port | review-round-4 |
 | After a stale forward is replaced, its old private port is no longer reserved; if the Linux holder exits, a later forward could get that port and receive old sessions' requests | Rare path: needs a service restart, a Linux program in the restart gap, that program exiting, and the kernel picking the same port again | review-round-4 |
 | (No longer applies after D15: no release.) The 60 s sweep's tmux snapshot can predate a start that registered and left `startingNames` during an `await`, releasing that live session's forward | Rare path: sub-second race between the sweep and a start finishing | review-round-2 |
 | (No longer applies after D15: no release.) A start cancelled after tmux was created but before the session is registered releases its forwards in `start()`'s `finally` even if the tmux kill did not take | Rare path: needs a cancel inside that window and a failed kill | review-round-1 |
-| While the machine service is down (restart or crash), a forward's private port is unbound; a Linux program that binds that exact port in the gap gets a live CLI's requests and headers | Rare path: needs a service restart and another program taking a kernel-picked port within seconds; startup reports it `failed` on the Project tools page | planning |
+| While the machine service is down (restart or crash), a forward's private port is unbound; a Linux program that binds that exact port in the gap gets a live CLI's requests and headers | Rare path: needs a service restart and another program taking a kernel-picked port within seconds; startup keeps it as a stale forward and the Project tools page shows the note | planning |
 
 ## Check Once Built
 
@@ -320,6 +334,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 |---|---------------|-------|
 | C1 | Live on WSL default networking: a Windows HTTP MCP server on `127.0.0.1:<port>`, marked, is callable from Claude, Codex and Antigravity sessions | planning |
 | C2 | With the Windows server stopped and a Linux listener on the tool port, connections are refused (no loop, nothing reaches the Linux listener), and work again once the Windows server starts | planning |
+| C4 | A cold relay start (powershell.exe plus loading the NetTCPIP module for the first `Get-NetTCPConnection`) fits the 3 s lookup limit and the 10 s status cap; if not, the limit counts from after the module loads | review-round-5 |
 | C3 | Mirrored networking: same as C1 and C2 | planning |
 
 ## Review Rounds
@@ -433,6 +448,27 @@ byte buffering, connect/lookup time limits, check lifetime and late results, one
 relay; §5 record lists current forwards, restore regardless of interop, stale entries; §6
 status never creates or replaces forwards, stale note, per-entry sequence for replies, `win
 info` unchanged; Validation updated; D16; two rare-path Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Forwards restored after a reboot when no session can hold a URL | upheld | §5 empty record when no `wc-` tmux session is live |
+| intent | minor | Rare path: page doesn't show local bind/record failures | accepted-risk | Accepted Risks; §3 reason list completed |
+| intent | minor | Cold relay start may exceed the 3 s lookup limit | check-once-built | C4 |
+| intent | minor | Accepted Risk row still says `failed` | upheld | Row reworded |
+| mechanics | blocking | Forwarding ignores the `TOOL_ROLES` gate; Pi not excluded | upheld | §2 step 1 |
+| mechanics | blocking | Concurrent-start test asserts more than the protocol guarantees | downgraded (minor) | Test wording only; a worker would fix the test, not build wrong behaviour. Validation reworded |
+| mechanics | major | Page shows "Reachable" after a local setup failure | accepted-risk | Rare path, same as intent finding 2 |
+| mechanics | major | Status body lacks `type` for the eligibility rule | upheld | §6 body includes `type` |
+| mechanics | major | Status replies lack the machine/project generation guard | upheld | §6 uses `tag()`/`fresh()` |
+
+### Round 6 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 5:** §2 step 1 role and CLI gate; §3 withheld reasons completed; §5
+restart empties the record when no wheelchair tmux session is live; §6 status body carries
+`type`, page replies use the machine/path/generation guard; Validation additions; Accepted
+Risks (local failures not on the page); C4.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
