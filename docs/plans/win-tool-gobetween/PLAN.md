@@ -126,8 +126,11 @@ wrapped entry:
   session throws before the task exists** (for example resolving the copy context,
   `machine/lib/win.js:153-156`, whose errors today are only logged); a later successful sync
   replaces it with `ready`.
-- Removed when the session stops (stop path). The stop path first invalidates the session's
-  attempt token, then removes the file, so a readying result that finishes after the stop
+- Removed when the session stops (stop path). All ready-file operations for one session
+  (every write, and stop's invalidate-and-remove) run one at a time through a per-session
+  serial queue in `WinBridge`; a write checks the attempt token after writing its temporary
+  file and immediately before the rename, and drops the temporary file if the token is no longer
+  valid. The stop path enqueues "invalidate the token, then remove the file", so a readying result that finishes after the stop
   writes nothing (the guard below checks the token, not only that the session is registered).
 - **Failed or cancelled start:** every path where `startIn` gives up after the ready file or
   the Claude `--mcp-config` file was written (`die`, cancelled start, tmux failure) removes
@@ -149,12 +152,12 @@ reads `ready`.
 **Remembered tool list (D5).** The cache file is
 `<stateDir>/win-tool-lists/<sha256 hex of JSON [git common dir of the worktree, entry name,
 original command, original args]>.json` (directory 0700, file 0600, atomic), holding
-`{"tools": [...], "at": "<iso>"}`. Whenever the real tool answers a client `tools/list`
-request that had no `cursor` with a result that has no `nextCursor`, the go-between writes
-that `tools` array to the cache (it tracks outstanding client request ids and their methods to
-match responses). Paginated lists are not cached. A missing or unparseable cache means "no
-remembered list". In addition, right after every start of the real tool has finished its
-handshake (step 1, 3a or 3b), the go-between sends the real tool its own `tools/list` request
+`{"tools": [...], "at": "<iso>"}`. A missing or unparseable cache means "no remembered list".
+The cache is written **only** from the go-between's own list request (clients' own
+`tools/list` responses are passed through untouched and never cached): right after every start
+of the real tool has finished its handshake (in steps 1 and 3a, once the client's
+`notifications/initialized` has been forwarded; in 3b, once the go-between's own has been
+sent), the go-between sends the real tool its own `tools/list` request
 (id `"wc-go-between-list-<random uuid>"`, generated per request) and, while the result has a
 `nextCursor`, further `tools/list` requests with that cursor (at most 20 pages); it caches the
 concatenated `tools` of all pages (nothing if any page fails or the limit is hit) and passes
@@ -162,7 +165,7 @@ none of these responses to the client; so a client that never lists again (Codex
 the next session. The service computes the path; the go-between only reads and writes it.
 
 1. **Ready at start** (ready file says `ready`): start the real tool at once and pipe
-   stdin/stdout both ways (stderr passes through), updating the cache as above, until either
+   stdin/stdout both ways (stderr passes through), running the list request above, until either
    side ends (step 5).
 2. **Not ready at start:** do not start the real tool. Answer the client itself (the
    "stand-in"):
@@ -206,7 +209,9 @@ the next session. The service computes the path; the go-between only reads and w
 4. While not ready, a ready file that says `failed` changes the sentence for later answers;
    a later `ready` still starts the tool (step 3).
 5. Once the real tool runs and (for 3b) its handshake has succeeded, if it exits on its own the
-   go-between exits with its exit code. Until the 3b handshake succeeds, the 3b failure rule
+   go-between first forwards everything left on the tool's stdout (it waits for the child's
+   `close` event, i.e. stdout ended, not just `exit`), then exits with the tool's exit code,
+   or `128 + <signal number>` if the tool was ended by a signal. Until the 3b handshake succeeds, the 3b failure rule
    above takes precedence: an exit then is a handoff failure (exit 1).
    If the client closes stdin, **or the go-between receives SIGHUP, SIGTERM or SIGINT** (a
    normal stop kills tmux, which signals it): before the ready point, exit 0 at once without
@@ -241,8 +246,8 @@ New tests in `machine/test/` must cover:
   list, a held `tools/call` is answered by the real tool after ready, one
   `notifications/initialized` reaches the real tool, `list_changed` sent once); the 50 s held
   call timeout (with the wait made configurable for the test); `failed` sentence; real tool
-  `initialize` failure; stdin close before and after ready; cache written only for
-  unpaginated lists.
+  `initialize` failure; stdin close before and after ready; a client's own `tools/list`
+  response never writes the cache.
 - Go-between: SIGTERM/SIGHUP while the real tool runs closes its stdin and then terminates it
   before exit; own `tools/list` after handshake fills the cache and is
   not passed to the client; a held call past 50 s, including one waiting on the real tool's
@@ -257,7 +262,9 @@ New tests in `machine/test/` must cover:
 - Shared map: `replaceEntries[name] = null` omits the entry for Codex and Antigravity and only
   disables it for Claude, and leaves it out of `loaded`.
 - Stop after removal: a readying result finishing after the session stopped does not recreate
-  the ready file.
+  the ready file, including one whose temporary file was already being written when stop ran.
+- Tool exit: a tool that writes a final response then exits has that response delivered before
+  the go-between exits; a tool killed by SIGTERM makes the go-between exit 143.
 - Probe pagination: a tool that pages its list gets every page cached; a failing page caches
   nothing.
 - Exit during handoff: a real tool exiting 0 before its 3b `initialize` answer makes the
@@ -288,6 +295,7 @@ As IDEA.md. Also the two items in Deferred.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | (Moved with Deferred 3, D9.) A start cancelled in the sub-second window after tmux spawned, where the CLI already started a wrapped tool that is writing, ends without waiting for that tool (the kill-and-throw path never calls `onStop`) | Rare path: needs a cancel inside that window plus a tool already writing to the copy | review-round-2 |
+| A session name ending in `.mcp` would make its normal settings file `<stateDir>/settings/<name>.json` share a path with another session's Claude config `<stateDir>/settings/<other>.mcp.json` | Rare path: session names are always `wc-<thread id>-<role>[-<n>]` from the hub and never contain `.mcp`; the shared contract with the localhost thread uses this path | review-round-5 |
 | (Moved with Deferred 3, D9.) A go-between that crashes while its Windows tool keeps writing lets the stop wait pass early | Rare path: needs the go-between itself to crash mid-session (parent review-round-8) | adopted |
 
 ## Check Once Built
@@ -388,6 +396,24 @@ moved; C3 reworded; IDEA.md "What good looks like" and "Not doing" updated.
 **Changed since Round 4:** IDEA.md Why/Not doing wording; Spec 1 stop sequence (SIGTERM, then
 SIGKILL); Spec 3 stop invalidates the attempt token; Spec 4 probe pagination and step 5
 precedence during handoff; Validation additions and the three-run live check.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Two cache sources; client-list tracking unneeded | upheld | Spec 4: cache only from the go-between's own list request |
+| intent | minor | IDEA promises tools appear for Codex even with nothing remembered | upheld | IDEA.md Not doing: first-ever Codex use (D5) |
+| mechanics | blocking | Claude config path can collide with another session's settings file | accepted-risk | Rare path: hub session names never contain `.mcp`; Accepted Risks |
+| mechanics | major | Token check before an awaited write lets the rename recreate the file after stop | upheld | Spec 3: per-session serial queue, token checked before rename |
+| mechanics | major | Signal-ended tool status and unflushed final output | upheld | Spec 4 step 5: wait for `close`, 128 + signal |
+| mechanics | minor | Cache tests contradict each other | upheld | Same fix as the first row |
+
+### Round 6 — 2026-11-21
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 5:** Spec 4 cache only from the go-between's own list request, probe
+timing per step, step 5 exit after stdout ends and signal status; Spec 3 per-session serial
+queue for ready-file writes; IDEA.md Not doing (first-ever Codex use); new Accepted Risk
+(`.mcp` session names); Validation updates.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|

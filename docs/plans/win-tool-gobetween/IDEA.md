@@ -36,6 +36,8 @@ own once the copy is ready, with no action from the agent and no delay to the ag
 - Windows tools reached over `localhost` (HTTP or SSE): that is the thread "Windows localhost
   tools from WSL".
 - Tools that are not Windows programs.
+- A Codex agent seeing a tool that has never run before on this project: it shows from the
+  agent's next session (Codex never re-checks its tool list; PLAN.md D5).
 - Making a normal stop, the periodic sweep or archiving wait until the agent's Windows tools have finished writing (today's
   agents don't wait either): saved for the two-part follow-up (PLAN.md D9).
 
