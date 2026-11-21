@@ -12,11 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q4: Does the sub-lead write lessons for workers?
-- **Context:** Workers are fresh per task; the sub-lead sees a worker's work come back wrong and retried, the same position the lead is in for reviewers (decision 11).
-- **Options:** workers save their own only; the sub-lead writes worker lessons too.
-- **Recommendation:** the sub-lead writes them too; workers may still save their own.
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -40,6 +35,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Lessons apply to all projects; an agent may mark one as only for the project it learned it in | Collin picked "All, unless marked" | user |
 | 11 | Reviewer and verifier lessons are written by the lead, from what its triage of their findings and gaps shows; reviewers and verifiers never save lessons | Collin picked "Lead writes them": only the lead sees a reviewer's or verifier's mistake cost time | idea-change |
 | 12 | Saving a lesson shows a one-line notice in the thread it came from (which agent type, the lesson text, link to Settings); it takes effect for agents started afterwards with no approval | Collin picked "A short notice" | user |
+| 13 | Worker lessons are saved by workers themselves and by the sub-lead, from what it sees across worker tasks | Collin picked "Sub-lead too" | user |
 
 ## Spec
 
