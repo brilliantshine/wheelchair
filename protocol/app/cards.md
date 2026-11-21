@@ -29,6 +29,9 @@ Rules for every card:
 - A card is accepted only for the thread your session belongs to.
 - On success `card.js` prints exactly one JSON line. For a kind that makes a stored card it is
   `{"id":"<id>","kind":"<kind>"}`; for `title`, `resolve` and `retract` it is `{"ok":true}`.
+  A `lesson` receipt also names the lesson: `{"id":"<id>","kind":"lesson","lesson":"<lesson id>"}`
+  when a notice was recorded, and `{"kind":"lesson","lesson":"<lesson id>"}` (no card id) when
+  the hub found the same lesson already saved and recorded no new notice.
   Either gains `"queued":true` when the machine's response body has `spooled: true` (the app was
   unreachable and the card waits on the machine; a delivered post can also return HTTP 202, which
   adds nothing). It never prints any other card field. Keep the id: a queued card's printed id is
