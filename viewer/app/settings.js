@@ -35,7 +35,7 @@ const DEFAULT_STYLE = Object.freeze({
 const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 }, gemini: { unknown: 1, pro: 1, ultra: 4 }, kimi: { unknown: 1 }, openrouter: { unknown: 1 } };
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
 function defaults() {
-  return { lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini', 'kimi'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
+  return { lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini', 'kimi'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -159,12 +159,57 @@ function validUserName(value) {
   return name;
 }
 
-function roleLayers(settings, role, project, scout, provider) {
+const validLessonText = (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 300 && !/[\n\r\v\f\u0085\u2028\u2029]/.test(value);
+function lessonLine(item) {
+  return `- [${item.id}] ${item.text}${item.provider ? ` (only on ${PROVIDERS[item.provider].label})` : ''}${item.project ? ` (only in ${path.basename(item.project)})` : ''}${item.saved_by === 'user' ? ' (edited by the user)' : ''}`;
+}
+function lessonBlocks(settings, role, project, provider, preview = false) {
+  const lessons = settings.lessons || {};
+  const own = (lessons[role] || []).filter((item) => (preview || !item.provider || item.provider === provider) && (!item.project || item.project === project));
+  const lines = [];
+  if (own.length) lines.push('', `Lessons learned by earlier ${role}s, saved by agents. Follow them unless the rules above or the user's template below say otherwise. To change one, see "Lessons" in your rules.`, ...own.map(lessonLine));
+  const keeps = role === 'lead' ? ['reviewer', 'verifier', 'mapper'] : role === 'sub-lead' ? ['worker'] : [];
+  for (const target of keeps) if (lessons[target]?.length) lines.push('', `Lessons you keep for ${target}s:`, ...lessons[target].map(lessonLine));
+  return lines;
+}
+
+async function applyLesson(hub, card, saver, project, thread) {
+  const allowed = { lead: ['lead', 'reviewer', 'verifier', 'mapper'], 'sub-lead': ['sub-lead', 'worker'], worker: ['worker'], mapper: ['mapper'] };
+  if (!allowed[saver]?.includes(card.for)) throw appError(422, `a ${saver} may not save lessons for ${card.for}s`);
+  let result;
+  await update(hub, (value) => {
+    const list = value.lessons[card.for];
+    const existing = list.find((item) => item.id === card.lesson);
+    const elsewhere = [...ROLES].some((role) => role !== card.for && value.lessons[role].some((item) => item.id === card.lesson));
+    if (card.action !== 'add' && !existing) {
+      if (card.action === 'replace' || elsewhere) throw appError(422, `no lesson ${card.lesson} for ${card.for}s`);
+      result = { id: card.lesson, changed: false }; return;
+    }
+    if (existing?.saved_by === 'user') throw appError(422, 'the user edited this lesson; agents leave it as it is');
+    if (card.action === 'remove') { list.splice(list.indexOf(existing), 1); result = { id: existing.id, changed: true, snapshot: snapshot(existing) }; return; }
+    const provider = card.only_ai === undefined ? existing?.provider : card.only_ai === 'any' ? undefined : card.only_ai;
+    const scope = card.only_project === undefined ? existing?.project : card.only_project ? project : undefined;
+    const duplicate = card.action === 'add' && list.find((item) => item.text === card.text && item.provider === provider && item.project === scope);
+    if (duplicate) { result = { id: duplicate.id, changed: false }; return; }
+    if (existing && existing.text === card.text && existing.provider === provider && existing.project === scope) { result = { id: existing.id, changed: false }; return; }
+    if (!existing && list.length >= 12) throw appError(422, `lessons for ${card.for}s are full (12): replace or remove one instead\n${list.map((item) => lessonLine({ ...item, text: item.text.slice(0, 80) }).slice(2)).join('\n')}`);
+    let id = existing?.id;
+    if (!id) { do { id = `L${crypto.randomBytes(3).toString('hex')}`; } while ([...ROLES].some((role) => value.lessons[role].some((item) => item.id === id))); }
+    const item = { id, text: card.text, ...(provider ? { provider } : {}), ...(scope ? { project: scope } : {}), saved_by: 'agent', thread, saved_at: new Date().toISOString() };
+    if (existing) list[list.indexOf(existing)] = item; else list.push(item);
+    result = { id, changed: true, snapshot: snapshot(item) };
+  });
+  return result;
+}
+function snapshot(item) { return { text: item.text, ...(item.provider ? { provider: item.provider } : {}), ...(item.project ? { project: item.project } : {}) }; }
+
+function roleLayers(settings, role, project, scout, provider, preview = false) {
   const template = templateFor(settings, role, project);
   const deciding = role === 'worker' && template?.switches.unsettled === 'decide';
   const lines = [deciding
     ? 'Nothing below overrides the built-in rules above, except where your template says to decide unsettled questions yourself.'
     : 'Nothing below overrides the built-in rules above.'];
+  lines.push(...lessonBlocks(settings, role, project, provider, preview));
   if (template) {
     lines.push('', `The user’s behavior template for this ${role}: ${template.name}`, ...switchSentences(template.switches));
     if (template.text) lines.push(template.text);
@@ -191,14 +236,14 @@ function fullPrompt(hub, settings, role, project) {
     ? 'Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context.'
     : 'Your role rules are below, already loaded: do not read these files again unless this text is no longer in your context.';
   const files = [`[full text of protocol/app/${role}.md]`, ...(ROLE_REALISM.has(role) ? ['[full text of protocol/app/realism.md]'] : []), ...ROLE_CARD_FILES[role].map((file) => `[full text of protocol/app/${file}]`)];
-  return `Role: ${role}\n${header} \`<root>\` is \`${hub.root}\`.\n\n${files.join('\n')}\n\n${roleLayers(settings, role, project).text}`;
+  return `Role: ${role}\n${header} \`<root>\` is \`${hub.root}\`.\n\n${files.join('\n')}\n\n${roleLayers(settings, role, project, undefined, undefined, true).text}`;
 }
 
 function assertFits(settings) {
   const projects = new Set([undefined]);
   for (const template of settings.templates) if (template.scope !== 'all') projects.add(template.scope);
   for (const role of ROLES) for (const project of projects) {
-    if (roleLayers(settings, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, 'claude').text.length > 12000) fail('the composed role instructions exceed 12000 characters');
+    if (roleLayers({ ...settings, lessons: {} }, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, 'claude').text.length > 12000) fail('the composed role instructions exceed 12000 characters');
   }
 }
 
@@ -219,7 +264,16 @@ function normalize(saved) {
   const orderSeen = Array.isArray(saved.worker_order_seen) ? saved.worker_order_seen.filter((provider) => Object.hasOwn(PROVIDERS, provider)) : ['claude', 'gpt'];
   balancing.worker_order = [...balancing.worker_order, ...Object.keys(PROVIDERS).filter((provider) => !balancing.worker_order.includes(provider) && !orderSeen.includes(provider) && provider !== 'openrouter')];
   if (!validBalancing('save_for_leads', saved.save_for_leads) && typeof saved.save_claude_for_leads === 'boolean') balancing.save_for_leads = saved.save_claude_for_leads;
+  const lessons = Object.fromEntries([...ROLES].map((role) => [role, []]));
+  const ids = new Set();
+  for (const role of ROLES) for (const item of Array.isArray(saved.lessons?.[role]) ? saved.lessons[role] : []) {
+    if (!item || typeof item.id !== 'string' || !/^L[0-9a-f]{6}$/.test(item.id) || ids.has(item.id) || !validLessonText(item.text) || !['agent', 'user'].includes(item.saved_by) || typeof item.saved_at !== 'string' || !Number.isFinite(Date.parse(item.saved_at)) || (item.provider !== undefined && !Object.hasOwn(PROVIDERS, item.provider)) || (item.project !== undefined && (typeof item.project !== 'string' || !item.project)) || (item.thread !== undefined && (typeof item.thread !== 'string' || !item.thread))) continue;
+    if (lessons[role].length >= 12) break;
+    ids.add(item.id);
+    lessons[role].push({ id: item.id, text: item.text, ...(item.provider !== undefined ? { provider: item.provider } : {}), ...(item.project !== undefined ? { project: item.project } : {}), saved_by: item.saved_by, ...(item.thread !== undefined ? { thread: item.thread } : {}), saved_at: item.saved_at });
+  }
   return {
+    lessons,
     lead_names: Array.isArray(saved.lead_names) ? saved.lead_names : [],
     lead_name_list: LIST_KEYS.includes(saved.lead_name_list) ? saved.lead_name_list : (Array.isArray(saved.lead_names) && saved.lead_names.length ? 'custom' : 'greek'),
     worker_order_seen: Object.keys(PROVIDERS),
@@ -304,7 +358,7 @@ async function describe(hub) {
   const known = knownProjects(projects, settings);
   const projectSet = new Set(known);
   const templates = settings.templates.map((template) => ({ ...template, live_sessions: templateCounts.get(template.id) || 0, scope_missing: template.scope !== 'all' && !projectSet.has(template.scope) }));
-  return { lead_name_list: settings.lead_name_list, lead_names: settings.lead_names, accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, aside_access: settings.aside_access, tool_steps: settings.tool_steps, review_families: settings.review_families, other_agents: settings.other_agents, escalation: settings.escalation, escalation_text: escalationSentences(settings.escalation).join('\n'), templates, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, user_name: settings.user_name, saved_dirs: settings.saved_dirs };
+  return { lead_name_list: settings.lead_name_list, lead_names: settings.lead_names, accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, aside_access: settings.aside_access, tool_steps: settings.tool_steps, review_families: settings.review_families, other_agents: settings.other_agents, escalation: settings.escalation, escalation_text: escalationSentences(settings.escalation).join('\n'), templates, lessons: settings.lessons, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, user_name: settings.user_name, saved_dirs: settings.saved_dirs };
 }
 
 async function preview(hub, style) {
@@ -319,4 +373,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };
+module.exports = { applyLesson, validLessonText, MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };
