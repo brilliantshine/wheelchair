@@ -36,6 +36,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | The zip is built on the hub with a small built-in writer (stored, no compression), no new dependency | Three small Markdown files; the package has no zip library | defaulted |
 | 10 | Remote threads show the last committed plan on `wc/<id>`, read through a new machine route; local threads keep reading the working tree | Leads commit plan changes each turn; reading refs avoids trusting worktree paths sent by the hub | defaulted |
 | 11 | Supersedes Decision 10's rationale: remote reads use the branch because one path serves live and archived threads alike (the machine can already find a thread's worktree itself, `machine/service.js:1720-1723`). Trade-off: mid-turn, a remote live thread can show the plan as of the lead's last commit, while a local one shows unsaved edits | Correcting a wrong rationale from review | review-round-1 |
+| 12 | Interactive-page (HTML) pictures download as their page file with scripts blocked; IDEA's "What good looks like" updated to say so | User's pick ("Save the page file") over no download | idea-change |
 
 ## Spec
 
@@ -262,7 +263,7 @@ New tests, at least:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | minor | HTML pictures download as .html, departing from IDEA's "image file" | user-decision | Asked the user |
+| intent | minor | HTML pictures download as .html, departing from IDEA's "image file" | user-decision | User chose "Save the page file"; Decision 12 |
 | intent | minor | Decision 10's rationale is wrong; mid-turn lag on remote threads unrecorded | upheld | Decision 11 |
 | intent | minor | Background refresh is heavier than on-demand listing | declined | The sidebar list already rides the chat poll; an on-demand route adds a request per poll and still needs stored discovery |
 | mechanics | blocking | Older machine ignores `keep` and deletes uploads | downgraded (minor) | Same as today's behaviour on that machine, not a wrong build; S4 now treats missing `kept_files` as 0 |

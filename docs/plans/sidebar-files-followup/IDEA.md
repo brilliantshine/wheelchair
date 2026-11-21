@@ -27,7 +27,8 @@ The sidebar files feature shipped the basics and saved five things for later. To
 
 ## What good looks like
 
-- On a picture, a download gives you an image file that looks like what you see on screen.
+- On a picture, a download gives you an image file that looks like what you see on screen. The
+  rare interactive-page pictures save as their page file instead, with scripts blocked.
 - One button downloads all of a thread's project documents as a single file.
 - Tapping a sent text or Markdown document shows it inside the app, with a way to download.
 - After archiving a thread, the files agents sent you are still listed and still download.
