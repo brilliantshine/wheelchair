@@ -1,6 +1,6 @@
 ---
 slug: overlap-questions
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-20
 ---
 
@@ -87,8 +87,25 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 58 | The same-project gate also covers Open Questions; another project's thread gets the late-overlap line once, in any window; waiting Open Questions count as already known; the peer settled path uses the latest Decision | Round 32 findings | review-round-32 |
 | 59 | Overlap Decisions start `Overlap with <thread id>:` and only they settle a thread; new information from any source updates a waiting Open Question; only an incoming peer question gets an immediate reply | Round 33 findings | review-round-33 |
 | 60 | After the review budget was reached again (rounds 31-33), run one more round with the plan as it is | User's pick (card 4dbee8da) | user |
+| 61 | Round 34 minor fixes: a clear chat answer to a waiting question settles it; the restart look updates waiting entries; `queued` follows `spooled: true`; overlap Decision wording | Round 34 findings, triaged with the stricter bar (worst outcome an extra card or stale wording = minor) | review-round-34 |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  A[Lead learns another thread overlaps] --> B{Same project?}
+  B -- no --> M[One line in the reply, offer a follow-up thread]
+  B -- yes --> C{Where is this thread?}
+  C -- feature before its plan exists --> W[Ask nothing yet; first look comes right after the plan is created]
+  C -- small fix before edits, or feature while planning --> Q[Question card, one at a time]
+  C -- review, approval, build, done, or small fix after edits --> M
+  Q --> R{Your answer}
+  R -- keep, change, go ahead, leave it, or cancel --> D[Logged in the plan and acted on once, even after a lead restart]
+  R -- vague --> F[Follow-up question card]
+  F --> R
+```
+
+The picture shows only the routing; the prose below is complete without it.
 
 ### Terms
 
@@ -139,7 +156,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   is settled; the original card counts as handled once a later overlap card with the same
   `about_thread` exists.
 - **Overlap Decision:** a Decision Log entry whose text starts `Overlap with <thread id>:`; every
-  Decision that settles an overlap (an answer, a cancel or moot, a finished peer) is written this
+  Decision that settles an overlap (an answer, including a clear chat answer to a waiting question; a cancel or moot) is written this
   way, and only these count as settling that thread. The latest one for a thread is its
   settlement.
 - **Done marker:** an overlap Decision ending
@@ -194,6 +211,9 @@ On every path the lead answers the peer at once, from what it knows; when the qu
 carded it adds that it is asking its user. The user's later decision is not sent back to the
 peer (Decision 36), so nothing records who asked. Unrelated peer questions pass on as today.
 
+- **Clear chat answer to a waiting question:** if the user clearly answers a waiting overlap in
+  chat while another card is open, the lead logs it as that thread's overlap Decision and removes
+  its Open Question in one commit; the other card stays open.
 - **One question at a time:** an overlap card waits behind any open `question` card of yours
   and is asked next. For a feature, a waiting or asked overlap is in PLAN.md's Open Questions
   (`Overlap with <thread id> (<title>): <what>`), so status stays `planning` until it is settled. The commit that logs
@@ -223,7 +243,7 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
 - **Cancelled or moot question:** when the user cancels an overlap question (in chat, or by
   typing it in the card's box), or this thread's own decision makes it moot, it is settled
   (Decision 48):
-  - On a feature it counts as "Keep the plan as it is", logged as a Decision naming the other
+  - On a feature it counts as "Keep the plan as it is", logged as an overlap Decision (Terms) naming the other
     thread's id, in the commit that removes its Open Question: source `user` for a cancel,
     `defaulted` for moot. If a card was posted for this question (the original card, when its
     follow-up is still waiting), the entry ends `(overlap card <id>)` with that card's id; if
@@ -241,7 +261,8 @@ On `[wc:context restart]`, after rereading the plan and cards:
   the same thread: act on it now. If status
   is no longer in the card window (rare: the answer would have to cross the move to review),
   treat it as a late overlap.
-- An open overlap card stays open and is not asked again.
+- An open overlap card stays open and is not asked again. Facts the restart look finds about a
+  waiting `Overlap with` Open Question update that entry before it is posted.
 - Run `wc.js session leads` once and treat any new overlap (Terms "New overlap") using the same paths as live discovery: for a feature, nothing before PLAN.md exists (a small fix uses its own before-edits window) (§1: if IDEA.md is
   confirmed, create it first, then look), a card inside the window, else a late overlap. A planned thread
   also asks any `Overlap with` Open Question not yet asked.
@@ -259,7 +280,8 @@ On `[wc:context restart]`, after rereading the plan and cards:
 - `question` cards accept an optional `about_thread`: a string of 12 lowercase hex characters.
   Stored on the card, never rendered.
 - `viewer/app/card.js` on success prints exactly one JSON line: `{"id":"<id>","kind":"<kind>"}`
-  for kinds that create a stored card, with `"queued":true` added when the machine spooled it;
+  for kinds that create a stored card, with `"queued":true` added when the machine's response body has `spooled: true` (not by HTTP
+  status: a delivered post can also return 202);
   `{"ok":true}` for `title`, `resolve`, `retract` (plus `"queued":true` when spooled). Never any
   other field of the card.
 - `protocol/app/lead.md`: where it says to retract a card it posted (approval on a mode change,
@@ -286,7 +308,8 @@ merging of branches; no sub-lead or worker rule changes.
 - `node --test viewer/test/*.test.js` passes, with new tests: a card's id equals its
   `delivery_id`; a re-delivery returns the same id with `duplicate: true`; `about_thread` is
   accepted on `question` (12 hex) and refused otherwise or on other kinds; `card.js` prints
-  `{id,kind}`, `{id,kind,queued}`, `{ok}` and `{ok,queued}`, and never a text field.
+  `{id,kind}`, `{id,kind,queued}`, `{ok}` and `{ok,queued}`, and never a text field; a delivered
+  202 receipt prints no `queued`.
 - `bash machine/test/run.sh` passes, with a test that the spooled response carries `id` equal to
   the delivery id and the drained card's hub id equals it.
 - `grep -n "overlap card" protocol/app/lead.md` shows the card-window, late-overlap and restart
@@ -329,6 +352,10 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | "Overlap Decision" lists a deferred finished-peer case; cancel wording lacks the prefix | upheld | Fixed |
+| mechanics | major | Clear chat answer to a waiting question not settled | downgraded (minor) | Worst outcome: the question is asked once more; fixed anyway |
+| mechanics | major | Restart look doesn't update a waiting entry | downgraded (minor) | Worst outcome: a slightly stale question the user answers in context; fixed anyway |
+| mechanics | minor | `queued` ambiguous for delivered 202 | upheld | Defined by `spooled: true`; test added |
 
 ### Round 33 — 2026-11-21
 
