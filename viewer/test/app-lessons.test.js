@@ -32,17 +32,36 @@ test('card schema and saver pairs', async () => {
 test('scope, repeat safety, replacement, removal and user ownership', async () => {
   const hub = await fixture();
   const first = await post(hub, add({ only_ai: 'gpt', only_project: true }), 'worker');
+  const afterFirstAdd = (await hub.state.thread('one')).cards.length;
   assert.equal((await post(hub, add({ only_ai: 'gpt', only_project: true }), 'worker')).lesson, first.lesson);
+  assert.equal((await hub.state.thread('one')).cards.length, afterFirstAdd);
   const second = await post(hub, add(), 'worker');
   assert.notEqual(first.lesson, second.lesson);
+  assert.equal((await settings.load(hub)).lessons.worker.length, 2);
+  const sameTextOtherScope = await post(hub, add({ only_ai: 'claude' }), 'worker');
+  assert.notEqual(sameTextOtherScope.lesson, second.lesson);
+  assert.equal((await settings.load(hub)).lessons.worker.length, 3);
   const replace = { kind: 'lesson', action: 'replace', for: 'worker', lesson: first.lesson, text: 'Try again.', why: 'A retry failed.' };
   const changed = await post(hub, replace, 'worker');
   assert.deepEqual(changed.snapshot, { text: 'Try again.', provider: 'gpt', project: '/project' });
+  const keptMarkers = (await settings.load(hub)).lessons.worker[0];
+  assert.equal(keptMarkers.provider, 'gpt');
+  assert.equal(keptMarkers.project, '/project');
+  const afterFirstReplace = (await hub.state.thread('one')).cards.length;
   await post(hub, replace, 'worker');
+  assert.equal((await hub.state.thread('one')).cards.length, afterFirstReplace);
   await post(hub, { ...replace, only_ai: 'any', only_project: false }, 'worker');
-  assert.deepEqual((await settings.load(hub)).lessons.worker[0].text, 'Try again.');
+  const cleared = (await settings.load(hub)).lessons.worker[0];
+  assert.equal(cleared.text, 'Try again.');
+  assert.equal(Object.hasOwn(cleared, 'provider'), false);
+  assert.equal(Object.hasOwn(cleared, 'project'), false);
   const remove = { kind: 'lesson', action: 'remove', for: 'worker', lesson: first.lesson, why: 'No longer true.' };
-  await post(hub, remove, 'worker'); await post(hub, remove, 'worker');
+  await post(hub, remove, 'worker');
+  const afterFirstRemove = (await hub.state.thread('one')).cards.length;
+  await post(hub, remove, 'worker');
+  assert.equal((await hub.state.thread('one')).cards.length, afterFirstRemove);
+  const leadLesson = await post(hub, add({ for: 'lead', text: 'Lead-only lesson.' }), 'lead');
+  await assert.rejects(post(hub, { ...remove, for: 'worker', lesson: leadLesson.lesson }, 'worker'), new RegExp(`no lesson ${leadLesson.lesson} for workers`));
   await assert.rejects(post(hub, replace, 'worker'), /no lesson/);
   await settings.update(hub, (s) => { s.lessons.worker[0].saved_by = 'user'; });
   await assert.rejects(post(hub, { ...remove, lesson: second.lesson }, 'worker'), /the user edited this lesson/);
@@ -52,21 +71,55 @@ test('scope, repeat safety, replacement, removal and user ownership', async () =
 test('normalization, cap, prompts and preview', async () => {
   const hub = await fixture();
   for (let i = 0; i < 12; i++) await post(hub, add({ text: `Lesson ${i}`, only_ai: 'gpt' }), 'worker');
-  await assert.rejects(post(hub, add({ text: 'Full' }), 'worker'), /lessons for workers are full \(12\): replace or remove one instead\n\[L/);
   const s = await settings.load(hub);
   s.lessons.worker[0].saved_by = 'user';
+  await settings.update(hub, (current) => { current.lessons.worker[0].saved_by = 'user'; });
+  await assert.rejects(post(hub, add({ text: 'Full' }), 'worker'), (error) => {
+    assert.match(error.message, /lessons for workers are full \(12\): replace or remove one instead/);
+    const lines = error.message.split('\n').slice(1);
+    assert.equal(lines.filter((line) => line.startsWith('[L')).length, 12);
+    assert.match(lines.find((line) => line.includes(s.lessons.worker[0].id)), /\(edited by the user\)$/);
+    return true;
+  });
   s.templates.push({ role: 'worker', scope: 'all', in_use: true, name: 'Mine', switches: {}, text: 'Template text' });
   const prompt = settings.roleLayers(s, 'worker', '/project', null, 'gpt').text;
   assert.match(prompt, /edited by the user/);
+  assert.match(prompt, /\(only on GPT\)/);
   assert.ok(prompt.indexOf('Lessons learned') < prompt.indexOf('Template text'));
   assert.doesNotMatch(settings.roleLayers(s, 'worker', '/project', null, 'claude').text, /Lessons learned/);
+  s.lessons.worker[0].project = '/project';
+  assert.doesNotMatch(settings.roleLayers(s, 'worker', '/other', null, 'gpt').text, /Lesson 0/);
   assert.match(settings.fullPrompt(hub, s, 'worker', '/project'), /Lesson 0/);
   assert.match(settings.fullPrompt(hub, s, 'sub-lead', '/project'), /Lessons you keep for workers/);
   s.lessons.reviewer = [s.lessons.worker[0]];
   assert.match(settings.fullPrompt(hub, s, 'lead', '/project'), /Lessons you keep for reviewers/);
-  assert.doesNotThrow(() => settings.assertFits(s));
+  const oversizedLessons = settings.defaults();
+  for (const role of ['reviewer', 'verifier', 'mapper', 'lead']) {
+    oversizedLessons.lessons[role] = Array.from({ length: 12 }, (_, i) => ({ id: `L${String(i).padStart(6, '0')}`, text: 'x'.repeat(300), saved_by: 'agent', saved_at: new Date(0).toISOString() }));
+  }
+  assert.doesNotThrow(() => settings.assertFits(oversizedLessons));
   s.lessons.worker.push({ id: 'bad', text: 'bad' });
   assert.equal(settings.normalize(s).lessons.worker.length, 12);
+});
+
+test('lead roleLayers keeps reviewer, verifier and mapper blocks', () => {
+  const s = settings.defaults();
+  for (const role of ['reviewer', 'verifier', 'mapper']) s.lessons[role] = [{ id: `L${role.padEnd(6, '0').slice(0, 6)}`, text: `${role} lesson`, ...(role === 'reviewer' ? { provider: 'gpt' } : {}), saved_by: 'agent', saved_at: new Date(0).toISOString() }];
+  const text = settings.roleLayers(s, 'lead', '/project', null, 'claude').text;
+  assert.match(text, /Lessons you keep for reviewers:/);
+  assert.match(text, /Lessons you keep for verifiers:/);
+  assert.match(text, /Lessons you keep for mappers:/);
+  assert.match(text, /reviewer lesson \(only on GPT\)/);
+});
+
+test('card.js lesson validation refuses reviewer and missing why', () => {
+  const valid = add({ for: 'reviewer' });
+  const reviewer = validate('lesson', valid, 'reviewer');
+  assert.equal(reviewer.ok, false);
+  assert.match(reviewer.reason, /reviewer may not post lesson/);
+  const missingWhy = validate('lesson', { ...add(), why: undefined }, 'worker');
+  assert.equal(missingWhy.ok, false);
+  assert.match(missingWhy.reason, /why/);
 });
 
 test('settings PUT merges edits and removals over HTTP', async () => {
