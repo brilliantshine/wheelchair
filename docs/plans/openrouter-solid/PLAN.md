@@ -31,6 +31,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | OpenRouter asides use Pi's `--fork` for the first turn and `--session` to resume, in non-interactive JSON mode, with read-only asides limited to Pi's read tools as reviewers are today | Mirrors Claude/Codex aside flow; reuses the existing reviewer tool allowlist | defaulted |
 | 6 | A failed transcript read when a turn ends is retried and never treated as an empty report; only a transcript that is truly absent or has no reply counts as empty | Losing a report in normal use is always fixed | defaulted |
 | 7 | Pi older than 1.5.2 is refused; newer versions run, Settings marks them untested, and a Pi start or turn failure on an untested version names the version as the likely cause | User picked run-with-warning over blocking | user |
+| 8 | Keep side conversations in this plan and review again after round 3 | User's pick when the review budget stopped | user |
 
 ## Spec
 
@@ -301,6 +302,17 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 | mechanics | blocking | First request can eat the whole budget | upheld (major) | S5 1s per call, 4s wall-clock deadline |
 | mechanics | major | What the 5s bound covers | upheld (minor) | S5 bounds recovery only; rest unchanged |
 | mechanics | minor | Version note should use the launch version | upheld | S3/S4 record launch version |
+
+### Round 4 — 2026-11-20
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 3:**
+- S3: explicit `--tools` on every aside turn; read-only path-boundary extension blocking reads outside the worktree; launch-version tie for notes.
+- S5: 1s per call, 4s wall-clock deadline on recovery only.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
