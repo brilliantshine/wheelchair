@@ -2,7 +2,25 @@
 slug: auto-merge
 date: 2026-11-21
 implemented-by: "T1 light (claude-haiku-5-5); T2 standard (gpt-6.1-terra, attempt 2 at effort xhigh); T3 standard (claude-sonnet-5-5); sub-lead claude-opus-5-5"
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: T1 claude light, T2 gpt standard, T3 claude standard (FAIL)
+  - round: 1
+    lane: gpt / gpt-6.2-sol
+    checks: T1 claude light, T2 gpt standard, T3 claude standard (FAIL)
+  - round: 2
+    lane: claude / claude-opus-5-5
+    checks: build plus R1-a gpt light, R1-b claude light (PASS)
+  - round: 2
+    lane: gpt / gpt-6.2-sol
+    checks: build plus R1-a gpt light, R1-b claude light (FAIL)
+  - round: 3
+    lane: claude / claude-opus-5-5
+    checks: build plus R2-a gpt light (PASS)
+  - round: 3
+    lane: gpt / gpt-6.2-sol
+    checks: build plus R2-a gpt light (PASS)
 ---
 
 # Completion Report — Auto-merge finished pull requests
@@ -144,3 +162,7 @@ not ok 436 - 6 message clears debt
 ```
 
 The remaining full-suite failure is the quiet-session timing test described under Remediation 1. It is outside this build's files and passes when run alone.
+
+### Verification attempt 3 at `381fbb4c`: PASS (both verifiers)
+
+The GPT verifier's `npm test` passed 793/793. The Claude verifier's first run had the quiet-session timing failure and its third run passed 793/793. At the merge base `249d3a8b`, in a separate clone, it passed 780/780. Browser specs for the touched pages passed 106/106 in Chromium and Firefox, and the Dismiss button passed a phone-width check in both.
