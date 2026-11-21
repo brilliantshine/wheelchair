@@ -470,3 +470,4 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 - 2026-11-21 — R1b accepted (band: scout): aside-turns tests 7/7 re-run by sub-lead; mismatched header never saved as conversation_id; error redacted before the limit check.
 - 2026-11-21 — Verification 2: Claude PASS; GPT FAIL with 2 gaps. Out-of-worktree AGENTS.md context in read-only Pi asides: not a gap (settled in review round 4; lead agreed). Aside test store race: must-fix (R2a).
 - 2026-11-21 — R2a accepted (band: scout): no choices reported or seen; aside test re-run 6 times by sub-lead, 0 failures.
+- 2026-11-21 — Verification 3 on 4e0220c6: Claude PASS, GPT PASS; no gaps. Their one-off failures (machine EADDRINUSE under parallel load, app-handoff.spec.js:228, the live-home installer snapshot) passed on isolated reruns and are in code this branch does not touch.
