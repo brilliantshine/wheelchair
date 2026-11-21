@@ -1,6 +1,6 @@
 ---
 slug: agent-lessons
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -431,7 +431,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub/machine/card backend: S2-S5, S7 route, node tests (tricky) | viewer/app/{settings,routes,card,cards}.js, machine/service.js, viewer/test/app-lessons.test.js | standard / gpt-6.1-terra | wc-7a7ad5f5b389-worker | `npm test` incl. app-lessons.test.js | done |
-| T2 | Settings page Lessons entry and editor, thread notice, hash route, preview caption, Playwright spec (S5 caption, S6, S7 UI) | viewer/pages/settings.js, viewer/pages/thread.js, page CSS, viewer/test/app-lessons.spec.js | standard / claude-sonnet-5-5 | wc-7a7ad5f5b389-worker-3 | playwright app-settings + app-lessons specs | in progress |
+| T2 | Settings page Lessons entry and editor, thread notice, hash route, preview caption, Playwright spec (S5 caption, S6, S7 UI) | viewer/pages/settings.js, viewer/pages/thread.js, page CSS, viewer/test/app-lessons.spec.js | standard / claude-sonnet-5-5 | wc-7a7ad5f5b389-worker-3 | playwright app-settings + app-lessons specs | done |
 | T4 | Harden app-lessons.test.js assertions the S10 list names but T1 checked loosely | viewer/test/app-lessons.test.js | light / gpt-6-luna | wc-7a7ad5f5b389-worker-4 | node --test test/app-lessons.test.js | done |
 | T3 | Protocol text S8 | protocol/app/{cards,lead,sub-lead,worker,mapper,reviewer,verifier}.md | standard / claude-sonnet-5-5 | wc-7a7ad5f5b389-worker-2 | protocol-rules.test.js | done |
 
@@ -455,3 +455,12 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — T4 accepted (band: scout): all eight items asserted; the oversized-lessons assertFits check uses lead/reviewer/verifier/mapper lessons (it is the lead's layer that could pass 12,000), replacing the earlier weaker assertFits call.
 - 2026-11-21 — Choice: T4, app-lessons.test.js: the CLI refusal is tested through `validate()` with the role, since card.js takes no role on the command line; the role check is enforced by the hub with the session's real role (cards.js).
 - 2026-11-21 — Choice: T4, app-lessons.test.js: oversized lessons placed on the four non-worker roles; one shared settings object is mutated across assertions (worker didn't list these; scout found them).
+- 2026-11-21 — T2 accepted (band: bigger-scout): strings, escaping, PUT body and hash handling match S6/S7. The note says "Changes apply to <role plural> started after you save.", like the template editor; kept.
+- 2026-11-21 — Choice: T2, settings.js: Remove then "Really remove" strikes the row with Undo; nothing is sent until Save.
+- 2026-11-21 — Choice: T2, settings.js: "saved from" thread titles come from GET /threads?view=list when an editor opens.
+- 2026-11-21 — Choice: T2, settings.js: a role with lessons but no templates shows its group; with neither, no group. Empty entry shows only the note, no Save.
+- 2026-11-21 — Choice: T2, settings.js: editor heading uses the existing role label ("Checker" for verifier); notice and empty text use "verifiers".
+- 2026-11-21 — Choice: T2, settings.js: client refuses empty or over-300 edits before sending; textareas with maxLength 300.
+- 2026-11-21 — Choice: T2, settings.js/thread.js: accent-soft background and border for the list entry; muted panel and italic markers for the notice.
+- 2026-11-21 — Choice: T2, settings.js: the note text uses the role plural (worker didn't list this; scout found it).
+- 2026-11-21 — Choice: T2, app-lessons.spec.js: seeds settings.json directly; screenshots only when LESSON_SHOTS is set.
