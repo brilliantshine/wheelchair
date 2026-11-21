@@ -254,6 +254,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 |------|--------------|-------|
 | `gh` with `GH_HOST` set to another host could send the REST merge to a mirror with the same owner, repo, PR number and head | Rare path: needs a non-default `GH_HOST` on the hub and an identical mirror | review-round-3 |
 | A thread handed off during the up-to-2-minute readiness wait could still be merged by the source hub | Rare path: a handoff inside that short window; the merge itself is still gated on a passing check | review-round-4 |
+| A readiness response that arrives just after the 2-minute wait ends is still acted on, so a ready pull request can merge a moment past the deadline | Rare path: needs the last `gh pr view` to straddle the deadline; the response was ready and the merge is pinned to the exact head | verification-1 |
 | A fast-forward that renames a file into `docs/plans/` shows only the new path in `git diff --name-only`, so the lead could count it as bookkeeping | Rare path: someone else pushes a rename into the plan folder during the finishing wait | review-round-6 |
 
 ## Check Once Built
