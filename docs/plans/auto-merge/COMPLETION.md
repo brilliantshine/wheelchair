@@ -121,3 +121,26 @@ $ cd viewer && npx playwright test test/app-settings.spec.js --reporter=line   (
 ```
 
 The one failure is a timing test (`viewer/test/app-quiet.test.js:38`: wait 220 ms, then expect no reminder). It covers the quiet-session path, which this build does not change (`git diff main -- viewer/app/quiet.js viewer/test/app-quiet.test.js` is empty). It fails only under full parallel-suite load. The verifier at attempt 1 also saw quiet-session timing failures on its first run, and its retry passed 792/792. R1-a's branch passed 793/793. Treated as a pre-existing flaky test, not a regression; residual risk noted here.
+
+### Remediation 2 (after verification attempt 2 at `96068dd6`)
+
+Gap and judgment in `REMEDIATION-2.md`.
+
+| Gap | Fix | Evidence |
+|-----|-----|----------|
+| The step 8 retry test's 20 ms budget could run out after one `gh` call under full-suite load (R2-a, gpt light / gpt-6-luna) | `viewer/test/app-auto-merge.test.js:16` defaults `retryMs 20 / waitMs 20 / mergeTimeoutMs 5000`; the UNKNOWN row uses `retryMs 50 / waitMs 1500` (`:71`, restored at `:80`); the timeout test uses `mergeTimeoutMs 300` with a 5 s stub (`:145-151`). Test-only. | below |
+
+```
+$ cd viewer && node --test test/app-auto-merge.test.js   (3 runs)
+# pass 13 # fail 0
+# pass 13 # fail 0
+# pass 13 # fail 0
+
+$ cd viewer && node --test test/*.test.js
+not ok 436 - 6 message clears debt
+# tests 793
+# pass 792
+# fail 1
+```
+
+The remaining full-suite failure is the quiet-session timing test described under Remediation 1. It is outside this build's files and passes when run alone.
