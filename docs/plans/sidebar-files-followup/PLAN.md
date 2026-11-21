@@ -492,6 +492,9 @@ New tests, at least:
 | T2 | tricky — Hub: ZIP writer and `docs.zip` (S2), remote plan reads and background refresh (S5), archive `keep` and `kept_files` (S4), HTML `download=1` (S1) | `viewer/app/*`, `viewer/server.js` diagram-html handling, `viewer/test/*.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker-2 | `node --test viewer/test/*.test.js` | done |
 | T3 | Picture page Download (S1 PNG export, HTML link) and sent-file preview page (S3) | `viewer/pages/picture*`, `viewer/pages/file.*`, `APP_PAGES` line, new specs | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-3 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
 | T4 | Thread page: Download all link (S2), sent rows open preview (S3), archived rows honour `kept_files` (S4), HTML download inertness browser test (S1); after T2 and T3 | `viewer/pages/thread.js`, `thread.css`, new spec | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-4 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
+| R1 | Remediation 1: form PNG reuses the already-fetched form JSON (S1) | `viewer/pages/picture.js`, `viewer/pages/picture-export.js`, form test in `viewer/test/app-picture-download.spec.js` | standard, claude-sonnet-5-5 | | `npm --prefix viewer run test:browser` | dispatched |
+| R2 | Remediation 1: wide-graph test uses real pan and zoom and asserts the transform changed (S1 Validation) | `viewer/test/app-picture-download.spec.js` (with R1, same session) | standard, claude-sonnet-5-5 | | `npm --prefix viewer run test:browser` | dispatched |
+| R3 | Remediation 1: lock test drives real chat, thread-list, doc and ZIP callers (S5 Validation) | `viewer/test/app-remote-plan.test.js`, `viewer/test/helpers/` | standard, gpt-6.1-terra | | `node --test viewer/test/*.test.js` | dispatched |
 
 ## Log
 
@@ -519,3 +522,4 @@ Build accepted: approval a40eb86e-c69f-46d8-815d-be9ef02baa25
 - 2026-11-21 — Choice: T4, `viewer/test/app-files.spec.js` (outside its boundary, disclosed): `exact: true` on two Download locators so "Download all" does not match; no assertion weakened.
 - 2026-11-21 — Choice: T4, `viewer/test/app-files-followup.spec.js`: phone link-height check allows 43.5 px (Firefox rounding); HTML downloads fetched with `?token=` and opened as `file://` pages from the run folder.
 - 2026-11-21 — T4 accepted (band: bigger-scout): browser 1142 passed and viewer 732/732 re-run by sub-lead on the worker branch; scout found no Spec deviation.
+- 2026-11-21 — Verification attempt 1 (acfde7a0): Claude verifier PASS, GPT verifier FAIL, 7 gaps. 3 rare paths went to Accepted Risks. The lead answered per gap: S5 thread-list documents is not a gap (no row added); the form PNG, wide-graph test and lock test are fixed (REMEDIATION-1.md).
