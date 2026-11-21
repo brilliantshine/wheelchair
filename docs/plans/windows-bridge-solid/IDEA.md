@@ -24,7 +24,7 @@ when the bridge is broken.
 ## What good looks like
 
 - Choosing the Unity MCP preset gives an agent a working Unity MCP pointed at its Windows copy, with no hand editing.
-- `win info` shows how much disk the thread's copy and the bridge's git data use, and warns when they pass a limit.
+- `win info` shows how much disk the thread's Windows copies use, the repository's git size, how many conflict snapshots are kept and how much space is free on Windows, and warns when copies, snapshots or free space pass a limit.
 - A Windows tool that starts before the copy is ready works once the copy is ready, without the agent doing anything.
 - On a WSL machine with a broken bridge, the user sees a warning that says what is wrong, before work depends on it.
 
@@ -39,4 +39,4 @@ when the bridge is broken.
 ## Constraints
 
 - Works on the user's WSL2 PC with WSL's default networking, and must not break mirrored networking.
-- Nothing changes for machines that are not WSL.
+- Nothing changes for machines that are not WSL, except that the MCP for Unity setup button also works there.

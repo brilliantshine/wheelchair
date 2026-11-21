@@ -70,7 +70,8 @@ artifacts (settings files, `--mcp-config`, Antigravity plugin files) are written
 that build. Because a wrapped entry's emitted command is Linux Node, the loaded set is not
 re-derived from emitted commands: each adapter's build returns `loaded: [{ name, windows,
 wrapped }]` for exactly the entries in its final configuration (after its skip rules and, for
-Codex, the budget), where `windows` is `isWindowsProgram` of the entry's original `.mcp.json`
+Codex, the budget), where `windows` is true only for a stdio entry (no `type` or `type:
+"stdio"`) and is `isWindowsProgram` of that entry's original `.mcp.json`
 command and `wrapped` says whether item 3 wrapped it. Pi and Kimi return an empty list.
 Today `windowsTools` comes from `.mcp.json` before the build; it now comes from
 the build, so a Windows tool the CLI does not load (for example on Pi or Kimi) no longer
@@ -98,6 +99,8 @@ named `unity` (`unity-2`, ... if taken), stdio, args `["--from", "mcpforunityser
   first agent will fetch it instead" (polling the same route; saving is never blocked by it).
   The page load does not call PowerShell. Not found → the button fills nothing and shows
   "Install uv on Windows first: https://docs.astral.sh/uv/getting-started/installation/".
+- Microsoft kernel with interop off: the button fills nothing and shows "Windows interop is off
+  in WSL; turn it on to set up MCP for Unity."
 - Any other machine: `uvx`.
 The user edits or saves it like any entry; the button only fills the form. The server version
 is not pinned (MCP for Unity's own setup does not pin it).
@@ -213,23 +216,27 @@ it and never sees the stale copy.
 
 **Stop waits for wrapped tools.** While a go-between's real tool runs, the go-between keeps
 a file `<stateDir>/win-tools/<session name>/<go-between pid>` (created when it starts the real
-tool, removed after the tool's job has closed and its pipes are shut). `WinBridge.onStop` for a
-`wrapped` session waits until the `win-tools` directories of **every** session registered on
-the same copy key are empty (polling, up to 15 s; entries whose pid is no longer alive are
+tool, removed after the tool's job has closed and its pipes are shut). `WinBridge.onStop` for
+**any** session (wrapped or not) whose copy key has at least one session recorded as `wrapped`
+in the launch record waits until the `win-tools` directories of every session registered on
+that copy key are empty (polling, up to 15 s; entries whose pid is no longer alive are
 removed) before the final stop reconcile, so a tool's last writes are in
 the final Windows snapshot. A timeout logs it and reconciles anyway. The same gate applies to
 `WinBridge.sweep()`'s final reconcile: a copy is not swept-reconciled while any session sharing
 it (registered for that copy key) still has entries in its `win-tools` directory with live
 pids; the next sweep tries again. This covers sessions that end without `onStop` (a CLI
-crash, or the handoff `kill` path in `machine/service.js`). The archive pass's final
-reconcile (`WinBridge.archiveFinish` and its retries) uses the same copy-wide gate before it
-snapshots and deletes a copy; while the gate is closed it leaves the copy for the next pass.
+crash, or the handoff `kill` path in `machine/service.js`). Archive checks the same copy-wide
+gate in `WinBridge.archiveCheck`, before it reconciles, commits or removes anything: while the
+gate is closed for any of the thread's copies, `archiveCheck` returns the existing `pending`
+result (so archive retries later, as it already does for running reconciles), and
+`onWorktreeRemoved` / `archiveFinish` never run for that thread until it opens.
 
 **Marking the copy used.** A pre-launch readying reconcile clears the copy's "used since last
 reconcile" state before the CLI exists. So, for a session with `windows_tools`, right after its
 tmux session has started the machine marks its copy used (`markKey`), and does so again when a
-readying task for that copy finishes after launch. The final stop reconcile therefore always
-runs for a session whose Windows tools could have written.
+readying task for that copy finishes after launch. So wherever the existing rules give a copy a
+final stop reconcile (lead and sub-lead thread copies; workers still sync before reporting
+done, as the parent plan requires), it is not skipped because readying finished first.
 
 **Process tree.** The go-between starts the real tool so that ending it ends every Windows
 process it started: through a launcher that puts the tool in a Windows Job Object with
@@ -293,8 +300,9 @@ existing caller keeps its meaning. A new `bridgeHealth()` on `WinBridge` returns
 - `kernel && !interop` → reason "Windows interop is off in WSL, so Windows programs can't run".
 - `wsl` → `winEnv.versions()` with a 15 s overall deadline; its `reason` if not ok; on the
   deadline, reason "Windows didn't answer within 15 seconds". Each probe looks Windows Git up
-  afresh: `createWinEnv`'s `gitExe()` keeps only a successful lookup (a failed one is not
-  memoized), so the warning clears on the next probe after the user installs Git.
+  afresh (a fresh `Get-Command git.exe`, replacing whatever `gitExe()` held, success or
+  failure); other callers keep using the last successful path between probes. So the warning
+  clears on the next probe after the user installs or moves Git.
 On a Microsoft kernel the machine runs the check in the background at startup and every 10
 minutes, and caches the result; callers read the cache and never wait for a probe, except as
 the approval card says.
@@ -343,6 +351,11 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   is still starting.
 - Go-between EOF: client closing stdin before ready exits without starting the tool;
   during the handoff stops the tool and exits.
+- Archive: `archiveCheck` returns `pending` while a wrapped tool on the thread's copy is
+  still shutting down, and nothing is committed or removed until it ends. An unwrapped lead
+  stopping last on a copy waits for a wrapped sibling's tool. An HTTP entry carrying a stray
+  `.exe` `command` is not counted as a Windows tool. Unity button with interop off shows the
+  interop message.
 - Copy marked used after launch even when readying finished before it, so stopping a lead
   runs the final reconcile; archive waits on the shutdown gate; a Git-missing probe clears
   after Git appears without a service restart; the `loaded` list for a wrapped Codex entry
@@ -574,9 +587,27 @@ cleanup of copies or git data.
 
 ### Round 10 — 2026-11-21
 
-**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+**Lanes:** gpt (intent); gpt (mechanics); cross-family: no (claude unavailable at start).
 
 **Changed since Round 9:** Background exception for the Unity button; adapters return `loaded` with original classification; item 3 archive gate and Marking the copy used; item 4 Git lookup not memoized on failure; Validation additions; D20 wording; C2; IDEA.md What good looks like (no restart).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | blocking | Archive gate placed in `archiveFinish`, after the snapshot | upheld | item 3 gate in `archiveCheck` returning `pending` |
+| intent | minor | "Final stop reconcile always runs" reads as changing worker cleanup | upheld | item 3 scoped to copies that get one |
+| intent | minor | IDEA promises no change off WSL despite the Unity button | upheld | IDEA Constraints |
+| intent | minor | IDEA disk criterion implies bridge-only git bytes | upheld | IDEA What good looks like |
+| mechanics | blocking | Archive gate placement (same as intent) | upheld | as above |
+| mechanics | blocking | Unwrapped session stopping last skips the gate | upheld | item 3 gate for any session on a copy with a wrapped session |
+| mechanics | blocking | `loaded.windows` ignores transport | upheld | stdio only |
+| mechanics | major | Unity button on a WSL kernel with interop off | upheld | item 1 interop-off message |
+| mechanics | minor | Git path cached after success goes stale | upheld | item 4 fresh lookup each probe |
+
+### Round 11 — 2026-11-21
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round 10:** item 3 shutdown gate for any session on a copy with a wrapped session, archive gate moved to `archiveCheck`, "Marking the copy used" scoped; `loaded.windows` stdio only; item 1 interop-off button message; item 4 fresh Git lookup per probe; Validation; IDEA.md disk criterion and non-WSL constraint.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
