@@ -36,7 +36,8 @@ never built (MAP.md).
 | D5 | Codex never re-lists tools after start (W1), so the go-between remembers each tool's last tool list and the stand-in advertises it at once; a call before the copy is ready waits for it (bounded) and then goes to the real tool. With nothing remembered yet the stand-in lists no tools; `list_changed` is still sent for CLIs that use it | User's choice; only option that makes Codex work in nearly every session without slowing its start | user |
 | D6 | `replaceEntries[name] = null` withholds an entry entirely (Claude: disabled, not in `--mcp-config`) | Asked by the localhost thread's lead for its withheld tools; costs nothing here | defaulted |
 | D7 | Keep the 45 s pre-launch wait for sessions whose Windows tools are all wrapped | It still supplies the copy path and prompt lines, and IDEA asks only for today's speed | review-round-1 |
-| D8 | Wrapped tools keep interop's working directory (`wslpath -w` of the Linux cwd) rather than switching to the copy | Same behaviour as an unwrapped tool today; tools find the copy through `WHEELCHAIR_WINDOWS_PROJECT` | review-round-2 |
+| D8 | Wrapped tools keep interop's working directory rather than switching to the copy | Same behaviour as an unwrapped tool today; tools find the copy through `WHEELCHAIR_WINDOWS_PROJECT` | review-round-2 |
+| D9 | Making a normal stop (and the sweep and archive) wait for a session's Windows tools to finish writing moves to the two-part follow-up (Deferred 3). The go-between starts the real tool directly through interop, as the CLI does today; no Windows launcher or Job Object. IDEA.md's "Stopping the agent normally brings back everything its Windows tools wrote" moves to Not doing | User's choice after three review rounds, most findings being in that part; agents do not have this wait today | idea-change |
 
 ## Spec
 
@@ -53,18 +54,22 @@ is launched through the go-between `machine/lib/win-tool-proxy.js`, except an en
 args include `mcp-for-unity` (D3), which stays as today. HTTP/SSE entries are never wrapped.
 
 The wrapped entry's command is `process.execPath` and its args are
-`[<abs path to win-tool-proxy.js>, '--ready-file', <ready file>, '--tools-dir', <tools dir>,
+`[<abs path to win-tool-proxy.js>, '--ready-file', <ready file>,
 '--list-cache', <cache file>, '--name', <entry name>, '--', <original command>,
 ...<original args>]`. The entry's `env` and `cwd` (if any) are kept unchanged.
 
-**What environment reaches the real Windows tool.** Exactly what WSL interop would pass to the
-unwrapped tool today, and never `WHEELCHAIR_SESSION_TOKEN`: the variables named in the
-go-between's `WSLENV` (with their WSLENV flags), plus `WHEELCHAIR_WINDOWS_PROJECT`. The
-go-between sets `WHEELCHAIR_WINDOWS_PROJECT` from the ready file's `copy` field (item 3) and
-adds it to `WSLENV` if missing, so the tool gets the copy path even when the launch-time
-environment lookup timed out (`machine/service.js:893-899`). The launcher is spawned with
-`interopEnv` (`machine/lib/win-env.js:31`), which removes the token, and its explicit
-environment list is filtered the same way `win-apps.js:254` does.
+**How the real tool is started (D9).** The go-between spawns the original command and args
+directly, exactly as the CLI would have (WSL interop runs the `.exe`), in the go-between's own
+working directory, with stdin/stdout piped to the go-between and stderr passed through. No
+Windows-side launcher or Job Object. Its environment is the go-between's own, minus
+`WHEELCHAIR_SESSION_TOKEN`, with `WHEELCHAIR_WINDOWS_PROJECT` set from the ready file's `copy`
+field (item 3) and added to `WSLENV` if missing, so the tool gets the copy path even when the
+launch-time environment lookup timed out (`machine/service.js:893-899`). As today, interop
+passes Windows only the variables `WSLENV` names.
+
+**Stop the tool** means: close its stdin, wait up to 2 s for it to exit, then send SIGTERM to
+the spawned interop process. What happens to its Windows descendants is the same as today for
+an unwrapped tool whose CLI ends (Deferred 3).
 
 "Loaded" means present in the adapter's final configuration for this session (after its skip
 rules and Codex's override size budget). Each adapter's build returns
@@ -99,8 +104,7 @@ tools from WSL" thread merged first), reuse it and only add entries; otherwise a
   `machine/service.js:477`, same live-tmux and `startingNames` rules) also removes
   `<stateDir>/settings/<name>.mcp.json` and `<stateDir>/win-ready/<name>` for sessions not
   live and not starting and whose file is older than 60 s (the existing sweep's grace,
-`machine/service.js:528`; the localhost thread's contract uses the same rule), and
-`<stateDir>/win-tools/<name>/` once none of its pids is alive and it is older than 60 s.
+  `machine/service.js:528`; the localhost thread's contract uses the same rule).
 - Pi and Kimi: unchanged.
 
 ### 3. Ready file
@@ -121,7 +125,7 @@ wrapped entry:
   session throws before the task exists** (for example resolving the copy context,
   `machine/lib/win.js:153-156`, whose errors today are only logged); a later successful sync
   replaces it with `ready`.
-- Removed when the session stops (stop path, after the wait in item 6).
+- Removed when the session stops (stop path).
 - **Failed or cancelled start:** every path where `startIn` gives up after the ready file or
   the Claude `--mcp-config` file was written (`die`, cancelled start, tmux failure) removes
   both. Writes are tied to the start attempt: `WinBridge` records a per-attempt token when it
@@ -193,71 +197,16 @@ the next session. The service computes the path; the go-between only reads and w
        already has its `initialize` result); their requests are still forwarded.
      - If the real tool fails to start, exits, or its `initialize` fails or times out: answer
        every held or queued request with JSON-RPC error `-32000` carrying the reason, write it
-       to stderr, **stop the tool (item 5) and remove its tools-dir entry**, then exit 1.
+       to stderr, stop the tool (item 1), then exit 1.
 4. While not ready, a ready file that says `failed` changes the sentence for later answers;
    a later `ready` still starts the tool (step 3).
 5. Once the real tool runs, if it exits on its own the go-between exits with its exit code.
    If the client closes stdin, **or the go-between receives SIGHUP, SIGTERM or SIGINT** (a
    normal stop kills tmux, which signals it): before the ready point, exit 0 at once without
-   starting the tool; during the handoff or afterwards, stop the tool (item 5), remove its
-   tools-dir entry, then exit. The signal handlers stay installed until then, so a second
+   starting the tool; during the handoff or afterwards, stop the tool (item 1), then exit. The signal handlers stay installed until then, so a second
    signal does not cut the stop short.
 
-### 5. Process tree
-
-The go-between starts the real tool so that ending it ends every Windows process it started:
-through a PowerShell launcher (spawned with `winEnv.spawnPs` from `machine/lib/win-env.js`,
-like `win-apps.js`) that creates a **named** Job Object with kill-on-close, assigns itself, and
-starts the tool as `machine/lib/win-apps.js:59-84` does, with these differences:
-
-- **Job name.** The go-between picks `id = "tool-" + <random uuid>`; the job is named
-  `wheelchair-<id>`, the same `wheelchair-` prefix `terminateScript(id)` (`win-apps.js:94`)
-  adds, so the go-between passes `id`, never the full name.
-- **Program and directory in Windows form.** The program is the original command translated
-  with `winEnv.translate(command, true)` (`win-env.js:95`; every wrapped command is under the
-  mount, item 1). The args are passed unchanged, as WSL interop does today. The working
-  directory is the go-between's own working directory (the one the CLI gave the launched
-  process; the go-between never applies the entry's `cwd` field itself) converted with
-  `wslpath -w`, which is what interop gives the unwrapped
-  tool today (a `\\wsl.localhost\...` path for a Linux directory).
-- **Stdio.** The tool's stdin, stdout and stderr are the launcher's own (not redirected to a
-  log). The launcher writes nothing to stdout. Right after the job exists and the tool has
-  started, it writes the line `wc-tool-started` to stderr; the go-between removes that line
-  from the stderr it passes through and treats it as the start acknowledgment.
-- **Exit.** The launcher exits only when the tool and all its descendants have ended (job
-  active-process count, as the app wrapper does), with the **tool's** exit code as its own
-  process exit code; it reports nothing on stdout. The go-between treats the launcher's exit
-  as the real tool's exit (Spec 4 step 5) and exits with that code.
-
-**Stop the tool** (one total budget of 12 s from the moment stopping begins):
-1. Close the tool's stdin.
-2. If the start acknowledgment has not arrived, wait for it or for the launcher to exit. If
-   the launcher exits first, stopping is done.
-3. Run `terminateScript(id)` through `winEnv.ps` with `timeoutMs` set to what is left of the
-   budget minus 2 s; this ends every process in the job.
-4. Wait for the launcher to exit and its pipes to close, within what is left of the budget.
-   If the budget runs out at any step, write that to stderr and exit anyway.
-
-### 6. Normal stop waits for the session's own tools
-
-While its real tool runs, a go-between keeps a file `<tools dir>/<go-between pid>`, where
-`<tools dir>` is `<stateDir>/win-tools/<session name>/` (created when it starts the real tool,
-removed after the job has closed and the pipes are shut). `WinBridge.onStop` for that session,
-after tmux is killed and before its final stop reconcile, polls until the directory is empty
-or absent (every 250 ms, up to 15 s, which is longer than the go-between's 12 s stop budget; an entry whose pid is not alive is removed). A timeout is
-logged and the reconcile goes ahead. Only the stopping session's own directory is checked
-(other sessions on the same copy: Deferred 2). The directory is removed after the wait.
-
-The wait protects the existing role-based final sync and changes no role rules: a lead or
-sub-lead copy is synced on stop when no other live session shares it (`machine/lib/win.js:226-231`);
-workers sync before reporting done; a verifier's copy is removed by design; shared copies are
-Deferred 2.
-
-`WinBridge.sweep()` does not reconcile a copy while a stop task for a session on that copy is
-in progress (an entry in `stopTasks` whose worktree key matches, as `win.js:264` already finds
-for archive); the next sweep tries again.
-
-### 7. Marking the copy used
+### 5. Marking the copy used
 
 Already built: `WinBridge.afterLaunch` marks the copy used after tmux starts and again when a
 late readying task finishes (`machine/lib/win.js:145-150`). Keep it; it must still run for
@@ -287,28 +236,21 @@ New tests in `machine/test/` must cover:
   call timeout (with the wait made configurable for the test); `failed` sentence; real tool
   `initialize` failure; stdin close before and after ready; cache written only for
   unpaginated lists.
-- Stop: `onStop` waits for a live entry in the session's tools dir, removes dead-pid entries,
-  and times out after 15 s (shortened in the test); `sweep()` skips a copy with a stop task in
-  progress.
-- Go-between: SIGTERM/SIGHUP while the real tool runs stops it (termination script called,
-  tools-dir entry removed before exit); own `tools/list` after handshake fills the cache and is
+- Go-between: SIGTERM/SIGHUP while the real tool runs closes its stdin and then terminates it
+  before exit; own `tools/list` after handshake fills the cache and is
   not passed to the client; a held call past 50 s, including one waiting on the real tool's
   `initialize`, is answered and never forwarded; a cancelled held call is never forwarded.
-- Environment: the launcher's environment has no `WHEELCHAIR_SESSION_TOKEN`; the real tool gets
+- Environment: the real tool's environment has no `WHEELCHAIR_SESSION_TOKEN`; the real tool gets
   `WHEELCHAIR_WINDOWS_PROJECT` from the ready file when the launch env lacked it; Codex keeps
   the `WHEELCHAIR_WINDOWS_PROJECT`/`WSLENV` passthrough for wrapped entries.
 - Failed start: a cancelled or failed start removes the ready file and Claude config file, and a
   late readying result for it writes nothing.
-- Handoff failure stops the launcher (termination script called) before exit 1; the go-between
-  exits with the launcher's exit code; a `prepareLaunch` context error writes `failed`.
-- Launcher: the program is the Windows form of the command and the directory the `wslpath -w`
-  form; the job name passed to `terminateScript` is `tool-<uuid>`; a stop before the start
-  acknowledgment waits for it and then terminates; the stop fits in 12 s with a slow
-  termination script.
+- Handoff failure stops the tool before exit 1; the go-between exits with the tool's exit
+  code; a `prepareLaunch` context error writes `failed`.
 - Shared map: `replaceEntries[name] = null` omits the entry for Codex and Antigravity and only
   disables it for Claude, and leaves it out of `loaded`.
-- Stale files: the sweep removes ready, Claude config and empty tools dirs of dead sessions but
-  not of starting ones.
+- Stale files: the sweep removes ready and Claude config files of dead sessions but not of
+  starting ones.
 
 Live check once built (needs a WSL machine with a Windows stdio MCP server and a fresh copy):
 start a Claude agent and a Codex agent before the copy is ready; Claude's tools appear after
@@ -324,21 +266,22 @@ As IDEA.md. Also the two items in Deferred.
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | 1 | After a machine service restart, keep tracking sessions with Windows tools and re-ready wrapped sessions whose ready file is not `ready` (parent's `win-sessions.json` launch record) | Needs a service restart during a live session; today's restart recovery already reconstructs from live sessions and copies (`machine/lib/win.js:339-358`) | planning | Parent Spec item 3 "Launch record" and "Recovery after a service restart" |
-| 2 | Stop, the periodic sweep and archive wait for every session sharing a copy, including sessions that ended without a normal stop (CLI crash, handoff kill) | Normal stop of the session itself is covered by Spec 6; the rest needs a sibling or crashed session with a tool still writing | planning | Parent Spec item 3 "Stop waits for wrapped tools" (copy-wide gate, sweep, `archiveCheck` pending) |
+| 3 | A normal stop, the sweep and archive wait until a session's Windows tools (and every Windows process they started) have finished writing before the final sync | Today's agents don't have this wait either; it is not needed for tools to appear. Moved here by the user after three review rounds (D9) | review-round-3 | Last full design: Spec 5 "Process tree" and Spec 6 "Normal stop waits" of this plan at commit `9d5a5511` (named Job Object launcher, `wc-tool-started` acknowledgment, `terminateScript("tool-<uuid>")`, 12 s stop budget, `win-tools/<session>/<pid>` files, 15 s `onStop` wait, sweep skips copies with a stop in progress) and the Round 1-3 findings against them |
+| 2 | Stop, the periodic sweep and archive wait for every session sharing a copy, including sessions that ended without a normal stop (CLI crash, handoff kill) | Needs a sibling or crashed session; with Deferred 3, the rest needs a sibling or crashed session with a tool still writing | planning | Parent Spec item 3 "Stop waits for wrapped tools" (copy-wide gate, sweep, `archiveCheck` pending) |
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| A start cancelled in the sub-second window after tmux spawned, where the CLI already started a wrapped tool that is writing, ends without waiting for that tool (the kill-and-throw path never calls `onStop`) | Rare path: needs a cancel inside that window plus a tool already writing to the copy | review-round-2 |
-| A go-between that crashes while its Windows tool keeps writing lets the stop wait pass early | Rare path: needs the go-between itself to crash mid-session (parent review-round-8) | adopted |
+| (Moved with Deferred 3, D9.) A start cancelled in the sub-second window after tmux spawned, where the CLI already started a wrapped tool that is writing, ends without waiting for that tool (the kill-and-throw path never calls `onStop`) | Rare path: needs a cancel inside that window plus a tool already writing to the copy | review-round-2 |
+| (Moved with Deferred 3, D9.) A go-between that crashes while its Windows tool keeps writing lets the stop wait pass early | Rare path: needs the go-between itself to crash mid-session (parent review-round-8) | adopted |
 
 ## Check Once Built
 
 | # | What to check | Round |
 |---|---------------|-------|
 | C1 | Antigravity re-lists a stdio server's tools on `notifications/tools/list_changed` (not installed on the planning machine). If it does not, it behaves like Codex: remembered list only | lead (W1) |
-| C3 | With the copy ready at start, a wrapped tool answers the CLI's `initialize` well within Codex's ~10 s start deadline despite the PowerShell launcher's start-up and `Add-Type` compile. If it comes close, fall back to always answering `initialize` from the stand-in (remembered list) and handing off through step 3b | review-round-2 |
+| C3 | With the copy ready at start, a wrapped tool answers the CLI's `initialize` well within Codex's ~10 s start deadline (the go-between adds a Node start-up; D9 removed the PowerShell launcher). If it comes close, fall back to always answering `initialize` from the stand-in (remembered list) and handing off through step 3b | review-round-2 |
 | C2 | Codex's default MCP tool-call timeout is longer than the 50 s pre-ready call wait (Spec 4), so a waiting call ends with the go-between's answer, not a Codex timeout | lead (D5) |
 
 ## Review Rounds
@@ -404,6 +347,19 @@ C3.
 | mechanics | minor | Stale-file sweep lacks the 60 s grace | upheld | Spec 2: 60 s grace, same as the localhost contract |
 | intent | minor | Stale-file rule differs from the localhost contract | upheld | Same fix as previous row |
 | intent | minor | Stop wait does not itself deliver sync for every role | upheld | Spec 6: wait protects the existing role-based sync |
+
+### Round 4 — 2026-11-21
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 3:** D9 (user): the stop wait, Windows launcher and Job Object moved to
+Deferred 3; Spec 1 now says how the go-between starts and stops the real tool directly through
+interop; old Spec 5 and 6 removed (old 7 is now 5); Spec 3 and 4 references updated; stale-file
+sweep no longer covers tools dirs; Validation trimmed; Accepted Risks about the stop wait marked
+moved; C3 reworded; IDEA.md "What good looks like" and "Not doing" updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 

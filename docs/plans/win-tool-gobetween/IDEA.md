@@ -28,7 +28,6 @@ own once the copy is ready, with no action from the agent and no delay to the ag
 - An agent started before its Windows copy is ready sees its Windows project tools appear
   once the copy is ready, and can use them, without restarting or asking.
 - The agent starts as fast as it does today.
-- Stopping the agent normally brings back everything its Windows tools wrote.
 - Codex, Claude and Antigravity agents all get this.
 
 ## Not doing
@@ -37,6 +36,8 @@ own once the copy is ready, with no action from the agent and no delay to the ag
 - Windows tools reached over `localhost` (HTTP or SSE): that is the thread "Windows localhost
   tools from WSL".
 - Tools that are not Windows programs.
+- Making a normal stop wait until the agent's Windows tools have finished writing (today's
+  agents don't wait either): saved for the two-part follow-up (PLAN.md D9).
 
 ## Constraints
 
