@@ -1,0 +1,89 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+
+function linuxPath(value) {
+  const match = value.match(/^([a-z]):[\\/](.*)$/i);
+  if (!match) throw new Error(`not a Windows path: ${value}`);
+  return path.join(process.env.WC_FAKE_MOUNT, match[1].toLowerCase(), ...match[2].split(/[\\/]/));
+}
+
+const index = process.argv.indexOf('-EncodedCommand');
+const script = Buffer.from(process.argv[index + 1], 'base64').toString('utf16le');
+const match = script.match(/^# wc:([a-z]+) ([A-Za-z0-9+/=]+)\r?\n/);
+if (!match) {
+  process.stderr.write('missing operation header\n');
+  process.exit(1);
+}
+const args = JSON.parse(Buffer.from(match[2], 'base64').toString());
+switch (match[1]) {
+  case 'appwrap': {
+    const settings = JSON.parse(args.argv[0] || '{}');
+    const dir = process.env.WC_FAKE_APP_DIR;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, args.id + '.json'), JSON.stringify({ pid: process.pid, args, settings }));
+    fs.mkdirSync(path.dirname(linuxPath(args.log)), { recursive: true });
+    fs.writeFileSync(linuxPath(args.log), settings.output || 'x'.repeat(settings.outputBytes || 0));
+    if (settings.echoEnv) fs.appendFileSync(linuxPath(args.log), JSON.stringify({ wrapper: process.env.WHEELCHAIR_SESSION_TOKEN || null, program: Object.fromEntries(args.env).WHEELCHAIR_SESSION_TOKEN || null }));
+    console.log(JSON.stringify({ started: { pid: process.pid + 10000, created: '133000000000000001', wrapper_pid: process.pid, wrapper_created: '133000000000000002' } }));
+    if (settings.launcherDuration != null) setTimeout(() => fs.writeFileSync(path.join(dir, args.id + '.launcher-exited'), ''), settings.launcherDuration);
+    setTimeout(() => { if (!settings.noDone) console.log(JSON.stringify({ done: { exit_code: settings.exitCode || 0 } })); }, settings.duration ?? 50);
+    break;
+  }
+  case 'appcleanup': {
+    const ledger = path.join(process.env.WC_FAKE_APP_DIR, 'cleanup.jsonl');
+    const registry = JSON.parse(fs.readFileSync(path.join(process.env.WC_FAKE_APP_DIR, 'processes.json'), 'utf8'));
+    for (const [pid, created] of [[args.wrapper_pid, args.wrapper_created], [args.pid, args.created]]) {
+      if (!pid || !created) continue;
+      const actual = registry[String(pid)];
+      const matched = actual != null && String(actual) === String(created);
+      fs.appendFileSync(ledger, JSON.stringify({ pid, matched }) + '\n');
+      if (matched) { try { process.kill(pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; } }
+    }
+    break;
+  }
+  case 'appwindows': {
+    const windows = [];
+    for (const app of args.apps) {
+      try {
+        const record = JSON.parse(fs.readFileSync(path.join(process.env.WC_FAKE_APP_DIR, app.id + '.json')));
+        for (const window of record.settings.windows || []) windows.push({ ...window, pid: record.pid + 10000, app_id: app.id });
+      } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    }
+    console.log(JSON.stringify(windows));
+    break;
+  }
+  case 'appshot':
+    fs.writeFileSync(linuxPath(args.destination), 'fake png');
+    break;
+  case 'appterminate': {
+    const file = path.join(process.env.WC_FAKE_APP_DIR, args.id + '.json');
+    try { const record = JSON.parse(fs.readFileSync(file)); process.kill(record.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ENOENT' && e.code !== 'ESRCH') throw e; }
+    break;
+  }
+  case 'localappdata':
+    console.log(process.env.WC_FAKE_LOCALAPPDATA);
+    break;
+  case 'gitpath':
+    console.log(process.env.WC_FAKE_GIT_PATH || '');
+    break;
+  case 'seed':
+    if (!script.trimEnd().endsWith('exit 0') || (script.match(/\.TrimEnd\('\\'\)/g) || []).length !== 4) {
+      process.stderr.write('seed script lacks explicit success or trimmed folder arguments\n');
+      process.exit(1);
+    }
+    if (Number(process.env.WC_FAKE_ROBOCOPY_CODE || 0) >= 8) process.exit(Number(process.env.WC_FAKE_ROBOCOPY_CODE));
+    if (process.env.WC_FAKE_SEED_LENGTH) fs.writeFileSync(process.env.WC_FAKE_SEED_LENGTH, String(process.argv[index + 1].length));
+    for (const relative of fs.readFileSync(linuxPath(args.list), 'utf8').split(/\r?\n/).filter(Boolean)) {
+      const source = path.join(linuxPath(args.source), ...relative.split('\\'));
+      const destination = path.join(linuxPath(args.destination), ...relative.split('\\'));
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.cpSync(source, destination, { recursive: true });
+    }
+    break;
+  default:
+    process.stderr.write(`unknown operation ${match[1]}\n`);
+    process.exit(1);
+}

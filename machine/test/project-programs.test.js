@@ -71,3 +71,18 @@ test('dot-dot after a symlink is resolved by the filesystem', () => {
     { names: ['missing'], text: "missing: its program can't be found" },
   ]);
 });
+
+test('Windows programs respect mount, file type and WSL', () => {
+  const { isWindowsProgram } = require('../lib/project-programs');
+  const { worktree, file } = fixture();
+  const exe = file('c/tool.EXE', 0o644);
+  const cmd = file('c/tool.cmd', 0o644);
+  assert.equal(isWindowsProgram(exe, worktree), true);
+  assert.equal(isWindowsProgram('/mnt/c/tool.exe', worktree), true);
+  for (const value of [cmd, 'tool.exe', '/mnt/cc/tool.exe', '/mnt/c/tool.bat', '/mnt/c/tool.ps1']) assert.equal(isWindowsProgram(value, worktree), false);
+  const check = (command, wsl) => missingPrograms({ worktree, mcp: { servers: { tool: { command } } }, path: '', wsl, mount: worktree });
+  assert.deepEqual(check(exe, true), []);
+  assert.equal(check(`${worktree}/c/missing.exe`, true).length, 1);
+  assert.deepEqual(check(`${worktree}/c/missing.exe`, false), []);
+  assert.equal(check(cmd, true).length, 1);
+});

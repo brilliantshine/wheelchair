@@ -11,7 +11,7 @@ const { appError } = require('./state.js');
 const { outOfDate } = require('./ready.js');
 const settingsStore = require('./settings.js');
 const usage = require('./usage.js');
-const { choose, slotFor } = require('./balancer.js');
+const { choose, slotFor, reviewFamilies } = require('./balancer.js');
 const { PROVIDERS, cliOf, providerOf } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
@@ -431,7 +431,24 @@ async function deliverReport(hub, thread, target, payload) {
   if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
   const chat = require('./chat.js');
   let text = target.cli === 'pi' ? '' : String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
-  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target), payload.turn_id, payload.entry_id);
+  if (!text) {
+    const now = hub.reportNow || Date.now;
+    const sleep = hub.reportSleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    const deadline = now() + 4000;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) {
+        if (deadline - now() < 750) break;
+        await sleep(500);
+      }
+      const remaining = deadline - now();
+      if (remaining <= 0) break;
+      try {
+        const raw = await chat.sessionTranscript(hub, thread, target, { strict: true, timeout: Math.min(attempt ? 1000 : 3000, remaining) });
+        text = chat.lastAssistantText(target.cli, raw, payload.turn_id, payload.entry_id);
+        if (!(target.cli === 'pi' && payload.entry_id && !chat.hasPiEntry(raw, payload.entry_id))) break;
+      } catch { /* retry transient read failures within the recovery budget */ }
+    }
+  }
   if (!text) return;
   const commit = text.match(/^COMMIT:\s*([0-9a-f]{7,40})/m)?.[1];
   addCard(
@@ -619,7 +636,7 @@ async function event(hub, payload) {
     target.needs_open = true;
     target.permission_open = permission;
     const title = type === 'stuck' ? 'Session stuck at startup' : 'Permission needed';
-    const body = `${target.name} needs attention before messages can continue.`;
+    const body = `${target.name} needs attention before messages can continue.${type === 'stuck' ? (payload.note || '') : ''}`;
     target.needs_card = addCard(
       thread,
       { kind: 'needs', title, body },
@@ -659,7 +676,7 @@ async function sessionRequest(hub, payload) {
     const problems = projectToolProblems(thread.project_tools && thread.project_tools.state).map((line) => line.text);
     const leadEntry = [...thread.sessions].reverse().find((item) => item.role === 'lead');
     const listed = thread.sessions.map((item) => (item === leadEntry ? { ...publicSession(item), project_tools: { problems } } : publicSession(item)));
-    return { sessions: listed, review_families: (await settingsStore.load(hub)).review_families };
+    return { sessions: listed, review_families: await reviewFamilies(hub, thread) };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
   if (payload.action === 'start') require('./handoff.js').refuseFrozen(hub, thread);

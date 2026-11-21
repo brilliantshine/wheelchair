@@ -43,13 +43,7 @@ function parseUsage(raw, now = Date.now()) {
   return { five_hour, week, ...([five_hour, week].some(w => w && w.used >= 100) ? { reached: true } : {}) };
 }
 const DISALLOWED_TOOLS = ['Artifact', 'Workflow', 'ScheduleWakeup', 'SendFeedback', 'ShareOnboardingGuide', 'ReportFindings', 'ListAgents', 'ArtifactComments', 'ArtifactData', 'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger', 'PushNotification', 'PublishPlugin', 'DesignSync', 'EnterWorktree', 'ExitWorktree', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'EndConversation'];
-// Typical first-call size measured 2026-11-17 (Claude Code 2.1.326-327,
-// claude-opus-5-5: lead 39.6k-40.7k, reviewer 21.4k-22.8k); raise a value
-// when that role's starting text grows.
-const STARTUP_TYPICAL = { lead: 41000, reviewer: 23000 };
-const STARTUP_MARGIN = 5000;
 module.exports = {
-  STARTUP_TYPICAL, STARTUP_MARGIN,
   provider: 'claude', loginEnv, parseUsage,
   usageProbe(dir, options = {}) { return run('claude', ['-p', '/usage', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', '', '--settings', JSON.stringify({ env: { ANTHROPIC_BASE_URL: closedPort } })], { ...options, env: { ...process.env, ...loginEnv(dir), ANTHROPIC_BASE_URL: closedPort }, parse: parseUsage }); },
   asideArgv(input, context) { return ['claude', '-p', '--output-format', 'json', '--model', input.model, ...(input.effort ? ['--effort', input.effort] : []), ...(input.access === 'full' ? ['--permission-mode', 'bypassPermissions'] : ['--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob']), '--strict-mcp-config', '--system-prompt-snapshot', 'off', '--append-system-prompt', context.prompt, '--resume', input.from, ...(input.mode === 'fork' ? ['--fork-session', '--session-id', input.new_id] : [])]; },
@@ -71,7 +65,7 @@ module.exports = {
       if (rejected.length) settings.disabledMcpjsonServers = rejected;
       if (context.tools && Object.keys(context.mcp.servers).length) settings.enableAllProjectMcpServers = true;
     }
-    return { settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', session.permission_mode === 'bypass' ? 'bypassPermissions' : 'auto', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt-file', context.promptPath, '--disallowedTools', DISALLOWED_TOOLS.join(',')] };
+    return { loaded: context.tools && context.mcp ? c.loadedTools(Object.keys(context.mcp.servers), context.mcp, context.mount) : [], settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', session.permission_mode === 'bypass' ? 'bypassPermissions' : 'auto', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt-file', context.promptPath, '--disallowedTools', DISALLOWED_TOOLS.join(',')] };
   },
   firstMessage(input) { return input.brief || input.first_message || ''; },
   readyText(session, pane) { return !pane.includes('Choose the text style that looks best with your terminal') && !pane.includes('Press Enter to continue') && !pane.includes('Yes, I trust this folder') && !pane.includes('No, exit') && !pane.includes('Yes, I accept') && pane.includes(session.permission_mode === 'bypass' ? 'bypass permissions on' : 'auto mode on') && /(^|\n).*❯\s/m.test(pane); },

@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { TryService, wayPaths } = require('../lib/try');
@@ -209,7 +211,7 @@ test('Status for the wheelchair clone returns refused', async () => {
 test('POST /v1/try requires the hub secret and validates inputs', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const http = require('node:http'); const { MachineService } = require('../service');
   const f = await tryFixture(); const secret = path.join(f.root, 'secret'); await fs.writeFile(secret, 'correct-secret');
-  const machine = new MachineService({ stateDir: path.join(f.root, 'state') }); machine.config.secret_file = secret;
+  const machine = new MachineService({ win: noWsl, stateDir: path.join(f.root, 'state') }); machine.config.secret_file = secret;
   const server = http.createServer((req, res) => machine.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const call = async (body, headers = {}) => fetch(`http://127.0.0.1:${server.address().port}/v1/try`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -441,7 +443,7 @@ test('real git am in progress is refused', async () => {
 test('a long switch does not delay the same project agent worktree queue', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path'); const { MachineService } = require('../service'); const f = await tryFixture();
   const marker = path.join(f.root, 'hook-started'); await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), `#!/bin/sh\ntouch '${marker}'\nsleep 2\n`, { mode: 0o755 });
-  const machine = new MachineService({ stateDir: path.join(f.root, 'machine') }); machine.tryService = f.instance; await machine.tryService.handle(f.request);
+  const machine = new MachineService({ win: noWsl, stateDir: path.join(f.root, 'machine') }); machine.tryService = f.instance; await machine.tryService.handle(f.request);
   for (let i = 0; i < 200 && !require('node:fs').existsSync(marker); i++) await new Promise(resolve => setTimeout(resolve, 10));
   await fs.access(marker); let ran = false; await Promise.race([machine.inRepoQueue(f.repo, async () => { ran = true; }), new Promise((_, reject) => setTimeout(() => reject(new Error('queue delayed')), 500))]);
   assert.equal(ran, true); assert.equal((await f.done()).last.outcome, 'success');

@@ -1,0 +1,77 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { makeTempSync } = require('../../test-support/run-dir');
+const { detectWsl, interopEnv, createWinEnv, worktreeKey } = require('../lib/win-env');
+test('detects WSL and its mount root', () => {
+  const root = makeTempSync('win-env-'); const procRoot = path.join(root, 'proc'), etcRoot = path.join(root, 'etc');
+  fs.mkdirSync(path.join(procRoot,'sys/kernel'),{recursive:true}); fs.mkdirSync(path.join(procRoot,'sys/fs/binfmt_misc'),{recursive:true}); fs.mkdirSync(etcRoot);
+  fs.writeFileSync(path.join(procRoot,'sys/kernel/osrelease'),'5.15-Microsoft');
+  assert.equal(detectWsl({procRoot,etcRoot}).wsl,false);
+  fs.writeFileSync(path.join(procRoot,'sys/fs/binfmt_misc/WSLInterop-late'),'enabled\n'); fs.writeFileSync(path.join(etcRoot,'wsl.conf'),'[automount]\nroot = /drives/\n');
+  assert.deepEqual(detectWsl({procRoot,etcRoot}),{wsl:true,kernel:true,interop:true,mount:'/drives'});
+});
+test('repairs interop without leaking token or mutating the input', () => {
+  const root = makeTempSync('win-env-'); fs.mkdirSync(path.join(root,'WSL'));
+  const a = path.join(root,'WSL','1_interop'), b = path.join(root,'WSL','2_interop'); fs.writeFileSync(a,''); fs.writeFileSync(b,''); fs.utimesSync(a,1,1); fs.utimesSync(b,2,2);
+  const original = { WSL_INTEROP:'/missing', WHEELCHAIR_SESSION_TOKEN:'secret' };
+  assert.deepEqual(interopEnv(original,{runRoot:root}),{WSL_INTEROP:b}); assert.equal(original.WHEELCHAIR_SESSION_TOKEN,'secret');
+});
+test('PowerShell startup failure includes interop guidance', async () => {
+  const root = makeTempSync('win-env-'); const env = createWinEnv({mount:root,env:{}});
+  await assert.rejects(env.ps('# wc:test e30=\n'), e => e.status === 422 && /WSL_INTEROP/.test(e.message) && /wsl --shutdown/.test(e.message));
+  assert.match(worktreeKey('/x'),/^[a-f0-9]{12}$/);
+});
+test('gitWin translates a Windows path and runs real git in the copy', async () => {
+  const root = makeTempSync('win-env-git-');
+  const mount = path.join(root, 'mnt');
+  const powershell = path.join(mount, 'c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe');
+  const git = path.join(mount, 'c/tools/git.exe');
+  fs.mkdirSync(path.dirname(powershell), { recursive: true });
+  fs.mkdirSync(path.dirname(git), { recursive: true });
+  fs.copyFileSync(path.join(__dirname, 'fixtures/win/powershell.exe'), powershell);
+  fs.copyFileSync(path.join(__dirname, 'fixtures/win/git.exe'), git);
+  const source = path.join(mount, 'c/source');
+  const copy = path.join(mount, 'c/copy');
+  fs.mkdirSync(source);
+  fs.mkdirSync(copy);
+  const env = createWinEnv({ mount, env: { ...process.env, WC_FAKE_MOUNT: mount, WC_FAKE_GIT_PATH: 'C:\\tools\\git.exe' } });
+  assert.equal((await env.git(['init', '--bare'], { cwd: source })).code, 0);
+  assert.equal((await env.gitWin(['init'], { cwd: copy })).code, 0);
+  const fetched = await env.gitWin(['ls-remote', 'C:\\source'], { cwd: copy });
+  assert.equal(fetched.code, 0, fetched.stderr);
+});
+test('disabled and missing registrations are not interop', () => {
+  const root = makeTempSync('win-detect-'), procRoot = path.join(root, 'proc'), etcRoot = path.join(root, 'etc');
+  fs.mkdirSync(path.join(procRoot, 'sys/kernel'), { recursive: true });
+  fs.mkdirSync(path.join(procRoot, 'sys/fs/binfmt_misc'), { recursive: true });
+  fs.writeFileSync(path.join(procRoot, 'sys/kernel/osrelease'), 'Microsoft');
+  const file = path.join(procRoot, 'sys/fs/binfmt_misc/WSLInterop');
+  for (const content of [null, '', 'disabled\n', 'enabled\n']) {
+    if (content !== null) fs.writeFileSync(file, content);
+    const detected = detectWsl({ procRoot, etcRoot });
+    assert.equal(detected.kernel, true);
+    assert.equal(detected.interop, content === 'enabled\n');
+    assert.equal(detected.wsl, content === 'enabled\n');
+  }
+});
+test('failed lookups recover and probes refresh successful paths', async () => {
+  const root = makeTempSync('win-recover-'), mount = path.join(root, 'mnt');
+  const powershell = path.join(mount, 'c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe');
+  const git = path.join(mount, 'c/tools/git.exe');
+  fs.mkdirSync(path.dirname(powershell), { recursive: true }); fs.mkdirSync(path.dirname(git), { recursive: true });
+  fs.copyFileSync(path.join(__dirname, 'fixtures/win/powershell.exe'), powershell);
+  fs.copyFileSync(path.join(__dirname, 'fixtures/win/git.exe'), git);
+  const vars = { ...process.env, WC_FAKE_MOUNT: mount, WC_FAKE_LOCALAPPDATA: '', WC_FAKE_GIT_PATH: '' };
+  const env = createWinEnv({ mount, env: vars });
+  await assert.rejects(env.localAppData());
+  assert.equal((await env.probe()).ok, false);
+  vars.WC_FAKE_LOCALAPPDATA = 'C:\\Users\\Test';
+  assert.equal(await env.localAppData(), vars.WC_FAKE_LOCALAPPDATA);
+  assert.match((await env.probe()).reason, /git.exe/);
+  vars.WC_FAKE_GIT_PATH = 'C:\\tools\\git.exe';
+  assert.deepEqual(await env.probe(), { ok: true });
+  assert.equal(await env.gitExe(), git);
+});

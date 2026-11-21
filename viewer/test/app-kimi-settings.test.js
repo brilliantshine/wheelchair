@@ -129,3 +129,11 @@ test('Usage: a named Kimi account with no home on a machine below the floor show
   assert.deepEqual(byId['default-kimi'], { a: { state: 'problem', text: floor }, b: 'signed_out' });
   assert.equal(providers.claude.accounts.find((x) => x.id === 'default-claude').machines.a, 'signed_in');
 });
+
+test('OpenRouter Pi warning appears in usage and does not block Ready', async () => {
+  const warning = 'Pi 1.6.0 is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.';
+  const hub = await hubWith({ m: { version: 'v1', pi: row({ logged_in: true, warning }), accounts: [{ id: 'default-openrouter', cli: 'pi', logged_in: true }] } });
+  assert.equal((await ready.check(hub, { machine: 'm', cli: 'pi' })).ok, true);
+  const account = (await usage.summary(hub)).providers.openrouter.accounts.find(a => a.id === 'default-openrouter');
+  assert.deepEqual(account.machines.m, { state: 'signed_in', warning });
+});

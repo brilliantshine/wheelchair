@@ -23,6 +23,7 @@ module.exports = {
   loginDone: pane => pane.includes('Saved API key for OpenRouter'),
   async spend(dir, now = new Date()) {
     const totals = { today: 0, last_7_days: 0, last_30_days: 0 };
+    const seen = new Set();
     const start = days => new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1).getTime();
     const walk = async root => {
       let entries; try { entries = await fs.promises.readdir(root, { withFileTypes: true }); } catch { return; }
@@ -37,6 +38,7 @@ module.exports = {
           const at = Date.parse(row.timestamp), raw = row.message?.usage?.cost?.total;
           const cost = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : 0;
           if (!Number.isFinite(at) || at > now.getTime() || typeof cost !== 'number' || !Number.isFinite(cost)) continue;
+          if (row.id != null) { const key = JSON.stringify([row.id, row.timestamp]); if (seen.has(key)) continue; seen.add(key); }
           if (at >= start(1)) totals.today += cost;
           if (at >= start(7)) totals.last_7_days += cost;
           if (at >= start(30)) totals.last_30_days += cost;
@@ -56,7 +58,10 @@ module.exports = {
     const extension = template.replace('HOOK_PATH', JSON.stringify(path.join(c.root, 'machine/hook.sh'))).replace('SESSION_NAME', JSON.stringify(session.name));
     fs.mkdirSync(path.dirname(extensionPath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(extensionPath, extension, { mode: 0o600 });
-    return { argv: [resolveCli(), '--provider', 'openrouter', '--model', input.model || 'openrouter/auto', '--session-id', session.cli_session_id, '--approve', '-e', extensionPath, '--append-system-prompt', context.promptPath, ...(input.role === 'reviewer' ? ['--tools', 'read,grep,find,ls'] : [])] };
+    return { loaded: [], ...(context.tools && context.mcp?.names.length ? { warnings: [{ names: [...context.mcp.names], text: "project tools aren't supported on Pi yet; this agent runs without them" }] } : {}), argv: [resolveCli(), '--provider', 'openrouter', '--model', input.model || 'openrouter/auto', '--session-id', session.cli_session_id, '--approve', ...(session.effort ? ['--thinking', session.effort] : []), '-e', extensionPath, '--append-system-prompt', context.promptPath, ...(input.role === 'reviewer' ? ['--tools', 'read,grep,find,ls'] : [])] };
+  },
+  asideArgv(i, { prompt }) {
+    return [resolveCli(), '--provider', 'openrouter', '--model', i.model, '--mode', 'json', '-p', ...(i.mode === 'fork' ? ['--fork', i.from, '--session-id', i.new_id] : ['--session', i.from]), '--append-system-prompt', prompt, '--no-extensions', ...(i.effort ? ['--thinking', i.effort] : []), '--tools', i.access === 'full' ? 'read,bash,edit,write,grep,find,ls' : 'read,grep,find,ls', ...(i.access === 'full' ? [] : ['-e', path.join(__dirname, 'pi-guard.js')])];
   },
   firstMessage(input) { return input.brief || input.first_message || ''; },
   readyText(session, pane) {

@@ -66,7 +66,7 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'project-tools' &&
-      ['read', 'save', 'remove-key'].includes(bits[1])) {
+      ['read', 'save', 'remove-key', 'unity-prep'].includes(bits[1])) {
     if (!body || typeof body.path !== 'string') return send(response, 400, { error: 'path is required' });
     const { machine, ...input } = body;
     const name = typeof machine === 'string' && machine ? machine : 'hub';
@@ -221,6 +221,17 @@ async function handleSettings(hub, request, response, url, bits, body) {
     await settings.update(hub, (value) => { value.harnesses[provider] = body.enabled; if (!body.enabled && !harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
     return send(response, 200, await settings.describe(hub));
   }
+  if (bits[1] === 'lessons' && bits.length === 3 && request.method === 'PUT') {
+    const role = bits[2];
+    if (!settings.ROLES.has(role) || !body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !['edits', 'removals'].includes(key)) || !Array.isArray(body.edits) || !Array.isArray(body.removals) || body.edits.some((edit) => !edit || typeof edit !== 'object' || Array.isArray(edit) || Object.keys(edit).some((key) => !['id', 'text'].includes(key)) || typeof edit.id !== 'string' || !settings.validLessonText(edit.text)) || body.removals.some((id) => typeof id !== 'string')) throw appError(400, 'invalid lesson edits');
+    const value = await settings.update(hub, (current) => {
+      const list = current.lessons[role];
+      if (body.edits.some((edit) => !list.some((item) => item.id === edit.id))) throw appError(409, 'an agent removed a lesson you edited; reload to see the current list');
+      for (const edit of body.edits) { const item = list.find((entry) => entry.id === edit.id); item.text = edit.text; item.saved_by = 'user'; item.saved_at = new Date().toISOString(); }
+      current.lessons[role] = list.filter((item) => !body.removals.includes(item.id));
+    });
+    return send(response, 200, { lessons: value.lessons[role] });
+  }
   if (bits[1] === 'accounts') {
     if (bits.length === 2 && request.method === 'POST') {
       let account;
@@ -279,7 +290,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (body.model !== null && (typeof body.model !== 'string' || !(body.provider === 'openrouter' ? /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/ : body.provider === 'kimi' ? /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/ : /^[a-z0-9][a-z0-9._-]{0,63}$/).test(body.model))) throw appError(400, 'model is invalid');
     if (!PROVIDERS[body.provider].effort && body.effort !== undefined) throw appError(400, `${PROVIDERS[body.provider].label} has no effort setting`);
     if (body.provider === 'gpt' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh'].includes(body.effort)) throw appError(400, 'effort for GPT must be one of low, medium, high, xhigh');
-    if (['claude', 'gemini'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
+    if (['claude', 'gemini', 'openrouter'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
@@ -463,12 +474,13 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const listed = await hub.allThreads();
     const all = await Promise.all(listed.map((thread) => hub.withThread(thread.id, async () => {
       let current = await hub.readSnapshot(thread.id);
-      if (await discoverSlug(current)) {
+      if (await discoverSlug(current, hub)) {
         current = await hub.thread(thread.id);
         await findSlug(hub, current);
       }
       return { ...thread, ...current };
     })));
+    for (const thread of all) require('./remote-plan.js').refresh(hub, thread);
     // `?view=list` is what the pages poll: each thread's summary without its history
     // (cards, sent messages, briefs), which is most of the bytes and none of the list.
     const lean = url.searchParams.get('view') === 'list';
@@ -582,19 +594,43 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (request.method === 'GET' && bits[2] === 'diagram-html' && bits.length === 3) {
     const html = await threadsModule.archivedHtml(hub, id, url.searchParams.get('file'));
-    response.writeHead(200, HTML_HEADERS);
-    response.end(html);
+    const download = url.searchParams.get('download') === '1';
+    response.writeHead(200, download ? { ...HTML_HEADERS, 'content-disposition': `attachment; filename="${url.searchParams.get('file')}"` } : HTML_HEADERS);
+    response.end(download ? require('./html-download.js').htmlDownload(html) : html);
     return;
   }
   if (request.method === 'GET' && bits[2] === 'chat') {
     return send(response, 200, await hub.chat(id));
+  }
+  if (request.method === 'GET' && bits[2] === 'docs.zip' && bits.length === 3) {
+    const thread = await hub.thread(id), documents = require('./documents.js'), remote = require('./remote-plan.js');
+    if (!documents.validSlug(thread.slug)) throw appError(404, 'document not found');
+    const isRemote = await remote.isRemote(hub, thread);
+    let files;
+    if (isRemote) {
+      try { files = (await remote.call(hub, thread, 'list', { slug: thread.slug })).files; if (!Array.isArray(files)) throw new Error('invalid list'); }
+      catch { throw appError(502, `Couldn't reach ${thread.machine}`); }
+      files = files.filter((file) => documents.FILES.includes(file));
+    } else files = await documents.list(thread, hub);
+    const entries = [];
+    for (const file of files) {
+      try {
+        const content = isRemote ? (await remote.call(hub, thread, 'read', { slug: thread.slug, file })).content : thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
+        if (typeof content !== 'string' && !Buffer.isBuffer(content)) throw new Error('invalid content');
+        entries.push({ name: `${thread.slug}/${file}`, data: content });
+      } catch { if (isRemote) throw appError(502, `Couldn't reach ${thread.machine}`); }
+    }
+    if (!entries.length) throw appError(404, 'document not found');
+    response.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${thread.slug}-documents.zip"`, 'cache-control': 'no-store' });
+    return response.end(require('./zip.js').zip(entries));
   }
   if (request.method === 'GET' && bits[2] === 'doc') {
     const file = url.searchParams.get('file');
     const thread = await hub.thread(id);
     const documents = require('./documents.js');
     if (!documents.validSlug(thread.slug) || !documents.FILES.includes(file)) throw appError(404, 'document not found');
-    const content = thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
+    const remote = require('./remote-plan.js');
+    const content = await remote.isRemote(hub, thread) ? await remote.read(hub, thread, file) : thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
     if (url.searchParams.get('download') === '1') {
       response.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8', 'x-content-type-options': 'nosniff', 'content-disposition': `attachment; filename="${thread.slug}-${file}"`, 'cache-control': 'no-store' });
       return response.end(content);

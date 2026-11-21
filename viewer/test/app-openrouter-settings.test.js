@@ -38,3 +38,19 @@ test('OpenRouter model IDs agree in the page and save route', async () => {
     assert.equal(none.status, 200); assert.equal((await api(c, '/settings')).body.models.openrouter.light, null);
   } finally { await close(c); }
 });
+
+test('OpenRouter effort pin round-trips through Settings; unknown level is refused', async () => {
+  const c = await setup();
+  try {
+    for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+      const saved = await api(c, '/settings/models', { method: 'PUT', body: { provider: 'openrouter', slot: 'heavy', model: 'a/b', effort } });
+      assert.equal(saved.status, 200, effort);
+      assert.deepEqual(saved.body.models.openrouter.heavy, { model: 'a/b', effort });
+      assert.deepEqual((await api(c, '/settings')).body.models.openrouter.heavy, { model: 'a/b', effort });
+    }
+    const bad = await api(c, '/settings/models', { method: 'PUT', body: { provider: 'openrouter', slot: 'heavy', model: 'a/b', effort: 'ultra' } });
+    assert.equal(bad.status, 400);
+    const cleared = await api(c, '/settings/models', { method: 'PUT', body: { provider: 'openrouter', slot: 'heavy', model: 'a/b' } });
+    assert.deepEqual(cleared.body.models.openrouter.heavy, { model: 'a/b', effort: null });
+  } finally { await close(c); }
+});

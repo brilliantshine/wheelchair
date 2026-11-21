@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 // Live screen check. Started by screen-live.sh with the Chromium path as argv[2].
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -112,7 +114,7 @@ exit 0
   const listen = await new Promise(resolve => { const s = http.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
   await fsp.writeFile(path.join(stateDir, 'machine.json'), JSON.stringify({ secret_file: secret, host: '127.0.0.1', port: listen }));
   process.env.PATH = `${bin}:${process.env.PATH}`; process.env.LIVE_PANE = pane; process.env.LIVE_SESSIONS = sessions;
-  const service = new MachineService({ stateDir, host: '127.0.0.1', port: listen });
+  const service = new MachineService({ win: noWsl, stateDir, host: '127.0.0.1', port: listen });
   // Expected, not a failure: the startup cleanup logs "machine: screen startup cleanup failed: wcscreen-<s>.slice"
   // because the parent slice does not exist yet on a fresh state dir.
   await service.listen();

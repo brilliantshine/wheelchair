@@ -42,7 +42,20 @@ async function change(hub, fn) {
   const file = path.join(hub.state.dir, 'usage.json');
   return hub.state.queued(file, async () => { const data = await store(hub); data.readings ||= {}; data.seen ||= {}; const result = await fn(data); await atomicWrite(file, `${JSON.stringify(data, null, 2)}\n`); return result; });
 }
-async function record(hub, reading) { return change(hub, (data) => { const old = data.readings[reading.account]; if (!old || Date.parse(reading.at) > Date.parse(old.at)) data.readings[reading.account] = { ...reading, ...(!reading.limited_until && Date.parse(old?.limited_until) > Date.now() ? { limited_until: old.limited_until } : {}) };  }); }
+async function record(hub, reading) { const newest = await change(hub, (data) => { const old = data.readings[reading.account]; if (!old || Date.parse(reading.at) > Date.parse(old.at)) { data.readings[reading.account] = { ...reading, ...(!reading.limited_until && Date.parse(old?.limited_until) > Date.now() ? { limited_until: old.limited_until } : {}) }; return true; } return false; }); if (newest) await adoptReportedPlan(hub, reading); }
+// A CLI that reports its plan (Codex does) sets the account's plan and weight, unless the user typed a weight.
+async function adoptReportedPlan(hub, reading) {
+  if (!reading?.plan_type || !reading.account) return;
+  try {
+    const account = (await settingsModule.load(hub)).accounts.find((a) => a.id === reading.account);
+    if (!account || !settingsModule.reportedPlan(account, reading.plan_type)) return;
+    await settingsModule.update(hub, (value) => {
+      const current = value.accounts.find((a) => a.id === reading.account);
+      const next = current && settingsModule.reportedPlan(current, reading.plan_type);
+      if (next) Object.assign(current, next);
+    });
+  } catch { /* the reading still records; the plan is picked up from the next one */ }
+}
 async function readings(hub) { return (await store(hub)).readings || {}; }
 async function lastChosen(hub) { return (await store(hub)).last_chosen || {}; }
 async function recordChosen(hub, provider, id) { return change(hub, (data) => { (data.last_chosen ||= {})[provider] = id; }); }
@@ -62,7 +75,7 @@ async function machineAccounts(hub) {
           for (const row of status.accounts) {
             logins[row.id] = Boolean(row.logged_in);
             accounts[row.id] = Boolean(logins[row.id] && status[row.cli]?.installed);
-            const text = cliProblem('kimi') && row.cli === 'kimi' ? cliProblem('kimi') : (!row.logged_in && typeof row.problem === 'string' && row.problem ? row.problem : null);
+            const text = cliProblem(row.cli) && ['kimi', 'pi'].includes(row.cli) ? cliProblem(row.cli) : (!row.logged_in && typeof row.problem === 'string' && row.problem ? row.problem : null);
             if (text) problems[row.id] = text;
           }
         } else for (const [provider, info] of Object.entries(PROVIDERS)) {
@@ -70,9 +83,10 @@ async function machineAccounts(hub) {
           accounts[`default-${provider}`] = Boolean(logins[`default-${provider}`] && status[info.cli]?.installed);
           if (provider === 'kimi' && cliProblem('kimi')) problems['default-kimi'] = cliProblem('kimi');
         }
-        const cliProblems = cliProblem('kimi') ? { kimi: cliProblem('kimi') } : {};
+        const cliProblems = Object.fromEntries(['kimi', 'pi'].filter(cliProblem).map(cli => [cli, cliProblem(cli)]));
+        const cliWarnings = status.pi?.warning ? { pi: status.pi.warning } : {};
         const harnesses = Object.fromEntries(Object.entries(PROVIDERS).map(([p, info]) => [p, { installed: Boolean(status[info.cli]?.installed), version: status[info.cli]?.version || null, recipe: status.recipes ? Boolean(status.recipes[p]) : null }]));
-        return [name, { reachable: true, accounts, logins, problems, cliProblems, harnesses, status }];
+        return [name, { reachable: true, accounts, logins, problems, cliProblems, cliWarnings, harnesses, status }];
       } catch { return [name, { reachable: false, accounts: {}, problems: {}, cliProblems: {} }]; }
     }));
     return Object.fromEntries(entries);
@@ -128,7 +142,7 @@ async function summary(hub, includeMachines = true, now = Date.now()) {
     const f = forecast(accounts, data.readings || {}, now);
     const below_notify = f.left !== null && f.left < settings.notify_below / 100;
     const ranked = rank(accounts, data.readings || {}, machines, settings, localName, now, data.last_chosen);
-    providers[provider] = { ...(provider === 'openrouter' && includeMachines ? { spend: await spend(hub) } : {}), label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: provider === 'openrouter' ? accounts.every((a) => a.paused) : f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : a.provider === 'kimi' && m.cliProblems?.kimi ? { state: 'problem', text: m.cliProblems.kimi } : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
+    providers[provider] = { ...(provider === 'openrouter' && includeMachines ? { spend: await spend(hub) } : {}), label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: provider === 'openrouter' ? accounts.every((a) => a.paused) : f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : (a.provider === 'kimi' && m.cliProblems?.kimi || a.provider === 'openrouter' && m.cliProblems?.pi) ? { state: 'problem', text: m.cliProblems[a.provider === 'kimi' ? 'kimi' : 'pi'] } : m.accounts[a.id] ? (a.provider === 'openrouter' && m.cliWarnings?.pi ? { state: 'signed_in', warning: m.cliWarnings.pi } : 'signed_in') : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : a.provider === 'openrouter' && m.cliWarnings?.pi ? { state: 'signed_out', warning: m.cliWarnings.pi } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
   }
   return { providers, seen: data.seen || {} };
 }

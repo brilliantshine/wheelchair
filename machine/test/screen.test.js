@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 // Spec validation map: start/idempotence, stop/restart, isolation and liveness:
 // "screen lifecycle and isolation"; reviewer and validation: "route rejects...";
 // environment, sandbox, command and version: "run rebuilds..." and "systemd versions...";
@@ -56,7 +58,7 @@ else if (name === 'codex') { const i = args.indexOf('--'); if (i >= 0) cp.spawnS
   await fsp.writeFile(path.join(bin, 'systemd-run'), '#!/bin/sh\nSCREEN_TOOL=systemd-run node "$SCREEN_LOGGER" "$@"\nstatus=$?\n[ "$status" = 137 ] && kill -KILL $$\n[ "$status" = 0 ] || exit "$status"\n[ "$1" = --version ] && exit 0\nwhile [ "$1" != -- ] && [ "$#" -gt 0 ]; do shift; done\n[ "$#" -gt 0 ] || exit 1\nshift\nexec "$@"\n', { mode: 0o755 });
   await fsp.writeFile(settings, '{}'); const previous = { PATH: process.env.PATH, SCREEN_LOG: process.env.SCREEN_LOG, SCREEN_SETTINGS: process.env.SCREEN_SETTINGS, SCREEN_LOGGER: process.env.SCREEN_LOGGER };
   process.env.PATH = `${bin}:${previous.PATH}`; process.env.SCREEN_LOG = log; process.env.SCREEN_SETTINGS = settings; process.env.SCREEN_LOGGER = logger;
-  const service = new MachineService({ stateDir: path.join(root, 'state'), host: '127.0.0.1', port: 1 });
+  const service = new MachineService({ win: noWsl, stateDir: path.join(root, 'state'), host: '127.0.0.1', port: 1 });
   service.config = { host: '127.0.0.1', port: 1 }; service.liveTmux = () => new Set(Object.values(service.sessions).filter(s => s.status !== 'stopped').map(s => s.name));
   function session(name, thread = 'thread', cli = 'claude') { return service.sessions[name] = { name, role: 'worker', cli, thread_id: thread, status: 'ready', token: name, worktree: root, account_dir: null }; }
   const a = session('wc-thread-worker'); const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

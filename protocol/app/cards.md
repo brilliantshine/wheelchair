@@ -23,10 +23,19 @@ Rules for every card:
 - The file holds one JSON object. `kind` must equal the kind on the command line.
 - Fields marked required must be present and non-empty. A field not listed for the kind
   is refused.
-- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient; `reach` is the one card that carries a thread id, the other thread's.) The app learns who you
+- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient; `reach` carries the other thread's id, and `question.about_thread` the other thread's id for an overlap card: the only exceptions.) The app learns who you
   are from your session token and which thread you belong to from its own record, and it
   assigns every card its `id`.
 - A card is accepted only for the thread your session belongs to.
+- On success `card.js` prints exactly one JSON line. For a kind that makes a stored card it is
+  `{"id":"<id>","kind":"<kind>"}`; for `title`, `resolve` and `retract` it is `{"ok":true}`.
+  A `lesson` receipt also names the lesson: `{"id":"<id>","kind":"lesson","lesson":"<lesson id>"}`
+  when a notice was recorded, and `{"kind":"lesson","lesson":"<lesson id>"}` (no card id) when
+  the hub found the same lesson already saved and recorded no new notice.
+  Either gains `"queued":true` when the machine's response body has `spooled: true` (the app was
+  unreachable and the card waits on the machine; a delivered post can also return HTTP 202, which
+  adds nothing). It never prints any other card field. Keep the id: a queued card's printed id is
+  the id it gets, so `retract` and `resolve` can name it.
 - Text fields are plain sentences for a person, not codenames. A card the user sees is read
   on a phone, so write the short version.
 
@@ -50,6 +59,7 @@ Rules for every card:
 | `stub` | yes | lead | no |
 | `sudo` | yes | lead | no |
 | `reach` | yes | lead | no |
+| `lesson` | yes | lead, sub-lead, worker, mapper | no |
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
 | `retract` | never | lead | no |
@@ -62,7 +72,7 @@ thread). An approval unpins when Start building is accepted or it is retracted; 
 approval replaces an open pinned approval. The app also posts `needs` cards of its own (a session stuck at startup, a
 permission prompt, "Sessions ended"); you never post those.
 
-Sections for `progress`, `message` and `result` are below; all other kind sections are
+Sections for `progress`, `lesson`, `message` and `result` are below; all other kind sections are
 in `cards-lead.md`.
 
 ## The shown kinds
@@ -97,6 +107,39 @@ forbidden with `checking` and verify `clean`. Review `clean` carries both counts
 Review and verify have no segment bar; verify appends machines when non-empty. The folded
 label joins the label and text with " · ", adding ": choice for you" when waiting; the
 build folded label remains "Building D of T". Text wraps at phone widths.
+
+### `lesson`
+
+Saves, replaces or removes one lesson for a type of agent; the card is the notice the user
+sees. See your role's Lessons section for when to save one.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `action` | `add` \| `replace` \| `remove` | yes | What to do |
+| `for` | role | yes | Whose lessons: lead may save for lead, reviewer, verifier, mapper; sub-lead for sub-lead, worker; worker for worker; mapper for mapper |
+| `text` | string | `add`, `replace` | 1-300 characters, one line |
+| `lesson` | string | `replace`, `remove` | The id of the lesson, as shown in your instructions |
+| `only_ai` | string | no | `add`/`replace`: `any` or `claude`, `gpt`, `gemini`, `kimi`, `openrouter`; the lesson reaches only agents on that AI. Name the AI of the agent that made the mistake |
+| `only_project` | boolean | no | `add`/`replace`: true limits the lesson to this thread's project |
+| `why` | string | `add`, `replace`, `remove` | One line, shown to the user: what went wrong and how it was proven |
+
+On a `replace`, an absent `only_ai` or `only_project` keeps the stored one; `only_ai: "any"`
+and `only_project: false` clear it. On an `add`, absent means no limit.
+
+A `lesson` card is never queued; the machine relays it synchronously. On the 503 (`the app
+did not confirm the lesson; run the same card again in a minute (repeating it is safe)`),
+do exactly that. Refusals (422), each a sentence you can act on:
+
+- `a <saver> may not save lessons for <target>s`.
+- `lessons for <role>s are full (12): replace or remove one instead`, then every lesson for
+  that role, one per line as `[<id>] <first 80 characters>` with its markers. If none is
+  worth dropping, do not save.
+- `no lesson <id> for <role>s`: a `replace` naming an id not present for that role, or a
+  `replace` or `remove` naming an id kept under another role.
+- `the user edited this lesson; agents leave it as it is`: a `replace` or `remove` of a
+  lesson marked "(edited by the user)".
+- A field error (400) from validation, such as an unknown `only_ai` or a missing `why`: fix
+  the field and run the card again.
 
 ## The kinds never shown
 

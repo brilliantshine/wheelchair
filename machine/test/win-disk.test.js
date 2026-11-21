@@ -1,0 +1,93 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { makeTempSync } = require('../../test-support/run-dir');
+const { WinDisk, REFRESH_MS } = require('../lib/win-disk');
+
+test('disk cache, thresholds, failures and real repository measurements', async t => {
+  const root = makeTempSync('win-disk-');
+  const repo = path.join(root, 'repo');
+  const thread = path.join(root, 'copies', 'thread');
+  await fs.mkdir(repo); await fs.mkdir(path.join(thread, 'one'), { recursive: true });
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  git('init', '-q');
+  const object = git('hash-object', '-w', '--stdin');
+  git('update-ref', 'refs/wheelchair/conflicts/example', object);
+  const ctx = { threadId: 'thread', key: 'one', stateDir: root, worktree: repo, copy: { linux: path.join(thread, 'one'), windows: 'C:\\copies\\thread\\one' } };
+  let bytes = 20000000000; let walks = 0; let fail = false; let walkScript;
+  const env = { localAppData: async () => root, toLinux: value => value, ps: async value => { walks++; walkScript = value; if (fail) throw new Error('walk failed'); return { code: 0, stdout: String(bytes), stderr: '' }; } };
+  const disk = new WinDisk(env);
+  const first = await disk.info(ctx);
+  assert.deepEqual(Object.keys(first).sort(), ['conflict_refs', 'copies', 'copies_bytes', 'git_bytes', 'measured_at', 'warnings', 'windows_free_bytes'].sort());
+  assert.equal(first.measured_at, null); assert.deepEqual(first.copies, []);
+  await disk.cache.get('thread').pending;
+  assert.match(walkScript, /^# wc:copysize /);
+  let measured = await disk.info(ctx);
+  assert.equal(measured.copies_bytes, bytes); assert.equal(measured.copies[0].path, 'C:\\copies\\thread\\one');
+  assert.ok(measured.measured_at); assert.equal(measured.conflict_refs, 1);
+  const output = git('count-objects', '-v');
+  assert.equal(measured.git_bytes, (Number(output.match(/^size: (\d+)/m)[1]) + Number(output.match(/^size-pack: (\d+)/m)[1])) * 1024);
+  assert.equal(walks, 1); assert.ok(!measured.warnings.some(w => w.includes('copies')));
+  bytes++; disk.cache.get('thread').attempted_at = Date.now() - REFRESH_MS - 1;
+  await disk.info(ctx); await disk.cache.get('thread').pending;
+  measured = await disk.info(ctx); assert.match(measured.warnings.join('\n'), /20\.0 GB/); assert.equal(walks, 2);
+  fail = true; disk.cache.get('thread').attempted_at = Date.now() - REFRESH_MS - 1;
+  await disk.info(ctx); await disk.cache.get('thread').pending;
+  measured = await disk.info(ctx); assert.equal(measured.copies_bytes, bytes); assert.match(measured.reason, /walk failed/);
+  assert.equal(walks, 3);
+  await disk.info(ctx);
+  assert.equal(walks, 3);
+  disk.cache.get('thread').attempted_at = Date.now() - REFRESH_MS - 1;
+  await disk.info(ctx); await disk.cache.get('thread').pending;
+  assert.equal(walks, 4);
+});
+
+test('warning thresholds and no git size warning', async t => {
+  const root = makeTempSync('win-disk-warning-');
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  execFileSync('git', ['init', '-q', root]);
+  const object = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: root, input: 'data', encoding: 'utf8' }).trim();
+  const ctx = { threadId: 't', key: 'k', stateDir: root, worktree: root, copy: { linux: path.join(root, 'absent', 'k'), windows: 'C:\\t\\k' } };
+  const oldStatfs = fs.statfs;
+  let free = 10000000000;
+  fs.statfs = async () => ({ bavail: free, bsize: 1 });
+  t.after(() => { fs.statfs = oldStatfs; });
+  const disk = new WinDisk({ localAppData: async () => root, toLinux: p => p, ps: async () => ({ code: 0, stdout: '0' }) });
+  disk.cache.set('t', { copies: [{ path: 'C:\\t\\k', bytes: 20000000000 }], measured_at: new Date().toISOString(), reason: null });
+  for (let i = 0; i < 9; i++) execFileSync('git', ['update-ref', `refs/wheelchair/conflicts/${i}`, object], { cwd: root });
+  let result = await disk.info(ctx); assert.deepEqual(result.warnings, []);
+  execFileSync('git', ['update-ref', 'refs/wheelchair/conflicts/9', object], { cwd: root });
+  disk.cache.get('t').copies[0].bytes++; free--;
+  result = await disk.info(ctx);
+  assert.deepEqual(result.warnings, ["This thread's Windows copies use 20.0 GB.", '10 kept conflict snapshots; see README to remove them.', 'Only 10.0 GB free on the Windows drive.']);
+});
+
+test('large git storage never produces a warning', async t => {
+  const root = makeTempSync('win-disk-git-');
+  const previousPath = process.env.PATH;
+  t.after(() => { process.env.PATH = previousPath; });
+  await fs.writeFile(path.join(root, 'git'), '#!/bin/sh\nif [ "$1" = count-objects ]; then printf "size: 999999999\nsize-pack: 0\\n"; fi\n', { mode: 0o755 });
+  process.env.PATH = `${root}:${previousPath}`;
+  const disk = new WinDisk({ localAppData: async () => root, toLinux: p => p });
+  const ctx = { threadId: 't', key: 'k', stateDir: root, worktree: root, copy: { linux: path.join(root, 'missing', 'k'), windows: 'C:\\t\\k' } };
+  const result = await disk.info(ctx);
+  assert.ok(result.git_bytes > 20e9);
+  assert.ok(!result.warnings.some(warning => /git/i.test(warning)));
+});
+
+test('copy walk doubles typographic quotes without changing them', async t => {
+  const root = makeTempSync('win-disk-quotes-');
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const copies = path.join(root, 'copies');
+  await fs.mkdir(path.join(copies, 'O’Brien'), { recursive: true });
+  const ctx = { threadId: 't', key: 'k', stateDir: root, worktree: root, copy: { linux: path.join(copies, 'current'), windows: 'C:\\copies\\current' } };
+  let walkScript;
+  const disk = new WinDisk({ localAppData: async () => root, toLinux: p => p, ps: async value => { walkScript = value; return { code: 0, stdout: '0' }; } });
+  await disk.info(ctx);
+  await disk.cache.get('t').pending;
+  assert.match(walkScript, /O’’Brien/);
+  assert.doesNotMatch(walkScript, /O''Brien/);
+});

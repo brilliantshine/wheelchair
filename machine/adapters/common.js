@@ -15,3 +15,8 @@ exports.seed = (dir, usual, instruction, cli, id) => {
 };
 exports.status = (cli, args, env, parse) => { const r = spawnSync(cli, args, { encoding: 'utf8', timeout: 15000, env: { ...process.env, ...env } }); try { return { logged_in: r.status === 0 && (!parse || parse(r.stdout)) }; } catch { return { logged_in: false }; } };
 exports.home = (env, fallback) => process.env[env] || path.join(os.homedir(), fallback);
+
+exports.loadedTools = (names, mcp, mount) => names.map(name => {
+  const entry = mcp.servers[name];
+  return { name, windows: (entry.type === undefined || entry.type === 'stdio') && require('../lib/project-programs').isWindowsProgram(entry.command, mount || '/mnt') };
+});

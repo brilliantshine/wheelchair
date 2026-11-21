@@ -12,7 +12,7 @@ function addCard(thread, card, meta = {}) {
   const at = new Date().toISOString();
   const record = {
     ...card,
-    id: crypto.randomUUID(),
+    id: meta.deliveryId || crypto.randomUUID(),
     session: meta.session || null,
     at,
     created_at: at,
@@ -59,12 +59,22 @@ async function acceptCard(hub, payload) {
     require('./handoff.js').refuseFrozen(hub, thread);
     if (thread.archived) throw appError(409, 'thread is archived');
     thread.delivered_ids ||= [];
-    if (payload.delivery_id && thread.delivered_ids.includes(payload.delivery_id)) {
-      return { ok: true, duplicate: true };
+    if (payload.delivery_id && (thread.delivered_ids.includes(payload.delivery_id) || thread.cards.some((card) => card.id === payload.delivery_id))) {
+      return { ok: true, duplicate: true, id: payload.delivery_id };
     }
     const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
+    if (payload.kind === 'lesson' && typeof input.for === 'string' && !['lead', 'sub-lead', 'worker', 'mapper'].includes(session.role)) {
+      throw appError(422, `a ${session.role} may not save lessons for ${input.for}s`);
+    }
     const checked = validate(payload.kind, input, session.role, { machine: true });
-    if (!checked.ok) throw appError(422, checked.reason);
+    if (!checked.ok) throw appError(payload.kind === 'lesson' ? 400 : 422, checked.reason);
+
+    if (checked.card.kind === 'lesson') {
+      const lesson = await require('./settings.js').applyLesson(hub, checked.card, session.role, thread.project, thread.id);
+      if (!lesson.changed) return { card: { ok: true, lesson: lesson.id }, targetName: null };
+      checked.card.lesson = lesson.id;
+      checked.card.snapshot = lesson.snapshot;
+    }
 
     if (checked.card.passes_on !== undefined && !thread.cards.some((item) => item.id === checked.card.passes_on && item.kind === 'message' && item.asks === true)) {
       throw appError(422, 'passes_on names no question in this thread');
@@ -156,7 +166,7 @@ async function acceptCard(hub, payload) {
     }
 
     const stored = ['image', 'file'].includes(checked.card.kind) ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
-    const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name });
+    const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name, deliveryId: payload.delivery_id });
     if (card.kind === 'sudo') thread.sudo_index[card.request_id] = card.id;
     if (card.kind === 'message' || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }
     if (card.kind === 'message' && !crossThread) {

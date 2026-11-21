@@ -13,7 +13,7 @@
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
   const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI'], ['openrouter', 'OpenRouter', 'Pi']];
-  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'] };
+  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'], openrouter: ['low', 'medium', 'high', 'xhigh', 'max'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
   const KIMI_MODEL_VALUE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/;
   const OPENROUTER_MODEL_VALUE = /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/;
@@ -36,6 +36,8 @@
   let selected = null; // a template id, or 'new'
   let draft = null;
   let confirming = false;
+  let lessonEdit = null; // the open Lessons learned editor: { role, texts, removals, confirming }
+  let lessonThreads = null; // thread id -> title, read when a Lessons editor opens
   let fullPrompt = null; // {text} | {error}
   let styleDraft = null;
   let preview = { running: false, after: null, error: '' };
@@ -598,7 +600,7 @@
         h('h2', { id: 'others', text: 'Other agents' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
+            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
             modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']].filter(([v]) => v === 'both' || harnessOn(v)))),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
@@ -624,6 +626,7 @@
     selected = id;
     confirming = false;
     fullPrompt = null;
+    if (isLessons(id)) { lessonEdit = { role: id.slice(8), texts: {}, removals: new Set(), confirming: null }; draft = null; loadLessonThreads(); return; }
     const found = data.templates.find((t) => t.id === id);
     draft = found ? structuredClone(found) : blankDraft();
     if (found && !draft.switches) draft.switches = {};
@@ -706,7 +709,7 @@
     if (fullPrompt.error) return h('p', { id: 'full-prompt', class: 'inline-err', role: 'alert', text: fullPrompt.error });
     return h('div', { class: 'full-prompt-wrap' },
       h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text }),
-      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it.' }));
+      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it. Lessons marked for one AI or one project reach only agents on that AI or in that project.' }));
   }
 
   function switchRow(title, hint, control) {
@@ -827,6 +830,99 @@
       errHost);
   }
 
+  // ---------------------------------------------------------------- Lessons learned (written by agents)
+
+  const LESSON_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers' };
+  const isLessons = (id) => typeof id === 'string' && id.startsWith('lessons:');
+  const lessonList = (role) => (data.lessons && data.lessons[role]) || [];
+
+  async function loadLessonThreads() {
+    try {
+      const res = await api('/threads?view=list');
+      lessonThreads = Object.fromEntries((res.threads || []).map((t) => [t.id, t.title || t.slug || String(t.project || '').split('/').filter(Boolean).pop() || t.id]));
+      if (lessonEdit && section === 'templates') renderPanel();
+    } catch { lessonThreads = lessonThreads || {}; }
+  }
+
+  function lessonMarkers(item) {
+    const marks = [];
+    if (item.provider) marks.push('only on ' + ((PROVIDERS.find((p) => p[0] === item.provider) || [])[1] || item.provider));
+    if (item.project) marks.push('only in ' + (item.project.split('/').filter(Boolean).pop() || item.project));
+    if (item.saved_by === 'user') marks.push('edited by the user');
+    return marks;
+  }
+
+  async function saveLessons(errHost) {
+    const role = lessonEdit.role;
+    const list = lessonList(role);
+    const edits = [];
+    for (const item of list) {
+      if (lessonEdit.removals.has(item.id)) continue;
+      const text = lessonEdit.texts[item.id];
+      if (text === undefined || text === item.text) continue;
+      if (!text.length || text.length > 300) { inlineErr(errHost, 'A lesson needs 1 to 300 characters.'); return; }
+      edits.push({ id: item.id, text });
+    }
+    const removals = [...lessonEdit.removals];
+    lessonEdit.saving = true;
+    setLessonsBusy(true);
+    try {
+      await api('/settings/lessons/' + encodeURIComponent(role), { method: 'PUT', body: { edits, removals } });
+      await reload(false);
+      lessonEdit = { role, texts: {}, removals: new Set(), confirming: null };
+      setNote(SAVED, false);
+      renderPanel();
+    } catch (e) {
+      lessonEdit.saving = false;
+      setLessonsBusy(false);
+      inlineErr(errHost, e.message);
+    }
+  }
+
+  // While a save is in flight nothing can be typed, so no edit is lost.
+  function setLessonsBusy(busy) {
+    document.querySelectorAll('.lessons-edit .lesson-text, .lessons-edit .lesson-row button, #save-lessons').forEach((n) => {
+      const row = n.closest('.lesson-row');
+      n.disabled = busy || (n.matches('.lesson-text') && !!row && lessonEdit.removals.has(row.dataset.id));
+    });
+  }
+
+  function renderLessonEditor() {
+    const role = lessonEdit.role;
+    const plural = LESSON_PLURAL[role] || role + 's';
+    const list = lessonList(role);
+    const errHost = h('div', {});
+    const rows = list.map((item) => {
+      const removed = lessonEdit.removals.has(item.id);
+      const value = lessonEdit.texts[item.id] !== undefined ? lessonEdit.texts[item.id] : item.text;
+      const field = h('textarea', { class: 'lesson-text', rows: 2, maxLength: 300, value, disabled: removed || !!lessonEdit.saving, 'aria-label': 'Lesson text' });
+      field.addEventListener('input', () => { lessonEdit.texts[item.id] = field.value; });
+      const marks = lessonMarkers(item);
+      const title = item.thread && lessonThreads && lessonThreads[item.thread];
+      let remove;
+      if (removed) remove = h('button', { type: 'button', class: 'undo-remove', text: 'Undo', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.delete(item.id); renderPanel(); } });
+      else if (lessonEdit.confirming === item.id) remove = h('button', { type: 'button', class: 'danger confirm-remove', text: 'Really remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.add(item.id); lessonEdit.confirming = null; renderPanel(); } });
+      else remove = h('button', { type: 'button', class: 'danger remove-lesson', text: 'Remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.confirming = item.id; renderPanel(); } });
+      return h('li', { class: 'lesson-row' + (removed ? ' removed' : ''), 'data-id': item.id },
+        field,
+        h('div', { class: 'lesson-foot' },
+          h('span', { class: 'lesson-marks' },
+            marks.map((m) => h('span', { class: 'lesson-mark', text: m })),
+            title ? h('a', { class: 'lesson-from', href: '/wheelchair/app/thread?id=' + encodeURIComponent(item.thread), text: 'saved from ' + title }) : null,
+            removed ? h('span', { class: 'lesson-mark', text: 'will be removed when you save' }) : null),
+          remove));
+    });
+    return h('div', { class: 'tpl-edit lessons-edit' },
+      noteEl(),
+      h('h2', { text: 'Lessons learned · ' + (roleInfo(role)[1]) }),
+      h('p', { class: 'hint lesson-warning', text: 'Agents keep this list up to date. Editing is not recommended; a lesson you edit is marked as yours and agents leave it alone.' }),
+      list.length ? h('ul', { class: 'lesson-rows' }, rows) : h('p', { class: 'empty-note', text: `No lessons for ${plural} right now.` }),
+      list.length ? h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'primary', id: 'save-lessons', text: 'Save', disabled: !!lessonEdit.saving, onclick: () => saveLessons(errHost) }),
+        h('span', { class: 'grow', id: 'using', text: `Changes apply to ${plural} started after you save.` })) : h('p', { class: 'hint', id: 'using', text: `Changes apply to ${plural} started after you save.` }),
+      errHost);
+  }
+
   function renderTemplates() {
     if (selected === null) select(data.templates[0] ? data.templates[0].id : 'new');
     const list = h('nav', { class: 'tpl-list', 'aria-label': 'Templates' },
@@ -835,8 +931,16 @@
       h('button', { type: 'button', class: 'new', id: 'new-template', text: '+ New template', onclick: () => { select('new'); renderPanel(); } }));
     for (const [role, label] of ROLES) {
       const items = data.templates.filter((t) => t.role === role);
-      if (!items.length) continue;
+      const lessons = lessonList(role);
+      if (!items.length && !lessons.length) continue;
       list.append(h('span', { class: 'group-label', text: label }));
+      if (lessons.length) {
+        const id = 'lessons:' + role;
+        list.append(h('button', {
+          type: 'button', class: 'tpl-item tpl-lessons', 'data-lessons': role, 'aria-current': String(selected === id),
+          onclick: () => { select(id); renderPanel(); },
+        }, h('span', { class: 'nm', text: 'Lessons learned' }), h('span', { class: 'tag agent-tag', text: 'Written by agents · ' + lessons.length })));
+      }
       for (const t of items) {
         const tags = [];
         if (t.in_use) tags.push(t.scope === 'all' ? 'in use' : 'in use here');
@@ -847,7 +951,7 @@
         }, h('span', { class: 'nm', text: t.name }), h('span', { class: 'tag', text: tags.join(' · ') })));
       }
     }
-    return h('div', { class: 'tpl' }, list, draft ? renderEditor() : h('p', { class: 'empty-note', text: 'No templates yet.' }));
+    return h('div', { class: 'tpl' }, list, lessonEdit && isLessons(selected) ? renderLessonEditor() : draft ? renderEditor() : h('p', { class: 'empty-note', text: 'No templates yet.' }));
   }
 
   // ---------------------------------------------------------------- Writing style
@@ -996,7 +1100,7 @@
 
   const PLAN_OPTIONS = {
     claude: [['unknown', 'Not sure'], ['pro', 'Pro'], ['max5', 'Max 5x'], ['max20', 'Max 20x']],
-    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
+    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['prolite', 'Pro Lite'], ['pro', 'Pro'], ['promax', 'Pro Max']],
     gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
     kimi: [['unknown', 'Not sure']],
     openrouter: [['unknown', 'Not sure']],
@@ -1232,7 +1336,8 @@
         a.paused && h('span', { class: 'v-badge', text: 'paused' }),
         h('span', { class: 'in-use' + (a.live_sessions ? ' on' : ''), text: a.live_sessions ? `in use · ${a.live_sessions} ${a.live_sessions === 1 ? 'agent' : 'agents'}` : 'idle' })),
       machines.length && h('ul', { class: 'machines' }, machines.map(([m, st]) => h('li', { 'data-machine': m, 'data-state': stateName(st) },
-        h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[st] || st) }),
+        h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[stateName(st)] || stateName(st)) }),
+        st && st.warning && h('span', { class: 'mstate note', text: st.warning }),
         stateName(st) !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) })))),
       h('div', { class: 'wins' },
         windowLine('5-hour window', a.reading && a.reading.five_hour),
@@ -1411,8 +1516,8 @@
     if (f.spend) {
       return h('div', { class: 'usage-prov', 'data-provider': provider },
         h('div', { class: 'usage-toggle' },
-          h('span', { class: 'usage-name', text: f.label }),
-          h('span', { class: 'usage-left usage-spend', text: spendText(f.spend) })));
+          h('span', { class: 'usage-name usage-name-spend', text: f.label }),
+          h('span', { class: 'usage-spend-text', text: spendText(f.spend) })));
     }
     return h('div', { class: 'usage-prov' + (f.amber ? ' amber' : ''), 'data-provider': provider },
       h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; renderPanel(); } },
@@ -1745,6 +1850,12 @@
 
   function readHash() {
     const key = location.hash.replace(/^#/, '');
+    const lessonRole = (/^templates\/lessons\/([a-z-]+)$/.exec(key) || [])[1];
+    if (lessonRole && LESSON_PLURAL[lessonRole]) {
+      if (section !== 'templates') { section = 'templates'; setNote('', false); styleNote = ''; diagram = null; }
+      if (selected !== 'lessons:' + lessonRole) select('lessons:' + lessonRole);
+      return;
+    }
     const next = SECTIONS.some(([k]) => k === key) ? key : 'models';
     if (next !== section) { section = next; setNote('', false); styleNote = ''; diagram = null; }
   }

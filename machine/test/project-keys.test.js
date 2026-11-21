@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -50,7 +52,7 @@ test('session launcher passes only selected keys outside recorded commands', asy
   await fs.writeFile(path.join(bin, 'tmux'), `#!/bin/sh\nif [ "$1" = new-session ]; then printf '%s\\n' "$@" >> "$FAKE_LOG"; for arg do last="$arg"; done; eval "$last"; elif [ "$1" = capture-pane ]; then printf 'auto mode on\\n❯ Ready\\n'; fi\n`, { mode: 0o755 });
   for (const cli of ['claude', 'codex', 'agy']) await fs.writeFile(path.join(bin, cli), '#!/bin/sh\nprintf "%s|%s|%s|%s\\n" "${KEY-unset}" "${HOLD-unset}" "${UNUSED-unset}" "${HOME-unset}" >> "$CAPTURED"\n', { mode: 0o755 });
   const previous = { PATH: process.env.PATH, FAKE_LOG: process.env.FAKE_LOG, CAPTURED: process.env.CAPTURED }; Object.assign(process.env, { PATH: `${bin}:${previous.PATH}`, FAKE_LOG: log, CAPTURED: captured });
-  const instance = new MachineService({ stateDir: state, host: '127.0.0.1', port: 0 });
+  const instance = new MachineService({ win: noWsl, stateDir: state, host: '127.0.0.1', port: 0 });
   const writeFile = fs.writeFile; const modes = [];
   fs.writeFile = async (...args) => { const result = await writeFile(...args); if (String(args[0]).endsWith('.json') && String(args[0]).includes('session-env')) modes.push((await fs.stat(args[0])).mode & 0o777); return result; };
   const agy = require('../adapters/agy'), prepare = agy.prepare; agy.prepare = () => {};

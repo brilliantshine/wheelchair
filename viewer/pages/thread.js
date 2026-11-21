@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  const LESSON_ROLE_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers' };
   const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
   const API = '/wheelchair/api';
   const id = new URLSearchParams(location.search).get('id') || '';
@@ -57,6 +58,21 @@
     if (disabled) b.disabled = true;
     if (onclick) b.addEventListener('click', onclick);
     return b;
+  }
+  // A done-card line whose "Start a thread about it" link shows only on hover, or on a tapped
+  // (focused) line on touch. A tap that lands where the link was still faded only reveals it:
+  // the press counts only if the link was showing when the pointer went down.
+  function threadLinkRow(card, text) {
+    const row = el('div', 'bullet'); row.tabIndex = 0;
+    row.appendChild(el('span', 'bullet-text', text));
+    let shownAtDown = false;
+    const link = button('Start a thread about it', 'link', (ev) => {
+      if (ev.detail !== 0 && !shownAtDown) return; // detail 0: keyboard activation
+      press(card, 'start-thread', text);
+    }, thread().archived);
+    row.addEventListener('pointerdown', () => { shownAtDown = getComputedStyle(link).opacity === '1'; });
+    row.appendChild(link);
+    return row;
   }
   const SVG = 'http://www.w3.org/2000/svg';
   // A fixed-path line icon, built as nodes.
@@ -410,6 +426,9 @@
   }
   const sentName = (c) => c.kind === 'file' ? (c.name || c.file) : String(c.file).replace(/^\d+-/, '');
   const sentUrl = (c) => T + '/files/' + encodeURIComponent(c.file);
+  // On an archived thread only the files the machine kept (thread.kept_files) can still be opened.
+  const sentAvailable = (c) => !thread().archived || (Array.isArray(thread().kept_files) && thread().kept_files.includes(c.file));
+  const sentPreview = (c) => c.kind === 'file' && window.WCFilePreview && window.WCFilePreview.previewable(c.name || c.file, c.size);
   function filesCount() { return ((data.documents || []).length) + pictureList().length + sentList().length; }
   // Both the right column and the phone panel are filled by this one function.
   function fillFiles(into) {
@@ -419,6 +438,7 @@
     if (docs.length || pictures.length) {
       const sec = el('div', 'files-section'); sec.appendChild(el('h3', '', 'Project documents'));
       const list = el('div', 'file-list');
+      if (docs.length) { const all = el('a', 'file-dl docs-zip', 'Download all'); all.href = T + '/docs.zip'; list.appendChild(all); }
       for (const f of docs) {
         const row = el('div', 'file-row');
         const a = el('a', 'file', f); a.href = docHref(f); row.appendChild(a);
@@ -438,10 +458,12 @@
       for (const c of sent) {
         const row = el('div', 'file-row sent-row');
         const isImage = c.kind === 'image';
-        if (isImage && !archived) { const a = el('a', 'file', c.title); a.href = sentUrl(c); a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a); }
+        const available = sentAvailable(c);
+        if (isImage && available) { const a = el('a', 'file', c.title); a.href = sentUrl(c); a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a); }
+        else if (available && sentPreview(c)) { const a = el('a', 'file', c.title); a.href = window.WCFilePreview.href(id, c.file); row.appendChild(a); }
         else row.appendChild(el('span', 'file-title', c.title));
         row.appendChild(el('span', 'file-meta dim', [sentName(c), isImage ? '' : humanSize(c.size)].filter(Boolean).join(' \u00b7 ')));
-        if (archived) row.appendChild(el('span', 'file-meta dim', REMOVED));
+        if (!available) row.appendChild(el('span', 'file-meta dim', REMOVED));
         else { const d = el('a', 'file-dl', 'Download'); d.href = sentUrl(c); d.setAttribute('download', sentName(c)); row.appendChild(d); }
         list.appendChild(row);
       }
@@ -1056,17 +1078,13 @@
         if (card.note) inset.appendChild(prose('dim', card.note));
         inset.appendChild(el('div', 'eyebrow', 'What you can do now'));
         for (const c of card.can_do || []) {
-          const row = el('div', 'bullet'); row.appendChild(el('span', 'bullet-text', c));
-          row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', c), thread().archived));
-          inset.appendChild(row);
+          inset.appendChild(threadLinkRow(card, c));
         }
         if ((card.left_as_is || []).length) {
           const left = el('div', 'left-as-is');
           left.appendChild(el('div', 'eyebrow', 'Left as is · ' + card.left_as_is.length + (card.left_as_is.length === 1 ? ' thing' : ' things')));
           for (const l of card.left_as_is) {
-            const row = el('div', 'bullet'); row.appendChild(el('span', 'bullet-text', l));
-            row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', l), thread().archived));
-            left.appendChild(row);
+            left.appendChild(threadLinkRow(card, l));
           }
           inset.appendChild(left);
         }
@@ -1134,15 +1152,17 @@
       }
       case 'image': {
         box.appendChild(el('h3', '', card.title));
-        if (thread().archived) box.appendChild(el('p', 'dim', 'Image removed when the thread was archived'));
+        if (!sentAvailable(card)) box.appendChild(el('p', 'dim', 'Image removed when the thread was archived'));
         else { const url = T + '/files/' + encodeURIComponent(card.file); const a = el('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; const img = el('img', 'card-image'); img.src = url; img.alt = card.title; a.appendChild(img); box.appendChild(a); }
         break;
       }
       case 'file': {
         box.appendChild(el('h3', '', card.title));
         box.appendChild(el('p', 'dim', [card.name || card.file, humanSize(card.size)].filter(Boolean).join(' \u00b7 ')));
-        if (thread().archived) box.appendChild(el('p', 'dim', REMOVED));
-        else { const d = el('a', 'btn small', 'Download'); d.href = sentUrl(card); d.setAttribute('download', card.name || card.file); box.appendChild(d); }
+        if (!sentAvailable(card)) box.appendChild(el('p', 'dim', REMOVED));
+        else {
+          if (sentPreview(card)) { const p = el('a', 'btn small', 'Preview'); p.href = window.WCFilePreview.href(id, card.file); box.appendChild(p); }
+          const d = el('a', 'btn small', 'Download'); d.href = sentUrl(card); d.setAttribute('download', card.name || card.file); box.appendChild(d); }
         break;
       }
       case 'stub': {
@@ -1202,6 +1222,23 @@
           }
           box.appendChild(result);
         }
+        break;
+      }
+      case 'lesson': {
+        const snap = card.snapshot || {};
+        const plural = LESSON_ROLE_PLURAL[card.for] || (card.for + 's');
+        const verb = card.action === 'remove' ? 'Removed a lesson for ' : card.action === 'replace' ? 'Updated a lesson for ' : 'Saved a lesson for ';
+        const marks = [];
+        if (snap.provider) marks.push('only on ' + (PROVIDER_LABEL[snap.provider] || snap.provider));
+        if (snap.project) marks.push('only in ' + (String(snap.project).split('/').filter(Boolean).pop() || snap.project));
+        const line = el('p', 'lesson-line');
+        line.appendChild(el('span', 'lesson-text', verb + plural + ': ' + (snap.text || '')));
+        if (card.why) line.appendChild(el('span', 'lesson-why', card.why));
+        for (const m of marks) line.appendChild(el('span', 'lesson-mark', m));
+        const link = el('a', 'lesson-link', 'Open in Settings');
+        link.href = '/wheelchair/app/settings#templates/lessons/' + encodeURIComponent(card.for);
+        line.appendChild(link);
+        box.appendChild(line);
         break;
       }
       default:
@@ -1342,7 +1379,7 @@
     sync('copy', [t.archived, t.project, t.machine], renderCopy);
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
     sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
-    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), data.documents, t.imported && t.imported.at, data.cards.filter((c) => c.kind === 'file' || c.kind === 'image').map((c) => [c.id, c.title, c.file, c.name, c.size, c.retracted_at, c.created_at]), (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
+    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), data.documents, t.imported && t.imported.at, data.cards.filter((c) => c.kind === 'file' || c.kind === 'image').map((c) => [c.id, c.title, c.file, c.name, c.size, c.retracted_at, c.created_at]), t.kept_files, (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported], renderDead);
@@ -1352,7 +1389,7 @@
     const leadNow = leadSession();
     // Text selected in the chat (for an aside) would vanish with a redraw, so the redraw waits
     // until the selection is gone; the selectionchange listener above calls render() then.
-    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, deferredOpen, cardErrors, declining]);
+    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, t.kept_files, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, deferredOpen, cardErrors, declining]);
     // An import moving the cutoff (or a hand-off starting) must not wait for the selection:
     // what came before the import has to leave the chat at once.
     const cutoff = JSON.stringify([t.imported && t.imported.at, Boolean(t.handed_off)]);

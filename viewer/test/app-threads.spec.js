@@ -519,15 +519,19 @@ for (const [label, size] of SIZES) {
       await page.locator('#pinned').getByRole('button', { name: 'Talk about this' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'talk', value: 'Moves lose work' });
 
+      // The link stays hidden until the line is hovered.
+      const leftRow = page.locator('.card-done .bullet', { hasText: 'Resize terminal' });
+      await expect(leftRow.getByRole('button', { name: 'Start a thread about it' })).toHaveCSS('opacity', '0');
+      await leftRow.hover();
       req = pressTo(dn.id);
-      await page.locator('.card-done .bullet', { hasText: 'Resize terminal' })
-        .getByRole('button', { name: 'Start a thread about it' }).click();
+      await leftRow.getByRole('button', { name: 'Start a thread about it' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'start-thread', value: 'Resize terminal' });
 
       // Every can_do entry offers it too, with the same press form.
+      const doRow = page.locator('.card-done .bullet', { hasText: 'Use it' });
+      await doRow.hover();
       req = pressTo(dn.id);
-      await page.locator('.card-done .bullet', { hasText: 'Use it' })
-        .getByRole('button', { name: 'Start a thread about it' }).click();
+      await doRow.getByRole('button', { name: 'Start a thread about it' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'start-thread', value: 'Use it' });
 
       req = pressTo(ideaCard.id);

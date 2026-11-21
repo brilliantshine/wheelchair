@@ -14,7 +14,7 @@ function context(transcript = raw, role = 'reviewer') {
   const target = {name:'reviewer',role,started_by:'lead',cli:'pi',provider:'openrouter',account:'openrouter-work',live:true,ready:true,queue:[]};
   const lead = {name:'lead',role:'lead',live:true,ready:false,queue:[]};
   const thread = {id:'t',machine:'m',sessions:[target,lead],cards:[],queues:{},delivered_ids:[]};
-  const hub = {thread:async()=>thread,save:async()=>{},appendSent:async()=>{},call:async(_m, route)=>{ assert.match(route,/transcript/); return {data:transcript}; }};
+  const hub = {thread:async()=>thread,save:async()=>{},appendSent:async()=>{},call:async(_m, route)=>{ assert.match(route,/transcript/); return {data:transcript}; }, client:{passThrough:async(_m, route)=>{ assert.match(route,/transcript/); return {status:200,body:{data:transcript}}; }}};
   const event = payload => sessions.event(hub,{thread_id:'t',session:'reviewer',...payload});
   return {target,lead,thread,hub,event};
 }
