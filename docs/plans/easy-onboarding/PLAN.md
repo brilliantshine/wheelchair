@@ -71,7 +71,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    through installing and signing in to an agent.`
 5. **README**: the first-time path becomes: install the basic tools, run `./install.sh --serve`,
    open the link, follow the checklist. Dependencies lists all five harnesses as optional,
-   installable from Settings → Harnesses; drop "at least one CLI required".
+   installable from Settings → Harnesses; drop "at least one CLI required". The macOS steps
+   (`README.md:42-47`) stop asking for Claude Code or Codex before install and say the same.
 6. **Fixtures** in `install/test/run.sh`. Change these, alongside the behavior:
    - `neither` (`430-435`): run it serving, the way `explicit_serve` does, and replace its
      assertions with: exit 0; prints the "No agent CLI yet" line; writes no Claude or Codex
@@ -107,7 +108,11 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    A "script" recipe downloads first and runs only a complete download, so a failed download
    fails the install: `t=$(mktemp) && curl -fsSL <url> -o "$t" && bash "$t"; r=$?; rm -f "$t";
    exit $r`.
-   Before committing, the worker confirms each URL answers (`curl -fsI <url>`) and picks the
+   Before committing, the worker confirms each URL answers (`curl -fsI <url>`), downloads each
+   script (without running it) and reads where it puts the binary. A folder other than
+   `$HOME/.local/bin` or `$HOME/.kimi-code/bin` is added to S1.3's PATH list (and the S2.7
+   fixtures); if the folder cannot be told from the script, that provider ships `recipe:
+   false`. The worker also picks the
    current, non-deprecated Pi package with `npm view <name> deprecated engines` for
    `@earendil-works/pi-coding-agent` and `@mariozechner/pi-coding-agent`. Each recipe carries a
    comment with its vendor docs URL. **A recipe whose URL or package cannot be confirmed is
@@ -129,7 +134,13 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    exit_code, finished_at}`, then removes the pid file. Starting a job removes any old result.
 5. **Setup and validation, inside the job, after the recipe exits 0:**
    - for `claude` or `gpt`: `python3 <clone>/install/unseen.py` with a present list of that
-     one harness, as `install.sh:137-139` does, then `sensitivity/set.sh`;
+     one harness, as `install.sh:137-139` does; then the diagram dial block, keeping the
+     current level: read it from the other harness's file with `WHEELCHAIR_PRESENT=<other>
+     sensitivity/set.sh --json` (`<other>` is `codex` when installing claude, and vice
+     versa; its `level`, or `default` when that is null or the command fails), then write only
+     the new harness's file with `WHEELCHAIR_PRESENT=<installed> sensitivity/set.sh <level>`
+     (`sensitivity/set.sh:16-19` seam), so the other harness's file or a Codex override never
+     blocks the install;
    - the CLI resolves the way `cliStatus` does (`service.js:1636-1650`) and, for claude, codex,
      agy and kimi, `<cli> --version` exits 0 (pi: resolve only).
    All pass → `succeeded`. Recipe non-zero → `failed` with its exit code. Recipe passed but the
@@ -171,8 +182,10 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    mappers) simply skip it and use the next enabled provider. Only starts whose placement is
    pinned to the thread's own provider (`balancer.js:50`: a lead or sub-lead of a thread that
    already has a provider) wait, with the reason `<Harness> is left out in Settings`, when
-   that provider is off. Sessions
-   already running keep running. Two dispatches continue an already-placed session and are
+   that provider is off. The wait carries that reason in the session's `waiting_reason`
+   (`sessions.js:284`), and the thread's waiting line (`viewer/pages/thread.js:1300`) shows
+   `<Harness> is left out in Settings. Turn it back on under Settings → Harnesses.` instead of
+   the refill wording. Sessions already running keep running. Two dispatches continue an already-placed session and are
    not new placements, so the switch does not affect them: an aside fork of a live lead
    (`viewer/app/asides.js:34-46`) and a retry of an unanswered start
    (`viewer/app/sessions.js:232-241`). Turning the switch back on lets waiting starts proceed.
@@ -268,7 +281,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    `harnesses`; PUT 200/400/404 and the lead-order 409 (default `['claude','any']` with only
    claude off → 200); balancer never places a new session on a switched-off provider, falls
    back for a switched-off review family, and does not block an aside or an unanswered-start
-   retry; Ready reason; `/harnesses` shape with one reachable and one unreachable machine;
+   retry; Ready reason; a pinned lead waiting on a switched-off harness gets the left-out
+   `waiting_reason`; `/harnesses` shape with one reachable and one unreachable machine;
    forwarders pass through and 502; `?fresh=1` clears the cache; `can_start` (Pi-only with default orders → lead and worker not ok, reasons name Pi and the
    order to add it to; after adding `openrouter` to `worker_order` → both ok; Lead order
    `['claude']` with Claude signed out and Codex signed in → lead not ok; a switched-off
@@ -300,7 +314,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    - not installed, or the last install on this machine `failed` → **Install** (or **Try
      again** after a failure);
    - installed, not signed in → **Sign in**;
-   - installed and signed in → no action.
+   - installed and signed in → no action;
+   - switch off → no action, whatever the state.
    Above the rows, when `can_start.lead.ok` or `can_start.worker.ok` is false, a notice
    `Agents can't start yet on <machine>:` with each failing reason and links to the lists it
    names: **Workers try first** → `#usage`; **Leads try** → `#models` (where the Lead order
@@ -308,7 +323,6 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    shown again (hash navigation back to `#harnesses`) and after any order save on the page,
    it re-fetches `/harnesses?fresh=1`, so a fixed order clears the notice. The notice reflects
    the hub's default machine (`can_start.machine`) whichever machine is picked.
-   No action when the switch is off.
 3. **Install state on load.** On page load and whenever the picked machine changes, the page
    GETs install state for each enabled provider on that machine. `running` → shows
    `Installing…` with the output tail (monospace, scrolls, fits a phone) and polls every 2 s;
@@ -346,7 +360,7 @@ Antigravity, Kimi Code, Pi (OpenRouter).
 2. Browser tests (`npm --prefix viewer run test:browser`) with stubbed responses: the card
    shows and hides; the Harnesses section renders five rows, the vendor-link case, Install
    flow states (running on load, succeeded, failed with Try again), Sign in, the
-   the switch-off confirmation, the "can't start yet" notice and its reason, an installed
+   switch-off confirmation, the "can't start yet" notice and its reason, an installed
    `recipe: false` harness that is signed out shows Sign in,
    reopening Settings while the machine is unreachable and a job runs then the machine
    answering (row shows `Installing…`); switching a harness off hides its account row, review-family
@@ -544,6 +558,20 @@ npm --prefix viewer run test:browser
 **Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
 
 **Changed since Round 9:** S3.2 (switch-off wait scoped to pinned lead/sub-lead starts); Decisions 7 and 10 marked refined; one Accepted Risks row. Budget reset by Collin's "Keep going".
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Script recipes' install folder never checked (Antigravity) | upheld | S2.2 worker reads each script's folder; add to PATH or `recipe: false` |
+| intent | minor | Two wording slips | upheld | Fixed |
+| mechanics | major | Thread banner shows refill wording for a left-out harness | upheld | S3.2 `waiting_reason` and waiting line |
+| mechanics | major | Sensitivity writer scope during install | upheld | S2.5 read level from the other file, write only the new one |
+| mechanics | minor | README macOS steps still require a CLI first | upheld | S1.5 |
+
+### Round 11 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 10:** S1.5 (README macOS steps); S2.2 (worker checks each script's install folder); S2.5 (dial level kept, only the new harness's file written); S3.2 (left-out reason shown on the thread's waiting line); S3.10 test; S4.2 (switch-off line moved into the action list); S5.2 wording.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
