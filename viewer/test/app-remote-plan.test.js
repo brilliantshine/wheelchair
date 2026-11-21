@@ -4,8 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { setup, close, thread, api } = require('./helpers/app.js');
-async function remoteContext() {
-  const ctx = await setup(); const made = await thread(ctx);
+async function remoteContext(options) {
+  const ctx = await setup(options); const made = await thread(ctx);
   const machines = JSON.parse(await fs.readFile(path.join(ctx.state, 'machines.json')));
   machines.remote = { ...machines.hub, name: 'remote', port: ctx.machine.port }; machines.hub = { ...machines.hub, port: 1 };
   await fs.writeFile(path.join(ctx.state, 'machines.json'), JSON.stringify(machines));
@@ -61,6 +61,39 @@ test('refresh checks its snapshot and never starts a machine call under the lock
   current = { ...current, project: '/changed' }; release();
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(current.slug, null); assert.deepEqual(remote.cached(hub, current), []);
+});
+
+test('real plan-file callers do not start or await machine requests under a thread lock', async () => {
+  for (const trigger of ['threads', 'list', 'chat', 'doc', 'zip']) {
+    const lockFile = path.join(await require('./helpers/server.js').makeDir('plan-lock-'), 'locks.json');
+    await fs.writeFile(lockFile, '{}');
+    const probe = path.join(__dirname, 'helpers/plan-lock-probe.js');
+    const { ctx, made } = await remoteContext({ env: {
+      NODE_OPTIONS: `--require=${probe}`, WC_TEST_LOCK_FILE: lockFile,
+    } });
+    const samples = [];
+    try {
+      const reply = async input => {
+        const sample = async phase => samples.push({ action: input.action, phase, held: (JSON.parse(await fs.readFile(lockFile))[input.thread_id] || 0) > 0 });
+        await sample('arrival');
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await sample('reply');
+        return input.action === 'list' ? { files: ['MAP.md'], status: 'implementing' } : { content: 'remote content' };
+      };
+      ctx.machine.planReplies.list = reply; ctx.machine.planReplies.read = reply;
+      let response;
+      if (trigger === 'zip') response = await fetch(`${ctx.server.url}/api/threads/${made.id}/docs.zip?token=${ctx.server.token}`);
+      else {
+        const route = { threads: '/threads', list: '/threads?view=list', chat: `/threads/${made.id}/chat`, doc: `/threads/${made.id}/doc?file=MAP.md` }[trigger];
+        response = await api(ctx, route);
+      }
+      assert.equal(response.status, 200, trigger);
+      // Refresh is background work; wait for its delayed response as well as direct reads.
+      for (let i = 0; i < 100 && (!samples.length || samples.length % 2); i++) await new Promise(resolve => setTimeout(resolve, 20));
+      assert.ok(samples.length >= 2, `${trigger} made a plan-files request: ${JSON.stringify(samples)}`);
+      assert.deepEqual(samples.filter(sample => sample.held), [], `${trigger} held the lock: ${JSON.stringify(samples)}`);
+    } finally { await close(ctx); }
+  }
 });
 
 test('remote refresh saves committed status for Features', async () => {
