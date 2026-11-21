@@ -106,8 +106,11 @@ first turn forks the lead's Pi session, later turns resume the fork.
   `dist/core/tools/path-utils.js:42`, copied into the extension since Pi does not export it),
   blocks it if it does not exist, otherwise takes its `realpath`, checks that, and writes the
   checked real path back into the call's input (`event.input.path`; `tool_call` may mutate input,
-  Pi `docs/extensions.md:364`). Pi then opens exactly the checked path, so its alternate-name
-  lookups never apply. Full access loads no such extension. The
+  Pi `docs/extensions.md:364`). Pi normalizes the string again
+  (`dist/utils/paths.js:100-127`), so the handler also applies the same normalization to the
+  checked real path and blocks the call unless the result is unchanged (a real path containing
+  characters Pi would rewrite, such as a narrow no-break space, is refused). Pi then opens exactly
+  the checked path, so its alternate-name lookups never apply. Full access loads no such extension. The
   message is passed on stdin or as the final argument, whichever Pi's `-p` supports
   (`cli.md`). Login env comes from `adapter.loginEnv(dir)` as for other providers.
 - Output parsing (Pi JSON mode, `json.md`): the first record is the session header
@@ -141,7 +144,8 @@ first turn forks the lead's Pi session, later turns resume the fork.
   file plus its fork counting copied entries once, a read-only aside whose read of a path outside
   the worktree (including the account's `auth.json`) is blocked, run against Pi's real resolver
   with harmless fixtures: `../` escapes, `~/...`, an `@`-prefixed path, a symlink inside the
-  worktree pointing outside, a missing path (blocked), and a read of `protocol/app/aside.md` that is allowed, and resume argv carrying
+  worktree pointing outside, a missing path (blocked), a real path containing a narrow
+  no-break space (blocked), and a read of `protocol/app/aside.md` that is allowed, and resume argv carrying
   `--tools` for both access settings (pattern of existing aside tests); hub test that an OpenRouter lead
   allows an aside (update `viewer/test/app-asides.test.js` where it pins the refusal).
 - Live check (costs money; keep it to one fork turn and one resume turn, model
@@ -188,8 +192,8 @@ first turn forks the lead's Pi session, later turns resume the fork.
 - Tests in `machine/test/pi.test.js` with a fake `pi --version` (pattern of
   `machine/test/kimi.test.js:175-235`): old → problem and start refused; 1.5.2 and 1.5.9 → clean;
   1.6.0 → warning, start allowed; probe failure → unknown-version warning; Pi pane gone before
-  ready → session ended with "Pi exited before it was ready"; turn-failed text carries the note on
-  an untested version only. Hub test that the warning reaches `/usage` and does not block Ready.
+  ready → session ended with "Pi exited before it was ready"; turn-failed text carries the untested note on an untested launch version,
+  the unknown note on an unknown launch version, and no note on a tested one. Hub test that the warning reaches `/usage` and does not block Ready.
 
 ### S5. A report survives a brief failure reading the agent's log (every provider)
 
@@ -207,7 +211,8 @@ already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
   returns `''`.
 - `deliverReport`: when the read throws, or when the CLI is `pi`, the event carries an
   `entry_id`, and the read (empty or absent included) does not contain that entry (the machine's copy can lag or fail, `machine/service.js:1403-1407`),
-  retry the read inline: up to 3 more attempts, 500ms apart, within the same event handling and
+  retry the read inline: up to 3 more attempts, 500ms apart (a gap is skipped, and
+  retrying stops, when less than 500ms plus a minimal call would remain before the deadline), within the same event handling and
   the 4-second budget.
   A text found inline in the hook payload (non-Pi) is used at once, as today.
 - If every attempt fails, behave as today for a missing report: no result, and `quiet.arm`
@@ -221,7 +226,8 @@ already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
   whose first read is empty and whose entry appears on a later read gets its report; an absent transcript makes one read only,
   produces no report and arms the quiet check; all attempts failing arms the quiet check; a first read that times out
   followed by a successful one delivers once; a connection dropped after headers fails that
-  attempt and is retried; the recovery itself never exceeds 4 seconds (measured around
+  attempt and is retried; the recovery itself never exceeds 4 seconds and no
+  gap starts when it cannot be followed by a retry before the deadline (measured around
   the report read with a fake clock or a slow fake machine).
 
 ### Non-goals
@@ -353,6 +359,21 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 |------|----------|---------|--------------|------------|
 | intent | minor | Rewrite the checked real path into the tool input instead of mirroring Pi's resolver | upheld | S3 adopts it |
 | intent | minor | Version tie bullet belongs in S4 | upheld | Moved to S4 |
+| mechanics | blocking | Pi re-normalizes the rewritten real path | upheld (major) | S3 blocks unless normalization leaves the checked path unchanged; fixture test |
+| mechanics | major | Turn-failure note tests cover untested only | upheld (minor) | S4 tests: untested note, unknown note, none when tested |
+| mechanics | minor | Gap can overrun the deadline | upheld | S5 skips a gap with no time left for a retry |
+
+### Round 6 — 2026-11-20
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 5:**
+- S3: read-only guard rewrites the checked real path into the tool input and refuses a path Pi would re-normalize; no resolver mirroring of alternate names.
+- S4: version-tie bullet moved here; failure-note tests for untested, unknown and tested launch versions.
+- S5: retry gap skipped near the deadline.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
