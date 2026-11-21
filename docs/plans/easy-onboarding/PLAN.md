@@ -10,11 +10,6 @@ created: 2026-11-20
 
 ## Open Questions
 
-### Q1: Is "leave it out" one switch for all machines, or per machine?
-- **Context:** Hub settings are global; installs and sign-ins are per machine. Placement (`viewer/app/balancer.js`) filters by signed-in accounts.
-- **Options:** (a) one switch per harness on the hub, applying everywhere; (b) a switch per harness per machine.
-- **Recommendation:** (a) — simplest; a harness not installed on a machine is already skipped there.
-
 ### Q2: What does the first run look like?
 - **Context:** Today a fresh install lands you on the app with no guidance; README carries the steps.
 - **Options:** (a) a setup checklist on the home page until at least one harness is installed and signed in, linking into Settings; (b) a separate step-by-step setup screen; (c) no first-run screen, just the Settings section.
@@ -24,7 +19,7 @@ created: 2026-11-20
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| 1 | Thread "Make OpenRouter agents solid" edits `cliStatus('pi')` and `machine/adapters/pi.js` command(); resolveCli stays theirs to leave as is | If this plan changes how Pi is found, both threads touch nearby lines | yes | |
+| 1 | Thread "Make OpenRouter agents solid" edits `cliStatus('pi')` and `machine/adapters/pi.js` command(); resolveCli stays theirs to leave as is | If this plan changes how Pi is found, both threads touch nearby lines | yes | Collin told; both threads proceed, a merge fix-up may be needed. Spec keeps Pi's resolution change minimal |
 
 ## Decision Log
 
@@ -35,10 +30,13 @@ created: 2026-11-20
 | 3 | The machine finds CLIs at run time from PATH plus the known user install dirs, so a CLI installed later is used without reinstalling wheelchair | IDEA "usable right away" | defaulted |
 | 4 | After a harness is installed from Settings, the machine runs that harness's own setup steps the installer would have done (instruction-file block, old-hook cleanup, model pins) | Otherwise a later-installed Claude or Codex misses its setup | defaulted |
 | 5 | `install.sh` no longer refuses when no harness CLI is present; it skips harness-specific steps and points to Settings | IDEA "one install command succeeds with no agent CLI" | defaulted |
+| 6 | Leaving a harness out is one hub-wide switch per harness, applying to every machine | Machines lacking a harness are already skipped; fewer controls | user |
 
 ## Spec
 
 (grows as decisions land)
+
+- **Harness switch:** Settings holds one on/off per harness (claude, gpt, gemini, kimi, openrouter), stored in hub settings and applying to every machine. Off: the harness never gets an agent placed on it (balancer skips its accounts), and it is hidden from choices in Settings (model cells, review-family picker, sign-in), except the harness list itself where it can be turned back on.
 
 ## Deferred
 
