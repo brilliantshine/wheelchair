@@ -422,7 +422,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S1 spend line + S2 thinking levels | settings.js/.css, providers.js, routes.js, codex/model.sh + tests, service.js effort line, pi.js command(), pi.test.js, openrouter settings tests | standard (claude, claude-sonnet-5-5) | wc-32fed9258dca-worker | codex, machine, viewer node, browser | in progress |
+| T1 | S1 spend line + S2 thinking levels | settings.js/.css, providers.js, routes.js, codex/model.sh + tests, service.js effort line, pi.js command(), pi.test.js, openrouter settings tests | standard (claude, claude-sonnet-5-5) | wc-32fed9258dca-worker | codex, machine, viewer node, browser | done |
 | T2 | S5 report survives a failed log read — tricky | chat.js, sessions.js deliverReport, machine-client.js, report tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-2 | viewer node | done |
 | T3 | S3 read-only aside path guard extension — tricky | machine/adapters/pi-guard.js, machine/test/pi-guard.test.js, test-support/smoke/pi-guard.js | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-3 | machine, pi-guard smoke | done |
 | T4 | S4 Pi version check (after T1, T2) | service.js version probe/cliStatus/launch version/exit reason, usage.js, ready.js, settings.js machine line, sessions.js stuck card, pi tests | standard | | machine, viewer node | not started |
@@ -441,3 +441,10 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 - 2026-11-21 — Choice: T2, viewer/app/machine-client.js: the hard wall-clock cap applies to every strict pass-through (also project-tools, 120s), and a pending credential lookup is cancelled before a late request starts.
 - 2026-11-21 — Choice: T2, viewer/app/sessions.js: clock and sleep injectable via hub.reportNow / hub.reportSleep.
 - 2026-11-21 — T2 accepted (band: self): retry/report/chat/openrouter-hub tests re-run, 41 pass. Sub-lead integration fix: a strict 404 is treated as empty only when its body is not JSON, so project-tools 404 error text still reaches the caller.
+- 2026-11-21 — Choice: T1, viewer/pages/settings.css: `.usage-name-spend { flex: 0 0 auto }` keeps "OpenRouter" from being squeezed on spend rows only.
+- 2026-11-21 — Choice: T1, viewer/pages/settings.js: spend element is a new `usage-spend-text` class (drops `usage-left`), 13px font kept.
+- 2026-11-21 — Choice: T1, app-openrouter-spend.spec.js: stubs `/api/usage` with `page.route`; one-line check is height <= 1.5 line boxes.
+- 2026-11-21 — Choice: T1, codex/test/run.sh: also asserts Kimi still rejects effort.
+- 2026-11-21 — Choice: T1, machine/adapters/pi.js: `--thinking` sits after `--approve`, before `-e` (unreported; found by scout).
+- 2026-11-21 — Choice: T1, app-openrouter-settings.test.js: round-trip added to the existing file on the heavy slot (unreported; found by scout).
+- 2026-11-21 — T1 accepted (band: scout): codex 159/0, pi.test 12/0, settings/routes 41/0, new spec 2/2 (chromium, firefox) re-run by sub-lead; full browser suite deferred to final validation. sessions.js:349 comment already says Kimi only, nothing to fix.
