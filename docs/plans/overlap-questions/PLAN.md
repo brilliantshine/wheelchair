@@ -60,6 +60,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 31 | A chat Spec change logs `idea-change` when it drops promised scope; restart with live reviewers applies a pending change before restarting the same pass; a chat change to an approved plan retracts the approval first; re-asking an open card retracts and reposts it | Round 12 findings | review-round-12 |
 | 32 | Split off: how a Spec change the user asks for in chat during a running review or after approval is saved, counted, survives a restart and withdraws the approval moves to its own thread (stub). Supersedes Decisions 30 and the chat-change parts of 31; a late overlap here gets only the one-line mention and a follow-up offer | Rounds 10-12 kept finding gaps there, and they are gaps in the existing review rules, not about overlaps; the user picked "Split it off" (card 72ce279f) | user |
 | 33 | Overlap questions from a peer follow the card window; (b)'s own overlap sentence is replaced; a re-ask posts its replacement only after the retract is confirmed | Round 13 findings | review-round-13 |
+| 34 | Peer overlap questions get four explicit paths (settled, held, in window, late) and the answer goes back to the peer, recorded on the Open Question for restarts; every retract 503 is retried after a minute | Round 14 findings | review-round-14 |
 
 ## Spec
 
@@ -121,10 +122,19 @@ instructions; never change on your own; never negotiate) and ends with "Your use
 through an overlap card, or in chat for a late overlap (see below)". In "When to look" (b),
 the sentence that turns a new overlap into an Open Question with "keep the plan as it is, or
 change it" options is replaced by a pointer to this section; (b) keeps only its timing. In
-"Passing a question on", a peer's question about an overlap with this thread follows the card
-window: inside it, it becomes (or joins) the overlap card for that thread; outside it, the lead
-gives the late-overlap mention and answers the peer from what it knows, saying its user was not
-asked. Unrelated peer questions pass on as today.
+"Passing a question on", a peer's question about an overlap with this thread takes one of these
+paths:
+- the overlap is already settled (a Decision Log entry, or an answered small-fix card): answer
+  the peer from that decision, with no new card, unless the question brings new information that
+  changes what the answered option would do (then it is a re-ask, inside the card window only);
+- before IDEA.md is confirmed: held, like any overlap, and asked first after confirmation;
+- inside the card window: it becomes (or joins) the overlap card for that thread;
+- after the card window: the late-overlap mention, and the lead answers the peer from what it
+  knows, saying its user was not asked.
+When a held or carded peer question is settled, the lead sends the answer back to that peer as a
+`message`. For a feature, the Open Question line records who asked (`asked by <session name>,
+question <id>`) so a restarted lead still replies; it is removed with the Decision once the reply
+is sent. Unrelated peer questions pass on as today.
 
 - **One question at a time:** an overlap card waits behind any open `question` card of yours
   and is asked next. For a feature, a waiting or asked overlap is in PLAN.md's Open Questions
@@ -149,7 +159,7 @@ asked. Unrelated peer questions pass on as today.
   overlap (Terms). No card.
 - **Re-asking an open card:** to re-ask an open overlap card with new information, retract it
   and post the new card only once the retract succeeds (or is refused as `card was already
-  withdrawn`); its Open Question stays and is updated in the same commit. If the retract is
+  withdrawn`); for a feature, its Open Question stays and is updated in the same commit. If the retract is
   refused because the card was answered, act on that answer against its own options instead.
   On a 503, retry after a minute before posting anything.
 - **Withdrawn card:** when the lead retracts an overlap card because it no longer applies, it
@@ -181,7 +191,11 @@ On `[wc:context restart]`, after rereading the plan and cards:
   `{ ok: true, spooled: true, id: <delivery_id> }`.
 - `retract` is never queued: the machine relays it like `done` (no spool; 503 "the app is
   unreachable; the retract was not recorded; try again in a minute" when the spool is behind or
-  the hub is unreachable). Its success and refusals come straight from the hub.
+  the hub is unreachable). Its success and refusals come straight from the hub. Every retract a
+  lead makes (overlap, approval, deferred, offer, question, needs, sudo) that gets this 503 is
+  retried after a minute until it succeeds or is refused; `cards-lead.md` `retract` says so, so
+  the existing retract steps (for example the deferred card on a switch to thorough) keep working
+  through an outage.
 - `viewer/app/card.js` `retractable`, before the generic `card is already answered`: an approval
   card whose `answered_action` is `start-building` is refused with `Start building was already
   pressed`; a card with `retracted_at` is refused with `card was already withdrawn`.
@@ -222,7 +236,7 @@ merging of branches; no sub-lead or worker rule changes.
   retracting a withdrawn card with `card was already withdrawn`.
 - `bash machine/test/run.sh` passes, with tests: the spooled response carries `id` equal to the
   delivery id and the drained card's hub id equals it; a retract with the hub down returns 503
-  and writes nothing to the spool.
+  and writes nothing to the spool, and a retract sent after the hub returns succeeds.
 - `grep -n "overlap card" protocol/app/lead.md` shows the card-window, late-overlap and restart
   rules; `grep -n "Your user decides in chat\|tell your user in one line that it exists" protocol/app/lead.md`
   finds nothing.
@@ -247,6 +261,15 @@ merging of branches; no sub-lead or worker rule changes.
 
 ## Review Rounds
 
+### Round 15 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 14:** Decision 34: §1 "Passing a question on" paths and peer reply; §1 re-ask "for a feature"; §3 every retract retried on 503; Validation adds a retract after the hub returns.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ### Round 14 — 2026-11-21
 
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
@@ -255,6 +278,12 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Peer never hears the user's answer; settled overlap | upheld | Answer sent back; settled path (Decision 34) |
+| intent | minor | Re-ask Open Question assumes PLAN.md | upheld | "For a feature" |
+| mechanics | major | Peer question before IDEA.md confirmation | upheld | Held path (Decision 34) |
+| mechanics | major | Peer question about a settled overlap | upheld | Answered from the decision (Decision 34) |
+| mechanics | major | Peer reply lost on restart | upheld | Recorded on the Open Question (Decision 34) |
+| mechanics | major | Synchronous retract breaks other retract steps when the app is down | upheld | Every retract retried on 503 (Decision 34) |
 
 ### Round 13 — 2026-11-21
 
