@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: When does the lead merge?
-- **Context:** After done, the lead writes "check it yourself" steps and an agent tries them (lead.md step 10). Once merged, any problem becomes a follow-up thread instead of a fix on the same PR (MAP.md 7).
-- **Options:** (a) right after the done card is accepted; (b) after the check agent has tried the steps, and only if none came out broken.
-- **Recommendation:** (b).
-
 ### Q2: Is the setting global, or per project?
 - **Context:** Settings preferences today are global (MAP.md 1).
 - **Options:** (a) one global switch; (b) per project.
@@ -47,6 +42,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 2 | Applies to every path that ends in a `done` card: planned builds, small fixes, after-done fixes on an open PR | All three end in the same finishing procedure (MAP.md 3) | defaulted |
 | 3 | The lead reads the setting at the moment it would merge, not when it started, so turning it off stops merges in running threads | A switch that doesn't take effect until new threads would surprise | defaulted |
 | 4 | If GitHub refuses the merge (review required, branch protection, head moved), the PR stays open, the lead says so in one line, and nothing retries the merge | Never bypass GitHub's rules (IDEA Constraints) | defaulted |
+| 5 | Merge only after the check agent has tried the Check it yourself steps and the check card has no broken step; a broken step keeps the PR open so Fix it now fixes it in place | One more look before main; fixes stay in the same thread | user |
+| 6 | After a broken check, "Leave it" does not merge; the PR stays open for Collin. A later fix that passes its check merges as usual | "Leave it" leaves the decision with Collin | defaulted |
 
 ## Spec
 
