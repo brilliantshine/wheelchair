@@ -487,7 +487,7 @@ New tests, at least:
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine: `/v1/plan-files` route (S5), archive keeps lead-sent files, kept serving and numbering (S4) | `machine/service.js`, `machine/API.md`, `machine/test/plan-files.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker | `bash machine/test/run.sh` | done |
 | T2 | tricky — Hub: ZIP writer and `docs.zip` (S2), remote plan reads and background refresh (S5), archive `keep` and `kept_files` (S4), HTML `download=1` (S1) | `viewer/app/*`, `viewer/server.js` diagram-html handling, `viewer/test/*.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker-2 | `node --test viewer/test/*.test.js` | done |
-| T3 | Picture page Download (S1 PNG export, HTML link) and sent-file preview page (S3) | `viewer/pages/picture*`, `viewer/pages/file.*`, `APP_PAGES` line, new specs | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-3 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | dispatched |
+| T3 | Picture page Download (S1 PNG export, HTML link) and sent-file preview page (S3) | `viewer/pages/picture*`, `viewer/pages/file.*`, `APP_PAGES` line, new specs | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-3 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
 | T4 | Thread page: Download all link (S2), sent rows open preview (S3), archived rows honour `kept_files` (S4), HTML download inertness browser test (S1); after T2 and T3 | `viewer/pages/thread.js`, `thread.css`, new spec | standard, claude | | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | not started |
 
 ## Log
@@ -503,3 +503,9 @@ Build accepted: approval a40eb86e-c69f-46d8-815d-be9ef02baa25
 - 2026-11-21 — Choice: T2, `viewer/app/threads.js` archive `keep`: "posted by a lead" means `card.session` is any session in `thread.sessions` with role `lead` (seen in diff, not in report).
 - 2026-11-21 — Choice: T2, `viewer/app/remote-plan.js` `isRemote`: a thread whose machine is `hub` is local; otherwise remote unless both names resolve to the same registry entry (identity, as `peers.js` `sameMachine`).
 - 2026-11-21 — T2 accepted (band: self, tricky): viewer suite 732/732 re-run by sub-lead; diff read in full; no lock-held machine calls, 404/502 mapping and ZIP strictness as Spec.
+- 2026-11-21 — Choice: T3, `viewer/pages/file.js`: previewable-file helper is `window.WCFilePreview {previewable, href, MAX}`; the thread page must load `file.js`; `previewable` is false when the size is unknown.
+- 2026-11-21 — Choice: T3, `viewer/pages/picture-export.js` forms: export re-fetches the form JSON from `WCDiagram.source(...)` instead of reading the drawn DOM; fixed 900 px logical width, colours from the page's CSS variables.
+- 2026-11-21 — Choice: T3, `viewer/test/app-picture-download.spec.js`: the wide-graph PNG is checked by exact dimensions plus non-background pixels in each quarter of the width, not per node.
+- 2026-11-21 — Choice: T3, `viewer/pages/file.js`: a non-previewable extension shows "cannot be previewed" with the Download link; stored names not matching `^[0-9]+-[A-Za-z0-9._-]+$` are refused.
+- 2026-11-21 — Choice: T3, preview tests serve files through the fake machine's `uploadsDir`.
+- 2026-11-21 — T3 accepted (band: bigger-scout): full browser suite 1120 passed re-run by sub-lead on the worker branch; scout found no Spec deviation and no HTML injection; weak spots (pan/zoom proof is a transform-string check; only the timeline form is tested) left for verification.
