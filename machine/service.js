@@ -2123,6 +2123,15 @@ class MachineService {
           if (this.platform === 'linux') {
             const { missing } = screenTools();
             if (missing.length) warnings.push(`Screens won't work on ${os.hostname()}: missing ${missing.join(', ')}. Builds that don't use a screen are unaffected.`);
+            if (this.win.detected.kernel && agent.worktree) {
+              const { mount } = this.win.detected;
+              const { mcp } = await readProjectMcp(agent.worktree, { wsl: true, mount });
+              if (hasWindowsProgram(mcp, { mount })) {
+                let health = this.win.bridgeHealth();
+                if (health.ok === null) health = await this.win.bridgeHealthWait(15000);
+                if (health.ok === false) warnings.push(`The Windows bridge won't work on ${os.hostname()}: ${health.reason}. Builds that don't use Windows are unaffected.`);
+              }
+            }
           }
           if (warnings.length) input.warnings = warnings.slice(0, 10);
           this.refreshStartupWarning();
@@ -2192,7 +2201,7 @@ class MachineService {
     this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.win.healthTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

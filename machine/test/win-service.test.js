@@ -19,7 +19,7 @@ async function service(wsl = true, options = {}) {
   const root = makeTempSync('win-service-'), bin = path.join(root, 'bin'), mount = path.join(root, 'mnt'), state = path.join(mount, 'c/state');
   const procRoot = path.join(root, 'proc'), etcRoot = path.join(root, 'etc'), runRoot = path.join(root, 'run');
   write(path.join(procRoot, 'sys/kernel/osrelease'), wsl ? 'microsoft' : 'linux');
-  if (wsl) write(path.join(procRoot, 'sys/fs/binfmt_misc/WSLInterop'), '');
+  if (wsl) write(path.join(procRoot, 'sys/fs/binfmt_misc/WSLInterop'), 'enabled\n');
   write(path.join(etcRoot, 'wsl.conf'), `[automount]\nroot = ${mount}\n`);
   write(path.join(runRoot, 'WSL/1_interop'), '');
   const powershell = path.join(mount, 'c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe');

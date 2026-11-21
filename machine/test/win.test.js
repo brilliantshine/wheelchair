@@ -15,7 +15,7 @@ function fixture(wsl = true) {
   fs.mkdirSync(path.join(procRoot, 'sys/fs/binfmt_misc'), { recursive: true });
   fs.mkdirSync(etcRoot);
   fs.writeFileSync(path.join(procRoot, 'sys/kernel/osrelease'), wsl ? 'microsoft' : 'linux');
-  if (wsl) fs.writeFileSync(path.join(procRoot, 'sys/fs/binfmt_misc/WSLInterop'), '');
+  if (wsl) fs.writeFileSync(path.join(procRoot, 'sys/fs/binfmt_misc/WSLInterop'), 'enabled\n');
   const session = { name: 'wc-test-lead', thread_id: 'test', role: 'lead', cli: 'claude', worktree: path.join(root, 'work'), status: 'ready' };
   const service = { stateDir: path.join(root, 'state'), sessions: { [session.name]: session }, liveTmux: () => new Set([session.name]), archivingThreads: new Set(), archivedThreads: new Set(), closingThreads: new Set(), log() {} };
   const winEnv = { localAppData: async () => 'C:\\Users\\Test', toLinux: p => path.join(root, 'drive', p.replace(/[:\\]/g, '/')), toWindows: p => `W:${p}`, versions: async () => ({ ok: true }) };
