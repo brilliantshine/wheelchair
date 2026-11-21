@@ -29,11 +29,24 @@ never built (MAP.md).
   it; (b) each thread builds its own replacement path.
 - **Recommendation:** (a).
 
+### Q2: How do Codex agents get Windows tools that appear late?
+- **Context:** live test (W1): Claude Code 2.1.330 re-lists tools on
+  `notifications/tools/list_changed`; codex-cli 0.171.0 does not (one `tools/list` at start,
+  nothing after the notification; tool never callable). So the stand-in's empty list stays
+  empty for a Codex session. Antigravity is not installed here; untested.
+- **Options:** (a) remember each tool's last tool list (stored by the go-between when the
+  real tool runs) and advertise it from the stand-in; a call before the copy is ready waits
+  for it (bounded under Codex's tool-call timeout) and then goes to the real tool; first ever
+  use of a tool gets no tools until the next session; (b) hold the handshake up to ~8 s for
+  Codex, then empty list: helps only fast copies; (c) accept that Codex gets these tools only
+  in sessions started after the copy is ready (changes IDEA.md "What good looks like").
+- **Recommendation:** (a), with `list_changed` still sent for CLIs that use it.
+
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| W1 | Design depends on CLIs re-listing tools on `notifications/tools/list_changed` (parent C4, never checked) | Live test of installed `claude` and `codex` running now | no | |
+| W1 | Design depends on CLIs re-listing tools on `notifications/tools/list_changed` (parent C4, never checked) | Live test of installed `claude` and `codex` | yes | Claude re-lists; Codex does not → Q2 |
 
 ## Decision Log
 
