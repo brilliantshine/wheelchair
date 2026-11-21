@@ -92,6 +92,12 @@ function command(program, args, options = {}) {
   if (result.error) return { ok: false, status: result.status ?? 127, stdout: result.stdout || '', stderr: result.stderr || result.error.message };
   return { ok: result.status === 0, status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
 }
+// git refuses to commit when the machine has no user.name or user.email set ("empty ident
+// name"). Fill only the missing ones for this one command; a configured identity is kept.
+function gitIdentityArgs(cwd) {
+  const value = (key) => { const r = command('git', ['-C', cwd, 'config', key]); return r.ok ? r.stdout.trim() : ''; };
+  return [...(value('user.name') ? [] : ['-c', 'user.name=wheelchair']), ...(value('user.email') ? [] : ['-c', 'user.email=wheelchair@localhost'])];
+}
 // The same result as command(), without blocking the event loop: for anything slow (a git
 // fetch can take many seconds), so /v1/status, hooks and other sessions keep being answered.
 function commandAsync(program, args, options = {}) {
@@ -1153,7 +1159,7 @@ class MachineService {
   archiveCommit(worktree, message) {
     const added = command('git', ['-C', worktree, 'add', '-A']);
     if (!added.ok) return { ok: false, reason: added.stderr.trim() || 'git add failed' };
-    const committed = command('git', ['-C', worktree, 'commit', '-m', message]);
+    const committed = command('git', ['-C', worktree, ...gitIdentityArgs(worktree), 'commit', '-m', message]);
     if (!committed.ok) return { ok: false, reason: committed.stderr.trim() || 'git commit failed' };
     const head = command('git', ['-C', worktree, 'rev-parse', 'HEAD']);
     return head.ok ? { ok: true, commit: head.stdout.trim() } : { ok: false, reason: head.stderr.trim() || 'git rev-parse failed' };
@@ -1471,12 +1477,12 @@ class MachineService {
     if (operation === 'commit') result = run('git', ['add', '--', ...input.paths,]);
     if (operation === 'commit' && result.ok) {
       const merging = run('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD']).ok;
-      result = run('git', ['commit', '-m', input.message, ...(merging ? [] : ['--', ...input.paths])]);
+      result = run('git', [...gitIdentityArgs(cwd), 'commit', '-m', input.message, ...(merging ? [] : ['--', ...input.paths])]);
     }
     if (operation === 'fetch') result = run('git', ['fetch', ...args]);
-    if (operation === 'merge') result = run('git', ['merge', ...args]);
-    if (operation === 'cherry-pick') result = run('git', ['cherry-pick', ...args]);
-    if (operation === 'revert') result = run('git', ['revert', ...args]);
+    if (operation === 'merge') result = run('git', [...gitIdentityArgs(cwd), 'merge', ...args]);
+    if (operation === 'cherry-pick') result = run('git', [...gitIdentityArgs(cwd), 'cherry-pick', ...args]);
+    if (operation === 'revert') result = run('git', [...gitIdentityArgs(cwd), 'revert', ...args]);
     if (operation === 'push') result = run('git', ['push', ...args]);
     if (operation === 'pr') result = run('gh', ['pr', 'create', ...args]);
     return { ok: result.ok, status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -1795,7 +1801,7 @@ class MachineService {
       }
       return { result: 'moved', remote_tip: tip, picked_up_at };
     };
-    if (action === 'claim-commit') return { sha: await run('commit-tree', `${input.parent}^{tree}`, '-p', input.parent, '-m', input.message) };
+    if (action === 'claim-commit') return { sha: await run(...gitIdentityArgs(repo), 'commit-tree', `${input.parent}^{tree}`, '-p', input.parent, '-m', input.message) };
     if (action === 'claim-state') return claimState();
     if (action === 'claim-push') {
       let state = await claimState(); let pushed;
