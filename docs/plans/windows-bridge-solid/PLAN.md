@@ -373,6 +373,15 @@ copies or git data; no IPv6-only Windows servers.
 | mechanics | major | Live check can pass against a Linux service | upheld | §Validation live part proves a Windows token |
 | mechanics | minor | Check once built: localhostForwarding may loop the relay to itself | upheld | §1 No loop through WSL; C3 |
 
+### Round 2 — 2026-11-21
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round 1:** "Which tools a session loads" (new); §1 marking limited to IPv4 http hosts, supported addresses, copy readying, `::1` listener, no-loop check, port-taken withholding, mirrored via `wslinfo` only, service-restart restore, `forwards` states; §2 help text and Unity prompt lines; §3 warnings (no `git_bytes` warning, conflict refs at 10); §4 ready file rules, go-between steps 4-7; §5 detection result `ok: null`, background probe with 15 s deadline, approval gating; Validation (new tests, live localhost part); D9-D14; Check Once Built C1-C3.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
