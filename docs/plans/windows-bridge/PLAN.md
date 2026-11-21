@@ -687,3 +687,4 @@ sets `WHEELCHAIR_UNITY`.
 - 2026-11-19: Review budget reached after round 3 (three rounds without a clean one since the user's last decision). Recurring area: the two-way file sync and its lifecycle. Asked the user how to proceed.
 - 2026-11-19: Review budget reached again after round 6 (rounds 4–6 since the user's git-sync decision, none clean). Findings now small and fixed; asked the user how to proceed.
 - 2026-11-19: Round 7 not clean (two majors, both fixed: D82, D83). Per D79, asked the user before going further.
+- 2026-11-20: Build accepted: approval 549f84df-cecd-4f90-b57a-ce1c39132202
