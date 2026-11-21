@@ -656,7 +656,7 @@ body names the current done head counts as its check card: post no other.
    it names (its `COMMIT:` line) for a small fix, after-done fix or repair; a lead-check pass
    whose only gaps were rare paths counts, and so does a sub-lead `done` result after "Defer
    them and finish"; (b) `git diff --name-only <that commit> <done head>` lists only files
-   under `docs/plans/` (commits brought in without a verifier, such as a fast-forward in 6,
+   under `docs/plans/`, or nothing (commits brought in without a verifier, such as a fast-forward in 6,
    fail this); (c) no `question` card in this thread was ever answered with "push it as it
    is" or with shipping a gap that survived its checks (deferring hardening, "Defer them and
    finish", is not shipping a surviving gap). Otherwise, and whenever you cannot tell (for
