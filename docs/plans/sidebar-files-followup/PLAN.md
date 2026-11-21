@@ -486,7 +486,7 @@ New tests, at least:
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine: `/v1/plan-files` route (S5), archive keeps lead-sent files, kept serving and numbering (S4) | `machine/service.js`, `machine/API.md`, `machine/test/plan-files.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker | `bash machine/test/run.sh` | done |
-| T2 | tricky — Hub: ZIP writer and `docs.zip` (S2), remote plan reads and background refresh (S5), archive `keep` and `kept_files` (S4), HTML `download=1` (S1) | `viewer/app/*`, `viewer/server.js` diagram-html handling, `viewer/test/*.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker-2 | `node --test viewer/test/*.test.js` | dispatched |
+| T2 | tricky — Hub: ZIP writer and `docs.zip` (S2), remote plan reads and background refresh (S5), archive `keep` and `kept_files` (S4), HTML `download=1` (S1) | `viewer/app/*`, `viewer/server.js` diagram-html handling, `viewer/test/*.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker-2 | `node --test viewer/test/*.test.js` | done |
 | T3 | Picture page Download (S1 PNG export, HTML link) and sent-file preview page (S3) | `viewer/pages/picture*`, `viewer/pages/file.*`, `APP_PAGES` line, new specs | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-3 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | dispatched |
 | T4 | Thread page: Download all link (S2), sent rows open preview (S3), archived rows honour `kept_files` (S4), HTML download inertness browser test (S1); after T2 and T3 | `viewer/pages/thread.js`, `thread.css`, new spec | standard, claude | | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | not started |
 
@@ -497,3 +497,9 @@ Build accepted: approval a40eb86e-c69f-46d8-815d-be9ef02baa25
 - 2026-11-21 — Choice: T1, archive `keep`: duplicate names reported once, in request order; invalid entries silently dropped (scout-noted, not in report).
 - 2026-11-21 — Choice: T1, plan-files: extra `default_branch` validation (no leading `-`, `check-ref-format`) (scout-noted, not in report).
 - 2026-11-21 — T1 accepted (band: scout): machine suite 449/449 re-run by sub-lead; scout found no spec deviations; minor robustness notes (ENOTDIR when `kept/<thread>` is a file, EACCES after removal) are rare paths.
+- 2026-11-21 — Choice: T2, `viewer/app/remote-plan.js`: per-hub WeakMap holds the file cache, attempt times and in-flight set, so separate Hub instances do not share remote results.
+- 2026-11-21 — Choice: T2, `viewer/app/remote-plan.js` refresh: the snapshot check also compares `default_branch`, and a snapshot without a slug is dropped if a slug appeared meanwhile (seen in diff, not in report).
+- 2026-11-21 — Choice: T2, `viewer/app/machine-client.js`: `requestJson` now rejects on a dropped response for every caller, not only `strict` ones (seen in diff, not in report).
+- 2026-11-21 — Choice: T2, `viewer/app/threads.js` archive `keep`: "posted by a lead" means `card.session` is any session in `thread.sessions` with role `lead` (seen in diff, not in report).
+- 2026-11-21 — Choice: T2, `viewer/app/remote-plan.js` `isRemote`: a thread whose machine is `hub` is local; otherwise remote unless both names resolve to the same registry entry (identity, as `peers.js` `sameMachine`).
+- 2026-11-21 — T2 accepted (band: self, tricky): viewer suite 732/732 re-run by sub-lead; diff read in full; no lock-held machine calls, 404/502 mapping and ZIP strictness as Spec.
