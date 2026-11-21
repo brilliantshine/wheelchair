@@ -94,6 +94,11 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     if (provider && picked) note = `Could not use ${provider}; using ${picked}.`;
   }
   if (picked && droppedProvider) note = `Could not use ${droppedProvider}; using ${picked}.`;
+  // Mix families narrowed to one signed-in family still reports a constraint it could not meet.
+  if (picked && settings.review_families === 'both' && strictReview) {
+    if (constraints.provider && constraints.provider !== picked) note = `Could not use ${constraints.provider}; using ${picked}.`;
+    else if (constraints.not_provider === picked) note = `Could not avoid ${picked}; using ${picked}.`;
+  }
   if (picked && fallbackReview) note = `Reviewers and checkers are set to ${PROVIDERS[fallbackReview].label}, but ${PROVIDERS[fallbackReview].label} is not available; using ${PROVIDERS[picked].label}.`;
   if (picked) return { provider: picked, account: available[picked], ...(note ? { note } : {}) };
   const relevant = provider && role === 'worker' && !margin[provider] ? [provider] : excluded && role === 'worker' ? order.filter((p) => p !== excluded) : order;
