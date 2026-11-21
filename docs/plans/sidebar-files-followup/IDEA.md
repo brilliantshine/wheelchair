@@ -11,8 +11,8 @@ created: 2026-11-20
 
 Finishing the thread sidebar's files. You can download pictures as image files and all
 project documents at once, preview documents an agent sent you without leaving the app,
-keep those sent files after archiving a thread, and see the map, idea, plan and pictures of
-threads that run on another computer.
+keep those sent files after archiving a thread, and see the map, idea and plan of threads that
+run on another computer.
 
 ## Why — the problem
 
@@ -32,8 +32,8 @@ The sidebar files feature shipped the basics and saved five things for later. To
 - One button downloads all of a thread's project documents as a single file.
 - Tapping a sent text or Markdown document shows it inside the app, with a way to download.
 - After archiving a thread, the files agents sent you are still listed and still download.
-- A thread running on another computer shows its map, idea, plan and pictures in the
-  sidebar, and they open and download, the same as a thread on this computer.
+- A thread running on another computer shows its map, idea and plan in the sidebar, and
+  they open and download, the same as a thread on this computer.
 
 ## Not doing
 
@@ -42,6 +42,8 @@ The sidebar files feature shipped the basics and saved five things for later. To
   itself).
 - Changing how you attach files to your own messages.
 - Keeping your own attachments after archiving.
+- Pictures of threads running on another computer: moved to their own thread ("Pictures
+  from threads on another computer").
 
 ## Constraints
 

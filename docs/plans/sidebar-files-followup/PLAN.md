@@ -37,6 +37,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Remote threads show the last committed plan on `wc/<id>`, read through a new machine route; local threads keep reading the working tree | Leads commit plan changes each turn; reading refs avoids trusting worktree paths sent by the hub | defaulted |
 | 11 | Supersedes Decision 10's rationale: remote reads use the branch because one path serves live and archived threads alike (the machine can already find a thread's worktree itself, `machine/service.js:1720-1723`). Trade-off: mid-turn, a remote live thread can show the plan as of the lead's last commit, while a local one shows unsaved edits | Correcting a wrong rationale from review | review-round-1 |
 | 12 | Interactive-page (HTML) pictures download as their page file with scripts blocked; IDEA's "What good looks like" updated to say so | User's pick ("Save the page file") over no download | idea-change |
+| 13 | Pictures of threads on another computer (plan pictures live or archived, and aside pictures) split into their own thread; IDEA's "What good looks like" drops pictures from the remote bullet and "Not doing" points to the new thread | User chose "Split it off" after four review rounds of findings on that part | idea-change |
 
 ## Spec
 
@@ -79,7 +80,7 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
 - The download URL is the **same URL the picture page already displays the HTML from**, plus
   `&download=1`: the local-live `/wheelchair/diagram-html?path=...` route
   (`viewer/server.js:1673-1696`, which already resolves the card's plan and registered file)
-  and the thread-scoped `.../diagram-html?file=` route (archived and remote, S5). Each route,
+  and the thread-scoped `.../diagram-html?file=` route (archived threads). Each route,
   given `download=1`, adds the prefix and `content-disposition: attachment; filename=
   "<graph file name>"` (the `.html` file's own name, e.g. `flow.html`; the title-based name is
   for PNGs only); without it, it behaves as today. The client never builds the file itself. This is the
@@ -88,7 +89,7 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   characters, falling back to the graph file name; extension `.png`.
 - Saving uses a blob URL on an `<a download>` element, which works in phone Safari and
   Chrome. The canvas never reads cross-origin images, so it is never tainted.
-- Graph and form PNGs work for local, remote and archived threads alike, since they run on
+- Graph and form PNGs work wherever the picture page shows the picture, since they run on
   what the page already rendered.
 
 ### S2. Download all documents (D2)
@@ -164,13 +165,14 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   suppressed: `viewer/pages/thread.js:405-445,1139`); any other keeps today's archived
   "Removed when the thread was archived" state.
 
-### S5. Documents and pictures of remote threads (D5, D6, D7)
+### S5. Documents of remote threads (D5, D7)
 
 **What it shows.** For a remote thread (live or archived), the sidebar and phone panel list
-the plan's MAP.md, IDEA.md, PLAN.md and pictures, and they open, download and zip as for a
-local thread. They show the **last committed** version on the thread's branch `wc/<id>`
-(leads commit plan changes before each turn ends); a local live thread keeps reading the
-working tree.
+the plan's MAP.md, IDEA.md and PLAN.md, and they open, download and zip as for a local
+thread. They show the **last committed** version on the thread's branch `wc/<id>` (leads
+commit plan changes before each turn ends); a local live thread keeps reading the working
+tree. Pictures of remote threads are not part of this plan (Decision 13): they behave as
+today.
 
 **Machine route.** New hub-authenticated `POST /v1/plan-files` with body
 `{thread_id, project, default_branch, slug?, action, file?}`:
@@ -185,8 +187,8 @@ working tree.
   `{files: [...]}`: which of the three plan files exist at `wc/<id>` and are at most 2 MiB
   (`git cat-file -s`), matching the local 2 MiB rule (`viewer/app/documents.js:13`); an
   oversized file is not listed, so it never appears in the sidebar or the ZIP.
-- `action: "read"`: `slug` and `file` required. `file` is one of the three plan files or
-  `graphs/<name>` with `<name>` matching `^[A-Za-z0-9._-]+\.(json|html)$`. Returns the blob
+- `action: "read"`: `slug` and `file` required. `file` is one of the three plan files
+  (the follow-up thread for pictures may extend this). Returns the blob
   via `git show wc/<id>:docs/plans/<slug>/<file>`, refused past 2 MiB (`git cat-file -s`
   first), as `{content}` (UTF-8 string).
 - Errors: 400 for bad input, 404 for a missing ref or file. All git calls use `execFile`
@@ -212,50 +214,22 @@ of a background refresh is cleared in a `finally`, so no failure leaves it set:
   Failures keep the last good cache and are not shown as errors.
 - The chat response and thread list use the cached file list for remote threads, and the
   chat response adds `remote: true` for them.
-- **Document and picture reads** for a remote thread call `read` outside any lock. Status
-  mapping (doc route, graph route, diagram-html route): a machine **404** (missing ref or
-  file) becomes the hub's existing 404 for that route, so the doc page and picture page show
-  their existing not-found state; a machine 400 becomes 404; a connection error, timeout or
-  any other status becomes 502 "Couldn't reach <machine>", which the picture page shows as
-  its existing "lost contact" notice. The S2 ZIP is stricter, as stated there.
-- **Picture rows stay card-driven, as today:** one row per `diagram` card file
-  (`viewer/pages/thread.js:381-394`); nothing lists graph files independently. Remote reads,
-  like today's archived reads (`viewer/app/threads.js:270-290`), read the picture from
-  `docs/plans/<thread.slug>/graphs/<file>`; a card whose `plan` differs from the thread's slug
-  is not specially handled. A card whose file is not committed yet shows the picture page's
-  existing not-found message.
-- **Picture reads:** the existing thread-scoped routes
-  `GET /wheelchair/api/threads/:id/graph?file=` and `.../diagram-html?file=`
-  (`viewer/app/routes.js:563-568,584-586`) serve remote threads through `read`, live or
-  archived, with the same headers as the archived path; local archived threads keep the
-  local Git path. `viewer/pages/diagram.js:12-24` and `viewer/pages/picture.js:31-41` use
-  these thread-scoped URLs (and `/wheelchair/?archive=<id>&file=` for the graph viewer)
-  when `ctx.archived || ctx.remote`, instead of hub-local worktree paths. The graph viewer
-  path for `archive=` must therefore accept remote live threads too.
-- **What the picture page shows on failure** (thread-scoped reads: archived or remote):
-  - Graph (`viewer/index.html`): a 404 shows the existing fatal screen; any other failure,
-    on first load or a poll, shows the existing "lost contact" notice and keeps polling. A
-    later successful poll clears the fatal screen and shows the graph (today only reserved
-    run names recover, `viewer/index.html:2394-2407`); this recovery applies to thread-scoped
-    reads only.
-  - Form: unchanged code path; the existing "This diagram could not be drawn" plus the hub's
-    error text, which is "This picture isn't saved yet" for 404 and "Couldn't reach
-    <machine>" for 502.
-  - HTML: the picture page and inline card first `fetch` the same URL; on 404 or 502 they show
-    the hub's error text in place of the frame (picture page via its existing `say()`),
-    otherwise they create the sandboxed iframe with that URL as today.
-- **Revision for polling:** the thread-scoped graph route returns `{graph, hash}` where
-  `hash` is the SHA-1 hex of the exact JSON text read (local archived or remote), and
-  `getArchivedGraph` (`viewer/index.html:431-442`) uses that `hash` instead of
-  `JSON.stringify(body).length + ':archived'`, so a same-length edit on a remote live thread
-  redraws the open picture. (Callers of the route read `graph` from the new wrapper.)
-- Local threads behave as today apart from S1–S4 and two route changes: the thread-scoped
-  graph route's `{graph, hash}` wrapper (also used for local archived threads) and the
-  HTML routes' `download=1`.
+- **Document reads** (doc route view and download, S2 ZIP) for a remote thread call `read`
+  outside any lock. Status mapping for the doc route: a machine **404** (missing ref or
+  file) or 400 becomes the doc route's existing 404, so the doc page shows its existing
+  not-found state; a connection error, timeout or any other status becomes 502 "Couldn't
+  reach <machine>". The S2 ZIP is stricter, as stated there.
+- Archived remote threads read documents through the machine too, instead of the hub-local
+  `git -C thread.project` (`viewer/app/threads.js:251-266`); local archived threads keep
+  that local path.
+- Local threads behave as today apart from S1–S4 and the HTML routes' `download=1` (S1).
+- Graph, form and HTML picture routes, `viewer/pages/diagram.js`, `viewer/pages/picture.js`
+  and `viewer/index.html` picture loading and polling are unchanged by S5.
 
 ### Non-goals
 
-- Aside pictures on remote threads (Deferred D1).
+- Pictures (plan or aside) of threads on another computer: split into their own thread
+  (Decision 13).
 - Showing uncommitted plan edits of remote threads.
 - Editing, deleting or expiring kept files; recovering files deleted by earlier archives.
 - Previews for other file types; zipping pictures or sent files.
@@ -273,16 +247,15 @@ New tests, at least:
 - `viewer/test/zip.test.js`: the ZIP writer's output unzips (`unzip -t` or Python
   `zipfile`) with the right names and bytes.
 - Viewer route tests: `docs.zip` for a local live, local archived and remote thread (fake
-  machine); 404 with no documents; remote doc/graph/html reads; 502 on machine failure;
+  machine); 404 with no documents; remote doc reads (live and archived); machine 404 → 404
+  and unreachable machine → 502 on the doc route; any failure → 502 on the ZIP;
   remote discovery stores the slug only when the snapshot still matches; no machine call
   happens while `withThread`/`withChatThread` is held (fake machine that checks a lock flag
   on `/v1/plan-files` requests only; chat's existing transcript fetch is unchanged).
-- Browser tests also: a remote graph that 404s then succeeds becomes visible; a 502 shows
-  "lost contact" and recovers; an HTML picture shows the 404/502 text; an exported graph keeps
+- Browser tests also: an exported graph keeps
   its group shading translucent (`fill-opacity`); a saved HTML file with a doctype keeps it
   first and has no refresh meta.
-- Viewer route tests also: remote picture read maps machine 404 to 404 and an unreachable
-  machine to 502; the graph route's `hash` changes on a same-length edit; archived rows show
+- Viewer route tests also: archived rows show
   links only for names in `thread.kept_files`; a rebase-kept archive still stays unarchived.
 - Machine tests: `/v1/plan-files` discover/list/read on a temp repo, input refusals,
   2 MiB refusal; archive moves only listed names to `kept/`, a retried archive after a
@@ -301,7 +274,6 @@ New tests, at least:
 
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
-| D1 | Aside pictures on threads running on another computer | Plan pictures work; aside pictures are drawn in side conversations and stay as today | planning | Aside pictures use a stored absolute graph path (`viewer/pages/picture.js:44-52`); route them through `/v1/plan-files` or a similar machine read |
 
 ## Accepted Risks
 
@@ -390,13 +362,13 @@ New tests, at least:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | minor | Form 404 text contradicts "existing 404" mapping | upheld | Pending the split question (remote pictures) |
+| intent | minor | Form 404 text contradicts "existing 404" mapping | upheld | Moved to the split thread with its part |
 | intent | minor | Machine retry test names `kept_files` | upheld | Validation names `kept_uploads` |
-| mechanics | blocking | `/graph` wrapper breaks form pictures | upheld | Pending the split question (remote pictures) |
-| mechanics | blocking | Recovery skips initial fit and breadcrumbs | downgraded (major) | Pending the split question (remote pictures) |
-| mechanics | major | 404 then 502 leaves "graph is gone" showing | upheld | Pending the split question (remote pictures) |
-| mechanics | major | Overlapping 10 s polls can redraw stale graphs | upheld | Pending the split question (remote pictures) |
-| mechanics | major | Form cache keeps failed reads for the tab's life | upheld | Pending the split question (remote pictures) |
+| mechanics | blocking | `/graph` wrapper breaks form pictures | upheld | Moved to the split thread with its part |
+| mechanics | blocking | Recovery skips initial fit and breadcrumbs | downgraded (major) | Moved to the split thread with its part |
+| mechanics | major | 404 then 502 leaves "graph is gone" showing | upheld | Moved to the split thread with its part |
+| mechanics | major | Overlapping 10 s polls can redraw stale graphs | upheld | Moved to the split thread with its part |
+| mechanics | major | Form cache keeps failed reads for the tab's life | upheld | Moved to the split thread with its part |
 | mechanics | major | Oversized remote document listed then unreadable | upheld | S5: `list` excludes files over 2 MiB |
 | mechanics | minor | Export style list misses visibility and text styles; measurement element leaks | upheld | S1: styles added, measurement element removed |
 | mechanics | minor | Machine retry test names `kept_files` | upheld | Same fix as intent finding |
