@@ -880,6 +880,8 @@ merging of branches; no sub-lead or worker rule changes.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Card id = delivery id; duplicate receipt id; `about_thread` on question; spooled 202 id; `card.js` receipt; tests (Spec §3 code) | viewer/app/cards.js, viewer/app/card.js, machine/service.js, viewer/test/, machine/test/ | standard / gpt-6.1-terra | wc-ebf1a18d38b1-worker | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | in progress |
+| T2 | Protocol text: lead.md overlap rules, restart, retract ids; cards.md; cards-lead.md; machine/API.md (Spec Terms, §1, §2, §3 docs) | protocol/app/lead.md, protocol/app/cards.md, protocol/app/cards-lead.md, machine/API.md | standard / claude-sonnet-5-5 | wc-ebf1a18d38b1-worker-2 | `node --test viewer/test/*.test.js`; Validation greps | in progress |
 
 ## Log
 
