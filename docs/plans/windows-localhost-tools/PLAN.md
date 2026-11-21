@@ -187,11 +187,15 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   changed. The listener only accepts on `127.0.0.1`. Each accepted socket gets one relay
   connection (`open` frame). Bytes the client sends before `opened` are buffered, at most
   1 MiB (more → close the socket), and sent in order after it. On `refused` the socket is
-  closed. **Flow control:** the shared stdin/stdout pipe is never paused for one connection.
-  Each side bounds what it has queued for one connection: on Linux, if a socket's
-  `writableLength` exceeds 4 MiB, that connection is closed (and `close` sent); the relay does
-  the same for its write queue to a Windows socket. Other connections and checks on the forward
-  are unaffected. The tool therefore sees `Host: 127.0.0.1:<private port>`, so any absolute URL it
+  closed. **Flow control:** `data` frames carry at most 64 KiB. Each side bounds the shared
+  pipe it writes: when its pending write queue to the pipe (Linux: relay stdin
+  `writableLength`; relay: its stdout buffer) exceeds 1 MiB, it pauses reading from all its
+  local sockets until the pipe drains below 256 KiB, then resumes them, reading round-robin so
+  one connection cannot starve others. Control frames (`open`, `opened`, `close`, `refused`,
+  `check`, `check-result`) are always written at once, ahead of queued data, so connection
+  setup and status checks are never held behind data. Each side also bounds what it has queued
+  for one destination socket: if that exceeds 4 MiB, the connection is closed (and `close`
+  sent). The shared pipe is never paused for one slow connection. The tool therefore sees `Host: 127.0.0.1:<private port>`, so any absolute URL it
   builds from `Host` (redirects, links) points back through the forward. The host is always
   `127.0.0.1`, even when the user wrote `localhost`: the listener binds only IPv4 loopback, and
   Linux `localhost` may resolve to `::1` first. A tool that checks the host name or port it is
@@ -265,31 +269,29 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   current forward's relay, or a one-off check, section 4). It never creates or replaces a
   forward. Reply `{wsl, status: {<name>: {state, reason?, note?}}}` with `state` `reachable` or
   `unreachable` (reason from `check-result`, or `couldn't check Windows for port <n>` on
-  timeout). `reachable` means a TCP connection reached a Windows process on the port, not
+  timeout), or `unavailable` (reason `Windows bridge not available`). `reachable` means a TCP connection reached a Windows process on the port, not
   that the tool accepts MCP requests. `note` is set when a stale forward exists for that tool port: `after the machine
   service restarted, port <private port> couldn't be reopened; sessions started before that
   restart can't use this tool (new sessions can)`. Off WSL:
   `{wsl: false, status: {}}`.
-- In `viewer/pages/project-tools.js`, each entry whose **Runs on Windows** switch is on shows a
-  status line under the switch: "Checking…", then "Reachable on Windows", "Not reachable:
-  <reason>" or "Not available: <reason>", plus the note if any. The page requests it after
-  load for the marks in the loaded file, again for one entry when its switch is turned on or
-  its URL changes (debounced 500 ms), and on a **Check again** button. Any edit to an
-  entry's URL, kind, switch or name immediately advances that entry's sequence, so a reply for
-  a request made before the edit is never applied, even if the URL is edited back; after the
-  edit, if the entry still has the switch on and is eligible, a new check is scheduled
-  (debounced 500 ms), otherwise the status line is hidden. It sends the form's
-  current values, saved or not. Each request is tagged with the page's existing
-  machine/path/generation guard (`tag()`/`fresh()`, `viewer/pages/project-tools.js:228-229`)
-  and a sequence number per entry; a debounced request that fires after the guard changed is
-  dropped, and a reply is applied only if it is still `fresh()`, is the latest request for that
-  entry, and the entry still has the same URL and the switch on (a rename moves the entry's
-  sequence with it). Turning the switch off
-  hides the line. Each status request is also tied to the entry's current form instance (a
-  token created when the edit form or the project view is rendered): Cancel, a post-save reread
-  or any re-render clears that entry's pending debounce timer and drops replies for older
-  tokens. If the request itself fails (HTTP error, machine unreachable), every entry
-  it covered shows "Couldn't check: <error>"; Check again stays available in every state.
+- In `viewer/pages/project-tools.js`, each entry whose **Runs on Windows** switch is on and
+  whose current values are eligible shows a status line under the switch: "Checking…",
+  "Reachable on Windows", "Not reachable: <reason>", "Not available: <reason>" or "Couldn't
+  check: <error>", plus the note if any, and a **Check again** button.
+- **Status lives in page state, not in the rendered cards.** The page keeps a status store
+  keyed by the page guard (`tag()`/`fresh()`, `viewer/pages/project-tools.js:228-229`:
+  machine, path, generation) plus the tool's current `type` and `url`. Every render of the
+  tools (`paintTools` and the edit form, whatever triggered it: load, Keep changes, Cancel,
+  save reread, the Unity poll) reads the line from the store for the entry's current values.
+  When a rendered entry needs a line and the store has neither a result nor a pending request
+  for its key, the page schedules a check for that key (debounced 500 ms; several keys due at
+  once go in one request). It sends the values shown, saved or not.
+- A reply is stored under the key it was requested for, only if `fresh()` still holds;
+  entries whose values have since changed simply no longer read it. A request that fails
+  (HTTP error, machine unreachable) stores "Couldn't check: <error>" for each key it covered.
+  Check again removes the stored result for that entry's key and schedules a check at once.
+  Turning the switch off hides the line; turning it on, or editing the URL or kind, reads (or
+  schedules) the key for the new values. Store entries for a stale guard are discarded.
 - `win info` is unchanged. No thread cards, per-session warning state or session-record
   fields are added.
 
@@ -353,11 +355,14 @@ frames and dialling a local test server (these cover the Linux side and the fram
   built from the request's `Host` sends the client back to `127.0.0.1:<private port>` and the
   follow-up goes through the forward; a streamed response arrives in pieces as sent; a
   restored forward pipes connections.
-- Status page: Cancel and a same-project reload while a check is pending leave no stale status;
-  editing a URL A → B → A before the check fires does not apply A's old reply;
+- Status page: Cancel, Keep changes, a same-project reload and the Unity poll's re-render while
+  a check is pending all end with a line for the current values (no stuck "Checking…", no
+  stale result); Keep changes before the debounce fires still gets a result; editing a URL A → B → A before the check fires shows A's stored result only if it is still fresh;
   renaming or changing kind during a check schedules a new check or hides the line.
 - Flow control: a client that stops reading a streamed response gets its connection closed at
-  4 MiB queued while a second connection and a status check on the same forward keep working.
+  4 MiB queued while a second connection and a status check on the same forward keep working;
+  a fast sender filling the shared pipe pauses local reads at 1 MiB and resumes after drain,
+  and a status check still answers meanwhile.
 - Relay frames: `opened` before data, client bytes buffered until then; `refused` closes the
   socket and sets `last_refusal`; `opened` clears it; relay death restarts at most once per
   10 s and finishes pending checks; an idle relay ends after 5 minutes; a check timed out at
@@ -632,6 +637,22 @@ hides the status.
 §4 why the host is always `127.0.0.1`; Not doing widened to tools that check the host name or
 port; §6 status requests tied to a per-render token (Cancel, reload); C5 reworded; D20 and
 two Accepted Risks (hardcoded redirects, user-accepted; TCP half-close); Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | major | Shared pipe queues unbounded; data can delay checks and other connections | upheld | §4 64 KiB frames, 1 MiB pipe bound pauses local reads, control frames first |
+| mechanics | major | Keep changes cancels the only check for the new values | upheld | §6 status store keyed by values; every render schedules missing checks |
+| mechanics | minor | `unavailable` missing from the reply schema | upheld | §6 |
+| intent | major | Per-render token can leave status stuck at "Checking…" | upheld | §6 token dropped; status store read by every render |
+
+### Round 12 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 11:** §4 flow control on the shared pipe (64 KiB frames, 1 MiB pipe
+bound pausing local reads, control frames first); §6 status line rewritten around a page-state
+store keyed by guard and current values, read by every render (per-render token dropped),
+`unavailable` in the reply schema; Validation updated.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
