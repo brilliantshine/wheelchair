@@ -100,3 +100,37 @@ T2 viewer 732/732; T3 browser 1120 passed; T4 browser 1142 passed and viewer 732
   uploads are removed fails a finished archive's response.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-21
+
+Verification attempt 1 (at `acfde7a0`): Claude verifier PASS; GPT verifier FAIL with 7
+gaps (verbatim in `REMEDIATION-1.md`). 3 were rare paths, now in PLAN.md Accepted Risks
+(round verification-1). The lead ruled 1 not a gap: the thread-list responses carry no
+document list for any thread. The other 3 were fixed:
+
+| Gap | Fix | Evidence |
+|-----|-----|----------|
+| S1: the form PNG could differ from the form on screen (Download fetched again) | `viewer/pages/picture.js:52-58,71`: the PNG uses the cache entry `draw` filled (key `card.id`); no fetch on Download | `viewer/test/app-picture-download.spec.js` "a form PNG draws the form that is on screen, not a later version" (serves A then B; A drawn, B not, one fetch) |
+| S1 Validation: the wide-graph test's plain drag did not pan | The test zooms with the wheel and pans with an alt-drag, asserting the scale changed after the zoom and the translation moved after the pan, before Download | `viewer/test/app-picture-download.spec.js:60-95` |
+| S5 Validation: the lock test called `refresh` directly on a mock | It now drives the real server for `/threads`, `/threads?view=list`, chat, the doc route and `docs.zip`, sampling lock state when each `/v1/plan-files` request arrives and before it is answered. A deliberate lock-held mutation failed it (worker report R3) | `viewer/test/app-remote-plan.test.js`; `viewer/test/helpers/plan-lock-probe.js` |
+
+Lanes: R1 and R2 by claude-sonnet-5-5; R3 by gpt-6.1-terra.
+
+Validation on the merged branch after remediation:
+
+```text
+$ bash machine/test/run.sh
+# tests 449
+# pass 449
+# fail 0
+
+$ node --test viewer/test/*.test.js
+# tests 733
+# pass 733
+# fail 0
+
+$ npm --prefix viewer run test:browser
+  34 skipped
+  1144 passed (11.9m)
+EXIT 0
+```
