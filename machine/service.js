@@ -815,7 +815,6 @@ class MachineService {
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
     const read = await readProjectMcp(worktree, { wsl, mount });
-    const windowsTools = hasWindowsProgram((wsl ? read : await readProjectMcp(worktree, { wsl: true, mount })).mcp, { mount });
     const { mcp, warnings } = read;
     const tools = TOOL_ROLES.has(input.role);
     const thread = tools && this.threadWorktree(input, worktree);
@@ -823,6 +822,8 @@ class MachineService {
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
     const context = { wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
+    const loaded = built.loaded || [];
+    const windowsTools = loaded.some(entry => entry.windows);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
     if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
@@ -874,6 +875,11 @@ class MachineService {
       ]);
       clearTimeout(timer);
       env.push(...Object.entries(extra));
+      let version;
+      try { version = (await fsp.readFile(path.join(worktree, 'ProjectSettings', 'ProjectVersion.txt'), 'utf8')).match(/^m_EditorVersion:\s*(\S+)/m)?.[1]; } catch {}
+      const unityExists = !!version && fs.existsSync(path.join(mount, 'c/Program Files/Unity/Hub/Editor', version, 'Editor/Unity.exe'));
+      const lines = require('./lib/win-prompt').promptLines({ health: this.win?.bridgeHealth(), wsl, loaded, mcp, copy: extra.WHEELCHAIR_WINDOWS_PROJECT, cli: session.cli, codexMode: session.codex_mode, version, unityExists });
+      if (lines.length) await atomicWrite(promptPath, rolePrompt + "\n\n" + lines.join("\n"));
     }
     env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
     const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
@@ -890,6 +896,7 @@ class MachineService {
     if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
     if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
     this.sessions[name] = session;
+    if (windowsTools) this.win?.afterLaunch(session);
     await this.persistSessions();
     try {
       await fsp.appendFile(path.join(this.stateDir, 'session-ledger.jsonl'), `${json({ at: new Date().toISOString(), name, role: input.role, provider: adapter.provider, model: input.model || null, account_dir: dir, cli_session_id: session.cli_session_id, thread_id: input.thread_id })}\n`);

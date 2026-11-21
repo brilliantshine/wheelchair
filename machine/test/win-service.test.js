@@ -107,3 +107,14 @@ test('Codex launch passes bridge environment names to a Windows tool', async () 
     assert.match(line, /mcp_servers\.project_windows\.env_vars=.*WHEELCHAIR_WINDOWS_PROJECT.*WSLENV/);
   } finally { await e.close(); }
 });
+
+test('readying uses the adapter loaded entries', async () => {
+  const e = await service(); try {
+    const dir = repo(e.root);
+    write(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { windows: { command: e.exe } } }));
+    const seen = [];
+    e.instance.win.beforeLaunch = async (session, opts) => { seen.push([session.cli, opts.windowsTools]); };
+    for (const cli of ['claude', 'codex', 'agy']) await start(e, 'lead', dir, { cli });
+    assert.deepEqual(seen, [['claude', true], ['codex', true], ['agy', true]]);
+  } finally { await e.close(); }
+});

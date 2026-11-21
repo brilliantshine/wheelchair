@@ -142,6 +142,14 @@ class WinBridge {
     } finally { clearTimeout(timer); }
   }
 
+  afterLaunch(session) {
+    if (!this.detected.wsl || !session.worktree) return;
+    const key = worktreeKey(session.worktree);
+    this.markKey(key);
+    const task = this.readying.get(key);
+    if (task) task.then(() => this.markKey(key)).catch(err => this.service.log(err));
+  }
+
   async prepareLaunch(session, { windowsTools } = {}) {
     try {
       if (!this.detected.wsl || !TOOL_ROLES.has(session.role)) return;
@@ -323,7 +331,20 @@ class WinBridge {
       this.healthTimer.unref();
     }
     await this.apps.startup();
-    if (this.detected.wsl) await this.sweep();
+    if (this.detected.wsl) {
+      const live = this.service.liveTmux?.();
+      if (live) for (const session of Object.values(this.service.sessions || {})) {
+        if (!TOOL_ROLES.has(session.role) || session.status === 'stopped' || !session.worktree || !live.has(session.name)) continue;
+        try {
+          const ctx = await this.context(session);
+          if (!this.exists(ctx)) continue;
+          this.toolSessions.add(session.name);
+          this.register(ctx, session);
+          this.markKey(ctx.key);
+        } catch (err) { this.service.log(err); }
+      }
+      await this.sweep();
+    }
   }
 
   async sessionEnv(session, baseEnv = {}) {

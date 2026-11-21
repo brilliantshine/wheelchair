@@ -329,3 +329,24 @@ test('info reports a PowerShell startup failure and environment names are case i
   assert.equal(info.reason, 'PowerShell unavailable');
   await assert.rejects(bridge.handle(session, { op: 'run', args: ['--env', 'wheelchair_session_token=secret', '--', 'cmd.exe'] }), { status: 400 });
 });
+
+test('launch and restart mark existing copies used and recover only live copies', async () => {
+  const { bridge, session, service } = fixture();
+  const ctx = await bridge.context(session);
+  fs.mkdirSync(path.join(ctx.copy.linux, '.git'), { recursive: true });
+  bridge.register(ctx, session);
+  writeState(bridge.stateDir, ctx.key, { ...readState(bridge.stateDir, ctx.key), used_since_ok: false });
+  bridge.afterLaunch(session);
+  assert.equal(readState(bridge.stateDir, ctx.key).used_since_ok, true);
+  writeState(bridge.stateDir, ctx.key, { ...readState(bridge.stateDir, ctx.key), used_since_ok: false });
+  const missing = { ...session, name: 'wc-missing', worktree: session.worktree + '-missing' };
+  service.sessions[missing.name] = missing;
+  service.liveTmux = () => new Set([session.name, missing.name]);
+  bridge.apps = { startup: async () => {}, sweep: async () => ({ copyKeys: [] }) };
+  bridge.runBridgeProbe = () => {};
+  await bridge.startup();
+  clearInterval(bridge.healthTimer);
+  assert.equal(bridge.toolSessions.has(session.name), true);
+  assert.equal(bridge.toolSessions.has(missing.name), false);
+  assert.equal(readState(bridge.stateDir, ctx.key).used_since_ok, true);
+});
