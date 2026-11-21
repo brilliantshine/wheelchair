@@ -98,7 +98,9 @@ tools from WSL" thread merged first), reuse it and only add entries; otherwise a
 - **Stale files:** the existing Antigravity tool-file sweep (`sweepAgyTools`,
   `machine/service.js:477`, same live-tmux and `startingNames` rules) also removes
   `<stateDir>/settings/<name>.mcp.json` and `<stateDir>/win-ready/<name>` for sessions not
-  live and not starting, and `<stateDir>/win-tools/<name>/` once none of its pids is alive.
+  live and not starting and whose file is older than 60 s (the existing sweep's grace,
+`machine/service.js:528`; the localhost thread's contract uses the same rule), and
+`<stateDir>/win-tools/<name>/` once none of its pids is alive and it is older than 60 s.
 - Pi and Kimi: unchanged.
 
 ### 3. Ready file
@@ -115,7 +117,10 @@ wrapped entry:
   readying task it awaited, or any later successful `win sync`/`run`/`start` sync of that
   copy. An existing `.git` alone never counts. So a stale copy counts as not ready until the
   first reconcile after start finishes.
-- `failed` when the readying task fails; a later successful sync replaces it with `ready`.
+- `failed` when the readying task fails, **or when anything in `prepareLaunch` for that
+  session throws before the task exists** (for example resolving the copy context,
+  `machine/lib/win.js:153-156`, whose errors today are only logged); a later successful sync
+  replaces it with `ready`.
 - Removed when the session stops (stop path, after the wait in item 6).
 - **Failed or cancelled start:** every path where `startIn` gives up after the ready file or
   the Claude `--mcp-config` file was written (`die`, cancelled start, tmux failure) removes
@@ -188,7 +193,7 @@ the next session. The service computes the path; the go-between only reads and w
        already has its `initialize` result); their requests are still forwarded.
      - If the real tool fails to start, exits, or its `initialize` fails or times out: answer
        every held or queued request with JSON-RPC error `-32000` carrying the reason, write it
-       to stderr, and exit 1.
+       to stderr, **stop the tool (item 5) and remove its tools-dir entry**, then exit 1.
 4. While not ready, a ready file that says `failed` changes the sentence for later answers;
    a later `ready` still starts the tool (step 3).
 5. Once the real tool runs, if it exits on its own the go-between exits with its exit code.
@@ -211,15 +216,18 @@ starts the tool as `machine/lib/win-apps.js:59-84` does, with these differences:
 - **Program and directory in Windows form.** The program is the original command translated
   with `winEnv.translate(command, true)` (`win-env.js:95`; every wrapped command is under the
   mount, item 1). The args are passed unchanged, as WSL interop does today. The working
-  directory is the effective Linux working directory (the entry's `cwd` if set, else the
-  go-between's own cwd) converted with `wslpath -w`, which is what interop gives the unwrapped
+  directory is the go-between's own working directory (the one the CLI gave the launched
+  process; the go-between never applies the entry's `cwd` field itself) converted with
+  `wslpath -w`, which is what interop gives the unwrapped
   tool today (a `\\wsl.localhost\...` path for a Linux directory).
 - **Stdio.** The tool's stdin, stdout and stderr are the launcher's own (not redirected to a
   log). The launcher writes nothing to stdout. Right after the job exists and the tool has
   started, it writes the line `wc-tool-started` to stderr; the go-between removes that line
   from the stderr it passes through and treats it as the start acknowledgment.
-- The launcher exits when the tool and all its descendants have ended, as the app wrapper
-  does.
+- **Exit.** The launcher exits only when the tool and all its descendants have ended (job
+  active-process count, as the app wrapper does), with the **tool's** exit code as its own
+  process exit code; it reports nothing on stdout. The go-between treats the launcher's exit
+  as the real tool's exit (Spec 4 step 5) and exits with that code.
 
 **Stop the tool** (one total budget of 12 s from the moment stopping begins):
 1. Close the tool's stdin.
@@ -239,6 +247,11 @@ after tmux is killed and before its final stop reconcile, polls until the direct
 or absent (every 250 ms, up to 15 s, which is longer than the go-between's 12 s stop budget; an entry whose pid is not alive is removed). A timeout is
 logged and the reconcile goes ahead. Only the stopping session's own directory is checked
 (other sessions on the same copy: Deferred 2). The directory is removed after the wait.
+
+The wait protects the existing role-based final sync and changes no role rules: a lead or
+sub-lead copy is synced on stop when no other live session shares it (`machine/lib/win.js:226-231`);
+workers sync before reporting done; a verifier's copy is removed by design; shared copies are
+Deferred 2.
 
 `WinBridge.sweep()` does not reconcile a copy while a stop task for a session on that copy is
 in progress (an entry in `stopTasks` whose worktree key matches, as `win.js:264` already finds
@@ -286,6 +299,8 @@ New tests in `machine/test/` must cover:
   the `WHEELCHAIR_WINDOWS_PROJECT`/`WSLENV` passthrough for wrapped entries.
 - Failed start: a cancelled or failed start removes the ready file and Claude config file, and a
   late readying result for it writes nothing.
+- Handoff failure stops the launcher (termination script called) before exit 1; the go-between
+  exits with the launcher's exit code; a `prepareLaunch` context error writes `failed`.
 - Launcher: the program is the Windows form of the command and the directory the `wslpath -w`
   form; the job name passed to `terminateScript` is `tool-<uuid>`; a stop before the start
   acknowledgment waits for it and then terminates; the stop fits in 12 s with a slow
@@ -382,6 +397,13 @@ C3.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Failed handoff exits without stopping the Windows job | upheld | Spec 4 3b: stop the tool before exit 1 |
+| mechanics | major | Launcher exit status must not use stdout | upheld | Spec 5 Exit: process exit code is the tool's |
+| mechanics | major | Two cwd answers when the entry has `cwd` | upheld | Spec 5: go-between's own cwd only |
+| mechanics | major | Context errors before the readying task leave `waiting` | upheld | Spec 3: `prepareLaunch` errors write `failed` |
+| mechanics | minor | Stale-file sweep lacks the 60 s grace | upheld | Spec 2: 60 s grace, same as the localhost contract |
+| intent | minor | Stale-file rule differs from the localhost contract | upheld | Same fix as previous row |
+| intent | minor | Stop wait does not itself deliver sync for every role | upheld | Spec 6: wait protects the existing role-based sync |
 
 ## Implementation Tasks
 
