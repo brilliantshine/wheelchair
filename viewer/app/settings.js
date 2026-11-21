@@ -40,7 +40,8 @@ const OLD_PLAN_WEIGHTS = { gpt: { pro: [6] } };
 // The plan and weight an account should take from what its CLI reported, or null when it should stay as is:
 // an unrecognised report, nothing to change, or a weight the user typed in themselves.
 function reportedPlan(account, planType) {
-  const plan = REPORTED_PLANS[account.provider]?.[String(planType || '').trim().toLowerCase()];
+  const reported = String(planType || '').trim().toLowerCase(), table = REPORTED_PLANS[account.provider];
+  const plan = table && Object.hasOwn(table, reported) ? table[reported] : null;
   if (!plan) return null;
   const defaults = [PLANS[account.provider][account.plan], ...(OLD_PLAN_WEIGHTS[account.provider]?.[account.plan] || [])];
   if (!defaults.includes(account.weight)) return null;

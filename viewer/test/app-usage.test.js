@@ -482,6 +482,9 @@ test('a reported GPT plan sets the account plan and weight unless the weight was
   assert.deepEqual([(await gpt()).plan, (await gpt()).weight], ['prolite', 5]);
   await usage.record(hub, gptReading('promax'));
   assert.deepEqual([(await gpt()).plan, (await gpt()).weight], ['promax', 25]);
+  await usage.record(hub, { ...gptReading('prolite'), at: '2020-01-01T00:00:00Z' });
+  assert.equal((await gpt()).plan, 'promax');
+  await usage.record(hub, gptReading('constructor'));
   await usage.record(hub, gptReading('enterprise'));
   assert.equal((await gpt()).plan, 'promax');
   await settings.update(hub, (v) => { v.accounts.find((a) => a.id === 'default-gpt').weight = 3; });

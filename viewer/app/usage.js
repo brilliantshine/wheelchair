@@ -42,7 +42,7 @@ async function change(hub, fn) {
   const file = path.join(hub.state.dir, 'usage.json');
   return hub.state.queued(file, async () => { const data = await store(hub); data.readings ||= {}; data.seen ||= {}; const result = await fn(data); await atomicWrite(file, `${JSON.stringify(data, null, 2)}\n`); return result; });
 }
-async function record(hub, reading) { await adoptReportedPlan(hub, reading); return change(hub, (data) => { const old = data.readings[reading.account]; if (!old || Date.parse(reading.at) > Date.parse(old.at)) data.readings[reading.account] = { ...reading, ...(!reading.limited_until && Date.parse(old?.limited_until) > Date.now() ? { limited_until: old.limited_until } : {}) };  }); }
+async function record(hub, reading) { const newest = await change(hub, (data) => { const old = data.readings[reading.account]; if (!old || Date.parse(reading.at) > Date.parse(old.at)) { data.readings[reading.account] = { ...reading, ...(!reading.limited_until && Date.parse(old?.limited_until) > Date.now() ? { limited_until: old.limited_until } : {}) }; return true; } return false; }); if (newest) await adoptReportedPlan(hub, reading); }
 // A CLI that reports its plan (Codex does) sets the account's plan and weight, unless the user typed a weight.
 async function adoptReportedPlan(hub, reading) {
   if (!reading?.plan_type || !reading.account) return;
