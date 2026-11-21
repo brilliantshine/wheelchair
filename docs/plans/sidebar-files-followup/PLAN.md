@@ -57,7 +57,8 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   coordinates) plus a 24 px margin, and its width/height to that box, so the export is
   independent of the viewport, pan or zoom; copy each
   element's computed style that affects drawing (fill, fill-opacity, stroke, stroke-opacity,
-  stroke-width, stroke-dasharray, opacity, visibility, text-transform, letter-spacing, font-family, font-size, font-weight, text-anchor, dominant-baseline) inline,
+  stroke-width, stroke-dasharray, opacity, visibility, text-transform, letter-spacing,
+  font-style, filter, font-family, font-size, font-weight, text-anchor, dominant-baseline) inline,
   remove the viewer's hidden label-measurement element (`text.label-metric`,
   `viewer/index.html:1902`) from the clone; serialize it, draw it onto a canvas at 2× scale on the page's background colour, and
   save the canvas as PNG. If either canvas side would exceed 8192 px, scale down to fit.
@@ -69,7 +70,8 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
 - **HTML pictures:** download the `.html` file itself (Decision 8), with
   `content-disposition: attachment`. The saved file must stay inert when opened: the hub
   inserts, immediately after a leading `<!doctype ...>` if the file starts with one (after
-  optional whitespace or BOM), otherwise as the very first bytes, `<meta http-equiv="Content-Security-Policy"
+  optional whitespace or BOM), otherwise as the very first bytes, `<meta charset="utf-8">`
+  followed by `<meta http-equiv="Content-Security-Policy"
   content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;
   base-uri 'none'; form-action 'none'">`: every directive of the in-app policy
   (`viewer/app/routes.js:17`) that a `<meta>` policy can carry (`frame-ancestors` and
@@ -103,7 +105,11 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
 - The ZIP writer is a new hub module (`viewer/app/zip.js`, Decision 9): stored entries
   (method 0), CRC-32, local headers, central directory, end record; no ZIP64 (inputs are at
   most 3 × 2 MiB).
-- 404 when the thread has no slug or none of the three files exists.
+- A document qualifies for the ZIP exactly when the sidebar would list it: it exists and is
+  at most 2 MiB. Local archived listing (`documents.list`, `viewer/app/documents.js:40-47`)
+  changes to check the blob size (`git cat-file -s`) as well as existence, so an oversized
+  archived document is no longer listed (matching local live and remote listing).
+- 404 when the thread has no slug or no document qualifies.
 - For a remote thread the route first calls `list` live (not the cache), then `read` for
   each listed file. If any machine call fails (unreachable, timeout, or an error status,
   including a 404 for a file `list` just reported), the route returns 502 "Couldn't reach
@@ -189,8 +195,9 @@ today.
   oversized file is not listed, so it never appears in the sidebar or the ZIP.
 - `action: "read"`: `slug` and `file` required. `file` is one of the three plan files
   (the follow-up thread for pictures may extend this). Returns the blob
-  via `git show wc/<id>:docs/plans/<slug>/<file>`, refused past 2 MiB (`git cat-file -s`
-  first), as `{content}` (UTF-8 string).
+  via `git show wc/<id>:docs/plans/<slug>/<file>` (with `maxBuffer` of at least 3 MiB), as
+  `{content}` (UTF-8 string). A file over 2 MiB (`git cat-file -s` first) is answered as
+  404, like a missing file, so the doc page shows its not-found state.
 - Errors: 400 for bad input, 404 for a missing ref or file. All git calls use `execFile`
   with argument arrays, never a shell.
 
@@ -212,8 +219,7 @@ of a background refresh is cleared in a `finally`, so no failure leaves it set:
   if `machine`, `project` and `slug` (when it had one) still match. A discovered slug is
   saved to `thread.slug`; `{files}` goes into an in-memory cache keyed by thread id.
   Failures keep the last good cache and are not shown as errors.
-- The chat response and thread list use the cached file list for remote threads, and the
-  chat response adds `remote: true` for them.
+- The chat response and thread list use the cached file list for remote threads.
 - **Document reads** (doc route view and download, S2 ZIP) for a remote thread call `read`
   outside any lock. Status mapping for the doc route: a machine **404** (missing ref or
   file) or 400 becomes the doc route's existing 404, so the doc page shows its existing
@@ -249,23 +255,26 @@ New tests, at least:
 - Viewer route tests: `docs.zip` for a local live, local archived and remote thread (fake
   machine); 404 with no documents; remote doc reads (live and archived); machine 404 → 404
   and unreachable machine → 502 on the doc route; any failure → 502 on the ZIP;
-  remote discovery stores the slug only when the snapshot still matches; no machine call
-  happens while `withThread`/`withChatThread` is held (fake machine that checks a lock flag
-  on `/v1/plan-files` requests only; chat's existing transcript fetch is unchanged).
+  remote discovery stores the slug only when the snapshot still matches; no caller starts
+  or awaits a `/v1/plan-files` request inside a `withThread`/`withChatThread` callback (a
+  background refresh started after a lock was released may still be in flight when the lock
+  is taken again; that is allowed). Chat's existing transcript fetch is unchanged.
 - Browser tests also: an exported graph keeps
   its group shading translucent (`fill-opacity`); a saved HTML file with a doctype keeps it
   first and has no refresh meta.
-- Viewer route tests also: archived rows show
+- Viewer route tests also: an oversized local archived document is not listed and not
+  zipped; archived rows show
   links only for names in `thread.kept_files`; a rebase-kept archive still stays unarchived.
-- Machine tests: `/v1/plan-files` discover/list/read on a temp repo, input refusals,
-  2 MiB refusal; archive moves only listed names to `kept/`, a retried archive after a
+- Machine tests: `/v1/plan-files` discover/list/read on a temp repo, input refusals, a
+  1.5 MiB file listed and read whole, a file over 2 MiB unlisted and read as 404; archive moves only listed names to `kept/`, a retried archive after a
   completed move reports the right `kept_uploads` (the viewer test checks `thread.kept_files`), serves them afterwards, still
   removes everything else; a move failure yields `uploads_removed: false`; `reserveUpload`
   numbering across `kept/`.
 - Browser tests: picture page Download produces a PNG blob for a graph (including one wider
   than a 390 px phone viewport, panned and zoomed before downloading, whose PNG contains every
   node) and a form, and an `.html`
-  download for an HTML picture whose first bytes are the CSP meta, and which, opened as a
+  download for an HTML picture (a doctype-free fixture with non-ASCII text) whose first bytes
+  are the charset and CSP metas, whose non-ASCII text displays correctly, and which, opened as a
   page, runs no inline script and does not submit a form; file preview page renders Markdown and text and shows
   "Too big to preview"; Download all link appears; archived thread with `kept_files` shows
   download links.
@@ -280,6 +289,12 @@ New tests, at least:
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A saved HTML picture could still navigate away through refresh tricks the tag match misses | Needs an agent writing deliberately evasive HTML (tampering, a rare path); the file opens from disk, not the app's origin, so it cannot reach the app or its secrets | review-round-3 |
+
+## Check Once Built
+
+| # | What to check | Round |
+|---|---------------|-------|
+| 1 | A plan document between 1 MiB and 2 MiB is listed and read whole through `/v1/plan-files` (no `execFile` buffer cut-off) | review-round-5 |
 
 ## Review Rounds
 
@@ -383,6 +398,28 @@ New tests, at least:
 - S1: export style list adds visibility, text-transform, letter-spacing and removes the label-measurement element; HTML download applies to the local-live and archived routes.
 - S5: `list` excludes files over 2 MiB.
 - Validation: picture-remote tests removed; machine retry test checks `kept_uploads`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | `remote: true` has no reader after the split | upheld | Dropped from S5 |
+| mechanics | major | Archived ZIP eligibility vs oversized documents | upheld | S2: archived listing checks size; qualifies = listed; 404 when none |
+| mechanics | major | Lock test forbids overlap the background design allows | upheld | Validation: no `/v1/plan-files` start or await inside a lock callback |
+| mechanics | minor | Oversized remote read status unspecified | upheld | S5: over 2 MiB answered as 404 |
+| mechanics | minor | Check once built: 1–2 MiB documents survive `execFile` buffer | check-once-built | S5 sets maxBuffer ≥ 3 MiB; Check Once Built row; machine test |
+| mechanics | minor | Saved HTML encoding implicit | upheld | S1: `<meta charset="utf-8">`; non-ASCII test |
+| mechanics | minor | Export style list omits font-style and filter | upheld | S1 style list |
+| mechanics | minor | Byte-zero CSP test should use a doctype-free fixture | upheld | Validation scoped |
+
+### Round 6 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 5:**
+- S1: saved HTML gets `<meta charset="utf-8">` before the CSP meta; style list adds font-style and filter.
+- S2: a document qualifies for the ZIP exactly when listed; local archived listing now checks size ≤ 2 MiB; 404 when none qualifies.
+- S5: `read` uses maxBuffer ≥ 3 MiB and answers over-2 MiB as 404; `remote: true` dropped.
+- Validation: lock test rephrased (no start/await inside lock callbacks); size and encoding tests; byte-zero test uses a doctype-free fixture.
+- New Check Once Built section (1 row).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
