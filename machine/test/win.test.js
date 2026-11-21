@@ -350,3 +350,42 @@ test('launch and restart mark existing copies used and recover only live copies'
   assert.equal(bridge.toolSessions.has(missing.name), false);
   assert.equal(readState(bridge.stateDir, ctx.key).used_since_ok, true);
 });
+
+
+test('launch marking causes a final reconcile after readying', async () => {
+  const { bridge, session, service, apps } = realFixture();
+  apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
+  await bridge.beforeLaunch(session, { windowsTools: true });
+  const ctx = await bridge.context(session);
+  await bridge.sync(ctx);
+  assert.equal(readState(service.stateDir, ctx.key).used_since_ok, false);
+  let reconciles = 0;
+  const sync = bridge.sync.bind(bridge);
+  bridge.sync = async (...args) => { reconciles++; return sync(...args); };
+  bridge.afterLaunch(session);
+  bridge.onStop(session);
+  await bridge.stopTasks.get(session.name).task;
+  assert.equal(reconciles, 1);
+});
+
+test('restart recovery tracks a live lead and reconciles on stop', async () => {
+  const { bridge, session, service, apps } = realFixture();
+  await bridge.beforeLaunch(session, { windowsTools: true });
+  const ctx = await bridge.context(session);
+  await bridge.sync(ctx);
+  assert.equal(readState(service.stateDir, ctx.key).used_since_ok, false);
+  bridge.toolSessions.clear();
+  apps.startup = async () => {};
+  apps.sweep = async () => ({ copyKeys: [] });
+  apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
+  bridge.runBridgeProbe = () => {};
+  await bridge.startup();
+  clearInterval(bridge.healthTimer);
+  assert.equal(bridge.toolSessions.has(session.name), true);
+  let reconciles = 0;
+  const sync = bridge.sync.bind(bridge);
+  bridge.sync = async (...args) => { reconciles++; return sync(...args); };
+  bridge.onStop(session);
+  await bridge.stopTasks.get(session.name).task;
+  assert.equal(reconciles, 1);
+});
