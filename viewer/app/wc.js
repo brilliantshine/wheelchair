@@ -184,7 +184,10 @@ async function main(argv) {
   if (group === 'session' && operation === 'start') {
     const response = JSON.parse(result.output);
     if (response.note) process.stderr.write(`${response.note}\n`);
-    if (response.session?.status === 'waiting') process.stdout.write(`waiting for room until ${response.session.waiting_until}\n`);
+    if (response.session?.status === 'waiting') {
+      process.stdout.write(`waiting for room until ${response.session.waiting_until}\n`);
+      if (response.session.waiting_reason?.endsWith(' is left out in Settings')) process.stdout.write(`waiting: ${response.session.waiting_reason}\n`);
+    }
   }
   if (group === 'session' && !full && ['start', 'list'].includes(operation)) {
     const response = JSON.parse(result.output);
