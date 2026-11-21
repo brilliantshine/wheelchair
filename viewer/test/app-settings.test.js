@@ -40,6 +40,7 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     assert.equal((await api(context, '/settings')).body.aside_access, 'full');
     assert.equal(initial.body.auto_merge, 'off');
     const autoMergeError = await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge: 'maybe' } });
+    assert.equal(autoMergeError.status, 400);
     assert.match(JSON.stringify(autoMergeError.body), /auto_merge must be off or on/);
     assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge: 'on' } })).body.auto_merge, 'on');
     assert.equal((await api(context, '/settings')).body.auto_merge, 'on');
