@@ -16,16 +16,7 @@ Review Rounds and Accepted Risks on `wc/d5233e17e73d`), summarised in `MAP.md`.
 
 ## Open Questions
 
-### Q4: SSE tools with the private port
-- **Context:** Old-style SSE tools tell the client where to send messages in an `endpoint`
-  event. Servers that send a full address (`http://localhost:<tool port>/messages`) make the
-  client post to the tool's own port in Linux, bypassing the forward: the tool fails, or an
-  unrelated Linux program on that port gets the headers.
-- **Options:** (a) support `http` (streamable) tools only; SSE stays as today (not sent to
-  Windows) with a warning; (b) the forwarder reads SSE streams and rewrites a full `endpoint`
-  address to the private port.
-- **Recommendation:** (a). SSE is deprecated in MCP, the form cannot edit SSE entries, and (b)
-  turns a byte pipe into an HTTP-aware proxy. Changes IDEA's "(or SSE)": scope change.
+(none)
 
 ## Watch List
 
@@ -44,6 +35,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D2 | A marked tool is reached through a private Linux port the machine picks, not the tool's own port; each session's built config points the tool at `http://127.0.0.1:<private port><path>`; the user's `.mcp.json` is never changed | Removes cross-project port meaning, Linux-port clashes and the localhostForwarding loop; restart gap becomes a rare path | user |
 | D3 | The forward (Linux private-port listener → Windows relay → Windows `127.0.0.1:<tool port>`) is used in every WSL networking mode, mirrored included; no networking-mode detection | Mirrored-mode direct access could reach a Linux listener on the tool's port; one path is simpler and always safe | defaulted |
 | D4 | The switch is stored as parent D7: top-level `"wheelchair": {"windows": ["<name>", ...]}` in `.mcp.json` | CLIs that read `mcpServers` never see an unknown field; save flow already keeps other top-level keys | defaulted |
+| D6 | Only `http` (streamable) entries can be marked; `sse` entries listed in `wheelchair.windows` are ignored with a warning and behave as today. IDEA.md: "(or SSE)" removed, SSE added to Not doing | SSE servers may send a full `endpoint` address at the tool's own port, bypassing the private port; SSE is deprecated and not editable in the form | idea-change |
 | D5 | Claude: the marked `.mcp.json` entry is added to `disabledMcpjsonServers` and a same-name entry with the private URL is passed with `--mcp-config <file>`; tool names stay unchanged | Verified live (W2) | defaulted |
 
 ## Spec

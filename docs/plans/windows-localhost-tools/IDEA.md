@@ -10,7 +10,7 @@ created: 2026-11-21
 ## What we're building
 
 On a machine where wheelchair runs inside WSL, a project tool whose server runs on Windows
-and is set up as `http://localhost:<port>` (or SSE) works for agents, as long as the user
+and is set up as an HTTP tool at `http://localhost:<port>` works for agents, as long as the user
 turns on a "Runs on Windows" switch for that tool in Project tools. Nobody edits addresses.
 
 ## Why — the problem
@@ -22,7 +22,7 @@ WSL's networking mode or hand-editing addresses.
 
 ## What good looks like
 
-- In Project tools, each localhost HTTP/SSE tool has a "Runs on Windows" switch.
+- In Project tools, each localhost HTTP tool has a "Runs on Windows" switch.
 - With it on and the Windows server running, an agent in a new session can call the tool,
   whether WSL uses its default networking or mirrored networking.
 - With it off, the tool behaves exactly as today.
@@ -36,7 +36,8 @@ WSL's networking mode or hand-editing addresses.
 
 - Guessing automatically which tools run on Windows.
 - Changing WSL's networking settings for the user.
-- Tools started as commands (stdio), and tools at addresses other than localhost.
+- Tools started as commands (stdio), older SSE-style tools, and tools at addresses other
+  than localhost.
 - Machines that are not WSL.
 - Kimi sessions, which load no project tools today.
 
