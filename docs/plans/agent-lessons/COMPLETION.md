@@ -67,3 +67,24 @@ Screenshots at 390px (T2): /tmp/claude-1000/-home-collin--local-state-wheelchair
 - Accepted Risks in PLAN.md stand.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1, GPT verifier FAIL)
+
+Gaps and tasks: `REMEDIATION-1.md`. One gap (non-ISO `saved_at` kept by normalize) accepted as a rare path in PLAN.md Accepted Risks.
+
+- Gap 2: viewer/app/cards.js:66-68 refuses reviewer/verifier lesson cards with 422 `a <role> may not save lessons for <target>s`.
+- Gap 3: viewer/app/card.js:90 and settings.js:270 require `only_ai`/`provider` to be a string key.
+- Gap 5: viewer/app/settings.js:168 preview of an all-projects template shows project-scoped lessons.
+- Gap 10: app-lessons.test.js covers a Claude sub-lead saving a GPT-only worker lesson, hub refusal of reviewer/verifier, array `only_ai`, preview scope.
+- Gaps 1, 6: protocol/app/lead.md:882-884, sub-lead.md:309-311, worker.md:95-97, mapper.md:85-87.
+- Gap 9: protocol/app/cards.md:66 names `lesson`; 400 bullet at cards.md:132-133.
+- Gap 7: viewer/pages/thread.js:1209-1222, thread.css:398-403 one-line notice; same-line assertion in app-lessons.spec.js.
+- Gap 8: viewer/pages/settings.js:866-888 and the editor render lock fields while the PUT is pending; held-PUT test in app-lessons.spec.js.
+
+Validation on the merged tip:
+
+```
+npm test: # tests 777  # pass 777  # fail 0
+playwright app-settings + app-lessons: 82 passed (41.8s)
+protocol-rules.test.js: # pass 36  # fail 0
+```

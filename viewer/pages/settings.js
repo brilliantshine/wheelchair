@@ -882,8 +882,8 @@
   // While a save is in flight nothing can be typed, so no edit is lost.
   function setLessonsBusy(busy) {
     document.querySelectorAll('.lessons-edit .lesson-text, .lessons-edit .lesson-row button, #save-lessons').forEach((n) => {
-      if (busy) { n.dataset.wasDisabled = n.disabled ? '1' : ''; n.disabled = true; }
-      else { n.disabled = n.dataset.wasDisabled === '1'; delete n.dataset.wasDisabled; }
+      const row = n.closest('.lesson-row');
+      n.disabled = busy || (n.matches('.lesson-text') && !!row && lessonEdit.removals.has(row.dataset.id));
     });
   }
 
@@ -895,14 +895,14 @@
     const rows = list.map((item) => {
       const removed = lessonEdit.removals.has(item.id);
       const value = lessonEdit.texts[item.id] !== undefined ? lessonEdit.texts[item.id] : item.text;
-      const field = h('textarea', { class: 'lesson-text', rows: 2, maxLength: 300, value, disabled: removed, 'aria-label': 'Lesson text' });
+      const field = h('textarea', { class: 'lesson-text', rows: 2, maxLength: 300, value, disabled: removed || !!lessonEdit.saving, 'aria-label': 'Lesson text' });
       field.addEventListener('input', () => { lessonEdit.texts[item.id] = field.value; });
       const marks = lessonMarkers(item);
       const title = item.thread && lessonThreads && lessonThreads[item.thread];
       let remove;
-      if (removed) remove = h('button', { type: 'button', class: 'undo-remove', text: 'Undo', onclick: () => { lessonEdit.removals.delete(item.id); renderPanel(); } });
-      else if (lessonEdit.confirming === item.id) remove = h('button', { type: 'button', class: 'danger confirm-remove', text: 'Really remove', onclick: () => { lessonEdit.removals.add(item.id); lessonEdit.confirming = null; renderPanel(); } });
-      else remove = h('button', { type: 'button', class: 'danger remove-lesson', text: 'Remove', onclick: () => { lessonEdit.confirming = item.id; renderPanel(); } });
+      if (removed) remove = h('button', { type: 'button', class: 'undo-remove', text: 'Undo', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.delete(item.id); renderPanel(); } });
+      else if (lessonEdit.confirming === item.id) remove = h('button', { type: 'button', class: 'danger confirm-remove', text: 'Really remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.add(item.id); lessonEdit.confirming = null; renderPanel(); } });
+      else remove = h('button', { type: 'button', class: 'danger remove-lesson', text: 'Remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.confirming = item.id; renderPanel(); } });
       return h('li', { class: 'lesson-row' + (removed ? ' removed' : ''), 'data-id': item.id },
         field,
         h('div', { class: 'lesson-foot' },
@@ -918,7 +918,7 @@
       h('p', { class: 'hint lesson-warning', text: 'Agents keep this list up to date. Editing is not recommended; a lesson you edit is marked as yours and agents leave it alone.' }),
       list.length ? h('ul', { class: 'lesson-rows' }, rows) : h('p', { class: 'empty-note', text: `No lessons for ${plural} right now.` }),
       list.length ? h('div', { class: 'actions' },
-        h('button', { type: 'button', class: 'primary', id: 'save-lessons', text: 'Save', onclick: () => saveLessons(errHost) }),
+        h('button', { type: 'button', class: 'primary', id: 'save-lessons', text: 'Save', disabled: !!lessonEdit.saving, onclick: () => saveLessons(errHost) }),
         h('span', { class: 'grow', id: 'using', text: `Changes apply to ${plural} started after you save.` })) : h('p', { class: 'hint', id: 'using', text: `Changes apply to ${plural} started after you save.` }),
       errHost);
   }

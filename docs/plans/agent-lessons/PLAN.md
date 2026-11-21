@@ -465,3 +465,8 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — Choice: T2, settings.js/thread.js: accent-soft background and border for the list entry; muted panel and italic markers for the notice.
 - 2026-11-21 — Choice: T2, settings.js: the note text uses the role plural (worker didn't list this; scout found it).
 - 2026-11-21 — Choice: T2, app-lessons.spec.js: seeds settings.json directly; screenshots only when LESSON_SHOTS is set.
+- 2026-11-21 — R2 accepted (band: scout): gaps 1, 6, 7, 8, 9 fixed. The sub-lead made the Settings save lock survive a redraw during the save (fields and buttons render disabled while `lessonEdit.saving`).
+- 2026-11-21 — Choice: R2, cards.md: the 400 bullet says "fix the field and run the card again".
+- 2026-11-21 — Choice: R2, thread.js/css: notice is one `p.lesson-line` with inline spans for why, markers and link, 10px apart.
+- 2026-11-21 — R1 accepted (band: scout): gaps 2, 3, 5, 10 fixed.
+- 2026-11-21 — Choice: R1, cards.js: the allowed-saver list is written inline before validate(); a non-string `for` falls through to the 400 field error (worker reported none; scout listed 2).
