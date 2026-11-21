@@ -40,6 +40,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D7 | One forward per Windows tool port, shared by every live session that loads a marked tool on that port; forwards are claimed before tmux and released only once the session's tmux is confirmed gone | Same meaning everywhere (the port is the Windows port), fewest relays; parent review rounds 6-8 on early release | defaulted |
 | D8 | A marked entry on WSL is always either pointed at its forward or withheld from the session; it never reaches a CLI with its original URL | The original URL points at Linux, where an unrelated program could get the headers | defaulted |
 | D9 | Off WSL the mark is ignored and the entry loads as today | No Windows to reach; the same server may run locally | defaulted |
+| D11 | The relay's refusal reasons are kept per forward and checked once at claim time; a problem becomes a session warning the user sees with other project tools warnings, but the tool is still given (its server may start later) | IDEA: user can see why; refusing at start would break tools started after the session | review-round-1 |
 | D10 | The Windows relay refuses a connection when no Windows process listens on the port or the listener is `wslrelay` | Stops a Linux program on the same port receiving the headers through WSL localhostForwarding (parent C3) | defaulted |
 
 ## Spec
@@ -52,17 +53,21 @@ tree. Read `MAP.md` and `docs/maps/project-tools.md`, `docs/maps/windows-bridge-
 
 - **Marked tool:** an entry of `.mcp.json` `mcpServers` named in the top-level
   `"wheelchair": {"windows": [...]}` list (D4) that is *eligible*: `type` is `http`, its `url`
-  parses, the scheme is `http:`, the host is `localhost` or `127.0.0.1`, and the URL has an
-  explicit port (or the default 80). Its **tool port** is that port.
+  parses with `new URL()`, the scheme is `http:` and the hostname is `localhost` or
+  `127.0.0.1`. Path, query and fragment may be anything. Its **tool port** is the URL's port,
+  or 80 when none is given. The reader (section 1) and the form (section 7) use this same rule,
+  in one shared function.
 - **Forward:** for one tool port, a Linux TCP listener on `127.0.0.1:<private port>` in the
   machine service plus one Windows relay process, piping each accepted connection to Windows
   `127.0.0.1:<tool port>`.
-- **On WSL:** `this.win.detected.wsl` is true (`machine/lib/win-env.js:8-29`).
+- **On WSL:** `this.win.detected.kernel` is true (`machine/lib/win-env.js:8-29`), whether
+  or not interop is on. Interop being off only means claims fail (section 4), so marked tools
+  are withheld; it never lets a marked tool load with its original URL (D8).
 
 ### 1. Reading the mark
 
 `readProjectMcp` (`machine/lib/project-mcp.js:85`) also returns `mcp.windows`: the eligible
-marked names, in list order, de-duplicated. A listed name that is not in `mcpServers` or not
+marked names, in list order, de-duplicated. A listed name that is in `mcpServers` but not
 eligible is left out with a warning, recorded like other project tools warnings:
 - `sse` entry: `<tool>: "Runs on Windows" doesn't apply to SSE tools; it loads as usual`.
 - any other ineligible entry: `<tool>: "Runs on Windows" only applies to an http://localhost
@@ -71,8 +76,8 @@ eligible is left out with a warning, recorded like other project tools warnings:
 A `wheelchair` value that is not an object, or `windows` not an array of strings, is ignored
 with one warning `"wheelchair" in .mcp.json is not in the expected form; ignored`. Unknown
 keys under `wheelchair` are ignored. Validation of the rest of the document is unchanged.
-Off WSL, `mcp.windows` is computed but unused (D9): no forwards, no withholding, no
-warnings beyond the ones above.
+Off WSL, `mcp.windows` is computed but unused (D9): no forwards, no withholding, and none of
+the warnings in this section.
 
 ### 2. Which tools a session forwards
 
@@ -86,6 +91,10 @@ In `startIn` (`machine/service.js:832`), on WSL only:
    successfully claimed tool. The rewritten URL is the tool's URL with host `127.0.0.1` and port
    the private port; scheme, path, query and fragment unchanged. Headers are unchanged.
 5. Use the second build from here on (`loaded`, warnings, settings, tool files).
+6. **Reconcile:** release this session's claim on every forward whose tool is not in the
+   second build's `loaded` (for example Codex skipping all project tools because the
+   overrides grew too large). Only then is the session's ownership recorded (section 5), and
+   only the claims that remain are recorded.
 
 If the session forwards nothing, steps 3-5 are skipped and startIn behaves exactly as today.
 `windowsTools` (copy readying for Windows stdio programs) is unchanged: a forwarded HTTP tool
@@ -114,10 +123,13 @@ needs no worktree copy.
 Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 
 - **Table:** tool port → `{private_port, sessions: Set<name>, listener, sockets, relay}`.
-- **Claim(session, tool port):** if a forward for that port exists, add the session and reuse
-  its private port. Otherwise check `WinBridge` can run Windows programs (interop and
-  `powershell.exe` present, as `bridgeHealth()` reports); if not, fail with `Windows bridge not
-  available`. Then `net.createServer` and listen on `127.0.0.1` port 0 (the kernel picks a free
+- **Claim(session, tool port):** if an *active* forward for that port exists (listener bound,
+  not `failed`), add the session and reuse its private port. A `failed` restored forward
+  (section 5) is never reused; a new claim for its tool port creates a new forward. To create
+  one, check the relay can run: `this.win.detected.interop` is true and the `powershell.exe`
+  path from `createWinEnv` (`machine/lib/win-env.js:54`) exists. This is not
+  `bridgeHealth()`, which also depends on Git and starts unknown. If not, fail with `Windows
+  bridge not available`. Then `net.createServer` and listen on `127.0.0.1` port 0 (the kernel picks a free
   port); a listen error fails the claim with `couldn't open a local port`. Concurrent claims for
   the same tool port share one pending creation (no two listeners for one tool port).
 - **Connections:** each accepted socket is relayed (below). The listener only accepts on
@@ -132,11 +144,22 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
     `127.0.0.1:<tool port>` (`Get-NetTCPConnection -State Listen -LocalPort <port>` → process
     name; result may be cached 2 s). None, or `wslrelay`, → `refused` (D10). Otherwise it
     connects to `127.0.0.1:<tool port>`; a failed connect → `refused`.
+  - `refused` carries a reason, `nothing on Windows is listening on port <n>`, `port <n> on
+    Windows leads back to Linux` (the `wslrelay` case) or `Windows refused the connection`;
+    the forward keeps it as `last_refusal` with its time. A connection the relay opens to
+    Windows clears it.
   - `refused` or `close` closes the Linux socket; a Linux socket closing sends `close`.
   - If the relay exits, open sockets are destroyed and the next connection starts it again, at
     most once per 10 s; inside that limit connections are accepted and closed at once, and the
     last reason is kept for `win info`.
   - IPv4 only on Windows: the relay always dials `127.0.0.1` (parent D9).
+- **Check at claim:** after a session's claims, the relay is started (if not running) and
+  asked once, with a `check` frame, for the Windows listener's owner on the tool port; it
+  answers `check-result` with the same reasons as `refused`, or none. A reason becomes a session
+  warning, recorded and printed like other project tools warnings: `<tool>: <reason>; calls
+  fail until its Windows server is running`. The tool is still given to the session (the server
+  may start later). A check that does not answer within 10 s gives the warning `<tool>: couldn't
+  check Windows for port <n>`. The session start does not wait for more than those 10 s.
 - **Release(session):** remove the session from every forward. A forward with no sessions
   left closes its listener, destroys every open socket (long-lived streams included) and ends
   the relay (close stdin, then kill after 5 s).
@@ -145,8 +168,11 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 
 - **Record:** `<stateDir>/win/forwards.json`, written atomically (`atomicWrite`,
   `service.js:110-115`, mode 0600) whenever claims or releases change it:
-  `{<tool port>: {private_port, sessions: [names]}}`. Claims for a session are recorded
-  **before its tmux starts**.
+  `{"forwards": [{tool_port, private_port, sessions: [names]}]}` (a list, since a failed
+  restored forward and a new one can share a tool port). Writes are serialized: one in-process
+  queue; each write snapshots the table when it runs, so the last write always holds the latest
+  state. A session's claims are recorded, and that write has finished, **before its tmux
+  starts**.
 - **Start failed or cancelled:** a session that claimed forwards but never reached
   `this.sessions[name]` is released in `start()`'s `finally` (`service.js:799`).
 - **Session gone:** a session is released only once its tmux session is confirmed absent
@@ -154,28 +180,34 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   `kill-session` when `liveTmux()` no longer lists it; otherwise the sweep does. The existing
   60 s `win.sweep` (`win.js:303-313`) also releases every recorded session not in `liveTmux()`
   and not in `startingNames` (`service.js:284`). A `null` from `liveTmux()` (tmux state
-  unknown) releases nothing.
+  unknown) releases nothing. This sweep is what releases a session whose start was cancelled
+  after tmux was created (once tmux is confirmed gone).
 - **Machine service restart:** in `WinBridge.startup` (after `recoverFromTmux`,
-  `service.js:446-447`), read `forwards.json`; for each tool port with at least one session
-  still in `liveTmux()`, listen on the recorded private port again with the live sessions.
-  Sessions not live are dropped from the record. A port that can no longer be bound is kept in
-  the table as `failed: port in use on Linux` with its sessions (released as usual); `win info`
-  shows it. A missing or unreadable file means no forwards to restore.
+  `service.js:446-447`), read `forwards.json`. If `liveTmux()` is `null`, restore every
+  recorded forward with all its recorded sessions; the sweep releases the dead ones once tmux
+  answers. Otherwise restore each forward with its sessions still in `liveTmux()`, dropping the
+  rest, and skip forwards left with none. Restoring listens on the recorded private port. A port
+  that can no longer be bound is kept as `failed` (reason `port in use on Linux`) with its
+  sessions, never reused by a claim (section 4), and released as usual. A missing or unreadable
+  file means no forwards to restore.
 
 ### 6. Visibility
 
-`WinBridge.info` (`win.js:373-381`) adds `forwards: [{tool_port, private_port, sessions,
-state, reason?}]`, `state` one of `ok`, `relay-failed`, `failed`. Withheld tools appear only
-as session warnings (section 3).
+`WinBridge.info(session)` (`win.js:373-381`) adds `forwards`: only the forwards the calling
+session holds, each `{tool, tool_port, private_port, state, reason?, last_refusal?}`, no
+other session names. `state` is `ok`, `relay-failed` (relay cannot start; reason as kept) or
+`failed` (reason `port in use on Linux`). `last_refusal` is `{reason, at}` from section 4.
+What the user sees: the claim-time and withheld warnings (sections 3 and 4), on the thread
+with other project tools warnings; the agent can read `win info`.
 
 ### 7. Project tools page
 
 - The read reply (`machine/lib/project-tools.js:71-88`, passed through at
-  `service.js:2084-2087`) gains `wsl: true|false` from `win.detected.wsl`, and the tools list
+  `service.js:2084-2087`) gains `wsl: true|false` from `win.detected.kernel`, and the tools list
   carries each entry's mark (`windows: [names]` read from `wheelchair.windows`).
 - In `viewer/pages/project-tools.js`, a "Web address" entry shows a **Runs on Windows** switch
-  when the read reply has `wsl: true` and the URL is `http://localhost[:port]` or
-  `http://127.0.0.1[:port]`. Help text: "Turn on if this tool's server runs on Windows. Agents
+  when the read reply has `wsl: true` and the URL is eligible by the shared rule in Terms
+  (so `http://localhost:8080/mcp` shows it). Help text: "Turn on if this tool's server runs on Windows. Agents
   here reach it through wheelchair." Hidden otherwise; a mark on a hidden entry is kept as is.
 - Saving sends `windows: [names]` next to `tools`. The dirty check (`:713`) and the machine's
   nothing-changed shortcut (`machine/lib/project-tools.js:100-103`) compare both `mcpServers`
@@ -200,17 +232,22 @@ npm --prefix viewer run test:browser
 
 New tests, with a fake `spawnPs` that runs a Node stand-in for the relay speaking the same
 frames and dialling a local test server:
-- `readProjectMcp`: eligible, SSE, non-localhost and malformed `wheelchair` cases and their
-  warnings; off WSL nothing forwards.
+- `readProjectMcp`: eligible (including a URL with a path and query), SSE, non-localhost and
+  malformed `wheelchair` cases and their warnings; off WSL nothing forwards and no mark
+  warnings; WSL kernel with interop off withholds marked tools.
 - Claude settings/argv: marked tool in `disabledMcpjsonServers`, `--mcp-config` file contents
   and mode 0600; Codex and Antigravity rewritten URLs; withheld tools absent from all three
   and never present with the original URL.
 - Two sessions on one tool port share one listener; releasing one keeps it; releasing the last
   closes it and destroys an open streaming connection.
 - Release waits for tmux to be gone; a starting session is skipped by the sweep; a failed start
-  releases.
+  releases; claims for tools the second build does not load are released and not recorded.
+- Two concurrent starts on different ports: both claims are in `forwards.json` afterwards.
+- Claim-time check: no Windows listener and `wslrelay` owner each give their warning; the
+  tool is still loaded.
 - Restart: forwards.json restored to the same private port for live sessions; a taken port is
-  reported `failed`.
+  reported `failed` and a new claim for that tool port gets a new private port; with tmux
+  unknown, every recorded forward is restored.
 - Relay frames: `refused` closes the socket; relay death restarts at most once per 10 s.
 - Project tools page: switch shown only on WSL and for localhost http URLs; dirty on switch
   change alone; rename/delete update the list; save keeps other keys.
@@ -222,6 +259,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A start cancelled after tmux was created but before the session is registered releases its forwards in `start()`'s `finally` even if the tmux kill did not take | Rare path: needs a cancel inside that window and a failed kill | review-round-1 |
 | While the machine service is down (restart or crash), a forward's private port is unbound; a Linux program that binds that exact port in the gap gets a live CLI's requests and headers | Rare path: needs a service restart and another program taking a kernel-picked port within seconds; startup reports it `failed` | planning |
 
 ## Check Once Built
@@ -242,6 +280,19 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Relay refusals (no Windows server, wslrelay) are invisible to the user; `win info` is agent-facing | upheld | §4 refusal reasons kept, claim-time check → session warning; §6; D11 |
+| intent | minor | `win info` lists other sessions' names and forwards | upheld | §6 only the caller's forwards, no names |
+| intent | minor | Off WSL, mark warnings are noise | upheld | §1 no mark warnings off WSL |
+| mechanics | blocking | A restored `failed` forward is reused by new claims, pointing them at the Linux holder | upheld | §4 failed forwards never reused; §5 list record |
+| mechanics | blocking | WSL with interop off takes the off-WSL path and loads marked tools with original URLs | upheld | Terms "On WSL" = kernel; §7 switch on kernel |
+| mechanics | blocking | Second Codex build can drop all tools while claims stay held | upheld | §2 step 6 reconcile before recording |
+| mechanics | blocking | Concurrent `forwards.json` writes can lose a claim | upheld | §5 serialized writes, start waits for its write |
+| mechanics | blocking | Restart with tmux state unknown undefined | upheld | §5 restore all when `liveTmux()` is null |
+| mechanics | blocking | Rare path: cancel after tmux created releases forwards without confirmed absence | accepted-risk | Accepted Risks (rare path) |
+| mechanics | major | Claim check uses `bridgeHealth()` (Git-dependent, starts null) | upheld | §4 relay readiness = interop + powershell.exe present |
+| mechanics | major | Refusals leave `win info` showing `ok` | upheld | §4 `last_refusal`, §6 (with intent finding 1) |
+| mechanics | major | Switch URL rule could match only bare origins | upheld | Terms shared eligibility rule; §7; tests |
+| mechanics | minor | §1 intro contradicts silent unknown names | upheld | §1 intro reworded |
 
 ## Implementation Tasks
 
