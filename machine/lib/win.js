@@ -239,7 +239,7 @@ class WinBridge {
       const stopping = [...this.stopTasks.values()].find(item => item.session.worktree && worktreeKey(item.session.worktree) === ctx.key);
       const running = stopping?.task || this.readying.get(ctx.key) || this.running.get(ctx.key);
       if (running) {
-        this.archiveAttempted.add(ctx.key);
+        if (!stopping) this.archiveAttempted.add(ctx.key);
         pending.push(ctx.state.last_session);
       } else if (!this.archiveAttempted.has(ctx.key) && this.needsFinal(ctx)) {
         this.archiveAttempted.add(ctx.key);

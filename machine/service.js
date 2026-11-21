@@ -1149,12 +1149,17 @@ class MachineService {
       if (result?.pending) pending.push(session);
       else stopped.push(session.name);
     }
-    if (pending.length) return { pending: true, pending_sessions: pending.map(session => session.name), stopped, committed: [], removed: [], kept: pending.map(session => ({ worktree: session.worktree, reason: session.end_reason })) };
+    if (pending.length) {
+      const bridge = this.win.archiveCheck(threadId);
+      return { pending: true, pending_sessions: [...new Set([...pending.map(session => session.name), ...bridge.pending])], stopped, committed: [], removed: [], kept: pending.map(session => ({ worktree: session.worktree, reason: session.end_reason })) };
+    }
     for (const session of sessions) {
       if (session.archived_pending || session.end_reason) continue;
       await this.stop(session.name);
       stopped.push(session.name);
     }
+    const bridge = this.win.archiveCheck(threadId);
+    if (bridge.pending.length) return { pending: true, pending_sessions: [...new Set(bridge.pending)], stopped, committed: [], removed: [], kept: [] };
     const worktrees = [...new Map(sessions
       .filter(session => session.created_worktree && session.role !== 'verifier')
       .map(session => [path.resolve(session.worktree), session])).values()];
@@ -1188,6 +1193,7 @@ class MachineService {
       removed.push(worktree);
       await this.win.onWorktreeRemoved(session, { kind: 'other' }).catch(error => this.log(error));
     }
+    await this.win.archiveFinish(threadId).catch(error => this.log(error));
     const keptWorktrees = new Set(kept.map(item => path.resolve(item.worktree)));
     for (const session of sessions) {
       const worktree = typeof session.worktree === 'string' ? path.resolve(session.worktree) : null;
