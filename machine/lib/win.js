@@ -25,6 +25,7 @@ class WinBridge {
     this.toolSessions = new Set();
     this.stopped = new Set();
     this.usage = new Map();
+    this.archiveAttempted = new Set();
     this.readyTimeoutMs = options.readyTimeoutMs ?? 45000;
     const onAppClosed = app => this.markKey(app.copyKey);
     this.apps = options.apps || new (require('./win-apps').AppTracker)({ winEnv: this.winEnv, stateDir: this.stateDir, log: service.log, onAppClosed });
@@ -68,6 +69,7 @@ class WinBridge {
     if (!fs.existsSync(file)) return;
     const state = readState(this.stateDir, key);
     state.used_since_ok = true;
+    state.used_at = new Date().toISOString();
     this.usage.set(key, (this.usage.get(key) || 0) + 1);
     writeState(this.stateDir, key, state);
   }
@@ -197,6 +199,58 @@ class WinBridge {
       return;
     }
     await this.remove(ctx, true);
+  }
+
+  needsFinal(ctx) {
+    const state = readState(this.stateDir, ctx.key);
+    if (!fs.existsSync(ctx.worktree) || !state.used_since_ok) return false;
+    return !state.last_failed || (state.used_at && state.used_at > state.last_failed.at);
+  }
+
+  archiveCheck(threadId) {
+    const pending = [];
+    for (const ctx of this.registry().filter(item => item.threadId === threadId)) {
+      const running = this.readying.get(ctx.key) || this.running.get(ctx.key);
+      if (running) {
+        this.archiveAttempted.add(ctx.key);
+        pending.push(ctx.state.last_session);
+      } else if (!this.archiveAttempted.has(ctx.key) && this.needsFinal(ctx)) {
+        this.archiveAttempted.add(ctx.key);
+        this.sync(ctx).catch(err => this.service.log(err));
+        pending.push(ctx.state.last_session);
+      }
+    }
+    return { pending };
+  }
+
+  async archiveFinish(threadId) {
+    for (const ctx of this.registry().filter(item => item.threadId === threadId)) {
+      if (this.running.has(ctx.key)) await this.running.get(ctx.key).catch(() => {});
+      const state = readState(this.stateDir, ctx.key);
+      if (state.last_failed) {
+        this.service.log(`keeping Windows copy ${ctx.copy.linux}: last reconcile failed`);
+        continue;
+      }
+      try { await this.remove(ctx, true); } catch (err) { this.service.log(err); }
+      this.archiveAttempted.delete(ctx.key);
+    }
+  }
+
+  async sweep() {
+    const live = this.service.liveTmux();
+    if (live === null) return;
+    const result = await this.apps.sweep(live);
+    for (const key of result.copyKeys) this.markKey(key);
+    for (const ctx of this.registry()) {
+      if ((ctx.state.role === 'lead' || ctx.state.role === 'sub-lead') && !this.liveSharing(ctx) && this.needsFinal(ctx) && !this.running.has(ctx.key)) {
+        try { await this.sync(ctx); } catch (err) { this.service.log(err); }
+      }
+    }
+  }
+
+  async startup() {
+    await this.apps.startup();
+    if (this.detected.wsl) await this.sweep();
   }
 
   async sessionEnv(session, baseEnv = {}) {

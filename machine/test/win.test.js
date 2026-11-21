@@ -148,3 +148,27 @@ test('verifier stop returns immediately and deletes after its apps stop', async 
   for (let i = 0; i < 100 && fs.existsSync(info.copy_linux); i++) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(fs.existsSync(info.copy_linux), false);
 });
+
+test('archive waits once for a final sync and retains a failed copy', async () => {
+  const { bridge, session } = realFixture();
+  await bridge.handle(session, { op: 'sync', args: [] });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  fs.writeFileSync(path.join(session.worktree, 'Case'), 'a');
+  fs.writeFileSync(path.join(session.worktree, 'case'), 'b');
+  assert.deepEqual(bridge.archiveCheck(session.thread_id).pending, [session.name]);
+  await Promise.allSettled([...bridge.running.values()]);
+  assert.deepEqual(bridge.archiveCheck(session.thread_id).pending, []);
+  await bridge.archiveFinish(session.thread_id);
+  assert.equal(fs.existsSync(info.copy_linux), true);
+});
+
+test('sweep reconciles a dead lead with no apps', async () => {
+  const { bridge, session, service, apps } = realFixture();
+  apps.sweep = async () => ({ copyKeys: [] });
+  await bridge.handle(session, { op: 'sync', args: [] });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  fs.writeFileSync(path.join(info.copy_linux, 'new-file'), 'windows');
+  service.liveTmux = () => new Set();
+  await bridge.sweep();
+  assert.equal(fs.readFileSync(path.join(session.worktree, 'new-file'), 'utf8'), 'windows');
+});
