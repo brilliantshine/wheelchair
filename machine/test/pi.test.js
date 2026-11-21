@@ -42,6 +42,14 @@ test('wrapped key is joined and redacted in agent pane', () => {
 });
 
 
+test('Pi argv carries --thinking only when the session has an effort', () => {
+  const root = makeTempSync('pi-thinking-');
+  const context = { stateDir: root, promptPath: '/prompt' };
+  const high = pi.command({ role: 'worker' }, { name: 'wc-test-worker', cli_session_id: '123', effort: 'high' }, root, context).argv;
+  assert.equal(high[high.indexOf('--thinking') + 1], 'high');
+  assert.equal(pi.command({ role: 'worker' }, { name: 'wc-test-worker', cli_session_id: '123', effort: null }, root, context).argv.includes('--thinking'), false);
+  assert.equal(pi.command({ role: 'worker' }, { name: 'wc-test-worker', cli_session_id: '123' }, root, context).argv.includes('--thinking'), false);
+});
 test('Pi role prompts and reviewer tools are passed in argv', () => {
   const root = makeTempSync('pi-roles-');
   for (const role of ['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper']) {

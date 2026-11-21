@@ -13,7 +13,7 @@
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
   const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI'], ['openrouter', 'OpenRouter', 'Pi']];
-  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'] };
+  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'], openrouter: ['low', 'medium', 'high', 'xhigh', 'max'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
   const KIMI_MODEL_VALUE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/;
   const OPENROUTER_MODEL_VALUE = /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/;
@@ -1391,8 +1391,8 @@
     if (f.spend) {
       return h('div', { class: 'usage-prov', 'data-provider': provider },
         h('div', { class: 'usage-toggle' },
-          h('span', { class: 'usage-name', text: f.label }),
-          h('span', { class: 'usage-left usage-spend', text: spendText(f.spend) })));
+          h('span', { class: 'usage-name usage-name-spend', text: f.label }),
+          h('span', { class: 'usage-spend-text', text: spendText(f.spend) })));
     }
     return h('div', { class: 'usage-prov' + (f.amber ? ' amber' : ''), 'data-provider': provider },
       h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; renderPanel(); } },
