@@ -45,6 +45,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D13 | The relay connects first and then identifies the owner of that exact accepted connection; no owner cache | Names the listener the dial really reached (dual-stack `::` servers included), no stale-cache window | review-round-3 |
 | D14 | Windows warnings are pruned at the next start in the thread for sessions no longer live, independent of forwards; release never updates the hub | The thread card only updates from starts; keeps all-withheld sessions covered | review-round-3 |
 | D15 | Forwards are not tied to sessions: once created, a forward stays open until the machine service stops (its relay ends after 5 idle minutes and restarts on demand); the user sees each Windows tool's live status on the Project tools page instead of thread warnings. Supersedes D7's release rule, D11, D12 and D14 | User chose to simplify after three unclean review rounds; idle private ports cost nothing | user |
+| D16 | Each session's config is built once; status checks never create forwards (a one-off relay checks ports without one); `win info` and the session record are not extended | Under D15 the double build and per-session fields serve nothing; typed-but-unsaved ports must not leave forwards behind | review-round-4 |
 | D10 | The Windows relay refuses a connection when no Windows process accepted it or the accepting process is `wslrelay` (mechanism superseded by D13) | Stops a Linux program on the same port receiving the headers through WSL localhostForwarding (parent C3) | defaulted |
 
 ## Spec
@@ -87,24 +88,23 @@ the warnings in this section.
 
 ### 2. Which tools a session forwards
 
-In `startIn` (`machine/service.js:832`), on WSL only:
-1. Build the session's config once as today (`commandFor`, `:847`) to learn `loaded`.
-2. The session's **forwarded tools** are the loaded entries whose name is in `mcp.windows`.
-   Kimi loads none, so it forwards none.
-3. For each forwarded tool, get its forward (section 4) and its private port, before tmux
-   starts. A tool whose forward cannot be had is withheld (section 3).
-4. Build the config again, passing `context.windowsUrls`: `{<name>: <rewritten URL>}` for each
-   tool with a forward. The rewritten URL is the tool's URL with host `127.0.0.1` and port the
-   private port; scheme, path, query and fragment unchanged. Headers are unchanged.
-5. Use the second build from here on (`loaded`, warnings, settings, tool files). Store on the
-   session record `windows_tools: [{name, tool_port}]` for the forwarded tools the second
-   build loads (persisted with the session in `sessions.json`, used by `win info`).
+In `startIn` (`machine/service.js:832`), on WSL only, after `readProjectMcp` (`:840`) and
+before `commandFor` (`:847`):
+1. Kimi sessions forward nothing (they load no project tools). For any other CLI, the
+   session's **forwarded tools** are the names in `mcp.windows` that are also in
+   `mcp.servers` (the entries this session may load).
+2. For each forwarded tool, get its forward (section 4) and its private port. A tool whose
+   forward cannot be had is withheld (section 3).
+3. Build the config once, passing `context.windowsUrls`: `{<name>: <rewritten URL>}` for each
+   tool with a forward, and `context.windowsWithheld`: `[names]`. The rewritten URL is the
+   tool's URL with host `127.0.0.1` and port the private port; scheme, path, query and
+   fragment unchanged. Headers are unchanged.
 
-A forward obtained for a tool the second build then does not load (for example Codex skipping
-all project tools because the overrides grew too large) is left as is: forwards are not owned
-by sessions (D15). If the session forwards nothing, steps 3-5 are skipped and startIn behaves
-exactly as today. `windowsTools` (copy readying for Windows stdio programs) is unchanged: a
-forwarded HTTP tool needs no worktree copy.
+A forward got for a tool the CLI then does not load (for example Codex skipping all project
+tools because the overrides grew too large) is left as is: forwards are not owned by sessions
+(D15). If the session forwards nothing, startIn behaves exactly as today. `windowsTools` (copy
+readying for Windows stdio programs) is unchanged: a forwarded HTTP tool needs no worktree
+copy.
 
 ### 3. Putting the rewritten URL in each CLI's config (D2, D5, D8)
 
@@ -118,8 +118,9 @@ forwarded HTTP tool needs no worktree copy.
   forwarded tools and omits withheld ones.
 - **Antigravity:** `machine/adapters/agy.js:39-43` uses the rewritten URL; withheld tools are
   omitted.
-- **Withheld:** a marked loaded tool without a forward is not given to the CLI in any form, and
-  a line is printed to the session log (stderr, as other project tools warnings are):
+- **Withheld:** a tool in `context.windowsWithheld` is not given to the CLI in any form, and
+  a line is printed to the machine service's log (stderr, `service.js:850`, as other project
+  tools warnings are; it is a diagnostic, not a user surface):
   `<tool>: couldn't reach Windows (<reason>); left out of this session`. Reasons: `Windows
   bridge not available`, `couldn't open a local port`. The user sees the same reason as the
   tool's status on the Project tools page (section 6).
@@ -129,66 +130,81 @@ forwarded HTTP tool needs no worktree copy.
 
 Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 
-- **Table:** tool port → `{private_port, state, listener, sockets, relay, last_refusal}`.
-  `state` is `ok` or `failed` (section 5).
-- **Get(tool port):** if an `ok` forward for that port exists, return its private port. A
-  `failed` forward is never returned; getting its tool port creates a new forward, which
-  replaces it in the table and the record. To create one, check the relay can run:
-  `this.win.detected.interop` is true and the `powershell.exe` path from `createWinEnv`
-  (`machine/lib/win-env.js:54`) exists. This is not `bridgeHealth()`, which also depends on Git
-  and starts unknown. If not, fail with `Windows bridge not available`. Then `net.createServer`
-  and listen on `127.0.0.1` port 0 (the kernel picks a free port); a listen error fails with
-  `couldn't open a local port`. Concurrent gets for the same tool port share one pending
-  creation (never two listeners for one tool port). A new forward is written to the record
-  (section 5), and that write has finished, before the get returns, so before any tmux that
-  uses it starts.
+- **Table:** tool port → the **current** forward `{private_port, state, listener, sockets,
+  relay, last_refusal, relay_error}`, `state` `ok` or `unrecorded`. Separately, a list of
+  **stale** forwards: restored ones whose private port could not be bound (section 5), each
+  `{tool_port, private_port, reason: "port in use on Linux"}`, kept until the service stops.
+- **Relay can run:** `this.win.detected.interop` is true and the `powershell.exe` path from
+  `createWinEnv` (`machine/lib/win-env.js:54`) exists. This is not `bridgeHealth()`, which also
+  depends on Git and starts unknown. Checked on every get, including when a forward exists.
+- **Get(tool port):** if the relay cannot run, fail with `Windows bridge not available`. If the
+  current forward is `ok`, return its private port. If it is `unrecorded`, retry the record
+  write; on success it becomes `ok` and is returned, else fail with `couldn't save the port
+  record`. Otherwise create one: `net.createServer`, listen on `127.0.0.1` port 0 (the kernel
+  picks a free port; a listen error fails with `couldn't open a local port`), add it to the
+  table as `unrecorded`, write the record (section 5) and wait for the write; success → `ok`
+  and return; failure → stays `unrecorded` and the get fails with `couldn't save the port
+  record`. Concurrent gets for the same tool port share one pending creation (never two
+  listeners for one tool port). So a private port is never handed to a CLI before it is in the
+  record.
 - **Lifetime:** a forward, once created, stays open until the machine service stops. It is not
-  tied to sessions and nothing closes it while the service runs. On service stop, listeners
-  close, open sockets are destroyed and relays end.
+  tied to sessions. On service stop, listeners close, open sockets are destroyed and relays end.
 - **Connections:** each accepted socket is relayed (below). The listener only accepts on
-  `127.0.0.1`.
+  `127.0.0.1`. Bytes the client sends before `opened` (below) are buffered, at most 1 MiB
+  (more → close the socket), and sent in order after it.
 - **Relay:** one `powershell.exe` per forward, started with `spawnPs`
   (`machine/lib/win-env.js:57-61`) running a script shipped in the repo
   (`machine/lib/win-relay.ps1`, embedded by reading the file, never written at run time),
-  started on demand (a connection or a status check). It multiplexes all connections for the
-  forward over its stdin/stdout with binary frames `[type:1][conn:4][len:4][payload]`, types
-  `open`, `data`, `close`, `refused`, `check`, `check-result`. A new connection never starts a
-  new Windows process while the relay runs. The machine ends a relay (close stdin, kill after
-  5 s) once it has had no open connections and no pending check for 5 minutes; the next
-  connection or check starts it again.
+  started on demand. It multiplexes all connections for the forward over its stdin/stdout with
+  binary frames `[type:1][id:4][len:4][payload]`, types `open`, `opened`, `data`, `close`,
+  `refused`, `check`, `check-result`. A new connection never starts a new Windows process
+  while the relay runs. The machine ends a relay (close stdin, kill after 5 s) once it has had
+  no open connections and no pending check for 5 minutes; the next connection or check starts
+  it again.
   - On `open`, the relay **connects first, then identifies who accepted** (D13): it connects to
-    `127.0.0.1:<tool port>` (a connect refused outright → `refused`, `nothing on Windows is
-    listening on port <n>`; any other connect failure → `refused`, `Windows refused the
-    connection`), and sends nothing yet. It then looks up the accepting end of that exact
-    connection: `Get-NetTCPConnection -LocalPort <tool port> -RemotePort <relay's own local
-    port> -RemoteAddress 127.0.0.1` → `OwningProcess` → process name. This names whatever
-    listener the dial really reached, whatever address it is bound to (`127.0.0.1`, `0.0.0.0`,
-    dual-stack `::`). An owner named `wslrelay` → close and `refused`, `port <n> on Windows leads
-    back to Linux`. An owner that cannot be established (no row, lookup error, process gone) →
-    close and `refused`, `couldn't check who holds port <n> on Windows` (fail closed). Only
-    then is any data passed. No caching: the check is per connection.
-  - `check` runs the same steps, closes the connection without sending data, and answers
-    `check-result` with the reason `refused` would carry, or none.
-  - The forward keeps the latest `refused` reason as `last_refusal` `{reason, at}`; a
-    connection the relay passes clears it.
+    `127.0.0.1:<tool port>` with a 5 s timeout (a connect refused outright → `refused`,
+    `nothing on Windows is listening on port <n>`; any other failure or the timeout →
+    `refused`, `Windows refused the connection`), and sends nothing yet. It then looks up the
+    accepting end of that exact connection, with a 3 s limit: `Get-NetTCPConnection -LocalPort
+    <tool port> -RemotePort <relay's own local port> -RemoteAddress 127.0.0.1` →
+    `OwningProcess` → process name. This names whatever listener the dial really reached,
+    whatever address it is bound to (`127.0.0.1`, `0.0.0.0`, dual-stack `::`). An owner named
+    `wslrelay` → close and `refused`, `port <n> on Windows leads back to Linux`. An owner that
+    cannot be established (no row, lookup error or timeout, process gone) → close and
+    `refused`, `couldn't check who holds port <n> on Windows` (fail closed). Otherwise it
+    answers `opened`, and only then is any data passed either way. No caching.
+  - `opened` clears the forward's `last_refusal`; `refused` sets it to `{reason, at}`.
   - `refused` or `close` closes the Linux socket; a Linux socket closing sends `close`.
-  - If the relay exits unexpectedly, open sockets are destroyed and the next connection or
-    check starts it again, at most once per 10 s; inside that limit connections are accepted
-    and closed at once, and the exit reason is kept as `relay_error` for status.
+  - `check` (with its own id) runs the same steps, closes the Windows connection without
+    sending data, and answers `check-result` with the same id and the reason `refused` would
+    carry, or none. The relay's own limits (5 s + 3 s) end every check within 8 s. The machine
+    keeps a pending check for at most 10 s; on its timeout it forgets the id (a late
+    `check-result` for an unknown id is ignored) and counts the check as finished for the idle
+    rule.
+  - If the relay exits unexpectedly, open sockets are destroyed, pending checks finish as
+    `couldn't check Windows for port <n>`, and the next connection or check starts it again, at
+    most once per 10 s; inside that limit connections are accepted and closed at once, and the
+    exit reason is kept as `relay_error`.
   - IPv4 only on Windows: the relay always dials `127.0.0.1` (parent D9).
+- **One-off check (no forward):** a status check (section 6) for a tool port with no current
+  forward does not create one. It starts a relay process just for that request (same script,
+  same `check` frames), runs the checks, and ends it when they finish; nothing is recorded.
 
 ### 5. Record and restarts
 
 - **Record:** `<stateDir>/win/forwards.json`, mode 0600, `{"forwards": [{tool_port,
-  private_port}]}`, rewritten (atomic, `atomicWrite`, `service.js:110-115`) whenever a forward
-  is created or replaced. Writes are serialized through one in-process queue; each write
-  snapshots the table when it runs, so the last write holds the latest state.
+  private_port}]}` listing the current forwards that are `ok` or `unrecorded`, rewritten
+  (atomic, `atomicWrite`, `service.js:110-115`) whenever a forward is created. Writes are
+  serialized through one in-process queue; each write snapshots the table when it runs, so the
+  last write holds the latest state.
 - **Machine service restart:** tmux sessions and their CLIs survive a restart and still hold
   private URLs. In `WinBridge.startup` (`service.js:447`), read `forwards.json` and, for each
-  entry, listen on `127.0.0.1:<recorded private port>` again as an `ok` forward. A port that can
-  no longer be bound becomes a `failed` forward (reason `port in use on Linux`) shown in status
-  (section 6); the next get for its tool port replaces it. A missing or unreadable file means
-  no forwards to restore. No tmux state is consulted.
+  entry, listen on `127.0.0.1:<recorded private port>` again as the `ok` current forward for
+  its tool port, whether or not the relay can run (keeping the port bound for existing URLs;
+  gets still check relay readiness). A port that can no longer be bound becomes a stale
+  forward (section 4) and the tool port has no current forward, so the next get creates a new
+  one (and the record write then drops the stale entry). A missing or unreadable file means no
+  forwards to restore. No tmux state is consulted.
 
 ### 6. Visibility
 
@@ -196,23 +212,25 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   (hub-authorized like `/v1/project-tools/read`, `service.js:2084`), reached from the page via
   the viewer's pass-through (`viewer/app/routes.js:68-73`: add `windows-status` to the allowed
   list). Body `{machine, path, token, tools: [{name, url}]}`. On a WSL machine, for each tool
-  whose URL is eligible (shared rule), the machine gets its forward (section 4) and runs one
-  `check`, all in parallel, each capped at 10 s. Reply `{wsl, status: {<name>: {state, reason?}}}`
-  with `state` one of `reachable`, `unreachable` (reason from `check-result`, or `couldn't
-  check Windows for port <n>` on timeout) or `unavailable` (reason from a failed get, or the
-  forward's `failed` reason). Off WSL: `{wsl: false, status: {}}`.
+  whose URL is eligible (shared rule), all in parallel, each capped at 10 s: if the relay cannot
+  run → `unavailable`, `Windows bridge not available`; otherwise run one `check` (through the
+  current forward's relay, or a one-off check, section 4). It never creates or replaces a
+  forward. Reply `{wsl, status: {<name>: {state, reason?, note?}}}` with `state` `reachable` or
+  `unreachable` (reason from `check-result`, or `couldn't check Windows for port <n>` on
+  timeout). `note` is set when a stale forward exists for that tool port: `sessions started
+  before the machine service restarted can't use this tool; start a new session`. Off WSL:
+  `{wsl: false, status: {}}`.
 - In `viewer/pages/project-tools.js`, each entry whose **Runs on Windows** switch is on shows a
-  status line under the switch: "Checking…", then "Reachable on Windows", or "Not reachable:
-  <reason>" / "Not available: <reason>". The page requests it after load for the marks in the
-  loaded file, again for one entry when its switch is turned on or its URL changes (debounced
-  500 ms), and on a **Check again** button. It sends the form's current values, saved or not.
-- **`win info`.** `WinBridge.info(session)` (`win.js:373-381`) adds `forwards`: one item per
-  entry of the calling session's `windows_tools` (section 2), each `{tool, tool_port,
-  private_port, state, reason?, last_refusal?, relay_error?}` from the forward currently in the
-  table for that tool port (`state` `failed` with its reason if none is `ok`). No other
-  session's data. The same list is included in `win info`'s fallback reply when the Windows
-  copy lookup fails (`win.js:391` onward): forwarding does not depend on the copy.
-- No thread cards or per-session warning state are added.
+  status line under the switch: "Checking…", then "Reachable on Windows", "Not reachable:
+  <reason>" or "Not available: <reason>", plus the note if any. The page requests it after
+  load for the marks in the loaded file, again for one entry when its switch is turned on or
+  its URL changes (debounced 500 ms), and on a **Check again** button. It sends the form's
+  current values, saved or not. Each request carries a sequence number per entry; a reply is
+  applied only if it is the latest request for that entry and the entry still has the same
+  URL and the switch on (a rename moves the entry's sequence with it). Turning the switch off
+  hides the line.
+- `win info` is unchanged. No thread cards, per-session warning state or session-record
+  fields are added.
 
 ### 7. Project tools page
 
@@ -252,24 +270,26 @@ frames and dialling a local test server (these cover the Linux side and the fram
   WSL kernel with interop off withholds marked tools.
 - Claude settings/argv: marked tool in `disabledMcpjsonServers`, `--mcp-config` file contents
   and mode 0600; Codex and Antigravity rewritten URLs; withheld tools absent from all three
-  and never present with the original URL.
+  and never present with the original URL. The config is built once.
 - Two sessions with tools on one tool port get the same private port and one listener; the
   listener stays open after both sessions stop.
-- Two concurrent starts on different tool ports: both forwards are in `forwards.json`; the
-  record is written before tmux starts.
-- Restart: forwards restored on their recorded private ports; a taken port gives a `failed`
-  forward, and the next get for that tool port gets a new private port and replaces the record
-  entry.
-- Relay frames: `refused` closes the socket and sets `last_refusal`; a passed connection clears
-  it; relay death restarts at most once per 10 s; an idle relay ends after 5 minutes and the
-  next connection restarts it.
-- `windows-status`: reachable, each unreachable reason, timeout, unavailable (interop off;
-  `failed` forward), off WSL; passes through the viewer route.
-- `win info` lists one item per tool in `windows_tools` (two tools on one port give two items),
-  also after a restart; the fallback reply (copy lookup failing) includes `forwards`.
+- Two concurrent starts on different tool ports: both forwards are in `forwards.json` before
+  either tmux starts. A failing record write fails the get (tool withheld); the next get
+  retries and succeeds.
+- Restart: forwards restored on their recorded private ports, also with interop off (then a
+  new session's get fails and the tool is withheld); a taken port gives a stale forward, the
+  status reply carries the note, and the next get creates a new forward and drops the stale
+  entry from the record.
+- Relay frames: `opened` before data, client bytes buffered until then; `refused` closes the
+  socket and sets `last_refusal`; `opened` clears it; relay death restarts at most once per
+  10 s and finishes pending checks; an idle relay ends after 5 minutes; a check timed out at
+  10 s no longer blocks idle shutdown and its late result is ignored.
+- `windows-status`: reachable, each unreachable reason, timeout, unavailable (interop off), off
+  WSL; a port with no forward uses a one-off relay and leaves no forward or record; passes
+  through the viewer route.
 - Project tools page: switch shown only on WSL and for eligible URLs; dirty on switch change
-  alone; rename/delete update the list; save keeps other keys; status line states and Check
-  again (browser test).
+  alone; rename/delete update the list; save keeps other keys; status line states, Check
+  again, and a stale reply for an old URL is not applied (browser test).
 
 The shipped relay script itself is tested by `machine/test/win-relay-live.test.js`, which runs
 `machine/lib/win-relay.ps1` through the real `powershell.exe` and skips (reporting "skipped:
@@ -288,6 +308,8 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Port 0 can pick a port that an unmarked Linux tool is configured for while its server is down; that tool then reaches the Windows forward | Rare path: needs a Linux tool configured on a port in the kernel's ephemeral range, its server down, and the kernel picking exactly that port | review-round-4 |
+| After a stale forward is replaced, its old private port is no longer reserved; if the Linux holder exits, a later forward could get that port and receive old sessions' requests | Rare path: needs a service restart, a Linux program in the restart gap, that program exiting, and the kernel picking the same port again | review-round-4 |
 | (No longer applies after D15: no release.) The 60 s sweep's tmux snapshot can predate a start that registered and left `startingNames` during an `await`, releasing that live session's forward | Rare path: sub-second race between the sweep and a start finishing | review-round-2 |
 | (No longer applies after D15: no release.) A start cancelled after tmux was created but before the session is registered releases its forwards in `start()`'s `finally` even if the tmux kill did not take | Rare path: needs a cancel inside that window and a failed kill | review-round-1 |
 | While the machine service is down (restart or crash), a forward's private port is unbound; a Linux program that binds that exact port in the gap gets a live CLI's requests and headers | Rare path: needs a service restart and another program taking a kernel-picked port within seconds; startup reports it `failed` on the Project tools page | planning |
@@ -384,6 +406,33 @@ demand, `check` frame, refusal reasons. §5 rewritten: record is `{tool_port, pr
 restart restores all recorded forwards without consulting tmux. §6 rewritten: Project tools
 page status via new `windows-status` route; `win info` from `windows_tools`; no thread
 warnings. Validation rewritten to match. Superseded Accepted Risks marked.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Config built twice for no purpose under D15 | upheld | §2 one build (D16) |
+| intent | minor | Status checks for typed ports leave forwards behind | upheld | §4 one-off check, §6 status never creates forwards (D16) |
+| intent | minor | `windows_tools` and `win info` additions not needed | upheld | §6 `win info` unchanged (D16) |
+| mechanics | blocking | Rare path: port 0 can pick an unmarked Linux tool's port | accepted-risk | Accepted Risks |
+| mechanics | blocking | Status request replaces a failed forward and loses its failure | upheld | §4 stale list kept; §6 status never replaces, shows a note |
+| mechanics | blocking | Rare path: replaced failed forward's port not reserved | accepted-risk | Accepted Risks |
+| mechanics | blocking | Restored forward reused while interop is off | upheld | §4 relay readiness checked on every get; §5 |
+| mechanics | major | Record write failure after bind undefined | upheld | §4 `unrecorded` state, get fails and retries |
+| mechanics | major | No success frame for `open` | upheld | §4 `opened` frame, client bytes buffered |
+| mechanics | major | Check lifetime on timeout undefined | upheld | §4 relay limits 8 s, machine forgets at 10 s |
+| mechanics | minor | Out-of-order status replies | upheld | §6 per-entry sequence |
+| mechanics | minor | Withheld line destination unclear | upheld | §3 machine service log, diagnostic only |
+
+### Round 5 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 4:** §2 one build with `windowsUrls` and `windowsWithheld` (D16); §3
+withheld line goes to the machine service log; §4 relay readiness checked on every get,
+`unrecorded` state and record-write failure, stale forwards list, `opened` frame and client
+byte buffering, connect/lookup time limits, check lifetime and late results, one-off check
+relay; §5 record lists current forwards, restore regardless of interop, stale entries; §6
+status never creates or replaces forwards, stale note, per-entry sequence for replies, `win
+info` unchanged; Validation updated; D16; two rare-path Accepted Risks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
