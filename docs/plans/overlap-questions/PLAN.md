@@ -11,7 +11,8 @@ the north star this plan serves. Goal and Constraints live there, not here, so t
 get buried as this file grows.
 
 Background: split from lead-chat (`docs/plans/lead-chat/PLAN.md` on main, Decisions 19-24,
-Review Rounds 4-6). Map: `MAP.md`, `docs/maps/overlap-decision-flow.md`.
+Review Rounds 4-6). Map: `MAP.md`, `docs/maps/overlap-decision-flow.md`. The map predates
+Decision 28: its review, approval and build overlap paths are out of scope.
 
 ## Open Questions
 
@@ -54,6 +55,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 26 | Approved-stage withdrawal applies to every overlap card, re-asks included; one fallback change option always exists; a split offer goes before waiting overlap cards but after an open one; a typed change follows its stage's change rules | Round 8 findings | review-round-8 |
 | 27 | Several overlaps on a small fix are all settled before edits; an answer that removes promised scope is an `idea-change` (its own Done marker); chat answers are resolved at once; a split settles waiting overlaps it made moot; the fallback option is always one of the change options and points to a follow-up | Round 9 findings | review-round-9 |
 | 28 | Supersedes the review, approved, Start building and restart-round parts of Decisions 4, 9, 11, 13-15, 17, 19-23, 25-27: overlap cards are asked only in the card window (before a small fix's edits; a feature while `planning`). From `ready-for-review` on, an overlap is a late overlap: one line and an offered follow-up thread. IDEA.md What we're building, What good looks like and Not doing changed to match. The card-id and retract changes (§3) stay | After rounds 7-9 again found new corners where overlap cards meet review, approval and splits, the user picked "Cards only while planning" (card 8d02e56a) | idea-change |
+| 29 | Pre-confirmation overlaps are held, not late; withdrawn overlap cards clear their Open Question; a Spec change asked in chat during a running round waits for triage and the next round; on a small fix the latest instruction wins and committed edits close its cards; a talk-instead retract refused by Start building leaves the build running | Round 10 findings | review-round-10 |
 
 ## Spec
 
@@ -78,7 +80,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   of its next visible reply which thread overlaps, what it is doing, and that a follow-up thread
   can be started; if the user asks for one, the lead posts a `stub` (`depends_on_parent` by the
   Stubs rule). If the user instead asks in chat to change this thread's plan or work, that is
-  handled like any other change they ask for at that step. Repeating the line after a restart
+  handled like any other change they ask for at that step; during a running review round, such
+  a Spec change is saved after that round's triage and listed in the next round's "Changed
+  since", so the changed Spec is reviewed before approval. Repeating the line after a restart
   is harmless.
 - **Actionable answer** of an overlap card, in this order: `answered_value` when
   `answered_action` is `picked` or `answered` (a press or the card's own box); else
@@ -96,7 +100,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   `(overlap card <id>)`, source `user`, or `idea-change` when the answer removes something
   IDEA.md's What or What good looks like promises (the answer is the user's agreement: the
   item moves to Not doing). It is committed in the same commit as the Spec change it causes.
-  Small-fix answers need no marker: acting twice is harmless. Before acting on any overlap
+  Small-fix answers need no marker. On a small fix, the latest instruction wins: a later chat
+  message from the user about that overlap overrides the card's answer, and once the fix's
+  edits are committed every answered small-fix overlap card is handled. Before acting on any overlap
   answer (a press, a typed or chat answer, or a restart), the lead checks for its Done marker
   and does nothing if it exists.
 
@@ -122,14 +128,20 @@ through an overlap card, or in chat for a late overlap (see below)".
 - **Small fix, before edits:** post the card and edit nothing until it is answered. Options:
   "Go ahead with the fix" and "Leave it to <other thread>" (no edits; say so in the reply; the
   thread stays open). With several overlaps, every card is settled (one at a time) before any
-  edit; one "Leave it" stops the fix unless the user later says otherwise.
+  edit; one "Leave it" stops the fix unless the user later says otherwise. When it stops, the
+  reply says the thread can be archived, or picked up again if they ask.
 - **Feature, while planning:** an Open Question asked as an overlap card. Options: "Keep the
   plan as it is" and one to three concrete "Change it: <what>"; one of them is always "Change
   it: leave <shared area> out of this plan (it can come back later as a follow-up)", used when
   no other concrete change fits. Any other change the user types in the box or in chat. The
   answer is handled like any planning answer, with the Done marker.
+- **Feature, before IDEA.md is confirmed:** held, not late: once IDEA.md is confirmed and
+  PLAN.md created with `status: planning`, it is the first Open Question asked.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
+- **Withdrawn card:** when the lead retracts an overlap card because it no longer applies, it
+  removes its Open Question in the same commit, with a Log line `Overlap with <thread id>
+  dropped: <why>`.
 
 ### 2. Restart (protocol/app/lead.md, "Restarting what died")
 
@@ -137,7 +149,8 @@ On `[wc:context restart]`, after rereading the plan and cards:
 - For each overlap card with an actionable answer and no Done marker: act on it now. If status
   is no longer in the card window (rare: the answer would have to cross the move to review),
   treat it as a late overlap.
-- An open overlap card stays open and is not asked again.
+- An open overlap card stays open and is not asked again. A retracted overlap card whose
+  `Overlap with` Open Question is still in PLAN.md is asked again.
 - Run `wc.js session leads` once and treat any overlap not covered by an overlap card or a
   Decision Log entry as new (a card inside the window, else a late overlap). A planned thread
   also asks any `Overlap with` Open Question not yet asked.
@@ -165,7 +178,9 @@ On `[wc:context restart]`, after rereading the plan and cards:
   `{"ok":true}` for `title`, `resolve`, `retract`. Never any other field of the card.
 - `protocol/app/lead.md`: where it says to retract an approval card (mode change, pull-back,
   talk instead of building), the id is the one `card.js` printed for it, or from the restart
-  context.
+  context. At the "talk instead of building" retract, `Start building was already pressed`
+  means the build stands: the lead says so in a line and keeps talking, without stopping the
+  sub-lead.
 - Docs: `protocol/app/cards.md` "Posting a card" documents the output and names the
   exceptions to "succeeds once the card is on disk, even if the app is down" (`done` and
   `retract` are never queued), and its rule that cards never carry a thread id names
@@ -210,6 +225,15 @@ merging of branches; no sub-lead or worker rule changes.
 
 ## Review Rounds
 
+### Round 11 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 10:** Decision 29: Background map note; Terms "Late overlap" (chat Spec change during a round) and "Done marker" (small-fix latest instruction wins); §1 small-fix stop reply, held pre-confirmation stage, withdrawn-card rule; §2 re-ask of withdrawn cards; §3 talk-instead retract refusal.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ### Round 10 — 2026-11-21
 
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
@@ -218,6 +242,14 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Small-fix answers replayed after edits or after a later chat answer | upheld | Latest instruction wins; edits close them (Decision 29) |
+| intent | minor | Talk-instead retract has no rule for the new refusal | upheld | §3 lead.md bullet |
+| intent | minor | "Leave it" small fix has no closure hint | upheld | Reply mentions archiving |
+| intent | minor | Map describes removed paths | upheld | Background note |
+| mechanics | major | Pre-confirmation overlap read as late | upheld | Held stage restored in §1 |
+| mechanics | major | Withdrawn overlap stuck in Open Questions | upheld | Withdrawn-card rule and restart re-ask |
+| mechanics | major | Chat Spec change during a running review | upheld | Waits for triage, then next round (Terms) |
+| mechanics | major | Restart reinstates a superseded small-fix answer | upheld | Latest instruction wins (Decision 29) |
 
 ### Round 9 — 2026-11-21
 
