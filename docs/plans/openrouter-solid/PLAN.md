@@ -84,15 +84,16 @@ first turn forks the lead's Pi session, later turns resume the fork.
   Replace the claude/gpt fallback at `aside-turns.js:95` with an explicit provider→adapter map
   (claude→claude, gpt→codex, openrouter→pi), so no provider silently runs another CLI.
 - `machine/adapters/pi.js` gets `asideArgv(i, { prompt })`:
-  `pi --provider openrouter --model <model> --mode json -p`, then `--fork <from>` for mode fork or
+  `pi --provider openrouter --model <model> --mode json -p`, then `--fork <from> --session-id <new_id>` for mode fork
+  (the hub supplies `new_id` for OpenRouter forks, as it does for Claude, `aside-turns.js:64`) or
   `--session <from>` for mode resume, `--append-system-prompt <prompt>`, `--no-extensions`
   (no wheelchair hook bridge in an aside), `--thinking <effort>` when set, and for access
   `read-only` (the default) `--tools read,grep,find,ls`; for `full` no tool restriction. The
   message is passed on stdin or as the final argument, whichever Pi's `-p` supports
   (`cli.md`). Login env comes from `adapter.loginEnv(dir)` as for other providers.
 - Output parsing (Pi JSON mode, `json.md`): the first record is the session header
-  `{"type":"session","id":...}`; its `id` is the `conversation_id` (for fork, the new session;
-  for resume, it must equal `from`). Success is judged from the settled outcome only: Pi retries
+  `{"type":"session","id":...}`; `conversation_id` is `new_id` for fork and `from` for resume, as
+  for Claude (`aside-turns.js:125`); a header id that differs is a failure. Success is judged from the settled outcome only: Pi retries
   rate limits and network errors itself (`json.md:38-48`), so an earlier errored assistant
   message followed by a successful retry is a success. The reply is the text of the last
   assistant `message_end`. Failure: non-zero exit, no assistant text after settling, or the
@@ -106,6 +107,10 @@ first turn forks the lead's Pi session, later turns resume the fork.
   or not installed) finishes at once as `state: failed` with S4's problem text. It is checked
   inside the runner, not at request validation, so the hub gets a terminal result and does not
   retry the dispatch.
+- Spend from forks (the usage view's OpenRouter totals, `machine/adapters/pi.js` `spend()`): Pi copies the lead's entries, cost records included, into a
+  forked session file (`dist/core/session-manager.js:1409-1425`). The spend scan
+  (`machine/adapters/pi.js:24-46`) counts each assistant entry once per account, keyed by entry
+  `id` plus `timestamp`, so aside forks add only their own new turns.
 - Asides fork and resume in the lead's worktree (`i.cwd`), the same directory as the lead's
   session, so Pi finds the session by id.
 - Tests: machine tests with a fake `pi` on PATH emitting JSON-mode records for fork, resume,
@@ -121,11 +126,6 @@ first turn forks the lead's Pi session, later turns resume the fork.
 
 - Tested version: `1.5.2`. Older than 1.5.2 is refused; 1.5.2 up to any 1.5.x patch is
   tested; anything newer is untested but allowed (Decision 7).
-- Spend from forks (S1's totals): Pi copies the lead's entries, cost records included, into a
-  forked session file (`dist/core/session-manager.js:1409-1425`). The spend scan
-  (`machine/adapters/pi.js:24-46`) counts each assistant entry once per account, keyed by entry
-  `id` plus `timestamp`, so aside forks add only their own new turns. (Listed here because S3
-  creates the forks.)
 - Machine: probe `pi --version` cached by executable and mtime, exactly as
   `checkKimiVersion` (`machine/service.js:1601-1619`), warmed at startup. A failed or
   unparseable probe counts as unknown (warning), not refused.
@@ -163,8 +163,9 @@ Today a failed transcript read becomes `''` (`viewer/app/chat.js:330-334`), `del
 returns without a report (`viewer/app/sessions.js:435`), and the turn and delivery ids are
 already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
 
-- `chat.sessionTranscript` gets a strict mode for report readers: a failed or timed-out machine
-  call throws; a transcript that is genuinely absent (machine answers with no data, or 404)
+- `chat.sessionTranscript` gets a strict mode for report readers: each machine call in it uses a
+  2-second timeout (not the 5s default, `viewer/app/machine-client.js:67`), so four attempts stay
+  well under the machine's 5s event POST timeout in the common case; a failed or timed-out call throws; a transcript that is genuinely absent (machine answers with no data, or 404)
   returns `''`.
 - `deliverReport`: when the read throws, or when the CLI is `pi`, the event carries an
   `entry_id`, and the read (empty or absent included) does not contain that entry (the machine's copy can lag or fail, `machine/service.js:1403-1407`),
@@ -241,6 +242,9 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Use hub-supplied new_id with --fork/--session-id like Claude | upheld | S3 adopts it |
+| intent | minor | Strict read timeouts could hold the lock ~40s | upheld | S5 strict reads use a 2s timeout |
+| intent | minor | Fork spend dedupe sits under S4 | upheld | Moved to S3, source named |
 
 ## Implementation Tasks
 
