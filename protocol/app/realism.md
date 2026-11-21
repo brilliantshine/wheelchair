@@ -21,6 +21,9 @@ How likely a problem must be before it is chased. It applies in every plan mode.
 - **What happens to a rare path**: it is reported once and recorded in the plan's Accepted
   Risks without asking the user. It is never fixed in this thread, never moved to Deferred
   and never raised again.
+- **Small consequences are minor**: a normal-use finding whose worst outcome is an extra
+  prompt to the user, a repeated message, or wording a careful reader reconciles the obvious
+  way is `minor` (`reviewer.md`): fixed, but it never blocks a clean review round.
 - **Check once built**: a finding about how code not yet written might behave ("this could
   race if the poller is written like X"), where the Spec is clear and correct and only the
   built code can show whether the problem exists. A Spec that is wrong, contradictory or
