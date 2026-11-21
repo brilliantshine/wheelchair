@@ -111,25 +111,40 @@ and mapper. It is **shown** (it is the thread notice, decision 12) and **not pin
 | `for` | role | yes | Whose lessons (must be allowed by S2) |
 | `text` | string | `add`, `replace` | 1–300 characters, one line |
 | `lesson` | string | `replace`, `remove` | The id of the lesson to change, as shown in the agent's instructions |
-| `only_ai` | string | no | `add`/`replace`: a `PROVIDERS` key (`claude`, `gpt`, `gemini`, `kimi`, `openrouter`); sets `provider`, so the lesson reaches only agents on that AI. Name the AI of the agent that made the mistake, which for a reviewer, verifier or worker lesson is often not the saver's own |
+| `only_ai` | string | no | `add`/`replace`: `any` or a `PROVIDERS` key (`claude`, `gpt`, `gemini`, `kimi`, `openrouter`); sets `provider`, so the lesson reaches only agents on that AI. Name the AI of the agent that made the mistake, which for a reviewer, verifier or worker lesson is often not the saver's own |
 | `only_project` | boolean | no | `add`/`replace`: true sets `project` to the thread's project path |
 | `why` | string | `add`, `replace`, `remove` | One line, shown on the notice: what went wrong and how it was proven |
 
 Like `done`, a `lesson` card is **never queued**: the machine relays it to the hub
-synchronously and returns the hub's answer; if the hub cannot be reached it returns 503
-`the app is unreachable; the lesson was not saved; try again in a minute`. The hub applies
-the change to `settings.lessons` and records the card in the thread in one step: if the
-settings write fails, no card is recorded. On success the stored card carries the
-resulting lesson `id` (and, for `remove`, the removed text) so the notice can show it.
+synchronously and returns the hub's answer; if the hub cannot be reached or does not answer it returns 503
+`the app did not confirm the lesson; run the same card again in a minute (repeating it is
+safe)`. Repeats are made safe by the hub, not by a delivery id: an `add` whose `for` and
+`text` exactly match an existing lesson for that role returns success with that lesson's
+id and records no second notice; a `replace` that leaves the lesson exactly as stored
+returns success with no new notice; a `remove` of an id that the most recent `lesson`
+card in this thread already removed returns success with no new notice. The hub first
+applies the change to `settings.lessons` through `settings.update()`, then records the card
+in the thread. If the settings write fails or is refused, no card is recorded and the
+refusal goes back to the agent. (A hub crash between the two writes leaves a saved lesson
+with no notice; see Accepted Risks.) On success the stored card carries the resulting lesson `id` and a snapshot of the lesson
+as it stands after the change (for `remove`, as it stood before): `text`, `provider` and
+`project`. The notice is drawn from this snapshot only.
 Refusals (422 unless noted), each a sentence the agent can act on:
 
 - `a <saver> may not save lessons for <target>s` (S2).
-- `lessons for <role>s are full (12): replace or remove one instead`.
+- `lessons for <role>s are full (12): replace or remove one instead`, followed by every
+  lesson for that role, one per line as `[<id>] <first 80 characters>` with its markers,
+  so an agent whose instructions showed none of them (other AI or project) can still pick
+  one. If none is worth dropping, the agent does not save the new lesson.
 - `no lesson <id> for <role>s` for a `replace`/`remove` naming a missing id or one under
   another role.
 - field errors (400) from `card.js` validation as for other kinds.
 
-`only_ai` absent or `only_project` false/absent on a `replace` clears that marker. An unknown `only_ai` value is refused by `card.js` (400). The stored
+On a `replace`, a marker field that is absent keeps the lesson's stored marker (so a
+maintainer replacing a lesson scoped to another project keeps that scope); `only_ai:
+"any"` clears `provider`; `only_project: false` clears `project`; `only_project: true`
+sets it to this thread's project. On an `add`, absent means no marker. An unknown
+`only_ai` value is refused by `card.js` (400). The stored
 `saved_by` becomes `agent`.
 
 ### S5. Reaching agents
@@ -157,8 +172,10 @@ its layer adds, after its own block, the same format headed
 `Lessons you keep for reviewers:` and `Lessons you keep for verifiers:` (all of them,
 with markers, unfiltered). The sub-lead likewise gets `Lessons you keep for workers:`.
 Lessons blocks (the role's own and the "you keep" ones) are **not** counted by
-`assertFits()`: their size is already bounded by the 12-per-role cap and 300-character
-limit, and counting them would refuse a lesson with a size error before the cap is reached.
+`assertFits()`: that check guards Collin's own layers, and lessons are bounded on their own
+by the 12-per-role cap and 300-character limit (at most about 11,000 characters for a lead,
+next to a 64,000-character `lead.md`). `assertFits()` builds its sample layers without
+lessons.
 
 The Settings "See it in full" preview (`fullPrompt`) shows the lessons block with every
 lesson for the role and its markers, filtered only by the template's project scope.
@@ -168,8 +185,10 @@ lesson for the role and its markers, filtered only by the template's project sco
 The `lesson` card renders in the thread as one compact line, styled as a notice (not a
 question): "Saved a lesson for <role plural>: <text>" (`add`), "Updated a lesson for
 <role plural>: <text>" (`replace`), "Removed a lesson for <role plural>: <removed text>"
-(`remove`), followed by the `why` in muted text and markers ("only on GPT", "only in this
-project"), and an "Open in Settings" link to the Lessons entry for that role. It needs no
+(`remove`), followed by the `why` in muted text and the snapshot's markers ("only on GPT", "only in
+<last path segment of the project>"), and an "Open in Settings" link to `/settings#templates/lessons/<role>`. That address
+always opens the role's Lessons entry, even with no lessons; empty, it says "No lessons
+for <role plural> right now." (S7). It needs no
 answer, never counts under "Needs you" and has no buttons.
 
 ### S7. Settings › Behavior templates
@@ -178,8 +197,8 @@ The template list gets, in each role's group (shown even when that role has no t
 of Collin's), one entry **"Lessons learned"** placed first, with a distinct "Written by
 agents" tag and a visual style unlike Collin's templates (an accent-tinted background and a
 text label, no icon). The tag shows the count, e.g.
-"Written by agents · 4". It is shown only when the role has at least one lesson; with none,
-the group shows nothing extra. It has no in-use toggle, no duplicate and no delete-all.
+"Written by agents · 4". It is listed only when the role has at least one lesson; with none,
+the group shows nothing extra, but the address in S6 still opens the empty entry. It has no in-use toggle, no duplicate and no delete-all.
 
 Selecting it opens an editor with:
 
@@ -189,11 +208,16 @@ Selecting it opens an editor with:
   read-only labels, "saved from <thread title>" as a link when `thread` is set and the
   thread still exists, and a Remove button (with a "Really remove" confirm step, as
   template Delete has).
-- Save, which writes the edited texts (`saved_by: user`) through a new
-  `PUT /settings/lessons/<role>` with body `{ lessons: [{ id, text }] }` that may only
-  edit text or drop entries, never add or change markers; unknown ids are refused (400).
-  A lesson an agent changed since the page loaded keeps the agent's version only if Collin
-  did not edit that row; otherwise Collin's text wins (last write wins per row).
+- Save, which sends only what Collin changed, through a new
+  `PATCH /settings/lessons/<role>` with body `{ edits: [{ id, text }], removals: [id] }`.
+  The page puts a row in `edits` only if its text differs from what the page loaded, and
+  in `removals` only if Collin confirmed Remove. Inside `settings.update()` the hub applies
+  each edit (`saved_by: user`, `saved_at` now) and each removal to the current list;
+  lessons Collin did not touch, including ones agents added or changed after the page
+  loaded, are left as they are. An edit to an id no longer present is refused (409,
+  `an agent removed a lesson you edited; reload to see the current list`) and nothing in
+  that request is applied; a removal of an id no longer present is ignored. Markers cannot
+  be changed or lessons added here (400). After saving, the page reloads the list.
 - The note "Changes apply to agents started after you save." like templates.
 
 Collin cannot add lessons from Settings (agents write them; his own instructions belong in
@@ -226,8 +250,8 @@ thread handoffs.
   replace/remove by id, missing id refused; `only_ai`/`only_project` set and cleared;
   `normalize()` dropping malformed lessons; `roleLayers` including only matching lessons,
   placing the block before the template text, and the lead's/sub-lead's "you keep" blocks;
-  `only_ai` naming another AI than the saver's; `assertFits` ignoring lessons blocks; the `PUT /settings/lessons/<role>` edit and
-  remove rules; the machine returning 503 for a `lesson` card when the hub is unreachable
+  `only_ai` naming another AI than the saver's; `assertFits` ignoring lessons blocks; the `PATCH /settings/lessons/<role>` rules (only changed rows applied, a concurrent agent add kept, 409 on an edited-then-removed id);
+  repeat-safe `add`/`replace`/`remove`; marker preservation on `replace`; the full-list refusal text; the machine returning 503 for a `lesson` card when the hub is unreachable
   instead of spooling.
 - `cd viewer && npx playwright test test/app-settings.spec.js test/app-lessons.spec.js`
   passes, with `app-lessons.spec.js` covering: the "Lessons learned" entry and its tag
@@ -253,6 +277,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A hub crash between saving a lesson and recording its notice leaves the lesson active with no notice | Rare path (crash mid-operation, sub-second window); the lesson still shows in Settings | review-round-1 |
 
 ## Check Once Built
 
@@ -275,6 +300,14 @@ stays as review history.
 |------|----------|---------|--------------|------------|
 | intent | blocking | `only_ai` as a boolean pins the lesson to the saver's AI, but lead/sub-lead save for reviewers, verifiers and workers that often run on another AI | upheld (blocking) | S4 `only_ai` names a provider; S8 tells lead and sub-lead to name the mistaken agent's AI |
 | intent | minor | Lead's "you keep" blocks (up to 36 lessons) would trip the 12,000-character check before the 12 cap | upheld (minor) | S3/S5: lessons blocks excluded from `assertFits`; bounded by cap |
+| mechanics | blocking | Settings save can't tell untouched rows from edits, or removals from lessons added meanwhile | upheld (blocking) | S7: PATCH with explicit `edits` and `removals`, merged in the write queue, 409 on edited-then-removed |
+| mechanics | blocking | Lesson and notice can't be written in one step | accepted-risk (rare path) | S4: settings first, then card; crash between is in Accepted Risks |
+| mechanics | blocking | Delegated saves can't target the mistaken agent's AI; replace drops another project's scope | upheld (blocking) | AI part fixed with the intent finding; S4: absent markers kept on `replace`, explicit clear values |
+| mechanics | major | Lost hub reply then retry can duplicate a lesson | upheld (major) | S4: hub makes repeated add/replace/remove succeed without a second lesson or notice; 503 text says repeating is safe |
+| mechanics | major | `assertFits` with lessons misses providers and lesson-only projects | declined | Superseded: lessons no longer counted by `assertFits` (intent minor); the 12,000 cap guards Collin's layers only (`docs/plans/app-settings/PLAN.md:279`), prompts already carry a 64k `lead.md` |
+| mechanics | minor | Cap refusal gives no usable ids when the agent's prompt filtered them all out | upheld (minor) | S4: refusal lists every lesson for the role |
+| mechanics | minor | Remove notice lacks the removed lesson's scope | upheld (minor) | S4/S6: card stores a snapshot; notice drawn from it |
+| mechanics | minor | Settings link has no destination after the last lesson is removed | upheld (minor) | S6/S7: fixed address opens the role's entry even when empty |
 
 ## Prior Work
 
