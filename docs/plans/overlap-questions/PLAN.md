@@ -75,6 +75,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 46 | A small fix never re-asks (news before edits is mentioned; the user's chat wins); a peer question joining an open card is a one-line mention; only the first follow-up inherits validity; a recorded drop (Log line) keeps an overlap from being asked again, also for waiting ones and on restart | Round 23 findings | review-round-23 |
 | 47 | A dropped overlap answers peers without a card; finished-peer removals use the named drop line; every follow-up for an unsettled answer inherits validity (supersedes the first-only limit in 46); small-fix drops record nothing; restart uses Terms "New overlap" | Round 24 findings | review-round-24 |
 | 48 | Supersedes the drop records in 46-47: cancelling an overlap question (or its becoming moot by this thread's decision) counts as the answer "Keep the plan as it is", logged as a Decision with the Done marker; a finished peer before posting is also logged as a Decision. No separate drop records | The last rounds drew findings on the separate drop record; the user picked "As 'keep the plan'" (card 09b79ae6) | user |
+| 49 | A cancel is settled: on a feature a Decision by thread id (card suffix only if a card was posted; `defaulted` when moot), on a small fix "Go ahead" unless chat says otherwise; a finished peer on a small fix is only mentioned | Round 25 findings | review-round-25 |
 
 ## Spec
 
@@ -112,8 +113,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   a note of it). A card with `retracted_at` has no answer. A chat answer is resolved on the card
   as soon as it arrives; if that resolve is refused because the card was already answered, the
   stored card answer wins.
-- **Settling an answer:** an answer that clearly picks one option, or (for a feature) states a
-  concrete change of its own, is acted on. Anything else (an objection, a condition, a vague
+- **Settling an answer:** an answer that clearly picks one option, cancels the question (§1
+  "Cancelled or moot question"), or (for a feature) states a concrete change of its own, is
+  acted on. Anything else (an objection, a condition, a vague
   answer) gets a follow-up overlap card for the same thread, with no Done marker until that one
   is settled; the original card counts as handled once a later overlap card with the same
   `about_thread` exists.
@@ -166,7 +168,8 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   its Decision removes it. Before posting a waiting overlap card (live or on restart), the lead
   rechecks the other thread in `session leads`: if it has finished (Terms "Overlap"), it removes
   the Open Question in the commit that logs a Decision `Overlap with <thread id>: the other thread
-  finished; mentioned only` (source `defaulted`), and gives the one-line mention instead. A follow-up card
+  finished; mentioned only` (source `defaulted`), and gives the one-line mention instead. On a
+  small fix it just gives the one-line mention and records nothing. A follow-up card
   for an unsettled answer (Terms "Settling an answer") skips this recheck: it inherits the
   original card's validity, live and on restart.
 - **Card text:** `fits` names the other thread by its title; each option's `consequence` says
@@ -191,13 +194,18 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   acts on the answer as the user gives it. A card stays valid even if the other thread finishes
   meanwhile; the finished-peer recheck applies only before posting.
 - **Cancelled or moot question:** when the user cancels an overlap question (in chat, or by
-  typing it in the card's box), or this thread's own decision makes it moot, that counts as the
-  answer "Keep the plan as it is" (Decision 48): on a feature it is logged as that Decision, with
-  the Done marker, in the commit that removes its Open Question; an open card is then resolved
-  with that note (a user cancel) or retracted (moot by this thread's decision); a waiting one is
-  not posted. On a small fix nothing is recorded: the card is resolved or retracted, or a waiting
-  one not posted, and the user's latest instruction in chat covers it. New information about the
-  other thread never cancels a question (it is only mentioned).
+  typing it in the card's box), or this thread's own decision makes it moot, it is settled
+  (Decision 48):
+  - On a feature it counts as "Keep the plan as it is", logged as a Decision naming the other
+    thread's id, in the commit that removes its Open Question: source `user` for a cancel,
+    `defaulted` for moot. If a card was posted, the entry ends `(overlap card <id>)` (the last
+    posted card for that thread, so a waiting follow-up is covered too); if none was, it has no
+    card suffix and Terms "New overlap" still excludes the thread.
+  - On a small fix it counts as "Go ahead with the fix" unless the user's chat says otherwise,
+    and nothing is recorded.
+  - An open card is then resolved with that note (a user cancel) or retracted (moot); a waiting
+    one is not posted.
+  New information about the other thread never cancels a question (it is only mentioned).
 
 ### 2. Restart (protocol/app/lead.md, "Restarting what died")
 
@@ -275,6 +283,15 @@ merging of branches; no sub-lead or worker rule changes.
 
 ## Review Rounds
 
+### Round 26 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 25:** Decision 49: Terms "Settling an answer" lists a cancel; §1 finished-peer recheck on a small fix; §1 "Cancelled or moot question" rewritten (feature and small-fix cases, Done marker without a card).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ### Round 25 — 2026-11-21
 
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
@@ -283,6 +300,13 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Cancelled waiting question has no card id for the marker | upheld | Thread id only (Decision 49) |
+| intent | minor | Moot logged as the user's decision | upheld | Source `defaulted` |
+| intent | minor | Small-fix cancel vs its options | upheld | Counts as "Go ahead" unless chat says otherwise |
+| intent | minor | Rare path: cancel note read as unsettled on restart | upheld | Cancel listed as settled (cheap) |
+| mechanics | blocking | Done marker needs a card id that doesn't exist | downgraded (major) | Thread id only; last posted card when one exists (Decision 49) |
+| mechanics | major | Finished-peer recheck on a small fix | upheld | Mention only, no record |
+| mechanics | major | Small-fix cancel reopened by a peer question | upheld | Cancel is settled (Decision 49) |
 
 ### Round 24 — 2026-11-21
 
