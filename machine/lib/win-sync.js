@@ -129,7 +129,7 @@ function entries(output) {
   return output.toString().split('\0').filter(Boolean);
 }
 
-async function snapshot(ctx, win) {
+async function snapshot(ctx, win, protectedPaths = new Set()) {
   const options = indexOptions(ctx, win);
   const indexPath = win ? path.join(ctx.copy.linux, '.git/wheelchair.index') : options.env.GIT_INDEX_FILE;
   if (!fs.existsSync(indexPath)) {
@@ -142,7 +142,7 @@ async function snapshot(ctx, win) {
   const force = [...realPaths].filter(file => !indexPaths.has(file) && fs.existsSync(path.join(options.cwd, file)));
   if (force.length) await command(ctx, win, ['add', '-f', '--', ...force], options);
   const ignored = await command(ctx, win, ['ls-files', '-ci', '--exclude-standard', '-z'], options);
-  const remove = entries(ignored.stdout).filter(file => !realPaths.has(file));
+  const remove = entries(ignored.stdout).filter(file => !realPaths.has(file) && !protectedPaths.has(file));
   if (remove.length) await command(ctx, win, ['rm', '--cached', '--ignore-unmatch', '--', ...remove], options);
   await command(ctx, win, ['add', '-A'], options);
   const skipped = [];
@@ -252,7 +252,8 @@ async function reconcileAttempt(ctx, hooks, state) {
     }
     folded.set(lower, file);
   }
-  const windowsSnapshot = (await snapshot(ctx, true)).tree;
+  const tracked = await command(ctx, false, ['ls-files', '-z'], { cwd: ctx.worktree });
+  const windowsSnapshot = (await snapshot(ctx, true, new Set(entries(tracked.stdout)))).tree;
   const windowsCommit = await commitTree(ctx, true, windowsSnapshot);
   await command(ctx, true, ['update-ref', 'refs/wheelchair/snapshot', windowsCommit], { cwd: ctx.copy.linux });
   await command(ctx, false, ['fetch', ctx.copy.linux, `+refs/wheelchair/snapshot:${windowsRef}`], { cwd: ctx.worktree });

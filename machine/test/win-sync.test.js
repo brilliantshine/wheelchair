@@ -265,3 +265,49 @@ test('interrupted conflict application retains marker masking on the next sync',
   assert.deepEqual(result.unresolved, ['initial']);
   assert.equal(fs.readFileSync(windows, 'utf8'), 'windows\n');
 });
+
+test('later force-add, repeated tracked deletion, and successive Windows edits sync', async () => {
+  const ctx = await fixture();
+  const linux = file => path.join(ctx.worktree, file);
+  const windows = file => path.join(ctx.copy.linux, file);
+  fs.writeFileSync(linux('.gitignore'), 'forced-later\n');
+  fs.writeFileSync(linux('forced-later'), 'tracked later');
+  await reconcile(ctx);
+  assert.equal(fs.existsSync(windows('forced-later')), false);
+  git(ctx.worktree, 'add', '-f', 'forced-later');
+  fs.unlinkSync(linux('initial'));
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(windows('forced-later'), 'utf8'), 'tracked later');
+  assert.equal(fs.existsSync(windows('initial')), false);
+  await reconcile(ctx);
+  assert.equal(fs.existsSync(windows('initial')), false);
+  fs.writeFileSync(windows('forced-later'), 'first edit');
+  await reconcile(ctx);
+  fs.writeFileSync(windows('forced-later'), 'second edit');
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(linux('forced-later'), 'utf8'), 'second edit');
+});
+
+test('clean checkout LFS and eol attributes do not transform bridge bytes', async () => {
+  const ctx = await fixture();
+  const linux = file => path.join(ctx.worktree, file);
+  const windows = file => path.join(ctx.copy.linux, file);
+  fs.writeFileSync(linux('.gitattributes'), 'lfs filter=lfs\neol text eol=crlf\n');
+  fs.writeFileSync(linux('lfs'), 'literal LFS file\n');
+  fs.writeFileSync(linux('eol'), 'line one\nline two\n');
+  git(ctx.worktree, 'add', '.gitattributes');
+  for (const file of ['lfs', 'eol']) {
+    const oid = git(ctx.worktree, 'hash-object', '-w', '--no-filters', file);
+    git(ctx.worktree, 'update-index', '--add', '--cacheinfo', `100644,${oid},${file}`);
+  }
+  git(ctx.worktree, 'commit', '-m', 'attribute fixture');
+  fs.unlinkSync(linux('lfs'));
+  fs.unlinkSync(linux('eol'));
+  git(ctx.worktree, '-c', 'filter.lfs.smudge=cat', '-c', 'filter.lfs.required=false', 'checkout', '-f', 'HEAD', '--', 'lfs', 'eol');
+  const lfs = fs.readFileSync(linux('lfs'));
+  const eol = fs.readFileSync(linux('eol'));
+  assert.ok(eol.includes(Buffer.from('\r\n')));
+  await reconcile(ctx);
+  assert.deepEqual(fs.readFileSync(windows('lfs')), lfs);
+  assert.deepEqual(fs.readFileSync(windows('eol')), eol);
+});
