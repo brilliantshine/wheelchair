@@ -485,9 +485,9 @@ New tests, at least:
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Machine: `/v1/plan-files` route (S5), archive keeps lead-sent files, kept serving and numbering (S4) | `machine/service.js`, `machine/API.md`, `machine/test/plan-files.test.js` | standard (no provider flag) | | `bash machine/test/run.sh` | dispatched |
-| T2 | tricky — Hub: ZIP writer and `docs.zip` (S2), remote plan reads and background refresh (S5), archive `keep` and `kept_files` (S4), HTML `download=1` (S1) | `viewer/app/*`, `viewer/server.js` diagram-html handling, `viewer/test/*.test.js` | standard (no provider flag) | | `node --test viewer/test/*.test.js` | dispatched |
-| T3 | Picture page Download (S1 PNG export, HTML link) and sent-file preview page (S3) | `viewer/pages/picture*`, `viewer/pages/file.*`, `APP_PAGES` line, new specs | standard, claude | | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | dispatched |
+| T1 | Machine: `/v1/plan-files` route (S5), archive keeps lead-sent files, kept serving and numbering (S4) | `machine/service.js`, `machine/API.md`, `machine/test/plan-files.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker | `bash machine/test/run.sh` | dispatched |
+| T2 | tricky — Hub: ZIP writer and `docs.zip` (S2), remote plan reads and background refresh (S5), archive `keep` and `kept_files` (S4), HTML `download=1` (S1) | `viewer/app/*`, `viewer/server.js` diagram-html handling, `viewer/test/*.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker-2 | `node --test viewer/test/*.test.js` | dispatched |
+| T3 | Picture page Download (S1 PNG export, HTML link) and sent-file preview page (S3) | `viewer/pages/picture*`, `viewer/pages/file.*`, `APP_PAGES` line, new specs | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-3 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | dispatched |
 | T4 | Thread page: Download all link (S2), sent rows open preview (S3), archived rows honour `kept_files` (S4), HTML download inertness browser test (S1); after T2 and T3 | `viewer/pages/thread.js`, `thread.css`, new spec | standard, claude | | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | not started |
 
 ## Log
