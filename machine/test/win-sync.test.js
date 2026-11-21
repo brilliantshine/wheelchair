@@ -38,10 +38,11 @@ async function fixture() {
   fs.writeFileSync(path.join(worktree, 'initial'), 'initial\n');
   git(worktree, 'add', '.');
   git(worktree, 'commit', '-m', 'initial');
-  const winEnv = createWinEnv({ mount, env: { ...process.env, WC_FAKE_MOUNT: mount, WC_FAKE_GIT_PATH: 'C:\\tools\\git.exe' } });
+  const fakeEnv = { ...process.env, WC_FAKE_MOUNT: mount, WC_FAKE_GIT_PATH: 'C:\\tools\\git.exe' };
+  const winEnv = createWinEnv({ mount, env: fakeEnv });
   const ctx = { winEnv, worktree, copy, stateDir: path.join(drive, 'state'), threadId: 'test', key: 'test' };
   await ensureCopy(ctx);
-  return ctx;
+  return { ...ctx, fakeEnv };
 }
 
 test('reconcile transfers additions, edits, deletions, renames and independent changes', async () => {
@@ -116,4 +117,80 @@ test('binary and modify/delete conflicts choose Linux and save Windows', async (
   assert.deepEqual(fs.readFileSync(linux('binary')), Buffer.from([0, 2]));
   assert.equal(fs.existsSync(linux('deleted')), false);
   assert.equal(git(ctx.worktree, 'show', `${result.conflicts[0].ref}:deleted`), 'windows');
+});
+
+test('refuses case collisions and leaves external symlinks out', async () => {
+  const ctx = await fixture();
+  fs.writeFileSync(path.join(ctx.worktree, 'Case'), 'a');
+  fs.writeFileSync(path.join(ctx.worktree, 'case'), 'b');
+  await assert.rejects(reconcile(ctx), error => error.status === 422 && /Case/.test(error.message) && /case/.test(error.message));
+  assert.equal(fs.existsSync(path.join(ctx.copy.linux, 'Case')), false);
+  fs.unlinkSync(path.join(ctx.worktree, 'case'));
+  fs.symlinkSync('/etc/passwd', path.join(ctx.worktree, 'outside'));
+  const result = await reconcile(ctx);
+  assert.deepEqual(result.skipped, ['outside']);
+  assert.equal(fs.existsSync(path.join(ctx.copy.linux, 'outside')), false);
+});
+
+test('refuses after two changes during apply without losing edits', async () => {
+  const ctx = await fixture();
+  const linux = path.join(ctx.worktree, 'initial');
+  const windows = path.join(ctx.copy.linux, 'initial');
+  await reconcile(ctx);
+  fs.writeFileSync(windows, 'windows change\n');
+  let calls = 0;
+  await assert.rejects(reconcile(ctx, { hooks: { afterSnapshot: async () => {
+    calls++;
+    fs.writeFileSync(linux, `concurrent edit ${calls}\n`);
+  } } }), error => error.status === 422 && /initial/.test(error.message));
+  assert.equal(calls, 2);
+  assert.equal(fs.readFileSync(linux, 'utf8'), 'concurrent edit 2\n');
+  assert.equal(fs.readFileSync(windows, 'utf8'), 'windows change\n');
+});
+
+test('interrupted Windows apply is resumed after another Linux edit', async () => {
+  const ctx = await fixture();
+  const linux = file => path.join(ctx.worktree, file);
+  const windows = file => path.join(ctx.copy.linux, file);
+  await reconcile(ctx);
+  fs.writeFileSync(windows('from-windows'), 'windows');
+  ctx.fakeEnv.WC_FAKE_GIT_FAIL_ONCE = 'read-tree';
+  ctx.fakeEnv.WC_FAKE_GIT_FAULT_FILE = path.join(ctx.stateDir, 'fault');
+  await assert.rejects(reconcile(ctx), /injected read-tree failure/);
+  assert.equal(fs.readFileSync(linux('from-windows'), 'utf8'), 'windows');
+  fs.writeFileSync(linux('new-linux'), 'linux');
+  const result = await reconcile(ctx);
+  assert.deepEqual(result.conflicts, []);
+  assert.equal(fs.readFileSync(windows('new-linux'), 'utf8'), 'linux');
+});
+
+test('raw bytes, executable mode, force-added and newly ignored files', async () => {
+  const ctx = await fixture();
+  const linux = file => path.join(ctx.worktree, file);
+  const windows = file => path.join(ctx.copy.linux, file);
+  const head = git(ctx.worktree, 'rev-parse', 'HEAD');
+  const index = fs.readFileSync(path.join(ctx.worktree, '.git/index'));
+  fs.writeFileSync(linux('.gitattributes'), 'raw filter=lfs\ncrlf text eol=crlf\n');
+  fs.writeFileSync(linux('.gitignore'), 'forced\n');
+  fs.writeFileSync(linux('forced'), 'tracked');
+  git(ctx.worktree, 'add', '-f', 'forced');
+  const realIndex = fs.readFileSync(path.join(ctx.worktree, '.git/index'));
+  const raw = Buffer.from([0, 1, 13, 10, 255]);
+  fs.writeFileSync(linux('raw'), raw);
+  fs.writeFileSync(linux('crlf'), 'a\r\nb\n');
+  fs.writeFileSync(linux('exec'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.writeFileSync(linux('later-ignored'), 'keep local');
+  await reconcile(ctx);
+  assert.deepEqual(fs.readFileSync(windows('raw')), raw);
+  assert.equal(fs.readFileSync(windows('crlf'), 'utf8'), 'a\r\nb\n');
+  assert.equal(fs.readFileSync(windows('forced'), 'utf8'), 'tracked');
+  assert.equal(git(ctx.worktree, 'rev-parse', 'HEAD'), head);
+  assert.deepEqual(fs.readFileSync(path.join(ctx.worktree, '.git/index')), realIndex);
+  assert.notDeepEqual(realIndex, index);
+  fs.writeFileSync(linux('.gitignore'), 'forced\nlater-ignored\n');
+  await reconcile(ctx);
+  fs.writeFileSync(windows('exec'), '#!/bin/sh\nexit 1\n');
+  await reconcile(ctx);
+  assert.ok(fs.statSync(linux('exec')).mode & 0o111);
+  assert.equal(fs.readFileSync(linux('later-ignored'), 'utf8'), 'keep local');
 });

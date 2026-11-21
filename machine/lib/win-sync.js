@@ -145,8 +145,30 @@ async function snapshot(ctx, win) {
   const remove = entries(ignored.stdout).filter(file => !realPaths.has(file));
   if (remove.length) await command(ctx, win, ['rm', '--cached', '--ignore-unmatch', '--', ...remove], options);
   await command(ctx, win, ['add', '-A'], options);
+  const skipped = [];
+  if (!win) {
+    const staged = await command(ctx, false, ['ls-files', '-s', '-z'], options);
+    for (const record of entries(staged.stdout)) {
+      const match = record.match(/^120000 [a-f0-9]+ \d+\t([\s\S]+)$/);
+      if (!match) continue;
+      const file = match[1];
+      try {
+        const target = fs.realpathSync(path.join(ctx.worktree, file));
+        const relative = path.relative(ctx.worktree, target);
+        if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+          skipped.push(file);
+        }
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        const target = path.resolve(path.dirname(path.join(ctx.worktree, file)), fs.readlinkSync(path.join(ctx.worktree, file)));
+        const relative = path.relative(ctx.worktree, target);
+        if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) skipped.push(file);
+      }
+    }
+    if (skipped.length) await command(ctx, false, ['update-index', '--force-remove', '--', ...skipped], options);
+  }
   const result = await command(ctx, win, ['write-tree'], options);
-  return result.stdout.toString().trim();
+  return { tree: result.stdout.toString().trim(), skipped };
 }
 
 const identity = {
@@ -219,8 +241,18 @@ async function reconcileAttempt(ctx, hooks, state) {
   const baseRef = `refs/wheelchair/${ctx.key}/base`;
   const windowsRef = `refs/wheelchair/${ctx.key}/windows`;
   const base = await resolveRef(ctx, baseRef);
-  const linuxSnapshot = await snapshot(ctx, false);
-  const windowsSnapshot = await snapshot(ctx, true);
+  const linux = await snapshot(ctx, false);
+  const linuxSnapshot = linux.tree;
+  const listing = await command(ctx, false, ['ls-tree', '-r', '--name-only', '-z', linuxSnapshot], { cwd: ctx.worktree });
+  const folded = new Map();
+  for (const file of entries(listing.stdout)) {
+    const lower = file.toLowerCase();
+    if (folded.has(lower) && folded.get(lower) !== file) {
+      throw new Error(`case collision: ${folded.get(lower)} and ${file}`);
+    }
+    folded.set(lower, file);
+  }
+  const windowsSnapshot = (await snapshot(ctx, true)).tree;
   const windowsCommit = await commitTree(ctx, true, windowsSnapshot);
   await command(ctx, true, ['update-ref', 'refs/wheelchair/snapshot', windowsCommit], { cwd: ctx.copy.linux });
   await command(ctx, false, ['fetch', ctx.copy.linux, `+refs/wheelchair/snapshot:${windowsRef}`], { cwd: ctx.worktree });
@@ -270,20 +302,35 @@ async function reconcileAttempt(ctx, hooks, state) {
   const toWindows = await changedPaths(ctx, windowsSnapshot, windowsApplyTree);
   const toLinux = await changedPaths(ctx, linuxSnapshot, linuxApplyTree);
   const linuxApply = await command(ctx, false, ['read-tree', '-m', '-u', linuxCommit, linuxApplyCommit], { ...indexOptions(ctx, false), allowFailure: true });
-  if (linuxApply.code) throw Object.assign(new Error(`Linux apply failed: ${linuxApply.stderr}`), { status: 422 });
+  if (linuxApply.code) throw applyError('Linux', linuxApply.stderr);
   await command(ctx, false, ['push', ctx.copy.linux, `+${windowsApplyCommit}:refs/wheelchair/linux`], { cwd: ctx.worktree });
   const windowsApply = await command(ctx, true, base ? ['read-tree', '-m', '-u', windowsCommit, windowsApplyCommit] : ['read-tree', '--reset', '-u', windowsApplyCommit], { ...indexOptions(ctx, true), allowFailure: true });
-  if (windowsApply.code) throw Object.assign(new Error(`Windows apply failed: ${windowsApply.stderr}`), { status: 422 });
+  if (windowsApply.code) throw applyError('Windows', windowsApply.stderr);
   await command(ctx, false, ['push', ctx.copy.linux, `+${resultWin}:refs/wheelchair/linux`], { cwd: ctx.worktree });
   await command(ctx, false, ['update-ref', baseRef, resultWin], { cwd: ctx.worktree });
   await command(ctx, true, ['update-ref', 'refs/wheelchair/base', resultWin], { cwd: ctx.copy.linux });
-  return { to_windows: toWindows, to_linux: toLinux, conflicts, unresolved, skipped: [] };
+  return { to_windows: toWindows, to_linux: toLinux, conflicts, unresolved, skipped: linux.skipped };
+}
+
+function applyError(side, stderr) {
+  const error = new Error(`${side} apply failed: ${stderr}`);
+  error.status = 422;
+  error.refusal = /not uptodate|not up.to.date|would be overwritten/i.test(stderr);
+  return error;
 }
 
 async function reconcileUnlocked(ctx, hooks) {
   const state = readState(ctx.stateDir, ctx.key);
   try {
-    const result = await reconcileAttempt(ctx, hooks, state);
+    let result;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        result = await reconcileAttempt(ctx, hooks, state);
+        break;
+      } catch (error) {
+        if (!error.refusal || attempt === 1) throw error;
+      }
+    }
     state.last_ok = new Date().toISOString();
     state.last_failed = null;
     state.used_since_ok = false;
