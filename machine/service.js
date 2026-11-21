@@ -661,7 +661,7 @@ class MachineService {
   commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context = {}) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex, agy or kimi');
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable });
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable, wsl: context.wsl, mount: context.mount });
   }
 
   threadWorktree(input, worktree) {
@@ -786,7 +786,7 @@ class MachineService {
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
-    const context = input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {};
+    const context = { wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
