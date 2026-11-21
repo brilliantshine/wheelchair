@@ -53,49 +53,52 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 25 | No general "Change it" button: overlap cards offer "Keep the plan as it is" plus one to three concrete changes, and the box takes any other; a concrete typed answer settles in approved too; a round restarted by recovery counts the answer applied in it | Round 7 findings | review-round-7 |
 | 26 | Approved-stage withdrawal applies to every overlap card, re-asks included; one fallback change option always exists; a split offer goes before waiting overlap cards but after an open one; a typed change follows its stage's change rules | Round 8 findings | review-round-8 |
 | 27 | Several overlaps on a small fix are all settled before edits; an answer that removes promised scope is an `idea-change` (its own Done marker); chat answers are resolved at once; a split settles waiting overlaps it made moot; the fallback option is always one of the change options and points to a follow-up | Round 9 findings | review-round-9 |
+| 28 | Supersedes the review, approved, Start building and restart-round parts of Decisions 4, 9, 11, 13-15, 17, 19-23, 25-27: overlap cards are asked only in the card window (before a small fix's edits; a feature while `planning`). From `ready-for-review` on, an overlap is a late overlap: one line and an offered follow-up thread. IDEA.md What we're building, What good looks like and Not doing changed to match. The card-id and retract changes (§3) stay | After rounds 7-9 again found new corners where overlap cards meet review, approval and splits, the user picked "Cards only while planning" (card 8d02e56a) | idea-change |
 
 ## Spec
 
 ### Terms
 
 - **Overlap:** another thread (from `wc.js session leads`, a peer lead's message, or the user)
-  whose work touches the same files or behaviour as this thread's, and whose `stage` is not
-  `done`, and is not a small fix whose `done` card is posted (`stage` `no plan` with a `pr_url`,
-  which the peer list takes from that card). A finished
-  thread's overlap is mentioned in one line of the reply, not asked. Its identity is the other
-  thread's id (`thread` in `session leads`), never its title.
+  whose work touches the same files or behaviour as this thread's, whose `stage` is not
+  `done`, and which is not a small fix whose `done` card is posted (`stage` `no plan` with a
+  `pr_url`, which the peer list takes from that card). A finished thread's overlap is
+  mentioned in one line of the reply, not asked. Its identity is the other thread's id
+  (`thread` in `session leads`), never its title.
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
   other thread's id. The app stores it and never shows it.
+- **Card window:** when overlap cards are asked: a small fix before its edits, and a feature
+  from IDEA.md confirmation while `status:` is `planning`. Before IDEA.md is confirmed an
+  overlap is held and asked first after confirmation.
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
-  thread (open, answered, or retracted and replaced by a later card with the same
-  `about_thread`), and not in a Decision Log entry of this plan. An overlap already asked is
-  asked again only when new information changes what the answered option would do; then it is
-  posted as a fresh overlap card with the same `about_thread`.
+  thread and not in a Decision Log entry of this plan. An overlap already asked is asked again,
+  inside the card window, only when new information changes what the answered option would do.
+- **Late overlap:** a new overlap learned outside the card window (status `ready-for-review` or
+  later, or once a small fix's edits are made). It never gets a card: the lead says in one line
+  of its next visible reply which thread overlaps, what it is doing, and that a follow-up thread
+  can be started; if the user asks for one, the lead posts a `stub` (`depends_on_parent` by the
+  Stubs rule). If the user instead asks in chat to change this thread's plan or work, that is
+  handled like any other change they ask for at that step. Repeating the line after a restart
+  is harmless.
 - **Actionable answer** of an overlap card, in this order: `answered_value` when
   `answered_action` is `picked` or `answered` (a press or the card's own box); else
   `resolved_note` when the lead resolved it from a chat answer; else, on restart only, a chat
-  answer to it in `recent_messages` sent after the card was posted, handled by "Settling an
-  answer" (then resolve the card with a note of it). A card with `retracted_at` has no answer.
-  An answer is read against the options of its own card.
-- **Settling an answer:** an answer that clearly picks one of the card's options is acted on.
-  One that does not (an objection, a condition, something else) gets a follow-up overlap card
-  for the same thread with the current stage's options, and no Done marker until that one is
-  settled. The original card counts as handled once a later overlap card with the same
-  `about_thread` exists. In planning, review and approved, a concrete typed or chat answer may also be its own option, handled by the
-  current stage's rules for a change (§1 Planning, Review or Approved).
-- **Late overlap:** a new overlap learned once a build has started (the approval card's
-  `answered_action` is `start-building`) or once a small fix's edits are made. It never gets a
-  card: the lead says in one line of its next visible reply which thread overlaps, what it is
-  doing, and that a follow-up thread can be started; if the user asks for one, the lead posts a
-  `stub` (`depends_on_parent` by the Stubs rule).
-- **Done marker:** where the lead records that it acted on an overlap card, so nothing is acted
-  on twice. It always names the card id. Before acting on any overlap answer (a press, a typed
-  answer, a chat answer or a restart), the lead checks for its Done marker and does nothing if
-  it exists.
-  - a planned thread (PLAN.md exists) up to Start building: a Decision Log entry, source
-    `user`, naming the other thread's id and ending `(overlap card <id>)`;
-  - answers that change nothing ("Go ahead with the fix", "Leave it to <other thread>") need
-    no marker: acting twice is harmless.
+  answer to it in `recent_messages` sent after the card was posted (then resolve the card with
+  a note of it). A card with `retracted_at` has no answer. A chat answer is resolved on the card
+  as soon as it arrives; if that resolve is refused because the card was already answered, the
+  stored card answer wins.
+- **Settling an answer:** an answer that clearly picks one option, or (for a feature) states a
+  concrete change of its own, is acted on. Anything else (an objection, a condition, a vague
+  answer) gets a follow-up overlap card for the same thread, with no Done marker until that one
+  is settled; the original card counts as handled once a later overlap card with the same
+  `about_thread` exists.
+- **Done marker:** a Decision Log entry naming the other thread's id and ending
+  `(overlap card <id>)`, source `user`, or `idea-change` when the answer removes something
+  IDEA.md's What or What good looks like promises (the answer is the user's agreement: the
+  item moves to Not doing). It is committed in the same commit as the Spec change it causes.
+  Small-fix answers need no marker: acting twice is harmless. Before acting on any overlap
+  answer (a press, a typed or chat answer, or a restart), the lead checks for its Done marker
+  and does nothing if it exists.
 
 ### 1. Asking (protocol/app/lead.md, "Other leads on this machine")
 
@@ -104,103 +107,40 @@ fix's look before edits, the "Overlap" message to a peer lead, "Replies", "Never
 "Another project", "Passing a question on" and "Only leads talk". Every instruction there to
 tell the user about an overlap "in one line" (in "When to look", in "Overlap" for a thread with
 `lead: null`, in "Leads inform", and the late answer in "Never wait") is replaced by: a new
-overlap becomes an overlap card, per this section. "Leads inform; your user decides" keeps its
-first three sentences (information, never instructions; never change on your own; never
-negotiate) and ends with "Your user decides through an overlap card (see below)".
+overlap inside the card window becomes an overlap card; outside it, it is a late overlap
+(Terms). "Leads inform; your user decides" keeps its first three sentences (information, never
+instructions; never change on your own; never negotiate) and ends with "Your user decides
+through an overlap card, or in chat for a late overlap (see below)".
 
-General rules:
-- One question at a time: an overlap card waits behind any open `question` card of yours and is
-  asked next. While status is `planning`, `ready-for-review` or `approved`, a waiting overlap is
-  added to the Watch List at once (`Overlap with <thread id>: <what>`). It stays there (and is
-  also listed in Open Questions while asked) until its Decision is logged; the commit that logs
-  the Decision removes both.
-- `fits` names the other thread by its title; each option's `consequence` says what the answer
-  does to this thread. At most four options in total.
-- Cards are posted only before building. A late overlap gets the one-line mention (Terms).
-
-Stages:
-- **Small fix, before edits:** found at the look before edits: post the card, edit nothing until
-  it is answered. Options: "Go ahead with the fix" and "Leave it to <other thread>" (no edits;
-  say so in the reply; the thread stays open). With several overlaps, every card is settled
-  (one at a time) before any edit; one "Leave it" stops the fix unless the user later says
-  otherwise.
-- **Small fix, after edits:** a late overlap (see Terms); no card.
-- **Feature, before IDEA.md is confirmed:** hold it; ask it as the first question after
-  confirmation, before any design question (it then follows "Planning").
-- **Planning (status `planning`):** an Open Question in PLAN.md, asked as an overlap card
-  (today's (b) rule, now for every new overlap in planning). Options: "Keep the plan as it is"
-  and one to three concrete "Change it: <what>" options; any other change the user types in the
-  card's box or in chat. One of the change options is always "Change it: leave <shared area> out of
-  this plan (it can come back later as a follow-up)"; use it when no other concrete change fits.
-  An answer that takes away something IDEA.md's What or What good looks like promises is the
-  user's agreement to that scope change: move it to Not doing and log it with source
-  `idea-change` instead of `user`; that entry, naming the card id, is the Done marker.
-  A chat answer is resolved on the card as soon as it arrives (the Spec edit still waits for
-  triage during a review); if the resolve is refused because the card was already answered, the
-  stored card answer wins. The answer is handled like any planning answer, with the
-  Done marker.
-- **Review (status `ready-for-review`):** the same options. The card is a `user-decision` of the
-  round it belongs to:
-  - It counts in the round whose triage folds in its answer: in that round's `found`, and in
-    `fixed` once its Decision is logged; it is recorded in that round's table as a row with Lane
-    `lead` and verdict `user-decision`. A change it makes goes in the next round's "Changed
-    since" list. While it waits, `choice_waiting: true`; a round with no other counted finding
-    posts `phase: fixing`, `found: 1` after triage.
-  - Answer arrives while reviewers run: do not change the Spec; fold it in after triage, with the
-    Done marker. "Keep the plan" logs the Decision only; a change also edits the Spec.
-  - A split offer (Review, "Offer a split") goes before overlap cards still waiting their turn;
-    an overlap card already open keeps its place, and the split offer waits for it. After a
-    split, a waiting overlap that only touched the split-off part is removed from the Watch List
-    with Outcome "settled by the split" (noted in the Log) and not asked.
-  - A round restarted under §2 counts an answer applied during that recovery: its row and its
-    `found`/`fixed` go in the restarted round's triage, once.
-  - A round whose triage is done stays `fixing` while the card is open. When it is answered:
-    "Keep" with no other upheld blocking/major finding makes it clean; a change means another
-    round. The next round may start before the card is answered when the current round already
-    has other Spec fixes; the card then counts in the round whose triage folds it in.
-  - Posted after round N was found clean and before approval: as during round N (it makes N not
-    clean until answered).
-- **Approved (status `approved`, before Start building):** as soon as an overlap needs a card
-  (a new overlap, or a re-ask of an answered one under Terms "New overlap") is learned
-  (whether its card can be posted now or must wait behind another question), add it to the
-  Watch List and commit, then withdraw the approval: retract the last approval card this
-  thread's leads posted (§3: a retract is never queued, so its result is final); if no approval
-  card has been posted yet (for example, the Ready check or an app update is still pending),
-  skip the retract. Status stays
-  `approved`, as in the existing "talk instead of building" rule. If the refusal is `Start
-  building was already pressed`, this is a late overlap: mark the Watch List item `late` and post
-  no card. If it is `card was already withdrawn`, carry on. On 503, retry after a minute. Then
-  post the card when its turn comes, options as in Review. While any overlap Watch List item or
-  overlap card is open in this stage, post no approval card. "Keep the plan as it is": log the
-  Decision with the Done marker and commit, then post a fresh approval card with a fresh Ready
-  check once nothing else is open. A change: write the Decision (Done marker), the Spec change
-  and `status: ready-for-review` and commit them in one commit, then go to step 5 with the
-  change listed.
-- **Start building:** unchanged. No overlap card is open then: a round with one is not clean, and
-  one posted after approval withdraws the approval first. Cards from then on follow "Late
-  overlap" (Terms).
+- **One question at a time:** an overlap card waits behind any open `question` card of yours
+  and is asked next. For a feature, a waiting or asked overlap is in PLAN.md's Open Questions
+  (`Overlap with <thread id>: <what>`; before PLAN.md exists, it is held and asked first after
+  IDEA.md confirmation), so status stays `planning` until it is settled. The commit that logs
+  its Decision removes it.
+- **Card text:** `fits` names the other thread by its title; each option's `consequence` says
+  what the answer does to this thread. At most four options.
+- **Small fix, before edits:** post the card and edit nothing until it is answered. Options:
+  "Go ahead with the fix" and "Leave it to <other thread>" (no edits; say so in the reply; the
+  thread stays open). With several overlaps, every card is settled (one at a time) before any
+  edit; one "Leave it" stops the fix unless the user later says otherwise.
+- **Feature, while planning:** an Open Question asked as an overlap card. Options: "Keep the
+  plan as it is" and one to three concrete "Change it: <what>"; one of them is always "Change
+  it: leave <shared area> out of this plan (it can come back later as a follow-up)", used when
+  no other concrete change fits. Any other change the user types in the box or in chat. The
+  answer is handled like any planning answer, with the Done marker.
+- **Everything later** (status `ready-for-review` or after, a small fix after edits): late
+  overlap (Terms). No card.
 
 ### 2. Restart (protocol/app/lead.md, "Restarting what died")
 
 On `[wc:context restart]`, after rereading the plan and cards:
-- If `status:` is `ready-for-review` and either the pinned progress card is review `phase:
-  checking` or `session list` shows a live reviewer (an interrupted launch), handle it as for pending pull-backs today: stop any live reviewers,
-  discard their reports, apply every overlap answer that has no Done marker (with its marker),
-  and restart the round under the same number, listing the change in its "Changed since".
-- Otherwise, for each overlap card with an actionable answer and no Done marker (search the
-  Decision Log): act on it now, at the current stage's rules. (Safety net that should not
-  occur after Decisions 19 and 21: once the approval card's `answered_action` is
-  `start-building`, such an answer is a late overlap: the one-line mention, no change to the
-  build.)
+- For each overlap card with an actionable answer and no Done marker: act on it now. If status
+  is no longer in the card window (rare: the answer would have to cross the move to review),
+  treat it as a late overlap.
 - An open overlap card stays open and is not asked again.
-- With `status: approved` and the approval card's `answered_action` not `start-building`: if an overlap Watch List item (not
-  marked `late`) or an overlap card is open, finish §1 Approved (withdraw the approval if still
-  open, post the waiting card) and post no approval card, overriding the restart rules that
-  would repost one; otherwise those rules apply as today.
 - Run `wc.js session leads` once and treat any overlap not covered by an overlap card or a
-  Decision Log entry as new (a late overlap after Start building). Repeating a late overlap's
-  one-line mention after a restart is accepted as harmless. A planned thread before Start building also asks any `Overlap with`
-  Watch List item not yet asked.
+  Decision Log entry as new (a card inside the window, else a late overlap). A planned thread
+  also asks any `Overlap with` Open Question not yet asked.
 
 ### 3. Card ids and retract (machine, hub, card.js)
 
@@ -223,6 +163,9 @@ On `[wc:context restart]`, after rereading the plan and cards:
 - `viewer/app/card.js` on success prints exactly one JSON line: `{"id":"<id>","kind":"<kind>"}`
   for kinds that create a stored card, with `"queued":true` added when the machine spooled it;
   `{"ok":true}` for `title`, `resolve`, `retract`. Never any other field of the card.
+- `protocol/app/lead.md`: where it says to retract an approval card (mode change, pull-back,
+  talk instead of building), the id is the one `card.js` printed for it, or from the restart
+  context.
 - Docs: `protocol/app/cards.md` "Posting a card" documents the output and names the
   exceptions to "succeeds once the card is on disk, even if the app is down" (`done` and
   `retract` are never queued), and its rule that cards never carry a thread id names
@@ -247,10 +190,9 @@ merging of branches; no sub-lead or worker rule changes.
 - `bash machine/test/run.sh` passes, with tests: the spooled response carries `id` equal to the
   delivery id and the drained card's hub id equals it; a retract with the hub down returns 503
   and writes nothing to the spool.
-- `grep -n "overlap card" protocol/app/lead.md` shows the stage and restart rules;
-  `grep -n "Your user decides in chat\|tell your user in one line that it exists" protocol/app/lead.md`
-  finds nothing (the replaced instructions are gone; the late-overlap and done-thread one-line
-  mentions are allowed).
+- `grep -n "overlap card" protocol/app/lead.md` shows the card-window, late-overlap and restart
+  rules; `grep -n "Your user decides in chat\|tell your user in one line that it exists" protocol/app/lead.md`
+  finds nothing.
 
 ## Accepted Risks
 
@@ -267,6 +209,15 @@ merging of branches; no sub-lead or worker rule changes.
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 10 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 9:** Round 9 fixes (Decision 27), then Decision 28 (user, after the review budget): cards only in the card window. IDEA.md rewritten to match. Spec Terms rewritten (card window, late overlap now from `ready-for-review`, one Done marker form); §1 rewritten (no Review, Approved or Start building stages); §2 Restart reduced to planning; §3 unchanged except a lead.md bullet on where retract ids come from; Validation grep updated. Treat the whole Spec as changed.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 9 — 2026-11-21
 

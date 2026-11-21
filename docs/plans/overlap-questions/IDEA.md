@@ -9,10 +9,12 @@ created: 2026-11-20
 
 ## What we're building
 
-When a thread's lead learns that another thread is working on the same files or behaviour,
-it asks you a real question with a card, at a moment when your answer can still be acted
-on. Your answer is not lost if the lead restarts, and it never stalls a plan review. A lead
-can also withdraw its own approval card when your answer changes the plan.
+When a thread's lead learns that another thread is working on the same files or behaviour
+while your answer can still shape the work (before a small fix's edits, or while a feature
+is being planned), it asks you a real question with a card. Later on, it mentions the overlap
+in one line and offers a follow-up thread. Your answer is not lost if the lead restarts. And
+posting a card tells the lead the card's id, so it can withdraw its own cards, such as an
+approval card.
 
 ## Why — the problem
 
@@ -28,18 +30,14 @@ that card's id.
 
 - When a lead learns of an overlap it has not raised with you before, a question card about
   it appears under "Needs you", with options such as "keep the plan as it is" or "change it".
-- The card comes at a sensible time: before a small fix's edits, after you confirm the idea
-  (never before), and during planning, review and approval. Once a build has started or a small
-  fix's edits are made, your answer could not change the work, so the lead says so in one line
-  and offers a follow-up thread instead of a card.
-- If you ask for a change while a plan review is running, the change is applied after that
-  round and checked in the next one; the review does not stall or count as clean while the
-  change waits.
+- The card comes at a sensible time: before a small fix's edits, and after you confirm the
+  idea (never before) while the feature is being planned. From plan review onwards, or once a
+  small fix's edits are made, the lead says in one line which thread overlaps and offers a
+  follow-up thread instead of a card.
 - If the lead restarts after you answered but before it acted, the new lead carries out your
   answer without asking again.
-- If your answer changes an approved plan, the lead withdraws the approval card, and the plan
-  goes back to review.
-- Posting a card tells the lead which card it posted, so it can withdraw that card later.
+- Posting a card tells the lead which card it posted, so it can withdraw that card later
+  (for example an approval card, when you want to talk before building).
 
 ## Not doing
 
@@ -47,8 +45,9 @@ that card's id.
   said so; only your answer changes anything.
 - No change to how leads find or message each other (that shipped in the lead-chat thread).
 - No automatic merging or coordination of two threads' branches.
-- No changes to the sub-lead or worker rules beyond what a "build already running" answer
-  needs.
+- No changes to the sub-lead or worker rules.
+- No overlap cards during plan review, approval or a build: the one-line mention and a
+  follow-up thread cover those.
 
 ## Constraints
 
