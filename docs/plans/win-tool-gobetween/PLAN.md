@@ -34,6 +34,8 @@ never built (MAP.md).
 | D3 | The MCP for Unity entry (args include `mcp-for-unity`) is not wrapped (parent D16) | It never reads the copy, and a late start would drop the agent's Editor selection | adopted |
 | D4 | Share one per-session entry-replacement map with the "Windows localhost tools from WSL" thread (`wc/a1a1b7d6016d`): `context.replaceEntries = {name: entry}`, applied by the Claude, Codex and Antigravity adapters; Claude gets replaced names in `disabledMcpjsonServers` and one per-session `--mcp-config` file holding every replaced entry. Whichever thread builds first adds it; the other reuses it | Both change the same adapters the same way; one path avoids conflicts | user |
 | D5 | Codex never re-lists tools after start (W1), so the go-between remembers each tool's last tool list and the stand-in advertises it at once; a call before the copy is ready waits for it (bounded) and then goes to the real tool. With nothing remembered yet the stand-in lists no tools; `list_changed` is still sent for CLIs that use it | User's choice; only option that makes Codex work in nearly every session without slowing its start | user |
+| D6 | `replaceEntries[name] = null` withholds an entry entirely (Claude: disabled, not in `--mcp-config`) | Asked by the localhost thread's lead for its withheld tools; costs nothing here | defaulted |
+| D7 | Keep the 45 s pre-launch wait for sessions whose Windows tools are all wrapped | It still supplies the copy path and prompt lines, and IDEA asks only for today's speed | review-round-1 |
 
 ## Spec
 
@@ -52,8 +54,16 @@ args include `mcp-for-unity` (D3), which stays as today. HTTP/SSE entries are ne
 The wrapped entry's command is `process.execPath` and its args are
 `[<abs path to win-tool-proxy.js>, '--ready-file', <ready file>, '--tools-dir', <tools dir>,
 '--list-cache', <cache file>, '--name', <entry name>, '--', <original command>,
-...<original args>]`. The entry's `env` and `cwd` (if any) are kept unchanged; the go-between
-passes its own environment to the real tool.
+...<original args>]`. The entry's `env` and `cwd` (if any) are kept unchanged.
+
+**What environment reaches the real Windows tool.** Exactly what WSL interop would pass to the
+unwrapped tool today, and never `WHEELCHAIR_SESSION_TOKEN`: the variables named in the
+go-between's `WSLENV` (with their WSLENV flags), plus `WHEELCHAIR_WINDOWS_PROJECT`. The
+go-between sets `WHEELCHAIR_WINDOWS_PROJECT` from the ready file's `copy` field (item 3) and
+adds it to `WSLENV` if missing, so the tool gets the copy path even when the launch-time
+environment lookup timed out (`machine/service.js:893-899`). The launcher is spawned with
+`interopEnv` (`machine/lib/win-env.js:31`), which removes the token, and its explicit
+environment list is filtered the same way `win-apps.js:254` does.
 
 "Loaded" means present in the adapter's final configuration for this session (after its skip
 rules and Codex's override size budget). Each adapter's build returns
@@ -68,10 +78,15 @@ The service fills `context.replaceEntries = { <name>: <wrapped entry> }` before 
 adapter command. If `main` already has this map when building starts (the "Windows localhost
 tools from WSL" thread merged first), reuse it and only add entries; otherwise add it here:
 
+- `replaceEntries[name] = null` means "withhold this entry": it is given to the CLI in no
+  form (Claude: disabled, not in `--mcp-config`; Codex/Antigravity: omitted; not in
+  `loaded`). Needed by the localhost thread; this plan never sets null (D6).
 - Codex (`machine/adapters/codex.js`) and Antigravity (`machine/adapters/agy.js`): a name in
   `replaceEntries` is translated from the replacement entry instead of the `.mcp.json` one,
-  through the same translation code, so env handling, Codex's
-  `WHEELCHAIR_WINDOWS_PROJECT`/`WSLENV` passthrough and Codex's size budget apply as today.
+  through the same translation code, so env handling and Codex's size budget apply as today.
+  Codex's `WHEELCHAIR_WINDOWS_PROJECT`/`WSLENV` passthrough (`codex.js:81-86`) is decided from
+  the **original** `.mcp.json` command, not the replacement's Node command, so wrapped
+  Windows entries keep it.
 - Claude (`machine/adapters/claude.js`): replaced names are added to
   `disabledMcpjsonServers` and given, under the same names, in one per-session JSON file
   `{ "mcpServers": { ... } }` holding every replaced entry, written to
@@ -82,8 +97,8 @@ tools from WSL" thread merged first), reuse it and only add entries; otherwise a
 ### 3. Ready file
 
 Path `<stateDir>/win-ready/<session name>` (directory 0700, file 0600, written atomically by
-write-then-rename), JSON `{"state": "ready" | "waiting" | "failed", "reason": "...", "at":
-"<iso>"}`; `reason` only with `failed`. Written by `WinBridge` for sessions with at least one
+write-then-rename), JSON `{"state": "ready" | "waiting" | "failed", "reason": "...", "copy": "<Windows path of
+the copy>", "at": "<iso>"}`; `reason` only with `failed`, `copy` only with `ready`. Written by `WinBridge` for sessions with at least one
 wrapped entry:
 
 - `waiting` before tmux starts, and kept while the session's readying task runs, including
@@ -95,6 +110,12 @@ wrapped entry:
   first reconcile after start finishes.
 - `failed` when the readying task fails; a later successful sync replaces it with `ready`.
 - Removed when the session stops (stop path, after the wait in item 6).
+- **Failed or cancelled start:** every path where `startIn` gives up after the ready file or
+  the Claude `--mcp-config` file was written (`die`, cancelled start, tmux failure) removes
+  both. Writes are tied to the start attempt: `WinBridge` records a per-attempt token when it
+  writes `waiting`, and a later readying result writes the file only if that session name is
+  still starting or registered with the same token. A late result for a dead attempt writes
+  nothing.
 
 The go-between branches on `state` only, never on `reason` text. A missing or unreadable file
 counts as `waiting`.
@@ -113,7 +134,11 @@ original command, original args]>.json` (directory 0700, file 0600, atomic), hol
 request that had no `cursor` with a result that has no `nextCursor`, the go-between writes
 that `tools` array to the cache (it tracks outstanding client request ids and their methods to
 match responses). Paginated lists are not cached. A missing or unparseable cache means "no
-remembered list". The service computes the path; the go-between only reads and writes it.
+remembered list". In addition, right after every start of the real tool has finished its
+handshake (step 1, 3a or 3b), the go-between sends the real tool its own `tools/list` request
+(id `"wc-go-between-list"`, never a client id), caches the result as above and does not pass
+the response to the client; so a client that never lists again (Codex) still leaves a list for
+the next session. The service computes the path; the go-between only reads and writes it.
 
 1. **Ready at start** (ready file says `ready`): start the real tool at once and pipe
    stdin/stdout both ways (stderr passes through), updating the cache as above, until either
@@ -129,10 +154,14 @@ remembered list". The service computes the path; the go-between only reads and w
    - `notifications/initialized` and other client notifications → swallowed.
    - `tools/list` → the remembered list, or an empty list if none.
    - `ping` → an empty result.
-   - `tools/call` → held (not answered) until the handoff (step 3), which sends it to the real
-     tool. If the ready file says `failed`, or the call has been held 50 s, answer it with a
-     JSON-RPC error `code -32000` and the `instructions` sentence (for the 50 s case: "The
-     Windows project copy is not ready yet; try again shortly.").
+   - `tools/call` → held (not answered) until the handoff (step 3) forwards it to the real
+     tool. Deadline: if a held call has not been **forwarded** to the real tool within 50 s of
+     its arrival (whether still waiting for ready or waiting on the real tool's `initialize`),
+     answer it with JSON-RPC error `code -32000` ("The Windows project copy is not ready yet;
+     try again shortly.") and drop it, so it is never forwarded later. If the ready file says
+     `failed`, answer every held call at once with the `failed` sentence.
+   - `notifications/cancelled` naming a held or queued request id → drop that request; it is
+     never forwarded and gets no answer.
    - any other request → JSON-RPC error `code -32000` with the `instructions` sentence.
 3. **When the ready file first says `ready`:**
    - **3a. The client has not sent `initialize` yet:** start the real tool and pipe as in
@@ -155,16 +184,26 @@ remembered list". The service computes the path; the go-between only reads and w
 4. While not ready, a ready file that says `failed` changes the sentence for later answers;
    a later `ready` still starts the tool (step 3).
 5. Once the real tool runs, if it exits on its own the go-between exits with its exit code.
-   If the client closes stdin: before the ready point, exit 0 at once without starting the
-   tool; during the handoff or afterwards, stop the tool (item 5), then exit.
+   If the client closes stdin, **or the go-between receives SIGHUP, SIGTERM or SIGINT** (a
+   normal stop kills tmux, which signals it): before the ready point, exit 0 at once without
+   starting the tool; during the handoff or afterwards, stop the tool (item 5), remove its
+   tools-dir entry, then exit. The signal handlers stay installed until then, so a second
+   signal does not cut the stop short.
 
 ### 5. Process tree
 
 The go-between starts the real tool so that ending it ends every Windows process it started:
-through a launcher that puts the tool in a Windows Job Object with kill-on-close, as
-`machine/lib/win-apps.js:59-84` does for apps, but with the tool's stdin, stdout and stderr
-passed through (not redirected to a log). "Stop the tool" means: close the job (all
-descendants end), then wait up to 5 s for the tool's stdio pipes to close.
+through a PowerShell launcher (spawned with `winEnv.spawnPs`, like `win-apps.js`) that creates
+a **named** Job Object `wheelchair-tool-<uuid>` (uuid chosen by the go-between) with
+kill-on-close, assigns itself, and starts the tool as `machine/lib/win-apps.js:59-84` does,
+except that the tool's stdin, stdout and stderr are the launcher's own (not redirected to a
+log) and the launcher writes nothing else to stdout (any status goes to stderr). The launcher
+exits when the tool and all its descendants have ended, as the app wrapper does.
+
+"Stop the tool" means: close the tool's stdin; run the existing named-job termination
+(`terminateScript(<job name>)`, `win-apps.js:94`, through `winEnv.ps`), which ends every
+process in the job; then wait up to 5 s for the launcher to exit and its stdio pipes to close.
+If termination fails, log it to stderr and still wait.
 
 ### 6. Normal stop waits for the session's own tools
 
@@ -175,6 +214,10 @@ after tmux is killed and before its final stop reconcile, polls until the direct
 or absent (every 250 ms, up to 15 s; an entry whose pid is not alive is removed). A timeout is
 logged and the reconcile goes ahead. Only the stopping session's own directory is checked
 (other sessions on the same copy: Deferred 2). The directory is removed after the wait.
+
+`WinBridge.sweep()` does not reconcile a copy while a stop task for a session on that copy is
+in progress (an entry in `stopTasks` whose worktree key matches, as `win.js:264` already finds
+for archive); the next sweep tries again.
 
 ### 7. Marking the copy used
 
@@ -207,7 +250,17 @@ New tests in `machine/test/` must cover:
   `initialize` failure; stdin close before and after ready; cache written only for
   unpaginated lists.
 - Stop: `onStop` waits for a live entry in the session's tools dir, removes dead-pid entries,
-  and times out after 15 s (shortened in the test).
+  and times out after 15 s (shortened in the test); `sweep()` skips a copy with a stop task in
+  progress.
+- Go-between: SIGTERM/SIGHUP while the real tool runs stops it (termination script called,
+  tools-dir entry removed before exit); own `tools/list` after handshake fills the cache and is
+  not passed to the client; a held call past 50 s, including one waiting on the real tool's
+  `initialize`, is answered and never forwarded; a cancelled held call is never forwarded.
+- Environment: the launcher's environment has no `WHEELCHAIR_SESSION_TOKEN`; the real tool gets
+  `WHEELCHAIR_WINDOWS_PROJECT` from the ready file when the launch env lacked it; Codex keeps
+  the `WHEELCHAIR_WINDOWS_PROJECT`/`WSLENV` passthrough for wrapped entries.
+- Failed start: a cancelled or failed start removes the ready file and Claude config file, and a
+  late readying result for it writes nothing.
 
 Live check once built (needs a WSL machine with a Windows stdio MCP server and a fresh copy):
 start a Claude agent and a Codex agent before the copy is ready; Claude's tools appear after
@@ -248,6 +301,16 @@ As IDEA.md. Also the two items in Deferred.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Cache only filled by a client `tools/list`; Codex never lists after handoff, so it stays empty | upheld | Spec 4: go-between's own `tools/list` after every handshake |
+| mechanics | blocking | Sweep can reconcile while a normal stop is still waiting for the tool | upheld | Spec 6: sweep skips copies with a stop task in progress |
+| mechanics | major | No control path for the go-between to close the Windows job | upheld | Spec 5: named job + `terminateScript` |
+| mechanics | major | Copy path missing when ready arrives after the launch budget; Codex passthrough sees the Node command | upheld | Spec 1 env, Spec 3 `copy`, Spec 2 passthrough on original command |
+| mechanics | major | Launcher's explicit env could carry the session token | upheld | Spec 1: interop-equivalent env, token removed |
+| mechanics | major | Held-call deadline across handoff; cancellation ignored | upheld | Spec 4: 50 s until forwarded; `notifications/cancelled` drops |
+| mechanics | major | Failed/cancelled start leaves ready and Claude config files; late readying writes stale state | upheld | Spec 3: cleanup on failed start, per-attempt token |
+| intent | major | Codex passthrough skipped for wrapped entries | upheld | Same fix as row 4 |
+| intent | major | tmux kill signals the go-between; default exit skips stopping the tool | upheld | Spec 4 step 5: SIGHUP/SIGTERM/SIGINT stop the tool first |
+| intent | minor | Drop the 45 s wait for wrapped-only sessions | declined | Not a defect: the wait still supplies the copy path and prompt lines; IDEA asks only for today's speed (D7) |
 
 ## Implementation Tasks
 
