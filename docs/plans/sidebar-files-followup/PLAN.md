@@ -373,6 +373,20 @@ New tests, at least:
 | mechanics | minor | Export style list misses visibility and text styles; measurement element leaks | upheld | S1: styles added, measurement element removed |
 | mechanics | minor | Machine retry test names `kept_files` | upheld | Same fix as intent finding |
 
+### Round 5 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 4:**
+- Split (Decision 13, IDEA updated): pictures of remote threads moved to their own thread. S5 now covers documents only; picture routes, pages and polling are unchanged by S5; the hash wrapper and per-format failure display are gone; `read` accepts only the three plan files; archived remote threads read documents through the machine.
+- Deferred D1 (aside pictures on remote threads) moved to the split thread; Deferred is empty.
+- S1: export style list adds visibility, text-transform, letter-spacing and removes the label-measurement element; HTML download applies to the local-live and archived routes.
+- S5: `list` excludes files over 2 MiB.
+- Validation: picture-remote tests removed; machine retry test checks `kept_uploads`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
