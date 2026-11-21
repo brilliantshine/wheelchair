@@ -46,6 +46,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 18 | Supersedes 5, 8, 11 and the build/done/small-fix-after-edits parts of 15-17: overlap cards are asked only before building (before a small fix's edits, planning, review, approval). Once a build has started or a small fix's edits are made, the lead mentions the overlap in one line and offers a follow-up thread. IDEA.md "What good looks like" bullet 2 changed to match | Review rounds 1-3 kept finding corners in the build, Start building hand-off and undo cases, where the answer cannot change the work; the user picked "Only before building" (card 73943c05) | idea-change |
 | 19 | Also supersedes Decision 2 for late overlaps and done threads (a one-line mention). An overlap card after approval first withdraws the approval, so no overlap card is ever open at Start building; the Start building retract step is removed | Closes the Start-building race by ordering, with no hub lock | review-round-4 |
 | 20 | Restart review recovery is gated on `ready-for-review` and a pinned `checking` progress card; a retracted card gets its own refusal `card was already withdrawn` | Round 4 findings | review-round-4 |
+| 21 | In `approved`, an overlap is written to the Watch List and the approval withdrawn as soon as it is learned; no approval card is posted (also on restart) while one is open; a change's Decision, Spec and status are one commit | Round 5 findings | review-round-5 |
+| 22 | A pushed small fix (`no plan` with a `pr_url`) counts as finished; overlap cards need one to three change options; restart review recovery also checks live reviewers | Round 5 findings | review-round-5 |
 
 ## Spec
 
@@ -53,7 +55,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 - **Overlap:** another thread (from `wc.js session leads`, a peer lead's message, or the user)
   whose work touches the same files or behaviour as this thread's, and whose `stage` is not
-  `done` (a finished thread's overlap is mentioned in one line of the reply, not asked). Its identity is the other
+  `done`, and is not a small fix already pushed (`stage` `no plan` with a `pr_url`). A finished
+  thread's overlap is mentioned in one line of the reply, not asked. Its identity is the other
   thread's id (`thread` in `session leads`), never its title.
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
   other thread's id. The app stores it and never shows it.
@@ -117,7 +120,8 @@ Stages:
   confirmation, before any design question (it then follows "Planning").
 - **Planning (status `planning`):** an Open Question in PLAN.md, asked as an overlap card
   (today's (b) rule, now for every new overlap in planning). Options: "Keep the plan as it is"
-  and up to three "Change it: <what>". The answer is handled like any planning answer, with the
+  and one to three "Change it: <what>" (a general "Change it" when no concrete change is clear
+  yet; the user then says what in the card's box or chat). The answer is handled like any planning answer, with the
   Done marker.
 - **Review (status `ready-for-review`):** the same options. The card is a `user-decision` of the
   round it belongs to:
@@ -134,15 +138,19 @@ Stages:
     has other Spec fixes; the card then counts in the round whose triage folds it in.
   - Posted after round N was found clean and before approval: as during round N (it makes N not
     clean until answered).
-- **Approved (status `approved`, before Start building):** before posting an overlap card,
-  withdraw the approval: retract the last approval card this thread's leads posted (§3: a retract
-  is never queued, so its result is final). Status stays `approved`, as in the existing "talk
-  instead of building" rule. If the refusal is `Start building was already pressed`, this is a
-  late overlap: post no card. If it is `card was already withdrawn`, carry on. On 503, retry after
-  a minute. Then post the card, options as in Review. "Keep the plan as it is": log the Decision
-  with the Done marker, then post a fresh approval card with a fresh Ready check. A change: log
-  the Decision with the Done marker, fold the change in, set `status: ready-for-review`, and go to
-  step 5 with the change listed.
+- **Approved (status `approved`, before Start building):** as soon as a new overlap is learned
+  (whether its card can be posted now or must wait behind another question), add it to the
+  Watch List and commit, then withdraw the approval: retract the last approval card this
+  thread's leads posted (§3: a retract is never queued, so its result is final). Status stays
+  `approved`, as in the existing "talk instead of building" rule. If the refusal is `Start
+  building was already pressed`, this is a late overlap: mark the Watch List item `late` and post
+  no card. If it is `card was already withdrawn`, carry on. On 503, retry after a minute. Then
+  post the card when its turn comes, options as in Review. While any overlap Watch List item or
+  overlap card is open in this stage, post no approval card. "Keep the plan as it is": log the
+  Decision with the Done marker and commit, then post a fresh approval card with a fresh Ready
+  check once nothing else is open. A change: write the Decision (Done marker), the Spec change
+  and `status: ready-for-review` and commit them in one commit, then go to step 5 with the
+  change listed.
 - **Start building:** unchanged. No overlap card is open then: a round with one is not clean, and
   one posted after approval withdraws the approval first. Cards from then on follow "Late
   overlap" (Terms).
@@ -150,16 +158,19 @@ Stages:
 ### 2. Restart (protocol/app/lead.md, "Restarting what died")
 
 On `[wc:context restart]`, after rereading the plan and cards:
-- If `status:` is `ready-for-review` and the pinned progress card is review `phase: checking`
-  (triage of that round never posted `fixing` or `clean`), handle it as for pending pull-backs today: stop any live reviewers,
+- If `status:` is `ready-for-review` and either the pinned progress card is review `phase:
+  checking` or `session list` shows a live reviewer (an interrupted launch), handle it as for pending pull-backs today: stop any live reviewers,
   discard their reports, apply every overlap answer that has no Done marker (with its marker),
   and restart the round under the same number, listing the change in its "Changed since".
 - Otherwise, for each overlap card with an actionable answer and no Done marker (search the
   Decision Log): act on it now, at the current stage's rules. Once the approval card's
   `answered_action` is `start-building`, such an answer (rare: it would need the answer and
   Start building to cross) is a late overlap: the one-line mention, no change to the build.
-- An open overlap card stays open and is not asked again. Before Start building, an overlap
-  card retracted by a lead with no later overlap card for the same `about_thread` is reposted.
+- An open overlap card stays open and is not asked again.
+- With `status: approved` and no Start building recorded: if an overlap Watch List item (not
+  marked `late`) or an overlap card is open, finish §1 Approved (withdraw the approval if still
+  open, post the waiting card) and post no approval card, overriding the restart rules that
+  would repost one; otherwise those rules apply as today.
 - Run `wc.js session leads` once and treat any overlap not covered by an overlap card or a
   Decision Log entry as new (a late overlap after Start building). Repeating a late overlap's
   one-line mention after a restart is accepted as harmless. A planned thread before Start building also asks any `Overlap with`
@@ -225,6 +236,15 @@ merging of branches; no sub-lead or worker rule changes.
 
 ## Review Rounds
 
+### Round 6 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 5:** Decisions 21-22: Terms "Overlap" excludes pushed small fixes; §1 Planning needs one to three change options; §1 Approved rewritten (Watch List and withdraw at once, no approval while open, one-commit change); §2 recovery also checks live reviewers, leftover repost rule removed, new approved-stage restart bullet.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ### Round 5 — 2026-11-21
 
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
@@ -233,6 +253,14 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Restart reposts approval while an overlap card is open | upheld | §2 posts no approval while one is open (Decision 21) |
+| intent | minor | Leftover repost-retracted-card rule | upheld | Removed |
+| intent | minor | Waiting overlap leaves the approval live | upheld | Approval withdrawn when the overlap is learned (Decision 21) |
+| mechanics | blocking | Restart restores approval while an overlap question is open | downgraded (major) | Same fix as intent's (Decision 21) |
+| mechanics | blocking | Done marker saved before the change | downgraded (major) | One commit (Decision 21) |
+| mechanics | major | Lead dies during reviewer launch | upheld | Also checks live reviewers (Decision 22) |
+| mechanics | major | Finished small fix shows `no plan` | downgraded (minor) | A stray card, not a wrong build; `no plan` + `pr_url` counts as finished |
+| mechanics | minor | Zero change options fails validation | upheld | One to three change options |
 
 ### Round 4 — 2026-11-21
 
