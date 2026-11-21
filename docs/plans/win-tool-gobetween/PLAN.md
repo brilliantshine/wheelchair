@@ -101,8 +101,10 @@ tools from WSL" thread merged first), reuse it and only add entries; otherwise a
   `{ "mcpServers": { ... } }` holding every replaced entry, written to
   `<stateDir>/settings/<session name>.mcp.json` (mode 0600, atomic) and passed with
   `--mcp-config <path>`. No `--strict-mcp-config`. The file is removed when the session stops.
-- **Stale files:** the existing Antigravity tool-file sweep (`sweepAgyTools`,
-  `machine/service.js:477`, same live-tmux and `startingNames` rules) also removes
+- **Stale files:** a sweep run wherever `sweepAgyTools` (`machine/service.js:477`) runs, with
+  the same live-tmux and `startingNames` rules, but scanning the new directories on its own:
+  it must not sit below `sweepAgyTools`' early returns for a missing or empty `agy-tools`
+  directory. It removes
   `<stateDir>/settings/<name>.mcp.json` and `<stateDir>/win-ready/<name>` for sessions not
   live and not starting and whose file is older than 60 s (the existing sweep's grace,
   `machine/service.js:528`; the localhost thread's contract uses the same rule).
@@ -184,7 +186,8 @@ the next session. The service computes the path; the go-between only reads and w
      tool's `initialize` is pending: the same per-call rule in both phases),
      answer it with JSON-RPC error `code -32000` ("The Windows project copy is not ready yet;
      try again shortly.") and drop it, so it is never forwarded later. If the ready file says
-     `failed`, answer every held call at once with the `failed` sentence.
+     `failed`, answer every held call at once with the `failed` sentence, and answer any
+     `tools/call` that arrives while it says `failed` at once with that sentence (not held).
    - `notifications/cancelled` naming a held or queued request id → drop that request; it is
      never forwarded and gets no answer.
    - any other request → JSON-RPC error `code -32000` with the `instructions` sentence.
@@ -210,7 +213,10 @@ the next session. The service computes the path; the go-between only reads and w
    a later `ready` still starts the tool (step 3).
 5. Once the real tool runs and (for 3b) its handshake has succeeded, if it exits on its own the
    go-between first forwards everything left on the tool's stdout (it waits for the child's
-   `close` event, i.e. stdout ended, not just `exit`), then exits with the tool's exit code,
+   `close` event, i.e. stdout ended, not just `exit`), then waits until its own stdout has
+   flushed everything to the client (the final write's callback, or `drain`), and only then
+   exits (setting `process.exitCode` and ending normally, never a bare `process.exit()` with
+   output pending) with the tool's exit code,
    or `128 + <signal number>` if the tool was ended by a signal. Until the 3b handshake succeeds, the 3b failure rule
    above takes precedence: an exit then is a handoff failure (exit 1).
    If the client closes stdin, **or the go-between receives SIGHUP, SIGTERM or SIGINT** (a
@@ -270,7 +276,10 @@ New tests in `machine/test/` must cover:
 - Exit during handoff: a real tool exiting 0 before its 3b `initialize` answer makes the
   go-between exit 1 with errors for queued requests.
 - Stale files: the sweep removes ready and Claude config files of dead sessions but not of
-  starting ones.
+  starting ones, including on a machine with no `agy-tools` directory.
+- Large final response: a tool that writes a 1 MiB response and exits has it all delivered to
+  a slow-reading client before the go-between exits.
+- A `tools/call` arriving while the ready file says `failed` is answered at once.
 
 Live check once built (needs a WSL machine with a Windows stdio MCP server and a fresh copy),
 in three separate runs: (1) cold cache: a Codex agent started before ready lists no tools, and
@@ -417,6 +426,9 @@ queue for ready-file writes; IDEA.md Not doing (first-ever Codex use); new Accep
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Go-between can exit with its own stdout unflushed | upheld | Spec 4 step 5: wait for own stdout to flush; 1 MiB test |
+| mechanics | major | Stale-file sweep skipped when there are no Antigravity files | upheld | Spec 2: own scan, not below `sweepAgyTools`' early returns; test |
+| mechanics | minor | New `tools/call` while `failed` waits 50 s | upheld | Spec 4: answered at once |
 
 ## Implementation Tasks
 
