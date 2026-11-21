@@ -152,9 +152,17 @@ No change to when an agent counts as quiet or to the reminders before the card; 
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Hub side: S1 quiet auto-close, S2 dismiss + read-time `blocking` flag, S2b, S3 docs, node tests | viewer/app/{quiet,cards,card,sessions,threads,chat}.js, viewer/app/API.md, protocol/app/cards.md, cards-lead.md, docs/maps/system-needs-quiet.md, viewer/test/app-{quiet,hub,project-tools-card}.test.js | standard / hub-chosen | | `node --test viewer/test/*.test.js` | in progress |
+| T1 | Hub side: S1 quiet auto-close, S2 dismiss + read-time `blocking` flag, S2b, S3 docs, node tests | viewer/app/{quiet,cards,card,sessions,threads,chat}.js, viewer/app/API.md, protocol/app/cards.md, cards-lead.md, docs/maps/system-needs-quiet.md, viewer/test/app-{quiet,hub,project-tools-card}.test.js | standard / gpt (gpt-6.1-terra) | wc-4866136bd5dd-worker | `node --test viewer/test/*.test.js` | done |
 | T2 | Thread page Dismiss button (S2 page) and browser test; after T1 | viewer/pages/thread.js, viewer/test/app-needs.spec.js | standard / claude (claude-sonnet-5-5) | | `npm --prefix viewer run test:browser`, `node --test viewer/test/*.test.js` | not started |
 
 ## Log
 - 2026-11-21 Ready check at approval: hub and machine answer session list; Claude and GPT sessions started this thread (both logged in); codex/preflight.sh: token fresh. Ready.
 - Build accepted: approval 2cc75ea4-d5cc-4250-9aec-810a887d4395
+- 2026-11-21 — T1 accepted (band: scout): full node suite 789/789 re-run by sub-lead on the worker branch; scout found the code matches S1, S2 hub, S2b, S3. Test gaps noted, not blocking: stopped-session hold case uses a fabricated stopped session; "enqueues nothing" checks only the card id; no waiting-start or cross-thread test.
+- 2026-11-21 — T1: worker reported "Choices: none"; the scout listed 6, logged below.
+- 2026-11-21 — Choice: T1, sessions.js child start: a `finishStart` helper resets and saves at the three returning branches.
+- 2026-11-21 — Choice: T1, chat.js: one flagged card array feeds both `thread.cards` and top-level `cards`.
+- 2026-11-21 — Choice: T1, threads.js dismiss: a replaced system needs card returns 422 `card is already answered` (was 404).
+- 2026-11-21 — Choice: T1, sessions.js applyProjectTools: dismissed check finds the stored card by id among all cards.
+- 2026-11-21 — Choice: T1, docs: API.md drops the old no-Dismiss sentence; system-needs-quiet.md map rewrites the closure and browser paragraphs; cards-lead.md retract rule 3 gets a parenthetical.
+- 2026-11-21 — Choice: T1, tests: the old system-dismiss refusal test was renamed and extended.
