@@ -2,7 +2,19 @@
 slug: overlap-questions
 date: 2026-11-21
 implemented-by: "T1 standard / gpt-6.1-terra (code); T2 standard / claude-sonnet-5-5 (protocol text); sub-lead claude-opus-5-5 added one test case"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5 (PASS)
+    checks: T1 gpt-6.1-terra, T2 claude-sonnet-5-5
+  - round: 1
+    lane: gpt / gpt-6.2-sol (FAIL, 3 gaps)
+    checks: T1 gpt-6.1-terra, T2 claude-sonnet-5-5
+  - round: 2
+    lane: claude / claude-opus-5-5 (PASS)
+    checks: T1, T2, R1 claude-haiku-5-5
+  - round: 2
+    lane: gpt / gpt-6.2-sol (PASS)
+    checks: T1, T2, R1 claude-haiku-5-5
 ---
 
 # Completion Report — Asking about overlapping threads
