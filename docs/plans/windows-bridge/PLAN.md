@@ -1,6 +1,6 @@
 ---
 slug: windows-bridge
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -755,3 +755,4 @@ sets `WHEELCHAIR_UNITY`.
 - 2026-11-21 — Choice: T5, `windows-live.js`: after the test run the harness also syncs and commits what Unity wrote (it writes `Assets/Resources/BillingMode.json` and its `.meta` during tests; the import also writes `.vscode/` and a `.slnx`), so the clean check proves that deleting the results file and syncing leaves nothing behind. Deviation from the Spec's order, recorded in COMPLETION: these are non-ignored project files Unity really writes, and the bridge correctly brings them back. The fixture's `.gitignore` follows the Spec's list exactly and does not ignore `.slnx`/`.vscode/`.
 - 2026-11-21 — Choice: T5, docs: the Store-app line is a separate paragraph right after the `win` paragraph in worker.md and verifier.md.
 - 2026-11-21 — T5 accepted (band: bigger-scout): live check without Unity passes and exits 77 on my re-run; with `WHEELCHAIR_UNITY` the worker's final run passed every step (import, EditMode test Passed, clean tree, Editor window and screenshot). I opened the Unity Editor shot `/tmp/wheelchair-windows-live-1115861b5945-unity.png`: it shows the Unity 6.5 Editor on the fixture project. No Unity process left afterwards. Scout notes kept as residual risks: the script does not assert `WSL_INTEROP` is absent in the service, and does not separately assert the Editor window is gone after `stop` (cleanup fails if the copy cannot be removed). The test edits in `win-sync.test.js`/`win.test.js` were my ownership extension, not scope creep.
+- 2026-11-21 — All tasks done; full validation run on the feature tip (machine and viewer suites: only the known base-branch failures; live check exit 77 without Unity, exit 0 with Unity). COMPLETION.md written; `machine/AGENTS.md` gained the missing `lib/win-apps.js` row. Status set to verifying.
