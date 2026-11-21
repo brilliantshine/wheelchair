@@ -175,8 +175,8 @@ answer, never counts under "Needs you" and has no buttons.
 
 The template list gets, in each role's group (shown even when that role has no templates
 of Collin's), one entry **"Lessons learned"** placed first, with a distinct "Written by
-agents" tag and a visual style unlike Collin's templates (an accent-tinted background and
-a small robot/spark-free text label; no icon fonts needed). The tag shows the count, e.g.
+agents" tag and a visual style unlike Collin's templates (an accent-tinted background and a
+text label, no icon). The tag shows the count, e.g.
 "Written by agents · 4". It is shown only when the role has at least one lesson; with none,
 the group shows nothing extra. It has no in-use toggle, no duplicate and no delete-all.
 
@@ -263,24 +263,14 @@ stays as review history.
 
 ## Review Rounds
 
-### Round 1 — <date>
+### Round 1 — 2026-11-21
 
-**Lanes:** <family / model>; <family / model>; cross-family: <yes|no>.
+**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
 
-Written for every round, including one where the table below stays empty. The table gets a row
-per finding, so a clean round would otherwise leave no record of which gate ran — which is the
-round where knowing it matters most.
-
-<!-- Round 2+: list what changed since the previous round; that list scopes the reviewers. -->
-
-**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-
-Reported severity is the reviewer's opinion; the lead verdict
-(`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
-exit. Downgrades and declines cite evidence.
 
 ## Prior Work
 
