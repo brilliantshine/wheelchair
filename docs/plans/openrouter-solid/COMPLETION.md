@@ -133,3 +133,33 @@ $ npm --prefix viewer run test:browser
   1116 passed (11.7m)
 ```
 The live aside check was not re-run (paid; the remediation does not change argv or the success path).
+
+### Remediation 2 (after verification attempt 2 on 8e8d638f)
+
+Attempt 2: Claude verifier PASS; GPT verifier FAIL with 2 gaps (see `REMEDIATION-2.md`). The out-of-worktree `AGENTS.md` context in read-only Pi asides is not a gap: settled in review round 4, and the lead agreed. The other gap was fixed:
+
+| Gap | Fix (file:line) | Validated by |
+|-----|-----------------|--------------|
+| S3 validation: the Pi aside test's two stores raced on one `aside-turns.json.tmp` | `machine/test/aside-turns.test.js:188-190`: await the first store's writes; the version-gate store gets its own state folder | aside test x5 by worker, x6 by sub-lead (0 failures); machine suite |
+
+Validation on the merged tip after remediation (run by the sub-lead):
+
+```
+$ bash codex/test/run.sh
+RESULT 159 passed, 0 failed
+$ bash machine/test/run.sh
+# tests 488
+# pass 488
+# fail 0
+$ node --test viewer/test/*.test.js
+# tests 755
+# pass 755
+# fail 0
+$ bash install/test/run.sh
+RESULT 205 passed, 1 failed
+FAIL real wheelchair directory is byte-identical after suite
+$ node test-support/smoke/pi-guard.js
+Pi guard offline check passed
+```
+
+The installer failure is that test's snapshot of the live `~/.wheelchair`, which running Codex sessions write to during the suite. Both attempt-2 verifiers saw it, the GPT verifier also on the pre-build commit, and an isolated-home rerun passed 206/206. This build changes nothing under `install/`. The first viewer run hung for 17 minutes in `app-balancer.test.js`, which this branch does not touch. That file then passed alone (43/43), and the full viewer rerun passed. The browser suite was not re-run: this remediation changed only a machine test, and both attempt-2 verifiers ran it green (1116 passed).
