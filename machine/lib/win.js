@@ -212,6 +212,7 @@ class WinBridge {
   }
 
   async onWorktreeRemoved(session, { kind }) {
+    if (!this.detected.wsl) return;
     const stopping = this.stopTasks.get(session.name);
     if (stopping) await stopping.task;
     const ctx = await this.context(session);
