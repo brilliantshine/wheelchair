@@ -1,6 +1,6 @@
 ---
 slug: windows-bridge
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -114,6 +114,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D82 | A copy whose last reconcile failed is never deleted at archive | It otherwise read as "needed none" | review-round-7 |
 | D83 | Newly ignored, untracked paths are dropped from the bridge indexes before each snapshot | A `.gitignore` added mid-thread (common for a new Unity project) must stop caches syncing | review-round-7 |
 | D84 | Plan approved after round 7 without a further round; the last fixes (D82, D83) go unreviewed | User's pick: findings had shrunk to small rule gaps and rare corners, and the build is checked on real Windows | user |
+| D85 | For D83 on both sides, "tracked" means listed in the Linux worktree's real index; the copy's own index is never used | The copy's ordinary index is empty, so a literal reading would drop force-tracked ignored files and delete them on Linux | defaulted |
+| D86 | The live check uses a classic WinForms window instead of Notepad; worker.md, verifier.md and README say Store-packaged apps (Windows 11 Notepad, Calculator, Paint) hand off outside the bridge, so `windows`, `shot` and `stop` cannot reach them | Found on the real PC: Store apps run outside the Job Object; widening the job-only window filter would expose the user's own windows | defaulted |
 
 ## Spec
 
