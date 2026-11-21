@@ -31,6 +31,20 @@ switch (match[1]) {
     setTimeout(() => { if (!settings.noDone) console.log(JSON.stringify({ done: { exit_code: settings.exitCode || 0 } })); }, settings.duration ?? 50);
     break;
   }
+  case 'appwindows': {
+    const windows = [];
+    for (const app of args.apps) {
+      try {
+        const record = JSON.parse(fs.readFileSync(path.join(process.env.WC_FAKE_APP_DIR, app.id + '.json')));
+        for (const window of record.settings.windows || []) windows.push({ ...window, pid: record.pid + 10000, app_id: app.id });
+      } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    }
+    console.log(JSON.stringify(windows));
+    break;
+  }
+  case 'appshot':
+    fs.writeFileSync(linuxPath(args.destination), 'fake png');
+    break;
   case 'appterminate': {
     const file = path.join(process.env.WC_FAKE_APP_DIR, args.id + '.json');
     try { const record = JSON.parse(fs.readFileSync(file)); process.kill(record.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ENOENT' && e.code !== 'ESRCH') throw e; }

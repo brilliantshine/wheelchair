@@ -63,3 +63,31 @@ test('four started jobs are allowed and stop returns their copy keys', async () 
   assert.equal(stopped.stopped.length, 4);
   assert.deepEqual(stopped.copyKeys, ['copy']);
 });
+
+test('windows and shots are restricted to the session and reject minimized windows', async () => {
+  const { tracker } = setup();
+  const one = await tracker.start(session, opts({ duration: 10000, windows: [{ handle: '101', title: 'one', minimized: false }, { handle: '102', title: 'min', minimized: true }] }));
+  await tracker.start({ name: 'wc-two' }, opts({ duration: 10000, windows: [{ handle: '201', title: 'two', minimized: false }] }));
+  assert.deepEqual((await tracker.windows(session)).windows.map(w => w.handle), ['101', '102']);
+  assert.equal((await tracker.windows(session)).windows[0].app_id, one.id);
+  await assert.rejects(tracker.shot(session, '201'), e => e.status === 400);
+  await assert.rejects(tracker.shot(session, '999'), e => e.status === 400);
+  await assert.rejects(tracker.shot(session, '102'), e => e.status === 422 && e.message === 'window is minimized');
+  const shot = await tracker.shot(session, '101');
+  assert.equal(fs.readFileSync(shot.path, 'utf8'), 'fake png');
+  await tracker.killSession(session.name);
+  await tracker.killSession('wc-two');
+});
+test('shots retain only the newest 50', async () => {
+  const { tracker, stateDir } = setup();
+  await tracker.start(session, opts({ duration: 10000, windows: [{ handle: '101', title: 'one', minimized: false }] }));
+  const dir = path.join(stateDir, 'win', session.name, 'shots');
+  fs.mkdirSync(dir, { recursive: true });
+  for (let n = 1; n <= 50; n++) fs.writeFileSync(path.join(dir, `${n}.png`), 'old');
+  const shot = await tracker.shot(session, '101');
+  const files = fs.readdirSync(dir);
+  assert.equal(files.length, 50);
+  assert.equal(files.includes('1.png'), false);
+  assert.equal(files.includes(path.basename(shot.path)), true);
+  await tracker.killSession(session.name);
+});

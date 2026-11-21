@@ -107,6 +107,81 @@ if ($h -ne [IntPtr]::Zero) { try { if (-not [WcTerminate]::TerminateJobObject($h
 `);
 }
 
+function windowsScript(apps) {
+  const data = Buffer.from(JSON.stringify(apps)).toString('base64');
+  return script('appwindows', { apps }, `
+$ErrorActionPreference='Stop'
+$a = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
+Add-Type -TypeDefinition @'
+using System; using System.Collections.Generic; using System.Text; using System.Runtime.InteropServices;
+public static class WcWindows {
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr OpenJobObject(uint access, bool inherit, string name);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool QueryInformationJobObject(IntPtr job, int cls, IntPtr data, int len, out int returned);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  delegate bool Callback(IntPtr h, IntPtr param);
+  [DllImport("user32.dll")] static extern bool EnumWindows(Callback cb, IntPtr param);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder text, int max);
+  public class Window { public string handle; public string title; public uint pid; public string app_id; public bool minimized; }
+  public static Window[] List(string[] ids) {
+    var owners = new Dictionary<uint,string>();
+    foreach (string id in ids) {
+      IntPtr job = OpenJobObject(4, false, "wheelchair-" + id); if (job == IntPtr.Zero) continue;
+      IntPtr data = Marshal.AllocHGlobal(65536);
+      try {
+        int returned;
+        if (!QueryInformationJobObject(job, 3, data, 65536, out returned)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        int count = Marshal.ReadInt32(data, 4);
+        for (int i = 0; i < count; i++) owners[(uint)Marshal.ReadIntPtr(data, 8 + i * IntPtr.Size).ToInt64()] = id;
+      } finally { Marshal.FreeHGlobal(data); CloseHandle(job); }
+    }
+    var windows = new List<Window>();
+    EnumWindows((h, _) => {
+      if (!IsWindowVisible(h)) return true;
+      uint pid; GetWindowThreadProcessId(h, out pid); string id;
+      if (!owners.TryGetValue(pid, out id)) return true;
+      var title = new StringBuilder(32768); GetWindowText(h, title, title.Capacity);
+      windows.Add(new Window {handle = h.ToInt64().ToString(), title = title.ToString(), pid = pid, app_id = id, minimized = IsIconic(h)}); return true;
+    }, IntPtr.Zero);
+    return windows.ToArray();
+  }
+}
+'@
+$items = @([WcWindows]::List([string[]]@($a | ForEach-Object { $_.id })))
+ConvertTo-Json -InputObject $items -Depth 5 -Compress
+`);
+}
+
+function shotScript(handle, destination) {
+  const args = { handle, destination };
+  const data = Buffer.from(JSON.stringify(args)).toString('base64');
+  return script('appshot', args, `
+$ErrorActionPreference='Stop'
+$a = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
+Add-Type -AssemblyName System.Drawing
+Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+using System; using System.Drawing; using System.Drawing.Imaging; using System.Runtime.InteropServices;
+public static class WcShot {
+  [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
+  public static void Save(long value, string dest) {
+    var h = new IntPtr(value); if (IsIconic(h)) throw new Exception("window is minimized");
+    RECT r; if (!GetWindowRect(h, out r) || r.Right <= r.Left || r.Bottom <= r.Top) throw new Exception("window has no size");
+    using (var bitmap = new Bitmap(r.Right-r.Left, r.Bottom-r.Top)) {
+      using (var g = Graphics.FromImage(bitmap)) { var dc = g.GetHdc(); try { if (!PrintWindow(h, dc, 2)) throw new Exception("PrintWindow failed"); } finally { g.ReleaseHdc(dc); } }
+      bitmap.Save(dest, ImageFormat.Png);
+    }
+  }
+}
+'@
+[WcShot]::Save([long]::Parse([string]$a.handle), [string]$a.destination)
+`);
+}
+
 function error(message, status = 422) { return Object.assign(new Error(message), { status }); }
 
 class AppTracker {
@@ -215,6 +290,30 @@ class AppTracker {
     const exited = apps.filter(a => changes.has(a.id)).map(a => a.id);
     for (const appId of exited) changes.delete(appId);
     return { apps: apps.map(({ id, program, running, exit_code, log }) => ({ id, program, running, exit_code, log })), exited };
+  }
+
+  async windows(session) {
+    const apps = this.apps.filter(a => a.session === session.name && a.running).map(a => ({ id: a.id }));
+    if (!apps.length) return { windows: [] };
+    const result = await this.winEnv.ps(windowsScript(apps));
+    if (result.code) throw error(result.stderr || 'failed to enumerate windows');
+    return { windows: JSON.parse(result.stdout.trim() || '[]') };
+  }
+
+  async shot(session, handle) {
+    const found = (await this.windows(session)).windows.find(w => String(w.handle) === String(handle));
+    if (!found) throw error('unknown window', 400);
+    if (found.minimized) throw error('window is minimized');
+    const dir = path.join(this.root, session.name, 'shots');
+    fs.mkdirSync(dir, { recursive: true });
+    let n = Date.now();
+    while (fs.existsSync(path.join(dir, `${n}.png`))) n++;
+    const target = path.join(dir, `${n}.png`);
+    const result = await this.winEnv.ps(shotScript(String(handle), this.winEnv.toWindows(target)));
+    if (result.code) throw error(result.stderr || 'failed to capture window');
+    const shots = fs.readdirSync(dir).filter(f => /^\d+\.png$/.test(f)).sort((a, b) => Number(b.slice(0, -4)) - Number(a.slice(0, -4)));
+    for (const old of shots.slice(50)) fs.unlinkSync(path.join(dir, old));
+    return { path: target };
   }
 
   async terminate(app) {
