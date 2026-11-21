@@ -1,6 +1,6 @@
 ---
 slug: sidebar-files-followup
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-20
 ---
 
