@@ -524,9 +524,15 @@
     if (!dead) return;
     deadEl.textContent = '';
     deadEl.appendChild(el('p', '', 'The lead has stopped.'));
+    const failed = el('p', 'dead-error'); failed.setAttribute('role', 'alert'); failed.hidden = true;
     deadEl.appendChild(button('Restart lead', 'primary', async () => {
-      try { await post(T + '/restart'); await poll(); } catch (e) { showError('Restart failed: ' + e.message); }
+      failed.hidden = true;
+      try { await post(T + '/restart'); await poll(); } catch (e) {
+        // Shown in the sticky box too: the page's error banner may be scrolled out of sight.
+        showError('Restart failed: ' + e.message); failed.textContent = 'Restart failed: ' + e.message; failed.hidden = false;
+      }
     }));
+    deadEl.appendChild(failed);
   }
 
   // ---- chat ----
@@ -1274,13 +1280,14 @@
   function syncStickyHeights() {
     const root = document.documentElement.style;
     root.setProperty('--head-h', headEl.offsetHeight + 'px');
+    root.setProperty('--dead-h', deadEl.offsetHeight + 'px');
     root.setProperty('--pins-h', pinnedEl.offsetHeight + 'px');
     root.setProperty('--composer-h', composerEl.offsetHeight + 'px');
   }
   syncStickyHeights();
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(syncStickyHeights);
-    for (const n of [headEl, pinnedEl, composerEl]) ro.observe(n);
+    for (const n of [headEl, deadEl, pinnedEl, composerEl]) ro.observe(n);
   } else window.addEventListener('resize', syncStickyHeights);
 
   // One line above the pinned cards while the live lead is waiting for room or rate-limited.

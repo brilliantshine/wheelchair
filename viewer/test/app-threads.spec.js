@@ -622,6 +622,15 @@ for (const [label, size] of SIZES) {
       await ctx.patch(made.id, (x) => { x.sessions[0].live = false; });
       await open(page, made.id);
       await expect(page.locator('#dead')).toContainText('The lead has stopped');
+      // It sticks under the thread header, so Restart stays in sight in a long chat.
+      expect(await page.locator('#dead').evaluate((n) => getComputedStyle(n).position)).toBe('sticky');
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await expect(page.getByRole('button', { name: 'Restart lead' })).toBeInViewport();
+      // A refused restart says so inside the box, which is in sight, not only in the banner up top.
+      await page.route(`**/threads/${made.id}/restart`, (r) => r.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: 'start refused' }) }), { times: 1 });
+      await page.getByRole('button', { name: 'Restart lead' }).click();
+      await expect(page.locator('#dead .dead-error')).toHaveText(/Restart failed: .*start refused/);
+      await expect(page.locator('#dead .dead-error')).toBeInViewport();
       await expect(page.locator('#msg')).toBeDisabled();
       const req = page.waitForRequest((r) => r.url().endsWith(`/threads/${made.id}/restart`));
       await page.getByRole('button', { name: 'Restart lead' }).click();
