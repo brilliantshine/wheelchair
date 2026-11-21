@@ -6,6 +6,9 @@ verified-by:
   - round: 1
     lane: claude / claude-opus-5-5
     checks: standard / gpt-6.1-terra
+  - round: 2
+    lane: claude / claude-opus-5-5
+    checks: standard / gpt-6.1-terra
 ---
 
 # Completion Report — A bridge from Wheelchair in WSL to the Windows side of the same PC
@@ -308,3 +311,5 @@ test tool returned `project=[C:\some\path]` (`docs/plans/windows-bridge/reports/
 earlier run also failed a third viewer test, which passed on the rerun; the same intermittent
 failure ("a start the machine never answered is asked again by name...") appeared in T2's runs
 before this fix.
+
+Verification attempt 2 (claude-opus-5-5, commit f2f31fcec255dedd81882e4a56cf990a2cad6241): PASS, no gaps. Live check exit 77 without Unity and exit 0 with Unity; Check Once Built #1 confirmed with real `codex exec` (the Windows stdio tool returned the copy path).
