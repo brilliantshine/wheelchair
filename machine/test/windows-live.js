@@ -49,6 +49,22 @@ async function commit(paths, message) {
   const result = await client('git', ['commit', '--paths', paths.join(','), '--message', message]);
   expect(result.ok, `commit ${message}`, result);
 }
+// Enumerate individual untracked files as well as tracked changes; keep test results out of commits.
+function changedPaths(repo) {
+  const result = spawnSync('git', ['-C', repo, 'status', '--porcelain', '-z', '--untracked-files=all'], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`git status failed: ${result.stderr}`);
+  return result.stdout.split('\0').filter(Boolean).map(entry => {
+    if (/[RC]/.test(entry.slice(0, 2))) throw new Error(`unexpected rename or copy: ${entry}`);
+    const name = entry.slice(3);
+    if (name.includes(',')) throw new Error(`cannot commit path containing a comma: ${name}`);
+    return name;
+  }).filter(name => name !== 'wheelchair-live-results.xml');
+}
+async function commitUnityChanges(repo, label) {
+  const paths = changedPaths(repo);
+  console.log(`${label} paths: ${JSON.stringify(paths)}`);
+  if (paths.length) await commit(paths, label);
+}
 async function poll(fn, timeout, description) {
   const until = Date.now() + timeout;
   while (Date.now() < until) { const result = await fn(); if (result) return result; await delay(1000); }
@@ -143,11 +159,16 @@ async function main() {
   const unity = /^\/mnt\//.test(unityInput) ? (await win('path', unityInput)).path : unityInput;
   const project = info.copy_windows;
   const imported = await win('start', '--', unity, '-batchmode', '-quit', '-projectPath', project); await waitExit(imported.id); await win('sync');
-  await commit(['Assets', 'Packages', 'ProjectSettings'], 'Unity import');
+  await commitUnityChanges(repo, 'Unity import');
   const tests = await win('run', '--', unity, '-batchmode', '-runTests', '-testPlatform', 'EditMode', '-projectPath', project, '-testResults', `${project}\\wheelchair-live-results.xml`);
   expect(tests.exit_code === 0, 'Unity tests exit 0', tests); const results = fs.readFileSync(path.join(repo, 'wheelchair-live-results.xml'), 'utf8');
   expect(/<test-case\b(?=[^>]*FixtureTest)(?=[^>]*result="Passed")[^>]*>/.test(results), 'Unity results contain passed FixtureTest');
-  fs.unlinkSync(path.join(repo, 'wheelchair-live-results.xml')); await win('sync'); expect(command('git', ['-C', repo, 'status', '--porcelain']) === '', 'Unity worktree is clean');
+  await win('sync');
+  await commitUnityChanges(repo, 'Unity tests');
+  fs.unlinkSync(path.join(repo, 'wheelchair-live-results.xml')); await win('sync');
+  const status = command('git', ['-C', repo, 'status', '--porcelain']);
+  const diff = command('git', ['-C', repo, 'diff', '--stat']);
+  expect(status === '', 'Unity worktree is clean', `git status --porcelain:\n${status}\ngit diff --stat:\n${diff}`);
   const editor = await win('start', '--', unity, '-projectPath', project); const editorWindow = await windowWith(w => w.app_id === editor.id && /unity/i.test(w.title), 'Unity Editor window', 300000); expect(!!editorWindow, 'windows lists Unity Editor'); await screenshot(editorWindow, 'unity'); await win('stop');
   return 0;
 }
