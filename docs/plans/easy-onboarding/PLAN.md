@@ -26,10 +26,10 @@ created: 2026-11-20
 | 4 | After a harness is installed from Settings, the machine runs that harness's own setup steps the installer would have done (instruction-file block, old-hook cleanup, model pins) | Otherwise a later-installed Claude or Codex misses its setup | defaulted |
 | 5 | `install.sh` no longer refuses when no harness CLI is present; it skips harness-specific steps and points to Settings | IDEA "one install command succeeds with no agent CLI" | defaulted |
 | 6 | Leaving a harness out is one hub-wide switch per harness, applying to every machine | Machines lacking a harness are already skipped; fewer controls | user |
-| 7 | First run: a setup checklist on the home page linking into Settings, gone once one harness is installed and signed in | Guides without duplicating Settings | user |
+| 7 | (refined by 21) First run: a setup checklist on the home page linking into Settings, gone once one harness is installed and signed in | Guides without duplicating Settings | user |
 | 8 | Decision 3 is met by always putting `~/.local/bin` and `~/.kimi-code/bin` on the service PATH, where every recipe lands; no adapter resolver changes | Avoids touching the OpenRouter thread's lines; PATH lookup is per call | defaulted |
 | 9 | (superseded by 11) Turning off the harness the lead model runs on is refused until another lead model is picked | Otherwise every new thread would be stuck | defaulted |
-| 10 | Checklist has two steps (install, sign in); no "choose" step | Choosing is optional: all harnesses default on | defaulted |
+| 10 | (refined by 21: a third `start` step) Checklist has two steps (install, sign in); no "choose" step | Choosing is optional: all harnesses default on | defaulted |
 | 11 | Supersedes 9: switching a harness off is refused only when Lead order (with `any` expanded) would have no enabled harness | Review round 1: the "lead model setting" does not exist; the old rule blocked Codex-only users from leaving Claude out | review-round-1 |
 | 12 | The switch stops new placements only; running agents, asides and retries of an unanswered start continue | Review round 1 | review-round-1 |
 | 13 | (superseded by 15, then 17) A successful install from Settings adds that harness to Workers try first if missing | Review round 1: default orders exclude OpenRouter, so a Pi-only user would wait forever | review-round-1 |
@@ -166,9 +166,12 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    `defaults()` and `normalize()` (`viewer/app/settings.js:37-39,205-241`): non-boolean or
    missing → `true`; unknown keys dropped. `describe()` (`settings.js:298-307`, `GET
    /settings`) adds `harnesses`.
-2. **What the switch governs.** Off means no **new** session is placed on that provider:
-   balancer placement for every role, including a thread's lead restart, waits with the
-   reason `<Harness> is left out in Settings` when the thread is pinned to it. Sessions
+2. **What the switch governs.** Off means no **new** session is placed on that provider.
+   Roles that pick from an order (a new thread's lead, workers, reviewers, verifiers,
+   mappers) simply skip it and use the next enabled provider. Only starts whose placement is
+   pinned to the thread's own provider (`balancer.js:50`: a lead or sub-lead of a thread that
+   already has a provider) wait, with the reason `<Harness> is left out in Settings`, when
+   that provider is off. Sessions
    already running keep running. Two dispatches continue an already-placed session and are
    not new placements, so the switch does not affect them: an aside fork of a live lead
    (`viewer/app/asides.js:34-46`) and a retry of an unanswered start
@@ -376,6 +379,7 @@ npm --prefix viewer run test:browser
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A CLI removed from a machine less than 15 s before a new start can still be chosen once (status cache) | Removing a harness CLI is unusual, and the start then fails with the machine's existing missing-CLI error; rare path | review-round-5 |
+| After a failed Settings install, an update removes that harness's recipe and the user installs it from the vendor site: the row may show Try again (→ vendor link) instead of Sign in | Needs a failed install, a recipe removed by an update, and a vendor install, in that order; sign-in is still reachable under Accounts; rare path | review-round-9 |
 | The only signed-in harness has its Lead model set to None, so the checklist completes but no lead starts | Every provider ships default models (`codex/model.sh:33-38`); needs a deliberate None on the only harness; rare path | review-round-5 |
 
 ## Review Rounds
@@ -531,6 +535,9 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Decisions 7 and 10 not marked refined | upheld | Marked refined by 21 |
+| mechanics | blocking | Saved failure vs Sign in for a `recipe: false` vendor install | accepted-risk | Rare path (Accepted Risks) |
+| mechanics | major | Switch-off wait could be read as blocking every role | upheld | S3.2 scoped to pinned lead/sub-lead starts |
 
 ## Implementation Tasks
 
