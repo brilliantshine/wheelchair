@@ -494,7 +494,7 @@ New tests, at least:
 | T4 | Thread page: Download all link (S2), sent rows open preview (S3), archived rows honour `kept_files` (S4), HTML download inertness browser test (S1); after T2 and T3 | `viewer/pages/thread.js`, `thread.css`, new spec | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-4 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
 | R1 | Remediation 1: form PNG reuses the already-fetched form JSON (S1) | `viewer/pages/picture.js`, `viewer/pages/picture-export.js`, form test in `viewer/test/app-picture-download.spec.js` | standard, claude-sonnet-5-5 | | `npm --prefix viewer run test:browser` | dispatched |
 | R2 | Remediation 1: wide-graph test uses real pan and zoom and asserts the transform changed (S1 Validation) | `viewer/test/app-picture-download.spec.js` (with R1, same session) | standard, claude-sonnet-5-5 | | `npm --prefix viewer run test:browser` | dispatched |
-| R3 | Remediation 1: lock test drives real chat, thread-list, doc and ZIP callers (S5 Validation) | `viewer/test/app-remote-plan.test.js`, `viewer/test/helpers/` | standard, gpt-6.1-terra | | `node --test viewer/test/*.test.js` | dispatched |
+| R3 | Remediation 1: lock test drives real chat, thread-list, doc and ZIP callers (S5 Validation) | `viewer/test/app-remote-plan.test.js`, `viewer/test/helpers/` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker-6 | `node --test viewer/test/*.test.js` | done |
 
 ## Log
 
@@ -523,3 +523,6 @@ Build accepted: approval a40eb86e-c69f-46d8-815d-be9ef02baa25
 - 2026-11-21 — Choice: T4, `viewer/test/app-files-followup.spec.js`: phone link-height check allows 43.5 px (Firefox rounding); HTML downloads fetched with `?token=` and opened as `file://` pages from the run folder.
 - 2026-11-21 — T4 accepted (band: bigger-scout): browser 1142 passed and viewer 732/732 re-run by sub-lead on the worker branch; scout found no Spec deviation.
 - 2026-11-21 — Verification attempt 1 (acfde7a0): Claude verifier PASS, GPT verifier FAIL, 7 gaps. 3 rare paths went to Accepted Risks. The lead answered per gap: S5 thread-list documents is not a gap (no row added); the form PNG, wide-graph test and lock test are fixed (REMEDIATION-1.md).
+- 2026-11-21 — Choice: R3, `viewer/test/helpers/plan-lock-probe.js`: the lock probe is preloaded into the isolated server process (`NODE_OPTIONS=--require`) and patches `Hub.prototype.withThread`/`withChatThread`, sharing counts through a temp file; it is not an accessor on the instance.
+- 2026-11-21 — Choice: R3, `viewer/test/app-remote-plan.test.js`: one fresh server and remote thread per trigger, so the 30 s refresh throttle cannot hide a request; `remoteContext(options)` takes env.
+- 2026-11-21 — R3 accepted (band: scout): viewer suite 733/733 re-run by sub-lead (the worker's twice-failing `app-quiet` test passes alone and in the full suite; it failed under load while R1/R2 browser tests ran at the same time). The worker reports a deliberate lock-held mutation made the test fail. Scout note: the test does not assert that the probe recorded anything, so a probe that fails to load would pass vacuously. Accepted as is.
