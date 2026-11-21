@@ -12,15 +12,15 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q2: Who writes lessons for reviewers and verifiers?
-- **Context:** Reviewers and verifiers are fresh each time, cannot post cards (`viewer/app/card.js:28`), and never see a mistake cost time: the lead triaging them does. IDEA.md says an agent saves lessons only for its own type.
-- **Options:** the lead writes lessons for the reviewers/verifiers it oversees; reviewers/verifiers get no lessons; they propose one in their report and the lead saves it.
-- **Recommendation:** they propose one in their report, the lead decides and saves it (keeps "own type" authorship of the wording, lead applies the bar).
-
 ### Q3: Does Collin hear about a new lesson?
 - **Context:** Lessons are agent-managed and take effect for agents started afterwards.
 - **Options:** saved quietly (visible in Settings); a short notice in the thread; needs Collin's OK first.
 - **Recommendation:** a short notice in the thread, no approval needed.
+
+### Q4: Does the sub-lead write lessons for workers?
+- **Context:** Workers are fresh per task; the sub-lead sees a worker's work come back wrong and retried, the same position the lead is in for reviewers (decision 11).
+- **Options:** workers save their own only; the sub-lead writes worker lessons too.
+- **Recommendation:** the sub-lead writes them too; workers may still save their own.
 
 ## Watch List
 
@@ -43,6 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | A lesson that conflicts with the rules or should always apply is not saved; the lead offers a stub for a protocol change instead | IDEA.md Not doing | defaulted |
 | 9 | Running agents keep the lessons they started with | IDEA.md Not doing; prompts are a snapshot at start (`machine/service.js:781`) | defaulted |
 | 10 | Lessons apply to all projects; an agent may mark one as only for the project it learned it in | Collin picked "All, unless marked" | user |
+| 11 | Reviewer and verifier lessons are written by the lead, from what its triage of their findings and gaps shows; reviewers and verifiers never save lessons | Collin picked "Lead writes them": only the lead sees a reviewer's or verifier's mistake cost time | idea-change |
 
 ## Spec
 

@@ -12,7 +12,9 @@ created: 2026-11-21
 Agents working in wheelchair can save a short lesson when they learn something the hard
 way, such as "an extra question card is a minor review finding, not a major one". A
 lesson is for the agent's own type (lead, sub-lead, worker, reviewer, verifier, mapper):
-later agents of that type read it alongside their role rules, whichever AI runs them,
+later agents of that type read it alongside their role rules (reviewers and verifiers
+start fresh each time and cannot see their own mistakes, so the lead writes their
+lessons), whichever AI runs them,
 unless the lesson is marked as only for one AI. In Settings, each agent type's lessons
 appear as one agent-written template, marked apart from Collin's own templates; Collin can
 edit it, though that is not recommended.
