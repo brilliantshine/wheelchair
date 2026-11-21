@@ -2,14 +2,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { makeTempSync } = require('../../test-support/run-dir');
 const { WinDisk, REFRESH_MS } = require('../lib/win-disk');
 
 test('disk cache, thresholds, failures and real repository measurements', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'win-disk-'));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const root = makeTempSync('win-disk-');
   const repo = path.join(root, 'repo');
   const thread = path.join(root, 'copies', 'thread');
   await fs.mkdir(repo); await fs.mkdir(path.join(thread, 'one'), { recursive: true });
@@ -18,29 +17,36 @@ test('disk cache, thresholds, failures and real repository measurements', async 
   const object = git('hash-object', '-w', '--stdin');
   git('update-ref', 'refs/wheelchair/conflicts/example', object);
   const ctx = { threadId: 'thread', key: 'one', stateDir: root, worktree: repo, copy: { linux: path.join(thread, 'one'), windows: 'C:\\copies\\thread\\one' } };
-  let bytes = 20000000000; let walks = 0; let fail = false;
-  const env = { localAppData: async () => root, toLinux: value => value, ps: async () => { walks++; if (fail) throw new Error('walk failed'); return { code: 0, stdout: String(bytes), stderr: '' }; } };
+  let bytes = 20000000000; let walks = 0; let fail = false; let walkScript;
+  const env = { localAppData: async () => root, toLinux: value => value, ps: async value => { walks++; walkScript = value; if (fail) throw new Error('walk failed'); return { code: 0, stdout: String(bytes), stderr: '' }; } };
   const disk = new WinDisk(env);
   const first = await disk.info(ctx);
   assert.deepEqual(Object.keys(first).sort(), ['conflict_refs', 'copies', 'copies_bytes', 'git_bytes', 'measured_at', 'warnings', 'windows_free_bytes'].sort());
   assert.equal(first.measured_at, null); assert.deepEqual(first.copies, []);
   await disk.cache.get('thread').pending;
+  assert.match(walkScript, /^# wc:copysize /);
   let measured = await disk.info(ctx);
   assert.equal(measured.copies_bytes, bytes); assert.equal(measured.copies[0].path, 'C:\\copies\\thread\\one');
   assert.ok(measured.measured_at); assert.equal(measured.conflict_refs, 1);
   const output = git('count-objects', '-v');
   assert.equal(measured.git_bytes, (Number(output.match(/^size: (\d+)/m)[1]) + Number(output.match(/^size-pack: (\d+)/m)[1])) * 1024);
   assert.equal(walks, 1); assert.ok(!measured.warnings.some(w => w.includes('copies')));
-  bytes++; disk.cache.get('thread').measured_at = new Date(Date.now() - REFRESH_MS - 1).toISOString();
+  bytes++; disk.cache.get('thread').attempted_at = Date.now() - REFRESH_MS - 1;
   await disk.info(ctx); await disk.cache.get('thread').pending;
   measured = await disk.info(ctx); assert.match(measured.warnings.join('\n'), /20\.0 GB/); assert.equal(walks, 2);
-  fail = true; disk.cache.get('thread').measured_at = new Date(Date.now() - REFRESH_MS - 1).toISOString();
+  fail = true; disk.cache.get('thread').attempted_at = Date.now() - REFRESH_MS - 1;
   await disk.info(ctx); await disk.cache.get('thread').pending;
   measured = await disk.info(ctx); assert.equal(measured.copies_bytes, bytes); assert.match(measured.reason, /walk failed/);
+  assert.equal(walks, 3);
+  await disk.info(ctx);
+  assert.equal(walks, 3);
+  disk.cache.get('thread').attempted_at = Date.now() - REFRESH_MS - 1;
+  await disk.info(ctx); await disk.cache.get('thread').pending;
+  assert.equal(walks, 4);
 });
 
 test('warning thresholds and no git size warning', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'win-disk-warning-'));
+  const root = makeTempSync('win-disk-warning-');
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   execFileSync('git', ['init', '-q', root]);
   const object = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: root, input: 'data', encoding: 'utf8' }).trim();
@@ -60,9 +66,9 @@ test('warning thresholds and no git size warning', async t => {
 });
 
 test('large git storage never produces a warning', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'win-disk-git-'));
+  const root = makeTempSync('win-disk-git-');
   const previousPath = process.env.PATH;
-  t.after(async () => { process.env.PATH = previousPath; await fs.rm(root, { recursive: true, force: true }); });
+  t.after(() => { process.env.PATH = previousPath; });
   await fs.writeFile(path.join(root, 'git'), '#!/bin/sh\nif [ "$1" = count-objects ]; then printf "size: 999999999\nsize-pack: 0\\n"; fi\n', { mode: 0o755 });
   process.env.PATH = `${root}:${previousPath}`;
   const disk = new WinDisk({ localAppData: async () => root, toLinux: p => p });
