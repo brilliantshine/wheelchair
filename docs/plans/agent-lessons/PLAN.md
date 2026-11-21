@@ -36,6 +36,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | Reviewer and verifier lessons are written by the lead, from what its triage of their findings and gaps shows; reviewers and verifiers never save lessons | Collin picked "Lead writes them": only the lead sees a reviewer's or verifier's mistake cost time | idea-change |
 | 12 | Saving a lesson shows a one-line notice in the thread it came from (which agent type, the lesson text, link to Settings); it takes effect for agents started afterwards with no approval | Collin picked "A short notice" | user |
 | 13 | Worker lessons are saved by workers themselves and by the sub-lead, from what it sees across worker tasks | Collin picked "Sub-lead too" | user |
+| 14 | The lead also writes mapper lessons; mappers may still save their own | Collin picked "Lead writes them": mappers stop after their map, so only the lead sees a map turn out wrong | idea-change |
 
 ## Spec
 
@@ -67,7 +68,7 @@ covers the point or is now wrong, it replaces or removes that one instead of add
 
 | Saver | May save lessons for |
 |---|---|
-| lead | lead, reviewer, verifier |
+| lead | lead, reviewer, verifier, mapper |
 | sub-lead | sub-lead, worker |
 | worker | worker |
 | mapper | mapper |
@@ -75,7 +76,9 @@ covers the point or is now wrong, it replaces or removes that one instead of add
 Reviewers and verifiers never save lessons (decisions 2, 11, 13). The lead writes a
 reviewer or verifier lesson when its own triage or checks show a reviewer or verifier
 mistake met the bar (for example, reviewers rating an extra question card as major,
-declined across rounds). The sub-lead writes worker lessons from what it sees across
+declined across rounds). The lead also writes mapper lessons, from a map that turned out
+wrong (for example, an area reviewers or workers found it missed); mappers may still save
+their own (decision 14). The sub-lead writes worker lessons from what it sees across
 worker tasks. The hub refuses any other saver/target pair with
 `a <saver> may not save lessons for <target>s`.
 
@@ -179,7 +182,8 @@ Running sessions keep what they started with (decision 9). A session started wit
 
 The lead also gets the reviewer and verifier lessons (so it can replace or remove them):
 its layer adds, after its own block, the same format headed
-`Lessons you keep for reviewers:` and `Lessons you keep for verifiers:` (all of them,
+`Lessons you keep for reviewers:`, `Lessons you keep for verifiers:` and
+`Lessons you keep for mappers:` (all of them,
 with markers, unfiltered). The sub-lead likewise gets `Lessons you keep for workers:`.
 Lessons blocks (the role's own and the "you keep" ones) are **not** counted by
 `assertFits()`: that check guards Collin's own layers, and lessons are bounded on their own
@@ -244,7 +248,7 @@ his templates). The `GET /settings` payload includes `lessons`.
   section with the bar (S1), whom it saves for (S2), "read the existing lessons first;
   replace or remove before adding", the 12 cap, the rule-conflict path, and that a lesson
   marked "(edited by the user)" is never reworded or removed by an agent. The lead's
-  section says when it writes reviewer and verifier lessons (naming, in `only_ai`, the AI
+  section says when it writes reviewer, verifier and mapper lessons (naming, in `only_ai`, the AI
   the reviewer or verifier ran on when the mistake is that AI's habit), and that a lesson card is a
   notice the user sees, so `why` is in the user's words. The sub-lead's says it writes
   worker lessons, naming the worker's AI in `only_ai` the same way.
@@ -341,7 +345,7 @@ stays as review history.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | major | Mappers start fresh and are stopped after their result, so they can never meet the bar; mapper lessons would never be written | user-decision | Asked Collin whether the lead also writes mapper lessons |
+| intent | major | Mappers start fresh and are stopped after their result, so they can never meet the bar; mapper lessons would never be written | user-decision | Collin: lead writes them too (decision 14); S2, S5, S8 |
 | intent | minor | Agents can reword Collin's edited lessons without knowing they are his | upheld (minor) | S5: "(edited by the user)" marker; agents never reword or remove those; S8 |
 | intent | minor | Repeat-safe `remove` tied to thread card history; simpler to succeed on any missing id | upheld (minor) | S4: missing id on `remove` succeeds silently |
 | intent | minor | Lead and sub-lead Settings previews don't say whether "you keep" blocks show | upheld (minor) | S5: previews include them |
@@ -352,6 +356,21 @@ stays as review history.
 | mechanics | major | Running agents never see the "(edited by the user)" marker added after they started | upheld (major) | S4: hub refuses replace/remove of a `saved_by: user` lesson, checked in the queued update |
 | mechanics | minor | Absent-id remove contradicts the refusal list; tests unspecified | upheld (minor) | S4 refusal list split by case; S10 tests each |
 | mechanics | minor | Settings warning still says agents may reword Collin's edits | upheld (minor) | S7 warning reworded; S10 asserts it |
+
+### Round 3 — 2026-11-21
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 2:**
+- S2, S5, S8: the lead also writes mapper lessons and keeps a "you keep for mappers" block (decision 14).
+- S4: `add` dedup compares text and scope; refusal list split by case (absent-id remove succeeds; absent-id replace and other-role ids refused); hub refuses replace/remove of a lesson Collin edited, checked in the queued update.
+- S5: "(edited by the user)" marker; agents never reword or remove those; Settings previews include the "you keep" blocks.
+- S6: notice link is `/wheelchair/app/settings#templates/lessons/<role>`.
+- S7: Settings save uses `PUT`; warning line reworded.
+- S10: matching tests. Accepted Risks: lost-reply retry after Collin's removal.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
