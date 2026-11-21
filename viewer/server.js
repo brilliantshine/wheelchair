@@ -1704,7 +1704,7 @@ async function servePage(response, name, csp = false) {
 
 // The app's pages (docs/plans/app-shell, "Views") live in viewer/pages/ and their vendored
 // libraries in viewer/vendor/; both are public assets like doc.js, matched by a narrow name.
-const APP_PAGES = new Set(['threads', 'thread', 'new', 'doc', 'picture', 'features', 'sessions', 'agents', 'settings', 'terminal']);
+const APP_PAGES = new Set(['threads', 'thread', 'new', 'doc', 'file', 'picture', 'features', 'sessions', 'agents', 'settings', 'terminal']);
 // The thread page embeds the graph page for `diagram` cards, so app pages may frame this origin.
 const APP_PAGE_CSP = `${PAGE_CSP}; frame-src 'self'`;
 // The app's fonts: served name -> file under node_modules/@fontsource (latin subset, normal style).
