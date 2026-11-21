@@ -23,6 +23,7 @@ class WinBridge {
     this.running = new Map();
     this.toolSessions = new Set();
     this.stopped = new Set();
+    this.usage = new Map();
     this.readyTimeoutMs = options.readyTimeoutMs ?? 45000;
     const onAppClosed = app => this.markKey(app.copyKey);
     this.apps = options.apps || new (require('./win-apps').AppTracker)({ winEnv: this.winEnv, stateDir: this.stateDir, log: service.log, onAppClosed });
@@ -64,6 +65,7 @@ class WinBridge {
     if (!fs.existsSync(file)) return;
     const state = readState(this.stateDir, key);
     state.used_since_ok = true;
+    this.usage.set(key, (this.usage.get(key) || 0) + 1);
     writeState(this.stateDir, key, state);
   }
 
@@ -75,6 +77,33 @@ class WinBridge {
       if (!state.thread_id || !state.worktree || !state.copy) return null;
       return { key: entry.name, copy: state.copy, worktree: state.worktree, threadId: state.thread_id, stateDir: this.stateDir, winEnv: this.winEnv, state };
     }).filter(Boolean);
+  }
+
+  async create(ctx, session) {
+    const sources = this.registry().filter(other => other.threadId === ctx.threadId && other.key !== ctx.key && other.state.last_ok && this.exists(other)).map(other => ({ copy: other.copy, last_ok: other.state.last_ok }));
+    this.register(ctx, session);
+    this.markKey(ctx.key);
+    await ensureCopy({ ...ctx, sources });
+  }
+
+  hasLiveTools(ctx) {
+    const live = this.service.liveTmux();
+    if (live === null) return false;
+    return Object.values(this.service.sessions).some(session => this.toolSessions.has(session.name) && live.has(session.name) && session.status !== 'stopped' && worktreeKey(session.worktree) === ctx.key);
+  }
+
+  async sync(ctx) {
+    const prior = this.running.get(ctx.key) || Promise.resolve();
+    const task = prior.catch(() => {}).then(async () => {
+      const usage = this.usage.get(ctx.key) || 0;
+      try {
+        return await reconcile(ctx);
+      } finally {
+        if ((this.usage.get(ctx.key) || 0) !== usage || this.hasLiveTools(ctx)) this.markKey(ctx.key);
+      }
+    });
+    this.running.set(ctx.key, task);
+    try { return await task; } finally { if (this.running.get(ctx.key) === task) this.running.delete(ctx.key); }
   }
 
   async sessionEnv(session, baseEnv = {}) {
@@ -108,7 +137,36 @@ class WinBridge {
       if (this.readying.has(ctx.key)) await this.readying.get(ctx.key).catch(() => {});
       this.check(session);
       if (op === 'path') return { path: /^[a-z]:[\\/]|^\\\\/i.test(args.path) ? this.winEnv.toLinux(args.path) : this.winEnv.toWindows(args.path) };
-      throw error(422, 'operation not yet implemented');
+      if (['sync', 'run', 'start'].includes(op)) {
+        await this.create(ctx, session);
+        const sync = await this.sync(ctx);
+        this.check(session);
+        if (op === 'sync') return sync;
+        const launch = { ...args, cwd: ctx.copy.windows, copyKey: ctx.key };
+        const result = await this.apps[op](session, launch);
+        if (op === 'run') {
+          this.markKey(ctx.key);
+          return { ...result, sync: await this.sync(ctx) };
+        }
+        return { ...result, sync };
+      }
+      if (op === 'status') {
+        const { exited, ...result } = await this.apps.status(session, args.id);
+        if (exited.length && this.exists(ctx)) {
+          this.markKey(ctx.key);
+          result.sync = await this.sync(ctx);
+        }
+        return result;
+      }
+      if (op === 'stop') {
+        const { wasRunning, copyKeys, ...result } = await this.apps.stop(session, args.id);
+        if (wasRunning) for (const key of copyKeys) this.markKey(key);
+        if (this.exists(ctx)) result.sync = await this.sync(ctx);
+        return result;
+      }
+      if (op === 'windows') return await this.apps.windows(session);
+      if (op === 'shot') return await this.apps.shot(session, args.handle);
+      throw error(400, 'unknown operation');
     } catch (err) {
       if (!err.status) err.status = 422;
       throw err;
