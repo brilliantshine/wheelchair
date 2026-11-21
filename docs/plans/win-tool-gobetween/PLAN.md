@@ -312,6 +312,20 @@ As IDEA.md. Also the two items in Deferred.
 | intent | major | tmux kill signals the go-between; default exit skips stopping the tool | upheld | Spec 4 step 5: SIGHUP/SIGTERM/SIGINT stop the tool first |
 | intent | minor | Drop the 45 s wait for wrapped-only sessions | declined | Not a defect: the wait still supplies the copy path and prompt lines; IDEA asks only for today's speed (D7) |
 
+### Round 2 — 2026-11-21
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 1:** Spec 1 environment rules (interop-equivalent, no token, copy path
+from ready file); Spec 2 `null` withholds (D6) and Codex passthrough on the original command;
+Spec 3 `copy` field, failed/cancelled start cleanup and per-attempt token; Spec 4 own
+`tools/list` after handshake, held-call 50 s deadline until forwarded, `notifications/cancelled`,
+signal handling in step 5; Spec 5 named job and `terminateScript` stop path; Spec 6 sweep skips
+copies with a stop in progress; Validation additions; D6, D7.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
