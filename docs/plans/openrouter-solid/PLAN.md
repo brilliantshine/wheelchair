@@ -95,11 +95,13 @@ first turn forks the lead's Pi session, later turns resume the fork.
   next turn.
 - Read-only boundary: Settings promises read-only asides read only the worktree
   (`viewer/pages/settings.js:538-541`), and Pi's read tools accept any path. A read-only aside also
-  loads a small wheelchair Pi extension (`-e`, a file under `machine/adapters/` written per turn
-  like `pi-extension.js`) whose `tool_call` handler blocks (`{ block: true, reason }`) any
+  loads a small static wheelchair Pi extension (`-e`, one file under `machine/adapters/`,
+  checking against the handler's `ctx.cwd`, which is the worktree since the aside is spawned with
+  `cwd: i.cwd`) whose `tool_call` handler blocks (`{ block: true, reason }`) any
   read/grep/find/ls call whose path argument, resolved with `realpath` (or its nearest existing
-  parent) against the worktree, falls outside the worktree. A call with no path uses the
-  worktree. Full access loads no such extension. The
+  parent) against the worktree, falls outside both the worktree and wheelchair's own
+  `protocol/` directory (the aside prompt tells it to read `protocol/app/aside.md`,
+  `machine/lib/aside-turns.js:98`). A call with no path uses the worktree. Full access loads no such extension. The
   message is passed on stdin or as the final argument, whichever Pi's `-p` supports
   (`cli.md`). Login env comes from `adapter.loginEnv(dir)` as for other providers.
 - Output parsing (Pi JSON mode, `json.md`): the first record is the session header
@@ -117,7 +119,7 @@ first turn forks the lead's Pi session, later turns resume the fork.
 - Redaction: `reply`, `error` and any stderr text are passed through `adapters/pi.js`
   `redact` before the aside result is stored or returned, so an OpenRouter key never reaches
   hub state.
-- Version tie: the machine records the Pi version a session or aside launched with (from the
+- Version tie: the machine records the Pi version a session launched with (from the
   S4 probe at launch) and S4's failure notes use that recorded version, not the current one.
 - Version gate: an OpenRouter aside on a machine whose Pi is refused by S4 (older than 1.5.2,
   or not installed) finishes at once as `state: failed` with S4's problem text. It is checked
@@ -187,10 +189,10 @@ Today a failed transcript read becomes `''` (`viewer/app/chat.js:330-334`), `del
 returns without a report (`viewer/app/sessions.js:435`), and the turn and delivery ids are
 already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
 
-- `chat.sessionTranscript` gets a strict mode for report readers: each machine call is capped at
-  1 second, and a wall-clock deadline of 4 seconds from the first read is checked before every
+- `chat.sessionTranscript` gets a strict mode for report readers: the first machine call may use up to
+  3 seconds and each retry call up to 1 second, and a wall-clock deadline of 4 seconds from the first read is checked before every
   call and every gap; no call or gap starts after the deadline and a call never runs past it (its
-  timeout is min(1s, time left)). The bound covers transcript recovery only, not the rest of
+  timeout is min(its cap, time left)). The bound covers transcript recovery only, not the rest of
   the event's handling (lock wait, saving state, queue delivery), which is unchanged. Its requests use the strict HTTP path
   (`viewer/app/machine-client.js:33`), so a connection dropped after headers rejects instead of
   hanging. A failed, timed-out or dropped call throws; a transcript that is genuinely absent (machine answers with no data, or 404)
@@ -313,6 +315,10 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Boundary blocks the aside's own rules file | upheld | S3 allows wheelchair's protocol/ directory too |
+| intent | minor | 1s cap can fail a large transcript that works today | upheld | S5 first call up to 3s, retries 1s |
+| intent | minor | Aside launch version is unused | upheld | Version tie for sessions only |
+| intent | minor | Boundary extension needn't be written per turn | upheld | One static file using ctx.cwd |
 
 ## Implementation Tasks
 
