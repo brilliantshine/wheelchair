@@ -264,7 +264,9 @@ class WinBridge {
   }
 
   async archiveFinish(threadId) {
+    const threadDirs = new Set();
     for (const ctx of this.registry().filter(item => item.threadId === threadId)) {
+      threadDirs.add(path.dirname(ctx.copy.linux));
       if (this.running.has(ctx.key)) await this.running.get(ctx.key).catch(() => {});
       const state = readState(this.stateDir, ctx.key);
       if (state.last_failed) {
@@ -273,6 +275,16 @@ class WinBridge {
       }
       try { await this.remove(ctx, true); } catch (err) { this.service.log(err); }
       this.archiveAttempted.delete(ctx.key);
+    }
+    // D14: archive removes the thread's copies folder; a kept copy keeps it (rmdir refuses a non-empty folder).
+    // Copies removed with their worktree earlier in this archive are no longer in the registry, so the
+    // thread's folder is also derived from the thread id. Only a plain id names a folder of its own.
+    if (this.detected.wsl && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(String(threadId))) {
+      try { threadDirs.add(path.dirname((await copyPaths(this.winEnv, threadId, 'x')).linux)); } catch (err) { this.service.log(err); }
+    }
+    for (const dir of threadDirs) {
+      if (path.basename(dir) !== String(threadId)) continue;
+      try { fs.rmdirSync(dir); } catch (err) { if (err.code !== 'ENOENT' && err.code !== 'ENOTEMPTY' && err.code !== 'EEXIST') this.service.log(err); }
     }
   }
 
