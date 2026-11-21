@@ -295,6 +295,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A custom OpenRouter model pin ending in a Pi thinking-level suffix (e.g. `:high`) combined with a thinking level in Settings may send a different model id than with the setting blank | Rare path: OpenRouter's own variants (`:free`, `:nitro`, ...) are not thinking-level names, so it needs a deliberately odd pin plus a level | review-round-2 |
+| The machine's session list can report a Pi session that exits before ready as not running without its end reason, when the pane disappears between two tmux snapshots or a concurrent poll lands while the reason's save is pending | Rare path: needs the exit to land inside a sub-second window between two actors; the next poll shows the reason | verification-1 |
 
 ## Check Once Built
 
@@ -459,3 +460,4 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 - 2026-11-21 — Choice: T5, test-support/smoke/pi-aside-live.js: isolated temp account and worktree with a copy of auth.json, so the real Pi session store is untouched. Sub-lead fix: the temp folder now comes from test-support/run-dir.js (removed at exit) so the key copy is not left in /tmp.
 - 2026-11-21 — Choice: T5, machine/lib/aside-turns.js: Pi's message goes on stdin (Pi prepends piped stdin to the prompt); the version check is injected as a `piProblem` constructor option; header check uses the first JSON record (unreported; seen in diff).
 - 2026-11-21 — T5 accepted (band: self): diff read against S3; live aside check run by sub-lead on deepseek/deepseek-v4.1-flash-1017 (fork | PASS | new id and reply; resume | PASS | same id and reply).
+- 2026-11-21 — Verification 1: Claude verifier PASS; GPT verifier FAIL with 4 gaps; 1 judged rare (Accepted Risks), 3 remain (spend spec flake, UTF-8 chunk split in aside output, pre-header Pi failure loses error/limit).
