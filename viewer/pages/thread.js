@@ -410,6 +410,9 @@
   }
   const sentName = (c) => c.kind === 'file' ? (c.name || c.file) : String(c.file).replace(/^\d+-/, '');
   const sentUrl = (c) => T + '/files/' + encodeURIComponent(c.file);
+  // On an archived thread only the files the machine kept (thread.kept_files) can still be opened.
+  const sentAvailable = (c) => !thread().archived || (Array.isArray(thread().kept_files) && thread().kept_files.includes(c.file));
+  const sentPreview = (c) => c.kind === 'file' && window.WCFilePreview && window.WCFilePreview.previewable(c.name || c.file, c.size);
   function filesCount() { return ((data.documents || []).length) + pictureList().length + sentList().length; }
   // Both the right column and the phone panel are filled by this one function.
   function fillFiles(into) {
@@ -419,6 +422,7 @@
     if (docs.length || pictures.length) {
       const sec = el('div', 'files-section'); sec.appendChild(el('h3', '', 'Project documents'));
       const list = el('div', 'file-list');
+      if (docs.length) { const all = el('a', 'file-dl docs-zip', 'Download all'); all.href = T + '/docs.zip'; list.appendChild(all); }
       for (const f of docs) {
         const row = el('div', 'file-row');
         const a = el('a', 'file', f); a.href = docHref(f); row.appendChild(a);
@@ -438,10 +442,12 @@
       for (const c of sent) {
         const row = el('div', 'file-row sent-row');
         const isImage = c.kind === 'image';
-        if (isImage && !archived) { const a = el('a', 'file', c.title); a.href = sentUrl(c); a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a); }
+        const available = sentAvailable(c);
+        if (isImage && available) { const a = el('a', 'file', c.title); a.href = sentUrl(c); a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a); }
+        else if (available && sentPreview(c)) { const a = el('a', 'file', c.title); a.href = window.WCFilePreview.href(id, c.file); row.appendChild(a); }
         else row.appendChild(el('span', 'file-title', c.title));
         row.appendChild(el('span', 'file-meta dim', [sentName(c), isImage ? '' : humanSize(c.size)].filter(Boolean).join(' \u00b7 ')));
-        if (archived) row.appendChild(el('span', 'file-meta dim', REMOVED));
+        if (!available) row.appendChild(el('span', 'file-meta dim', REMOVED));
         else { const d = el('a', 'file-dl', 'Download'); d.href = sentUrl(c); d.setAttribute('download', sentName(c)); row.appendChild(d); }
         list.appendChild(row);
       }
@@ -1134,15 +1140,17 @@
       }
       case 'image': {
         box.appendChild(el('h3', '', card.title));
-        if (thread().archived) box.appendChild(el('p', 'dim', 'Image removed when the thread was archived'));
+        if (!sentAvailable(card)) box.appendChild(el('p', 'dim', 'Image removed when the thread was archived'));
         else { const url = T + '/files/' + encodeURIComponent(card.file); const a = el('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; const img = el('img', 'card-image'); img.src = url; img.alt = card.title; a.appendChild(img); box.appendChild(a); }
         break;
       }
       case 'file': {
         box.appendChild(el('h3', '', card.title));
         box.appendChild(el('p', 'dim', [card.name || card.file, humanSize(card.size)].filter(Boolean).join(' \u00b7 ')));
-        if (thread().archived) box.appendChild(el('p', 'dim', REMOVED));
-        else { const d = el('a', 'btn small', 'Download'); d.href = sentUrl(card); d.setAttribute('download', card.name || card.file); box.appendChild(d); }
+        if (!sentAvailable(card)) box.appendChild(el('p', 'dim', REMOVED));
+        else {
+          if (sentPreview(card)) { const p = el('a', 'btn small', 'Preview'); p.href = window.WCFilePreview.href(id, card.file); box.appendChild(p); }
+          const d = el('a', 'btn small', 'Download'); d.href = sentUrl(card); d.setAttribute('download', card.name || card.file); box.appendChild(d); }
         break;
       }
       case 'stub': {
@@ -1341,7 +1349,7 @@
     sync('copy', [t.archived, t.project, t.machine], renderCopy);
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
     sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
-    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), data.documents, t.imported && t.imported.at, data.cards.filter((c) => c.kind === 'file' || c.kind === 'image').map((c) => [c.id, c.title, c.file, c.name, c.size, c.retracted_at, c.created_at]), (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
+    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), data.documents, t.imported && t.imported.at, data.cards.filter((c) => c.kind === 'file' || c.kind === 'image').map((c) => [c.id, c.title, c.file, c.name, c.size, c.retracted_at, c.created_at]), t.kept_files, (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported], renderDead);
@@ -1351,7 +1359,7 @@
     const leadNow = leadSession();
     // Text selected in the chat (for an aside) would vanish with a redraw, so the redraw waits
     // until the selection is gone; the selectionchange listener above calls render() then.
-    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, deferredOpen, cardErrors, declining]);
+    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, t.kept_files, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, deferredOpen, cardErrors, declining]);
     // An import moving the cutoff (or a hand-off starting) must not wait for the selection:
     // what came before the import has to leave the chat at once.
     const cutoff = JSON.stringify([t.imported && t.imported.at, Boolean(t.handed_off)]);

@@ -278,9 +278,10 @@ mechanics-lens reviewer with `--not-provider <that provider>`. If the intent rev
 start came back `waiting`, start the mechanics reviewer with no provider flag. The hub
 drops a provider constraint it cannot meet and says so in the start output's `note`.
 Brief them from `<root>/protocol/app/reviewer.md`: one takes the **mechanics lens**, one
-the **intent lens**. With one family usable, both land on it, one per lens. If
+the **intent lens**. If both land on one family anyway, keep one per lens. If
 `review_families` is `claude`, `gpt`, `gemini`, `kimi`, or `openrouter`, start one fresh reviewer with no provider flag,
-briefed with both lenses from `reviewer.md`. Record one lane and `cross-family: no` in
+briefed with both lenses from `reviewer.md` (`session list` names the one family when
+only one is signed in, even if the setting mixes families). Record one lane and `cross-family: no` in
 the Review Rounds "Lanes" line. Include in each brief the Review Rounds table and Accepted
 Risks from PLAN.md, so settled findings are not re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
 round in depth plus one whole-Spec coherence pass. Write a short "Changed since the last
@@ -315,9 +316,17 @@ verdict, and act:
 You may not downgrade or decline a finding you have not checked against the Spec or the
 code; the verdict cites evidence. A reviewer's severity is an opinion, not a gate, and
 severity is what the finding would do to an implementing worker: `blocking` (would build
-the wrong thing or could not implement it), `major` (would have to stop and ask), `minor`
-(everything else). Whether a rare path is chased is decided by `realism.md`, not
-by its severity. Stop each
+the wrong thing or could not implement it), `major` (not blocking, but in normal use would lose the user's
+decision or work, or leave a worker genuinely unable to proceed), `minor` (everything
+else). The full ladder is in `reviewer.md`. A finding whose worst outcome is an extra prompt
+to the user, a repeated message, or wording a careful reader reconciles the obvious way is
+`minor`, however it was argued: fix it, but it never blocks a clean round. Whether a rare
+path is chased is decided by `realism.md`, not by its severity.
+
+Fix by cutting before patching. A minor finding gets the smallest edit, often deleting the
+sentence that causes it. When one part of the Spec keeps drawing findings, simplify or
+remove that rule rather than adding another clause: each patch grows the Spec and draws
+new findings. Stop each
 reviewer when its `result` arrives; each round starts fresh reviewers.
 
 After triage, if the round is clean by the test below, resolve any counted minor or

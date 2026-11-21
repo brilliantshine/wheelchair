@@ -29,7 +29,8 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `GET /threads/:id/handoff-file` | — | Saved JSON file with attachment filename; `404` if no saved file matches the handed-off head |
 | `POST /threads/:id/restart` | — | replacement lead session; its restart context is queued first |
 | `POST /threads/:id/archive` | — | the machine archive response |
-| `GET /threads/:id/doc?file=PLAN.md` | — | `{content}` from the archived branch, read-only |
+| `GET /threads/:id/doc?file=PLAN.md` | — | `{content}` from the live worktree or archived/remote branch; `download=1` downloads it |
+| `GET /threads/:id/docs.zip` | — | Downloads the listed plan documents as `<slug>-documents.zip`; 404 if none qualify, 502 if a remote read fails |
 | `GET /features` | — | `{idea,planning,review,building,verifying,done,needs}` |
 | `GET /projects` | — | `{projects:[path]}`, the repos in `projects.json`, added when a thread is created |
 | `GET /sessions` | — | machine groups `{machine,hub,reachable,last_seen,sessions}, `hub:true` on the entry `"hub"` resolves to`; other tmux sessions appear as `{name,managed:false}` (read-only) |
@@ -58,7 +59,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 
 `Thread` has `id`, `project`, `cli`, `machine`, `stub`, `context`, `parent`,
 `depends_on_parent`, `waiting_on_parent`, `sessions`, `cards`, `pinned`, `queues`, `sent`,
-`worktree`, `branch`, `slug`, `archived`, and `handed_off` (`null` or `{at,head,stage}`); chat `thread.export` is `{ok,reason}`. It has optional `merge_noticed_url` and `merge_noticed_at` (the reported PR URL and its ISO notice time). Card records retain their card fields plus `id`,
+`worktree`, `branch`, `slug`, `archived`, `kept_files` (stored names retained on archive), and `handed_off` (`null` or `{at,head,stage}`); chat `thread.export` is `{ok,reason}`. It has optional `merge_noticed_url` and `merge_noticed_at` (the reported PR URL and its ISO notice time). Card records retain their card fields plus `id`,
 `session`, `at`, `created_at`, `answered`, `answered_action`, `answered_value`, and `system`.
 A closed `needs` card, or a question the lead resolved after an answer in chat, also has
 `resolved_by` (a lead's session name, or `user` for a needs dismissal), `resolved_note` and
@@ -216,3 +217,5 @@ cancelled-claim revocations. `POST /handoff-revokes/dismiss` accepts
 `POST /threads/import?machine=<machine>&project=<project>` accepts a raw handoff file (at most 10 MB). It returns `{outcome, id, note?}` with outcome `created`, `advanced`, or `opened`; invalid files return 422, conflicts return 409, and oversized bodies return 413.
 
 Handoff exports use version 2 with `who: user` for the user's history; version 1 files still import.
+
+Both HTML diagram routes accept `download=1` to serve an inert attachment under the HTML file’s own name.

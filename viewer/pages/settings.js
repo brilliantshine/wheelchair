@@ -13,7 +13,7 @@
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
   const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI'], ['openrouter', 'OpenRouter', 'Pi']];
-  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'] };
+  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'], openrouter: ['low', 'medium', 'high', 'xhigh', 'max'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
   const KIMI_MODEL_VALUE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/;
   const OPENROUTER_MODEL_VALUE = /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/;
@@ -598,7 +598,7 @@
         h('h2', { id: 'others', text: 'Other agents' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
+            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
             modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']])),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
@@ -1229,7 +1229,8 @@
         a.paused && h('span', { class: 'v-badge', text: 'paused' }),
         h('span', { class: 'in-use' + (a.live_sessions ? ' on' : ''), text: a.live_sessions ? `in use · ${a.live_sessions} ${a.live_sessions === 1 ? 'agent' : 'agents'}` : 'idle' })),
       machines.length && h('ul', { class: 'machines' }, machines.map(([m, st]) => h('li', { 'data-machine': m, 'data-state': stateName(st) },
-        h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[st] || st) }),
+        h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[stateName(st)] || stateName(st)) }),
+        st && st.warning && h('span', { class: 'mstate note', text: st.warning }),
         stateName(st) !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) })))),
       h('div', { class: 'wins' },
         windowLine('5-hour window', a.reading && a.reading.five_hour),
@@ -1391,8 +1392,8 @@
     if (f.spend) {
       return h('div', { class: 'usage-prov', 'data-provider': provider },
         h('div', { class: 'usage-toggle' },
-          h('span', { class: 'usage-name', text: f.label }),
-          h('span', { class: 'usage-left usage-spend', text: spendText(f.spend) })));
+          h('span', { class: 'usage-name usage-name-spend', text: f.label }),
+          h('span', { class: 'usage-spend-text', text: spendText(f.spend) })));
     }
     return h('div', { class: 'usage-prov' + (f.amber ? ' amber' : ''), 'data-provider': provider },
       h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; renderPanel(); } },

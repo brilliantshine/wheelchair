@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 const { TryService } = require('./lib/try');
-const { startupWarning } = require('./lib/startup-warning');
 const { createProjectTools } = require('./lib/project-tools');
 const { TOOL_ROLES, readProjectMcp, hasWindowsProgram } = require('./lib/project-mcp');
 const { missingPrograms } = require('./lib/project-programs');
@@ -24,6 +23,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, spawn, execFile } = require('node:child_process');
 const { pipeline } = require('node:stream/promises');
+const { promisify } = require('node:util');
+const gitAsync = promisify(execFile);
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
 const { readLines: readCodexSteps } = require('./lib/codex-steps');
@@ -45,6 +46,41 @@ function uploadName(name) {
   const ext = match ? match[2] : '';
   const stem = (match ? match[1] : clean).slice(0, 100 - ext.length) || 'file';
   return stem + ext;
+}
+
+const PLAN_FILES = ['MAP.md', 'IDEA.md', 'PLAN.md'];
+const validSlug = (slug) => typeof slug === 'string' && /^[a-z0-9][a-z0-9._-]{0,79}$/.test(slug) && slug !== '.' && slug !== '..';
+const storedName = name => typeof name === 'string' && /^[0-9]+-[A-Za-z0-9._-]+$/.test(name);
+async function planFiles(input) {
+  const { thread_id, project, default_branch, slug, action, file } = input;
+  if (typeof thread_id !== 'string' || !/^[0-9a-f]{12}$/.test(thread_id) || typeof project !== 'string' || !path.isAbsolute(project) || typeof default_branch !== 'string' || !default_branch || default_branch.startsWith('-') || default_branch.includes('\0') || !['discover', 'list', 'read'].includes(action)) die('invalid plan request');
+  if (action !== 'discover' && !validSlug(slug)) die('invalid slug');
+  if (action === 'read' && !PLAN_FILES.includes(file)) die('invalid file');
+  try { if (!(await fsp.stat(project)).isDirectory()) die('invalid project'); await fsp.stat(path.join(project, '.git')); } catch (error) { if (error.status) throw error; die('invalid project'); }
+  const branch = `wc/${thread_id}`;
+  const git = async (...args) => (await gitAsync('git', ['-C', project, ...args], { maxBuffer: 4 * 1024 * 1024 })).stdout;
+  const missing = () => Object.assign(new Error('not found'), { status: 404 });
+  try { await git('rev-parse', '--git-dir'); await git('check-ref-format', '--branch', default_branch); } catch { die('invalid project or default branch'); }
+  try {
+    await git('rev-parse', '--verify', `${branch}^{commit}`);
+    if (action === 'discover') {
+      let base;
+      try { base = (await git('merge-base', branch, `origin/${default_branch}`)).trim(); }
+      catch { base = (await git('merge-base', branch, default_branch)).trim(); }
+      const added = await git('diff', '--name-only', '--diff-filter=A', base, branch, '--', 'docs/plans');
+      const existing = new Set((await git('ls-tree', '--name-only', base, 'docs/plans/')).split('\n').map(line => line.trim().split('/').pop()).filter(Boolean));
+      const names = new Set();
+      for (const line of added.split('\n')) { const match = line.match(/docs\/plans\/([^/]+)\//); if (match && !existing.has(match[1])) names.add(match[1]); }
+      return { slug: names.size === 1 ? [...names][0] : null };
+    }
+    const object = name => `${branch}:docs/plans/${slug}/${name}`;
+    const eligible = async name => { try { return Number((await git('cat-file', '-s', object(name))).trim()) <= 2 * 1024 * 1024; } catch { return false; } };
+    if (action === 'read') { if (!await eligible(file)) throw missing(); return { content: await git('show', object(file)) }; }
+    const checks = await Promise.all(PLAN_FILES.map(eligible));
+    const files = PLAN_FILES.filter((_, i) => checks[i]);
+    const content = files.includes('PLAN.md') ? await git('show', object('PLAN.md')) : '';
+    return { files, status: content.match(/^status:\s*([^\s#]+)/m)?.[1] || null };
+  } catch (error) { if (error.status) throw error; throw missing(); }
 }
 
 // Canonical identity shared by SSH and HTTPS GitHub origins.
@@ -236,17 +272,12 @@ class MachineService {
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
-    this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
+    this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir, { piProblem: async () => { await this.checkPiVersion(); const status = this.cliStatus('pi'); return status.installed ? status.problem : 'Pi is not installed'; } });
     this.sessions = {};
     this.projectToolsBoot = crypto.randomUUID();
     this.projectToolsState = new Map();
     this.projectToolsWrites = new Map();
     this.platform = process.platform;
-    this.startupWarning = null;
-    this.startupSamples = new Map();
-    this.startupWarningRunning = false;
-    this.startupWarningRerun = false;
-    this.scanStartupWarning = startupWarning;
     this.stepReads = new Map();
     this.codexStepChunkSize = options.codexStepChunkSize || 8 * 1024 * 1024;
     this.startingWorktrees = new Set();
@@ -277,17 +308,6 @@ class MachineService {
     this.win = new WinBridge(this, options.win || {});
   }
 
-  async refreshStartupWarning() {
-    if (this.startupWarningRunning) { this.startupWarningRerun = true; return; }
-    this.startupWarningRunning = true;
-    do {
-      this.startupWarningRerun = false;
-      try { this.startupWarning = await this.scanStartupWarning(this.stateDir, this.startupSamples); }
-      catch (error) { this.startupWarning = null; this.log(error); }
-    } while (this.startupWarningRerun);
-    this.startupWarningRunning = false;
-  }
-
   async withThreadLock(id, fn) {
     const previous = this.threadLocks.get(id) || Promise.resolve();
     let release;
@@ -309,6 +329,7 @@ class MachineService {
     const dir = path.join(this.stateDir, 'uploads', threadName(id));
     await mkdir(dir);
     const entries = await fsp.readdir(dir);
+    entries.push(...await fsp.readdir(path.join(this.stateDir, 'kept', id)).catch(error => { if (error.code === 'ENOENT') return []; throw error; }));
     let n = entries.reduce((max, entry) => Math.max(max, Number(/^(\d+)-/.exec(entry)?.[1] || 0)), 0) + 1;
     for (;;) {
       const target = path.join(dir, `${n}-${uploadName(name)}`);
@@ -421,6 +442,7 @@ class MachineService {
     this.archivingThreads = new Set(markers.archiving || []);
     this.archivedThreads = new Set(markers.archived || []);
     this.checkKimiVersion();
+    this.checkPiVersion();
     await this.recoverFromTmux();
     await this.screens.startup();
     await this.win.startup();
@@ -779,7 +801,7 @@ class MachineService {
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
-    if (input.cli === 'pi' && !adapter.resolveCli()) die('Pi is not installed');
+    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); }
     if (input.cli === 'kimi') { await this.checkKimiVersion(); const status = this.cliStatus('kimi'); if (!status.installed) die('Kimi Code is not installed'); if (status.problem) die(status.problem); }
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
@@ -788,7 +810,7 @@ class MachineService {
     if (dir) adapter.seed(dir, account.id);
     await adapter.prepare?.(dir);
     const options = startOptions(input);
-    if (['kimi', 'pi'].includes(input.cli)) options.effort = null;
+    if (input.cli === 'kimi') options.effort = null;
     const createdWorktree = !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
     if (reserved) this.refuseSharedWorktree(reserved, name);
@@ -813,6 +835,7 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
+    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); session.pi_version = status.version || null; }
     const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
     const read = await readProjectMcp(worktree, { wsl, mount });
     const { mcp, warnings } = read;
@@ -1069,7 +1092,7 @@ class MachineService {
   async checkReady(session) {
     if (session.status === 'ready') return true;
     let pane;
-    try { pane = this.pane(session.name); } catch { return false; }
+    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
     const prompt = adapters[session.cli]?.answerPrompts(session, pane);
     if (prompt) {
       for (const key of prompt.keys) this.tmux(['send-keys', '-t', session.name, key]);
@@ -1092,7 +1115,7 @@ class MachineService {
     const age = Date.now() - new Date(session.created_at).getTime();
     if (age >= 30_000 && session.status !== 'stuck') {
       session.status = 'stuck'; await this.persistSessions();
-      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id });
+      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id, ...(session.cli === 'pi' && this.piVersionNote(session.pi_version) ? { note: this.piVersionNote(session.pi_version) } : {}) });
     }
     return false;
   }
@@ -1119,7 +1142,7 @@ class MachineService {
   // A permission prompt the service relayed is cleared once the pane shows the input screen again.
   async checkPrompt(session) {
     let pane;
-    try { pane = this.pane(session.name); } catch { return false; }
+    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
     if (!this.readyText(session, pane)) return false;
     session.prompt_open = false; await this.persistSessions();
     await this.emitEvent({ type: 'prompt-cleared', session: session.name, thread_id: session.thread_id });
@@ -1199,7 +1222,8 @@ class MachineService {
     const head = command('git', ['-C', worktree, 'rev-parse', 'HEAD']);
     return head.ok ? { ok: true, commit: head.stdout.trim() } : { ok: false, reason: head.stderr.trim() || 'git rev-parse failed' };
   }
-  async archive(threadId) {
+  async archive(threadId, keep = []) {
+    const names = [...new Set((Array.isArray(keep) ? keep : []).filter(storedName))];
     if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
     threadName(threadId);
     this.closingThreads.set(threadId, (this.closingThreads.get(threadId) || 0) + 1);
@@ -1282,10 +1306,22 @@ class MachineService {
       // Only a finished archive counts: the hub reopens a thread whose archive kept a rebase or
       // could not remove its uploads, and that thread takes uploads again. Still inside the lock,
       // so an upload queued behind it sees this.
-      try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); await this.screens.removeThreadDir(threadId); }
+      try {
+        const uploads = path.join(this.stateDir, 'uploads', threadId); const keptDir = path.join(this.stateDir, 'kept', threadId);
+        for (const name of names) {
+          const source = path.join(uploads, name); let stat;
+          try { stat = await fsp.lstat(source); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+          if (!stat.isFile()) continue;
+          await mkdir(keptDir);
+          try { await fsp.rename(source, path.join(keptDir, name)); }
+          catch (error) { if (error.code !== 'EXDEV') throw error; await fsp.copyFile(source, path.join(keptDir, name)); await fsp.unlink(source); }
+        }
+        await fsp.rm(uploads, { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); await this.screens.removeThreadDir(threadId); }
       catch (error) { uploads_removed = false; uploads_error = error.message; }
     }
-    return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
+    const kept_uploads = [];
+    for (const name of names) { try { if ((await fsp.lstat(path.join(this.stateDir, 'kept', threadId, name))).isFile()) kept_uploads.push(name); } catch (error) { if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error; } }
+    return { stopped, committed, removed, kept, kept_uploads, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
     } finally {
       this.archivingThreads.delete(threadId);
       await this.persistArchiveMarkers();
@@ -1451,6 +1487,7 @@ class MachineService {
     if (current.cli === 'pi' && ['turn-ended', 'turn-failed'].includes(event.type)) {
       try { current.source_transcript ||= await adapter.findTranscript(current, current.account_dir); if (current.source_transcript) await this.copyTranscript(current, current.source_transcript); } catch (error) { this.log(error); }
     }
+    if (current.cli === 'pi' && event.type === 'turn-failed') event = { ...event, error: (event.error || '') + this.piVersionNote(current.pi_version) };
     if (current.cli === 'pi' && event.transcript_path) { event = { ...event }; delete event.transcript_path; }
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
     if (event.type === 'turn-ended' && adapter.onTurnEnded) {
@@ -1643,8 +1680,47 @@ class MachineService {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
     for (const entry of accounts) delete entry.authenticated;
+    if (pi.problem) for (const entry of accounts) if (entry.cli === 'pi') { entry.logged_in = false; delete entry.problem; }
     if (kimi.problem) for (const entry of accounts) if (entry.cli === 'kimi') { entry.logged_in = false; delete entry.problem; }
     return { version: this.version, claude, codex, agy, kimi, pi, accounts, sessions: this.sessionList() };
+  }
+  piVersionNote(version) {
+    const status = this.piVersionStatus(version, { logged_in: true });
+    if (!status.warning) return '';
+    return version ? ` Pi ${version} is newer than the version wheelchair was tested with (1.5.2); that may be the cause.` : " Pi's version couldn't be read; that may be the cause.";
+  }
+  async piExitedBeforeReady(session) {
+    if (session.cli !== 'pi' || !['starting', 'stuck'].includes(session.status) || session.end_reason) return;
+    session.end_reason = 'Pi exited before it was ready' + this.piVersionNote(session.pi_version);
+    await this.persistSessions();
+  }
+  async reconcilePiExits() {
+    const live = this.liveTmux();
+    if (live) for (const session of Object.values(this.sessions)) if (!live.has(session.name)) await this.piExitedBeforeReady(session);
+  }
+  checkPiVersion(executable = adapters.pi.resolveCli()) {
+    if (!executable) return Promise.resolve();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
+    this.piVersions ||= new Map();
+    const key = JSON.stringify([executable, mtime]);
+    if (!this.piVersions.has(key)) {
+      const entry = {};
+      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.piVersionTimeoutMs ?? 5000 }, (error, stdout) => {
+        const output = stdout.trim();
+        entry.version = !error && /^v?\d+\.\d+\.\d+$/.test(output) ? output.replace(/^v/, '') : null;
+        resolve(entry);
+      }));
+      this.piVersions.set(key, entry);
+    }
+    return this.piVersions.get(key).promise;
+  }
+  piVersionStatus(version, login) {
+    const match = typeof version === 'string' && version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+    if (!match) return { installed: true, logged_in: login.logged_in, version: null, warning: "Pi's version couldn't be read. If OpenRouter agents fail, this may be why." };
+    const [major, minor, patch] = match.slice(1).map(Number);
+    const old = major < 1 || major === 1 && (minor < 5 || minor === 5 && patch < 2);
+    const newer = major > 1 || major === 1 && minor > 5;
+    return { installed: true, logged_in: !old && login.logged_in, version, ...(old ? { problem: `Pi 1.5.2 or newer is needed (found ${version})` } : newer ? { warning: `Pi ${version} is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.` } : {}) };
   }
   checkKimiVersion(executable = adapters.kimi.resolveCli()) {
     if (!executable) return Promise.resolve();
@@ -1682,7 +1758,7 @@ class MachineService {
     return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
-    if (cli === 'pi') return { installed: !!adapters.pi.resolveCli(), logged_in: !!adapters.pi.resolveCli() && login.logged_in };
+    if (cli === 'pi') { const executable = adapters.pi.resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } this.checkPiVersion(executable); return this.piVersionStatus(this.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); }
     if (cli === 'kimi') {
       const executable = adapters.kimi.resolveCli(); if (!executable) return { installed: false, logged_in: false };
       let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; }
@@ -1998,7 +2074,7 @@ class MachineService {
           return result.ok ? send(response, 200, { level: input.level, text: result.stdout }) : send(response, 422, failure(result));
         } finally { this.sensitivityWriting = false; }
       }
-      if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
+      if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); await this.reconcilePiExits(); return send(response, 200, this.status()); }
       if (request.method === 'POST' && url.pathname === '/v1/project-tools/unity-prep') {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
@@ -2076,7 +2152,7 @@ class MachineService {
         }
       }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
-      if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.sessionList()); }
+      if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); await this.reconcilePiExits(); return send(response, 200, this.sessionList()); }
       if (request.method === 'POST' && url.pathname === '/v1/uploads') {
         await this.authorize(request, 'hub');
         const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request, url.searchParams.get('vouched') === '1');
@@ -2086,8 +2162,12 @@ class MachineService {
         await this.authorize(request, 'hub');
         const id = threadName(decodeURIComponent(pathBits[2])); const name = decodeURIComponent(pathBits[3]);
         if (!/^[0-9]+-[A-Za-z0-9._-]+$/.test(name)) die('invalid file name');
-        const target = path.join(this.stateDir, 'uploads', id, name);
-        let file; try { file = await fsp.open(target, 'r'); } catch (error) { if (error.code === 'ENOENT') throw Object.assign(new Error('not found'), { status: 404 }); throw error; }
+        let file;
+        for (const dir of ['uploads', 'kept']) {
+          try { file = await fsp.open(path.join(this.stateDir, dir, id, name), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); break; }
+          catch (error) { if (error.code === 'ENOENT') continue; if (error.code === 'ELOOP') throw Object.assign(new Error('not found'), { status: 404 }); throw error; }
+        }
+        if (!file) throw Object.assign(new Error('not found'), { status: 404 });
         const type = IMAGE_TYPES[path.extname(name).toLowerCase()];
         response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': `attachment; filename="${name.replace(/^\d+-/, '')}"` } : {}) });
         file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
@@ -2104,7 +2184,8 @@ class MachineService {
         try { input = await bodyOf(request); } catch (error) { if (error.status === 400) throw Object.assign(error, { status: 422, handoff: true }); throw error; }
         return send(response, 200, await this.handoff(input));
       }
-      if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
+      if (request.method === 'POST' && url.pathname === '/v1/plan-files') { await this.authorize(request, 'hub'); return send(response, 200, await planFiles(await bodyOf(request))); }
+      if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); const input = await bodyOf(request); return send(response, 200, await this.archive(input.thread_id, input.keep)); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
         if (request.method === 'DELETE' && pathBits.length === 3) { const result = await this.stop(name); return send(response, result?.pending ? 202 : 200, result || { ok: true }); }
@@ -2132,7 +2213,6 @@ class MachineService {
         if (input.kind !== 'file') delete input.warnings;
         if (input.kind === 'approval' && agent.role === 'lead') {
           const warnings = [];
-          if (typeof this.startupWarning === 'string') warnings.push(this.startupWarning);
           if (this.platform === 'linux') {
             const { missing } = screenTools();
             if (missing.length) warnings.push(`Screens won't work on ${os.hostname()}: missing ${missing.join(', ')}. Builds that don't use a screen are unaffected.`);
@@ -2147,7 +2227,6 @@ class MachineService {
             }
           }
           if (warnings.length) input.warnings = warnings.slice(0, 10);
-          this.refreshStartupWarning();
         }
         if (input.kind === 'image') input = await this.copyImage(agent, input);
         if (input.kind === 'file') {
@@ -2209,12 +2288,9 @@ class MachineService {
     // Spec "Machine service on the hub": spools are retried until the hub acknowledges them.
     this.spoolTimer = setInterval(() => { for (const kind of ['events', 'cards']) this.drainSpool(kind).catch(error => this.log(error)); }, this.spoolInterval);
     this.spoolTimer.unref();
-    this.refreshStartupWarning();
-    this.startupWarningTimer = setInterval(() => this.refreshStartupWarning(), 10 * 60 * 1000);
-    this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.win.healthTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.win.healthTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

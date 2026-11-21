@@ -29,7 +29,6 @@ agents own neither tmux nor the machine secret.
 | `lib/env-launch.js` | Session key launcher: reads and deletes the mode-600 JSON env file, then execs the CLI; never prints values. |
 | `lib/project-programs.js` | Synchronous check that each project stdio server's program exists, for the thread's project-tools lines. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |
-| `lib/startup-warning.js` | Background startup-size check: ledger tail and kept-transcript first-call samples against `STARTUP_TYPICAL`, giving the approval card's `warnings` line. |
 | `hook.sh` | CLI hook entry point; turns Claude/Codex/Antigravity payloads into local events and spools while the service is down. |
 | `lib/hook-post.js` | Dependency-free HTTP/spool helper used by `hook.sh`. |
 | `API.md` | The hub-to-machine and agent-to-machine route contract. |

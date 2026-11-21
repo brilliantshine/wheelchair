@@ -33,6 +33,8 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     accounts: [{ id: 'default-claude', cli: 'claude', logged_in: true }, { id: 'default-gpt', cli: 'codex', logged_in: true }],
   };
   const handoffReplies = {};
+  const planReplies = {};
+  let keptUploads;
   const projectToolsReplies = {};
   let usageReply = { status: 200, delay: 0, reading: null };
   let uploadsDir = options.uploadsDir;
@@ -88,6 +90,11 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
       if (reply.raw !== undefined) { response.writeHead(reply.status || 200); return response.end(reply.raw); }
       return send(response, reply.status || 200, reply.body);
     }
+    if (request.method === 'POST' && url.pathname === '/v1/plan-files') {
+      let reply = planReplies[input.action] || { status: 404, body: { error: 'not found' } };
+      if (typeof reply === 'function') reply = await reply(input);
+      return send(response, typeof reply.status === 'number' ? reply.status : 200, reply.body === undefined ? reply : reply.body);
+    }
     if (request.method === 'POST' && url.pathname === '/v1/handoff') {
       let reply = handoffReplies[input.action];
       if (Array.isArray(reply)) reply = reply.shift();
@@ -135,7 +142,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
       return stopSession(response, sessions, url);
     }
     if (request.method === 'POST' && url.pathname === '/v1/archive') {
-      return archive(response, sessions, input.thread_id, archiveKept, uploadsRemoved);
+      return archive(response, sessions, input.thread_id, archiveKept, uploadsRemoved, keptUploads);
     }
     if (request.method === 'GET' && url.pathname === '/v1/projects') {
       if (!projectsAvailable) return send(response, 404, { error: 'not found' });
@@ -164,6 +171,9 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     sessions,
     calls,
     handoffReplies,
+    planReplies,
+    get keptUploads() { return keptUploads; },
+    set keptUploads(value) { keptUploads = value; },
     projectToolsReplies,
     status,
     get dropNextStart() { return dropNextStart; },
@@ -245,7 +255,7 @@ function stopSession(response, sessions, url) {
   return send(response, 200, { ok: true });
 }
 
-function archive(response, sessions, threadId, kept, uploadsRemoved) {
+function archive(response, sessions, threadId, kept, uploadsRemoved, keptUploads) {
   const stopped = [...sessions.values()]
     .filter((session) => session.thread_id === threadId)
     .map((session) => {
@@ -259,6 +269,7 @@ function archive(response, sessions, threadId, kept, uploadsRemoved) {
     removed: stopped.map((name) => `/tmp/${name}`),
     kept,
     uploads_removed: uploadsRemoved,
+    ...(keptUploads === undefined ? {} : { kept_uploads: keptUploads }),
     ...(uploadsRemoved === false ? { uploads_error: 'permission denied' } : {}),
   });
 }

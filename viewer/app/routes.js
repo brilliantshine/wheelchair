@@ -262,7 +262,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (body.model !== null && (typeof body.model !== 'string' || !(body.provider === 'openrouter' ? /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/ : body.provider === 'kimi' ? /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/ : /^[a-z0-9][a-z0-9._-]{0,63}$/).test(body.model))) throw appError(400, 'model is invalid');
     if (!PROVIDERS[body.provider].effort && body.effort !== undefined) throw appError(400, `${PROVIDERS[body.provider].label} has no effort setting`);
     if (body.provider === 'gpt' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh'].includes(body.effort)) throw appError(400, 'effort for GPT must be one of low, medium, high, xhigh');
-    if (['claude', 'gemini'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
+    if (['claude', 'gemini', 'openrouter'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
@@ -446,12 +446,13 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const listed = await hub.allThreads();
     const all = await Promise.all(listed.map((thread) => hub.withThread(thread.id, async () => {
       let current = await hub.readSnapshot(thread.id);
-      if (await discoverSlug(current)) {
+      if (await discoverSlug(current, hub)) {
         current = await hub.thread(thread.id);
         await findSlug(hub, current);
       }
       return { ...thread, ...current };
     })));
+    for (const thread of all) require('./remote-plan.js').refresh(hub, thread);
     // `?view=list` is what the pages poll: each thread's summary without its history
     // (cards, sent messages, briefs), which is most of the bytes and none of the list.
     const lean = url.searchParams.get('view') === 'list';
@@ -565,19 +566,43 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (request.method === 'GET' && bits[2] === 'diagram-html' && bits.length === 3) {
     const html = await threadsModule.archivedHtml(hub, id, url.searchParams.get('file'));
-    response.writeHead(200, HTML_HEADERS);
-    response.end(html);
+    const download = url.searchParams.get('download') === '1';
+    response.writeHead(200, download ? { ...HTML_HEADERS, 'content-disposition': `attachment; filename="${url.searchParams.get('file')}"` } : HTML_HEADERS);
+    response.end(download ? require('./html-download.js').htmlDownload(html) : html);
     return;
   }
   if (request.method === 'GET' && bits[2] === 'chat') {
     return send(response, 200, await hub.chat(id));
+  }
+  if (request.method === 'GET' && bits[2] === 'docs.zip' && bits.length === 3) {
+    const thread = await hub.thread(id), documents = require('./documents.js'), remote = require('./remote-plan.js');
+    if (!documents.validSlug(thread.slug)) throw appError(404, 'document not found');
+    const isRemote = await remote.isRemote(hub, thread);
+    let files;
+    if (isRemote) {
+      try { files = (await remote.call(hub, thread, 'list', { slug: thread.slug })).files; if (!Array.isArray(files)) throw new Error('invalid list'); }
+      catch { throw appError(502, `Couldn't reach ${thread.machine}`); }
+      files = files.filter((file) => documents.FILES.includes(file));
+    } else files = await documents.list(thread, hub);
+    const entries = [];
+    for (const file of files) {
+      try {
+        const content = isRemote ? (await remote.call(hub, thread, 'read', { slug: thread.slug, file })).content : thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
+        if (typeof content !== 'string' && !Buffer.isBuffer(content)) throw new Error('invalid content');
+        entries.push({ name: `${thread.slug}/${file}`, data: content });
+      } catch { if (isRemote) throw appError(502, `Couldn't reach ${thread.machine}`); }
+    }
+    if (!entries.length) throw appError(404, 'document not found');
+    response.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${thread.slug}-documents.zip"`, 'cache-control': 'no-store' });
+    return response.end(require('./zip.js').zip(entries));
   }
   if (request.method === 'GET' && bits[2] === 'doc') {
     const file = url.searchParams.get('file');
     const thread = await hub.thread(id);
     const documents = require('./documents.js');
     if (!documents.validSlug(thread.slug) || !documents.FILES.includes(file)) throw appError(404, 'document not found');
-    const content = thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
+    const remote = require('./remote-plan.js');
+    const content = await remote.isRemote(hub, thread) ? await remote.read(hub, thread, file) : thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
     if (url.searchParams.get('download') === '1') {
       response.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8', 'x-content-type-options': 'nosniff', 'content-disposition': `attachment; filename="${thread.slug}-${file}"`, 'cache-control': 'no-store' });
       return response.end(content);

@@ -7,7 +7,7 @@ const http = require('node:http');
 const https = require('node:https');
 const { appError } = require('./state.js');
 
-function requestJson(urlText, method, headers = {}, body, timeout = 5000, strict = false) {
+function requestJson(urlText, method, headers = {}, body, timeout = 5000, strict = false, signal) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlText);
     const payload = body === undefined ? '' : JSON.stringify(body);
@@ -26,22 +26,28 @@ function requestJson(urlText, method, headers = {}, body, timeout = 5000, strict
             }),
         },
         timeout,
+        signal,
       },
       (response) => {
         response.setEncoding('utf8');
         let output = '';
-        if (strict) response.on('aborted', () => reject(new Error('machine connection dropped')));
+        response.on('aborted', () => reject(new Error('machine connection dropped')));
+        response.on('error', reject);
         response.on('data', (chunk) => { output += chunk; });
         response.on('end', () => {
           try {
             resolve({ status: response.statusCode, body: strict ? JSON.parse(output) : (output ? JSON.parse(output) : {}) });
           } catch {
+            // A strict 404 with a non-JSON body still means "absent", not a broken machine.
+            if (strict && response.statusCode === 404) return resolve({ status: 404, body: {} });
             if (strict) return reject(new Error('machine returned invalid JSON'));
             resolve({ status: response.statusCode, body: { raw: output } });
           }
         });
       },
     );
+    const wallTimer = strict ? setTimeout(() => request.destroy(new Error('machine timeout')), timeout) : null;
+    request.on('close', () => clearTimeout(wallTimer));
     request.on('timeout', () => request.destroy(new Error('machine timeout')));
     request.on('error', reject);
     request.end(payload);
@@ -93,11 +99,12 @@ class MachineClient {
     } finally { clearTimeout(timer); }
   }
 
-  async passThrough(machineName, suffix, method, body, timeout = 5000) {
+  async passThrough(machineName, suffix, method, body, timeout = 5000, signal) {
     const machine = await this.state.machine(machineName);
     const secret = await this.secret(machine);
+    if (signal?.aborted) throw new Error('machine timeout');
     return requestJson(this.url(machine, suffix), method,
-      { 'x-wheelchair-machine-secret': secret }, body, timeout, true);
+      { 'x-wheelchair-machine-secret': secret }, body, timeout, true, signal);
   }
 
   // Spec "Decline": one synchronous call, ten seconds overall (not merely idle) before the hub

@@ -145,6 +145,16 @@ for value in "${or128}x" 'ab' 'a/b/c' 'a/b:' 'a/b::c'; do
   assert "OpenRouter rejects pin $value" json_assert 'import json,sys; assert json.load(sys.stdin)["malformed"] is True'
   printf 'openrouter.light = openrouter/auto\n' > "$pins"
 done
+for level in low medium high xhigh max; do
+  run_model set openrouter light a/b "$level"
+  assert "OpenRouter accepts effort $level" test "$status" -eq 0
+  run_model effort openrouter light
+  assert "OpenRouter reloads effort $level" equals "$output" "$level"
+done
+run_model set openrouter light a/b bogus
+assert 'OpenRouter rejects unknown effort' test "$status" -eq 2
+run_model set kimi light kimi-x high
+assert 'Kimi still rejects effort' test "$status" -eq 2
 run_model set openrouter light none
 assert 'OpenRouter saves none' test "$status" -eq 0
 run_model openrouter light

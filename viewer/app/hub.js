@@ -290,6 +290,7 @@ class Hub {
       result.thread.handoff_op = thread.handoff_op ? { kind: thread.handoff_op.kind, last_error: thread.handoff_op.last_error, can_cancel: !thread.handoff_op.claim_landed } : null;
       return { result, thread, refresh };
     });
+    require('./remote-plan.js').refresh(this, snapshot.thread);
     if (snapshot.refresh) this.refreshHandoffStatus(snapshot.thread).catch(() => {});
     return snapshot.result;
   }
