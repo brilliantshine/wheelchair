@@ -98,8 +98,7 @@ At most **12 lessons per role**. `normalize()` in `viewer/app/settings.js` keeps
 well-formed entries for known roles (dropping bad ones, as it does for accounts) and
 defaults `lessons` to `{}` keyed per role with empty arrays. All writes go through
 `settings.update()` (the queued read-modify-write, `viewer/app/state.js:241`), so two
-agents saving at once both land. `assertFits()` includes lessons, so a lesson that would
-push a role past 12,000 characters is refused with the existing message.
+agents saving at once both land. `assertFits()` keeps checking only Collin's layers (S5).
 
 ### S4. Saving: the `lesson` card
 
@@ -112,7 +111,7 @@ and mapper. It is **shown** (it is the thread notice, decision 12) and **not pin
 | `for` | role | yes | Whose lessons (must be allowed by S2) |
 | `text` | string | `add`, `replace` | 1–300 characters, one line |
 | `lesson` | string | `replace`, `remove` | The id of the lesson to change, as shown in the agent's instructions |
-| `only_ai` | boolean | no | `add`/`replace`: true sets `provider` to the saving session's provider |
+| `only_ai` | string | no | `add`/`replace`: a `PROVIDERS` key (`claude`, `gpt`, `gemini`, `kimi`, `openrouter`); sets `provider`, so the lesson reaches only agents on that AI. Name the AI of the agent that made the mistake, which for a reviewer, verifier or worker lesson is often not the saver's own |
 | `only_project` | boolean | no | `add`/`replace`: true sets `project` to the thread's project path |
 | `why` | string | `add`, `replace`, `remove` | One line, shown on the notice: what went wrong and how it was proven |
 
@@ -130,7 +129,7 @@ Refusals (422 unless noted), each a sentence the agent can act on:
   another role.
 - field errors (400) from `card.js` validation as for other kinds.
 
-`only_ai`/`only_project` false or absent on a `replace` clears that marker. The stored
+`only_ai` absent or `only_project` false/absent on a `replace` clears that marker. An unknown `only_ai` value is refused by `card.js` (400). The stored
 `saved_by` becomes `agent`.
 
 ### S5. Reaching agents
@@ -157,7 +156,9 @@ The lead also gets the reviewer and verifier lessons (so it can replace or remov
 its layer adds, after its own block, the same format headed
 `Lessons you keep for reviewers:` and `Lessons you keep for verifiers:` (all of them,
 with markers, unfiltered). The sub-lead likewise gets `Lessons you keep for workers:`.
-These count toward the 12,000-character fit check.
+Lessons blocks (the role's own and the "you keep" ones) are **not** counted by
+`assertFits()`: their size is already bounded by the 12-per-role cap and 300-character
+limit, and counting them would refuse a lesson with a size error before the cap is reached.
 
 The Settings "See it in full" preview (`fullPrompt`) shows the lessons block with every
 lesson for the role and its markers, filtered only by the template's project scope.
@@ -205,9 +206,10 @@ his templates). The `GET /settings` payload includes `lessons`.
 - `protocol/app/lead.md`, `sub-lead.md`, `worker.md`, `mapper.md`: a short "Lessons"
   section with the bar (S1), whom it saves for (S2), "read the existing lessons first;
   replace or remove before adding", the 12 cap, and the rule-conflict path. The lead's
-  section says when it writes reviewer and verifier lessons, and that a lesson card is a
+  section says when it writes reviewer and verifier lessons (naming, in `only_ai`, the AI
+  the reviewer or verifier ran on when the mistake is that AI's habit), and that a lesson card is a
   notice the user sees, so `why` is in the user's words. The sub-lead's says it writes
-  worker lessons.
+  worker lessons, naming the worker's AI in `only_ai` the same way.
 - `protocol/app/reviewer.md`, `verifier.md`: one sentence that the lessons in their
   instructions are kept by the lead and they do not save lessons.
 
@@ -224,7 +226,7 @@ thread handoffs.
   replace/remove by id, missing id refused; `only_ai`/`only_project` set and cleared;
   `normalize()` dropping malformed lessons; `roleLayers` including only matching lessons,
   placing the block before the template text, and the lead's/sub-lead's "you keep" blocks;
-  `assertFits` refusing an oversize lesson; the `PUT /settings/lessons/<role>` edit and
+  `only_ai` naming another AI than the saver's; `assertFits` ignoring lessons blocks; the `PUT /settings/lessons/<role>` edit and
   remove rules; the machine returning 503 for a `lesson` card when the hub is unreachable
   instead of spooling.
 - `cd viewer && npx playwright test test/app-settings.spec.js test/app-lessons.spec.js`
@@ -265,12 +267,14 @@ stays as review history.
 
 ### Round 1 — 2026-11-21
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | `only_ai` as a boolean pins the lesson to the saver's AI, but lead/sub-lead save for reviewers, verifiers and workers that often run on another AI | upheld (blocking) | S4 `only_ai` names a provider; S8 tells lead and sub-lead to name the mistaken agent's AI |
+| intent | minor | Lead's "you keep" blocks (up to 36 lessons) would trip the 12,000-character check before the 12 cap | upheld (minor) | S3/S5: lessons blocks excluded from `assertFits`; bounded by cap |
 
 ## Prior Work
 
