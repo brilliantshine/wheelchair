@@ -1,6 +1,6 @@
 ---
 slug: openrouter-solid
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-20
 ---
 
@@ -35,7 +35,34 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ## Spec
 
-Four OpenRouter (Pi) items plus one all-provider report fix. Evidence: `MAP.md`,
+Four OpenRouter (Pi) items plus one all-provider report fix.
+
+```mermaid
+flowchart TD
+  A[You open a side conversation on an OpenRouter lead reply] --> B{Pi version OK?}
+  B -- older than 1.5.2 --> X[Side conversation fails with a plain message]
+  B -- yes --> C[Copy the lead's Pi session under a new id]
+  C --> D{Read-only?}
+  D -- yes --> E[Pi may only read the project folder and wheelchair's rules]
+  D -- full --> F[Pi gets all its tools]
+  E --> G[Pi answers]
+  F --> G
+  G --> H{Finished cleanly?}
+  H -- yes --> I[Reply shown, with any key hidden]
+  H -- no --> X
+  I --> J[Next message continues the same copy]
+```
+
+```mermaid
+flowchart TD
+  R[A reviewer or verifier ends its turn] --> S[Read its log for the report]
+  S --> T{Read worked?}
+  T -- yes --> U[Report delivered once]
+  T -- failed --> V{Time left in the 4 seconds?}
+  V -- yes --> S
+  V -- no --> W[App asks the agent to repeat its report]
+```
+ Evidence: `MAP.md`,
 `docs/maps/openrouter-hardening.md`. Installed Pi is 1.5.2; its docs are in
 `$(npm root -g)/@earendil-works/pi-coding-agent/docs/` (`json.md`, `cli.md`, `session-format.md`).
 
@@ -142,12 +169,18 @@ first turn forks the lead's Pi session, later turns resume the fork.
   error, an error followed by a successful retry (success), a key in reply and stderr (redacted),
   an old Pi (terminal failure, no dispatch retry), read-only argv, and a spend scan over a lead
   file plus its fork counting copied entries once, a read-only aside whose read of a path outside
-  the worktree (including the account's `auth.json`) is blocked, run against Pi's real resolver
-  with harmless fixtures: `../` escapes, `~/...`, an `@`-prefixed path, a symlink inside the
+  the worktree (including the account's `auth.json`) is blocked. The guard's handler is unit-tested
+  in the standard machine suite with fake `tool_call` events (no Pi needed, so macOS CI on Node 20
+  still runs it), with harmless fixtures: `../` escapes, `~/...`, an `@`-prefixed path, a symlink inside the
   worktree pointing outside, a missing path (blocked), a real path containing a narrow
   no-break space (blocked), and a read of `protocol/app/aside.md` that is allowed, and resume argv carrying
   `--tools` for both access settings (pattern of existing aside tests); hub test that an OpenRouter lead
   allows an aside (update `viewer/test/app-asides.test.js` where it pins the refusal).
+- Real-Pi guard check: a separate offline script (e.g. `test-support/smoke/pi-guard.js`, not
+  part of `machine/test/run.sh`) loads the real extension into the installed Pi with tools only, no
+  model call, and confirms the path Pi actually opens for the fixtures above. It exits 0 with
+  "skipped: Pi not installed" when `pi` is absent. Run it on this machine (Pi 1.5.2) as part of
+  validation.
 - Live check (costs money; keep it to one fork turn and one resume turn, model
   `deepseek/deepseek-v4.1-flash-1017`): extend `test-support/smoke/pi-live.js` or add a sibling,
   confirming fork produces a new id, resume keeps it, and the reply text comes back.
@@ -191,7 +224,9 @@ first turn forks the lead's Pi session, later turns resume the fork.
     asserts the card text includes the note.
 - Tests in `machine/test/pi.test.js` with a fake `pi --version` (pattern of
   `machine/test/kimi.test.js:175-235`): old → problem and start refused; 1.5.2 and 1.5.9 → clean;
-  1.6.0 → warning, start allowed; probe failure → unknown-version warning; Pi pane gone before
+  1.6.0 → warning, start allowed; a session launched on 1.5.2 whose fake
+  executable then reports 1.6.0, with the service restarted while the session stays registered,
+  still gets no note (the launch version is persisted); probe failure → unknown-version warning; Pi pane gone before
   ready → session ended with "Pi exited before it was ready"; turn-failed text carries the untested note on an untested launch version,
   the unknown note on an unknown launch version, and no note on a tested one. Hub test that the warning reaches `/usage` and does not block Ready.
 
@@ -207,12 +242,15 @@ already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
   timeout is min(its cap, time left)). The bound covers transcript recovery only, not the rest of
   the event's handling (lock wait, saving state, queue delivery), which is unchanged. Its requests use the strict HTTP path
   (`viewer/app/machine-client.js:33`), so a connection dropped after headers rejects instead of
-  hanging. A failed, timed-out or dropped call throws; a transcript that is genuinely absent (machine answers with no data, or 404)
-  returns `''`.
+  hanging. A failed, timed-out or dropped call throws; a transcript the machine reports
+  absent (no data, or 404) falls back to the session's local `transcript_path` when the hub record
+  has one, as today (`viewer/app/chat.js:333-334`); a failed read of that local file throws too;
+  with no local path it returns `''`.
 - `deliverReport`: when the read throws, or when the CLI is `pi`, the event carries an
   `entry_id`, and the read (empty or absent included) does not contain that entry (the machine's copy can lag or fail, `machine/service.js:1403-1407`),
   retry the read inline: up to 3 more attempts, 500ms apart (a gap is skipped, and
-  retrying stops, when less than 500ms plus a minimal call would remain before the deadline), within the same event handling and
+  retrying stops, when less than 750ms remains before the deadline: a 500ms gap plus a
+  250ms minimum call), within the same event handling and
   the 4-second budget.
   A text found inline in the hook payload (non-Pi) is used at once, as today.
 - If every attempt fails, behave as today for a missing report: no result, and `quiet.arm`
@@ -227,7 +265,8 @@ already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
   produces no report and arms the quiet check; all attempts failing arms the quiet check; a first read that times out
   followed by a successful one delivers once; a connection dropped after headers fails that
   attempt and is retried; the recovery itself never exceeds 4 seconds and no
-  gap starts when it cannot be followed by a retry before the deadline (measured around
+  gap starts when it cannot be followed by a retry before the deadline (fake-clock tests at
+  749ms and 750ms left: no retry, then one retry) (measured around
   the report read with a fake clock or a slow fake machine).
 
 ### Non-goals
@@ -244,7 +283,7 @@ node --test viewer/test/*.test.js
 npm --prefix viewer run test:browser
 bash install/test/run.sh
 ```
-Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-flash-1017).
+Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-flash-1017).
 
 ## Deferred
 
@@ -374,6 +413,10 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Real-Pi resolver test vs isolated suite and macOS CI without Pi | downgraded (minor) | A skip-if-missing check is the obvious way to build it, so a worker would not have to stop and ask. S3 now unit-tests the handler with fake events in the standard suite and adds a separate offline real-Pi check that skips without Pi |
+| mechanics | minor | Launch-version test can pass while using the current probe | upheld | S4 test changes the version after launch and restarts |
+| mechanics | minor | Strict read drops the local transcript_path fallback | upheld | S5 keeps it; local read failure throws |
+| mechanics | minor | "Minimal call" undefined | upheld | S5: 750ms cutoff, tests at both sides |
 
 ## Implementation Tasks
 
