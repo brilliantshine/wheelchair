@@ -127,6 +127,12 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     const paused = await fixture({}, {}, ['default-claude', 'default-gpt']);
     await settings.update(paused, (s) => { s.accounts.find((a) => a.id === 'default-claude').paused = true; });
     assert.equal(await reviewFamilies(paused, { machine: 'hub' }), 'gpt');
+    // Claude turned off at the reviewer tier still counts: verifiers may use it at their own tier.
+    const tierOff = await fixture({}, {}, ['default-claude', 'default-gpt']);
+    await settings.update(tierOff, (s) => { s.other_agents.reviewer = 'critical'; });
+    const models = (args) => new Promise((resolve, reject) => require('node:child_process').execFile(path.join(tierOff.root, 'codex', 'model.sh'), args, (e) => (e ? reject(e) : resolve())));
+    await models(['set', 'claude', 'critical', 'none']);
+    try { assert.equal(await reviewFamilies(tierOff, { machine: 'hub' }), 'both'); } finally { await models(['reset']); }
   });
   await t.test('wait estimate accounts for every exhausted window', async () => {
     const five = future(2), week = future(5);

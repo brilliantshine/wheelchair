@@ -29,19 +29,15 @@ async function machineNameOf(hub, thread) {
   const resolvedMachine = await hub.state.resolveMachine(configured, thread.machine);
   return Object.keys(configured).find((name) => configured[name] === resolvedMachine || configured[name].name === resolvedMachine?.name) || thread.machine;
 }
-// What the lead is told about review families. "Mix families" with only one family signed in
-// and used at the reviewer tier means one reviewer per round on that family, not two on it.
+// What leads and sub-leads are told about review families. "Mix families" with only one
+// family signed in means one reviewer per round on that family, not two on it. Only sign-in
+// counts, not per-tier models, so verifier choices for multi-family setups are unchanged.
 async function reviewFamilies(hub, thread) {
   const settings = await settingsStore.load(hub);
   if (settings.review_families !== 'both') return settings.review_families;
   const [machines, machineName] = await Promise.all([usage.machineAccounts(hub), machineNameOf(hub, thread)]);
-  const usable = [];
-  for (const p of Object.keys(PROVIDERS)) {
-    if (!signedIn(settings, machines, machineName, p)) continue;
-    try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, settings.other_agents.reviewer]); } catch (e) { if (e.code === 3) continue; throw e; }
-    usable.push(p);
-  }
-  return usable.length === 1 ? usable[0] : 'both';
+  const signed = Object.keys(PROVIDERS).filter((p) => signedIn(settings, machines, machineName, p));
+  return signed.length === 1 ? signed[0] : 'both';
 }
 async function choose(hub, thread, role, tier, constraints = {}) {
   let { provider, not_provider: excluded } = constraints;
