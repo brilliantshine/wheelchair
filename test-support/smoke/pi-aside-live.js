@@ -7,6 +7,8 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { AsideTurns } = require('../../machine/lib/aside-turns');
 const pi = require('../../machine/adapters/pi');
+// The temp folder (holding a copy of auth.json) lives in the per-process run folder, removed at exit.
+const { makeTempSync } = require('../run-dir.js');
 const auth = path.join(process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi/agent'), 'auth.json');
 let available = !!process.env.OPENROUTER_API_KEY;
 try { available ||= !!JSON.parse(fs.readFileSync(auth, 'utf8')).openrouter; } catch {}
@@ -14,7 +16,7 @@ if (spawnSync('sh', ['-c', 'command -v pi'], { stdio: 'ignore' }).status !== 0) 
 else if (!available) console.log('SKIP | no OpenRouter key available');
 else run().catch(error => { console.error('FAIL | ' + pi.redact(error.message)); process.exitCode = 1; });
 async function run() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-aside-live-')), cwd = path.join(dir, 'work'), account = path.join(dir, 'account');
+  const dir = makeTempSync('pi-aside-live-'), cwd = path.join(dir, 'work'), account = path.join(dir, 'account');
   fs.mkdirSync(cwd); fs.mkdirSync(account); if (fs.existsSync(auth)) fs.copyFileSync(auth,path.join(account,'auth.json'));
   const parent = crypto.randomUUID(), fork = crypto.randomUUID(), timestamp = new Date().toISOString(), ms = Date.now();
   const folder = path.join(account,'sessions','--'+cwd.replace(/^[/\\]/,'').replace(/[/\\:]/g,'-')+'--'); fs.mkdirSync(folder,{recursive:true});
