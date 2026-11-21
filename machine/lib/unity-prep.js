@@ -8,7 +8,7 @@ function createUnityPrep({ detected, winEnv, now = Date.now, run = runFetch }) {
   async function command() {
     if (cached && now() - cached.at < 600000) return cached.path;
     if (!lookup) lookup = (async () => {
-      const result = await winEnv.ps('(Get-Command uvx.exe -ErrorAction SilentlyContinue).Source', { timeoutMs: 10000 });
+      const result = await winEnv.ps(`# wc:uvxpath e30=\n(Get-Command uvx.exe -ErrorAction SilentlyContinue).Source`, { timeoutMs: 10000 });
       if (result.code || !result.stdout.trim()) throw new Error('uvx.exe not found');
       const path = winEnv.toLinux(result.stdout.trim());
       cached = { path, at: now() };
@@ -36,7 +36,12 @@ function runFetch(program) {
     child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-4096); });
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, 300000);
     child.on('error', error => { clearTimeout(timer); reject(error); });
-    child.on('close', code => { clearTimeout(timer); if (timedOut) reject(new Error('process timed out')); else if (code !== 0) reject(new Error(stderr.trim() || `process exited with code ${code}`)); else resolve(); });
+    child.on('close', code => {
+      clearTimeout(timer);
+      if (timedOut) reject(new Error('process timed out'));
+      else if (code !== 0) reject(new Error(stderr.split(/\r?\n/).filter(line => line.trim()).pop()?.slice(0, 300) || `process exited with code ${code}`));
+      else resolve();
+    });
   });
 }
-module.exports = { createUnityPrep };
+module.exports = { createUnityPrep, runFetch };

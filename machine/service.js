@@ -1995,7 +1995,6 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/project-tools/unity-prep') {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
-        try { await this.projectTools.identity(input.path); } catch (error) { return send(response, 400, { error: error.message }); }
         this.unityPrep ||= require('./lib/unity-prep').createUnityPrep({ detected: this.win.detected, winEnv: this.win.winEnv });
         return send(response, 200, await this.unityPrep(input));
       }
