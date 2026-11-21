@@ -219,19 +219,27 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    ```
    can_start: { machine: "hub", lead: {ok, reason?}, worker: {ok, reason?} }
    ```
-   computed by calling the real placement code, `balancer.choose(hub, {machine: "hub",
-   sessions: []}, role, "top")` (`viewer/app/balancer.js:27`; it only reads), once with role
-   `lead` and once with `worker`. `hub` is the machine a new thread starts on by default
-   (`viewer/app/threads.js:63`). A returned provider → `ok: true`. A wait → `ok: false` with a
-   plain reason built by the hub:
-   - when no provider in the order `choose` used (lead: the enabled, expanded Lead order;
-     worker: the enabled Workers try first) is installed and signed in on that machine:
-     `New leads try <names>; none is installed and signed in on <machine>.` (workers: `New
-     workers try …`), followed, when some other enabled harness is installed and signed in
-     there, by `Add <names> to Lead order` (or `Workers try first`) ` under Settings → Usage.`;
-   - otherwise: `Every account they would use is at its usage limit right now.`
-   If `choose` throws (for example no model at the slot), `ok: false` and the reason is its
-   message. The hub never changes either order on its own; there is no button that does.
+   `hub` is the machine a new thread starts on by default (`viewer/app/threads.js:63`). The
+   hub decides each role in this order:
+   1. `hub` unreachable → `ok: false`, `<machine> isn't reachable.`
+   2. Its service version differs from the hub's (`outOfDate`, `viewer/app/ready.js:11-16`) →
+      `ok: false`, `<machine> needs updating: re-run ./install.sh on it.`
+   3. Otherwise it calls the real placement code, `balancer.choose(hub, {machine: "hub",
+      sessions: []}, role, tier)` (`viewer/app/balancer.js:27`; it only reads), with tier
+      `top` for `lead` and `standard` for `worker` (always within the Highest tier setting,
+      which real worker starts check separately, `sessions.js:267-273`). A returned provider
+      → `ok: true`. If `choose` throws, `ok: false` with its message.
+   4. A wait → `ok: false`, with a plain reason:
+      - when no provider in the order `choose` used (lead: the enabled, expanded Lead order;
+        worker: the enabled Workers try first) is installed and signed in on `hub`: `New
+        leads try <names>; none is installed and signed in on <machine>.` (workers: `New
+        workers try …`). When some other enabled harness is installed and signed in there,
+        add `Add <names> to <list> in Settings.`, where `<list>` is `Workers try first` for
+        workers, and for leads `Workers try first` when Lead order contains `any` (one edit
+        then fixes both) or `Leads try` when it does not;
+      - otherwise: `No account has room for a new <lead|worker> right now (usage limits, or
+        the share saved for leads).`
+   The hub never changes either order on its own; there is no button that does.
 9. **Onboarding status** `GET /onboarding` → `{show, steps:[{id:"install", label:"Install an
    agent harness", done}, {id:"signin", label:"Sign in to it", done}, {id:"start",
    label:"Agents can start", done, reason?}]}`, from `GET /harnesses` data. `install` is done
@@ -239,9 +247,11 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    reachable machine has a provider that is enabled, installed and `signed_in` on that same
    machine. `start` is done when `can_start.lead.ok` and `can_start.worker.ok`; when not done
    it carries the first failing reason. The first time all three are done, the hub saves a new
-   boolean setting `onboarding_done: true` (default `false`, normalized like other booleans);
-   from then on `show` is false for good, so the checklist never comes back over a usage limit
-   or a later change. Otherwise `show` is true when some step is not done and at least one
+   boolean setting `onboarding_done: true`; from then on `/onboarding` answers `{show: false,
+   steps: []}` at once, without building `/harnesses` data or calling `choose`, so the
+   checklist never comes back and the home poll costs nothing. In `normalize()`: a fresh
+   install (no saved settings file) gets `false`; a saved settings file without the key (an
+   install from before this feature) gets `true`. Otherwise `show` is true when some step is not done and at least one
    machine is reachable; false when none is.
 10. **Tests** in `viewer/test/`: normalize defaults and bad values; `describe` includes
    `harnesses`; PUT 200/400/404 and the lead-order 409 (default `['claude','any']` with only
@@ -251,8 +261,11 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    forwarders pass through and 502; `?fresh=1` clears the cache; `can_start` (Pi-only with default orders → lead and worker not ok, reasons name Pi and the
    order to add it to; after adding `openrouter` to `worker_order` → both ok; Lead order
    `['claude']` with Claude signed out and Codex signed in → lead not ok; a switched-off
-   harness never makes it ok; all accounts at their limit → the limit reason); onboarding's
-   `start` step and `onboarding_done` (set once, checklist stays hidden afterwards); balancer skips a provider whose CLI is not installed
+   harness never makes it ok; no room → the no-room reason; Lead order with `any` → the lead
+   reason points at Workers try first, without `any` at Leads try; `hub` unreachable or out of
+   date → those reasons; worker probed at `standard` with Highest tier `standard` → ok); onboarding's
+   `start` step and `onboarding_done` (set once; afterwards `/onboarding` does not call
+   `choose`; a saved settings file without the key normalizes to `true`); balancer skips a provider whose CLI is not installed
    though its account is logged in; order writes refused when they empty the enabled Lead order;
    reservation skips a switched-off provider; onboarding for no CLI, installed-not-signed-in, installed on one machine
    with sign-in only on another (not done), and done.
@@ -268,15 +281,19 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    switch (shared by all machines); and an action:
    - `recipe: null` (old service) → the whole machine shows `This machine needs updating:
      re-run ./install.sh on it.` above the rows, and no row offers Install;
-   - `recipe: false` and not installed → a link "Install from <vendor>'s site" to the docs URL
-     kept in a page constant per provider;
+   - `recipe: false` → when not installed, a link "Install from <vendor>'s site" to the docs
+     URL kept in a page constant per provider; when installed, no action. This holds even if
+     an earlier install on this machine failed: `recipe: false` wins over Try again;
    - not installed, or the last install on this machine `failed` → **Install** (or **Try
      again** after a failure);
    - installed, not signed in → **Sign in**;
    - installed and signed in → no action.
    Above the rows, when `can_start.lead.ok` or `can_start.worker.ok` is false, a notice
-   `Agents can't start yet on <machine>:` with each failing reason and a link **Open Usage**
-   to `#usage` (the section holding Lead order and Workers try first). The notice reflects
+   `Agents can't start yet on <machine>:` with each failing reason and links to the lists it
+   names: **Workers try first** → `#usage`; **Leads try** → `#models` (where the Lead order
+   editor lives, `viewer/pages/settings.js:562,1454-1460`). Whenever the Harnesses section is
+   shown again (hash navigation back to `#harnesses`) and after any order save on the page,
+   it re-fetches `/harnesses?fresh=1`, so a fixed order clears the notice. The notice reflects
    the hub's default machine (`can_start.machine`) whichever machine is picked.
    No action when the switch is off.
 3. **Install state on load.** On page load and whenever the picked machine changes, the page
@@ -468,6 +485,25 @@ npm --prefix viewer run test:browser
 **Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
 
 **Changed since Round 6:** S2.6 (`no recipe` 404; GET for every provider); S3.6 (`recipe: null` for an old service); S3.8 replaced by `can_start` from `balancer.choose`; S3.9 `start` step and `onboarding_done`; S3.10 tests; S4.2 (old-service notice, no row action for signed-in, "can't start yet" notice); S4.3 (`no recipe` → vendor link); S5 (reason under `start`); Accepted Risks row for the second tab removed; Decision 21.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Lead reason sends Pi-only users to make two edits | upheld | S3.8 points at Workers try first when Lead order has `any` |
+| intent | minor | `/onboarding` keeps calling `choose` forever | upheld | S3.9 short-circuit |
+| intent | minor | Wrong reason for reserve holds or unreachable `hub` | upheld | S3.8 steps 1 and 4 |
+| intent | minor | Upgraders see the checklist over a working setup | upheld | S3.9 old settings → `true` |
+| mechanics | blocking | Probe passes while `hub` runs an older service | downgraded (major) | S3.8 step 2 |
+| mechanics | blocking | Worker probe at `top` vs Highest tier | downgraded (minor) | S3.8 worker at `standard` |
+| mechanics | blocking | Lead order lives in Models, not Usage | upheld (major) | S4.2 links per list |
+| mechanics | blocking | "Usage limit" reason wrong for the lead reserve | downgraded (major) | S3.8 no-room reason |
+| mechanics | major | Removed recipe vs failed result | downgraded (minor) | S4.2 `recipe: false` wins |
+| mechanics | minor | No refresh after fixing the order | upheld | S4.2 re-fetch on return and save |
+
+### Round 8 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 7:** S3.8 rewritten (unreachable and out-of-date checks, worker probed at `standard`, reasons point at the right list, no-room reason); S3.9 (`/onboarding` short-circuits once done; old settings files → `onboarding_done: true`); S3.10 tests; S4.2 (`recipe: false` wins; links to Workers try first in Usage and Leads try in Models; re-fetch on return and after order saves).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
