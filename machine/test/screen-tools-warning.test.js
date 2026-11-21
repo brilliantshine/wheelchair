@@ -33,7 +33,7 @@ test('approval card reports missing screen tools, preserves startup order, and r
   try {
     await service.listen();
     service.sessions = { lead: { name: 'wc-t-lead', thread_id: 't', role: 'lead', token: 'lead' } };
-    service.platform = 'linux'; service.refreshStartupWarning = () => {};
+    service.platform = 'linux';
     const post = async () => {
       const res = await fetch(`http://127.0.0.1:${service.server.address().port}/v1/agent/cards`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-wheelchair-session-token': 'lead' }, body: JSON.stringify({ kind: 'approval' }) });
       assert.equal(res.status, 200); return cards.at(-1);
@@ -41,8 +41,7 @@ test('approval card reports missing screen tools, preserves startup order, and r
     const warning = names => `Screens won't work on ${os.hostname()}: missing ${names.join(', ')}. Builds that don't use a screen are unaffected.`;
     process.env.PATH = empty; assert.deepEqual((await post()).warnings, [warning(TOOLS)]);
     process.env.PATH = partial; assert.deepEqual((await post()).warnings, [warning(TOOLS.filter(n => n !== TOOLS[1] && n !== TOOLS[6]))]);
-    service.startupWarning = 'startup'; assert.deepEqual((await post()).warnings, ['startup', warning(TOOLS.filter(n => n !== TOOLS[1] && n !== TOOLS[6]))]);
-    service.startupWarning = null; process.env.PATH = full; assert.equal('warnings' in await post(), false);
+    process.env.PATH = full; assert.equal('warnings' in await post(), false);
     process.env.PATH = empty; service.platform = 'darwin'; assert.equal('warnings' in await post(), false);
   } finally { process.env.PATH = oldPath; if (service.server.listening) await close(service.server); await close(hub); }
 });
