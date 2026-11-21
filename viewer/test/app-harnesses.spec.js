@@ -290,6 +290,74 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await expect(page.locator('[data-order="worker_order"]').getByRole('button', { name: '+ Antigravity' })).toHaveCount(0);
     });
 
+    test('moving a visible provider keeps switched-off ones at their saved index', async ({ page }) => {
+      const s = status();
+      s.switches.gpt = false;
+      await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
+      let saved = null;
+      await page.route('**/api/settings', async (r) => {
+        const b = await (await r.fetch()).json();
+        b.harnesses = { ...s.switches };
+        b.worker_order = ['gpt', 'claude', 'gemini', 'kimi'];
+        b.lead_order = ['gpt', 'claude', 'gemini', 'kimi', 'any'];
+        return json(r, b);
+      });
+      await page.route('**/api/settings/balancing', async (r) => {
+        saved = r.request().postDataJSON();
+        return json(r, { ...saved, reserved_provider: null });
+      });
+      await openPage(page, context, '/app/settings#usage');
+      const wo = page.locator('[data-order="worker_order"]');
+      await expect(wo.locator('li')).toHaveCount(3);
+      await wo.getByRole('button', { name: 'Move Claude down' }).click();
+      await expect(wo.locator('li span').first()).toHaveText('Antigravity');
+      await page.locator('#bal-save').click();
+      await expect.poll(() => saved && saved.worker_order).toEqual(['gpt', 'gemini', 'claude', 'kimi']);
+      saved = null;
+      await page.locator('#sections a[data-section="models"]').click();
+      const lo = page.locator('[data-order="lead_order"]');
+      await lo.getByRole('button', { name: 'Move Claude down' }).click();
+      await page.locator('#lead-order-save').click();
+      await expect.poll(() => saved && saved.lead_order).toEqual(['gpt', 'gemini', 'claude', 'kimi', 'any']);
+    });
+
+    test('Install targets the machine the picker shows and waits for its data', async ({ page }) => {
+      const s = status();
+      s.machines.push({ name: 'node-2', reachable: true, harnesses: Object.fromEntries(NAMES.map((n) => [n, h()])) });
+      let hold = null; let release = null;
+      const world = {
+        harnesses: async (r) => { if (hold) await hold; return json(r, s); },
+        install: (r) => json(r, { state: 'idle' }),
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      await expect(row(page, 'claude').getByRole('button', { name: 'Install Claude Code' })).toBeVisible();
+      hold = new Promise((res) => { release = res; });
+      await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
+      await expect(page.getByRole('button', { name: /Install/ })).toHaveCount(0);
+      release();
+      await row(page, 'claude').getByRole('button', { name: 'Install Claude Code' }).click();
+      await expect.poll(() => world.calls.some((c) => c === 'POST /wheelchair/api/machines/node-2/harnesses/claude/install')).toBe(true);
+      expect(world.calls.some((c) => c.startsWith('POST /wheelchair/api/machines/hub/'))).toBe(false);
+    });
+
+    test('switching a harness off closes its open sign-in card', async ({ page }) => {
+      const s = status();
+      s.machines[0].harnesses.gemini = h({ installed: true, version: '1' });
+      await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }),
+        put: (r) => { s.switches.gemini = false; return json(r, { harnesses: { ...s.switches } }); } });
+      await page.route('**/api/accounts/default-gemini/signin', (r) => json(r, {}));
+      await page.route('**/api/accounts/default-gemini/signin/hub', (r) => json(r, { state: 'waiting', url: 'https://example.test/login' }));
+      await openPage(page, context, '/app/settings#harnesses');
+      await row(page, 'gemini').getByRole('button', { name: 'Sign in Antigravity' }).click();
+      await expect(row(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+      await page.getByLabel('Use Antigravity').click();
+      await expect(page.getByLabel('Use Antigravity')).not.toBeChecked();
+      await expect(page.locator('.signin-card')).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Open sign-in link' })).toHaveCount(0);
+    });
+
     test('the home checklist shows, shows the start reason, and hides', async ({ page }) => {
       let body = { show: true, steps: [
         { id: 'install', label: 'Install an agent harness', done: true },
