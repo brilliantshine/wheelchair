@@ -129,21 +129,29 @@ test('app queue messages do not close a quiet card', () => run(async f => {
   assert.equal((await f.session(f.worker)).quiet_card, id); assert.equal((await f.read()).cards.find(x => x.id === id).answered, false);
 }));
 
-test('dismissed quiet episode rearms the ladder after starter message or child start', () => run(async f => {
-  async function ladder(who) {
-    for (let stage = 0; stage < 3; stage++) {
-      const t = await f.read(); const s = t.sessions.find(x => x.name === who.name);
-      for (const child of t.sessions.filter(x => x.started_by === who.name)) { child.owes_reply = false; child.queue = []; child.status = 'ready'; }
-      Object.assign(s, { owes_reply: true, turn_ended: true, queue: [], quiet_check_at: new Date(0).toISOString() });
-      t.queues[s.name] = s.queue;
-      if (stage === 2) s.quiet_starter_at = new Date().toISOString();
-      await f.hub.save(t); await require('../app/quiet.js').checkQuiet(f.hub);
-      assert.equal((await f.session(who)).quiet_stage, stage + 1);
-    }
-    assert.ok((await f.session(who)).quiet_card);
+test('dismissed quiet episode rearms the ladder after starter message or child start', async () => {
+  async function ladder(f, who, starter, dismissed) {
+    assert.equal((await f.session(who)).quiet_stage, 0);
+    await f.end(who);
+    await until(() => f.submits(who).some(x => x.includes('Your turn ended')));
+    await f.end(starter); await f.end(who);
+    await until(() => f.submits(starter).some(x => x.includes('ended two turns')));
+    await f.end(who);
+    const fresh = await until(async () => (await f.read()).cards.find(c =>
+      c.title === 'An agent stopped without reporting' && c.id !== dismissed && !c.answered));
+    assert.notEqual(fresh.id, dismissed);
   }
-  const first = await seedQuiet(f, f.worker, true); await f.message(f.sub, f.worker);
-  await ladder(f.worker); assert.notEqual((await f.session(f.worker)).quiet_card, first);
-  const second = await seedQuiet(f, f.sub, true); await f.start(f.sub, 'worker', 'rearm-child');
-  await ladder(f.sub); assert.notEqual((await f.session(f.sub)).quiet_card, second);
-}));
+  await run(async f => {
+    const dismissed = await seedQuiet(f, f.worker, true);
+    await f.message(f.sub, f.worker); await feed(f, f.worker, f.sub);
+    await ladder(f, f.worker, f.sub, dismissed);
+  });
+  await run(async f => {
+    await f.result(f.worker);
+    const dismissed = await seedQuiet(f, f.sub, true);
+    const child = await f.start(f.sub, 'worker', 'rearm-child');
+    await f.result(child);
+    await feed(f, f.sub, f.worker); await feed(f, f.sub, child);
+    await ladder(f, f.sub, f.lead, dismissed);
+  });
+});
