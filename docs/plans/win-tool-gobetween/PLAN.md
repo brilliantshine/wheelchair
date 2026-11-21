@@ -370,6 +370,19 @@ copies with a stop in progress; Validation additions; D6, D7.
 | intent | minor | Launcher start-up may approach Codex's 10 s deadline | check-once-built | C3 |
 | intent | minor | `null` withhold path untested | upheld | Validation: shared-map test |
 
+### Round 3 — 2026-11-21
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 2:** Spec 2 cites the localhost thread's shared contract and adds the
+stale-file sweep; Spec 4 per-probe uuid id and per-call 50 s rule during handoff; Spec 5
+rewritten (job id, Windows program and directory, start acknowledgment, 12 s stop budget);
+Spec 6 wait vs budget; Validation additions; D8; new Accepted Risk (cancel after tmux spawn);
+C3.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
