@@ -1,0 +1,43 @@
+---
+slug: windows-bridge-solid
+status: draft   # draft | confirmed
+mode: thorough   # thorough | two-part | proof-of-concept
+created: 2026-11-21
+---
+
+# Make the Windows bridge solid
+
+## What we're building
+
+The Windows bridge lets agents in WSL work on their own Windows copy of a project. This
+finishes five things it left out: Windows tools that talk over a local web address, a
+ready-made Unity MCP setup, disk-use reporting for Windows copies, restarting tools that
+started too early, and a clear warning when the bridge is broken.
+
+## Why — the problem
+
+- A Windows tool that serves on Windows `localhost` (HTTP or SSE) cannot be reached from WSL by default, so only plain stdio tools work.
+- Wiring a Unity MCP to the Windows copy is left to the user each time.
+- Copies and the git data the sync leaves behind grow silently; nothing shows how much space they take.
+- A Windows tool that starts before its copy is ready keeps running against a missing or stale copy.
+- When the bridge is broken on a WSL machine, agents only find out when a Windows command fails.
+
+## What good looks like
+
+- An agent on a WSL machine can use a project tool configured as `http://localhost:<port>` (or SSE) that runs on Windows, without the user editing addresses.
+- Choosing the Unity MCP preset gives an agent a working Unity MCP pointed at its Windows copy, with no hand editing.
+- `win info` shows how much disk the thread's copy and the bridge's git data use, and warns when they pass a limit.
+- A Windows tool that started before the copy was ready gets restarted once it is ready, without the agent doing anything.
+- On a WSL machine with a broken bridge, the user sees a warning that says what is wrong, before work depends on it.
+
+## Not doing
+
+- Making Store-packaged apps (Windows 11 Notepad, Calculator, Paint) visible to or stoppable by the bridge.
+- Loading project tools for Pi agents.
+- Automatically deleting copies or git data to stay under the limit; it warns only.
+- Bridges from anything other than WSL to Windows.
+
+## Constraints
+
+- Works on the user's WSL2 PC with WSL's default networking, and must not break mirrored networking.
+- Nothing changes for machines that are not WSL.
