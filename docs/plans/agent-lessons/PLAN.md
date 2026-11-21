@@ -431,8 +431,8 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub/machine/card backend: S2-S5, S7 route, node tests (tricky) | viewer/app/{settings,routes,card,cards}.js, machine/service.js, viewer/test/app-lessons.test.js | standard / gpt-6.1-terra | wc-7a7ad5f5b389-worker | `npm test` incl. app-lessons.test.js | done |
-| T2 | Settings page Lessons entry and editor, thread notice, hash route, preview caption, Playwright spec (S5 caption, S6, S7 UI) | viewer/pages/settings.js, viewer/pages/thread.js, page CSS, viewer/test/app-lessons.spec.js | standard / claude-sonnet-5-5 | | playwright app-settings + app-lessons specs | in progress |
-| T4 | Harden app-lessons.test.js assertions the S10 list names but T1 checked loosely | viewer/test/app-lessons.test.js | light / gpt | | node --test test/app-lessons.test.js | in progress |
+| T2 | Settings page Lessons entry and editor, thread notice, hash route, preview caption, Playwright spec (S5 caption, S6, S7 UI) | viewer/pages/settings.js, viewer/pages/thread.js, page CSS, viewer/test/app-lessons.spec.js | standard / claude-sonnet-5-5 | wc-7a7ad5f5b389-worker-3 | playwright app-settings + app-lessons specs | in progress |
+| T4 | Harden app-lessons.test.js assertions the S10 list names but T1 checked loosely | viewer/test/app-lessons.test.js | light / gpt-6-luna | wc-7a7ad5f5b389-worker-4 | node --test test/app-lessons.test.js | done |
 | T3 | Protocol text S8 | protocol/app/{cards,lead,sub-lead,worker,mapper,reviewer,verifier}.md | standard / claude-sonnet-5-5 | wc-7a7ad5f5b389-worker-2 | protocol-rules.test.js | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -452,3 +452,6 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — Choice: T1, routes.js: PUT /settings/lessons refuses unknown body and row fields (400).
 - 2026-11-21 — Choice: T1, cards.js: a lesson card failing field validation returns 400 (other kinds keep 422); a no-change repeat returns `{ ok: true, lesson: <id> }` and records no card.
 - 2026-11-21 — Choice: T1, settings.js: normalize() drops lesson entries with a malformed id, a duplicate id, or a bad saved_at; keeps the first 12 per role.
+- 2026-11-21 — T4 accepted (band: scout): all eight items asserted; the oversized-lessons assertFits check uses lead/reviewer/verifier/mapper lessons (it is the lead's layer that could pass 12,000), replacing the earlier weaker assertFits call.
+- 2026-11-21 — Choice: T4, app-lessons.test.js: the CLI refusal is tested through `validate()` with the role, since card.js takes no role on the command line; the role check is enforced by the hub with the session's real role (cards.js).
+- 2026-11-21 — Choice: T4, app-lessons.test.js: oversized lessons placed on the four non-worker roles; one shared settings object is mutated across assertions (worker didn't list these; scout found them).
