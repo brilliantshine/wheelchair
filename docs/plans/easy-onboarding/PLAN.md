@@ -722,3 +722,4 @@ Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
 - 2026-11-21 — Choice: R3-1, `patchSettings` stub helper: on any failure it calls `r.abort()` rather than leaving the request unanswered.
 - 2026-11-21 — Choice: R3-1, `settingsGet`: waits for any GET ending `/api/settings` registered before the submit click, not one tied to the POST.
 - 2026-11-21 — Choice: R3-1, `afterEach` with `unrouteAll({ behavior: 'ignoreErrors' })` placed in each phone/desktop describe block, not at file level.
+- 2026-11-21 — Remediation 3 done; full validation on bb42466d (installer 208/209, with the live-folder check environmental; machine 486; node 764; browser 1198 passed). Verification attempt 4 next.

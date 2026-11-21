@@ -154,3 +154,27 @@ node --test viewer/test/*.test.js # tests 764 / # pass 764 / # fail 0
 npm --prefix viewer run test:browser   1 failed / 34 skipped / 1197 passed (16.2m)
 ```
 The one browser failure was `app-send-now.spec.js:84` (chromium, a 30 s timeout), which this build does not touch. Run alone it passed: `12 passed (17.2s)`. The GPT verifier saw the same test time out in attempt 2.
+
+### Remediation 3 — 2026-11-21
+
+Verification attempt 3 on `2cf9fa84`: both verifiers failed it on one shared gap, a flaky R2-1 browser test. The GPT verifier also found two cases that need two Settings tabs open at once. The lead accepted those as rare paths, recorded in PLAN.md Accepted Risks with round `verification-3` (`REMEDIATION-3.md`).
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| The Add account browser tests raced their own settings reload: a route handler's `r.fetch()` met a disposed response at teardown | Test-only. Settings stubs go through `patchSettings`, which tolerates a disposed response. Both Add account tests wait for the follow-up `GET /api/settings`. Each describe block unroutes in `afterEach` with `ignoreErrors`. One one-shot refetch count became `expect.poll` with the same predicate. | `viewer/test/app-harnesses.spec.js` (`patchSettings` ~`:36`, `settingsGet` ~`:48`, `afterEach` ~`:66`, `expect.poll` ~`:242`) | itself, repeated |
+
+No product code changed. Lane: R3-1 light claude-haiku-5-5.
+
+Focused repeat on `39de9149`, run by the sub-lead and not taken from the worker's report:
+```
+npx playwright test test/app-harnesses.spec.js --repeat-each=10   840 passed (14.3m) / exit 0
+```
+
+Validation on `bb42466d`:
+```
+bash install/test/run.sh          FAIL real wheelchair directory is byte-identical after suite
+                                  RESULT 208 passed, 1 failed   (pre-existing live-folder check, see above)
+bash machine/test/run.sh          # pass 486 / # fail 0
+node --test viewer/test/*.test.js # pass 764 / # fail 0
+npm --prefix viewer run test:browser   34 skipped / 1198 passed (12.8m) / exit 0
+```
