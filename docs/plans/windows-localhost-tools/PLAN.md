@@ -347,6 +347,20 @@ shared rule; Validation additions; D11; Accepted Risks (cancel window).
 | intent | major | Windows warnings can vanish before the user sees them | upheld | Same fix as mechanics finding 4 (§6, D12) |
 | intent | minor | Claim-time warning stays after the server starts | upheld | §4 wording "when this session started"; §6 snapshot |
 
+### Round 3 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 2:** §2 step 6 reconcile by tool port; §4 owner row choice
+(`127.0.0.1`, else `0.0.0.0`) and fail-closed lookup, new refusal reason, `check` runs owner
+lookup plus connect, Windows warnings wording; §5 record holds `tools` per session,
+tmux-aware name matching; §6 one `info` item per tool, fallback reply includes forwards,
+Windows warnings stored per session apart from per-CLI lines (D12); Validation additions;
+Accepted Risks (sweep snapshot race).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
