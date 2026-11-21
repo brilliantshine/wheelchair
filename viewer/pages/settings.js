@@ -996,7 +996,7 @@
 
   const PLAN_OPTIONS = {
     claude: [['unknown', 'Not sure'], ['pro', 'Pro'], ['max5', 'Max 5x'], ['max20', 'Max 20x']],
-    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
+    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['prolite', 'Pro Lite'], ['pro', 'Pro'], ['promax', 'Pro Max']],
     gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
     kimi: [['unknown', 'Not sure']],
     openrouter: [['unknown', 'Not sure']],
