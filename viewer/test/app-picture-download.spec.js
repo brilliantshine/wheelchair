@@ -63,15 +63,28 @@ test.describe('phone', () => {
     const frame = page.frameLocator('iframe.picture-frame');
     await expect(frame.locator('.node')).toHaveCount(4);
     const box = await page.locator('iframe.picture-frame').boundingBox();
-    await page.mouse.move(box.x + 200, box.y + 300);
-    await page.mouse.wheel(0, -600);
-    await page.mouse.down(); await page.mouse.move(box.x + 60, box.y + 380, { steps: 5 }); await page.mouse.up();
-    await page.waitForTimeout(200);
-    const live = await page.frames().find((f) => f !== page.mainFrame()).evaluate(() => {
+    const inner = page.frames().find((f) => f !== page.mainFrame());
+    const read = () => inner.evaluate(() => {
       const root = Array.from(document.getElementById('canvas').children).filter((c) => c.tagName === 'g').pop();
       const b = root.getBBox(); return { w: b.width, h: b.height, transform: root.getAttribute('transform') };
     });
-    expect(live.transform).not.toBe('translate(0,0) scale(1)');
+    const parse = (t) => { const m = /translate\(([-\d.e]+)[ ,]+([-\d.e]+)\)\s*scale\(([-\d.e]+)\)/.exec(t); return m && { x: +m[1], y: +m[2], k: +m[3] }; };
+    const before = await read();
+    await page.mouse.move(box.x + 200, box.y + 300);
+    await page.mouse.wheel(0, -600);
+    await expect.poll(async () => (await read()).transform).not.toBe(before.transform);
+    const zoomed = await read();
+    expect(parse(zoomed.transform).k).not.toBe(parse(before.transform).k);
+    // Pan: an alt-drag on empty canvas (a plain drag box-selects).
+    await page.keyboard.down('Alt');
+    await page.mouse.move(box.x + 200, box.y + 300);
+    await page.mouse.down(); await page.mouse.move(box.x + 60, box.y + 380, { steps: 5 }); await page.mouse.up();
+    await page.keyboard.up('Alt');
+    await expect.poll(async () => (await read()).transform).not.toBe(zoomed.transform);
+    const live = await read();
+    const a = parse(zoomed.transform); const b = parse(live.transform);
+    expect(b.k).toBe(a.k);
+    expect(b.x !== a.x || b.y !== a.y).toBe(true);
     const { dl, bytes } = await download(page);
     expect(dl.suggestedFilename()).toBe('Wide-graph.png');
     expect(bytes.subarray(0, 4).equals(PNG)).toBe(true);
@@ -115,6 +128,27 @@ test.describe('phone', () => {
     const got = await inspect(page, bytes, 1);
     expect(got.hits).toEqual([true]);
     expect(got.w).toBe(1800);
+  });
+
+  test('a form PNG draws the form that is on screen, not a later version', async ({ page }) => {
+    const made = await seed({ 'steps.json': FORM });
+    const A = { ...FORM, events: [{ when: 'Monday', label: 'VersionOnScreen' }] };
+    const B = { ...FORM, events: [{ when: 'Monday', label: 'VersionSavedLater' }] };
+    let hits = 0;
+    await page.route(/\/diagram-form\?/, async (route) => {
+      hits++; await route.fulfill({ contentType: 'application/json', body: JSON.stringify(hits === 1 ? A : B) });
+    });
+    await open(page, made, { graph: 'steps', title: 'Steps', format: 'form' });
+    await expect(page.locator('.diagram-form')).toContainText('VersionOnScreen');
+    await page.evaluate(() => {
+      window.__text = []; const real = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function (t, ...rest) { window.__text.push(t); return real.call(this, t, ...rest); };
+    });
+    await download(page);
+    const drawn = await page.evaluate(() => window.__text.join(' '));
+    expect(drawn).toContain('VersionOnScreen');
+    expect(drawn).not.toContain('VersionSavedLater');
+    expect(hits).toBe(1);
   });
 
   test('an HTML picture downloads through the displayed URL plus download=1', async ({ page }) => {

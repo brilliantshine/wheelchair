@@ -49,11 +49,12 @@
       return window.WCPictureExport.graphCanvas(f && f.contentDocument);
     });
   }
-  function formPng(src, name) {
+  // The PNG uses the same fetched value the page drew (the cache entry draw filled), never a new fetch.
+  function formPng(cache, key, name) {
     offerPng(name, async () => {
-      const res = await fetch(src);
-      if (!res.ok) throw new Error('Could not load this diagram (status ' + res.status + ').');
-      return window.WCPictureExport.formCanvas(await res.json());
+      let value;
+      try { value = await cache.get(key); } catch (e) { throw new Error('Could not load this diagram (' + e.message + ').'); }
+      return window.WCPictureExport.formCanvas(value);
     });
   }
 
@@ -67,7 +68,7 @@
     messageEl.hidden = true;
     const ctx = { id: id, archived: !!thread.archived, worktree: thread.worktree };
     const src = window.WCDiagram.source(card, ctx);
-    if (card.format === 'form') { window.WCDiagram.draw(card, pictureEl, ctx, new Map()); formPng(src, card.graph); }
+    if (card.format === 'form') { const cache = new Map(); window.WCDiagram.draw(card, pictureEl, ctx, cache); formPng(cache, card.id, card.graph); }
     else {
       frame(src, card.title || card.graph, card.format === 'html');
       if (card.format === 'html') { dlEl.hidden = false; dlEl.href = src + '&download=1'; }
