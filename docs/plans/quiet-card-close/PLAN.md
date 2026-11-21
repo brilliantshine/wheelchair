@@ -155,6 +155,7 @@ No change to when an agent counts as quiet or to the reminders before the card; 
 | T1 | Hub side: S1 quiet auto-close, S2 dismiss + read-time `blocking` flag, S2b, S3 docs, node tests | viewer/app/{quiet,cards,card,sessions,threads,chat}.js, viewer/app/API.md, protocol/app/cards.md, cards-lead.md, docs/maps/system-needs-quiet.md, viewer/test/app-{quiet,hub,project-tools-card}.test.js | standard / gpt (gpt-6.1-terra) | wc-4866136bd5dd-worker | `node --test viewer/test/*.test.js` | done |
 | T2 | Thread page Dismiss button (S2 page) and browser test; after T1 | viewer/pages/thread.js, viewer/test/app-needs.spec.js | standard / claude (claude-sonnet-5-5) | wc-4866136bd5dd-worker-2 | `npm --prefix viewer run test:browser`, `node --test viewer/test/*.test.js` | done |
 | R1 | Remediation 1: make the rearm test in app-quiet.test.js stable (no product change) | viewer/test/app-quiet.test.js | standard / gpt (gpt-6.1-terra); rung 2: effort xhigh | wc-4866136bd5dd-worker-4 | 6x2 concurrent app-quiet runs, `node --test viewer/test/*.test.js` | done |
+| R2 | Remediation 2: duplicate-start test seeds an open quiet card | viewer/test/app-quiet.test.js | light / gpt | | `node --test viewer/test/*.test.js` | in progress |
 
 ## Log
 - 2026-11-21 Ready check at approval: hub and machine answer session list; Claude and GPT sessions started this thread (both logged in); codex/preflight.sh: token fresh. Ready.
@@ -182,3 +183,4 @@ No change to when an agent counts as quiet or to the reminders before the card; 
 - 2026-11-21 — Choice: R1, app-quiet.test.js: the worker case also calls `feed` before its ladder.
 - 2026-11-21 — Choice: R1, app-quiet.test.js: per-stage `quiet_stage` assertions replaced by waits on reminders and the new card.
 - 2026-11-21 — Choice: R1, app-quiet.test.js: the new card is found by its title and a different, unanswered id.
+- 2026-11-21 — Verification attempt 2 at 1f732426: Claude verifier PASS; GPT verifier FAIL with one gap (duplicate-start test seeds a dismissed card, not an open one). A Spec Validation item, so fixed; 0 rare paths. Remediation 2 opened.
