@@ -1,6 +1,6 @@
 ---
 slug: easy-onboarding
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-20
 ---
 
@@ -44,6 +44,25 @@ created: 2026-11-20
 | 22 | Keep reviewing the whole plan as is (no split, no trim) | Collin picked "Keep going" after the third budget stop | user |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  A[Run ./install.sh --serve] --> B{Basic tools present<br/>and Node 20+?}
+  B -- no --> B1[Say what is missing and stop]
+  B -- yes --> C[Install wheelchair, even with no agent CLI;<br/>service PATH includes the user install folders]
+  C --> D[Open the link: home shows<br/>'Set up an agent' checklist]
+  D --> E[Settings, Harnesses: pick a harness, press Install]
+  E --> F[Machine runs the install job:<br/>maker's installer, setup steps, check the CLI runs]
+  F -- failed --> F1[Show the log tail and Try again]
+  F -- succeeded --> G[Sign in from the same row]
+  G --> H{Could a new lead and a worker start?<br/>asks the real placement code}
+  H -- no --> H1[Say why and link to Leads try or Workers try first]
+  H1 --> H
+  H -- yes --> I[Checklist done for good]
+  S[Use switch off] -.-> J[No new agents on that harness;<br/>hidden elsewhere in Settings]
+```
+
+The diagram repeats S1–S5 below; the prose is authoritative.
 
 Validation and the bar: a fresh agent implements from this section alone. Provider keys
 are the hub's (`claude`, `gpt`, `gemini`, `kimi`, `openrouter`); CLIs are `claude`, `codex`,
@@ -136,9 +155,10 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    `node machine/lib/harness-install.js <provider>`. It runs, in order, the Node check (S2.3),
    the recipe, the setup steps and validation (S2.5), all inside the job, so a service restart
    mid-install never skips them. Output from every step goes to
-   `~/.wheelchair/installs/<provider>.log` (truncated at start); the job's pid is in
-   `<provider>.pid`; when it ends it writes `<provider>.result`, JSON `{state:"succeeded"|"failed",
-   exit_code, finished_at}`, then removes the pid file. Starting a job removes any old result.
+   `~/.wheelchair/installs/<provider>.log` (truncated at start); the job's pid and start time are
+   in `<provider>.pid` as JSON `{pid, started_at}`; when it ends it writes `<provider>.result`,
+   JSON `{state:"succeeded"|"failed", exit_code, started_at, finished_at}`, then removes the pid
+   file. GET's `started_at` comes from whichever of the two files is current. Starting a job removes any old result.
 5. **Setup and validation, inside the job, after the recipe exits 0:**
    - for `claude` or `gpt`: `python3 <clone>/install/unseen.py` with a present list of that
      one harness, as `install.sh:137-139` does; then the diagram dial block, keeping the
@@ -199,7 +219,9 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    lead asking for a sub-lead on a switched-off harness learns why. Sessions already running keep running. Two dispatches continue an already-placed session and are
    not new placements, so the switch does not affect them: an aside fork of a live lead
    (`viewer/app/asides.js:34-46`) and a retry of an unanswered start
-   (`viewer/app/sessions.js:232-241`). Turning the switch back on lets waiting starts proceed.
+   (`viewer/app/sessions.js:232-241`). Turning the switch back on lets waiting starts proceed. For an unpinned
+   new lead that waits, the wait's `waiting_provider` fallback (`balancer.js:94`, first entry
+   of Lead order) uses the enabled Lead order, so it never names a switched-off harness.
 3. **Route** `PUT /settings/harnesses/<provider>` body `{enabled: boolean}` → saves through
    `updateSettings`, returns `describe()`. Unknown provider → 404; non-boolean → 400.
    Refused with 409 only when switching off would leave `lead_order`, expanded as the balancer
@@ -359,7 +381,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    to `#accounts` (where add and restore controls live).
 5. **Switching off** a harness with `threads_using > 0` first asks "<N> threads use
    <Harness>. Their running agents keep going, but no new agent starts on it. Leave it out?"
-   A 409 shows its message under the row.
+   A 409 shows its message under the row. After any successful switch change the page
+   re-fetches `/harnesses?fresh=1`, so the rows and the "can't start yet" notice reflect it.
 6. **Switched-off harnesses are hidden elsewhere** on the page: their account rows and
    sign-in, their model cells, their option in the review-family picker (`598-603`), and their
    entries and add-options in the Workers try first and Lead order editors (`:1434`,
@@ -621,6 +644,10 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Slow login probe makes a reachable machine look unreachable | declined | Pre-existing: placement and Usage already read the same 3 s status fetch (`usage.js:56`); Harnesses agreeing with placement is correct, and it retries |
+| mechanics | minor | No refresh after a switch change | upheld | S4.5 |
+| mechanics | minor | Unpinned lead wait names a switched-off harness | upheld | S3.2 `waiting_provider` uses the enabled order |
+| mechanics | minor | `started_at` lost across restart | upheld | S2.4 pid file JSON carries it |
 
 ## Implementation Tasks
 
