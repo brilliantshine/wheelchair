@@ -55,8 +55,8 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   that group's `getBBox()` measured on the live SVG (which is in the group's own, untransformed
   coordinates) plus a 24 px margin, and its width/height to that box, so the export is
   independent of the viewport, pan or zoom; copy each
-  element's computed style that affects drawing (fill, stroke, stroke-width, stroke-dasharray,
-  opacity, font-family, font-size, font-weight, text-anchor, dominant-baseline) inline,
+  element's computed style that affects drawing (fill, fill-opacity, stroke, stroke-opacity,
+  stroke-width, stroke-dasharray, opacity, font-family, font-size, font-weight, text-anchor, dominant-baseline) inline,
   serialize it, draw it onto a canvas at 2× scale on the page's background colour, and
   save the canvas as PNG. If either canvas side would exceed 8192 px, scale down to fit.
 - **Form pictures** (timeline, before-after, layers, side-by-side): draw the form onto a
@@ -66,21 +66,25 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   screen appears in the image.
 - **HTML pictures:** download the `.html` file itself (Decision 8), with
   `content-disposition: attachment`. The saved file must stay inert when opened: the hub
-  inserts, as the very first bytes of the file, `<meta http-equiv="Content-Security-Policy"
+  inserts, immediately after a leading `<!doctype ...>` if the file starts with one (after
+  optional whitespace or BOM), otherwise as the very first bytes, `<meta http-equiv="Content-Security-Policy"
   content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;
   base-uri 'none'; form-action 'none'">`: every directive of the in-app policy
   (`viewer/app/routes.js:17`) that a `<meta>` policy can carry (`frame-ancestors` and
   `sandbox` are ignored in `<meta>`; with no script, frame or connect source allowed, the
-  file cannot run script, submit forms, load or send anything).
+  file cannot run script, submit forms, load or send anything). The hub also removes every
+  `<meta>` tag whose `http-equiv` is `refresh` (case-insensitive match on the tag), so the
+  file cannot navigate away by itself.
 - The download URL is the **same URL the picture page already displays the HTML from**, plus
   `&download=1`: the local-live `/wheelchair/diagram-html?path=...` route
   (`viewer/server.js:1673-1696`, which already resolves the card's plan and registered file)
   and the thread-scoped `.../diagram-html?file=` route (archived and remote, S5). Each route,
-  given `download=1`, adds the prefix and `content-disposition: attachment` with the S1 file
-  name; without it, it behaves as today. The client never builds the file itself. This is the
+  given `download=1`, adds the prefix and `content-disposition: attachment; filename=
+  "<graph file name>"` (the `.html` file's own name, e.g. `flow.html`; the title-based name is
+  for PNGs only); without it, it behaves as today. The client never builds the file itself. This is the
   one new behaviour for local threads besides S1–S4's buttons.
-- File name: the picture's title, reduced to `[A-Za-z0-9._-]`, spaces to `-`, max 80
-  characters, falling back to the graph file name; extension `.png` or `.html`.
+- PNG file name: the picture's title, reduced to `[A-Za-z0-9._-]`, spaces to `-`, max 80
+  characters, falling back to the graph file name; extension `.png`.
 - Saving uses a blob URL on an `<a download>` element, which works in phone Safari and
   Chrome. The canvas never reads cross-origin images, so it is never tainted.
 - Graph and form PNGs work for local, remote and archived threads alike, since they run on
@@ -139,20 +143,21 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   mode 0700; `rename`, falling back to copy-then-unlink across file systems). A name that
   does not exist is skipped. Any other failure is reported like a failed uploads removal
   (`uploads_removed: false` plus `uploads_error`), so today's retry contract
-  (`viewer/app/threads.js:226-241`) applies unchanged. The response adds `kept: [names]`:
+  (`viewer/app/threads.js:226-241`) applies unchanged. The response adds `kept_uploads: [names]` (a new field: the existing `kept` field lists
+  retained worktrees and keeps its meaning and the hub's rebase retry check):
   the requested names present in `kept/<thread>/` after the move step, whether moved by this
   attempt or an earlier one, so a retried archive reports files an earlier attempt already
   preserved.
-- A machine not yet updated ignores `keep` and returns no `kept`; the hub treats a missing
-  `kept` as empty (links stay hidden, the same as today's behaviour).
+- A machine not yet updated ignores `keep` and returns no `kept_uploads`; the hub treats a
+  missing or non-array `kept_uploads` as empty and keeps only string entries (links stay hidden, the same as today's behaviour).
 - `GET /v1/uploads/:threadId/:file` (`machine/service.js:1973-1981`) serves
   `uploads/<thread>/<file>` and, if absent, `kept/<thread>/<file>`, with the same name check,
   headers and symlink refusal.
 - `reserveUpload` (`machine/service.js:300-315`) takes the highest `N-` prefix across both
   `uploads/<thread>/` and `kept/<thread>/`, so a restored thread never reuses a kept number.
 - Kept files are never removed (Decision 7). A thread restore leaves them in `kept/`.
-- **Hub record:** on a finished archive, set `thread.kept_files` to the response's `kept`
-  list (an array of stored names; absent or empty means none). The chat response carries it.
+- **Hub record:** on a finished archive, set `thread.kept_files` to the response's
+  `kept_uploads` list (an array of stored names; absent or empty means none). The chat response carries it.
   On an archived thread, a sent row, file chat card or image card shows its link, preview or
   image only when its `card.file` is in `thread.kept_files` (today they are always
   suppressed: `viewer/pages/thread.js:405-445,1139`); any other keeps today's archived
@@ -184,8 +189,12 @@ working tree.
 - Errors: 400 for bad input, 404 for a missing ref or file. All git calls use `execFile`
   with argument arrays, never a shell.
 
-**Hub reads.** A new hub module (`viewer/app/remote-plan.js`) owns remote reads through
-`MachineClient.call` with a 10 s timeout:
+**Hub reads.** A new hub module (`viewer/app/remote-plan.js`) owns remote reads through the
+machine client with an overall 10 s deadline covering the whole response, not just the
+connection: if the response is aborted, errors or has not finished within 10 s, the read
+rejects (a new `MachineClient` helper may be added for this; `requestJson` today does not
+reject on an abort after headers, `viewer/app/machine-client.js:30-46`). The in-flight flag
+of a background refresh is cleared in a `finally`, so no failure leaves it set:
 
 - **Discovery and listing, never under a lock.** `discoverSlug`/`findSlug` and
   `documents.list` skip remote threads (return null / use the cache). After the chat lock is
@@ -220,12 +229,26 @@ working tree.
   these thread-scoped URLs (and `/wheelchair/?archive=<id>&file=` for the graph viewer)
   when `ctx.archived || ctx.remote`, instead of hub-local worktree paths. The graph viewer
   path for `archive=` must therefore accept remote live threads too.
+- **What the picture page shows on failure** (thread-scoped reads: archived or remote):
+  - Graph (`viewer/index.html`): a 404 shows the existing fatal screen; any other failure,
+    on first load or a poll, shows the existing "lost contact" notice and keeps polling. A
+    later successful poll clears the fatal screen and shows the graph (today only reserved
+    run names recover, `viewer/index.html:2394-2407`); this recovery applies to thread-scoped
+    reads only.
+  - Form: unchanged code path; the existing "This diagram could not be drawn" plus the hub's
+    error text, which is "This picture isn't saved yet" for 404 and "Couldn't reach
+    <machine>" for 502.
+  - HTML: the picture page and inline card first `fetch` the same URL; on 404 or 502 they show
+    the hub's error text in place of the frame (picture page via its existing `say()`),
+    otherwise they create the sandboxed iframe with that URL as today.
 - **Revision for polling:** the thread-scoped graph route returns `{graph, hash}` where
   `hash` is the SHA-1 hex of the exact JSON text read (local archived or remote), and
   `getArchivedGraph` (`viewer/index.html:431-442`) uses that `hash` instead of
   `JSON.stringify(body).length + ':archived'`, so a same-length edit on a remote live thread
   redraws the open picture. (Callers of the route read `graph` from the new wrapper.)
-- Local threads (live or archived) behave exactly as today.
+- Local threads behave as today apart from S1–S4 and two route changes: the thread-scoped
+  graph route's `{graph, hash}` wrapper (also used for local archived threads) and the
+  HTML routes' `download=1`.
 
 ### Non-goals
 
@@ -251,9 +274,13 @@ New tests, at least:
   remote discovery stores the slug only when the snapshot still matches; no machine call
   happens while `withThread`/`withChatThread` is held (fake machine that checks a lock flag
   on `/v1/plan-files` requests only; chat's existing transcript fetch is unchanged).
+- Browser tests also: a remote graph that 404s then succeeds becomes visible; a 502 shows
+  "lost contact" and recovers; an HTML picture shows the 404/502 text; an exported graph keeps
+  its group shading translucent (`fill-opacity`); a saved HTML file with a doctype keeps it
+  first and has no refresh meta.
 - Viewer route tests also: remote picture read maps machine 404 to 404 and an unreachable
   machine to 502; the graph route's `hash` changes on a same-length edit; archived rows show
-  links only for names in `thread.kept_files`.
+  links only for names in `thread.kept_files`; a rebase-kept archive still stays unarchived.
 - Machine tests: `/v1/plan-files` discover/list/read on a temp repo, input refusals,
   2 MiB refusal; archive moves only listed names to `kept/`, a retried archive after a
   completed move reports the right `kept_files`, serves them afterwards, still
@@ -277,6 +304,7 @@ New tests, at least:
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A saved HTML picture could still navigate away through refresh tricks the tag match misses | Needs an agent writing deliberately evasive HTML (tampering, a rare path); the file opens from disk, not the app's origin, so it cannot reach the app or its secrets | review-round-3 |
 
 ## Review Rounds
 
@@ -332,6 +360,30 @@ New tests, at least:
 - S4: archive returns `kept: [names]`; `thread.kept_files` is that list; archived links per file.
 - S5: 404 vs 502 status mapping for remote reads; graph route returns a SHA-1 content `hash` used by `getArchivedGraph`; refresh retry 30 s from last attempt.
 - Validation: pan/zoom export test, saved-HTML behaviour test, status-mapping, hash and per-file tests.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | S5 "local exactly as today" conflicts with the hash wrapper on local archived | upheld | S5 lists the local route changes |
+| intent | minor | CSP meta before doctype forces quirks mode | upheld | S1: meta after a leading doctype |
+| mechanics | blocking | `kept` already names retained worktrees | upheld | S4: new `kept_uploads` field; rebase check untouched |
+| mechanics | blocking | Saved HTML can navigate away via meta refresh | downgraded (minor) | S1: hub strips refresh metas; obfuscated variants are an agent-tampering rare path (Accepted Risks) |
+| mechanics | blocking | `MachineClient.call` can hang on an aborted response | downgraded (major) | S5: 10 s whole-response deadline; in-flight cleared in finally |
+| mechanics | major | HTML download name needs the card title | upheld | S1: `.html` saves under its own file name |
+| mechanics | major | Picture UI states for 404/502 not defined per format | upheld | S5: per-format failure display; tests |
+| mechanics | major | Remote graph opened before commit stays hidden | upheld | S5: successful poll clears fatal for thread-scoped reads |
+| mechanics | minor | Export omits fill-opacity | upheld | S1 style list; test |
+| mechanics | minor | Meta-first forces quirks mode | upheld | Same fix as intent finding |
+
+### Round 4 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 3:**
+- S1: export style list adds fill-opacity and stroke-opacity; CSP meta goes after a leading doctype; refresh metas stripped; HTML downloads save under the `.html` file's own name.
+- S4: archive response field renamed `kept_uploads` (existing `kept` worktree field and rebase check untouched); hub keeps only string entries.
+- S5: 10 s whole-response deadline for machine reads, in-flight cleared in finally; per-format failure display on the picture page and inline cards; thread-scoped graph polls recover from the fatal screen; local route changes listed.
+- Accepted Risks: first row (refresh tricks).
+- Validation: matching browser and route tests.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
