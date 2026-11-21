@@ -1628,6 +1628,18 @@ test('handoff claims use exact leases, state checks, and safe revocation', async
   } finally { await env.close(); }
 });
 
+test('handoff claim commits even when git on the machine has no name or email set', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const id = '012345abcdef'; const repo = await project(root);
+    git(['-C', repo, 'config', '--unset', 'user.name']); git(['-C', repo, 'config', '--unset', 'user.email']);
+    const parent = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim(); const emptyConfig = path.join(root, 'empty-gitconfig'); await write(emptyConfig, '');
+    await withEnv({ GIT_CONFIG_GLOBAL: emptyConfig, GIT_CONFIG_NOSYSTEM: '1' }, async () => {
+      const response = await api(env, 'POST', '/v1/handoff', { action: 'claim-commit', thread_id: id, project: repo, parent, message: 'pickup' }, hubHeader);
+      assert.equal(response.status, 200, JSON.stringify(response.body)); assert.match(response.body.sha || '', /^[0-9a-f]{40}$/, JSON.stringify(response.body));
+    });
+  } finally { await env.close(); }
+});
+
 test('handoff local branch operations guard divergence and report ownership', async () => {
   const root = await temp(); const env = await service(root, { realGit: true }); try {
     const id = '012345abcdef'; const { repo, worktree } = await startedWorktree(env, root, id); const branch = `wc/${id}`;
