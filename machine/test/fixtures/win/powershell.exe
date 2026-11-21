@@ -31,6 +31,18 @@ switch (match[1]) {
     setTimeout(() => { if (!settings.noDone) console.log(JSON.stringify({ done: { exit_code: settings.exitCode || 0 } })); }, settings.duration ?? 50);
     break;
   }
+  case 'appcleanup': {
+    const ledger = path.join(process.env.WC_FAKE_APP_DIR, 'cleanup.jsonl');
+    const registry = JSON.parse(fs.readFileSync(path.join(process.env.WC_FAKE_APP_DIR, 'processes.json'), 'utf8'));
+    for (const [pid, created] of [[args.wrapper_pid, args.wrapper_created], [args.pid, args.created]]) {
+      if (!pid || !created) continue;
+      const actual = registry[String(pid)];
+      const matched = actual != null && String(actual) === String(created);
+      fs.appendFileSync(ledger, JSON.stringify({ pid, matched }) + '\n');
+      if (matched) { try { process.kill(pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; } }
+    }
+    break;
+  }
   case 'appwindows': {
     const windows = [];
     for (const app of args.apps) {

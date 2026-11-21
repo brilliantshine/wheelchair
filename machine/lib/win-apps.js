@@ -182,6 +182,27 @@ public static class WcShot {
 `);
 }
 
+function cleanupScript(app) {
+  const args = { pid: app.pid, created: app.created, wrapper_pid: app.wrapper_pid, wrapper_created: app.wrapper_created };
+  const data = Buffer.from(JSON.stringify(args)).toString('base64');
+  return script('appcleanup', args, `
+$ErrorActionPreference='Stop'
+$a = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
+function Stop-Matching([int]$pidValue, [string]$created) {
+  if ($pidValue -le 0 -or -not $created) { return }
+  $p = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+  if ($null -eq $p) { return }
+  try { $actual = $p.StartTime.ToUniversalTime().ToFileTimeUtc().ToString() } catch { throw "cannot check process creation time: $_" }
+  if ($actual -ne $created) { return }
+  & taskkill.exe /PID $pidValue /T /F | Out-Null
+  if ($LASTEXITCODE -ne 0 -and (Get-Process -Id $pidValue -ErrorAction SilentlyContinue)) { throw "cannot stop process $pidValue" }
+  try { $p.WaitForExit(5000) | Out-Null } catch {}
+}
+Stop-Matching $a.wrapper_pid $a.wrapper_created
+Stop-Matching $a.pid $a.created
+`);
+}
+
 function error(message, status = 422) { return Object.assign(new Error(message), { status }); }
 
 class AppTracker {
@@ -202,6 +223,27 @@ class AppTracker {
     const json = JSON.stringify(this.apps, null, 2).replace(/("(?:created|wrapper_created)": )"(\d+)"/g, '$1$2');
     fs.writeFileSync(tmp, json, { mode: 0o600 });
     fs.renameSync(tmp, this.file);
+  }
+
+  async startup() {
+    try {
+      const json = fs.readFileSync(this.file, 'utf8').replace(/("(?:created|wrapper_created)":\s*)(\d+)/g, '$1"$2"');
+      this.apps = JSON.parse(json);
+    } catch (e) { if (e.code === 'ENOENT') return; throw e; }
+    for (const app of this.apps) {
+      if (!app.running || this.children.has(app.id)) continue;
+      const result = await this.winEnv.ps(cleanupScript(app));
+      if (result.code) throw error(result.stderr || 'failed to clean up Windows app');
+      app.running = false;
+      app.exit_code = null;
+      this.save();
+    }
+  }
+
+  async sweep(liveNames) {
+    const dead = this.apps.filter(app => app.running && !liveNames.has(app.session));
+    await Promise.all(dead.map(app => this.terminate(app)));
+    return { copyKeys: [...new Set(dead.map(app => app.copyKey).filter(k => k != null))] };
   }
 
   async launch(session, options, started) {

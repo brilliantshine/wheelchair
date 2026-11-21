@@ -91,3 +91,27 @@ test('shots retain only the newest 50', async () => {
   assert.equal(files.includes(path.basename(shot.path)), true);
   await tracker.killSession(session.name);
 });
+
+test('startup kills a matching wrapper first and never kills reused PIDs', async () => {
+  const { tracker, stateDir, fakeDir, winEnv } = setup();
+  const started = await tracker.start(session, opts({ duration: 10000 }));
+  const data = JSON.parse(fs.readFileSync(path.join(stateDir, 'win/apps.json'), 'utf8'));
+  const app = data[0];
+  fs.writeFileSync(path.join(fakeDir, 'processes.json'), JSON.stringify({ [app.wrapper_pid]: '133000000000000002', [app.pid]: '133000000000000099' }));
+  const recovered = new AppTracker({ winEnv, stateDir });
+  await recovered.startup();
+  const calls = fs.readFileSync(path.join(fakeDir, 'cleanup.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(calls, [{ pid: app.wrapper_pid, matched: true }, { pid: app.pid, matched: false }]);
+  assert.equal(recovered.status(session, started.id).apps[0].running, false);
+  assert.equal(recovered.status(session, started.id).apps[0].exit_code, null);
+});
+test('sweep terminates dead sessions and returns their copy keys', async () => {
+  const { tracker } = setup();
+  const dead = await tracker.start(session, { ...opts({ duration: 10000 }), copyKey: 'dead-copy' });
+  const live = await tracker.start({ name: 'wc-live' }, { ...opts({ duration: 10000 }), copyKey: 'live-copy' });
+  assert.deepEqual(await tracker.sweep(new Set(['wc-live'])), { copyKeys: ['dead-copy'] });
+  await wait(100);
+  assert.equal(tracker.status(session, dead.id).apps[0].running, false);
+  assert.equal(tracker.status({ name: 'wc-live' }, live.id).apps[0].running, true);
+  await tracker.killSession('wc-live');
+});
