@@ -24,6 +24,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, spawn, execFile } = require('node:child_process');
 const { pipeline } = require('node:stream/promises');
+const { promisify } = require('node:util');
+const gitAsync = promisify(execFile);
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
 const { readLines: readCodexSteps } = require('./lib/codex-steps');
@@ -44,6 +46,41 @@ function uploadName(name) {
   const ext = match ? match[2] : '';
   const stem = (match ? match[1] : clean).slice(0, 100 - ext.length) || 'file';
   return stem + ext;
+}
+
+const PLAN_FILES = ['MAP.md', 'IDEA.md', 'PLAN.md'];
+const validSlug = (slug) => typeof slug === 'string' && /^[a-z0-9][a-z0-9._-]{0,79}$/.test(slug) && slug !== '.' && slug !== '..';
+const storedName = name => typeof name === 'string' && /^[0-9]+-[A-Za-z0-9._-]+$/.test(name);
+async function planFiles(input) {
+  const { thread_id, project, default_branch, slug, action, file } = input;
+  if (typeof thread_id !== 'string' || !/^[0-9a-f]{12}$/.test(thread_id) || typeof project !== 'string' || !path.isAbsolute(project) || typeof default_branch !== 'string' || !default_branch || default_branch.startsWith('-') || default_branch.includes('\0') || !['discover', 'list', 'read'].includes(action)) die('invalid plan request');
+  if (action !== 'discover' && !validSlug(slug)) die('invalid slug');
+  if (action === 'read' && !PLAN_FILES.includes(file)) die('invalid file');
+  try { if (!(await fsp.stat(project)).isDirectory()) die('invalid project'); await fsp.stat(path.join(project, '.git')); } catch (error) { if (error.status) throw error; die('invalid project'); }
+  const branch = `wc/${thread_id}`;
+  const git = async (...args) => (await gitAsync('git', ['-C', project, ...args], { maxBuffer: 4 * 1024 * 1024 })).stdout;
+  const missing = () => Object.assign(new Error('not found'), { status: 404 });
+  try { await git('rev-parse', '--git-dir'); await git('check-ref-format', '--branch', default_branch); } catch { die('invalid project or default branch'); }
+  try {
+    await git('rev-parse', '--verify', `${branch}^{commit}`);
+    if (action === 'discover') {
+      let base;
+      try { base = (await git('merge-base', branch, `origin/${default_branch}`)).trim(); }
+      catch { base = (await git('merge-base', branch, default_branch)).trim(); }
+      const added = await git('diff', '--name-only', '--diff-filter=A', base, branch, '--', 'docs/plans');
+      const existing = new Set((await git('ls-tree', '--name-only', base, 'docs/plans/')).split('\n').map(line => line.trim().split('/').pop()).filter(Boolean));
+      const names = new Set();
+      for (const line of added.split('\n')) { const match = line.match(/docs\/plans\/([^/]+)\//); if (match && !existing.has(match[1])) names.add(match[1]); }
+      return { slug: names.size === 1 ? [...names][0] : null };
+    }
+    const object = name => `${branch}:docs/plans/${slug}/${name}`;
+    const eligible = async name => { try { return Number((await git('cat-file', '-s', object(name))).trim()) <= 2 * 1024 * 1024; } catch { return false; } };
+    if (action === 'read') { if (!await eligible(file)) throw missing(); return { content: await git('show', object(file)) }; }
+    const checks = await Promise.all(PLAN_FILES.map(eligible));
+    const files = PLAN_FILES.filter((_, i) => checks[i]);
+    const content = files.includes('PLAN.md') ? await git('show', object('PLAN.md')) : '';
+    return { files, status: content.match(/^status:\s*([^\s#]+)/m)?.[1] || null };
+  } catch (error) { if (error.status) throw error; throw missing(); }
 }
 
 // Canonical identity shared by SSH and HTTPS GitHub origins.
@@ -301,6 +338,7 @@ class MachineService {
     const dir = path.join(this.stateDir, 'uploads', threadName(id));
     await mkdir(dir);
     const entries = await fsp.readdir(dir);
+    entries.push(...await fsp.readdir(path.join(this.stateDir, 'kept', id)).catch(error => { if (error.code === 'ENOENT') return []; throw error; }));
     let n = entries.reduce((max, entry) => Math.max(max, Number(/^(\d+)-/.exec(entry)?.[1] || 0)), 0) + 1;
     for (;;) {
       const target = path.join(dir, `${n}-${uploadName(name)}`);
@@ -1135,7 +1173,8 @@ class MachineService {
     const head = command('git', ['-C', worktree, 'rev-parse', 'HEAD']);
     return head.ok ? { ok: true, commit: head.stdout.trim() } : { ok: false, reason: head.stderr.trim() || 'git rev-parse failed' };
   }
-  async archive(threadId) {
+  async archive(threadId, keep = []) {
+    const names = [...new Set((Array.isArray(keep) ? keep : []).filter(storedName))];
     if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
     threadName(threadId);
     this.closingThreads.set(threadId, (this.closingThreads.get(threadId) || 0) + 1);
@@ -1211,10 +1250,22 @@ class MachineService {
       // Only a finished archive counts: the hub reopens a thread whose archive kept a rebase or
       // could not remove its uploads, and that thread takes uploads again. Still inside the lock,
       // so an upload queued behind it sees this.
-      try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); await this.screens.removeThreadDir(threadId); }
+      try {
+        const uploads = path.join(this.stateDir, 'uploads', threadId); const keptDir = path.join(this.stateDir, 'kept', threadId);
+        for (const name of names) {
+          const source = path.join(uploads, name); let stat;
+          try { stat = await fsp.lstat(source); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+          if (!stat.isFile()) continue;
+          await mkdir(keptDir);
+          try { await fsp.rename(source, path.join(keptDir, name)); }
+          catch (error) { if (error.code !== 'EXDEV') throw error; await fsp.copyFile(source, path.join(keptDir, name)); await fsp.unlink(source); }
+        }
+        await fsp.rm(uploads, { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); await this.screens.removeThreadDir(threadId); }
       catch (error) { uploads_removed = false; uploads_error = error.message; }
     }
-    return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
+    const kept_uploads = [];
+    for (const name of names) { try { if ((await fsp.lstat(path.join(this.stateDir, 'kept', threadId, name))).isFile()) kept_uploads.push(name); } catch (error) { if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error; } }
+    return { stopped, committed, removed, kept, kept_uploads, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
     } finally {
       this.archivingThreads.delete(threadId);
       await this.persistArchiveMarkers();
@@ -1974,8 +2025,12 @@ class MachineService {
         await this.authorize(request, 'hub');
         const id = threadName(decodeURIComponent(pathBits[2])); const name = decodeURIComponent(pathBits[3]);
         if (!/^[0-9]+-[A-Za-z0-9._-]+$/.test(name)) die('invalid file name');
-        const target = path.join(this.stateDir, 'uploads', id, name);
-        let file; try { file = await fsp.open(target, 'r'); } catch (error) { if (error.code === 'ENOENT') throw Object.assign(new Error('not found'), { status: 404 }); throw error; }
+        let file;
+        for (const dir of ['uploads', 'kept']) {
+          try { file = await fsp.open(path.join(this.stateDir, dir, id, name), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); break; }
+          catch (error) { if (error.code === 'ENOENT') continue; if (error.code === 'ELOOP') throw Object.assign(new Error('not found'), { status: 404 }); throw error; }
+        }
+        if (!file) throw Object.assign(new Error('not found'), { status: 404 });
         const type = IMAGE_TYPES[path.extname(name).toLowerCase()];
         response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': `attachment; filename="${name.replace(/^\d+-/, '')}"` } : {}) });
         file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
@@ -1992,7 +2047,8 @@ class MachineService {
         try { input = await bodyOf(request); } catch (error) { if (error.status === 400) throw Object.assign(error, { status: 422, handoff: true }); throw error; }
         return send(response, 200, await this.handoff(input));
       }
-      if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
+      if (request.method === 'POST' && url.pathname === '/v1/plan-files') { await this.authorize(request, 'hub'); return send(response, 200, await planFiles(await bodyOf(request))); }
+      if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); const input = await bodyOf(request); return send(response, 200, await this.archive(input.thread_id, input.keep)); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
         if (request.method === 'DELETE' && pathBits.length === 3) { const result = await this.stop(name); return send(response, result?.pending ? 202 : 200, result || { ok: true }); }
