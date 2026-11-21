@@ -488,7 +488,7 @@ New tests, at least:
 | T1 | Machine: `/v1/plan-files` route (S5), archive keeps lead-sent files, kept serving and numbering (S4) | `machine/service.js`, `machine/API.md`, `machine/test/plan-files.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker | `bash machine/test/run.sh` | done |
 | T2 | tricky — Hub: ZIP writer and `docs.zip` (S2), remote plan reads and background refresh (S5), archive `keep` and `kept_files` (S4), HTML `download=1` (S1) | `viewer/app/*`, `viewer/server.js` diagram-html handling, `viewer/test/*.test.js` | standard, gpt-6.1-terra | wc-291bff9fbda1-worker-2 | `node --test viewer/test/*.test.js` | done |
 | T3 | Picture page Download (S1 PNG export, HTML link) and sent-file preview page (S3) | `viewer/pages/picture*`, `viewer/pages/file.*`, `APP_PAGES` line, new specs | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-3 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
-| T4 | Thread page: Download all link (S2), sent rows open preview (S3), archived rows honour `kept_files` (S4), HTML download inertness browser test (S1); after T2 and T3 | `viewer/pages/thread.js`, `thread.css`, new spec | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-4 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | dispatched |
+| T4 | Thread page: Download all link (S2), sent rows open preview (S3), archived rows honour `kept_files` (S4), HTML download inertness browser test (S1); after T2 and T3 | `viewer/pages/thread.js`, `thread.css`, new spec | standard, claude-sonnet-5-5 | wc-291bff9fbda1-worker-4 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
 
 ## Log
 
@@ -509,3 +509,10 @@ Build accepted: approval a40eb86e-c69f-46d8-815d-be9ef02baa25
 - 2026-11-21 — Choice: T3, `viewer/pages/file.js`: a non-previewable extension shows "cannot be previewed" with the Download link; stored names not matching `^[0-9]+-[A-Za-z0-9._-]+$` are refused.
 - 2026-11-21 — Choice: T3, preview tests serve files through the fake machine's `uploadsDir`.
 - 2026-11-21 — T3 accepted (band: bigger-scout): full browser suite 1120 passed re-run by sub-lead on the worker branch; scout found no Spec deviation and no HTML injection; weak spots (pan/zoom proof is a transform-string check; only the timeline form is tested) left for verification.
+- 2026-11-21 — Choice: T4, `viewer/pages/thread.js` sent rows: a previewable file's title becomes the preview link and its Download link stays beside it.
+- 2026-11-21 — Choice: T4, `viewer/pages/thread.js` file chat card: a separate Preview button next to Download.
+- 2026-11-21 — Choice: T4, `viewer/pages/thread.js` archived kept image rows: keep a Download link as well as the image link.
+- 2026-11-21 — Choice: T4, `viewer/pages/thread.js`: `kept_files` added to both the files signature and the chat signature; Download all sits inside `.file-list` with the `file-dl` class.
+- 2026-11-21 — Choice: T4, `viewer/test/app-files.spec.js` (outside its boundary, disclosed): `exact: true` on two Download locators so "Download all" does not match; no assertion weakened.
+- 2026-11-21 — Choice: T4, `viewer/test/app-files-followup.spec.js`: phone link-height check allows 43.5 px (Firefox rounding); HTML downloads fetched with `?token=` and opened as `file://` pages from the run folder.
+- 2026-11-21 — T4 accepted (band: bigger-scout): browser 1142 passed and viewer 732/732 re-run by sub-lead on the worker branch; scout found no Spec deviation.
