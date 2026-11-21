@@ -39,6 +39,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D12 | Each agent binds to its own copy's Editor through instructions added to its prompt: open Unity on its copy, select the MCP for Unity instance whose project path is the copy, verify, never act on another | One MCP for Unity server on Windows serves every Editor and routes per client session; URLs cannot separate threads | review-round-1 |
 | D13 | Marked tools are withheld from a session when the Linux port is held by another process; forwards and readying follow only entries the session's CLI loads; forwards are recorded and restored across machine restarts | Stops keys in headers reaching an unrelated Linux service; no wasted ports or 45 s waits for tools never loaded; tmux sessions outlive the service | review-round-1 |
 | D14 | Tool readiness is a ready file written only after a successful reconcile following the session's start; the go-between keeps the client connection if the tool exits before that, and handles a restart during an unfinished `initialize` | Fixes skipped restarts on a stale or mid-reconcile copy and lost connections | review-round-1 |
+| D15 | Supersedes D5's mode: the MCP for Unity preset is a stdio tool started per agent (`uvx.exe` on Windows, wrapped by the go-between), not the Editor's HTTP address. The localhost forward (item 1) is still built for other tools | User's choice; agents usually start before Unity is open, and the HTTP way would fail for that whole session; one server per agent keeps agents apart | user |
 ## Spec
 
 Background: the bridge as built is described in `docs/maps/windows-bridge-runtime.md` and
@@ -148,30 +149,54 @@ Antigravity (plugin) need no URL change.
 
 ### 2. MCP for Unity preset
 
-The Project tools form gets an "Add MCP for Unity" button (shown on every machine; the
-switch part only on WSL). It adds an entry named `unity` (`unity-2`, ... if taken):
-`{"type": "http", "url": "http://localhost:8080/mcp"}`, with "Runs on Windows" on when the
-machine is WSL. The user edits or saves it like any entry; the button only fills the form.
-Help text under it: "Add the MCP for Unity package to your Unity project and commit it, so
-every Windows copy has it. Each agent opens Unity on its own copy and picks that Editor in
-the MCP. The port must match the one shown in Window > MCP for Unity." It links to
-`https://coplaydev.github.io/unity-mcp/getting-started/install`.
+MCP for Unity runs as a stdio tool started per agent (D15): `uvx --from mcpforunityserver
+mcp-for-unity --transport stdio`, which talks to whichever Unity Editors have the MCP for Unity
+package open, over Windows localhost. On WSL it runs on Windows (`uvx.exe`), so it is an
+ordinary Windows `.exe` stdio tool: it readies the copy, gets `WHEELCHAIR_WINDOWS_PROJECT`, and
+is wrapped by item 4's go-between. Each agent has its own server process.
 
-**Pointing each agent at its own copy's Editor.** One MCP for Unity server on Windows
-`localhost:8080` serves every running Editor; agents in different threads reach the same
-server, and the server routes by an active instance chosen per client session. So, for a
-tool-role session whose loaded entries include a marked tool named `unity` or `unity-<n>`,
-or whose URL is the preset's, the machine adds these lines to the session's prompt file
-before launch (same mechanism as item 5's line):
+**The button.** The Project tools form gets an "Add MCP for Unity" button. It adds an entry
+named `unity` (`unity-2`, ... if taken), stdio, args `["--from", "mcpforunityserver",
+"mcp-for-unity", "--transport", "stdio"]`, and a command:
+- WSL machine: the Linux path of Windows `uvx.exe`. The form asks the machine (a new field on
+  the existing project tools read response, `windows_uvx`), which resolves it once per call
+  with PowerShell `(Get-Command uvx.exe).Source` and converts it with `winEnv.toLinux`, with a
+  10 s deadline. Not found → the button stays enabled but fills nothing and shows "Install uv
+  on Windows first: https://docs.astral.sh/uv/getting-started/installation/".
+- Any other machine: `uvx`.
+The user edits or saves it like any entry; the button only fills the form. The server version
+is not pinned (MCP for Unity's own setup does not pin it).
+
+Help text under it: "Add the MCP for Unity package to your Unity project and commit it, so
+every Windows copy has it. Each agent opens Unity on its own copy and picks that Editor. The
+first start downloads the server; if an agent's Unity tools fail the first time, start a new
+agent." It
+links to `https://coplaydev.github.io/unity-mcp/getting-started/install`.
+
+**Pointing each agent at its own copy's Editor.** One machine can have several Editors open
+(other threads' copies, the user's own). For a tool-role session on a WSL machine whose loaded
+entries include a Windows stdio entry with `mcp-for-unity` among its args, the machine adds
+these lines to the session's prompt file before launch (same mechanism as item 5's line),
+filling every placeholder itself:
 
 > Unity: your project copy on Windows is `<copy_windows path>`. Open Unity on it yourself
-> (`wc.js win start "<Unity.exe>" -projectPath "<copy>"`), never on another path. Before any
-> other Unity MCP call, list the connected Unity instances, select the one whose project path
-> is your copy, and check the selection; if none matches, don't use the Unity tools until it
-> appears. Never act on another instance.
+> (`wc.js win start "<unity exe>" -projectPath "<copy_windows path>"`), never on another path.
+> Before any other Unity MCP call, list the connected Unity instances, select the one whose
+> project path is your copy, and check the selection; if none matches, don't use the Unity
+> tools until it appears. Never act on another instance.
 
-`README.md`'s Windows bridge section gets a short "Unity" paragraph saying the same,
-including that the package must be committed to the project.
+`<unity exe>` is `C:\Program Files\Unity\Hub\Editor\<version>\Editor\Unity.exe`, where
+`<version>` is `m_EditorVersion` from the session worktree's `ProjectSettings/ProjectVersion.txt`,
+if that file exists under the Windows mount. Otherwise the sentence reads "Open Unity <version
+or 'the project's version'> on it yourself with `wc.js win start` (Unity is usually under
+`C:\Program Files\Unity\Hub\Editor`)".
+
+For a sandboxed Codex session (which cannot `win start`), the second sentence is instead: "You
+can't start Windows programs from this sandboxed session; ask whoever started you to have Unity
+opened on that path." The rest is the same.
+
+`README.md`'s Windows bridge section gets a short "Unity" paragraph saying the same, including
+that uv must be installed on Windows and the package committed to the project.
 
 ### 3. Disk report
 
@@ -320,8 +345,10 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
 - Project tools form and save: switch shown only on WSL and for `http://localhost` /
   `http://127.0.0.1`; list kept in step with renames and deletes; Unity button fills the
   entry; other top-level keys kept.
-- Unity prompt lines added only for sessions loading the `unity` marked entry, with the
-  session's copy path.
+- Unity button: on WSL fills the `uvx.exe` Linux path from `windows_uvx`, or shows the
+  install hint when it is missing; elsewhere `uvx`. Prompt lines added only for sessions
+  loading a Windows stdio `mcp-for-unity` entry, with the copy path and the Unity path from
+  `ProjectVersion.txt` (or the fallback sentence); the sandboxed Codex variant.
 - `win info`: `disk` fields and each warning threshold with fake sizes, no `git_bytes`
   warning; `forwards` states.
 - Ready file: `ok: true` only after a successful reconcile after start (not for an existing
@@ -344,9 +371,11 @@ request with a random token the harness chose; it then starts a session whose `.
 marks an HTTP entry on that port (written before the session starts), and checks that a
 request to `http://127.0.0.1:<port>/` from WSL returns that token (proving the answer came
 from Windows), and that after stopping the listener a request fails within 5 s rather than
-hanging. When `WHEELCHAIR_UNITY` is set and an MCP for Unity server answers on Windows
-`localhost:8080`, it also sends an MCP `initialize` POST to `/mcp` through the forward and
-checks for a JSON-RPC result; otherwise it prints `Unity MCP part skipped`.
+hanging. When `WHEELCHAIR_UNITY` is set and Windows has `uvx.exe`, the Unity part also: opens the
+Editor on the fixture copy (as today), runs the preset's command through the go-between (with a
+ready file already `ok: true`), sends MCP `initialize` and `tools/list` over its stdio and
+checks for tools, then reads the instance list and checks one instance's project path is the
+fixture copy. Otherwise it prints `Unity MCP part skipped`.
 
 ### Not doing
 
@@ -364,7 +393,7 @@ copies or git data; no IPv6-only Windows servers.
 
 | # | What to check | Round |
 |---|---------------|-------|
-| C1 | MCP for Unity's active-instance selection is per client session in HTTP mode, so two agents selecting different Editors do not override each other | lead (D12) |
+| C1 | MCP for Unity's stdio server lists every connected Editor with its project path, and selecting one in one agent's server does not affect another agent's | lead (D12, D15) |
 | C2 | Claude accepts a `--mcp-config` server with the same name as a `.mcp.json` server listed in `disabledMcpjsonServers`, and ignores the top-level `wheelchair` key in `.mcp.json` | lead (D7, item 4) |
 | C3 | With default WSL `localhostForwarding`, requests fail promptly while the Windows server is down and reach it once it starts, with no loop through the relay | review-round-1 |
 
@@ -406,16 +435,25 @@ copies or git data; no IPv6-only Windows servers.
 | mechanics | blocking | `::1` bind failure by another Linux service still lets IPv6 clients reach it | upheld | §1 `EADDRINUSE` on `::1` withholds the entry |
 | mechanics | blocking | Relay failure or service restart releases a port while CLIs keep its URL | upheld (restart window accepted-risk) | §1 listeners stay bound while used; restart gap in Accepted Risks |
 | mechanics | blocking | Go-between can waste its one restart with no client handshake | upheld | §4 step 4c (ready before `initialize`), step 5 holds `initialize` |
-| mechanics | blocking | Unity prompt tells sandboxed Codex to run a refused command | upheld | pending the Unity connection decision |
+| mechanics | blocking | Unity prompt tells sandboxed Codex to run a refused command | upheld | §2 sandboxed Codex sentence |
 | mechanics | major | Ready-file recovery has no durable enrollment | upheld | §4 `win_wrapped` / `win_ready` in the session record |
 | mechanics | major | Codex size budget can drop entries counted as loaded | upheld | "Which tools a session loads": from the final built config |
 | mechanics | major | Shared forward gains an IPv6 need later | upheld | §1 bind `::1` before admitting; addresses recorded |
 | mechanics | major | Switch-only edit skipped by the save short-cut | upheld | §1 save body `windows`, both checks compare it |
-| mechanics | major | Live Unity check never claims port 8080 | upheld | pending the Unity connection decision |
+| mechanics | major | Live Unity check never claims port 8080 | upheld | §Validation Unity part runs the stdio preset; no port 8080 |
 | mechanics | minor | `win info` warning prelude would break JSON stdout | upheld | §3 warnings to stderr |
-| intent | major | HTTP preset fails for the whole session when Unity isn't open at agent start | user-decision | question card: stdio per agent vs Editor's HTTP |
-| intent | minor | `<Unity.exe>` left as a placeholder | upheld | pending the Unity connection decision |
-| intent | minor | Unity prompt triggered by an unmarked URL | upheld | pending the Unity connection decision |
+| intent | major | HTTP preset fails for the whole session when Unity isn't open at agent start | user-decision | D15: stdio per agent |
+| intent | minor | `<Unity.exe>` left as a placeholder | upheld | §2 filled from `ProjectVersion.txt` |
+| intent | minor | Unity prompt triggered by an unmarked URL | upheld | §2 trigger is a Windows stdio `mcp-for-unity` entry |
+
+### Round 3 — 2026-11-21
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round 2:** "Which tools a session loads" (from the final built config); §1 `::1` listener rules and late binding, listeners stay bound while used, save carries the Windows list, restart record holds addresses; §2 rewritten for the stdio preset (D15): button and `windows_uvx`, help text, prompt trigger and filled Unity path, sandboxed Codex sentence; §3 warnings to stderr; §4 enrollment in the session record, go-between steps 4c and 5; Validation (Unity button and prompt tests, live Unity part via the stdio preset); Accepted Risks (restart window); C1 reworded.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
