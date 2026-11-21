@@ -296,7 +296,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 
 ### Round 2 — 2026-11-21
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:** Terms (shared eligibility rule incl. paths; "On WSL" = WSL kernel,
 interop separate); §1 intro and off-WSL warnings; §2 step 6 reconcile claims after the second
