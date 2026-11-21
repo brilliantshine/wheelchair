@@ -63,8 +63,18 @@ async function acceptCard(hub, payload) {
       return { ok: true, duplicate: true, id: payload.delivery_id };
     }
     const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
+    if (payload.kind === 'lesson' && typeof input.for === 'string' && !['lead', 'sub-lead', 'worker', 'mapper'].includes(session.role)) {
+      throw appError(422, `a ${session.role} may not save lessons for ${input.for}s`);
+    }
     const checked = validate(payload.kind, input, session.role, { machine: true });
-    if (!checked.ok) throw appError(422, checked.reason);
+    if (!checked.ok) throw appError(payload.kind === 'lesson' ? 400 : 422, checked.reason);
+
+    if (checked.card.kind === 'lesson') {
+      const lesson = await require('./settings.js').applyLesson(hub, checked.card, session.role, thread.project, thread.id);
+      if (!lesson.changed) return { card: { ok: true, lesson: lesson.id }, targetName: null };
+      checked.card.lesson = lesson.id;
+      checked.card.snapshot = lesson.snapshot;
+    }
 
     if (checked.card.passes_on !== undefined && !thread.cards.some((item) => item.id === checked.card.passes_on && item.kind === 'message' && item.asks === true)) {
       throw appError(422, 'passes_on names no question in this thread');

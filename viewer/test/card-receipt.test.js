@@ -18,6 +18,8 @@ test('card CLI prints only a receipt for delivered and spooled cards and instruc
       [{ kind: 'message', to: 'lead', text: 'secret text' }, 202, { ok: true, spooled: true, id: 'queued' }, { id: 'queued', kind: 'message', queued: true }],
       [{ kind: 'message', to: 'lead', text: 'secret text' }, 202, { id: 'delivered-202', kind: 'message', text: 'secret text', answered: false }, { id: 'delivered-202', kind: 'message' }],
       [{ kind: 'message', to: 'lead', text: 'secret text' }, 202, { ok: true, duplicate: true, id: 'duplicate' }, { id: 'duplicate', kind: 'message' }],
+      [{ kind: 'lesson', action: 'add', for: 'lead', text: 'secret lesson', why: 'secret why' }, 200, { id: 'saved', kind: 'lesson', lesson: 'L2094a1', text: 'secret lesson' }, { id: 'saved', kind: 'lesson', lesson: 'L2094a1' }],
+      [{ kind: 'lesson', action: 'add', for: 'lead', text: 'secret lesson', why: 'secret why' }, 200, { ok: true, lesson: 'L2094a1' }, { kind: 'lesson', lesson: 'L2094a1' }],
       ...['title', 'resolve', 'retract'].flatMap(kind => [false, true].map(queued => [kind === 'title' ? { kind, title: 'secret title' } : { kind, card: 'target', note: 'secret note' }, queued ? 202 : 200, queued ? { ok: true, spooled: true, id: 'queued' } : { ok: true, title: 'secret title' }, queued ? { ok: true, queued: true } : { ok: true }])),
     ];
     for (const [card, code, body, expected] of cases) {

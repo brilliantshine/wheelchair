@@ -6,8 +6,10 @@ const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
 const path = require('node:path');
+const { PROVIDERS } = require('./providers.js');
 
 const shown = new Set([
+  'lesson',
   'offer',
   'idea',
   'deferred',
@@ -26,6 +28,7 @@ const shown = new Set([
 ]);
 
 const roles = {
+  lesson: ['lead', 'sub-lead', 'worker', 'mapper'],
   offer: ['lead'],
   idea: ['lead'],
   deferred: ['lead'],
@@ -78,6 +81,15 @@ const sudoMachineFields = {
 };
 
 const fields = {
+  lesson: {
+    action: (v) => ['add', 'replace', 'remove'].includes(v),
+    for: (v) => ['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper'].includes(v),
+    why: (v) => line(v) && !/[\v\f\u0085\u2028\u2029]/.test(v),
+    text: (v) => v === undefined || (line(v) && v.length <= 300 && !/[\v\f\u0085\u2028\u2029]/.test(v)),
+    lesson: (v) => v === undefined || (typeof v === 'string' && /^L[0-9a-f]{6}$/.test(v)),
+    only_ai: (v) => v === undefined || v === 'any' || (typeof v === 'string' && Object.hasOwn(PROVIDERS, v)),
+    only_project: (v) => v === undefined || typeof v === 'boolean',
+  },
   offer: { summary: text },
   idea: {
     bullets: (value) => array(value, (item) => object(item) && text(item.id) && text(item.text), 1),
@@ -198,6 +210,7 @@ function validate(kind, card, role, options = {}) {
   for (const [key, check] of Object.entries(spec)) {
     if (!check(card[key])) return { ok: false, reason: `invalid or missing field: ${key}` };
   }
+  if (kind === 'lesson' && ((card.action !== 'remove' && card.text === undefined) || (card.action !== 'add' && card.lesson === undefined) || (card.action === 'add' && card.lesson !== undefined) || (card.action === 'remove' && (card.text !== undefined || card.only_ai !== undefined || card.only_project !== undefined)))) return { ok: false, reason: 'invalid fields for lesson action' };
   if (kind === 'question' && !card.options.some((option) => option.id === card.leaning)) {
     return { ok: false, reason: 'leaning must name an option' };
   }
@@ -305,6 +318,8 @@ async function main(argv) {
   }
   const body = JSON.parse(result.body);
   const receipt = ['title', 'resolve', 'retract'].includes(kind) ? { ok: true } : { id: body.id, kind };
+  // A lesson's receipt names the lesson, including a repeat the hub saved earlier (no new card id then).
+  if (kind === 'lesson' && typeof body.lesson === 'string') receipt.lesson = body.lesson;
   if (body.spooled === true) receipt.queued = true;
   process.stdout.write(`${JSON.stringify(receipt)}\n`);
 }
