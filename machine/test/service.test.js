@@ -264,7 +264,7 @@ test('transcript copy dedupes content after source shrinks', async () => {
   const env = await service(await temp()); try { await start(env); const source = path.join(path.dirname(env.state), 'source.jsonl'); await write(source, '{"one":1}\n{"two":2}\n'); const session = env.instance.sessions['wc-t-lead']; await env.instance.copyTranscript(session, source); await write(source, '{"one":1}\n'); await env.instance.copyTranscript(session, source); assert.equal((await fs.readFile(session.transcript_path, 'utf8')).trim().split('\n').length, 2); } finally { await env.close(); }
 });
 test('card spool keeps order and retries until acknowledged', async () => {
-  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' }); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'two', text: 'two' }] }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 2); hub.setStatus(200); await env.instance.drainSpool('cards'); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0); const cards = hub.calls.filter(call => call.path.endsWith('/cards')); assert.match(cards.at(-2).body, /"id":"one"/); assert.match(cards.at(-1).body, /"id":"two"/); } finally { await env.close(); await hub.close(); }
+  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); const first = await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' }); const second = await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'two', text: 'two' }] }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal(first.body.spooled, true); assert.equal(second.body.spooled, true); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 2); hub.setStatus(200); await env.instance.drainSpool('cards'); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0); const cards = hub.calls.filter(call => call.path.endsWith('/cards')); assert.equal(JSON.parse(cards.at(-2).body).delivery_id, first.body.id); assert.equal(JSON.parse(cards.at(-1).body).delivery_id, second.body.id); assert.match(cards.at(-2).body, /"id":"one"/); assert.match(cards.at(-1).body, /"id":"two"/); } finally { await env.close(); await hub.close(); }
 });
 test('a card stored before a hub 500 is queued and deduplicated on drain', async () => {
   const hub = await hubServer(200, { failAfterStore: true }); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
@@ -1894,4 +1894,29 @@ test('Kimi usage route protects credentials and reports usage failures', async (
       assert.equal((await api(env, 'POST', '/v1/usage', { account: 'default-kimi', cli: 'agy', dir: null }, hubHeader)).status, 400);
     } finally { await new Promise(resolve => server.close(resolve)); await env.close(); }
   });
+});
+
+test('spooled receipt id becomes the drained hub card id', async () => {
+  const { acceptCard } = require('../../viewer/app/cards');
+  const thread = { id: 't', sessions: [{ name: 'wc-t-lead', role: 'lead' }], cards: [], queues: {}, pinned: {} };
+  const hub = { updateThread: async (_, fn) => fn(thread), session: (t, name) => t.sessions.find(s => s.name === name) };
+  const server = http.createServer((req, res) => {
+    let body = ''; req.on('data', chunk => { body += chunk; }); req.on('end', async () => {
+      try {
+        const result = req.url.endsWith('/cards') ? await acceptCard(hub, JSON.parse(body)) : { ok: true };
+        res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(result));
+      } catch (error) { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); }
+    });
+  });
+  const env = await service(await temp());
+  try {
+    await start(env);
+    const result = await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' });
+    assert.equal(result.body.spooled, true);
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    env.instance.config.hub_url = `http://127.0.0.1:${server.address().port}`;
+    await env.instance.drainSpool('cards');
+    assert.equal(thread.cards.length, 1);
+    assert.equal(thread.cards[0].id, result.body.id);
+  } finally { await env.close(); if (server.listening) await new Promise(resolve => server.close(resolve)); }
 });
