@@ -45,11 +45,16 @@ you.
 
 - `blocking`: a worker following this Spec would build the wrong thing, or could not
   implement it as written.
-- `major`: a worker would have to stop and ask before proceeding.
-- `minor`: everything else: polish, taste, an optional or better-but-not-necessary design.
+- `major`: in normal use (`realism.md`), a worker taking the most obvious reading would
+  lose a decision the user made or the user's work, or is genuinely unable to proceed: no
+  reasonable reading settles it, and the readings lead to behaviour the user would notice.
+- `minor`: everything else: polish, taste, an optional or better-but-not-necessary design,
+  and any finding whose worst outcome is an extra prompt or question to the user, a
+  repeated message, or two sentences a careful reader reconciles the obvious way.
 
-A finding you cannot tie to a concrete worker consequence is `minor`. Reporting nothing is
-an acceptable outcome; padding severity is not.
+Judge by the worst realistic outcome, not by whether a wording tension could be argued to
+need a question. A finding you cannot tie to a concrete worker consequence is `minor`.
+Reporting nothing is an acceptable outcome; padding severity is not.
 
 The plan's Review Rounds table, Accepted Risks and Check Once Built sections record findings
 already settled. A finding marked `declined`, `accepted-risk` or `check-once-built`, or listed

@@ -315,9 +315,17 @@ verdict, and act:
 You may not downgrade or decline a finding you have not checked against the Spec or the
 code; the verdict cites evidence. A reviewer's severity is an opinion, not a gate, and
 severity is what the finding would do to an implementing worker: `blocking` (would build
-the wrong thing or could not implement it), `major` (would have to stop and ask), `minor`
-(everything else). Whether a rare path is chased is decided by `realism.md`, not
-by its severity. Stop each
+the wrong thing or could not implement it), `major` (in normal use, would lose the user's
+decision or work, or leave a worker genuinely unable to proceed), `minor` (everything
+else). The full ladder is in `reviewer.md`. A finding whose worst outcome is an extra prompt
+to the user, a repeated message, or wording a careful reader reconciles the obvious way is
+`minor`, however it was argued: fix it, but it never blocks a clean round. Whether a rare
+path is chased is decided by `realism.md`, not by its severity.
+
+Fix by cutting before patching. A minor finding gets the smallest edit, often deleting the
+sentence that causes it. When one part of the Spec keeps drawing findings, simplify or
+remove that rule rather than adding another clause: each patch grows the Spec and draws
+new findings. Stop each
 reviewer when its `result` arrives; each round starts fresh reviewers.
 
 After triage, if the round is clean by the test below, resolve any counted minor or
