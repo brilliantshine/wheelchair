@@ -62,6 +62,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 33 | Overlap questions from a peer follow the card window; (b)'s own overlap sentence is replaced; a re-ask posts its replacement only after the retract is confirmed | Round 13 findings | review-round-13 |
 | 34 | Peer overlap questions get four explicit paths (settled, held, in window, late) and the answer goes back to the peer, recorded on the Open Question for restarts; every retract 503 is retried after a minute | Round 14 findings | review-round-14 |
 | 35 | Peer replies are best effort and never hold the plan: the Decision carries who asked and the reply follows its commit; a small fix does not reply after a restart; only a re-ask and the talk-instead approval retract wait for a retract to succeed | Round 15 findings | review-round-15 |
+| 36 | Supersedes the reply-back parts of Decisions 34-35: a peer's overlap question is answered at once from what the lead knows (saying it is asking its user when held or carded); the user's decision is not sent back later. Unrelated peer questions keep today's "send the answer back" rule | After rounds 13-15, the last two drew findings only about the reply-back; the user picked "No, answer it right away" (card fd19b88f) | user |
 
 ## Spec
 
@@ -132,12 +133,9 @@ paths:
 - inside the card window: it becomes (or joins) the overlap card for that thread;
 - after the card window: the late-overlap mention, and the lead answers the peer from what it
   knows, saying its user was not asked.
-When a held or carded peer question is settled, the lead sends the answer back to that peer as a
-`message`, best effort: a refused reply (the peer archived or has no live lead) is dropped with a
-Log line. For a feature, the Open Question line records who asked (`asked by <session name>,
-question <id>`); the Decision Log entry copies it, the Open Question is removed with the Decision
-as usual, and the reply is sent right after that commit. On a small fix nothing records who asked,
-so a lead restarted before the answer does not reply to the peer. Unrelated peer questions pass on as today.
+On every path the lead answers the peer at once, from what it knows; when the question is held
+or carded it adds that it is asking its user. The user's later decision is not sent back to the
+peer (Decision 36), so nothing records who asked. Unrelated peer questions pass on as today.
 
 - **One question at a time:** an overlap card waits behind any open `question` card of yours
   and is asked next. For a feature, a waiting or asked overlap is in PLAN.md's Open Questions
@@ -266,6 +264,15 @@ merging of branches; no sub-lead or worker rule changes.
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 16 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 15:** Round 15 fixes (Decision 35: retract retries hold only where needed), then Decision 36: a peer's overlap question is answered at once; the user's decision is not sent back (reply tracking removed from §1 "Passing a question on").
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 15 — 2026-11-21
 
