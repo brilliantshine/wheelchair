@@ -320,6 +320,9 @@ New tests, at least:
 | A remote thread's stage could read a hub-local file if the hub has a checkout at that thread's worktree path | Rare path: worktree paths carry the thread id and live on the thread's own machine | review-round-7 |
 | After undoing a handoff archived before files were kept, a new attachment could reuse an old file card's numbered name and be kept or served as it | Rare path: needs an undone handoff of a thread archived before this feature, then a numbering collision | review-round-7 |
 | A very large graph or form may exceed older iOS Safari's canvas area limit and fail to download | Rare path: older browser versions with unusually large pictures | review-round-7 |
+| An archive whose `kept/<thread>` directory denies access returns 500 instead of `uploads_removed: false` | Rare path: needs broken permissions inside the machine's own state directory | verification-1 |
+| A remote thread whose machine was removed from the registry shows its documents as not found rather than "Couldn't reach" | Rare path: removing a machine that still has threads is not ordinary running | verification-1 |
+| The preview page reads a whole streamed file before saying "Too big to preview" when no length is sent | Rare path: the app links only files whose card size is at most 2 MiB; a larger one needs a hand-typed URL | verification-1 |
 
 ## Check Once Built
 
