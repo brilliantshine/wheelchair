@@ -199,6 +199,15 @@ npm --prefix viewer run test:browser
 
 ## Review Rounds
 
+### Round 1 — 2026-11-20
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
