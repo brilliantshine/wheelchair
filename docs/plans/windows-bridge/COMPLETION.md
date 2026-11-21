@@ -305,5 +305,6 @@ Evidence: real `codex exec` on this PC with the adapter's own `-c` overrides and
 test tool returned `project=[C:\some\path]` (`docs/plans/windows-bridge/reports/R1.md`).
 `bash machine/test/run.sh` after the merge: tests 500, pass 499, fail 1 (the known Kimi test).
 `node --test viewer/test/*.test.js`: pass 712, fail 2 (the two known plan-directory tests); one
-earlier run also failed a third, timing-sensitive viewer test that passed on rerun and fails the
-same way on the base branch occasionally.
+earlier run also failed a third viewer test, which passed on the rerun; the same intermittent
+failure ("a start the machine never answered is asked again by name...") appeared in T2's runs
+before this fix.
