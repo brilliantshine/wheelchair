@@ -667,7 +667,7 @@ npm --prefix viewer run test:browser
 | R1-1 | Remediation 1: S2.3 Node check reads the recipe's PATH node | `machine/lib/harness-install.js`, `machine/test/harness-install.test.js` | standard, gpt | wc-ff891978fb1d-worker-7 | `bash machine/test/run.sh` | done |
 | R1-2 | Remediation 1: S4.6 hidden order positions; S4.1–4.3 Install targets the shown machine; S4.2 sign-in closes on switch-off | `viewer/pages/settings.{js,css}`, `viewer/test/app-harnesses.spec.js` | standard, claude | wc-ff891978fb1d-worker-8 | `npm --prefix viewer run test:browser` | done |
 | R2-1 | Remediation 2: Add account offers only switched-on providers; switch-off closes every sign-in card for that provider (second attempt on the sign-in gap) | `viewer/pages/settings.js`, `viewer/test/app-harnesses.spec.js` | standard, claude | wc-ff891978fb1d-worker-9 | `npm --prefix viewer run test:browser` | done |
-| R3-1 | Remediation 3: make the Add account browser tests stop racing their settings reload (test only) | `viewer/test/app-harnesses.spec.js` | light, claude | wc-ff891978fb1d-worker-10 | `--repeat-each=10` on app-harnesses.spec.js; `npm --prefix viewer run test:browser` | running |
+| R3-1 | Remediation 3: make the Add account browser tests stop racing their settings reload (test only) | `viewer/test/app-harnesses.spec.js` | light, claude | wc-ff891978fb1d-worker-10 | `--repeat-each=10` on app-harnesses.spec.js; `npm --prefix viewer run test:browser` | done |
 
 ## Log
 
@@ -717,3 +717,8 @@ Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
 - 2026-11-21 — Remediation 2 complete; validation on `abb50e71`: installer 209/209, machine 486/486, node 764/764, browser 1197 passed / 1 flaky (app-send-now, passes alone 12/12). Verification attempt 3 started.
 - 2026-11-21 — Verification attempt 3 on `2cf9fa84`: both verifiers FAIL on the same must-fix gap, the R2-1 test `switching off the provider chosen in an open Add account form resets it` is flaky (its `stubAccounts` `route.fetch` is still in flight at test end), which fails `npm --prefix viewer run test:browser`. The GPT verifier also found two-tab variants: the Add draft one recorded as a rare path; the sign-in card one sent to the lead, as it touches the sign-in gap that has had two fix attempts.
 - 2026-11-21 — Lead's answer on attempt 3: fix the flaky test; both two-tab cases are rare paths. REMEDIATION-3.md written; R3-1 dispatched (light: the brief names the exact change).
+- 2026-11-21 — R3-1 accepted (band: scout): test-only change to `viewer/test/app-harnesses.spec.js`; no product code, no skipped or weakened assertion. My own `--repeat-each=10` run on 39de9149: 840 passed, exit 0.
+- 2026-11-21 — Choice: R3-1, switching-off-with-threads test: the `fresh=1` refetch count check became `expect.poll` (same assertion); it was the one failure in the worker's first repeat run.
+- 2026-11-21 — Choice: R3-1, `patchSettings` stub helper: on any failure it calls `r.abort()` rather than leaving the request unanswered.
+- 2026-11-21 — Choice: R3-1, `settingsGet`: waits for any GET ending `/api/settings` registered before the submit click, not one tied to the POST.
+- 2026-11-21 — Choice: R3-1, `afterEach` with `unrouteAll({ behavior: 'ignoreErrors' })` placed in each phone/desktop describe block, not at file level.
