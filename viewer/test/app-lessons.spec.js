@@ -69,6 +69,8 @@ test.describe('Settings', () => {
     await expect(first).toContainText('only on GPT');
     await expect(first).toContainText('only in proj-alpha');
     await expect(first.locator('.lesson-from')).toHaveText(/^saved from /);
+    // A thread with no title of its own shows its display name, as the thread page does, not its id.
+    await expect(first.locator('.lesson-from')).not.toHaveText('saved from ' + made.id);
     await expect(page.locator('.lesson-row[data-id="L000002"]')).toContainText('edited by the user');
     await expect(page.locator('.lesson-row[data-id="L000003"] .lesson-from')).toHaveCount(0);
 

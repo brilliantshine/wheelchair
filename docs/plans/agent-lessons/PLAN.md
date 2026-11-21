@@ -321,6 +321,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | Two agents in different threads replacing or removing the same lesson at nearly the same time: the later one wins, on a lesson it read at its own start | Rare path: lessons are few and rarely changed, and both changes show as notices; no lesson versioning | review-round-3 |
 | If an `add` lands, its reply is lost, and Collin removes the lesson before the agent repeats the card, the repeat saves it again | Rare path: a lost reply and a removal within the same minute; Collin can remove it again | review-round-2 |
 | `normalize()` keeps a lesson whose `saved_at` is a non-ISO date string `Date.parse()` accepts (e.g. "2020") | Rare path: the hub always writes ISO times; only a hand-edited settings.json produces it, and the field is display-only | verification-1 |
+| A lessons save in Settings that is still pending when Collin switches to another role's Lessons entry and types there redraws the first role's editor when it returns, dropping the new draft | Rare path: needs a switch and typing inside the sub-second window of a local save; the saved data is correct and the draft can be retyped | verification-2 |
 | A hub crash between saving a lesson and recording its notice leaves the lesson active with no notice | Rare path (crash mid-operation, sub-second window); the lesson still shows in Settings | review-round-1 |
 
 ## Check Once Built
@@ -470,3 +471,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — Choice: R2, thread.js/css: notice is one `p.lesson-line` with inline spans for why, markers and link, 10px apart.
 - 2026-11-21 — R1 accepted (band: scout): gaps 2, 3, 5, 10 fixed.
 - 2026-11-21 — Choice: R1, cards.js: the allowed-saver list is written inline before validate(); a non-string `for` falls through to the 400 field error (worker reported none; scout listed 2).
+- 2026-11-21 — Verification 2: Claude verifier PASS; GPT verifier FAIL with 2 gaps. Role switch during a pending save accepted as a rare path. "saved from" showing a raw thread id fixed by the sub-lead directly (one-line, transcription-level): viewer/pages/settings.js loadLessonThreads uses the thread's display name (title, slug, project folder, id), as viewer/app/peers.js threadName does; assertion added to app-lessons.spec.js and shown to fail on the old line.

@@ -839,7 +839,7 @@
   async function loadLessonThreads() {
     try {
       const res = await api('/threads?view=list');
-      lessonThreads = Object.fromEntries((res.threads || []).map((t) => [t.id, t.title || t.id]));
+      lessonThreads = Object.fromEntries((res.threads || []).map((t) => [t.id, t.title || t.slug || String(t.project || '').split('/').filter(Boolean).pop() || t.id]));
       if (lessonEdit && section === 'templates') renderPanel();
     } catch { lessonThreads = lessonThreads || {}; }
   }

@@ -88,3 +88,16 @@ npm test: # tests 777  # pass 777  # fail 0
 playwright app-settings + app-lessons: 82 passed (41.8s)
 protocol-rules.test.js: # pass 36  # fail 0
 ```
+
+### Remediation 2 (after verification attempt 2, GPT verifier FAIL)
+
+Gaps: `REMEDIATION-2.md`. The role-switch-during-save gap is accepted as a rare path (PLAN.md Accepted Risks, verification-2).
+
+- "saved from" link text: viewer/pages/settings.js `loadLessonThreads` uses title, slug, project folder, then id (as viewer/app/peers.js:14). viewer/test/app-lessons.spec.js asserts an untitled thread's link is not its raw id; the assertion fails against the old line (checked).
+
+Validation on the fixed tip:
+
+```
+npm test: # tests 777  # pass 777  # fail 0
+playwright app-settings + app-lessons: 82 passed (2.0m)
+```
