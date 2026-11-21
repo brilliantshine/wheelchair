@@ -35,6 +35,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | HTML pictures download as their .html file, not PNG; graphs and forms download as PNG | HTML pictures run in a sandboxed frame the page cannot draw from; they are the rare fallback form | defaulted |
 | 9 | The zip is built on the hub with a small built-in writer (stored, no compression), no new dependency | Three small Markdown files; the package has no zip library | defaulted |
 | 10 | Remote threads show the last committed plan on `wc/<id>`, read through a new machine route; local threads keep reading the working tree | Leads commit plan changes each turn; reading refs avoids trusting worktree paths sent by the hub | defaulted |
+| 11 | Supersedes Decision 10's rationale: remote reads use the branch because one path serves live and archived threads alike (the machine can already find a thread's worktree itself, `machine/service.js:1720-1723`). Trade-off: mid-turn, a remote live thread can show the plan as of the lead's last commit, while a local one shows unsaved edits | Correcting a wrong rationale from review | review-round-1 |
 
 ## Spec
 
@@ -48,18 +49,25 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
 - The picture page (`viewer/pages/picture.js`) gets a **Download** button for every picture
   it can show.
 - **Graph pictures:** clone the rendered SVG from the graph viewer
-  (`viewer/index.html:1888-1906`), reset pan/zoom so the whole graph is in view, copy each
+  (`viewer/index.html:1888-1906`); set the clone's `viewBox` to the drawn content's bounding
+  box (`getBBox()` of the content group, measured on the live SVG) plus a 24 px margin, and its
+  width/height to that box, independent of the viewport, pan or zoom; copy each
   element's computed style that affects drawing (fill, stroke, stroke-width, stroke-dasharray,
   opacity, font-family, font-size, font-weight, text-anchor, dominant-baseline) inline,
-  serialize it, draw it onto a canvas at 2× device scale on the page's background colour, and
-  save the canvas as PNG.
+  serialize it, draw it onto a canvas at 2× scale on the page's background colour, and
+  save the canvas as PNG. If either canvas side would exceed 8192 px, scale down to fit.
 - **Form pictures** (timeline, before-after, layers, side-by-side): draw the form onto a
   canvas from its JSON with a small drawer per form, following the same reading order and
   text as the on-screen form (`viewer/pages/diagram.js:28-80`), wrapping long text, at 2×
   scale, then save as PNG. Pixel-identical styling is not required; every string shown on
   screen appears in the image.
 - **HTML pictures:** download the `.html` file itself (Decision 8), with
-  `content-disposition: attachment`.
+  `content-disposition: attachment`. The saved file must stay inert when opened: the hub
+  inserts, as the very first bytes of the file, `<meta http-equiv="Content-Security-Policy"
+  content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">` (a policy at
+  least as strict as the one the picture page serves it with, `viewer/app/routes.js:17-18`).
+  The download is a hub route (`.../diagram-html?file=<name>&download=1`, local, archived or
+  remote) that adds this prefix; the client never builds the file itself.
 - File name: the picture's title, reduced to `[A-Za-z0-9._-]`, spaces to `-`, max 80
   characters, falling back to the graph file name; extension `.png` or `.html`.
 - Saving uses a blob URL on an `<a download>` element, which works in phone Safari and
@@ -79,6 +87,11 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   (method 0), CRC-32, local headers, central directory, end record; no ZIP64 (inputs are at
   most 3 × 2 MiB).
 - 404 when the thread has no slug or none of the three files exists.
+- For a remote thread the route first calls `list` live (not the cache), then `read` for
+  each listed file. If any machine call fails (unreachable, timeout, or an error status,
+  including a 404 for a file `list` just reported), the route returns 502 "Couldn't reach
+  <machine>"; it never returns a partial ZIP as success. For local threads a file that
+  disappears between listing and reading is skipped.
 - The sidebar's Project documents section and the phone Files panel
   (`viewer/pages/thread.js:381-465`) get a **Download all** link above the list when at least
   one of the three files exists.
@@ -115,7 +128,12 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   mode 0700; `rename`, falling back to copy-then-unlink across file systems). A name that
   does not exist is skipped. Any other failure is reported like a failed uploads removal
   (`uploads_removed: false` plus `uploads_error`), so today's retry contract
-  (`viewer/app/threads.js:226-241`) applies unchanged. The response adds `kept_files: <n>`.
+  (`viewer/app/threads.js:226-241`) applies unchanged. The response adds `kept_files: <n>`,
+  where `n` is the number of requested names present in `kept/<thread>/` after the move
+  step, whether moved by this attempt or an earlier one, so a retried archive reports files
+  an earlier attempt already preserved.
+- A machine not yet updated ignores `keep` and returns no `kept_files`; the hub treats a
+  missing `kept_files` as 0 (links stay hidden, the same as today's behaviour).
 - `GET /v1/uploads/:threadId/:file` (`machine/service.js:1973-1981`) serves
   `uploads/<thread>/<file>` and, if absent, `kept/<thread>/<file>`, with the same name check,
   headers and symlink refusal.
@@ -146,8 +164,7 @@ working tree.
   under `docs/plans` in `base..wc/<id>`, minus directories present at the base. Returns
   `{slug}` when exactly one, else `{slug: null}`.
 - `action: "list"`: `slug` required and valid (`documents.validSlug` rules). Returns
-  `{files: [...], graphs: [...]}`: which of the three plan files exist at `wc/<id>`, and the
-  `.json`/`.html` names under `docs/plans/<slug>/graphs/` (`git ls-tree`).
+  `{files: [...]}`: which of the three plan files exist at `wc/<id>`.
 - `action: "read"`: `slug` and `file` required. `file` is one of the three plan files or
   `graphs/<name>` with `<name>` matching `^[A-Za-z0-9._-]+\.(json|html)$`. Returns the blob
   via `git show wc/<id>:docs/plans/<slug>/<file>`, refused past 2 MiB (`git cat-file -s`
@@ -166,13 +183,19 @@ working tree.
   refresh snapshots `machine`, `project`, `default_branch`, `slug`; calls `discover` if no
   slug, then `list`; then takes `withThread`, re-reads the thread and stores the result only
   if `machine`, `project` and `slug` (when it had one) still match. A discovered slug is
-  saved to `thread.slug`; `{files, graphs}` go into an in-memory cache keyed by thread id.
+  saved to `thread.slug`; `{files}` goes into an in-memory cache keyed by thread id.
   Failures keep the last good cache and are not shown as errors.
 - The chat response and thread list use the cached file list for remote threads, and the
   chat response adds `remote: true` for them.
 - **Document reads** (doc route, download, S2 zip) for a remote thread call `read` outside
   any lock. A machine error or timeout returns 502 with a plain message ("Couldn't reach
   <machine>"), as the file route does today.
+- **Picture rows stay card-driven, as today:** one row per `diagram` card file
+  (`viewer/pages/thread.js:381-394`); nothing lists graph files independently. Remote reads,
+  like today's archived reads (`viewer/app/threads.js:270-290`), read the picture from
+  `docs/plans/<thread.slug>/graphs/<file>`; a card whose `plan` differs from the thread's slug
+  is not specially handled. A card whose file is not committed yet shows the picture page's
+  existing not-found message.
 - **Picture reads:** the existing thread-scoped routes
   `GET /wheelchair/api/threads/:id/graph?file=` and `.../diagram-html?file=`
   (`viewer/app/routes.js:563-568,584-586`) serve remote threads through `read`, live or
@@ -205,13 +228,16 @@ New tests, at least:
 - Viewer route tests: `docs.zip` for a local live, local archived and remote thread (fake
   machine); 404 with no documents; remote doc/graph/html reads; 502 on machine failure;
   remote discovery stores the slug only when the snapshot still matches; no machine call
-  happens while `withThread`/`withChatThread` is held (fake machine that checks a lock flag).
+  happens while `withThread`/`withChatThread` is held (fake machine that checks a lock flag
+  on `/v1/plan-files` requests only; chat's existing transcript fetch is unchanged).
 - Machine tests: `/v1/plan-files` discover/list/read on a temp repo, input refusals,
-  2 MiB refusal; archive moves only listed names to `kept/`, serves them afterwards, still
+  2 MiB refusal; archive moves only listed names to `kept/`, a retried archive after a
+  completed move reports the right `kept_files`, serves them afterwards, still
   removes everything else; a move failure yields `uploads_removed: false`; `reserveUpload`
   numbering across `kept/`.
-- Browser tests: picture page Download produces a PNG blob for a graph and a form and an
-  `.html` download for an HTML picture; file preview page renders Markdown and text and shows
+- Browser tests: picture page Download produces a PNG blob for a graph (including one wider
+  than a 390 px phone viewport, whose PNG contains every node) and a form, and an `.html`
+  download for an HTML picture whose first bytes are the CSP meta; file preview page renders Markdown and text and shows
   "Too big to preview"; Download all link appears; archived thread with `kept_files` shows
   download links.
 
@@ -236,6 +262,16 @@ New tests, at least:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | HTML pictures download as .html, departing from IDEA's "image file" | user-decision | Asked the user |
+| intent | minor | Decision 10's rationale is wrong; mid-turn lag on remote threads unrecorded | upheld | Decision 11 |
+| intent | minor | Background refresh is heavier than on-demand listing | declined | The sidebar list already rides the chat poll; an on-demand route adds a request per poll and still needs stored discovery |
+| mechanics | blocking | Older machine ignores `keep` and deletes uploads | downgraded (minor) | Same as today's behaviour on that machine, not a wrong build; S4 now treats missing `kept_files` as 0 |
+| mechanics | blocking | Retry accounting for `kept_files` undefined | upheld (major) | S4: count requested names present in `kept/` |
+| mechanics | blocking | Exported HTML can run script when opened | upheld | S1: hub prefixes a CSP meta; download is a hub route |
+| mechanics | major | Remote graph names have no defined path to picture rows | upheld | S5: rows stay card-driven, `list` drops graphs, reads use thread slug like archived |
+| mechanics | major | ZIP error handling for remote reads unspecified | upheld | S2: live `list` then `read`; any failure is 502, never a partial ZIP |
+| mechanics | major | Lock test would fail on chat's existing transcript fetch | upheld | Validation scoped to `/v1/plan-files` calls |
+| mechanics | minor | Pan/zoom reset does not fit the graph for export | upheld | S1: export bounds from content bbox, 8192 px cap; wide-graph test |
 
 ## Implementation Tasks
 
