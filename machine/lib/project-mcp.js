@@ -77,7 +77,12 @@ function entryReason(name, entry) {
   const http = object(entry) && (entry.type === 'http' || entry.type === 'sse') && typeof entry.url === 'string' && entry.url.length > 0 && (entry.headers === undefined || (object(entry.headers) && Object.values(entry.headers).every(value => typeof value === 'string')));
   return stdio || http ? null : 'not a valid stdio, http or sse entry';
 }
-async function readProjectMcp(worktree) {
+function hasWindowsProgram(mcp) {
+  const { isWindowsProgram } = require('./project-programs');
+  return !!mcp && Object.values(mcp.servers).some(entry =>
+    (entry.type === undefined || entry.type === 'stdio') && isWindowsProgram(entry.command));
+}
+async function readProjectMcp(worktree, { wsl = true } = {}) {
   try {
     const file = path.join(worktree, '.mcp.json');
     let info;
@@ -106,6 +111,7 @@ async function readProjectMcp(worktree) {
     for (const name of names) {
       const entry = data.mcpServers[name];
       const reason = entryReason(name, entry);
+      if (!reason && !wsl && (entry.type === undefined || entry.type === 'stdio') && require('./project-programs').isWindowsProgram(entry.command)) continue;
       if (!reason) Object.defineProperty(servers, name, { value: entry, enumerable: true, writable: true, configurable: true });
       else warnings.push({ names: [name], text: `${serverLabel(name)}: skipped: ${reason}` });
     }
@@ -117,4 +123,4 @@ async function readProjectMcp(worktree) {
     return { mcp: { names, servers, rawServers: data.mcpServers }, warnings, hash };
   } catch { return failure('read failed'); }
 }
-module.exports = { DUPLICATE_HEADERS, TOOL_ROLES, readProjectMcp, serverLabel, entryReason, checkDocumentText };
+module.exports = { DUPLICATE_HEADERS, TOOL_ROLES, readProjectMcp, serverLabel, entryReason, checkDocumentText, hasWindowsProgram };
