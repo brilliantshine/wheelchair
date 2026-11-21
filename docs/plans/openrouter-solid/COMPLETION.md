@@ -2,7 +2,25 @@
 slug: openrouter-solid
 date: 2026-11-21
 implemented-by: "T1 standard claude-sonnet-5-5; T2-T5 standard gpt-6.1-terra; integration and live check by sub-lead (claude-opus-5-5)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (PASS)
+    checks: claude-sonnet-5-5, gpt-6.1-terra
+  - round: 1
+    lane: gpt-6.2-sol (FAIL, 3 fixed, 1 rare)
+    checks: claude-sonnet-5-5, gpt-6.1-terra
+  - round: 2
+    lane: claude-opus-5-5 (PASS)
+    checks: claude-sonnet-5-5, gpt-6.1-terra
+  - round: 2
+    lane: gpt-6.2-sol (FAIL, 1 fixed, 1 settled in review)
+    checks: claude-sonnet-5-5, gpt-6.1-terra
+  - round: 3
+    lane: claude-opus-5-5 (PASS)
+    checks: claude-sonnet-5-5, gpt-6.1-terra
+  - round: 3
+    lane: gpt-6.2-sol (PASS)
+    checks: claude-sonnet-5-5, gpt-6.1-terra
 ---
 
 # Completion Report — Make OpenRouter agents solid
