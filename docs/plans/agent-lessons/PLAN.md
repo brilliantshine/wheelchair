@@ -430,6 +430,9 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Hub/machine/card backend: S2-S5, S7 route, node tests (tricky) | viewer/app/{settings,routes,card,cards}.js, machine/service.js, viewer/test/app-lessons.test.js | standard / gpt-6.1-terra | wc-7a7ad5f5b389-worker | `npm test` incl. app-lessons.test.js | in progress |
+| T2 | Settings page Lessons entry and editor, thread notice, hash route, preview caption, Playwright spec (S5 caption, S6, S7 UI) | viewer/pages/settings.js, viewer/pages/thread.js, page CSS, viewer/test/app-lessons.spec.js | standard / claude-sonnet-5-5 | | playwright app-settings + app-lessons specs | not started (after T1) |
+| T3 | Protocol text S8 | protocol/app/{cards,lead,sub-lead,worker,mapper,reviewer,verifier}.md | standard / claude-sonnet-5-5 | wc-7a7ad5f5b389-worker-2 | protocol-rules.test.js | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
