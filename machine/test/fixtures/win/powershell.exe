@@ -19,6 +19,23 @@ if (!match) {
 }
 const args = JSON.parse(Buffer.from(match[2], 'base64').toString());
 switch (match[1]) {
+  case 'appwrap': {
+    const settings = JSON.parse(args.argv[0] || '{}');
+    const dir = process.env.WC_FAKE_APP_DIR;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, args.id + '.json'), JSON.stringify({ pid: process.pid, args, settings }));
+    fs.mkdirSync(path.dirname(linuxPath(args.log)), { recursive: true });
+    fs.writeFileSync(linuxPath(args.log), settings.output || 'x'.repeat(settings.outputBytes || 0));
+    if (settings.echoEnv) fs.appendFileSync(linuxPath(args.log), JSON.stringify({ wrapper: process.env.WHEELCHAIR_SESSION_TOKEN || null, program: Object.fromEntries(args.env).WHEELCHAIR_SESSION_TOKEN || null }));
+    console.log(JSON.stringify({ started: { pid: process.pid + 10000, created: '133000000000000001', wrapper_pid: process.pid, wrapper_created: '133000000000000002' } }));
+    setTimeout(() => { if (!settings.noDone) console.log(JSON.stringify({ done: { exit_code: settings.exitCode || 0 } })); }, settings.duration ?? 50);
+    break;
+  }
+  case 'appterminate': {
+    const file = path.join(process.env.WC_FAKE_APP_DIR, args.id + '.json');
+    try { const record = JSON.parse(fs.readFileSync(file)); process.kill(record.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ENOENT' && e.code !== 'ESRCH') throw e; }
+    break;
+  }
   case 'localappdata':
     console.log(process.env.WC_FAKE_LOCALAPPDATA);
     break;
