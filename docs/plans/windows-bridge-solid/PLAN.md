@@ -50,8 +50,11 @@ every new code path returns early there, and the non-WSL tests keep passing unch
 actually loads an entry. Loaded entries per CLI, for tool roles: Claude loads stdio, `http`
 and `sse`; Codex and Antigravity load stdio and `http` (they skip `sse`, as today, and skip
 anything their existing per-entry reasons reject); Pi and Kimi load none. "Loaded entries"
-below always means this set, computed from the adapter's own skip rules (the entries it does
-not warn about), not from `.mcp.json` alone.
+below always means this set, taken from the adapter's final built configuration for the
+session (after item 4's wrapping and after Codex's override size budget, which can drop every
+entry), not from `.mcp.json` alone. The order in `startIn` is: build the adapter command
+(with wrapping), read the loaded entries from it, then claim forwards and decide readying from
+those. An entry that ends up not loaded claims no forward and triggers no readying.
 
 ### 1. Windows localhost tools (HTTP and SSE)
 
@@ -77,7 +80,11 @@ nothing (no readying, no forward).
 the machine reports WSL and the URL is `http://localhost` or `http://127.0.0.1`. Saving
 writes or removes the tool's name in `wheelchair.windows`, removes the `wheelchair` key when
 the list empties and it has no other keys, and keeps every other top-level key as today.
-Renaming or deleting a tool updates the list. SSE stays not editable in the form (as today)
+Renaming or deleting a tool updates the list. A change to the switch alone is a change: the
+form's dirty check and the machine's save request both carry the Windows list (the save body
+gains `windows: [names]`, alongside `tools`), and the machine's "nothing changed" short-cut
+compares both `mcpServers` and `wheelchair.windows` against the baseline before skipping the
+PR. SSE stays not editable in the form (as today)
 but a hand-written SSE entry listed in `wheelchair.windows` is honoured where loaded.
 
 **Forward.** On a WSL machine whose networking mode is not mirrored, the machine keeps one
@@ -85,8 +92,12 @@ forward per distinct port named by a loaded marked tool of any live tool-role se
 is not rewritten: the agent CLI connects to the port in WSL as written.
 
 - Linux side: a TCP listener in the machine service on `127.0.0.1:<port>`, and also on
-  `[::1]:<port>` when the URL host is `localhost` and the machine has IPv6 loopback (a failed
-  `::1` bind is ignored). Both feed the same Windows relay.
+  `[::1]:<port>` when any session using the port has a URL host of `localhost`. A `::1` bind
+  that fails because the machine has no IPv6 loopback (`EADDRNOTAVAIL`, `EAFNOSUPPORT`) is
+  ignored; one that fails because the address is in use (`EADDRINUSE`) counts as "port taken
+  on Linux" below. When a later session needs `::1` on a port the machine already forwards on
+  IPv4 only, the machine binds `::1` then, before admitting that session, with the same rules.
+  All listeners for a port feed the same Windows relay.
 - Windows side: one long-lived relay process per port, started through interop with
   `powershell.exe` running a script shipped in the repo (not written at run time). It
   multiplexes every connection for that port over its stdin/stdout with simple framing
@@ -99,13 +110,16 @@ is not rewritten: the agent CLI connects to the port in WSL as written.
   none, or it is `wslrelay`, it refuses that connection (Linux side closes it) instead of
   dialling. The lookup result may be cached for 2 s.
 - If the Windows side refuses a connection, the Linux side closes that connection; the relay
-  stays up. If the relay process dies, the next connection restarts it once; a second death
-  within 60 s closes the listeners and records the reason.
+  stays up. If the relay process dies, the next connection starts it again, at most once per
+  10 s; while it cannot be started, connections are accepted and closed at once and the
+  reason is recorded for `win info`. **The Linux listeners stay bound for as long as any live
+  session uses the port**, whatever happens to the relay, so the port is never released to
+  another Linux process while a CLI still holds its URL.
 - Claimed before the agent CLI is launched (in `startIn`, before tmux), kept while any live
   session uses that port, closed within 60 s of the last such session stopping or its thread
   archiving.
-- **Port taken on Linux.** If `127.0.0.1:<port>` cannot be bound because another Linux
-  process holds it (or the forward has failed), the marked entry is withheld from that
+- **Port taken on Linux.** If `127.0.0.1:<port>` (or `[::1]:<port>` when needed, see above)
+  cannot be bound because another Linux process holds it, the marked entry is withheld from that
   session's CLI so it never connects to the unrelated process (its headers may carry keys):
   Claude gets the name added to `disabledMcpjsonServers`; Codex and Antigravity drop the
   entry. The project tools warning `<tool>: port <port> is in use on Linux, so it can't reach
@@ -119,12 +133,12 @@ mirrored mode no forward is made and nothing is withheld: WSL reaches Windows `1
 directly.
 
 **Machine service restart.** tmux sessions survive a service restart, so forwards must too.
-The machine records, per session, the ports it forwarded and the marked tool names in
-`<stateDir>/win-forwards.json` (written atomically, mode 0600, entry removed when the session
+The machine records, per session, the ports it forwarded, the addresses bound for each
+(`127.0.0.1`, `::1`) and the marked tool names in `<stateDir>/win-forwards.json` (written atomically, mode 0600, entry removed when the session
 stops). On startup, after `recoverFromTmux`, it re-claims the listeners for every recorded
-session that is still live; a port that can no longer be bound is recorded as `failed: port
-in use on Linux` (the CLI keeps its configuration; the agent sees connection errors and `win
-info` says why).
+session that is still live, with the recorded addresses; a port that can no longer be bound
+is recorded as `failed: port in use on Linux` and shown by `win info`. The window while the
+service is down is an accepted risk (see Accepted Risks).
 
 **Per CLI.** URLs pass through unchanged, so Claude (file-loaded), Codex (HTTP override) and
 Antigravity (plugin) need no URL change.
@@ -181,8 +195,8 @@ A failed measurement leaves the last value and adds `disk.reason`.
 Warnings (D3, amended D11): `copies_bytes` over 20 GB → "This thread's Windows copies use <n>
 GB."; `conflict_refs` 10 or more → "<n> kept conflict snapshots; see README to remove them.";
 `windows_free_bytes` under 10 GB → "Only <n> GB free on the Windows drive." No warning on
-`git_bytes`. Nothing is ever deleted. `wc.js win info`'s printed output shows the warnings
-first.
+`git_bytes`. Nothing is ever deleted. `wc.js win info` keeps printing the JSON on stdout,
+unchanged in shape apart from the new fields; it prints each `disk.warnings` line to stderr.
 
 ### 4. Restarting Windows stdio tools after the copy is ready
 
@@ -208,10 +222,14 @@ JSON `{"ok": true, "at": "<iso>"}` or `{"ok": false, "reason": "...", "at": "<is
 - `ok: false` is written when the session's readying task fails or is still running when the
   45 s wait ends (`reason` "Windows copy is still being readied"); a later success replaces
   it with `ok: true`.
-- On machine service startup, for every live tool session whose ready file is missing or
-  `ok: false` and whose readying was interrupted, the machine runs the readying (create +
-  sync) again and writes the result.
 - Removed when the session stops.
+
+**Enrollment survives restarts.** When a session is started with at least one wrapped tool,
+its session record (persisted in the machine's sessions file) gets `win_wrapped: true` and
+`win_ready: "pending"`, updated to `"ok"` or `"failed"` together with the ready file. On
+machine service startup, for every live session with `win_wrapped: true` and `win_ready` not
+`"ok"`, the machine runs the readying (create + sync) again and writes the result. Sessions
+without `win_wrapped` are never readied by this recovery.
 
 So a copy that existed but was stale at start still counts as not ready until the first
 reconcile after start finishes; if that finishes within the 45 s wait, the tool starts after
@@ -229,9 +247,11 @@ it and is never restarted.
    b. Answer every request already sent to the old tool and unanswered, other than an
       unanswered `initialize`, with a JSON-RPC error (`code -32000`, message "Windows tool
       restarted because its project copy became ready; try again").
-   c. Start the tool again and send it the remembered `initialize`. If the client's
-      `initialize` had not been answered yet, pass the new tool's response to the client as
-      that answer; otherwise drop it. Wait for a successful response (up to 60 s).
+   c. Start the tool again. If the client has not sent `initialize` yet, skip to d (the
+      client's own `initialize`, queued or still to come, goes to the new tool as normal).
+      Otherwise send it the remembered `initialize`. If the client's `initialize` had not been
+      answered yet (including one held by step 5), pass the new tool's response to the client
+      as that answer; otherwise drop it. Wait for a successful response (up to 60 s).
    d. Then send `notifications/initialized` if the client had sent it, flush the queue in
       order, and, if the client had already been initialized, send the client
       `notifications/tools/list_changed`. Resume piping.
@@ -240,8 +260,9 @@ it and is never restarted.
       stderr, and exit 1.
    Restarts at most once.
 5. **Tool exits before ready.** If the real tool exits while the ready file is missing or
-   `ok: false` with reason "still being readied", the go-between does not exit: it answers
-   pending and new requests (including `initialize`) with a JSON-RPC error (`code -32000`,
+   `ok: false` with reason "still being readied", the go-between does not exit: it holds an
+   unanswered `initialize` (never answers it with an error), and answers other pending and new
+   requests with a JSON-RPC error (`code -32000`,
    "Windows tool is waiting for its project copy to be ready; try again shortly") and
    performs step 4's restart (from 4c) when `ok: true` appears. If the ready file instead
    holds `ok: false` with any other reason (readying failed), it answers with that reason
@@ -337,6 +358,7 @@ copies or git data; no IPv6-only Windows servers.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| While the machine service is down (restart or crash), a forwarded port is unbound; a Linux process that takes it in that window can receive a live CLI's requests and headers for that tool | Rare path: needs a service restart and another Linux process binding that exact port in the gap; startup re-claims it and reports a failure | review-round-2 |
 
 ## Check Once Built
 
@@ -381,6 +403,19 @@ copies or git data; no IPv6-only Windows servers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | `::1` bind failure by another Linux service still lets IPv6 clients reach it | upheld | §1 `EADDRINUSE` on `::1` withholds the entry |
+| mechanics | blocking | Relay failure or service restart releases a port while CLIs keep its URL | upheld (restart window accepted-risk) | §1 listeners stay bound while used; restart gap in Accepted Risks |
+| mechanics | blocking | Go-between can waste its one restart with no client handshake | upheld | §4 step 4c (ready before `initialize`), step 5 holds `initialize` |
+| mechanics | blocking | Unity prompt tells sandboxed Codex to run a refused command | upheld | pending the Unity connection decision |
+| mechanics | major | Ready-file recovery has no durable enrollment | upheld | §4 `win_wrapped` / `win_ready` in the session record |
+| mechanics | major | Codex size budget can drop entries counted as loaded | upheld | "Which tools a session loads": from the final built config |
+| mechanics | major | Shared forward gains an IPv6 need later | upheld | §1 bind `::1` before admitting; addresses recorded |
+| mechanics | major | Switch-only edit skipped by the save short-cut | upheld | §1 save body `windows`, both checks compare it |
+| mechanics | major | Live Unity check never claims port 8080 | upheld | pending the Unity connection decision |
+| mechanics | minor | `win info` warning prelude would break JSON stdout | upheld | §3 warnings to stderr |
+| intent | major | HTTP preset fails for the whole session when Unity isn't open at agent start | user-decision | question card: stdio per agent vs Editor's HTTP |
+| intent | minor | `<Unity.exe>` left as a placeholder | upheld | pending the Unity connection decision |
+| intent | minor | Unity prompt triggered by an unmarked URL | upheld | pending the Unity connection decision |
 
 ## Implementation Tasks
 
