@@ -118,9 +118,10 @@ and mapper. It is **shown** (it is the thread notice, decision 12) and **not pin
 Like `done`, a `lesson` card is **never queued**: the machine relays it to the hub
 synchronously and returns the hub's answer; if the hub cannot be reached or does not answer it returns 503
 `the app did not confirm the lesson; run the same card again in a minute (repeating it is
-safe)`. Repeats are made safe by the hub, not by a delivery id: an `add` whose `for` and
-`text` exactly match an existing lesson for that role returns success with that lesson's
-id and records no second notice; a `replace` that leaves the lesson exactly as stored
+safe)`. Repeats are made safe by the hub, not by a delivery id: an `add` whose `for`, `text`
+and resulting `provider` and `project` all exactly match an existing lesson returns
+success with that lesson's id and records no second notice (same text with a different
+scope is a new lesson); a `replace` that leaves the lesson exactly as stored
 returns success with no new notice; a `remove` of an id that is no longer present returns
 success with no new notice (as Settings removals do, S7). The hub first
 applies the change to `settings.lessons` through `settings.update()`, then records the card
@@ -136,8 +137,12 @@ Refusals (422 unless noted), each a sentence the agent can act on:
   lesson for that role, one per line as `[<id>] <first 80 characters>` with its markers,
   so an agent whose instructions showed none of them (other AI or project) can still pick
   one. If none is worth dropping, the agent does not save the new lesson.
-- `no lesson <id> for <role>s` for a `replace`/`remove` naming a missing id or one under
-  another role.
+- `no lesson <id> for <role>s` for a `replace` naming an id not present for that role,
+  and for a `replace` or `remove` naming an id that exists under another role. (A `remove`
+  of an id present under no role succeeds silently, as above.)
+- `Collin edited this lesson; agents leave it as it is` for a `replace` or `remove` of a
+  lesson whose current `saved_by` is `user`. The hub checks the stored value inside the
+  queued settings update, so this holds even for an agent started before Collin's edit.
 - field errors (400) from `card.js` validation as for other kinds.
 
 On a `replace`, a marker field that is absent keeps the lesson's stored marker (so a
@@ -192,7 +197,8 @@ The `lesson` card renders in the thread as one compact line, styled as a notice 
 question): "Saved a lesson for <role plural>: <text>" (`add`), "Updated a lesson for
 <role plural>: <text>" (`replace`), "Removed a lesson for <role plural>: <removed text>"
 (`remove`), followed by the `why` in muted text and the snapshot's markers ("only on GPT", "only in
-<last path segment of the project>"), and an "Open in Settings" link to `/settings#templates/lessons/<role>`. That address
+<last path segment of the project>"), and an "Open in Settings" link to `/wheelchair/app/settings#templates/lessons/<role>` (the
+viewer serves app pages under `/wheelchair/app/`, `viewer/server.js:1748`). That address
 always opens the role's Lessons entry, even with no lessons; empty, it says "No lessons
 for <role plural> right now." (S7). It needs no
 answer, never counts under "Needs you" and has no buttons.
@@ -208,14 +214,15 @@ the group shows nothing extra, but the address in S6 still opens the empty entry
 
 Selecting it opens an editor with:
 
-- A warning line at the top: "Agents keep this list up to date. You can edit it, but
-  agents may reword or remove your changes later."
+- A warning line at the top: "Agents keep this list up to date. Editing is not
+  recommended; a lesson you edit is marked as yours and agents leave it alone."
 - One row per lesson: the text in an editable field (1–300 characters), its markers as
   read-only labels, "saved from <thread title>" as a link when `thread` is set and the
   thread still exists, and a Remove button (with a "Really remove" confirm step, as
   template Delete has).
 - Save, which sends only what Collin changed, through a new
-  `PATCH /settings/lessons/<role>` with body `{ edits: [{ id, text }], removals: [id] }`.
+  `PUT /settings/lessons/<role>` (PUT, because the route dispatcher reads bodies only for
+  POST, PUT and DELETE, `viewer/app/routes.js:65`) with body `{ edits: [{ id, text }], removals: [id] }`.
   The page puts a row in `edits` only if its text differs from what the page loaded, and
   in `removals` only if Collin confirmed Remove. Inside `settings.update()` the hub applies
   each edit (`saved_by: user`, `saved_at` now) and each removal to the current list;
@@ -257,8 +264,8 @@ thread handoffs.
   replace/remove by id, missing id refused; `only_ai`/`only_project` set and cleared;
   `normalize()` dropping malformed lessons; `roleLayers` including only matching lessons,
   placing the block before the template text, and the lead's/sub-lead's "you keep" blocks;
-  `only_ai` naming another AI than the saver's; `assertFits` ignoring lessons blocks; the `PATCH /settings/lessons/<role>` rules (only changed rows applied, a concurrent agent add kept, 409 on an edited-then-removed id);
-  repeat-safe `add`/`replace`/`remove`; the "(edited by the user)" marker in the block; lead and sub-lead previews showing their "you keep" blocks; marker preservation on `replace`; the full-list refusal text; the machine returning 503 for a `lesson` card when the hub is unreachable
+  `only_ai` naming another AI than the saver's; `assertFits` ignoring lessons blocks; the `PUT /settings/lessons/<role>` rules (only changed rows applied, a concurrent agent add kept, 409 on an edited-then-removed id);
+  repeat-safe `add`/`replace`/`remove` (an `add` with the same text but another scope is saved as new); `remove` of an absent id succeeding, `replace` of an absent id and either action on another role's id refused; `replace`/`remove` of a `saved_by: user` lesson refused against the stored value; the `PUT` route exercised over HTTP with a nonempty edit and removal; the "(edited by the user)" marker in the block; lead and sub-lead previews showing their "you keep" blocks; marker preservation on `replace`; the full-list refusal text; the machine returning 503 for a `lesson` card when the hub is unreachable
   instead of spooling.
 - `cd viewer && npx playwright test test/app-settings.spec.js test/app-lessons.spec.js`
   passes, with `app-lessons.spec.js` covering: the "Lessons learned" entry and its tag
@@ -284,6 +291,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| If an `add` lands, its reply is lost, and Collin removes the lesson before the agent repeats the card, the repeat saves it again | Rare path: a lost reply and a removal within the same minute; Collin can remove it again | review-round-2 |
 | A hub crash between saving a lesson and recording its notice leaves the lesson active with no notice | Rare path (crash mid-operation, sub-second window); the lesson still shows in Settings | review-round-1 |
 
 ## Check Once Built
@@ -328,7 +336,7 @@ stays as review history.
 - S4/S6: the card stores a snapshot of the lesson; the notice uses it.
 - S3/S5: lessons are not counted by `assertFits()`.
 - S6/S7: a fixed Settings address opens a role's Lessons entry, even when empty.
-- S7: `PATCH /settings/lessons/<role>` with explicit `edits` and `removals`.
+- S7: `PUT /settings/lessons/<role>` with explicit `edits` and `removals`.
 - S8, S10: matching protocol and test changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
@@ -337,6 +345,13 @@ stays as review history.
 | intent | minor | Agents can reword Collin's edited lessons without knowing they are his | upheld (minor) | S5: "(edited by the user)" marker; agents never reword or remove those; S8 |
 | intent | minor | Repeat-safe `remove` tied to thread card history; simpler to succeed on any missing id | upheld (minor) | S4: missing id on `remove` succeeds silently |
 | intent | minor | Lead and sub-lead Settings previews don't say whether "you keep" blocks show | upheld (minor) | S5: previews include them |
+| mechanics | blocking | Add dedup ignores scope, so a scoped lesson can silently block a global one with the same text | downgraded (minor) | Needs identical text saved twice with different scopes; S4 dedup now compares text, provider and project |
+| mechanics | blocking | Notice link `/settings…` is not served; app pages live under `/wheelchair/app/` | upheld (blocking) | S6: `/wheelchair/app/settings#templates/lessons/<role>`; S10 follows the link |
+| mechanics | blocking | PATCH bodies are not read by the route dispatcher | upheld (blocking) | S7: PUT instead (`viewer/app/routes.js:65`); S10 exercises it over HTTP |
+| mechanics | major | Retry after a lost reply recreates a lesson Collin removed in between | accepted-risk (rare path) | Accepted Risks |
+| mechanics | major | Running agents never see the "(edited by the user)" marker added after they started | upheld (major) | S4: hub refuses replace/remove of a `saved_by: user` lesson, checked in the queued update |
+| mechanics | minor | Absent-id remove contradicts the refusal list; tests unspecified | upheld (minor) | S4 refusal list split by case; S10 tests each |
+| mechanics | minor | Settings warning still says agents may reword Collin's edits | upheld (minor) | S7 warning reworded; S10 asserts it |
 
 ## Prior Work
 
