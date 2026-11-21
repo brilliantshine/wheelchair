@@ -25,7 +25,7 @@ when the bridge is broken.
 
 - Choosing the Unity MCP preset gives an agent a working Unity MCP pointed at its Windows copy, with no hand editing.
 - `win info` shows how much disk the thread's copy and the bridge's git data use, and warns when they pass a limit.
-- A Windows tool that started before the copy was ready gets restarted once it is ready, without the agent doing anything.
+- A Windows tool that starts before the copy is ready works once the copy is ready, without the agent doing anything.
 - On a WSL machine with a broken bridge, the user sees a warning that says what is wrong, before work depends on it.
 
 ## Not doing

@@ -44,13 +44,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D17 | Before the copy is ready, a go-between whose tool has exited answers `initialize` itself and lists no tools, then sends `tools/list_changed` once the real tool is up | Holding `initialize` would outlast CLI start deadlines (Codex 10 s) | review-round-4 |
 | D18 | Supersedes D14's restart and D17: the go-between never starts the real tool before the copy is ready; it answers the handshake itself until then, then starts the tool and sends `tools/list_changed`. Wrapped tools started before ready expose tools only for that session | Same behaviour the user chose (agents start promptly, tools work once the copy is ready) with no restart, so no handshake replay, stall or duplicate-notification cases | review-round-5 |
 | D19 | D18 also supersedes D8's "restarted": the go-between holds the tool back until the copy is ready; nothing is restarted | Wording left from the restart design | review-round-6 |
-| D20 | Windows localhost (HTTP/SSE) tool forwarding is split into its own thread; this plan drops its Spec part (old §1) and the IDEA promise moves to Not doing. D2, D6, D7, D9, D10, D13 and the port parts of later rounds now belong to that thread | User's choice after review kept reopening port ownership and release; nothing else here depends on it since D15 | idea-change |
+| D20 | Windows localhost (HTTP/SSE) tool forwarding is split into its own thread; this plan drops its Spec part (old §1) and the IDEA promise moves to Not doing. D2, D6, D7, D9, D10, D13, D15's last sentence (forward still built here), D5's localhost rationale and the port parts of later rounds now belong to that thread | User's choice after review kept reopening port ownership and release; nothing else here depends on it since D15 | idea-change |
 ## Spec
 
 Background: the bridge as built is described in `docs/maps/windows-bridge-runtime.md` and
 `MAP.md`. "WSL machine" means `detectWsl()` reports a Microsoft kernel (see item 4 for the
 widened detection). Nothing in this Spec changes behaviour on a machine that is not WSL;
-every new code path returns early there, and the non-WSL tests keep passing unchanged.
+every new code path returns early there, and the non-WSL tests keep passing unchanged. The one
+exception is item 1's "Add MCP for Unity" button, which also works off WSL (it fills `uvx`).
 
 Windows tools that serve on Windows `localhost` (HTTP/SSE) are not part of this plan; they
 moved to their own thread (D20).
@@ -66,7 +67,12 @@ once, with item 3's wrapping applied; (2) read the loaded entries from that buil
 readying (the `windowsTools` flag: a loaded Windows `.exe` stdio entry), ready enrollment,
 Windows tool tracking (item 3) and the Unity prompt lines from the loaded entries only. Launch
 artifacts (settings files, `--mcp-config`, Antigravity plugin files) are written only from
-that build. Today `windowsTools` comes from `.mcp.json` before the build; it now comes from
+that build. Because a wrapped entry's emitted command is Linux Node, the loaded set is not
+re-derived from emitted commands: each adapter's build returns `loaded: [{ name, windows,
+wrapped }]` for exactly the entries in its final configuration (after its skip rules and, for
+Codex, the budget), where `windows` is `isWindowsProgram` of the entry's original `.mcp.json`
+command and `wrapped` says whether item 3 wrapped it. Pi and Kimi return an empty list.
+Today `windowsTools` comes from `.mcp.json` before the build; it now comes from
 the build, so a Windows tool the CLI does not load (for example on Pi or Kimi) no longer
 triggers readying.
 
@@ -215,7 +221,15 @@ the final Windows snapshot. A timeout logs it and reconciles anyway. The same ga
 `WinBridge.sweep()`'s final reconcile: a copy is not swept-reconciled while any session sharing
 it (registered for that copy key) still has entries in its `win-tools` directory with live
 pids; the next sweep tries again. This covers sessions that end without `onStop` (a CLI
-crash, or the handoff `kill` path in `machine/service.js`).
+crash, or the handoff `kill` path in `machine/service.js`). The archive pass's final
+reconcile (`WinBridge.archiveFinish` and its retries) uses the same copy-wide gate before it
+snapshots and deletes a copy; while the gate is closed it leaves the copy for the next pass.
+
+**Marking the copy used.** A pre-launch readying reconcile clears the copy's "used since last
+reconcile" state before the CLI exists. So, for a session with `windows_tools`, right after its
+tmux session has started the machine marks its copy used (`markKey`), and does so again when a
+readying task for that copy finishes after launch. The final stop reconcile therefore always
+runs for a session whose Windows tools could have written.
 
 **Process tree.** The go-between starts the real tool so that ending it ends every Windows
 process it started: through a launcher that puts the tool in a Windows Job Object with
@@ -278,7 +292,9 @@ existing caller keeps its meaning. A new `bridgeHealth()` on `WinBridge` returns
 - not `kernel` → `{ ok: true }` (never warns).
 - `kernel && !interop` → reason "Windows interop is off in WSL, so Windows programs can't run".
 - `wsl` → `winEnv.versions()` with a 15 s overall deadline; its `reason` if not ok; on the
-  deadline, reason "Windows didn't answer within 15 seconds".
+  deadline, reason "Windows didn't answer within 15 seconds". Each probe looks Windows Git up
+  afresh: `createWinEnv`'s `gitExe()` keeps only a successful lookup (a failed one is not
+  memoized), so the warning clears on the next probe after the user installs Git.
 On a Microsoft kernel the machine runs the check in the background at startup and every 10
 minutes, and caches the result; callers read the cache and never wait for a probe, except as
 the approval card says.
@@ -327,6 +343,10 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   is still starting.
 - Go-between EOF: client closing stdin before ready exits without starting the tool;
   during the handoff stops the tool and exits.
+- Copy marked used after launch even when readying finished before it, so stopping a lead
+  runs the final reconcile; archive waits on the shutdown gate; a Git-missing probe clears
+  after Git appears without a service restart; the `loaded` list for a wrapped Codex entry
+  says `windows: true` and readying runs, and an entry dropped by Codex's budget is absent.
 - Restart tracking: after a service restart, a live session with `windows_tools` in the
   launch record is back in `toolSessions`, and its stop runs the final reconcile.
 - Go-between, with a fake MCP tool: the `mcp-for-unity` entry is not wrapped; ready at start
@@ -378,7 +398,7 @@ cleanup of copies or git data.
 | # | What to check | Round |
 |---|---------------|-------|
 | C1 | MCP for Unity's stdio server lists every connected Editor with its project path, and selecting one in one agent's server does not affect another agent's | lead (D12, D15) |
-| C2 | Claude accepts a `--mcp-config` server with the same name as a `.mcp.json` server listed in `disabledMcpjsonServers` | lead (D7, item 4) |
+| C2 | Claude accepts a `--mcp-config` server with the same name as a `.mcp.json` server listed in `disabledMcpjsonServers` | lead (item 3) |
 | C4 | Claude, Codex and Antigravity re-list a tool's tools on `notifications/tools/list_changed` from a stdio server (D17) | review-round-4 |
 | C5 | MCP for Unity's Stdio transport choice holds for every project copy opened by the same Windows user | review-round-4 |
 | C3 | (Split off with localhost forwarding, D20.) With default WSL `localhostForwarding`, requests fail promptly while the Windows server is down and reach it once it starts, with no loop through the relay | review-round-1 |
@@ -540,6 +560,23 @@ cleanup of copies or git data.
 **Lanes:** claude (intent); other family (mechanics); cross-family: yes.
 
 **Changed since Round 8:** localhost forwarding (old §1) split into its own thread (D20); items renumbered (1 Unity, 2 disk, 3 early tools, 4 warning); "Which tools a session loads" simplified (build once, readying from the build); launch record moved into item 3 with only `wrapped` / `windows_tools`; approval warning gating; Validation trimmed (no forward, port or switch tests, no live localhost part); IDEA.md What/Why/good/Not doing updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | IDEA still says the early tool "gets restarted" | upheld | IDEA.md What good looks like |
+| intent | minor | D15's last sentence and D5's rationale still imply the forward is here | upheld | D20 lists them |
+| intent | minor | C2 cites D7 and item 4 | upheld | C2 cites item 3 |
+| mechanics | blocking | Pre-launch reconcile clears the used flag before the CLI exists | upheld | item 3 Marking the copy used |
+| mechanics | blocking | Archive's final reconcile skips the shutdown gate | upheld | item 3 gate covers archive |
+| mechanics | blocking | Health probe memoizes a missing Git forever | upheld | item 4: failed lookup not memoized |
+| mechanics | major | Loaded classification lost after wrapping | upheld | adapters return `loaded` with original classification |
+| mechanics | minor | Unity button contradicts "returns early off WSL" | upheld | Background states the exception |
+
+### Round 10 — 2026-11-21
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round 9:** Background exception for the Unity button; adapters return `loaded` with original classification; item 3 archive gate and Marking the copy used; item 4 Git lookup not memoized on failure; Validation additions; D20 wording; C2; IDEA.md What good looks like (no restart).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
