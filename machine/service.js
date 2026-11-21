@@ -778,7 +778,7 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    const { wsl, mount } = this.win.detected;
+    const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
     const read = await readProjectMcp(worktree, { wsl, mount });
     const windowsTools = hasWindowsProgram((wsl ? read : await readProjectMcp(worktree, { wsl: true, mount })).mcp, { mount });
     const { mcp, warnings } = read;
@@ -829,8 +829,8 @@ class MachineService {
     }
     const env = this.launchEnv(session, adapter);
     if (tools) {
-      await this.win.beforeLaunch(session, { windowsTools });
-      const extra = await this.win.sessionEnv(session, { ...process.env, ...Object.fromEntries(env) });
+      await this.win?.beforeLaunch(session, { windowsTools });
+      const extra = await this.win?.sessionEnv(session, { ...process.env, ...Object.fromEntries(env) }) || {};
       env.push(...Object.entries(extra));
     }
     env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
@@ -869,7 +869,7 @@ class MachineService {
     return this.stopFatal(session);
   }
   async stopFatal(session) {
-    this.win.onStop(session);
+    this.win?.onStop(session);
     this.tmux(['kill-session', '-t', `=${session.name}`]);
     const live = this.liveTmux();
     if (!live || live.has(session.name)) return { pending: true, end_reason: session.end_reason };
@@ -1100,7 +1100,7 @@ class MachineService {
     session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     this.screens.killSession(name);
-    this.win.onStop(session);
+    this.win?.onStop(session);
     await this.persistSessions();
     if (session.role === 'verifier' && session.created_worktree) {
       const removed = command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);

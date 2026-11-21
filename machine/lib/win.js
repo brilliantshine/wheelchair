@@ -197,7 +197,7 @@ class WinBridge {
 
   // T4 calls this once per stop, possibly after setting session.status to stopped.
   onStop(session) {
-    if (this.stopped.has(session.name)) return;
+    if (!this.detected.wsl || this.stopped.has(session.name)) return;
     this.stopped.add(session.name);
     this.toolSessions.delete(session.name);
     const termination = this.killSession(session.name);
@@ -282,8 +282,13 @@ class WinBridge {
 
   async sessionEnv(session, baseEnv = {}) {
     if (!this.detected.wsl || !TOOL_ROLES.has(session.role)) return {};
-    const ctx = await this.context(session);
-    return { WHEELCHAIR_WINDOWS_PROJECT: ctx.copy.windows, WSLENV: [baseEnv.WSLENV, 'WHEELCHAIR_WINDOWS_PROJECT'].filter(Boolean).join(':') };
+    try {
+      const ctx = await this.context(session);
+      return { WHEELCHAIR_WINDOWS_PROJECT: ctx.copy.windows, WSLENV: [baseEnv.WSLENV, 'WHEELCHAIR_WINDOWS_PROJECT'].filter(Boolean).join(':') };
+    } catch (err) {
+      this.service.log(err);
+      return {};
+    }
   }
 
   async info(session, ctx) {
