@@ -1,6 +1,6 @@
 ---
 slug: windows-bridge-solid
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -53,6 +53,26 @@ Background: the bridge as built is described in `docs/maps/windows-bridge-runtim
 widened detection). Nothing in this Spec changes behaviour on a machine that is not WSL;
 every new code path returns early there, and the non-WSL tests keep passing unchanged. The one
 exception is item 1's "Add MCP for Unity" button, which also works off WSL (it fills `uvx`).
+
+```mermaid
+flowchart TD
+  A[Agent session starts on WSL] --> B[Build the agent's tool config once]
+  B --> C{Loads a Windows tool?}
+  C -- yes --> D[Ready the Windows copy, wait up to 45 s]
+  C -- no --> F
+  D --> E{MCP for Unity among the tools?}
+  E -- yes --> E1[Add Unity lines to the agent's notes: its copy path and Unity.exe]
+  E -- no --> F
+  E1 --> F{Bridge known broken?}
+  F -- yes --> F1[Add a 'bridge not working' line to the agent's notes]
+  F -- no --> G
+  F1 --> G[Start the agent]
+  G --> H[Mark the copy used if Windows tools are loaded]
+  H --> I[Agent works; win info shows disk use and warnings]
+  I --> J[Agent stops: final sync brings Windows changes back]
+  R[Machine service restarts] --> R1[Live sessions with a copy are tracked again and their copy marked used]
+  R1 --> J
+```
 
 Windows tools that serve on Windows `localhost` (HTTP/SSE) are not part of this plan; they
 moved to their own thread (D20). Neither is holding back Windows tools that start before their
@@ -123,8 +143,9 @@ filling every placeholder itself:
 
 If the copy's Windows path could not be resolved before launch (for example a failed
 `%LOCALAPPDATA%` lookup), the machine does not wait: the first sentence instead reads "Unity: run
-`wc.js win info` and use its `copy_windows` path as your project copy on Windows", and every
-later `<copy_windows path>` reads "that path".
+`wc.js win info` to get your project copy's Windows path (`copy_windows`); if it is null, wait
+and run it again", and the `win start` command reads `-projectPath "<copy_windows from win
+info>"`, telling the agent to put that value in.
 
 `<unity exe>` is `C:\Program Files\Unity\Hub\Editor\<version>\Editor\Unity.exe`, where
 `<version>` is `m_EditorVersion` from the session worktree's `ProjectSettings/ProjectVersion.txt`,
@@ -171,24 +192,18 @@ unchanged in shape apart from the new fields; it prints each `disk.warnings` lin
 These keep the parent bridge's final stop reconcile from being skipped for sessions with
 Windows tools.
 
-**Windows tool flag on the session record.** tmux sessions survive a service restart, but
-`WinBridge.toolSessions` is in memory. In step (3) the machine sets `windows_tools: true` or
-`false` on the session object (true when it loads any Windows stdio tool, including the Unity
-entry); the existing `persistSessions()` after tmux starts saves it with the rest of the
-session record. No separate file.
-
-**Recovery after a service restart.** On startup, after `recoverFromTmux`, every live session
-whose record has `windows_tools: true` is added back to `WinBridge.toolSessions`, its copy
-registered as today **and marked used** (`markKey`), so the final stop reconcile runs even if a
-reconcile before the restart had cleared the copy's "used since last reconcile" state. A live
-tool-role session whose record has no `windows_tools` field at all (started before this change,
-for example across the upgrade that installs it, or recovered from tmux with no record) is
-treated conservatively as `windows_tools: true` when a Windows copy already exists for its
-worktree, and `false` otherwise; the result is stored on the record. Over-counting costs at
-most one extra final reconcile.
+**Recovery after a service restart.** tmux sessions survive a service restart, but
+`WinBridge.toolSessions` is in memory. On startup, after `recoverFromTmux`, every live tool-role
+session on a WSL machine whose worktree already has a Windows copy is added back to
+`WinBridge.toolSessions`, its copy registered as today **and marked used** (`markKey`), so the
+final stop reconcile runs even if a reconcile before the restart had cleared the copy's "used
+since last reconcile" state. This needs no new field on the session record and covers sessions
+started before this change. Counting a session without Windows tools costs at most one extra
+final reconcile.
 
 **Marking the copy used.** A pre-launch readying reconcile clears the copy's "used since last
-reconcile" state before the CLI exists. So, for a session with `windows_tools`, right after its
+reconcile" state before the CLI exists. So, for a session whose loaded entries include a
+Windows stdio tool (including the Unity entry), right after its
 tmux session has started the machine marks its copy used (`markKey`), and does so again when a
 readying task for that copy finishes after launch. So wherever the existing rules give a copy a
 final stop reconcile (lead and sub-lead thread copies; workers still sync before reporting
@@ -259,10 +274,10 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   `machine/test/win-service.test.js` and any other that writes a binfmt registration) write
   `enabled` as the first line, so they keep testing the working-interop path.
 - Recovery marks the copy used: from a persisted `used_since_ok: false`, a recovered session's
-  stop runs the final reconcile. A pre-upgrade record with an existing copy is tracked; one
-  without a copy is not. The Unity prompt's fallback sentence when the copy path is unknown.
-- Restart tracking: after a service restart, a live session with `windows_tools: true` in its
-  record is back in `toolSessions`, and its stop runs the final reconcile. A `disabled` binfmt
+  stop runs the final reconcile. A live tool-role session with an existing copy is tracked
+  after a restart (including one started before this change); one without a copy is not. The
+  Unity prompt's fallback sentence when the copy path is unknown.
+- Restart tracking: after a service restart, such a session is back in `toolSessions`. A `disabled` binfmt
   registration counts as interop off.
 - Detection and warnings: interop off on a Microsoft kernel gives the reason; approval card
   gets the warning only when the project has Windows tools; a probe past 15 s gives the
@@ -292,6 +307,7 @@ of copies or git data.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | (Split off with localhost forwarding, D20.) In mirrored mode, a Linux server started later on a marked tool's loopback port, while the Windows tool is down, receives that live CLI's requests | Rare path: needs the opt-in mirrored mode, the Windows tool down, and a Linux server on the same port; it is the user's own service | review-round-8 |
+| A `%LOCALAPPDATA%` lookup that fails at session launch or at service startup, followed by Windows recovering, a manual sync and more tool edits, can leave the session out of `toolSessions` so its final stop reconcile is skipped | Rare path: a failed Windows lookup on a healthy machine plus that exact sequence; lookups are retried (item 4) and the edits stay in the copy until archive | review-round-14 |
 | (Split off with the go-between, D21.) A go-between that crashes while its Windows tool keeps writing lets the shutdown gate pass early | Rare path: needs the go-between itself to crash mid-session | review-round-8 |
 | A service restart between tmux creation and session persistence can register and track a different copy in recovery (worktree taken from the tmux pane's folder) | Rare path: a restart inside that launch window plus a pane directory that differs from the worktree | review-round-8 |
 | (Split off with localhost forwarding, D20.) An unmarked URL written with an IPv4-mapped address (`http://[::ffff:127.0.0.1]:<port>`) is not covered by port reservations and can reach a Windows forward | Rare path: unusual hand-written address form | review-round-5 |
@@ -546,6 +562,10 @@ of copies or git data.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `windows_tools` field adds nothing over the conservative rule | upheld | item 3 recovery uses existing copy, no field |
+| mechanics | blocking | Startup `%LOCALAPPDATA%` failure leaves a session untracked | accepted-risk | Rare path: failed lookup on a healthy machine plus a specific sequence |
+| mechanics | blocking | Launch-time lookup failure skips `toolSessions` enrollment | accepted-risk | Rare path: same as above |
+| mechanics | minor | Unity fallback leaves a literal "that path" in a runnable command | upheld | item 1 fallback wording |
 
 ## Implementation Tasks
 
