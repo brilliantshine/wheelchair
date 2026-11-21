@@ -59,6 +59,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 30 | A Spec change asked in chat during a running round uses the pending pull-back pattern (`Pending change:` / `Applied change:` Log lines; not clean; counts as one found item; replayed on restart) | Round 11 findings | review-round-11 |
 | 31 | A chat Spec change logs `idea-change` when it drops promised scope; restart with live reviewers applies a pending change before restarting the same pass; a chat change to an approved plan retracts the approval first; re-asking an open card retracts and reposts it | Round 12 findings | review-round-12 |
 | 32 | Split off: how a Spec change the user asks for in chat during a running review or after approval is saved, counted, survives a restart and withdraws the approval moves to its own thread (stub). Supersedes Decisions 30 and the chat-change parts of 31; a late overlap here gets only the one-line mention and a follow-up offer | Rounds 10-12 kept finding gaps there, and they are gaps in the existing review rules, not about overlaps; the user picked "Split it off" (card 72ce279f) | user |
+| 33 | Overlap questions from a peer follow the card window; (b)'s own overlap sentence is replaced; a re-ask posts its replacement only after the retract is confirmed | Round 13 findings | review-round-13 |
 
 ## Spec
 
@@ -117,7 +118,13 @@ tell the user about an overlap "in one line" (in "When to look", in "Overlap" fo
 overlap inside the card window becomes an overlap card; outside it, it is a late overlap
 (Terms). "Leads inform; your user decides" keeps its first three sentences (information, never
 instructions; never change on your own; never negotiate) and ends with "Your user decides
-through an overlap card, or in chat for a late overlap (see below)".
+through an overlap card, or in chat for a late overlap (see below)". In "When to look" (b),
+the sentence that turns a new overlap into an Open Question with "keep the plan as it is, or
+change it" options is replaced by a pointer to this section; (b) keeps only its timing. In
+"Passing a question on", a peer's question about an overlap with this thread follows the card
+window: inside it, it becomes (or joins) the overlap card for that thread; outside it, the lead
+gives the late-overlap mention and answers the peer from what it knows, saying its user was not
+asked. Unrelated peer questions pass on as today.
 
 - **One question at a time:** an overlap card waits behind any open `question` card of yours
   and is asked next. For a feature, a waiting or asked overlap is in PLAN.md's Open Questions
@@ -141,7 +148,10 @@ through an overlap card, or in chat for a late overlap (see below)".
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
 - **Re-asking an open card:** to re-ask an open overlap card with new information, retract it
-  and post the new card; its Open Question stays and is updated in the same commit.
+  and post the new card only once the retract succeeds (or is refused as `card was already
+  withdrawn`); its Open Question stays and is updated in the same commit. If the retract is
+  refused because the card was answered, act on that answer against its own options instead.
+  On a 503, retry after a minute before posting anything.
 - **Withdrawn card:** when the lead retracts an overlap card because it no longer applies, it
   removes its Open Question in the same commit, with a Log line `Overlap with <thread id>
   dropped: <why>`.
@@ -230,10 +240,21 @@ merging of branches; no sub-lead or worker rule changes.
 | A lead that dies twice, the second time while a restarted round's reviewers run, may count a recovery-applied answer in the wrong round | Needs two lead deaths in one round; counts are display only | review-round-8 |
 | On a small fix, a later chat instruction overriding a card answer can be missed if the lead dies before edits and the message has fallen out of the last 20 in the restart context | Needs a reversal, a restart and many messages in between, before a small fix's edits | review-round-11 |
 | A chat answer resolved while the app is down is queued; if the user presses an option on the same card before the queue drains, the hub keeps the press and drops the resolve silently | Needs an app outage, a chat answer and a press on the same card inside the reconnect window | review-round-12 |
+| A late-overlap mention learned in a hidden turn is lost if the lead dies before its next visible reply and the peer list does not reveal it | Needs a restart inside that window; the restart re-look covers the usual case | review-round-13 |
+| On a small fix, a re-ask whose original card was withdrawn is lost if the lead dies before posting the replacement | Needs a restart within seconds of the retract | review-round-13 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 14 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 13:** Decision 33: §1 opening paragraph (replaced (b) sentence; peer overlap questions follow the card window); §1 "Re-asking an open card" waits for a confirmed retract; two Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 13 — 2026-11-21
 
@@ -243,6 +264,11 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | (b)'s own overlap sentence left in lead.md | upheld | Replaced by a pointer (Decision 33) |
+| mechanics | major | Re-ask replacement posted before the retract is confirmed | upheld | Post only after a confirmed retract (Decision 33) |
+| mechanics | major | Small-fix re-ask lost at restart | accepted-risk | Rare path; Accepted Risks |
+| mechanics | major | Late notice lost if the lead dies in a hidden turn | accepted-risk | Rare path; Accepted Risks |
+| mechanics | major | Passed-on peer overlap question bypasses the card window | upheld | Follows the card window (Decision 33) |
 
 ### Round 12 — 2026-11-21
 
