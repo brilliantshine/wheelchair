@@ -96,21 +96,22 @@ $destination = ${shellLiteral(args.destination)}
 Get-Content -LiteralPath ${shellLiteral(args.list)} -Encoding UTF8 | ForEach-Object {
   $relative = $_
   if ($relative.EndsWith('\\')) {
-    robocopy (Join-Path $source $relative) (Join-Path $destination $relative) /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    robocopy ((Join-Path $source $relative).TrimEnd('\\')) ((Join-Path $destination $relative).TrimEnd('\\')) /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
   } else {
     $parent = Split-Path $relative -Parent
     $name = Split-Path $relative -Leaf
-    robocopy (Join-Path $source $parent) (Join-Path $destination $parent) $name /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    robocopy ((Join-Path $source $parent).TrimEnd('\\')) ((Join-Path $destination $parent).TrimEnd('\\')) $name /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
   }
   if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
-}`;
+}
+exit 0`;
         let result;
         try {
           result = await winEnv.ps(script('seed', args, body), { timeoutMs: SEED_TIMEOUT_MS });
         } finally {
           fs.rmSync(listPath, { force: true });
         }
-        if (result.code) throw Object.assign(new Error(`seed failed: ${result.stderr}`), { status: 422 });
+        if (result.code) throw Object.assign(new Error(`seed failed (exit ${result.code}): ${result.stderr}`), { status: 422 });
       }
     }
   }
@@ -272,7 +273,13 @@ async function reconcileAttempt(ctx, hooks, state) {
     }
     folded.set(lower, file);
   }
-  const windowsSnapshot = (await snapshot(ctx, true, trackedPaths)).tree;
+  let windowsSnapshot;
+  if (base) {
+    windowsSnapshot = (await snapshot(ctx, true, trackedPaths)).tree;
+  } else {
+    // No Windows snapshot is taken before the first checkout installs ignore rules.
+    windowsSnapshot = (await command(ctx, true, ['mktree'], { cwd: ctx.copy.linux, input: '' })).stdout.toString().trim();
+  }
   const windowsCommit = await commitTree(ctx, true, windowsSnapshot);
   await command(ctx, true, ['update-ref', 'refs/wheelchair/snapshot', windowsCommit], { cwd: ctx.copy.linux });
   await command(ctx, false, ['fetch', ctx.copy.linux, `+refs/wheelchair/snapshot:${windowsRef}`], { cwd: ctx.worktree });

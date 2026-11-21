@@ -232,6 +232,41 @@ test('seeding copies only ignored paths accepted by the new worktree', async () 
   assert.equal(fs.existsSync(path.join(newCopy.linux, 'cache-two')), false);
 });
 
+test('seeding accepts robocopy success code 1 and reports failure code 8', async () => {
+  const source = await fixture();
+  fs.writeFileSync(path.join(source.worktree, '.gitignore'), 'cache\n');
+  await reconcile(source);
+  fs.writeFileSync(path.join(source.copy.linux, 'cache'), 'seeded');
+  source.fakeEnv.WC_FAKE_ROBOCOPY_CODE = '1';
+  const seeded = { ...source, copy: { linux: path.join(path.dirname(source.copy.linux), 'seed-one'), windows: 'C:\\seed-one' }, key: 'seed-one', sources: [{ copy: source.copy, last_ok: 'now' }] };
+  assert.equal((await ensureCopy(seeded)).created, true);
+  assert.equal(fs.readFileSync(path.join(seeded.copy.linux, 'cache'), 'utf8'), 'seeded');
+  source.fakeEnv.WC_FAKE_ROBOCOPY_CODE = '8';
+  const failed = { ...seeded, copy: { linux: path.join(path.dirname(source.copy.linux), 'seed-eight'), windows: 'C:\\seed-eight' }, key: 'seed-eight' };
+  await assert.rejects(ensureCopy(failed), /seed failed \(exit 8\)/);
+});
+
+test('first and second reconciles preserve seeded ignored files outside both indexes and base', async () => {
+  const source = await fixture();
+  fs.writeFileSync(path.join(source.worktree, '.gitignore'), 'Library/\n');
+  await reconcile(source);
+  fs.mkdirSync(path.join(source.copy.linux, 'Library'));
+  fs.writeFileSync(path.join(source.copy.linux, 'Library', 'cache'), 'seeded');
+  const ctx = { ...source, copy: { linux: path.join(path.dirname(source.copy.linux), 'seed-library'), windows: 'C:\\seed-library' }, key: 'seed-library', sources: [{ copy: source.copy, last_ok: 'now' }] };
+  await ensureCopy(ctx);
+  for (let i = 0; i < 2; i++) {
+    await reconcile(ctx);
+    assert.equal(fs.readFileSync(path.join(ctx.copy.linux, 'Library', 'cache'), 'utf8'), 'seeded');
+    const linux = await ctx.winEnv.git(['ls-files', '-z'], { cwd: ctx.worktree, env: { GIT_INDEX_FILE: path.join(ctx.stateDir, 'win/copies', ctx.key, 'linux.index') } });
+    const windows = await ctx.winEnv.gitWin(['ls-files', '-z'], { cwd: ctx.copy.linux, env: { GIT_INDEX_FILE: '.git/wheelchair.index' } });
+    assert.equal(linux.code, 0);
+    assert.equal(windows.code, 0);
+    assert.ok(!linux.stdout.toString().split('\0').includes('Library/cache'));
+    assert.ok(!windows.stdout.toString().split('\0').includes('Library/cache'));
+    assert.doesNotMatch(git(ctx.worktree, 'ls-tree', '-r', '--name-only', `refs/wheelchair/${ctx.key}/base`), /Library\/cache/);
+  }
+});
+
 test('seeding collapses a large ignored folder and keeps the command short', async () => {
   const source = await fixture();
   fs.writeFileSync(path.join(source.worktree, '.gitignore'), 'Library/\nignored-file\n');
