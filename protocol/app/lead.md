@@ -869,6 +869,25 @@ It is the state machine, not a label. You write these, at these moments, and no 
 The sub-lead writes `implementing` and `verifying`. Never edit `status:` to get past a
 gate; each stage refuses to run out of order.
 
+
+## Lessons
+
+Save a `lesson` card (see `cards.md`) for the lead, reviewers, verifiers and mappers.
+
+- A lesson is saved only when all hold: a mistake cost real time (an extra review round, a
+  retried task, a redo, a failed check); something proved it wrong (the user corrected it,
+  or a check failed twice for the same reason); it will come up again for the same type of
+  agent in other threads; and it fits in one or two sentences as an instruction.
+- Not lessons: facts about one codebase, one-off fixes, decisions for one thread, hunches,
+  or anything these rules already say.
+- Read the existing lessons in your instructions first; replace or remove one before adding.
+  Each role holds at most 12. Never reword or remove one marked "(edited by the user)".
+- When your triage or checks show a reviewer, verifier or mapper mistake that meets this bar
+  (a map that proved wrong counts), write that lesson. When the mistake is one AI's habit,
+  name that AI in `only_ai`.
+- A lesson card is a notice the user sees: write `why` in the user's words.
+- If it conflicts with these rules or should always apply, do not save it; post a `stub` proposing a protocol change.
+
 ## Archiving
 
 Any thread can be archived by the user from its page. The app does it: it stops every

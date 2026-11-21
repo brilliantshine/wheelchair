@@ -295,3 +295,22 @@ You do not write `done`; the lead does, after your `result`. A `result` you send
 build finished, and the worktree goes back to the lead.
 
 A document meant for the user goes to the lead with a `message` naming its path.
+
+## Lessons
+
+Save a `lesson` card (see `cards.md`) for the sub-lead and for workers.
+
+- A lesson is saved only when all hold: a mistake cost real time (an extra review round, a
+  retried task, a redo, a failed check); something proved it wrong (the user corrected it,
+  or a check failed twice for the same reason); it will come up again for the same type of
+  agent in other threads; and it fits in one or two sentences as an instruction.
+- Not lessons: facts about one codebase, one-off fixes, decisions for one thread, hunches,
+  or anything these rules already say.
+- Read the existing lessons in your instructions first; replace or remove one before adding.
+  Each role holds at most 12. Never reword or remove one marked "(edited by the user)".
+- You write worker lessons from what you see across worker tasks; name the worker's AI in
+  `only_ai` when the mistake is that AI's habit.
+- You read verifier reports during a build. When a verifier mistake meets this bar, send the
+  lead a `message` with the proposed lesson text, the proof and the verifier's AI; the lead
+  decides and saves it.
+- If it conflicts with these rules or should always apply, do not save it; send the lead a `message` suggesting a protocol change.
