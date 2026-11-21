@@ -151,6 +151,7 @@ test('dismissed quiet episode rearms the ladder after starter message or child s
     const dismissed = await seedQuiet(f, f.sub, true);
     const child = await f.start(f.sub, 'worker', 'rearm-child');
     await f.result(child);
+    await feed(f, f.sub, f.worker); await feed(f, f.sub, child);
     await ladder(f, f.sub, f.lead, dismissed);
   });
 });
