@@ -17,18 +17,6 @@ never built (MAP.md).
 
 ## Open Questions
 
-### Q1: Share one way of swapping tool entries with the "Windows localhost tools from WSL" thread?
-- **Context:** that thread (plan `docs/plans/windows-localhost-tools/PLAN.md` on
-  `wc/a1a1b7d6016d`, in review, not built) also replaces `.mcp.json` entries per session in
-  the Claude, Codex and Antigravity adapters, and for Claude uses the same
-  "disable in `disabledMcpjsonServers` + same-name entry in a per-session `--mcp-config`"
-  route this plan needs (its lead verified live that Claude uses the `--mcp-config` entry).
-  Its lead suggests one generic per-session map `context.replaceEntries = {name: entry}`
-  applied by all three adapters, filled by both features, with one `--mcp-config` file.
-- **Options:** (a) shared map, whichever thread builds first adds it and the other reuses
-  it; (b) each thread builds its own replacement path.
-- **Recommendation:** (a).
-
 ### Q2: How do Codex agents get Windows tools that appear late?
 - **Context:** live test (W1): Claude Code 2.1.330 re-lists tools on
   `notifications/tools/list_changed`; codex-cli 0.171.0 does not (one `tools/list` at start,
@@ -54,6 +42,7 @@ never built (MAP.md).
 |---|----------|-----------|--------|
 | D1 | Mode two-part | User's choice; the parent's review stalled on rare cleanup cases | user |
 | D2 | Carry forward the parent's go-between design (parent D18/D19): the real Windows tool is never started before the copy is ready; the go-between answers the handshake, lists no tools, then starts the tool and sends `tools/list_changed` | Reviewed over eleven rounds in the parent; holding `initialize` outlasts Codex's ~10 s start deadline | adopted |
+| D4 | Share one per-session entry-replacement map with the "Windows localhost tools from WSL" thread (`wc/a1a1b7d6016d`): `context.replaceEntries = {name: entry}`, applied by the Claude, Codex and Antigravity adapters; Claude gets replaced names in `disabledMcpjsonServers` and one per-session `--mcp-config` file holding every replaced entry. Whichever thread builds first adds it; the other reuses it | Both change the same adapters the same way; one path avoids conflicts | user |
 | D3 | The MCP for Unity entry (args include `mcp-for-unity`) is not wrapped (parent D16) | It never reads the copy, and a late start would drop the agent's Editor selection | adopted |
 
 ## Spec
@@ -72,8 +61,12 @@ HTTP/SSE entries are never wrapped. Each adapter's build returns
 ### 2. Per CLI
 - Codex and Antigravity: translated entries get the wrapped command and args; Codex keeps its
   `WHEELCHAIR_WINDOWS_PROJECT`/`WSLENV` passthrough.
-- Claude: wrapped names go into `disabledMcpjsonServers` and are given, wrapped and under the
-  same names, in a per-session `--mcp-config` file (mode 0600). (Shape depends on Q1.)
+- All three go through the shared replacement map (D4): the service puts each wrapped entry
+  into `context.replaceEntries[name]`. If `main` already has the map when building starts
+  (the localhost thread merged first), reuse it; otherwise add it here as specified in D4.
+- Claude: replaced names go into `disabledMcpjsonServers` and are given, wrapped and under the
+  same names, in one per-session `--mcp-config` file (mode 0600) holding every replaced entry
+  (live-verified by the localhost thread that Claude uses the `--mcp-config` entry).
 - Pi and Kimi: unchanged (no project tools).
 
 ### 3. Ready file
