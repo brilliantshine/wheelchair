@@ -31,15 +31,15 @@ test('spend text is not in the 76px column and fits one line', async ({ page }) 
   await page.locator('#sections a[data-section="usage"]').click();
   const spend = page.locator('[data-provider="openrouter"] .usage-spend-text');
   await expect(spend).toHaveText('<$0.01 today · <$0.01 last 7 days · <$0.01 last 30 days');
-  const info = await spend.evaluate((el) => {
+  await expect(spend).not.toHaveClass(/usage-left/);
+  await expect(spend).not.toHaveCSS('flex-basis', '76px');
+  await expect(spend).toHaveCSS('flex-grow', '1');
+  await expect(spend).toHaveCSS('text-align', 'left');
+  await expect.poll(async () => spend.evaluate((el) => {
     const cs = getComputedStyle(el);
-    return { flexBasis: cs.flexBasis, grow: cs.flexGrow, align: cs.textAlign, height: el.getBoundingClientRect().height, line: parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5, className: el.className };
-  });
-  expect(info.className).not.toContain('usage-left');
-  expect(info.flexBasis).not.toBe('76px');
-  expect(info.grow).toBe('1');
-  expect(info.align).toBe('left');
-  expect(info.height).toBeLessThanOrEqual(info.line * 1.5);
+    const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+    return el.isConnected && el.getBoundingClientRect().height <= line * 1.5;
+  })).toBe(true);
   await expect(page.locator('[data-provider="openrouter"] .bar')).toHaveCount(0);
   await expect(page.locator('[data-provider="openrouter"] .usage-name')).toHaveText('OpenRouter');
 });
