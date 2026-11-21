@@ -24,3 +24,22 @@ test('PowerShell startup failure includes interop guidance', async () => {
   await assert.rejects(env.ps('# wc:test e30=\n'), e => e.status === 422 && /WSL_INTEROP/.test(e.message) && /wsl --shutdown/.test(e.message));
   assert.match(worktreeKey('/x'),/^[a-f0-9]{12}$/);
 });
+test('gitWin translates a Windows path and runs real git in the copy', async () => {
+  const root = makeTempSync('win-env-git-');
+  const mount = path.join(root, 'mnt');
+  const powershell = path.join(mount, 'c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe');
+  const git = path.join(mount, 'c/tools/git.exe');
+  fs.mkdirSync(path.dirname(powershell), { recursive: true });
+  fs.mkdirSync(path.dirname(git), { recursive: true });
+  fs.copyFileSync(path.join(__dirname, 'fixtures/win/powershell.exe'), powershell);
+  fs.copyFileSync(path.join(__dirname, 'fixtures/win/git.exe'), git);
+  const source = path.join(mount, 'c/source');
+  const copy = path.join(mount, 'c/copy');
+  fs.mkdirSync(source);
+  fs.mkdirSync(copy);
+  const env = createWinEnv({ mount, env: { ...process.env, WC_FAKE_MOUNT: mount, WC_FAKE_GIT_PATH: 'C:\\tools\\git.exe' } });
+  assert.equal((await env.git(['init', '--bare'], { cwd: source })).code, 0);
+  assert.equal((await env.gitWin(['init'], { cwd: copy })).code, 0);
+  const fetched = await env.gitWin(['ls-remote', 'C:\\source'], { cwd: copy });
+  assert.equal(fetched.code, 0, fetched.stderr);
+});
