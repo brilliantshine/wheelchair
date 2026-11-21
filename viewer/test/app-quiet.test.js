@@ -128,3 +128,22 @@ test('app queue messages do not close a quiet card', () => run(async f => {
   await f.hub.withThread(f.t.id, async () => { const t = await f.read(); await require('../app/sessions.js').enqueue(f.hub, t, f.worker.name, '[wc:from app] reminder', 'app'); });
   assert.equal((await f.session(f.worker)).quiet_card, id); assert.equal((await f.read()).cards.find(x => x.id === id).answered, false);
 }));
+
+test('dismissed quiet episode rearms the ladder after starter message or child start', () => run(async f => {
+  async function ladder(who) {
+    for (let stage = 0; stage < 3; stage++) {
+      const t = await f.read(); const s = t.sessions.find(x => x.name === who.name);
+      for (const child of t.sessions.filter(x => x.started_by === who.name)) { child.owes_reply = false; child.queue = []; child.status = 'ready'; }
+      Object.assign(s, { owes_reply: true, turn_ended: true, queue: [], quiet_check_at: new Date(0).toISOString() });
+      t.queues[s.name] = s.queue;
+      if (stage === 2) s.quiet_starter_at = new Date().toISOString();
+      await f.hub.save(t); await require('../app/quiet.js').checkQuiet(f.hub);
+      assert.equal((await f.session(who)).quiet_stage, stage + 1);
+    }
+    assert.ok((await f.session(who)).quiet_card);
+  }
+  const first = await seedQuiet(f, f.worker, true); await f.message(f.sub, f.worker);
+  await ladder(f.worker); assert.notEqual((await f.session(f.worker)).quiet_card, first);
+  const second = await seedQuiet(f, f.sub, true); await f.start(f.sub, 'worker', 'rearm-child');
+  await ladder(f.sub); assert.notEqual((await f.session(f.sub)).quiet_card, second);
+}));
