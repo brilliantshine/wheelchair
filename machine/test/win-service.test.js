@@ -96,3 +96,14 @@ test('stop and merge remove copies and archive waits for final reconciliation', 
     const second = await e.instance.archive('test'); assert.notEqual(second.pending, true); assert.equal(fs.existsSync(leadCopy), false);
   } finally { await e.close(); }
 });
+
+
+test('Codex launch passes bridge environment names to a Windows tool', async () => {
+  const e = await service(); try {
+    const dir = repo(e.root);
+    write(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { windows: { command: e.exe } } }));
+    const session = await start(e, 'lead', dir, { cli: 'codex' });
+    const line = fs.readFileSync(e.log, 'utf8').split('\n').find(line => line.includes('new-session') && line.includes(session.name));
+    assert.match(line, /mcp_servers\.project_windows\.env_vars=.*WHEELCHAIR_WINDOWS_PROJECT.*WSLENV/);
+  } finally { await e.close(); }
+});
