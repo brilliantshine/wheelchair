@@ -90,3 +90,39 @@ alone (uploads-archive run alone twice on T1's branch: 3/3 pass) and the full su
 - Protocol rules are prose; their effect is only checkable by reading.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1 on 3c0b7556)
+
+Gaps (see REMEDIATION-1.md), all fixed in task R1 (light / claude-haiku-5-5), checked by scout, merged:
+
+| Gap | Fix at |
+|-----|--------|
+| First look must include overlaps learned before PLAN.md | protocol/app/lead.md:717 ("An overlap you learned before PLAN.md existed ... is part of that first look, even if `session leads` does not show it.") |
+| Cancel's Done marker names the original card when its follow-up is still waiting | protocol/app/lead.md:758 |
+| API.md: `done` is never spooled, gets 503 | machine/API.md:32 |
+
+Not a gap (agreed with the lead): full viewer suite failures under load. `viewer/test/server.test.js`
+"the global write lock serializes concurrent writes ..." is a pre-existing race: it failed 1 of 6
+runs of server.test.js on base d5e5d1e7 and passes alone here (2 of 2 after the run below).
+
+Validation after R1:
+
+```
+$ node --test viewer/test/*.test.js
+not ok 660 - the global write lock serializes concurrent writes and retry retains both changes
+# tests 727
+# pass 726
+# fail 1
+$ node --test viewer/test/server.test.js   (twice)
+# pass 50 # fail 0
+# pass 50 # fail 0
+$ bash machine/test/run.sh
+# pass 448
+# fail 0
+$ grep -c "overlap card" protocol/app/lead.md
+16
+$ grep -n "Your user decides in chat\|tell your user in one line that it exists" protocol/app/lead.md
+(no output)
+$ node --test viewer/test/protocol-rules.test.js
+# pass 36 # fail 0
+```
