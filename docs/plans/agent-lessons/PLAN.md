@@ -12,11 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: Do lessons apply to every project, or to one project?
-- **Context:** Behavior templates already have "All projects" or one project as their scope (`viewer/pages/settings.js:734`). Lessons that meet the bar are mostly about how to do the role (the severity lesson applies anywhere); facts about one codebase belong in maps.
-- **Options:** all projects; per project; all projects, project-only when marked (like the AI marker).
-- **Recommendation:** all projects, project-only when marked.
-
 ### Q2: Who writes lessons for reviewers and verifiers?
 - **Context:** Reviewers and verifiers are fresh each time, cannot post cards (`viewer/app/card.js:28`), and never see a mistake cost time: the lead triaging them does. IDEA.md says an agent saves lessons only for its own type.
 - **Options:** the lead writes lessons for the reviewers/verifiers it oversees; reviewers/verifiers get no lessons; they propose one in their report and the lead saves it.
@@ -47,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | Lessons are stored by the hub with the other settings (`settings.json`, queued writes, `viewer/app/state.js:241`) and added to role layers at session start | One store every machine's agents get through role layers (`viewer/app/sessions.js:324`); works for every AI | defaulted |
 | 8 | A lesson that conflicts with the rules or should always apply is not saved; the lead offers a stub for a protocol change instead | IDEA.md Not doing | defaulted |
 | 9 | Running agents keep the lessons they started with | IDEA.md Not doing; prompts are a snapshot at start (`machine/service.js:781`) | defaulted |
+| 10 | Lessons apply to all projects; an agent may mark one as only for the project it learned it in | Collin picked "All, unless marked" | user |
 
 ## Spec
 
