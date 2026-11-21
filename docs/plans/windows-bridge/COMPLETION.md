@@ -2,7 +2,10 @@
 slug: windows-bridge
 date: 2026-11-21
 implemented-by: "standard / gpt-6.1-terra (T1, T1b, T2, T3a, T3b, T4, T5; T1 attempt 2, T3a, T3b, T4 and T5 at xhigh effort); sub-lead: claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: standard / gpt-6.1-terra
 ---
 
 # Completion Report — A bridge from Wheelchair in WSL to the Windows side of the same PC
@@ -276,3 +279,31 @@ Per-task real checks on this PC (in each task's report under `docs/plans/windows
 - Unity batch mode needs an activated Unity license on the PC; without one Unity exits 198 (README does not yet say this).
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-21
+
+Verification attempt 1 (claude-opus-5-5, commit 7f815025) found one gap: in a Codex session a
+Windows stdio MCP server did not receive `WHEELCHAIR_WINDOWS_PROJECT`, because Codex starts stdio
+servers with a cleared environment and interop forwards only variables named in `WSLENV`
+(`REMEDIATION-1.md`). Judged normal use; no rare paths.
+
+Fix (R1, standard / gpt-6.1-terra at xhigh effort):
+- `machine/adapters/codex.js:52,81-86`: on WSL, every stdio entry whose command is a Windows program
+  gets `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` in its `env_vars` passthrough, merged without
+  duplicates; off WSL and for other entries the overrides are unchanged.
+- `machine/service.js:664,789`: the adapter context carries `wsl` and `mount`.
+- `machine/adapters/agy.js`: unchanged; agy's stdio servers inherit its whole environment
+  (`docs/plans/project-tools-solid/PLAN.md` decision 16), so the variables already arrive, as in
+  Claude. Kimi runs no project tools.
+- `README.md` (Windows bridge): Windows-side tools started by Wheelchair get the variable
+  automatically; a tool run by hand outside Wheelchair needs it in `WSLENV`.
+- Tests: `machine/test/project-mcp-codex.test.js:138-145` (Windows entry on WSL, merged with an
+  existing passthrough, non-Windows entry, off WSL); `machine/test/win-service.test.js:100-107`
+  (a Codex launch on the fake WSL root carries the passthrough).
+
+Evidence: real `codex exec` on this PC with the adapter's own `-c` overrides and a Windows stdio
+test tool returned `project=[C:\some\path]` (`docs/plans/windows-bridge/reports/R1.md`).
+`bash machine/test/run.sh` after the merge: tests 500, pass 499, fail 1 (the known Kimi test).
+`node --test viewer/test/*.test.js`: pass 712, fail 2 (the two known plan-directory tests); one
+earlier run also failed a third, timing-sensitive viewer test that passed on rerun and fails the
+same way on the base branch occasionally.
