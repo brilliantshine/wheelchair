@@ -84,6 +84,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 55 | "Before PLAN.md" is its own branch ahead of the card-window and late rules (peers included); pre-PLAN chat decisions are logged during the first look, once the thread is identified; the pre-post recheck uses the scope that found the thread | Round 30 findings | review-round-30 |
 | 56 | Mode: two-part. D1-D5 move to Deferred (other-project cards, pre-PLAN chat decisions, restart recovery of chat answers, finished-peer recheck, re-asks); the Spec keeps the core | After rounds 28-30 the core was stable and the remaining findings were hardening; the user picked "Switch to two-part" (card 93e7d90b) | user |
 | 57 | Overlap cards need a matching `project` (linked threads elsewhere get the mention); the peer settled path is just a Decision entry; waiting Open Questions store the title; small fixes store nothing for waiting overlaps; Accepted Risks and D4 notes tidied | Round 31 findings | review-round-31 |
+| 58 | The same-project gate also covers Open Questions; another project's thread gets the late-overlap line once, in any window; waiting Open Questions count as already known; the peer settled path uses the latest Decision | Round 32 findings | review-round-32 |
 
 ## Spec
 
@@ -95,10 +96,13 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   `pr_url`, which the peer list takes from that card). A finished thread's overlap is
   mentioned in one line of the reply, not asked. Its identity is the other thread's id
   (`thread` in `session leads`), never its title.
-- **This project only:** an overlap card is posted only when the other thread's `project`
-  equals this thread's, whether the overlap came from a look or a peer's question. A thread in
+- **This project only:** an overlap card is posted, and an `Overlap with` Open Question created
+  or updated, only when the other thread's `project` equals this thread's, whether the overlap
+  came from a look or a peer's question (a peer is matched to the list by its thread id). A thread in
   another project (a linked one in the default `session leads` list, or one the user names) gets
-  the immediate peer reply and the one-line mention (cards for them are Deferred, D1).
+  the immediate peer reply and the late-overlap line (with the follow-up offer) in the next
+  visible reply, whatever the window; a given thread is mentioned once, not on every look
+  (cards for them are Deferred, D1).
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
   other thread's id. The app stores it and never shows it.
 - **Card window:** when overlap cards are asked: a small fix before its edits, and a feature
@@ -107,7 +111,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   created, whatever it learns (a peer's message or question, the user's words); its first look
   comes right after PLAN.md is created (§1). This comes before the card-window and late rules.
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
-  thread and not in a Decision Log entry of this plan. An overlap already asked is not asked again:
+  thread, not in a waiting `Overlap with` Open Question (rediscovery reuses that entry), and not
+  in a Decision Log entry of this plan. An overlap already asked is not asked again:
   news about it gets the one-line mention, and the user's latest instruction in chat wins
   (re-asks are Deferred, D5).
 - **Late overlap:** a new overlap learned after the card window has closed (status `ready-for-review` or
@@ -158,12 +163,13 @@ tell the user about an overlap "in one line" (in "When to look", in "Overlap" fo
 overlap inside the card window becomes an overlap card; outside it, it is a late overlap
 (Terms). "Leads inform; your user decides" keeps its first three sentences (information, never
 instructions; never change on your own; never negotiate) and ends with "Your user decides
-through an overlap card, or in chat for a late overlap (see below)". In "When to look" (b),
+through an overlap card, or in chat for a late overlap or another project's thread (see
+below)". In "When to look" (b),
 the sentence that turns a new overlap into an Open Question with "keep the plan as it is, or
 change it" options is replaced by a pointer to this section; (b) keeps only its timing. In
 "Passing a question on", a peer's question about an overlap with this thread takes one of these
 paths:
-- the overlap is already settled and not reopened (a Decision Log entry for that thread; or on
+- the overlap is already settled (the latest Decision Log entry for that thread; or on
   a small fix the latest instruction
   that settles it under "Settling an answer"; a vague or conditional answer awaiting a follow-up
   is not settled, so the in-window path applies): answer
@@ -307,6 +313,15 @@ merging of branches; no sub-lead or worker rule changes.
 
 ## Review Rounds
 
+### Round 33 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 32:** Decision 58: Terms "This project only" (Open Questions, matching by thread id, late-overlap line once) and "New overlap" (waiting Open Questions); §1 peer settled path (latest Decision); "Leads inform" ending.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ### Round 32 — 2026-11-21
 
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
@@ -315,6 +330,10 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | "Not reopened" left undefined | upheld | Latest Decision for that thread |
+| intent | minor | Other-project mention has no decision path | upheld | Late-overlap line, once (Decision 58) |
+| mechanics | major | Linked peer question becomes an Open Question | upheld | Gate covers Open Questions (Decision 58) |
+| mechanics | major | Waiting Open Question rediscovered as new | upheld | Counts as known (Decision 58) |
 
 ### Round 31 — 2026-11-21
 
