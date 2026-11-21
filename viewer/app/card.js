@@ -318,6 +318,8 @@ async function main(argv) {
   }
   const body = JSON.parse(result.body);
   const receipt = ['title', 'resolve', 'retract'].includes(kind) ? { ok: true } : { id: body.id, kind };
+  // A lesson's receipt names the lesson, including a repeat the hub saved earlier (no new card id then).
+  if (kind === 'lesson' && typeof body.lesson === 'string') receipt.lesson = body.lesson;
   if (body.spooled === true) receipt.queued = true;
   process.stdout.write(`${JSON.stringify(receipt)}\n`);
 }
