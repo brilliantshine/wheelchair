@@ -358,6 +358,85 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await expect(page.getByRole('link', { name: 'Open sign-in link' })).toHaveCount(0);
     });
 
+    // Accounts-panel stubs: settings carries the live switches and one signed-out Claude account.
+    async function stubAccounts(page, s, posts) {
+      await page.route('**/api/settings', async (r) => {
+        if (r.request().method() !== 'GET') return r.continue();
+        const b = await (await r.fetch()).json();
+        b.harnesses = { ...s.switches };
+        return json(r, b);
+      });
+      await page.route('**/api/usage', async (r) => {
+        const acct = { id: 'acct-claude', provider: 'claude', name: 'Work', plan: 'unknown', weight: 1, paused: false, machines: { hub: 'signed_out' }, reading: null, next: false, live_sessions: 0 };
+        return json(r, { providers: { claude: { label: 'Claude', left: null, accounts: [acct] } } });
+      });
+      await page.route('**/api/settings/accounts', (r) => {
+        if (r.request().method() !== 'POST') return r.continue();
+        posts.push(r.request().postDataJSON());
+        return json(r, { id: 'new-one', ...r.request().postDataJSON(), weight: 1, paused: false }, 201);
+      });
+    }
+    const switchOff = async (page, s, name, key) => {
+      await page.locator('#sections a[data-section="harnesses"]').click();
+      await page.getByLabel(`Use ${name}`).click();
+      const leave = row(page, key).getByRole('button', { name: 'Leave it out' });
+      if (await leave.count()) await leave.click();
+      await expect(page.getByLabel(`Use ${name}`)).not.toBeChecked();
+    };
+
+    test('Add account never hides a switched-off provider: default is the first offered one', async ({ page }) => {
+      const s = status();
+      s.switches.claude = false;
+      const posts = [];
+      await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
+      await stubAccounts(page, s, posts);
+      await openPage(page, context, '/app/settings#accounts');
+      await page.locator('#add-account').click();
+      await expect(page.locator('#add-provider')).toHaveValue('gpt');
+      await page.locator('#add-name').fill('Spare');
+      await page.locator('.add-form button[type="submit"]').click();
+      await expect.poll(() => posts.length).toBe(1);
+      expect(posts[0].provider).toBe('gpt');
+    });
+
+    test('switching off the provider chosen in an open Add account form resets it', async ({ page }) => {
+      const s = status();
+      const posts = [];
+      await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }),
+        put: (r) => { s.switches.gpt = false; return json(r, { harnesses: { ...s.switches } }); } });
+      await stubAccounts(page, s, posts);
+      await openPage(page, context, '/app/settings#accounts');
+      await page.locator('#add-account').click();
+      await page.locator('#add-provider').selectOption('gpt');
+      await page.locator('#add-name').fill('Spare');
+      await switchOff(page, s, 'Codex', 'gpt');
+      await page.locator('#sections a[data-section="accounts"]').click();
+      const value = await page.locator('#add-provider').inputValue();
+      expect(value).not.toBe('gpt');
+      expect(await page.locator('#add-provider option').evaluateAll((o) => o.map((x) => x.value))).toContain(value);
+      await page.locator('#add-name').fill('Spare');
+      await page.locator('.add-form button[type="submit"]').click();
+      if (value === 'claude') await page.locator('#add-anyway').click(); // one Claude account exists: the terms step
+      await expect.poll(() => posts.length).toBeGreaterThan(0);
+      expect(posts[0].provider).toBe(value);
+      expect(posts[0].provider).not.toBe('gpt');
+    });
+
+    test('switching Claude Code off closes a sign-in card opened from Accounts', async ({ page }) => {
+      const s = status();
+      await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }),
+        put: (r) => { s.switches.claude = false; return json(r, { harnesses: { ...s.switches } }); } });
+      await stubAccounts(page, s, []);
+      await page.route('**/api/accounts/acct-claude/signin', (r) => json(r, {}));
+      await page.route('**/api/accounts/acct-claude/signin/hub', (r) => json(r, { state: 'waiting', url: 'https://example.test/login' }));
+      await openPage(page, context, '/app/settings#accounts');
+      await page.getByRole('button', { name: 'Sign in Work on hub' }).click();
+      await expect(page.locator('.signin-card')).toHaveCount(1);
+      await switchOff(page, s, 'Claude Code', 'claude');
+      await page.locator('#sections a[data-section="accounts"]').click();
+      await expect(page.locator('.signin-card')).toHaveCount(0);
+    });
+
     test('the home checklist shows, shows the start reason, and hides', async ({ page }) => {
       let body = { show: true, steps: [
         { id: 'install', label: 'Install an agent harness', done: true },

@@ -1119,7 +1119,7 @@
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
       h('div', { class: 'head-line' }, h('h2', { text: `Sign in ${account.name} on ${machine}` }), closeBtn),
       status, actions, codeBox, pasteWrap, h('div', { class: 'actions' }, termLink));
-    const card = { account: account.id, machine, harness: harness || null, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
+    const card = { account: account.id, provider: account.provider, machine, harness: harness || null, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
     signCard = card;
     const hostEl = harness ? document.querySelector(`[data-signin-host="${harness}"]`) : document.getElementById('signin-host');
     if (hostEl) hostEl.replaceChildren(root);
@@ -1285,8 +1285,12 @@
     } catch (e) { adding.warn = false; renderPanel(); inlineErr(document.querySelector('.add-form') || form, e.message); }
   }
 
+  function addProviders() { return Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini' && harnessOn(v)); }
+
   function addForm() {
-    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: 'claude', name: '', plan: 'unknown', warn: false }; renderPanel(); } });
+    const offered = addProviders();
+    if (!offered.length) return null;
+    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: offered[0][0], name: '', plan: 'unknown', warn: false }; renderPanel(); } });
     const form = h('form', { class: 'box add-form', onsubmit: (ev) => {
       ev.preventDefault();
       if (!adding.name.trim()) { inlineErr(form, 'Give the account a name.'); return; }
@@ -1295,7 +1299,7 @@
       saveAdd(form);
     } });
     const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; renderPanel(); } },
-      Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini' && harnessOn(v)).map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
+      offered.map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
     const name = h('input', { id: 'add-name', value: adding.name, 'aria-label': 'Account name', placeholder: 'Name, e.g. Work', required: true, oninput: () => { adding.name = name.value; } });
     const plan = planSelect(adding.provider, adding.plan);
     plan.id = 'add-plan';
@@ -1593,7 +1597,8 @@
       const res = await api('/settings/harnesses/' + encodeURIComponent(provider), { method: 'PUT', body: { enabled } });
       if (data && res && res.harnesses) data.harnesses = res.harnesses;
     } catch (e) { hz.rowErr[provider] = e.message; paintHarnesses(); return; }
-    if (!enabled && signCard && signCard.harness === provider) closeSignin();
+    if (!enabled && signCard && (signCard.harness === provider || signCard.provider === provider)) closeSignin();
+    if (adding) { const first = addProviders()[0]; if (!first) adding = null; else if (!addProviders().some(([v]) => v === adding.provider)) { adding.provider = first[0]; adding.plan = 'unknown'; adding.warn = false; } if (section === 'accounts') renderPanel(); }
     paintHarnesses();
     await loadHarnesses(true);
     const machine = harnessMachine();
