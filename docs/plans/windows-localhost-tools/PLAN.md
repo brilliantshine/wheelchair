@@ -294,6 +294,21 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 | mechanics | major | Switch URL rule could match only bare origins | upheld | Terms shared eligibility rule; §7; tests |
 | mechanics | minor | §1 intro contradicts silent unknown names | upheld | §1 intro reworded |
 
+### Round 2 — 2026-11-21
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 1:** Terms (shared eligibility rule incl. paths; "On WSL" = WSL kernel,
+interop separate); §1 intro and off-WSL warnings; §2 step 6 reconcile claims after the second
+build; §4 claim reuses only active forwards, relay readiness check (interop + powershell.exe),
+refusal reasons and `last_refusal`, claim-time `check` frame and warning; §5 list-shaped
+record, serialized writes, start waits for its write, sweep covers cancelled starts, restart
+with tmux unknown, failed forwards; §6 `info` scoped to the caller; §7 switch on kernel and
+shared rule; Validation additions; D11; Accepted Risks (cancel window).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
