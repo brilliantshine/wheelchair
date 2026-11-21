@@ -60,15 +60,16 @@ async function machineAccounts(hub) {
         if (Array.isArray(status.accounts)) {
           for (const row of status.accounts) {
             accounts[row.id] = Boolean(row.logged_in);
-            const text = cliProblem('kimi') && row.cli === 'kimi' ? cliProblem('kimi') : (!row.logged_in && typeof row.problem === 'string' && row.problem ? row.problem : null);
+            const text = cliProblem(row.cli) && ['kimi', 'pi'].includes(row.cli) ? cliProblem(row.cli) : (!row.logged_in && typeof row.problem === 'string' && row.problem ? row.problem : null);
             if (text) problems[row.id] = text;
           }
         } else for (const [provider, info] of Object.entries(PROVIDERS)) {
           accounts[`default-${provider}`] = Boolean(status[info.cli]?.logged_in);
           if (provider === 'kimi' && cliProblem('kimi')) problems['default-kimi'] = cliProblem('kimi');
         }
-        const cliProblems = cliProblem('kimi') ? { kimi: cliProblem('kimi') } : {};
-        return [name, { reachable: true, accounts, problems, cliProblems }];
+        const cliProblems = Object.fromEntries(['kimi', 'pi'].filter(cliProblem).map(cli => [cli, cliProblem(cli)]));
+        const cliWarnings = status.pi?.warning ? { pi: status.pi.warning } : {};
+        return [name, { reachable: true, accounts, problems, cliProblems, cliWarnings }];
       } catch { return [name, { reachable: false, accounts: {}, problems: {}, cliProblems: {} }]; }
     }));
     return Object.fromEntries(entries);
@@ -123,7 +124,7 @@ async function summary(hub, includeMachines = true, now = Date.now()) {
     const f = forecast(accounts, data.readings || {}, now);
     const below_notify = f.left !== null && f.left < settings.notify_below / 100;
     const ranked = rank(accounts, data.readings || {}, machines, settings, localName, now, data.last_chosen);
-    providers[provider] = { ...(provider === 'openrouter' && includeMachines ? { spend: await spend(hub) } : {}), label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: provider === 'openrouter' ? accounts.every((a) => a.paused) : f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : a.provider === 'kimi' && m.cliProblems?.kimi ? { state: 'problem', text: m.cliProblems.kimi } : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
+    providers[provider] = { ...(provider === 'openrouter' && includeMachines ? { spend: await spend(hub) } : {}), label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: provider === 'openrouter' ? accounts.every((a) => a.paused) : f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : (a.provider === 'kimi' && m.cliProblems?.kimi || a.provider === 'openrouter' && m.cliProblems?.pi) ? { state: 'problem', text: m.cliProblems[a.provider === 'kimi' ? 'kimi' : 'pi'] } : m.accounts[a.id] ? (a.provider === 'openrouter' && m.cliWarnings?.pi ? { state: 'signed_in', warning: m.cliWarnings.pi } : 'signed_in') : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : a.provider === 'openrouter' && m.cliWarnings?.pi ? { state: 'signed_out', warning: m.cliWarnings.pi } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
   }
   return { providers, seen: data.seen || {} };
 }

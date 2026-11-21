@@ -156,6 +156,7 @@
 .machines li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; }
 .machines .mname { font-family: var(--mono); font-size: 12px; }
 .mstate { font-size: 12px; color: var(--dim); }
+.mstate.note { color: var(--dim); }
 .mstate.signed_in { color: var(--good-text); }
 .mstate.signed_out, .mstate.problem { color: var(--warn); }
 .wins { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }

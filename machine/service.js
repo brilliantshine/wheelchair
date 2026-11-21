@@ -413,6 +413,7 @@ class MachineService {
     this.archivingThreads = new Set(markers.archiving || []);
     this.archivedThreads = new Set(markers.archived || []);
     this.checkKimiVersion();
+    this.checkPiVersion();
     await this.recoverFromTmux();
     await this.screens.startup();
     this.screenTimer = setInterval(() => this.screens.sweep().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SCREEN_SWEEP_MS || 60000));
@@ -768,7 +769,7 @@ class MachineService {
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
-    if (input.cli === 'pi' && !adapter.resolveCli()) die('Pi is not installed');
+    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); }
     if (input.cli === 'kimi') { await this.checkKimiVersion(); const status = this.cliStatus('kimi'); if (!status.installed) die('Kimi Code is not installed'); if (status.problem) die(status.problem); }
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
@@ -802,6 +803,7 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
+    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); session.pi_version = status.version || null; }
     const read = await readProjectMcp(worktree);
     const { mcp, warnings } = read;
     const tools = TOOL_ROLES.has(input.role);
@@ -1032,7 +1034,7 @@ class MachineService {
   async checkReady(session) {
     if (session.status === 'ready') return true;
     let pane;
-    try { pane = this.pane(session.name); } catch { return false; }
+    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
     const prompt = adapters[session.cli]?.answerPrompts(session, pane);
     if (prompt) {
       for (const key of prompt.keys) this.tmux(['send-keys', '-t', session.name, key]);
@@ -1055,7 +1057,7 @@ class MachineService {
     const age = Date.now() - new Date(session.created_at).getTime();
     if (age >= 30_000 && session.status !== 'stuck') {
       session.status = 'stuck'; await this.persistSessions();
-      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id });
+      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id, ...(session.cli === 'pi' && this.piVersionNote(session.pi_version) ? { note: this.piVersionNote(session.pi_version) } : {}) });
     }
     return false;
   }
@@ -1082,7 +1084,7 @@ class MachineService {
   // A permission prompt the service relayed is cleared once the pane shows the input screen again.
   async checkPrompt(session) {
     let pane;
-    try { pane = this.pane(session.name); } catch { return false; }
+    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
     if (!this.readyText(session, pane)) return false;
     session.prompt_open = false; await this.persistSessions();
     await this.emitEvent({ type: 'prompt-cleared', session: session.name, thread_id: session.thread_id });
@@ -1403,6 +1405,7 @@ class MachineService {
     if (current.cli === 'pi' && ['turn-ended', 'turn-failed'].includes(event.type)) {
       try { current.source_transcript ||= await adapter.findTranscript(current, current.account_dir); if (current.source_transcript) await this.copyTranscript(current, current.source_transcript); } catch (error) { this.log(error); }
     }
+    if (current.cli === 'pi' && event.type === 'turn-failed') event = { ...event, error: (event.error || '') + this.piVersionNote(current.pi_version) };
     if (current.cli === 'pi' && event.transcript_path) { event = { ...event }; delete event.transcript_path; }
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
     if (event.type === 'turn-ended' && adapter.onTurnEnded) {
@@ -1595,8 +1598,47 @@ class MachineService {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
     for (const entry of accounts) delete entry.authenticated;
+    if (pi.problem) for (const entry of accounts) if (entry.cli === 'pi') { entry.logged_in = false; delete entry.problem; }
     if (kimi.problem) for (const entry of accounts) if (entry.cli === 'kimi') { entry.logged_in = false; delete entry.problem; }
     return { version: this.version, claude, codex, agy, kimi, pi, accounts, sessions: this.sessionList() };
+  }
+  piVersionNote(version) {
+    const status = this.piVersionStatus(version, { logged_in: true });
+    if (!status.warning) return '';
+    return version ? ` Pi ${version} is newer than the version wheelchair was tested with (1.5.2); that may be the cause.` : " Pi's version couldn't be read; that may be the cause.";
+  }
+  async piExitedBeforeReady(session) {
+    if (session.cli !== 'pi' || !['starting', 'stuck'].includes(session.status) || session.end_reason) return;
+    session.end_reason = 'Pi exited before it was ready' + this.piVersionNote(session.pi_version);
+    await this.persistSessions();
+  }
+  async reconcilePiExits() {
+    const live = this.liveTmux();
+    if (live) for (const session of Object.values(this.sessions)) if (!live.has(session.name)) await this.piExitedBeforeReady(session);
+  }
+  checkPiVersion(executable = adapters.pi.resolveCli()) {
+    if (!executable) return Promise.resolve();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
+    this.piVersions ||= new Map();
+    const key = JSON.stringify([executable, mtime]);
+    if (!this.piVersions.has(key)) {
+      const entry = {};
+      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.piVersionTimeoutMs ?? 5000 }, (error, stdout) => {
+        const output = stdout.trim();
+        entry.version = !error && /^v?\d+\.\d+\.\d+$/.test(output) ? output.replace(/^v/, '') : null;
+        resolve(entry);
+      }));
+      this.piVersions.set(key, entry);
+    }
+    return this.piVersions.get(key).promise;
+  }
+  piVersionStatus(version, login) {
+    const match = typeof version === 'string' && version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+    if (!match) return { installed: true, logged_in: login.logged_in, version: null, warning: "Pi's version couldn't be read. If OpenRouter agents fail, this may be why." };
+    const [major, minor, patch] = match.slice(1).map(Number);
+    const old = major < 1 || major === 1 && (minor < 5 || minor === 5 && patch < 2);
+    const newer = major > 1 || major === 1 && minor > 5;
+    return { installed: true, logged_in: !old && login.logged_in, version, ...(old ? { problem: `Pi 1.5.2 or newer is needed (found ${version})` } : newer ? { warning: `Pi ${version} is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.` } : {}) };
   }
   checkKimiVersion(executable = adapters.kimi.resolveCli()) {
     if (!executable) return Promise.resolve();
@@ -1634,7 +1676,7 @@ class MachineService {
     return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
-    if (cli === 'pi') return { installed: !!adapters.pi.resolveCli(), logged_in: !!adapters.pi.resolveCli() && login.logged_in };
+    if (cli === 'pi') { const executable = adapters.pi.resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } this.checkPiVersion(executable); return this.piVersionStatus(this.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); }
     if (cli === 'kimi') {
       const executable = adapters.kimi.resolveCli(); if (!executable) return { installed: false, logged_in: false };
       let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; }
@@ -1950,7 +1992,7 @@ class MachineService {
           return result.ok ? send(response, 200, { level: input.level, text: result.stdout }) : send(response, 422, failure(result));
         } finally { this.sensitivityWriting = false; }
       }
-      if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
+      if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); await this.reconcilePiExits(); return send(response, 200, this.status()); }
       if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
@@ -2022,7 +2064,7 @@ class MachineService {
         }
       }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
-      if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.sessionList()); }
+      if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); await this.reconcilePiExits(); return send(response, 200, this.sessionList()); }
       if (request.method === 'POST' && url.pathname === '/v1/uploads') {
         await this.authorize(request, 'hub');
         const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request, url.searchParams.get('vouched') === '1');
