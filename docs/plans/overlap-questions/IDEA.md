@@ -29,8 +29,9 @@ that card's id.
 - When a lead learns of an overlap it has not raised with you before, a question card about
   it appears under "Needs you", with options such as "keep the plan as it is" or "change it".
 - The card comes at a sensible time: before a small fix's edits, after you confirm the idea
-  (never before), during planning or review, and during a build. A question during a build
-  never changes the running build; it offers a follow-up thread instead.
+  (never before), and during planning, review and approval. Once a build has started or a small
+  fix's edits are made, your answer could not change the work, so the lead says so in one line
+  and offers a follow-up thread instead of a card.
 - If you ask for a change while a plan review is running, the change is applied after that
   round and checked in the next one; the review does not stall or count as clean while the
   change waits.

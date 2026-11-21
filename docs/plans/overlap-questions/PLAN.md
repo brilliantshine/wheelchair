@@ -43,6 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | An overlap card belongs to the round it is posted in, or moves to the next round if that starts first; a small fix after its first push uses the Done options on purpose | Names the owning round; the user can close a pushed pull request | review-round-2 |
 | 16 | Threads at stage `done` are not overlaps for a card; answers are read against their own card's options; a follow-up card completes the original; the Drop revert is one marked commit | Round 3 findings | review-round-3 |
 | 17 | Restart: an untriaged round restarts under the same number; a sub-lead is restarted only while the build is unfinished; retracted cards without a successor are reposted | Round 3 findings | review-round-3 |
+| 18 | Supersedes 5, 8, 11 and the build/done/small-fix-after-edits parts of 15-17: overlap cards are asked only before building (before a small fix's edits, planning, review, approval). Once a build has started or a small fix's edits are made, the lead mentions the overlap in one line and offers a follow-up thread. IDEA.md "What good looks like" bullet 2 changed to match | Review rounds 1-3 kept finding corners in the build, Start building hand-off and undo cases, where the answer cannot change the work; the user picked "Only before building" (card 73943c05) | idea-change |
 
 ## Spec
 
@@ -64,24 +65,26 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   `resolved_note` when the lead resolved it from a chat answer; else, on restart only, a chat
   answer to it in `recent_messages` sent after the card was posted, handled by "Settling an
   answer" (then resolve the card with a note of it). A card with `retracted_at` has no answer.
-  An answer is read against the options of its own card, then the Start building mapping
-  applies where it does.
+  An answer is read against the options of its own card.
 - **Settling an answer:** an answer that clearly picks one of the card's options is acted on.
   One that does not (an objection, a condition, something else) gets a follow-up overlap card
   for the same thread with the current stage's options, and no Done marker until that one is
   settled. The original card counts as handled once a later overlap card with the same
   `about_thread` exists. In planning and review, a typed answer may also be its own option, handled like any
   planning answer.
+- **Late overlap:** a new overlap learned once a build has started (the approval card's
+  `answered_action` is `start-building`) or once a small fix's edits are made. It never gets a
+  card: the lead says in one line of its next visible reply which thread overlaps, what it is
+  doing, and that a follow-up thread can be started; if the user asks for one, the lead posts a
+  `stub` (`depends_on_parent` by the Stubs rule).
 - **Done marker:** where the lead records that it acted on an overlap card, so nothing is acted
   on twice. It always names the card id. Before acting on any overlap answer (a press, a typed
   answer, a chat answer or a restart), the lead checks for its Done marker and does nothing if
   it exists.
   - a planned thread (PLAN.md exists) up to Start building: a Decision Log entry, source
     `user`, naming the other thread's id and ending `(overlap card <id>)`;
-  - a small fix's "Drop the fix": the revert commit's message contains `overlap card <id>`;
-  - a follow-up thread: the `stub` summary contains `From overlap card <id>.`;
-  - answers that change nothing ("Go ahead", "Carry on", "Let it finish", "Leave it",
-    "Keep the plan as it is" outside a planned thread) need no marker: acting twice is harmless.
+  - answers that change nothing ("Go ahead with the fix", "Leave it to <other thread>") need
+    no marker: acting twice is harmless.
 
 ### 1. Asking (protocol/app/lead.md, "Other leads on this machine")
 
@@ -102,21 +105,13 @@ General rules:
   finds it again by looking (§2).
 - `fits` names the other thread by its title; each option's `consequence` says what the answer
   does to this thread. At most four options in total.
-- The stage that counts is the one when the card is posted; at Start building, cards with
-  pre-build options are replaced (see "Start building").
+- Cards are posted only before building. A late overlap gets the one-line mention (Terms).
 
 Stages:
 - **Small fix, before edits:** found at the look before edits: post the card, edit nothing until
   it is answered. Options: "Go ahead with the fix" and "Leave it to <other thread>" (no edits;
   say so in the reply; the thread stays open).
-- **Small fix, after edits, before the first push:** hold the push while the card waits.
-  Options: "Carry on" and "Drop the fix". Drop: first commit any uncommitted edits of the fix
-  (`wc.js git commit`, the fix's paths), then `wc.js git revert --no-commit` every commit on the
-  branch that is not on the default branch, newest first, then one `wc.js git commit` of the
-  reverted paths whose message names `overlap card <id>`. Check `ok` in each result. Push
-  nothing; say so in the reply.
-- **Small fix, after the first push:** the Done options below. This narrowing is intentional:
-  the user can close the pull request themselves.
+- **Small fix, after edits:** a late overlap (see Terms); no card.
 - **Feature, before IDEA.md is confirmed:** hold it; ask it as the first question after
   confirmation, before any design question (it then follows "Planning").
 - **Planning (status `planning`):** an Open Question in PLAN.md, asked as an overlap card
@@ -144,23 +139,20 @@ Stages:
   lead (the refusal says `card is already answered` and it has `retracted_at` in the thread
   state): log the Decision with the
   Done marker, fold the change in, set `status: ready-for-review`, and go to step 5 with the
-  change listed. If the refusal says `Start building was already pressed` (§3), handle the
-  answer under "Start building". On 503, retry after a minute.
+  change listed. If the refusal says `Start building was already pressed` (§3), the build goes
+  ahead unchanged: log nothing in the worktree, and say in one line that the build had already
+  started and a follow-up thread can be started for the change (as for a late overlap). On 503,
+  retry after a minute.
 - **Start building:** on `[card <id>] start building`, start the sub-lead first (as today).
-  Then retract every open overlap card whose options are not the Building options, and repost
-  each with the Building options and the same `about_thread` (a retract 503: retry after a
-  minute; already answered: read its answer by the mapping below). Once the approval card's
-  `answered_action` is `start-building`, every pre-build overlap answer without a Done marker,
-  whenever it was given, is read as: "Keep the plan" → "Let it finish"; any "Change it" → "Let it finish, then start a
-  follow-up thread", naming the change in the stub. The boundary is that approval answer,
-  whatever `status:` says.
-- **Building (Start building accepted until `done`):** the running build never changes and the
-  lead writes nothing to the worktree. Options: "Let it finish" and "Let it finish, then start a
-  follow-up thread" (post a `stub` at once, `depends_on_parent: true`, naming the other thread,
-  what to reconcile and `From overlap card <id>.`). No stop option: to stop, the user archives
-  the thread (Decision 8).
-- **Done (step 9):** options "Leave it" and "Start a thread about it" (a `stub` naming
-  `From overlap card <id>.`, with `depends_on_parent` set by the Stubs rule).
+  Then retract every open overlap card (note: "The build has started; this can be a follow-up
+  thread") and say in one line of the reply which overlaps are still open and that a follow-up
+  thread can be started for any of them. A retract 503: retry after a minute. A retract refused
+  as already answered: treat the answer as one that arrived after Start building (below).
+- **Answers after Start building:** any overlap answer without a Done marker, once the approval
+  card's `answered_action` is `start-building`, does not change the build: the lead says in one
+  line that the build had already started and offers a follow-up thread (a "Keep the plan"
+  answer needs no line). No marker is written; repeating the line after a restart is harmless.
+- No overlap card is posted during a build or after `done` (Decision 18).
 
 ### 2. Restart (protocol/app/lead.md, "Restarting what died")
 
@@ -170,17 +162,16 @@ On `[wc:context restart]`, after rereading the plan and cards:
   discard their reports, apply every overlap answer that has no Done marker (with its marker),
   and restart the round under the same number, listing the change in its "Changed since".
 - Otherwise, for each overlap card with an actionable answer and no Done marker (search the
-  Decision Log, `git log --format=%B` of the branch, and the `stub` cards' summaries in the
-  context): act on it now, at the current stage's rules.
+  Decision Log): act on it now, at the current stage's rules (after Start building, as in §1
+  "Answers after Start building").
 - If the approval card is answered with `start-building` and `status:` is `approved`,
   `implementing` or `verifying`: if no sub-lead is live, start one as in Start building step 1;
-  then finish the Start building card replacement for any open overlap card that still has
-  pre-build options. With `status: done` no sub-lead is started.
-- An open overlap card stays open and is not asked again. An overlap card retracted by a lead
-  with no later overlap card for the same `about_thread` is reposted with the current stage's
-  options.
+  then retract any overlap card still open, as in §1 Start building. With `status: done` no
+  sub-lead is started.
+- An open overlap card stays open and is not asked again. Before Start building, an overlap
+  card retracted by a lead with no later overlap card for the same `about_thread` is reposted.
 - Run `wc.js session leads` once and treat any overlap not covered by an overlap card or a
-  Decision Log entry as new. A planned thread before Start building also asks any `Overlap with`
+  Decision Log entry as new (a late overlap after Start building). A planned thread before Start building also asks any `Overlap with`
   Watch List item not yet asked.
 
 ### 3. Card ids and retract (machine, hub, card.js)
@@ -236,9 +227,18 @@ merging of branches; no sub-lead or worker rule changes.
 |------|--------------|-------|
 | An overlap learned from a peer message before PLAN.md exists, still waiting to be asked, is lost if the lead also restarts before asking, and the peer's summary in `session leads` does not reveal it | Needs a restart inside a short window plus a peer summary that hides the overlap; the restart re-look covers the usual case | review-round-1 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
-| A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take | review-round-2 |
+| A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 4 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 3:** Round 3 fixes (Decisions 16-17), then Decision 18 (user, after the review budget): cards only before building. IDEA.md bullet 2 changed. Terms: new "Late overlap", Done marker list shortened; §1 Small fix after edits is a late overlap, Approved's Start-won outcome, Start building now retracts open overlap cards, new "Answers after Start building", no Building/Done stage cards; §2 Restart retracts instead of replacing.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 3 — 2026-11-20
 
