@@ -87,8 +87,18 @@ first turn forks the lead's Pi session, later turns resume the fork.
   `pi --provider openrouter --model <model> --mode json -p`, then `--fork <from> --session-id <new_id>` for mode fork
   (the hub supplies `new_id` for OpenRouter forks, as it does for Claude, `aside-turns.js:64`) or
   `--session <from>` for mode resume, `--append-system-prompt <prompt>`, `--no-extensions`
-  (no wheelchair hook bridge in an aside), `--thinking <effort>` when set, and for access
-  `read-only` (the default) `--tools read,grep,find,ls`; for `full` no tool restriction. The
+  (no wheelchair hook bridge or MCP in an aside; explicit `-e` paths still load), `--thinking <effort>` when set, and an explicit `--tools` on every
+  turn, fork and resume alike, because Pi restores a session's saved tool selection when `--tools`
+  is omitted: `read-only` (the default) → `--tools read,grep,find,ls`; `full` → `--tools
+  read,bash,edit,write,grep,find,ls`. Switching access between turns therefore takes effect on the
+  next turn.
+- Read-only boundary: Settings promises read-only asides read only the worktree
+  (`viewer/pages/settings.js:538-541`), and Pi's read tools accept any path. A read-only aside also
+  loads a small wheelchair Pi extension (`-e`, a file under `machine/adapters/` written per turn
+  like `pi-extension.js`) whose `tool_call` handler blocks (`{ block: true, reason }`) any
+  read/grep/find/ls call whose path argument, resolved with `realpath` (or its nearest existing
+  parent) against the worktree, falls outside the worktree. A call with no path uses the
+  worktree. Full access loads no such extension. The
   message is passed on stdin or as the final argument, whichever Pi's `-p` supports
   (`cli.md`). Login env comes from `adapter.loginEnv(dir)` as for other providers.
 - Output parsing (Pi JSON mode, `json.md`): the first record is the session header
@@ -106,6 +116,8 @@ first turn forks the lead's Pi session, later turns resume the fork.
 - Redaction: `reply`, `error` and any stderr text are passed through `adapters/pi.js`
   `redact` before the aside result is stored or returned, so an OpenRouter key never reaches
   hub state.
+- Version tie: the machine records the Pi version a session or aside launched with (from the
+  S4 probe at launch) and S4's failure notes use that recorded version, not the current one.
 - Version gate: an OpenRouter aside on a machine whose Pi is refused by S4 (older than 1.5.2,
   or not installed) finishes at once as `state: failed` with S4's problem text. It is checked
   inside the runner, not at request validation, so the hub gets a terminal result and does not
@@ -119,7 +131,9 @@ first turn forks the lead's Pi session, later turns resume the fork.
 - Tests: machine tests with a fake `pi` on PATH emitting JSON-mode records for fork, resume,
   error, an error followed by a successful retry (success), a key in reply and stderr (redacted),
   an old Pi (terminal failure, no dispatch retry), read-only argv, and a spend scan over a lead
-  file plus its fork counting copied entries once (pattern of existing aside tests); hub test that an OpenRouter lead
+  file plus its fork counting copied entries once, a read-only aside whose read of a path outside
+  the worktree (including the account's `auth.json`) is blocked, and resume argv carrying
+  `--tools` for both access settings (pattern of existing aside tests); hub test that an OpenRouter lead
   allows an aside (update `viewer/test/app-asides.test.js` where it pins the refusal).
 - Live check (costs money; keep it to one fork turn and one resume turn, model
   `deepseek/deepseek-v4.1-flash-1017`): extend `test-support/smoke/pi-live.js` or add a sibling,
@@ -172,10 +186,11 @@ Today a failed transcript read becomes `''` (`viewer/app/chat.js:330-334`), `del
 returns without a report (`viewer/app/sessions.js:435`), and the turn and delivery ids are
 already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
 
-- `chat.sessionTranscript` gets a strict mode for report readers: all its machine calls share one
-  budget of 4 seconds from the first read (each call's timeout is the time left, at least 250ms), so
-  the whole retry fits inside the machine's 5-second event POST deadline (`machine/service.js:207`);
-  retries stop when the budget is spent. Its requests use the strict HTTP path
+- `chat.sessionTranscript` gets a strict mode for report readers: each machine call is capped at
+  1 second, and a wall-clock deadline of 4 seconds from the first read is checked before every
+  call and every gap; no call or gap starts after the deadline and a call never runs past it (its
+  timeout is min(1s, time left)). The bound covers transcript recovery only, not the rest of
+  the event's handling (lock wait, saving state, queue delivery), which is unchanged. Its requests use the strict HTTP path
   (`viewer/app/machine-client.js:33`), so a connection dropped after headers rejects instead of
   hanging. A failed, timed-out or dropped call throws; a transcript that is genuinely absent (machine answers with no data, or 404)
   returns `''`.
@@ -195,7 +210,8 @@ already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
   whose first read is empty and whose entry appears on a later read gets its report; an absent transcript makes one read only,
   produces no report and arms the quiet check; all attempts failing arms the quiet check; a first read that times out
   followed by a successful one delivers once; a connection dropped after headers fails that
-  attempt and is retried; total time stays under 5 seconds.
+  attempt and is retried; the recovery itself never exceeds 4 seconds (measured around
+  the report read with a fake clock or a slow fake machine).
 
 ### Non-goals
 
@@ -280,6 +296,11 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Read-only Pi asides can read outside the worktree (account files) | upheld | S3 path-boundary extension blocks out-of-worktree reads; test |
+| mechanics | blocking | Full access not restored on resume | upheld | S3 passes explicit --tools every turn |
+| mechanics | blocking | First request can eat the whole budget | upheld (major) | S5 1s per call, 4s wall-clock deadline |
+| mechanics | major | What the 5s bound covers | upheld (minor) | S5 bounds recovery only; rest unchanged |
+| mechanics | minor | Version note should use the launch version | upheld | S3/S4 record launch version |
 
 ## Implementation Tasks
 
