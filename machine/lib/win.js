@@ -24,6 +24,7 @@ class WinBridge {
     this.running = new Map();
     this.toolSessions = new Set();
     this.stopped = new Set();
+    this.stopTasks = new Map();
     this.usage = new Map();
     this.archiveAttempted = new Set();
     this.readyTimeoutMs = options.readyTimeoutMs ?? 45000;
@@ -125,7 +126,19 @@ class WinBridge {
     try { return await task; } finally { if (this.running.get(ctx.key) === task) this.running.delete(ctx.key); }
   }
 
-  async beforeLaunch(session, { windowsTools } = {}) {
+  async beforeLaunch(session, options = {}) {
+    let timer;
+    try {
+      await Promise.race([this.prepareLaunch(session, options), new Promise(resolve => {
+        timer = setTimeout(() => {
+          this.readyErrors.set(worktreeKey(session.worktree), 'Windows copy is still being readied');
+          resolve();
+        }, this.readyTimeoutMs);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+
+  async prepareLaunch(session, { windowsTools } = {}) {
     try {
       if (!this.detected.wsl || !TOOL_ROLES.has(session.role)) return;
       const ctx = await this.context(session);
@@ -196,20 +209,24 @@ class WinBridge {
 
   // T4 calls this once per stop, possibly after setting session.status to stopped.
   onStop(session) {
-    if (this.stopped.has(session.name)) return;
+    if (!this.detected.wsl || this.stopped.has(session.name)) return;
     this.stopped.add(session.name);
     this.toolSessions.delete(session.name);
     const termination = this.killSession(session.name);
-    Promise.resolve(termination).then(async () => {
+    const task = Promise.resolve(termination).then(async () => {
       const ctx = await this.context(session);
       if (this.readying.has(ctx.key)) await this.readying.get(ctx.key);
       if (!this.exists(ctx)) return;
       if (session.role === 'verifier') await this.remove(ctx, false);
       else if ((session.role === 'lead' || session.role === 'sub-lead') && !this.liveSharing(ctx, session.name) && readState(this.stateDir, ctx.key).used_since_ok && fs.existsSync(ctx.worktree)) await this.sync(ctx);
-    }).catch(err => this.service.log(err));
+    }).catch(err => this.service.log(err)).finally(() => this.stopTasks.delete(session.name));
+    this.stopTasks.set(session.name, { task, session });
   }
 
   async onWorktreeRemoved(session, { kind }) {
+    if (!this.detected.wsl) return;
+    const stopping = this.stopTasks.get(session.name);
+    if (stopping) await stopping.task;
     const ctx = await this.context(session);
     if (this.readying.has(ctx.key)) await this.readying.get(ctx.key);
     if (!this.exists(ctx)) return;
@@ -232,9 +249,10 @@ class WinBridge {
   archiveCheck(threadId) {
     const pending = [];
     for (const ctx of this.registry().filter(item => item.threadId === threadId)) {
-      const running = this.readying.get(ctx.key) || this.running.get(ctx.key);
+      const stopping = [...this.stopTasks.values()].find(item => item.session.worktree && worktreeKey(item.session.worktree) === ctx.key);
+      const running = stopping?.task || this.readying.get(ctx.key) || this.running.get(ctx.key);
       if (running) {
-        this.archiveAttempted.add(ctx.key);
+        if (!stopping) this.archiveAttempted.add(ctx.key);
         pending.push(ctx.state.last_session);
       } else if (!this.archiveAttempted.has(ctx.key) && this.needsFinal(ctx)) {
         this.archiveAttempted.add(ctx.key);
@@ -277,8 +295,13 @@ class WinBridge {
 
   async sessionEnv(session, baseEnv = {}) {
     if (!this.detected.wsl || !TOOL_ROLES.has(session.role)) return {};
-    const ctx = await this.context(session);
-    return { WHEELCHAIR_WINDOWS_PROJECT: ctx.copy.windows, WSLENV: [baseEnv.WSLENV, 'WHEELCHAIR_WINDOWS_PROJECT'].filter(Boolean).join(':') };
+    try {
+      const ctx = await this.context(session);
+      return { WHEELCHAIR_WINDOWS_PROJECT: ctx.copy.windows, WSLENV: [baseEnv.WSLENV, 'WHEELCHAIR_WINDOWS_PROJECT'].filter(Boolean).join(':') };
+    } catch (err) {
+      this.service.log(err);
+      return {};
+    }
   }
 
   async info(session, ctx) {

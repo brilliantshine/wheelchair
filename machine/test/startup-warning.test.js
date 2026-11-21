@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -54,7 +56,7 @@ test('skips malformed records and missing copies, reads tail and caches only hit
   await startupWarning(f.root, cache); assert.equal(cache.get(missing.cli_session_id), 50000);
 });
 test('refresh coalesces triggers, publishes on completion, and recovers from errors', async () => {
-  const f = await fixture(); const svc = new MachineService({ stateDir: f.root });
+  const f = await fixture(); const svc = new MachineService({ win: noWsl, stateDir: f.root });
   let release; let count = 0; svc.log = () => {}; svc.startupWarning = 'old';
   svc.scanStartupWarning = async () => { count++; if (count === 1) { await new Promise(r => { release = r; }); throw Error('failed'); } return startupWarning(f.root, svc.startupSamples); };
   const running = svc.refreshStartupWarning(); svc.refreshStartupWarning(); svc.refreshStartupWarning();

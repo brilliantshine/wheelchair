@@ -77,12 +77,12 @@ function entryReason(name, entry) {
   const http = object(entry) && (entry.type === 'http' || entry.type === 'sse') && typeof entry.url === 'string' && entry.url.length > 0 && (entry.headers === undefined || (object(entry.headers) && Object.values(entry.headers).every(value => typeof value === 'string')));
   return stdio || http ? null : 'not a valid stdio, http or sse entry';
 }
-function hasWindowsProgram(mcp) {
+function hasWindowsProgram(mcp, { mount = '/mnt' } = {}) {
   const { isWindowsProgram } = require('./project-programs');
   return !!mcp && Object.values(mcp.servers).some(entry =>
-    (entry.type === undefined || entry.type === 'stdio') && isWindowsProgram(entry.command));
+    (entry.type === undefined || entry.type === 'stdio') && isWindowsProgram(entry.command, mount));
 }
-async function readProjectMcp(worktree, { wsl = true } = {}) {
+async function readProjectMcp(worktree, { wsl = true, mount = '/mnt' } = {}) {
   try {
     const file = path.join(worktree, '.mcp.json');
     let info;
@@ -107,11 +107,13 @@ async function readProjectMcp(worktree, { wsl = true } = {}) {
     const checked = checkDocumentText(text);
     if (!checked.ok) return failure(checked.reason, hash);
     const { data } = checked;
-    const names = Object.keys(data.mcpServers), servers = {}, warnings = [];
-    for (const name of names) {
+    const names = [], servers = {}, rawServers = {}, warnings = [], dropped = [];
+    for (const name of Object.keys(data.mcpServers)) {
       const entry = data.mcpServers[name];
       const reason = entryReason(name, entry);
-      if (!reason && !wsl && (entry.type === undefined || entry.type === 'stdio') && require('./project-programs').isWindowsProgram(entry.command)) continue;
+      if (!reason && !wsl && (entry.type === undefined || entry.type === 'stdio') && require('./project-programs').isWindowsProgram(entry.command, mount)) { dropped.push(name); continue; }
+      names.push(name);
+      Object.defineProperty(rawServers, name, { value: entry, enumerable: true, writable: true, configurable: true });
       if (!reason) Object.defineProperty(servers, name, { value: entry, enumerable: true, writable: true, configurable: true });
       else warnings.push({ names: [name], text: `${serverLabel(name)}: skipped: ${reason}` });
     }
@@ -120,7 +122,7 @@ async function readProjectMcp(worktree, { wsl = true } = {}) {
       const entry = servers[name];
       if ((entry.type === 'http' || entry.type === 'sse') && duplicates.has(name)) entry[DUPLICATE_HEADERS] = true;
     }
-    return { mcp: { names, servers, rawServers: data.mcpServers }, warnings, hash };
+    return { mcp: { names, servers, rawServers }, warnings, hash, dropped };
   } catch { return failure('read failed'); }
 }
 module.exports = { DUPLICATE_HEADERS, TOOL_ROLES, readProjectMcp, serverLabel, entryReason, checkDocumentText, hasWindowsProgram };

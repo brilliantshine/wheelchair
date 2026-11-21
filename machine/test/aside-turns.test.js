@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -47,7 +49,7 @@ test('aside turns use isolated CLI commands and persist their outcomes', async (
     store.timeoutMs = 100; i = { ...base, turn_id: uuid(), prompt: 'WAIT' }; await store.start(i); assert.equal((await wait(store, i.turn_id)).error, 'took too long');
     store.timeoutMs = 5000; i = { ...base, turn_id: uuid(), prompt: 'WAIT' }; await store.start(i); await delay(150); const pid = store.get(i.turn_id).pid; await store.stop(i.turn_id); assert.equal(store.get(i.turn_id).error, 'stopped'); await delay(100); assert.throws(() => process.kill(pid, 0)); await store.ack(i.turn_id); assert.throws(() => store.get(i.turn_id), { status: 404 }); assert.throws(() => store.get(uuid()), { status: 404 });
     const expired = uuid(); store.turns[expired] = { state: 'ok', started_at: '2000-01-01T00:00:00Z' }; await store.save(); const reloaded = new AsideTurns(dir, atomic, x => x); await reloaded.load(); assert.equal(reloaded.turns[expired], undefined);
-    const service = new MachineService({ stateDir: dir }); service.sessions = { a: { name: 'a' }, b: { name: 'b', codex_thread_id: 'thread' } }; service.liveTmux = () => new Set(); service.cliStatus = () => ({}); const listed = service.status().sessions; assert.equal(listed[0].codex_thread_id, null); assert.equal(listed[1].codex_thread_id, 'thread');
+    const service = new MachineService({ win: noWsl, stateDir: dir }); service.sessions = { a: { name: 'a' }, b: { name: 'b', codex_thread_id: 'thread' } }; service.liveTmux = () => new Set(); service.cliStatus = () => ({}); const listed = service.status().sessions; assert.equal(listed[0].codex_thread_id, null); assert.equal(listed[1].codex_thread_id, 'thread');
   } finally { process.env = old; }
 });
 test('recovery kills matching and marker-only process groups before failing', async () => {
@@ -73,7 +75,7 @@ test('recovery kills real detached groups, including a marker-only process', asy
 test('hub authentication, validation and aside routes', async () => {
   const http = require('node:http');
   const dir = await makeTemp('aside-http-'); const secret = path.join(dir, 'secret'); await fsp.writeFile(secret, 'secret');
-  const service = new MachineService({ stateDir: dir }); service.config.secret_file = secret; await service.asideTurns.load();
+  const service = new MachineService({ win: noWsl, stateDir: dir }); service.config.secret_file = secret; await service.asideTurns.load();
   const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(r => server.listen(0, '127.0.0.1', r));
   const request = async (method, route, body, auth = true) => { const response = await fetch(`http://127.0.0.1:${server.address().port}${route}`, { method, headers: { 'content-type': 'application/json', ...(auth ? { 'x-wheelchair-machine-secret': 'secret' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }); return [response.status, await response.json()]; };
   try {
@@ -89,7 +91,7 @@ test('stopping an unknown turn persists a tombstone and prevents a later start',
   await fsp.mkdir(bin); await fsp.symlink(path.join(__dirname, 'fixtures/aside/cli.js'), path.join(bin, 'claude'));
   await fsp.writeFile(log, ''); await fsp.writeFile(secret, 'secret');
   const old = { ...process.env }; Object.assign(process.env, { PATH: bin + ':' + old.PATH, ASIDE_LOG: log, ASIDE_STORE: path.join(dir, 'aside-turns.json') });
-  let service = new MachineService({ stateDir: dir });
+  let service = new MachineService({ win: noWsl, stateDir: dir });
   const firstStore = service.asideTurns;
   onCleanup(() => { for (const t of Object.values(firstStore.turns)) if (t.state === 'running' && t.pid) firstStore.proc.kill(t.pid); });
   service.config.secret_file = secret; await service.asideTurns.load();
@@ -107,7 +109,7 @@ test('stopping an unknown turn persists a tombstone and prevents a later start',
     const tombstone = service.asideTurns.get(id);
     assert.deepEqual(tombstone, { input: null, state: 'failed', error: 'stopped', pid: null, pid_start: null, started_at: tombstone.started_at, finished_at: tombstone.started_at, reply: null, conversation_id: null, limit: false });
     assert.ok(!Number.isNaN(Date.parse(tombstone.started_at)));
-    service = new MachineService({ stateDir: dir });
+    service = new MachineService({ win: noWsl, stateDir: dir });
     const resumedStore = service.asideTurns;
     onCleanup(() => { for (const t of Object.values(resumedStore.turns)) if (t.state === 'running' && t.pid) resumedStore.proc.kill(t.pid); });
     service.config.secret_file = secret; await service.asideTurns.load();

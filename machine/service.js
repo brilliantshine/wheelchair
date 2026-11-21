@@ -3,7 +3,7 @@
 const { TryService } = require('./lib/try');
 const { startupWarning } = require('./lib/startup-warning');
 const { createProjectTools } = require('./lib/project-tools');
-const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
+const { TOOL_ROLES, readProjectMcp, hasWindowsProgram } = require('./lib/project-mcp');
 const { missingPrograms } = require('./lib/project-programs');
 const { projectIdentity, readKeyStore, launchKeys, keyReferences } = require('./lib/project-keys');
 
@@ -30,6 +30,7 @@ const { readLines: readCodexSteps } = require('./lib/codex-steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
 const { ScreenManager, screenTools } = require('./lib/screen');
+const { WinBridge } = require('./lib/win');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
@@ -267,6 +268,7 @@ class MachineService {
     this.options = options;
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
     this.screens = new ScreenManager(this);
+    this.win = new WinBridge(this, options.win || {});
   }
 
   async refreshStartupWarning() {
@@ -389,6 +391,9 @@ class MachineService {
     this.checkKimiVersion();
     await this.recoverFromTmux();
     await this.screens.startup();
+    await this.win.startup();
+    this.winTimer = setInterval(() => this.win.sweep().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_WIN_SWEEP_MS || 60000));
+    this.winTimer.unref();
     this.screenTimer = setInterval(() => this.screens.sweep().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SCREEN_SWEEP_MS || 60000));
     this.screenTimer.unref();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
@@ -773,16 +778,19 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    const read = await readProjectMcp(worktree);
+    const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
+    const read = await readProjectMcp(worktree, { wsl, mount });
+    const windowsTools = hasWindowsProgram((wsl ? read : await readProjectMcp(worktree, { wsl: true, mount })).mcp, { mount });
     const { mcp, warnings } = read;
     const tools = TOOL_ROLES.has(input.role);
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
-    if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath() });
+    if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
     const context = input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {};
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
+    if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     if (built.toolFiles) {
       const root = path.join(this.stateDir, 'agy-tools');
@@ -820,6 +828,18 @@ class MachineService {
       } catch (error) { console.error("the key store on this machine can't be read"); }
     }
     const env = this.launchEnv(session, adapter);
+    if (tools) {
+      const started = Date.now();
+      await this.win?.beforeLaunch(session, { windowsTools });
+      let timer;
+      const remaining = Math.max(0, (this.win?.readyTimeoutMs ?? 45000) - (Date.now() - started));
+      const extra = await Promise.race([
+        this.win?.sessionEnv(session, { ...process.env, ...Object.fromEntries(env) }) || {},
+        new Promise(resolve => { timer = setTimeout(() => resolve({}), remaining); })
+      ]);
+      clearTimeout(timer);
+      env.push(...Object.entries(extra));
+    }
     env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
     const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
     const redactions = new Set(built.redactions || []);
@@ -856,12 +876,16 @@ class MachineService {
     return this.stopFatal(session);
   }
   async stopFatal(session) {
+    this.win?.onStop(session);
     this.tmux(['kill-session', '-t', `=${session.name}`]);
     const live = this.liveTmux();
     if (!live || live.has(session.name)) return { pending: true, end_reason: session.end_reason };
     session.status = 'stopped'; session.prompt_open = false; session.stopped_at = new Date().toISOString();
     await this.persistSessions();
-    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+    if (session.role === 'verifier' && session.created_worktree) {
+      const removed = command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+      if (removed.ok) this.win.onWorktreeRemoved(session, { kind: 'verifier' }).catch(error => this.log(error));
+    }
     return { ok: true, end_reason: session.end_reason };
   }
   async kimiBinding(session) {
@@ -1083,8 +1107,12 @@ class MachineService {
     session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     this.screens.killSession(name);
+    this.win?.onStop(session);
     await this.persistSessions();
-    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+    if (session.role === 'verifier' && session.created_worktree) {
+      const removed = command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+      if (removed.ok) this.win.onWorktreeRemoved(session, { kind: 'verifier' }).catch(error => this.log(error));
+    }
     this.sweepAgyTools();
   }
   gitPath(worktree, name) {
@@ -1128,12 +1156,17 @@ class MachineService {
       if (result?.pending) pending.push(session);
       else stopped.push(session.name);
     }
-    if (pending.length) return { pending: true, pending_sessions: pending.map(session => session.name), stopped, committed: [], removed: [], kept: pending.map(session => ({ worktree: session.worktree, reason: session.end_reason })) };
+    if (pending.length) {
+      const bridge = this.win.archiveCheck(threadId);
+      return { pending: true, pending_sessions: [...new Set([...pending.map(session => session.name), ...bridge.pending])], stopped, committed: [], removed: [], kept: pending.map(session => ({ worktree: session.worktree, reason: session.end_reason })) };
+    }
     for (const session of sessions) {
       if (session.archived_pending || session.end_reason) continue;
       await this.stop(session.name);
       stopped.push(session.name);
     }
+    const bridge = this.win.archiveCheck(threadId);
+    if (bridge.pending.length) return { pending: true, pending_sessions: [...new Set(bridge.pending)], stopped, committed: [], removed: [], kept: [] };
     const worktrees = [...new Map(sessions
       .filter(session => session.created_worktree && session.role !== 'verifier')
       .map(session => [path.resolve(session.worktree), session])).values()];
@@ -1165,7 +1198,9 @@ class MachineService {
       const result = command('git', ['-C', worktree, 'worktree', 'remove', worktree]);
       if (!result.ok) { kept.push({ worktree, reason: result.stderr.trim() || 'git worktree remove failed' }); continue; }
       removed.push(worktree);
+      await this.win.onWorktreeRemoved(session, { kind: 'other' }).catch(error => this.log(error));
     }
+    await this.win.archiveFinish(threadId).catch(error => this.log(error));
     const keptWorktrees = new Set(kept.map(item => path.resolve(item.worktree)));
     for (const session of sessions) {
       const worktree = typeof session.worktree === 'string' ? path.resolve(session.worktree) : null;
@@ -1398,7 +1433,7 @@ class MachineService {
     if (!branch.ok || !branch.stdout.trim() || branch.stdout.trim() === 'HEAD') die('worker branch cannot be determined');
     if (!command('git', ['merge-base', '--is-ancestor', branch.stdout.trim(), 'HEAD'], { cwd }).ok) die('worker branch is not fully merged into yours');
     const result = command('git', ['worktree', 'remove', path.resolve(worker.worktree)], { cwd });
-    if (result.ok) { worker.worktree_removed = true; await this.persistSessions(); }
+    if (result.ok) { worker.worktree_removed = true; await this.persistSessions(); await this.win.onWorktreeRemoved(worker, { kind: 'merge' }).catch(error => this.log(error)); }
     return { ok: result.ok, status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
   async git(session, input) {
@@ -2041,6 +2076,7 @@ class MachineService {
         }
       }
       if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, agent.cli === 'kimi' ? { ignored: true } : await this.hook(agent.name, input)); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/win') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.win.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
@@ -2059,7 +2095,7 @@ class MachineService {
     this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }
