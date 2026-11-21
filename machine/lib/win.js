@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { detectWsl, createWinEnv, worktreeKey, copyPaths } = require('./win-env');
 const { ensureCopy, reconcile, readState, writeState, deleteCopy } = require('./win-sync');
 const { parseWinOp } = require('./win-args');
@@ -54,7 +55,9 @@ class WinBridge {
 
   register(ctx, session) {
     const state = readState(this.stateDir, ctx.key);
+    const gitDir = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: ctx.worktree, encoding: 'utf8' });
     Object.assign(state, { thread_id: ctx.threadId, worktree: ctx.worktree, copy: ctx.copy, last_session: session.name, role: session.role });
+    if (gitDir.status === 0) state.git_dir = gitDir.stdout.trim();
     writeState(this.stateDir, ctx.key, state);
     return state;
   }
@@ -144,6 +147,56 @@ class WinBridge {
     } catch (err) {
       this.service.log(err);
     }
+  }
+
+  liveSharing(ctx, excluded) {
+    const live = this.service.liveTmux();
+    if (live === null) return true;
+    return Object.values(this.service.sessions).some(session => session.name !== excluded && session.worktree && session.status !== 'stopped' && live.has(session.name) && worktreeKey(session.worktree) === ctx.key);
+  }
+
+  async remove(ctx, saveUnresolved) {
+    const state = readState(this.stateDir, ctx.key);
+    const worktree = fs.existsSync(ctx.worktree) ? ctx.worktree : state.git_dir;
+    if (!worktree || !fs.existsSync(worktree)) {
+      this.service.log(`cannot delete Windows copy ${ctx.copy.linux}: repository is unavailable`);
+      return;
+    }
+    await deleteCopy({ ...ctx, worktree }, { saveUnresolved });
+  }
+
+  async killSession(name) {
+    const result = await this.apps.killSession(name);
+    if (result.wasRunning) for (const key of result.copyKeys) this.markKey(key);
+    return result;
+  }
+
+  onStop(session) {
+    if (session.status === 'stopped' || this.stopped.has(session.name)) return;
+    this.stopped.add(session.name);
+    this.toolSessions.delete(session.name);
+    const termination = this.killSession(session.name);
+    Promise.resolve(termination).then(async () => {
+      const ctx = await this.context(session);
+      if (!this.exists(ctx)) return;
+      if (this.readying.has(ctx.key)) await this.readying.get(ctx.key);
+      if (session.role === 'verifier') await this.remove(ctx, false);
+      else if ((session.role === 'lead' || session.role === 'sub-lead') && !this.liveSharing(ctx, session.name) && readState(this.stateDir, ctx.key).used_since_ok && fs.existsSync(ctx.worktree)) await this.sync(ctx);
+    }).catch(err => this.service.log(err));
+  }
+
+  async onWorktreeRemoved(session, { kind }) {
+    const ctx = await this.context(session);
+    if (!this.exists(ctx)) return;
+    if (this.readying.has(ctx.key)) await this.readying.get(ctx.key);
+    if (this.running.has(ctx.key)) await this.running.get(ctx.key).catch(() => {});
+    const state = readState(this.stateDir, ctx.key);
+    if (kind === 'verifier' || kind === 'merge') return this.remove(ctx, false);
+    if (state.last_failed) {
+      this.service.log(`keeping Windows copy ${ctx.copy.linux}: last reconcile failed`);
+      return;
+    }
+    await this.remove(ctx, true);
   }
 
   async sessionEnv(session, baseEnv = {}) {

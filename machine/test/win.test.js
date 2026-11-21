@@ -122,3 +122,29 @@ test('readying times out without blocking launch and does not create copies for 
   await ready;
   assert.equal((await bridge.handle(session, { op: 'info', args: [] })).ready, true);
 });
+
+test('worker merge cleanup deletes its copy and stop does not reconcile', async () => {
+  const { bridge, session, apps } = realFixture('worker');
+  apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
+  await bridge.handle(session, { op: 'sync', args: [] });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  fs.writeFileSync(path.join(info.copy_linux, 'new-file'), 'windows');
+  bridge.onStop(session);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fs.existsSync(path.join(session.worktree, 'new-file')), false);
+  await bridge.onWorktreeRemoved(session, { kind: 'merge' });
+  assert.equal(fs.existsSync(info.copy_linux), false);
+});
+
+test('verifier stop returns immediately and deletes after its apps stop', async () => {
+  const { bridge, session, apps } = realFixture('verifier');
+  let release;
+  apps.killSession = () => new Promise(resolve => { release = () => resolve({ wasRunning: false, copyKeys: [] }); });
+  await bridge.handle(session, { op: 'sync', args: [] });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  assert.equal(bridge.onStop(session), undefined);
+  assert.equal(fs.existsSync(info.copy_linux), true);
+  release();
+  for (let i = 0; i < 100 && fs.existsSync(info.copy_linux); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(fs.existsSync(info.copy_linux), false);
+});
