@@ -49,6 +49,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 21 | In `approved`, an overlap is written to the Watch List and the approval withdrawn as soon as it is learned; no approval card is posted (also on restart) while one is open; a change's Decision, Spec and status are one commit | Round 5 findings | review-round-5 |
 | 22 | A pushed small fix (`no plan` with a `pr_url`) counts as finished; overlap cards need one to three change options; restart review recovery also checks live reviewers | Round 5 findings | review-round-5 |
 | 23 | Overlap Watch List items stay until their Decision is logged; a bare general "Change it" gets a follow-up card; the approval retract is skipped when none was posted | Round 6 findings | review-round-6 |
+| 24 | After the review budget was reached again (rounds 4-6), run another review round with the plan as it is | User's pick (card 4bcb64a3) | user |
 
 ## Spec
 
@@ -243,6 +244,15 @@ merging of branches; no sub-lead or worker rule changes.
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 7 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 6:** Decision 23: Terms "Overlap" cutoff is the peer's done card; "Settling an answer" treats a bare general "Change it" as unsettled; §1 General rules keep the Watch List item until its Decision; §1 Approved skips the retract when no approval was posted; §2 uses the approval's `answered_action` and marks the late-answer clause a safety net; one Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 6 — 2026-11-21
 
