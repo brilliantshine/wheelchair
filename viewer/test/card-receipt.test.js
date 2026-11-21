@@ -16,6 +16,7 @@ test('card CLI prints only a receipt for delivered and spooled cards and instruc
     const cases = [
       [{ kind: 'message', to: 'lead', text: 'secret text' }, 200, { id: 'delivered', text: 'secret text' }, { id: 'delivered', kind: 'message' }],
       [{ kind: 'message', to: 'lead', text: 'secret text' }, 202, { ok: true, spooled: true, id: 'queued' }, { id: 'queued', kind: 'message', queued: true }],
+      [{ kind: 'message', to: 'lead', text: 'secret text' }, 202, { id: 'delivered-202', kind: 'message', text: 'secret text', answered: false }, { id: 'delivered-202', kind: 'message' }],
       [{ kind: 'message', to: 'lead', text: 'secret text' }, 202, { ok: true, duplicate: true, id: 'duplicate' }, { id: 'duplicate', kind: 'message' }],
       ...['title', 'resolve', 'retract'].flatMap(kind => [false, true].map(queued => [kind === 'title' ? { kind, title: 'secret title' } : { kind, card: 'target', note: 'secret note' }, queued ? 202 : 200, queued ? { ok: true, spooled: true, id: 'queued' } : { ok: true, title: 'secret title' }, queued ? { ok: true, queued: true } : { ok: true }])),
     ];
