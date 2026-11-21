@@ -126,7 +126,19 @@ class WinBridge {
     try { return await task; } finally { if (this.running.get(ctx.key) === task) this.running.delete(ctx.key); }
   }
 
-  async beforeLaunch(session, { windowsTools } = {}) {
+  async beforeLaunch(session, options = {}) {
+    let timer;
+    try {
+      await Promise.race([this.prepareLaunch(session, options), new Promise(resolve => {
+        timer = setTimeout(() => {
+          this.readyErrors.set(worktreeKey(session.worktree), 'Windows copy is still being readied');
+          resolve();
+        }, this.readyTimeoutMs);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+
+  async prepareLaunch(session, { windowsTools } = {}) {
     try {
       if (!this.detected.wsl || !TOOL_ROLES.has(session.role)) return;
       const ctx = await this.context(session);

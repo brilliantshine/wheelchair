@@ -829,8 +829,15 @@ class MachineService {
     }
     const env = this.launchEnv(session, adapter);
     if (tools) {
+      const started = Date.now();
       await this.win?.beforeLaunch(session, { windowsTools });
-      const extra = await this.win?.sessionEnv(session, { ...process.env, ...Object.fromEntries(env) }) || {};
+      let timer;
+      const remaining = Math.max(0, (this.win?.readyTimeoutMs ?? 45000) - (Date.now() - started));
+      const extra = await Promise.race([
+        this.win?.sessionEnv(session, { ...process.env, ...Object.fromEntries(env) }) || {},
+        new Promise(resolve => { timer = setTimeout(() => resolve({}), remaining); })
+      ]);
+      clearTimeout(timer);
       env.push(...Object.entries(extra));
     }
     env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
