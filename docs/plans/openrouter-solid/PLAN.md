@@ -427,3 +427,4 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 
 - Round 1: IDEA's Why says a report lost to a brief read failure is never recovered; in fact the quiet reminder asks the agent to repeat it. S5 still saves that extra turn and misleading nudge.
 - Ready check 2026-11-21: hub and machine service answer; pi 1.5.2 installed; Codex preflight passes.
+- Build accepted: approval 257ab768-b85c-4bb5-8d55-31ee5a3c1231
