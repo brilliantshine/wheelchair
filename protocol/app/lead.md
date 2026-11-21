@@ -136,7 +136,7 @@ The user picks the project and the machine, then writes in plain words.
   gap surviving two attempts comes to the user as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
   with `wc.js git pr`, and follow **Making the pull request mergeable** before posting
-  `done`. Say in your reply what changed. After the `done` card, follow step 10 (Check it
+  `done`, setting `verified` as that section says. Say in your reply what changed. After the `done` card, follow step 10 (Check it
   yourself).
 - **Anything bigger** gets an `offer` card: "Take it into planning?" Taking it into planning,
   or typing instead of answering, makes the thread a feature. "Keep talking first"
@@ -460,9 +460,11 @@ After the sub-lead's `result` and once it is stopped:
 
 1. Set `status: done` in PLAN.md, commit it, push the branch, and open the pull request
    (`wc.js git push -u origin HEAD:wc/<thread-id>`, `wc.js git pr`). The `done` status is committed before the push, so
-   the pull request carries it. Never merge.
+   the pull request carries it. Never merge: the app merges finished
+   pull requests itself when the user's auto-merge setting is on.
 2. Follow **Making the pull request mergeable** before posting a `done` card: what they can
    do now, what was left as is (each gets a "Start a thread about it"), and the pull request link.
+   Set `verified` as that section says.
 3. Sub-lead and worker sessions are stopped; their transcripts stay.
 4. After the `done` card is accepted, follow step 10 (Check it yourself).
 
@@ -504,7 +506,8 @@ When the user reports a problem, first run `gh pr view --json state`:
      updated the pull request branch), merge them with `wc.js git merge` and re-verify
      first. Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`.
   4. Follow **Making the pull request mergeable** before posting a new `done` card for the
-     fix, saying what changed, what was re-checked and the pull request link. Then follow
+     fix, saying what changed, what was re-checked and the pull request link, and setting
+     `verified` as that section says. Then follow
      step 10 (Check it yourself) for that `done` card; its steps cover only what the fix
      changed.
 
@@ -535,7 +538,8 @@ cover only what that fix changed). Each `see` is something they can observe, not
 Commands use full paths and name the output to look for. `update` says how this project
 picks up a merged change; when you do not know, say so plainly and give your best guess
 marked as such. When the done card is for an already merged pull request, `update` leaves
-out the merge. Never write steps into the Spec (verifiers grade every Spec item).
+out the merge. Otherwise phrase it so it holds either way ("Once the pull request is
+merged, …"), never "merge the pull request". Never write steps into the Spec (verifiers grade every Spec item).
 
 **Trying.** Right after the `done` card is accepted, make the local branch tip the done
 head. `HEAD` equal: nothing to do. `HEAD` an ancestor (the merged-PR path, which fetched the
@@ -587,6 +591,8 @@ problem the user reported (step 9, which checks the PR state first), using your 
 card's broken steps' notes as the report.
 `[card <id>] leave it` gets a one-line reply and nothing else. In a two-part thread the
 follow-up `stub` is posted right after `done`, without waiting for the check card.
+A "Not merged automatically" card is the app's own: you do not resolve it and need not react;
+on `[card <id>] dismissed` for one, say nothing beyond one line.
 
 A new `done` accepted while a steps verifier for an older head runs: stop that verifier,
 post no check card for the older head, and start over for the new one.
@@ -644,7 +650,19 @@ body names the current done head counts as its check card: post no other.
    `BLOCKED` is ready only with no failed or pending checks (a rule such as review may
    remain for the user); `UNKNOWN`, `DRAFT` and other states mean wait. A ready state with
    no checks waits five minutes from the window start, polling every 60 seconds throughout.
-3. **Ready:** post `done` with `head`. Wherever this section says to post `done`, a
+3. **Ready:** post `done` with `head`. Set `verified: true` only when all three hold:
+   (a) you hold in your own context a passing check naming a commit: the sub-lead's build
+   `result` and its `commit` for a planned build; a passing verifier `result` and the commit
+   it names (its `COMMIT:` line) for a small fix, after-done fix or repair; a lead-check pass
+   whose only gaps were rare paths counts, and so does a sub-lead `done` result after "Defer
+   them and finish"; (b) `git diff --name-only <that commit> <done head>` lists only files
+   under `docs/plans/`, or nothing (commits brought in without a verifier, such as a fast-forward in 6,
+   fail this); (c) no `question` card in this thread was ever answered with "push it as it
+   is" or with shipping a gap that survived its checks (deferring hardening, "Defer them and
+   finish", is not shipping a surviving gap). Otherwise, and whenever you cannot tell (for
+   example a restarted lead with no such result in its context), omit it. If `card.js`
+   refuses the done card with `unknown field: verified` (an older hub), post it again
+   without the field. Wherever this section says to post `done`, a
    `card.js` refusal saying "try again", "still working out" or "checks not passed yet"
    means wait two minutes and return to 2 within the same window; for a merged PR, retry
    posting every two minutes until the window ends. "Conflicts" or "moved on" → 7;

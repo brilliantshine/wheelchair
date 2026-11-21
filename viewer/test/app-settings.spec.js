@@ -255,6 +255,17 @@ test.describe('desktop', () => {
     await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/tmp/proj-alpha', '/tmp/proj-beta']));
   });
 
+  test('the auto-merge switch says Saved, not applies to new sessions, and survives a reload', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    const merge = page.getByRole('radiogroup', { name: 'Merge pull requests when done' });
+    await merge.getByRole('radio', { name: 'On' }).click();
+    await expect(merge.getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.note').first()).toHaveText('Saved');
+    await expect.poll(async () => (await settings(page)).auto_merge).toBe('on');
+    await page.reload();
+    await expect(page.getByRole('radiogroup', { name: 'Merge pull requests when done' }).getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   test('the style saves', async ({ page }) => {
     await openPage(page, context, '/app/settings#writing');
     await page.getByRole('radio', { name: 'Thorough' }).click();

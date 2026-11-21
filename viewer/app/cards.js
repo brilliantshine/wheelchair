@@ -167,6 +167,9 @@ async function acceptCard(hub, payload) {
 
     const stored = ['image', 'file'].includes(checked.card.kind) ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
     const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name, deliveryId: payload.delivery_id });
+    if (card.kind === 'done') {
+      for (const needs of thread.cards) if (needs.kind === 'needs' && needs.auto_merge === true && !needs.answered && needs.auto_merge_head !== card.head) resolveCard(needs, 'app', 'Replaced by a newer version');
+    }
     if (card.kind === 'sudo') thread.sudo_index[card.request_id] = card.id;
     if (card.kind === 'message' || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }
     if (card.kind === 'message' && !crossThread) {
@@ -181,7 +184,7 @@ async function acceptCard(hub, payload) {
       if (session.started_by) {
         const target = hub.session(thread, session.started_by);
         target.queue ||= [];
-        target.queue.push({ text: `[wc:from ${session.name}] result: ${card.summary}`, source: 'result', at: new Date().toISOString() });
+        target.queue.push({ text: `[wc:from ${session.name}] result${card.commit ? ` (commit ${card.commit})` : ''}: ${card.summary}`, source: 'result', at: new Date().toISOString() });
         thread.queues[target.name] = target.queue;
       }
     }
@@ -200,6 +203,7 @@ async function acceptCard(hub, payload) {
     return { card, targetName, ...(crossThread ? { targetThread: crossThread, senderTitle: require('./peers.js').threadName(thread) } : {}) };
   });
   if (result.duplicate) return result;
+  if (result.card?.kind === 'check') require('./auto-merge.js').afterCheck(hub, payload.thread_id, result.card.id);
   if (result.targetName) {
     const thread = await hub.thread(payload.thread_id);
     await hub.deliver(thread, result.targetName);

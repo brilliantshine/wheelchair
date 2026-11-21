@@ -3,6 +3,8 @@
 Checked against: `4cfa20cd5aafa0418afabb829c9a4c73430a435f` (origin/main)
 Files covered: `protocol/app/lead.md`, `protocol/app/cards.md`, `protocol/app/cards-lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.md`, `protocol/templates/PLAN.md`, `viewer/app/card.js`, `viewer/app/cards.js`, `viewer/app/hub.js`, `viewer/app/pr-gate.js`, `viewer/app/chat.js`, `viewer/app/threads.js`, `viewer/app/routes.js`, `viewer/app/handoff.js`, `viewer/pages/thread.js`, `machine/service.js`, `viewer/test/app-done-gate.test.js`, `viewer/test/app-threads.spec.js`, `viewer/test/app-handoff.test.js`, `viewer/test/app-thread-list.test.js`, `docs/plans/plan-modes/PLAN.md`, `docs/plans/plan-modes/COMPLETION.md`.
 
+> Finishing, check-card and merge-detection paths rechecked against `249d3a8ba14731806c3f2d40a25596b9294e6999` in [auto-merge-flow.md](auto-merge-flow.md); other historical claims retain their original checked commit.
+
 ```text
 plan validation and completion -> independent verifier -> lead pushes PR
                                                    -> GitHub readiness -> done card
