@@ -48,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 20 | Restart review recovery is gated on `ready-for-review` and a pinned `checking` progress card; a retracted card gets its own refusal `card was already withdrawn` | Round 4 findings | review-round-4 |
 | 21 | In `approved`, an overlap is written to the Watch List and the approval withdrawn as soon as it is learned; no approval card is posted (also on restart) while one is open; a change's Decision, Spec and status are one commit | Round 5 findings | review-round-5 |
 | 22 | A pushed small fix (`no plan` with a `pr_url`) counts as finished; overlap cards need one to three change options; restart review recovery also checks live reviewers | Round 5 findings | review-round-5 |
+| 23 | Overlap Watch List items stay until their Decision is logged; a bare general "Change it" gets a follow-up card; the approval retract is skipped when none was posted | Round 6 findings | review-round-6 |
 
 ## Spec
 
@@ -55,7 +56,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 - **Overlap:** another thread (from `wc.js session leads`, a peer lead's message, or the user)
   whose work touches the same files or behaviour as this thread's, and whose `stage` is not
-  `done`, and is not a small fix already pushed (`stage` `no plan` with a `pr_url`). A finished
+  `done`, and is not a small fix whose `done` card is posted (`stage` `no plan` with a `pr_url`,
+  which the peer list takes from that card). A finished
   thread's overlap is mentioned in one line of the reply, not asked. Its identity is the other
   thread's id (`thread` in `session leads`), never its title.
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
@@ -74,7 +76,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - **Settling an answer:** an answer that clearly picks one of the card's options is acted on.
   One that does not (an objection, a condition, something else) gets a follow-up overlap card
   for the same thread with the current stage's options, and no Done marker until that one is
-  settled. The original card counts as handled once a later overlap card with the same
+  settled. A bare pick of a general "Change it" is not settled: it gets a follow-up overlap card
+  asking what to change. The original card counts as handled once a later overlap card with the same
   `about_thread` exists. In planning and review, a typed answer may also be its own option, handled like any
   planning answer.
 - **Late overlap:** a new overlap learned once a build has started (the approval card's
@@ -105,8 +108,9 @@ negotiate) and ends with "Your user decides through an overlap card (see below)"
 General rules:
 - One question at a time: an overlap card waits behind any open `question` card of yours and is
   asked next. While status is `planning`, `ready-for-review` or `approved`, a waiting overlap is
-  added to the Watch List at once (`Overlap with <thread id>: <what>`) and moved to Open
-  Questions when asked.
+  added to the Watch List at once (`Overlap with <thread id>: <what>`). It stays there (and is
+  also listed in Open Questions while asked) until its Decision is logged; the commit that logs
+  the Decision removes both.
 - `fits` names the other thread by its title; each option's `consequence` says what the answer
   does to this thread. At most four options in total.
 - Cards are posted only before building. A late overlap gets the one-line mention (Terms).
@@ -141,7 +145,9 @@ Stages:
 - **Approved (status `approved`, before Start building):** as soon as a new overlap is learned
   (whether its card can be posted now or must wait behind another question), add it to the
   Watch List and commit, then withdraw the approval: retract the last approval card this
-  thread's leads posted (§3: a retract is never queued, so its result is final). Status stays
+  thread's leads posted (§3: a retract is never queued, so its result is final); if no approval
+  card has been posted yet (for example, the Ready check or an app update is still pending),
+  skip the retract. Status stays
   `approved`, as in the existing "talk instead of building" rule. If the refusal is `Start
   building was already pressed`, this is a late overlap: mark the Watch List item `late` and post
   no card. If it is `card was already withdrawn`, carry on. On 503, retry after a minute. Then
@@ -163,11 +169,12 @@ On `[wc:context restart]`, after rereading the plan and cards:
   discard their reports, apply every overlap answer that has no Done marker (with its marker),
   and restart the round under the same number, listing the change in its "Changed since".
 - Otherwise, for each overlap card with an actionable answer and no Done marker (search the
-  Decision Log): act on it now, at the current stage's rules. Once the approval card's
-  `answered_action` is `start-building`, such an answer (rare: it would need the answer and
-  Start building to cross) is a late overlap: the one-line mention, no change to the build.
+  Decision Log): act on it now, at the current stage's rules. (Safety net that should not
+  occur after Decisions 19 and 21: once the approval card's `answered_action` is
+  `start-building`, such an answer is a late overlap: the one-line mention, no change to the
+  build.)
 - An open overlap card stays open and is not asked again.
-- With `status: approved` and no Start building recorded: if an overlap Watch List item (not
+- With `status: approved` and the approval card's `answered_action` not `start-building`: if an overlap Watch List item (not
   marked `late`) or an overlap card is open, finish §1 Approved (withdraw the approval if still
   open, post the waiting card) and post no approval card, overriding the restart rules that
   would repost one; otherwise those rules apply as today.
@@ -231,6 +238,7 @@ merging of branches; no sub-lead or worker rule changes.
 |------|--------------|-------|
 | An overlap learned from a peer message before PLAN.md exists, still waiting to be asked, is lost if the lead also restarts before asking, and the peer's summary in `session leads` does not reveal it | Needs a restart inside a short window plus a peer summary that hides the overlap; the restart re-look covers the usual case | review-round-1 |
 | A retract saved by the hub whose reply is lost in a network drop returns 503; the retry then gets `card was already withdrawn`, which the lead treats as success | Handled by the distinct refusal; listed so later rounds don't re-raise | review-round-4 |
+| A lead that dies while launching round N+1's reviewers may restart the round under the pinned pass N | Needs a death within the seconds of a launch; a misnumbered round is cosmetic | review-round-6 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
@@ -244,6 +252,13 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | "No Start building recorded" is ambiguous in thorough mode | upheld | Uses the approval's `answered_action` |
+| intent | minor | Restart clause describes an impossible path | upheld | Marked as a safety net |
+| mechanics | major | Pushed small fix before its done card still gets a card | declined | Until `done` the other fix is unfinished, so asking is fair; Terms now say the cutoff is its done card |
+| mechanics | major | Approved with no approval card posted yet | downgraded (minor) | Retract skipped (Decision 23) |
+| mechanics | major | Watch List item moved to Open Questions is missed on restart | upheld | Item stays until its Decision (Decision 23) |
+| mechanics | major | Bare "Change it" press has nothing to apply | upheld | Follow-up card (Decision 23) |
+| mechanics | minor | Round number source when dying mid-launch | accepted-risk | Rare path; Accepted Risks |
 
 ### Round 5 — 2026-11-21
 
