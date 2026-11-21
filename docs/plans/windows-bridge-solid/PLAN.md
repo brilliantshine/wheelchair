@@ -1,6 +1,6 @@
 ---
 slug: windows-bridge-solid
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -580,7 +580,7 @@ of copies or git data.
 | T5c | Fix T5b's three failing tests: set `used_since_ok: false` directly instead of through `sync` (the fixture's lead is live, so `sync` re-marks it), and a Codex budget fixture under 32 KiB that quotes past 64 KiB | `machine/test/win.test.js`, `machine/test/win-service.test.js` | light / gpt-6-luna, effort high (rung 1: T5b hit its fails-twice guardrail) | wc-d5233e17e73d-worker-10 | machine suite | done |
 | T3 | Item 2: `win info` `disk` object, cached background copy walks, warnings; `wc.js win info` prints warnings to stderr (after T2) | `win.js` `info()` only, new `machine/lib/win-disk.js`, `viewer/app/wc.js` win info printing, new tests | standard / gpt-6.1-terra | wc-d5233e17e73d-worker-5 | machine and viewer node suites | done (follow-ups in T3b) |
 | T3b | T3 follow-ups: `# wc:` header on the copy-walk script, a failed walk retried only after the 10-minute window, test temp folders from `test-support/run-dir.js` | `machine/lib/win-disk.js`, `machine/test/win-disk.test.js` | light / gpt-6-luna | wc-d5233e17e73d-worker-9 | machine suite | done |
-| T3c | Copy-walk literal doubles a typographic quote with the same character, not two ASCII quotes (found in my read while writing COMPLETION.md) | `machine/lib/win-disk.js` (one line), `machine/test/win-disk.test.js` | light / gpt-6-luna | wc-d5233e17e73d-worker-11 | win-disk tests, machine suite | running |
+| T3c | Copy-walk literal doubles a typographic quote with the same character, not two ASCII quotes (found in my read while writing COMPLETION.md) | `machine/lib/win-disk.js` (one line), `machine/test/win-disk.test.js` | light / gpt-6-luna | wc-d5233e17e73d-worker-11 | win-disk tests, machine suite | done |
 | T5 | Session wiring (tricky): `startIn` uses `built.loaded` for readying, Unity prompt lines, broken-bridge prompt line, mark copy used after launch and after late readying, restart recovery of tool sessions (after T1, T2) | `machine/service.js` `startIn`/startup; `win.js` `prepareLaunch` and new tracking methods; win-service/win tests | standard / gpt-6.1-terra | wc-d5233e17e73d-worker-6 | `bash machine/test/run.sh` | done (tests in T5b) |
 
 ## Log
@@ -619,3 +619,6 @@ of copies or git data.
 - 2026-11-21 — T5c accepted (band: scout): win.test.js + win-service.test.js 28/28; my machine suite run 557/558 (Kimi only). Mutations by the scout: `afterLaunch` as a no-op fails the launch test (control passes); removing recovery's `markKey` fails the restart test; a huge Codex budget fails the budget test. The two reconcile tests set `used_since_ok: false` directly rather than through a real readying reconcile.
 - 2026-11-21 — Merged `origin/main` (130 commits) into the feature branch at `fc33131f`; conflicts in `machine/adapters/pi.js` (kept main's `--thinking` argv plus `loaded: []`) and `machine/service.js` (main's `/v1/status` with `reconcilePiExits` plus the unity-prep route; main's close handler plus clearing `win.healthTimer`).
 - 2026-11-21 — Routers updated: `machine/AGENTS.md` (win-disk, win-prompt, unity-prep rows; win, win-env, windows-live rows), `viewer/AGENTS.md` (project-tools row).
+- 2026-11-21 — Choice: T3c (from the diff; report said none): test fixture puts `O’Brien` beside `current` under one copies folder; `ps` stub returns `0`; an extra `doesNotMatch(/O''Brien/)` assertion.
+- 2026-11-21 — T3c accepted (band: scout): win-disk tests 4/4; machine suite 564/568, the four failures are the known pre-existing ones (Kimi not installed, Pi aside, plan-files on port 7374), all failing on `origin/main` too.
+- 2026-11-21 — All tasks done; status set to verifying.
