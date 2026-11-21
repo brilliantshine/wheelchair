@@ -662,7 +662,7 @@ npm --prefix viewer run test:browser
 | T2 | Machine: S2 (tmux PATH, recipes, install job, routes, tests) | `machine/service.js` (S2 parts), `machine/lib/harness-*.js`, `machine/test/`, `machine/API.md`, `machine/AGENTS.md` | standard, gpt-6.1-terra | wc-ff891978fb1d-worker-5 (attempt 2; worker-2 stopped: brief barred editing existing PATH tests) | `bash machine/test/run.sh` | done |
 | T3 | Hub: S3 (switches, placement, `/harnesses`, `can_start`, `/onboarding`, forwarders, wc.js reason, thread waiting line) — tricky | `viewer/app/**`, `viewer/pages/thread.js` (waiting line), `viewer/test/*.test.js`, `viewer/AGENTS.md` | standard, gpt-6.1-terra | wc-ff891978fb1d-worker-6 (attempt 2; worker-3 stopped: S3.10 tests incomplete) | `node --test viewer/test/*.test.js` | done |
 | T4 | Pages: S4 Harnesses section, S5 home checklist, browser tests | `viewer/pages/settings.{js,css,html}`, `viewer/pages/threads.{js,html}`, new `viewer/test/*.spec.js` | standard, claude-sonnet-5-5 | wc-ff891978fb1d-worker-4 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done |
-| R1-1 | Remediation 1: S2.3 Node check reads the recipe's PATH node | `machine/lib/harness-install.js`, `machine/test/harness-install.test.js` | standard, gpt | wc-ff891978fb1d-worker-7 | `bash machine/test/run.sh` | running |
+| R1-1 | Remediation 1: S2.3 Node check reads the recipe's PATH node | `machine/lib/harness-install.js`, `machine/test/harness-install.test.js` | standard, gpt | wc-ff891978fb1d-worker-7 | `bash machine/test/run.sh` | done |
 | R1-2 | Remediation 1: S4.6 hidden order positions; S4.1–4.3 Install targets the shown machine; S4.2 sign-in closes on switch-off | `viewer/pages/settings.{js,css}`, `viewer/test/app-harnesses.spec.js` | standard, claude | wc-ff891978fb1d-worker-8 | `npm --prefix viewer run test:browser` | running |
 
 ## Log
@@ -697,3 +697,6 @@ Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
 - 2026-11-21 — Full validation on `d90ebeea`: installer 208/1 (the pre-existing live-folder check), machine 484/484, node 764/764, browser 1174 passed / 34 skipped / 0 failed. COMPLETION.md written; status verifying.
 - 2026-11-21 — Verification attempt 1 on `c281731a`: Claude verifier PASS; GPT verifier FAIL with 9 gaps. 5 judged rare paths and recorded in Accepted Risks (verification-1); 4 remain, sent to the lead for defer/fix.
 - 2026-11-21 — Lead's answer: fix all 4 remaining gaps, defer none. REMEDIATION-1.md written; R1-1 (gpt) and R1-2 (claude) dispatched in parallel.
+- 2026-11-21 — R1-1 accepted (band: scout): the Node check runs `node -e` on the job's PATH before npm recipes; `bash machine/test/run.sh` 486/486 on the worker branch, no stray tmux sessions. The scout's no-timeout note doesn't apply: the probe runs in the detached job, not the service.
+- 2026-11-21 — Choice: R1-1, harness-install.js: only a plain `x.y.z` version is accepted (prerelease suffixes count as not working); a node that exits non-zero counts as not working.
+- 2026-11-21 — Choice: R1-1, harness-install.test.js: added a malformed-version case for the no-working-node message.
