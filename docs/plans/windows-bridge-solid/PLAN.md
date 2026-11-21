@@ -45,6 +45,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D18 | Supersedes D14's restart and D17: the go-between never starts the real tool before the copy is ready; it answers the handshake itself until then, then starts the tool and sends `tools/list_changed`. Wrapped tools started before ready expose tools only for that session | Same behaviour the user chose (agents start promptly, tools work once the copy is ready) with no restart, so no handshake replay, stall or duplicate-notification cases | review-round-5 |
 | D19 | D18 also supersedes D8's "restarted": the go-between holds the tool back until the copy is ready; nothing is restarted | Wording left from the restart design | review-round-6 |
 | D20 | Windows localhost (HTTP/SSE) tool forwarding is split into its own thread; this plan drops its Spec part (old §1) and the IDEA promise moves to Not doing. D2, D6, D7, D9, D10, D13, D15's last sentence (forward still built here), D5's localhost rationale and the port parts of later rounds now belong to that thread | User's choice after review kept reopening port ownership and release; nothing else here depends on it since D15 | idea-change |
+| D21 | Holding back Windows tools that start before their copy is ready (the go-between: D8, D14, D16, D17, D18, D19 and item 3's ready file, process tree and shutdown gate) is split into its own thread; the IDEA promise moves to Not doing. This thread keeps the existing-bridge fixes review found (Windows tool tracking across restarts, marking the copy used after launch, lookup recovery) | User's choice after three more unclean rounds, nearly all about the go-between's shutdown wait | idea-change |
 ## Spec
 
 Background: the bridge as built is described in `docs/maps/windows-bridge-runtime.md` and
@@ -54,25 +55,22 @@ every new code path returns early there, and the non-WSL tests keep passing unch
 exception is item 1's "Add MCP for Unity" button, which also works off WSL (it fills `uvx`).
 
 Windows tools that serve on Windows `localhost` (HTTP/SSE) are not part of this plan; they
-moved to their own thread (D20).
+moved to their own thread (D20). Neither is holding back Windows tools that start before their
+copy is ready (the go-between): it moved to its own thread too (D21).
 
 **Which tools a session loads.** Several rules below depend on whether the session's CLI
 actually loads an entry. Loaded entries per CLI, for tool roles: Claude loads stdio, `http`
 and `sse`; Codex and Antigravity load stdio and `http` (they skip `sse`, as today, and skip
 anything their existing per-entry reasons reject); Pi and Kimi load none. "Loaded entries"
 below always means this set, taken from the adapter's final built configuration for the
-session (after item 3's wrapping and after Codex's override size budget, which can drop every
-entry), not from `.mcp.json` alone. The order in `startIn` is: (1) build the adapter command
-once, with item 3's wrapping applied; (2) read the loaded entries from that build; (3) decide
-readying (the `windowsTools` flag: a loaded Windows `.exe` stdio entry), ready enrollment,
-Windows tool tracking (item 3) and the Unity prompt lines from the loaded entries only. Launch
-artifacts (settings files, `--mcp-config`, Antigravity plugin files) are written only from
-that build. Because a wrapped entry's emitted command is Linux Node, the loaded set is not
-re-derived from emitted commands: each adapter's build returns `loaded: [{ name, windows,
-wrapped }]` for exactly the entries in its final configuration (after its skip rules and, for
-Codex, the budget), where `windows` is true only for a stdio entry (no `type` or `type:
-"stdio"`) and is `isWindowsProgram` of that entry's original `.mcp.json`
-command and `wrapped` says whether item 3 wrapped it. Pi and Kimi return an empty list.
+session (after Codex's override size budget, which can drop every entry), not from
+`.mcp.json` alone. The order in `startIn` is: (1) build the adapter command once; (2) read the
+loaded entries from that build; (3) decide readying (the `windowsTools` flag: a loaded Windows
+`.exe` stdio entry), Windows tool tracking (item 3) and the Unity prompt lines from the loaded
+entries only. Each adapter's build returns `loaded: [{ name, windows }]` for exactly the entries
+in its final configuration (after its skip rules and, for Codex, the budget), where `windows` is
+true only for a stdio entry (no `type` or `type: "stdio"`) whose original `.mcp.json` command
+`isWindowsProgram`. Pi and Kimi return an empty list.
 Today `windowsTools` comes from `.mcp.json` before the build; it now comes from
 the build, so a Windows tool the CLI does not load (for example on Pi or Kimi) no longer
 triggers readying.
@@ -83,8 +81,7 @@ MCP for Unity runs as a stdio tool started per agent (D15): `uvx --from mcpforun
 mcp-for-unity --transport stdio`, which talks to whichever Unity Editors have the MCP for Unity
 package open, over Windows localhost. On WSL it runs on Windows (`uvx.exe`), so it is an
 ordinary Windows `.exe` stdio tool: it readies the copy and gets `WHEELCHAIR_WINDOWS_PROJECT`.
-It is **not** wrapped by item 3's go-between: it never reads the copy, and a restart would drop
-the agent's Editor selection. Each agent has its own server process.
+Each agent has its own server process.
 
 **The button.** The Project tools form gets an "Add MCP for Unity" button. It adds an entry
 named `unity` (`unity-2`, ... if taken), stdio, args `["--from", "mcpforunityserver",
@@ -163,77 +160,26 @@ GB."; `conflict_refs` 10 or more → "<n> kept conflict snapshots; see README to
 `git_bytes`. Nothing is ever deleted. `wc.js win info` keeps printing the JSON on stdout,
 unchanged in shape apart from the new fields; it prints each `disk.warnings` line to stderr.
 
-### 3. Windows stdio tools that start before the copy is ready
+### 3. Fixes to the existing bridge's Windows tool tracking
 
-**Which tools.** On a WSL machine, for tool roles, every loaded stdio entry whose command
-`isWindowsProgram`, except one whose args include `mcp-for-unity` (§2), is launched through a
-go-between: `machine/lib/win-tool-proxy.js`, run as `<node> <proxy> --ready-file <path> --
-<command> <args...>`, where `<node>` is `process.execPath`. HTTP tools are never wrapped
-(their server is not started by the CLI).
+These keep the parent bridge's final stop reconcile from being skipped for sessions with
+Windows tools.
 
-**Per CLI.**
-- Codex and Antigravity: their translated entries get the wrapped command and args. The
-  Codex env passthrough of `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` stays.
-- Claude loads `.mcp.json` itself, so its wrapped entries are added to
-  `disabledMcpjsonServers` and given instead, wrapped and under the same names, in a
-  per-session file passed with `--mcp-config` (in `<stateDir>/settings/`, mode 0600).
-- Pi and Kimi load no project tools; unchanged.
+**Launch record.** tmux sessions survive a service restart, but `WinBridge.toolSessions` is in
+memory. After step (3) and **before tmux is started**, the machine writes the session's launch
+record to `<stateDir>/win-sessions.json` (one entry per session name; written atomically, mode
+0600) for every session with `windows_tools` (any loaded Windows stdio tool, including the
+Unity entry). The entry is removed when its start fails, or once the session is confirmed
+gone: its tmux session absent from `liveTmux()`, checked by the stop path after `kill-session`
+and by `WinBridge.sweep()` (every 60 s) for any recorded session no longer in `liveTmux()` and
+not still starting (names in the service's `startingNames` are skipped, as the Antigravity
+tool-file sweep already does). This file, not the sessions file, is what startup recovery
+reads, so a restart during launch is covered.
 
-**Ready file.** `<stateDir>/win-ready/<session name>` (mode 0600, written atomically) holds
-JSON `{"state": "ready" | "waiting" | "failed", "reason": "...", "at": "<iso>"}` (`reason`
-only for `failed`). The go-between branches on `state` only, never on reason text.
-- `ready` is written only after a reconcile of that session's copy (its `create` + `sync`)
-  **finishes successfully after the session's start began**: the session's own readying
-  task, a shared readying task it awaited, or any later successful `win sync`/`run`/`start`
-  sync of that copy. An existing `.git` alone never counts.
-- `waiting` is written before launch and stays while the readying task is still running
-  (including past the 45 s wait).
-- `failed` is written when the readying task fails; a later success replaces it with `ready`.
-- Removed when the session stops.
-
-**Launch record.** tmux sessions survive a service restart, so Windows tool state must too.
-After step (3) and **before tmux is started**, the machine writes the session's launch record
-to `<stateDir>/win-sessions.json` (one entry per session name; written atomically, mode 0600):
-`wrapped` (has at least one go-between) and `windows_tools` (has any loaded Windows stdio
-tool, wrapped or the Unity entry). Only sessions with either flag get an entry. The entry is
-removed when its start fails, or once the session is confirmed gone: its tmux session absent
-from `liveTmux()`, checked by the stop path after `kill-session` and by `WinBridge.sweep()`
-(every 60 s) for any recorded session no longer in `liveTmux()` and not still starting (names
-in the service's `startingNames` are skipped, as the Antigravity tool-file sweep already
-does). This file, not the sessions file, is what startup recovery reads, so a restart during
-launch is covered.
-
-**Recovery after a service restart.** On startup, after `recoverFromTmux`, for every live
-session in the launch record: with `windows_tools`, it is added back to
-`WinBridge.toolSessions` (and its copy registered as today), so the copy's "used since last
-reconcile" tracking and the final stop reconcile work as before the restart; with `wrapped`
-and a ready file that is missing or not `ready`, the machine runs the readying (create and
-sync) again and writes the result.
-
-So a copy that existed but was stale at start still counts as not ready until the first
-reconcile after start finishes; if that finishes within the 45 s wait, the tool starts after
-it and never sees the stale copy.
-
-**Stop waits for wrapped tools.** While a go-between's real tool runs, the go-between keeps
-a file `<stateDir>/win-tools/<session name>/<go-between pid>` (created when it starts the real
-tool, removed after the tool's job has closed and its pipes are shut). `WinBridge.onStop` for
-**any** session (wrapped or not) waits, before its final stop reconcile, until the `win-tools`
-directories of every session registered on its copy key are empty. This is decided by listing
-those directories, not by the launch record (which can already be gone for a sibling whose
-tmux ended while its go-between is still shutting down); an absent directory counts as empty (polling, up to 15 s; entries whose pid is no longer alive are
-removed) before the final stop reconcile, so a tool's last writes are in
-the final Windows snapshot. A timeout logs it and reconciles anyway. The same gate applies to
-`WinBridge.sweep()`'s final reconcile: a copy is not swept-reconciled while any session sharing
-it (registered for that copy key) still has entries in its `win-tools` directory with live
-pids; the next sweep tries again. This covers sessions that end without `onStop` (a CLI
-crash, or the handoff `kill` path in `machine/service.js`). Archive checks the same copy-wide
-gate in `WinBridge.archiveCheck`, before it reconciles, commits or removes anything: while the
-gate is closed for any of the thread's copies, `archiveCheck` returns the existing `pending`
-result, and `onWorktreeRemoved` / `archiveFinish` never run for that thread until it opens.
-As today for `pending`, the app shows "Archive again to retry" and the user archives again;
-nothing retries automatically. Verifier copies are not gated: a verifier's worktree is a
-throwaway whose Windows copy is removed without a reconcile by design, so its tool's last
-writes are not kept anyway.
+**Recovery after a service restart.** On startup, after `recoverFromTmux`, every live session
+in the launch record is added back to `WinBridge.toolSessions` (and its copy registered as
+today), so the copy's "used since last reconcile" tracking and the final stop reconcile work as
+before the restart.
 
 **Marking the copy used.** A pre-launch readying reconcile clears the copy's "used since last
 reconcile" state before the CLI exists. So, for a session with `windows_tools`, right after its
@@ -241,58 +187,6 @@ tmux session has started the machine marks its copy used (`markKey`), and does s
 readying task for that copy finishes after launch. So wherever the existing rules give a copy a
 final stop reconcile (lead and sub-lead thread copies; workers still sync before reporting
 done, as the parent plan requires), it is not skipped because readying finished first.
-
-**Process tree.** The go-between starts the real tool so that ending it ends every Windows
-process it started: through a launcher that puts the tool in a Windows Job Object with
-kill-on-close, as `machine/lib/win-apps.js` does for apps, with the tool's stdio passed
-through. "Stop the tool" means: close the job (all descendants end), then wait until the
-tool's stdio pipes close (up to 5 s).
-
-**Go-between behaviour (D18).** The real tool is never started before its copy is ready, so
-nothing ever needs restarting. The go-between reads JSON-RPC messages line by line.
-
-1. **Ready at start** (ready file says `ready`): it starts the real tool at once and only
-   pipes stdin/stdout both ways (stderr passes through), like an unwrapped tool, until either
-   side ends (step 5).
-2. **Not ready at start:** it does not start the real tool. It answers the client itself:
-   - `initialize` → at once, a successful result with the client's requested
-     `protocolVersion`, `capabilities` `{tools: {listChanged: true}}`, `serverInfo`
-     `{name: "<tool name>", version: "0"}` and `instructions` saying the state: "Waiting for
-     the Windows project copy to be ready; this tool's real tools appear when it is." or, when
-     the ready file says `failed`, "The Windows project copy couldn't be readied: <reason>.
-     This tool has no tools until it is. Run `wc.js win sync` to retry."
-   - `notifications/initialized` and other client notifications → swallowed.
-   - `tools/list` → an empty list. `ping` → an empty result.
-   - any other request → a JSON-RPC error (`code -32000`) with the same sentence as
-     `instructions`.
-3. **When the ready file first says `ready`** (poll every 2 s is fine), one of two paths:
-   - **3a. The client has not sent `initialize` yet:** start the real tool and pipe as in
-     step 1 from then on. The client's own handshake goes to the real tool and its answers
-     go back unchanged. Nothing synthetic, no `list_changed`.
-   - **3b. The stand-in already answered `initialize`:** queue client messages, start the
-     real tool, send it the client's `initialize` params, wait up to 60 s for a successful
-     response (not passed to the client: it already has one), then send the real tool exactly
-     one `notifications/initialized` (the go-between's own; every client
-     `notifications/initialized`, including any queued during the handoff, is dropped), flush
-     the rest of the queue in order, send the client `notifications/tools/list_changed`, and
-     from then on pipe as in step 1.
-   The rules below apply to 3b.
-   - If its `protocolVersion` differs from the one the go-between answered, the go-between
-     writes a line saying so to stderr and carries on.
-   - Only tools are exposed for such a session: prompts, resources and other capabilities the
-     real tool offers are not advertised (the go-between already answered `initialize`), and
-     their requests are still forwarded if a client sends them. Accepted limit: a tool wrapped
-     and started before its copy is ready has tools only for that session.
-   - If the real tool fails to start, exits, or its `initialize` fails or times out, the
-     go-between answers queued requests with a JSON-RPC error carrying the reason, writes it
-     to stderr, and exits 1.
-4. While not ready, a `failed` ready file changes the `instructions`/error sentence for later
-   messages; a later `ready` still starts the tool (step 3).
-5. After the real tool is running, if it exits on its own, the go-between exits with its code,
-   as an unwrapped tool would. If the client closes stdin at any time, the go-between ends:
-   before the ready point it exits at once without ever starting the real tool (and stops
-   polling the ready file); during the 3b handoff or afterwards it stops the tool (process tree
-   as above), then exits.
 
 ### 4. Broken bridge warning
 
@@ -347,43 +241,17 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   sandboxed Codex variant.
 - `win info`: `disk` fields and each warning threshold with fake sizes, no `git_bytes`
   warning.
-- Ready file: `ready` only after a successful reconcile after start (not for an existing
-  `.git` with readying still running); `waiting` past the 45 s wait; `failed` on failure;
-  replaced by a later `win sync` success; after a service restart, a live `wrapped` session
-  whose ready file is not `ready` is readied again, including one restarted during launch
-  (launch record written before tmux).
-- Stop: a wrapped tool still shutting down delays the final reconcile, in `onStop` and in
-  the sweep, until its file is gone; its last write is in the snapshot. A session killed
-  through the handoff path has its launch record removed by the next sweep, but not while it
-  is still starting.
-- Go-between EOF: client closing stdin before ready exits without starting the tool;
-  during the handoff stops the tool and exits.
-- A failed `%LOCALAPPDATA%` lookup at startup recovers on the next operation and probe. A
-  stop waits on a sibling's go-between file even after the sibling's launch record is gone.
-- Archive: `archiveCheck` returns `pending` while a wrapped tool on the thread's copy is
-  still shutting down, and nothing is committed or removed until it ends. An unwrapped lead
-  stopping last on a copy waits for a wrapped sibling's tool. An HTTP entry carrying a stray
-  `.exe` `command` is not counted as a Windows tool. Unity button with interop off shows the
-  interop message.
+- A failed `%LOCALAPPDATA%` lookup at startup recovers on the next operation and probe.
+- An HTTP entry carrying a stray `.exe` `command` is not counted as a Windows tool. Unity
+  button with interop off shows the interop message.
 - Copy marked used after launch even when readying finished before it, so stopping a lead
-  runs the final reconcile; archive waits on the shutdown gate; a Git-missing probe clears
-  after Git appears without a service restart; the `loaded` list for a wrapped Codex entry
-  says `windows: true` and readying runs, and an entry dropped by Codex's budget is absent.
+  runs the final reconcile; a Git-missing probe clears after Git appears without a service
+  restart; the `loaded` list for a Codex Windows entry says `windows: true` and readying runs,
+  and an entry dropped by Codex's budget is absent.
 - Restart tracking: after a service restart, a live session with `windows_tools` in the
-  launch record is back in `toolSessions`, and its stop runs the final reconcile.
-- Go-between, with a fake MCP tool: the `mcp-for-unity` entry is not wrapped; ready at start
-  pipes only; ready before the client's `initialize` passes the client's own handshake
-  through unchanged; not ready at start answers `initialize` (client's version, `instructions` with
-  the waiting or failed sentence), swallows `notifications/initialized`, lists no tools, and
-  never starts the real tool; on ready after the stand-in answered, it starts it, sends
-  `initialize` then exactly one `notifications/initialized` (a client one queued during the
-  handoff is dropped) before any queued request, then `list_changed`; a protocol
-  version mismatch is logged and tolerated; the real tool failing its `initialize` exits 1;
-  exits with the tool's code afterwards; stopping the tool ends a child process it started.
-  A real-CLI check (Codex, with a fake Windows tool and a ready file that appears 20 s after
-  start) shows the tool's tools appear in the session after ready. Claude gets
-  `--mcp-config` with the wrapped entry and the original in `disabledMcpjsonServers`; Codex and
-  Antigravity get wrapped commands.
+  launch record is back in `toolSessions`, including one restarted during launch, and its
+  stop runs the final reconcile; a handoff-killed session's record is removed by the next
+  sweep, but not while it is still starting.
 - Detection and warnings: interop off on a Microsoft kernel gives the reason; approval card
   gets the warning only when the project has Windows tools; a probe past 15 s gives the
   timeout reason; session start never waits; non-WSL machines get none.
@@ -393,15 +261,17 @@ Unity part also: adds the MCP
 for Unity package to the fixture's `Packages/manifest.json` (the git URL from MCP for Unity's
 install docs) in the harness's working copy before the copy is made, opens the Editor on the
 fixture copy and waits for its window (as today), then, **before** the existing `win stop`,
-runs the preset's command directly (not wrapped), sends MCP `initialize`, then
+runs the preset's command directly, sends MCP `initialize`, then
 `notifications/initialized`, then `tools/list`, and checks for tools; then reads the instance
 list, polling up to 120 s for an instance whose project path is the fixture copy (failing with
 "set MCP for Unity's transport to Stdio in Window > MCP for Unity" if none appears); then stops the Editor as today. Otherwise it prints `Unity MCP part skipped`.
 
 ### Not doing
 
-As IDEA.md. Also: no Windows localhost (HTTP/SSE) tools (own thread, D20); no automatic
-cleanup of copies or git data.
+As IDEA.md. Also: no Windows localhost (HTTP/SSE) tools (own thread, D20); no holding back
+of Windows tools that start before the copy is ready (own thread, D21); no automatic cleanup
+of copies or git data.
+
 
 
 
@@ -410,7 +280,7 @@ cleanup of copies or git data.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | (Split off with localhost forwarding, D20.) In mirrored mode, a Linux server started later on a marked tool's loopback port, while the Windows tool is down, receives that live CLI's requests | Rare path: needs the opt-in mirrored mode, the Windows tool down, and a Linux server on the same port; it is the user's own service | review-round-8 |
-| A go-between that crashes while its Windows tool keeps writing lets the shutdown gate pass early | Rare path: needs the go-between itself to crash mid-session | review-round-8 |
+| (Split off with the go-between, D21.) A go-between that crashes while its Windows tool keeps writing lets the shutdown gate pass early | Rare path: needs the go-between itself to crash mid-session | review-round-8 |
 | A service restart between tmux creation and session persistence can ready a different copy in recovery | Rare path: a restart inside that launch window plus a pane directory that differs from the worktree | review-round-8 |
 | (Split off with localhost forwarding, D20.) An unmarked URL written with an IPv4-mapped address (`http://[::ffff:127.0.0.1]:<port>`) is not covered by port reservations and can reach a Windows forward | Rare path: unusual hand-written address form | review-round-5 |
 | (Split off with localhost forwarding, D20.) While the machine service is down (restart or crash), a forwarded port is unbound; a Linux process that takes it in that window can receive a live CLI's requests and headers for that tool | Rare path: needs a service restart and another Linux process binding that exact port in the gap; startup re-claims it and reports a failure | review-round-2 |
@@ -420,8 +290,8 @@ cleanup of copies or git data.
 | # | What to check | Round |
 |---|---------------|-------|
 | C1 | MCP for Unity's stdio server lists every connected Editor with its project path, and selecting one in one agent's server does not affect another agent's | lead (D12, D15) |
-| C2 | Claude accepts a `--mcp-config` server with the same name as a `.mcp.json` server listed in `disabledMcpjsonServers` | lead (item 3) |
-| C4 | Claude, Codex and Antigravity re-list a tool's tools on `notifications/tools/list_changed` from a stdio server (D17) | review-round-4 |
+| C2 | (Split off with the go-between, D21.) Claude accepts a `--mcp-config` server with the same name as a `.mcp.json` server listed in `disabledMcpjsonServers` | lead (item 3) |
+| C4 | (Split off with the go-between, D21.) Claude, Codex and Antigravity re-list a tool's tools on `notifications/tools/list_changed` from a stdio server (D17) | review-round-4 |
 | C5 | MCP for Unity's Stdio transport choice holds for every project copy opened by the same Windows user | review-round-4 |
 | C3 | (Split off with localhost forwarding, D20.) With default WSL `localhostForwarding`, requests fail promptly while the Windows server is down and reach it once it starts, with no loop through the relay | review-round-1 |
 
@@ -627,6 +497,15 @@ cleanup of copies or git data.
 | mechanics | blocking | Verifier worktree removed before `archiveCheck` | declined | as the intent row: throwaway copy by design |
 | mechanics | major | Failed Git lookup after success: which path operations use | upheld | item 4: probe success replaces, failure doesn't |
 | mechanics | minor | `pending` needs the user to archive again | upheld | item 3 states the manual retry |
+
+### Round 12 — 2026-11-21
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round 11:** the go-between (old item 3) split into its own thread (D21); item 3 is now "Fixes to the existing bridge's Windows tool tracking" (launch record with `windows_tools` only, restart recovery, marking the copy used); "Which tools a session loads" without wrapping (`loaded: [{name, windows}]`); item 1 no longer mentions wrapping; Validation trimmed; IDEA.md updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
