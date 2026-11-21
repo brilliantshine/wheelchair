@@ -85,6 +85,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 56 | Mode: two-part. D1-D5 move to Deferred (other-project cards, pre-PLAN chat decisions, restart recovery of chat answers, finished-peer recheck, re-asks); the Spec keeps the core | After rounds 28-30 the core was stable and the remaining findings were hardening; the user picked "Switch to two-part" (card 93e7d90b) | user |
 | 57 | Overlap cards need a matching `project` (linked threads elsewhere get the mention); the peer settled path is just a Decision entry; waiting Open Questions store the title; small fixes store nothing for waiting overlaps; Accepted Risks and D4 notes tidied | Round 31 findings | review-round-31 |
 | 58 | The same-project gate also covers Open Questions; another project's thread gets the late-overlap line once, in any window; waiting Open Questions count as already known; the peer settled path uses the latest Decision | Round 32 findings | review-round-32 |
+| 59 | Overlap Decisions start `Overlap with <thread id>:` and only they settle a thread; new information from any source updates a waiting Open Question; only an incoming peer question gets an immediate reply | Round 33 findings | review-round-33 |
 
 ## Spec
 
@@ -100,9 +101,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   or updated, only when the other thread's `project` equals this thread's, whether the overlap
   came from a look or a peer's question (a peer is matched to the list by its thread id). A thread in
   another project (a linked one in the default `session leads` list, or one the user names) gets
-  the immediate peer reply and the late-overlap line (with the follow-up offer) in the next
+  the late-overlap line (with the follow-up offer) in the next
   visible reply, whatever the window; a given thread is mentioned once, not on every look
-  (cards for them are Deferred, D1).
+  (cards for them are Deferred, D1). When the overlap came as a peer's question, the lead also
+  replies to that peer at once.
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
   other thread's id. The app stores it and never shows it.
 - **Card window:** when overlap cards are asked: a small fix before its edits, and a feature
@@ -111,8 +113,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   created, whatever it learns (a peer's message or question, the user's words); its first look
   comes right after PLAN.md is created (§1). This comes before the card-window and late rules.
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
-  thread, not in a waiting `Overlap with` Open Question (rediscovery reuses that entry), and not
-  in a Decision Log entry of this plan. An overlap already asked is not asked again:
+  thread, not in a waiting `Overlap with` Open Question (rediscovery reuses that entry, and new
+  information from any source updates it), and not settled by an overlap Decision (Terms
+  "Overlap Decision"). An overlap already asked is not asked again:
   news about it gets the one-line mention, and the user's latest instruction in chat wins
   (re-asks are Deferred, D5).
 - **Late overlap:** a new overlap learned after the card window has closed (status `ready-for-review` or
@@ -134,7 +137,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   answer) gets a follow-up overlap card for the same thread, with no Done marker until that one
   is settled; the original card counts as handled once a later overlap card with the same
   `about_thread` exists.
-- **Done marker:** a Decision Log entry naming the other thread's id and ending
+- **Overlap Decision:** a Decision Log entry whose text starts `Overlap with <thread id>:`; every
+  Decision that settles an overlap (an answer, a cancel or moot, a finished peer) is written this
+  way, and only these count as settling that thread. The latest one for a thread is its
+  settlement.
+- **Done marker:** an overlap Decision ending
   `(overlap card <id>)`; it is matched by that suffix, not by source. Source `user`; `idea-change`
   when the answer removes something IDEA.md's What or What good looks like promises (the answer
   is the user's agreement: the item moves to Not doing); `defaulted` for a question made moot by
@@ -169,7 +176,7 @@ the sentence that turns a new overlap into an Open Question with "keep the plan 
 change it" options is replaced by a pointer to this section; (b) keeps only its timing. In
 "Passing a question on", a peer's question about an overlap with this thread takes one of these
 paths:
-- the overlap is already settled (the latest Decision Log entry for that thread; or on
+- the overlap is already settled (the latest overlap Decision for that thread; or on
   a small fix the latest instruction
   that settles it under "Settling an answer"; a vague or conditional answer awaiting a follow-up
   is not settled, so the in-window path applies): answer
@@ -321,6 +328,9 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Any Decision naming the peer counts as a settlement | upheld | "Overlap Decision" term (Decision 59) |
+| mechanics | major | Waiting question stale after a peer's reply | upheld | Any new information updates it (Decision 59) |
+| mechanics | minor | Immediate reply where no peer asked | upheld | Only for an incoming question |
 
 ### Round 32 — 2026-11-21
 
