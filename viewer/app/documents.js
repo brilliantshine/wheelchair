@@ -31,17 +31,20 @@ async function readLive(thread, file) {
   throw appError(404, 'document not found');
 }
 
-async function list(thread) {
+async function list(thread, hub) {
   if (!validSlug(thread.slug)) return [];
+  if (hub && await require('./remote-plan.js').isRemote(hub, thread)) return require('./remote-plan.js').cached(hub, thread);
   if (!thread.archived) {
     const results = await Promise.all(FILES.map((file) => eligible(thread, file)));
     return FILES.filter((_, i) => results[i]);
   }
   if (!thread.branch || !thread.project) return [];
-  const key = JSON.stringify([thread.id, thread.branch]);
+  const tip = await git('git', ['-C', thread.project, 'rev-parse', thread.branch]).then((r) => r.stdout.trim()).catch(() => null);
+  if (!tip) return [];
+  const key = JSON.stringify([thread.id, thread.branch, thread.slug, tip]);
   if (!cache.has(key)) {
     cache.set(key, Promise.all(FILES.map(async (file) => {
-      try { await git('git', ['-C', thread.project, 'cat-file', '-e', `${thread.branch}:docs/plans/${thread.slug}/${file}`]); return file; } catch { return null; }
+      try { const result = await git('git', ['-C', thread.project, 'cat-file', '-s', `${tip}:docs/plans/${thread.slug}/${file}`]); return Number(result.stdout.trim()) <= 2 * 1024 * 1024 ? file : null; } catch { return null; }
     })).then((files) => files.filter(Boolean)));
   }
   return cache.get(key);

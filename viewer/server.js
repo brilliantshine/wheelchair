@@ -1688,8 +1688,10 @@ async function handleDiagramFile(request, response, url, state, format) {
     if (format === 'form' && bytes.length > 2 * 1024 * 1024) fail(413, 'too-large', 'The diagram file is too large.');
   } catch (error) { if (error.status) throw error; fail(404, 'not-found', 'The diagram file does not exist.'); }
   if (format === 'html') {
-    response.writeHead(200, require('./app/routes.js').HTML_HEADERS);
-    response.end(bytes);
+    const download = url.searchParams.get('download') === '1';
+    const headers = require('./app/routes.js').HTML_HEADERS;
+    response.writeHead(200, download ? { ...headers, 'content-disposition': `attachment; filename="${path.basename(actual)}"` } : headers);
+    response.end(download ? require('./app/html-download.js').htmlDownload(bytes) : bytes);
   } else {
     let value;
     try { value = JSON.parse(bytes.toString('utf8')); } catch { fail(422, 'invalid-json', 'The diagram file is not valid JSON.'); }
@@ -1704,7 +1706,7 @@ async function servePage(response, name, csp = false) {
 
 // The app's pages (docs/plans/app-shell, "Views") live in viewer/pages/ and their vendored
 // libraries in viewer/vendor/; both are public assets like doc.js, matched by a narrow name.
-const APP_PAGES = new Set(['threads', 'thread', 'new', 'doc', 'picture', 'features', 'sessions', 'agents', 'settings', 'terminal']);
+const APP_PAGES = new Set(['threads', 'thread', 'new', 'doc', 'file', 'picture', 'features', 'sessions', 'agents', 'settings', 'terminal']);
 // The thread page embeds the graph page for `diagram` cards, so app pages may frame this origin.
 const APP_PAGE_CSP = `${PAGE_CSP}; frame-src 'self'`;
 // The app's fonts: served name -> file under node_modules/@fontsource (latin subset, normal style).
