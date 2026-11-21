@@ -14,7 +14,7 @@ const { makeTemp } = require('../../test-support/run-dir');
 const listen = (server, ...args) => new Promise(resolve => server.listen(...args, resolve));
 const close = server => new Promise(resolve => server.close(resolve));
 
-test('approval card reports missing screen tools, preserves startup order, and respects platform', async () => {
+test('approval card reports missing screen tools and respects platform', async () => {
   const root = await makeTemp('screen-warning-');
   const empty = path.join(root, 'empty'), partial = path.join(root, 'partial'), full = path.join(root, 'full');
   await Promise.all([empty, partial, full].map(dir => fs.mkdir(dir)));
