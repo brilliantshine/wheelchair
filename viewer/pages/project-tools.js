@@ -123,6 +123,9 @@
     };
     let els = {};
     let formState = null;
+    let unityMessage = '';
+    let unityPollTimer = null;
+    let unitySeq = 0;
 
     const status = h('div', { class: 'pt-status', role: 'status' });
     const view = h('div', { class: 'pt-view' });
@@ -333,8 +336,41 @@
       const names = Object.keys(state.tools);
       const kids = names.map((name) => toolCard(name));
       if (!names.length) kids.push(h('p', { class: 'hint', text: 'No tools yet.' }));
-      kids.push(h('div', { class: 'actions' }, button('Add a tool', () => openForm(null), { id: 'pt-add', disabled: state.loading })));
+      kids.push(h('div', { class: 'actions' }, button('Add a tool', () => openForm(null), { id: 'pt-add', disabled: state.loading }), lockBtn('Add MCP for Unity', addUnity)));
+      kids.push(h('p', { class: 'hint' }, 'Add the MCP for Unity package to your Unity project and commit it, so every Windows copy has it. In Unity, open Window > MCP for Unity and set the transport to Stdio (once per Windows user). Each agent opens Unity on its own copy and picks that Editor. ', h('a', { href: 'https://coplaydev.github.io/unity-mcp/getting-started/install', target: '_blank', rel: 'noopener', text: 'MCP for Unity installation' })));
+      kids.push(h('p', { role: 'status', text: unityMessage }));
       els.tools.replaceChildren(...kids);
+    }
+
+    async function addUnity() {
+      if (state.busy || state.loading) return;
+      const seq = ++unitySeq;
+      if (unityPollTimer) clearTimeout(unityPollTimer);
+      unityPollTimer = null;
+      const c = tag();
+      setBusy(true);
+      let result;
+      try { result = await post('/project-tools/unity-prep', { machine: c.machine, path: c.path }); }
+      finally { setBusy(false); }
+      if (seq !== unitySeq) return;
+      if (!fresh(c)) return;
+      const body = result.body;
+      if (!body?.command) { unityMessage = body?.message || 'Could not prepare MCP for Unity.'; paintTools(); return; }
+      let name = 'unity', n = 2;
+      while (Object.hasOwn(state.tools, name)) name = 'unity-' + n++;
+      setOwn(state.tools, name, { command: body.command, args: ['--from', 'mcpforunityserver', 'mcp-for-unity', '--transport', 'stdio'] });
+      paintSave();
+      async function update(fetchState) {
+        if (seq !== unitySeq || !fresh(c)) return;
+        unityMessage = fetchState?.state === 'ready' ? 'Ready' : fetchState?.state === 'failed' ? "Couldn't fetch it: " + fetchState.reason + '; the first agent will fetch it instead' : fetchState ? 'Getting MCP for Unity ready on Windows…' : '';
+        paintTools();
+        if (fetchState?.state === 'running') unityPollTimer = setTimeout(async () => {
+          if (seq !== unitySeq || !fresh(c)) return;
+          const next = await post('/project-tools/unity-prep', { machine: c.machine, path: c.path, poll: true });
+          if (seq === unitySeq && fresh(c)) update(next.body?.fetch || { state: 'failed', reason: next.body?.message || 'request failed' });
+        }, 3000);
+      }
+      update(body.fetch);
     }
 
     const keyChip = (key) => {

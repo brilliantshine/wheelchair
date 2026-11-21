@@ -19,6 +19,10 @@ class WinBridge {
     this.options = options;
     this.detected = detectWsl(options);
     this.winEnv = options.winEnv || createWinEnv({ mount: this.detected.mount, runRoot: options.runRoot, log: service.log });
+    this.health = { ok: null };
+    this.healthProbe = null;
+    this.healthDeadlineMs = options.healthDeadlineMs ?? 15000;
+    this.healthIntervalMs = options.healthIntervalMs ?? 600000;
     this.readying = new Map();
     this.readyErrors = new Map();
     this.running = new Map();
@@ -136,6 +140,14 @@ class WinBridge {
         }, this.readyTimeoutMs);
       })]);
     } finally { clearTimeout(timer); }
+  }
+
+  afterLaunch(session) {
+    if (!this.detected.wsl || !session.worktree) return;
+    const key = worktreeKey(session.worktree);
+    this.markKey(key);
+    const task = this.readying.get(key);
+    if (task) task.then(() => this.markKey(key)).catch(err => this.service.log(err));
   }
 
   async prepareLaunch(session, { windowsTools } = {}) {
@@ -300,9 +312,51 @@ class WinBridge {
     }
   }
 
+  bridgeHealth() {
+    if (!this.detected.kernel) return { ok: true };
+    if (!this.detected.interop) return { ok: false, reason: "Windows interop is off in WSL, so Windows programs can't run" };
+    return this.health;
+  }
+
+  runBridgeProbe() {
+    if (!this.detected.wsl || this.healthProbe) return this.healthProbe;
+    let timer;
+    const deadline = new Promise(resolve => { timer = setTimeout(() => resolve({ ok: false, reason: "Windows didn't answer within 15 seconds" }), this.healthDeadlineMs); });
+    const probe = Promise.resolve().then(() => this.winEnv.probe()).catch(err => ({ ok: false, reason: err.message }));
+    const task = Promise.race([probe, deadline]).then(result => { this.health = result; return result; }).finally(() => { clearTimeout(timer); if (this.healthProbe === task) this.healthProbe = null; });
+    this.healthProbe = task;
+    return task;
+  }
+
+  async bridgeHealthWait(ms) {
+    if (!this.healthProbe) return this.bridgeHealth();
+    let timer;
+    await Promise.race([this.healthProbe, new Promise(resolve => { timer = setTimeout(resolve, ms); })]);
+    clearTimeout(timer);
+    return this.bridgeHealth();
+  }
+
   async startup() {
+    if (this.detected.kernel) {
+      this.runBridgeProbe();
+      this.healthTimer = setInterval(() => this.runBridgeProbe(), this.healthIntervalMs);
+      this.healthTimer.unref();
+    }
     await this.apps.startup();
-    if (this.detected.wsl) await this.sweep();
+    if (this.detected.wsl) {
+      const live = this.service.liveTmux?.();
+      if (live) for (const session of Object.values(this.service.sessions || {})) {
+        if (!TOOL_ROLES.has(session.role) || session.status === 'stopped' || !session.worktree || !live.has(session.name)) continue;
+        try {
+          const ctx = await this.context(session);
+          if (!this.exists(ctx)) continue;
+          this.toolSessions.add(session.name);
+          this.register(ctx, session);
+          this.markKey(ctx.key);
+        } catch (err) { this.service.log(err); }
+      }
+      await this.sweep();
+    }
   }
 
   async sessionEnv(session, baseEnv = {}) {
@@ -321,7 +375,9 @@ class WinBridge {
     const versions = await this.winEnv.versions();
     const reason = this.readyErrors.get(ctx.key) || versions.reason;
     const ready = !this.readying.has(ctx.key) && !reason;
-    return { wsl: true, ok: versions.ok, ready, ...(reason ? { reason } : {}), copy_windows: ctx.copy.windows, copy_linux: ctx.copy.linux, sandboxed };
+    this.disk ||= new (require('./win-disk').WinDisk)(this.winEnv);
+    const disk = await this.disk.info(ctx);
+    return { wsl: true, ok: versions.ok, ready, ...(reason ? { reason } : {}), copy_windows: ctx.copy.windows, copy_linux: ctx.copy.linux, sandboxed, disk };
   }
 
   async handle(session, body) {

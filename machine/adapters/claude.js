@@ -65,7 +65,7 @@ module.exports = {
       if (rejected.length) settings.disabledMcpjsonServers = rejected;
       if (context.tools && Object.keys(context.mcp.servers).length) settings.enableAllProjectMcpServers = true;
     }
-    return { settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', session.permission_mode === 'bypass' ? 'bypassPermissions' : 'auto', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt-file', context.promptPath, '--disallowedTools', DISALLOWED_TOOLS.join(',')] };
+    return { loaded: context.tools && context.mcp ? c.loadedTools(Object.keys(context.mcp.servers), context.mcp, context.mount) : [], settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', session.permission_mode === 'bypass' ? 'bypassPermissions' : 'auto', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt-file', context.promptPath, '--disallowedTools', DISALLOWED_TOOLS.join(',')] };
   },
   firstMessage(input) { return input.brief || input.first_message || ''; },
   readyText(session, pane) { return !pane.includes('Choose the text style that looks best with your terminal') && !pane.includes('Press Enter to continue') && !pane.includes('Yes, I trust this folder') && !pane.includes('No, exit') && !pane.includes('Yes, I accept') && pane.includes(session.permission_mode === 'bypass' ? 'bypass permissions on' : 'auto mode on') && /(^|\n).*❯\s/m.test(pane); },

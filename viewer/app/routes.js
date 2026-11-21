@@ -65,7 +65,7 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'project-tools' &&
-      ['read', 'save', 'remove-key'].includes(bits[1])) {
+      ['read', 'save', 'remove-key', 'unity-prep'].includes(bits[1])) {
     if (!body || typeof body.path !== 'string') return send(response, 400, { error: 'path is required' });
     const { machine, ...input } = body;
     const name = typeof machine === 'string' && machine ? machine : 'hub';

@@ -21,9 +21,11 @@ function detectWsl({ procRoot = '/proc', etcRoot = '/etc' } = {}) {
     const setting = line.match(/^\s*root\s*=\s*([^#;]+?)\s*$/i);
     if (section === 'automount' && setting) mount = setting[1].trim();
   }
-  const interop = ['WSLInterop', 'WSLInterop-late'].some(name =>
-    fs.existsSync(path.join(procRoot, 'sys/fs/binfmt_misc', name)));
-  return { wsl: /microsoft/i.test(release) && interop, mount: mount.replace(/\/+$/, '') || '/' };
+  const kernel = /microsoft/i.test(release);
+  const interop = ['WSLInterop', 'WSLInterop-late'].some(name => {
+    try { return fs.readFileSync(path.join(procRoot, 'sys/fs/binfmt_misc', name), 'utf8').split(/\r?\n/)[0] === 'enabled'; } catch { return false; }
+  });
+  return { wsl: kernel && interop, kernel, interop, mount: mount.replace(/\/+$/, '') || '/' };
 }
 
 function interopEnv(baseEnv, { runRoot = '/run' } = {}) {
@@ -109,19 +111,31 @@ function createWinEnv({ mount, runRoot = '/run', env: baseEnv = process.env, log
   }
   let appPromise;
   let gitPromise;
+  async function findApp() {
+    const result = await ps(script('localappdata', '$env:LOCALAPPDATA'));
+    if (result.code || !result.stdout.trim()) throw new Error(result.stderr.trim() || '%LOCALAPPDATA% was not found');
+    return result.stdout.trim();
+  }
+  async function findGit() {
+    const result = await ps(script('gitpath', '(Get-Command git.exe -ErrorAction SilentlyContinue).Source'));
+    if (result.code || !result.stdout.trim()) throw Object.assign(new Error('Git for Windows (git.exe) was not found on the Windows PATH'), { status: 422 });
+    return translate(result.stdout.trim(), false);
+  }
   function localAppData() {
-    return appPromise ||= ps(script('localappdata', '$env:LOCALAPPDATA')).then(result => {
-      if (result.code) throw new Error(result.stderr);
-      return result.stdout.trim();
-    });
+    if (!appPromise) {
+      const pending = findApp();
+      appPromise = pending;
+      pending.catch(() => { if (appPromise === pending) appPromise = undefined; });
+    }
+    return appPromise;
   }
   function gitExe() {
-    return gitPromise ||= ps(script('gitpath', '(Get-Command git.exe -ErrorAction SilentlyContinue).Source')).then(result => {
-      if (result.code || !result.stdout.trim()) {
-        throw Object.assign(new Error('Git for Windows (git.exe) was not found on the Windows PATH'), { status: 422 });
-      }
-      return translate(result.stdout.trim(), false);
-    });
+    if (!gitPromise) {
+      const pending = findGit();
+      gitPromise = pending;
+      pending.catch(() => { if (gitPromise === pending) gitPromise = undefined; });
+    }
+    return gitPromise;
   }
   async function gitRun(program, args, { cwd, env, input, timeoutMs = 60000 } = {}, win = false) {
     const effectiveEnv = childEnv({ ...baseEnv, ...env });
@@ -138,9 +152,9 @@ function createWinEnv({ mount, runRoot = '/run', env: baseEnv = process.env, log
   }
   const git = (args, opts) => gitRun('git', args, opts);
   const gitWin = async (args, opts) => gitRun(await gitExe(), args, opts, true);
-  async function versions() {
+  async function versions(gitPath) {
     try {
-      const [linuxResult, windowsResult] = await Promise.all([git(['--version']), gitWin(['--version'])]);
+      const [linuxResult, windowsResult] = await Promise.all([git(['--version']), gitPath ? gitRun(gitPath, ['--version'], {}, true) : gitWin(['--version'])]);
       const linux = linuxResult.stdout.toString().trim();
       const windows = windowsResult.stdout.toString().trim();
       const valid = value => {
@@ -154,7 +168,17 @@ function createWinEnv({ mount, runRoot = '/run', env: baseEnv = process.env, log
       return { linux: '', windows: '', ok: false, reason: error.message };
     }
   }
-  return { powershellPath, ps, spawnPs, toWindows: p => translate(p, true), toLinux: p => translate(p, false), localAppData, gitExe, git, gitWin, versions };
+  async function probe() {
+    try {
+      const [app, gitPath] = await Promise.all([
+        findApp().then(value => { appPromise = Promise.resolve(value); return value; }),
+        findGit().then(value => { gitPromise = Promise.resolve(value); return value; })
+      ]);
+      const result = await versions(gitPath);
+      return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+    } catch (error) { return { ok: false, reason: error.message }; }
+  }
+  return { probe, powershellPath, ps, spawnPs, toWindows: p => translate(p, true), toLinux: p => translate(p, false), localAppData, gitExe, git, gitWin, versions };
 }
 
 async function copyPaths(winEnv, threadId, key) {

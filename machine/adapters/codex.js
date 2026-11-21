@@ -134,12 +134,13 @@ module.exports = {
     const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
     const argv = ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
     const projectStart = argv.length;
-    const { args, warnings } = codexOverrides(context?.tools ? context.mcp : null, context);
+    const { args, warnings, tooLarge } = codexOverrides(context?.tools ? context.mcp : null, context);
     argv.push(...args);
     // Every project override is redacted in the stored command (Spec §3): '-c' then 'key=value'.
     const redactions = [];
     for (let i = projectStart + 1; i < argv.length; i += 2) redactions.push(i);
-    return { argv, warnings, redactions };
+    const names = context?.tools && !tooLarge ? Object.keys(context.mcp?.servers || {}).filter(name => !codexEntryReason(name, context.mcp.servers[name])) : [];
+    return { argv, warnings, redactions, loaded: c.loadedTools(names, context?.mcp, context?.mount) };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('Ask Codex to do anything'); }, answerPrompts() { return null; },
