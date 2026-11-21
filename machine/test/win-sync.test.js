@@ -74,3 +74,46 @@ test('reconcile transfers additions, edits, deletions, renames and independent c
   assert.equal(fs.existsSync(windows('linux-renamed')), false);
   assert.equal(fs.existsSync(linux('windows-renamed')), false);
 });
+
+test('text conflicts preserve the Windows version and mask markers until resolved', async () => {
+  const ctx = await fixture();
+  const linux = file => path.join(ctx.worktree, file);
+  const windows = file => path.join(ctx.copy.linux, file);
+  fs.writeFileSync(linux('conflict'), 'base\n');
+  await reconcile(ctx);
+  fs.writeFileSync(linux('conflict'), 'linux\n');
+  fs.writeFileSync(windows('conflict'), 'windows\n');
+  const result = await reconcile(ctx);
+  assert.equal(result.conflicts.length, 1);
+  assert.match(fs.readFileSync(linux('conflict'), 'utf8'), /^<<<<<<< /m);
+  assert.equal(fs.readFileSync(windows('conflict'), 'utf8'), 'linux\n');
+  assert.equal(git(ctx.worktree, 'show', `${result.conflicts[0].ref}:conflict`), 'windows');
+  fs.writeFileSync(windows('conflict'), 'waiting\n');
+  fs.writeFileSync(windows('other'), 'other\n');
+  await reconcile(ctx);
+  assert.equal(fs.readFileSync(windows('conflict'), 'utf8'), 'waiting\n');
+  assert.equal(fs.readFileSync(linux('other'), 'utf8'), 'other\n');
+  fs.writeFileSync(windows('conflict'), 'linux\n');
+  fs.writeFileSync(linux('conflict'), 'resolved\n');
+  const resolved = await reconcile(ctx);
+  assert.deepEqual(resolved.unresolved, []);
+  assert.equal(fs.readFileSync(windows('conflict'), 'utf8'), 'resolved\n');
+});
+
+test('binary and modify/delete conflicts choose Linux and save Windows', async () => {
+  const ctx = await fixture();
+  const linux = file => path.join(ctx.worktree, file);
+  const windows = file => path.join(ctx.copy.linux, file);
+  fs.writeFileSync(linux('binary'), Buffer.from([0, 1]));
+  fs.writeFileSync(linux('deleted'), 'base');
+  await reconcile(ctx);
+  fs.writeFileSync(linux('binary'), Buffer.from([0, 2]));
+  fs.unlinkSync(linux('deleted'));
+  fs.writeFileSync(windows('binary'), Buffer.from([0, 3]));
+  fs.writeFileSync(windows('deleted'), 'windows');
+  const result = await reconcile(ctx);
+  assert.equal(result.conflicts.length, 2);
+  assert.deepEqual(fs.readFileSync(linux('binary')), Buffer.from([0, 2]));
+  assert.equal(fs.existsSync(linux('deleted')), false);
+  assert.equal(git(ctx.worktree, 'show', `${result.conflicts[0].ref}:deleted`), 'windows');
+});

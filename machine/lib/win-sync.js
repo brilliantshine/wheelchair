@@ -171,45 +171,119 @@ async function changedPaths(ctx, before, after) {
   return entries(result.stdout);
 }
 
-async function reconcileAttempt(ctx, hooks) {
+async function replaceEntries(ctx, tree, replacements) {
+  if (!replacements.size) return tree;
+  const index = path.join(statePath(ctx.stateDir, ctx.key), `merge-${crypto.randomBytes(8).toString('hex')}.index`);
+  const options = { cwd: ctx.worktree, env: { GIT_INDEX_FILE: index } };
+  try {
+    await command(ctx, false, ['read-tree', tree], options);
+    for (const [file, sourceTree] of replacements) {
+      await command(ctx, false, ['update-index', '--force-remove', '--', file], options);
+      const entry = await command(ctx, false, ['ls-tree', '-z', sourceTree, '--', file], { cwd: ctx.worktree });
+      const record = entry.stdout.toString().split('\0')[0];
+      if (!record) continue;
+      const match = record.match(/^(\d+) (\w+) ([a-f0-9]+)\t([\s\S]+)$/);
+      if (match && match[4] === file) {
+        await command(ctx, false, ['update-index', '--add', '--cacheinfo', `${match[1]},${match[3]},${file}`], options);
+      }
+    }
+    return (await command(ctx, false, ['write-tree'], options)).stdout.toString().trim();
+  } finally {
+    fs.rmSync(index, { force: true });
+  }
+}
+
+async function isTextConflict(ctx, file, base, linuxTree, windowsTree) {
+  const blobs = [];
+  for (const tree of [base, linuxTree, windowsTree]) {
+    const entry = await command(ctx, false, ['ls-tree', '-z', tree, '--', file], { cwd: ctx.worktree });
+    const match = entry.stdout.toString().match(/^(100644|100755) blob ([a-f0-9]+)\t/);
+    if (!match) return false;
+    const blob = await command(ctx, false, ['cat-file', 'blob', match[2]], { cwd: ctx.worktree });
+    blobs.push(blob.stdout);
+  }
+  return blobs.every(blob => !blob.subarray(0, 8000).includes(0));
+}
+
+function containsMarkers(ctx, file) {
+  try {
+    const contents = fs.readFileSync(path.join(ctx.worktree, file), 'utf8');
+    return contents.split(/\r?\n/).some(line => line.startsWith('<<<<<<< ') || line === '=======' || line.startsWith('>>>>>>> '));
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'EISDIR') return false;
+    throw error;
+  }
+}
+
+async function reconcileAttempt(ctx, hooks, state) {
   const baseRef = `refs/wheelchair/${ctx.key}/base`;
   const windowsRef = `refs/wheelchair/${ctx.key}/windows`;
   const base = await resolveRef(ctx, baseRef);
-  const linuxTree = await snapshot(ctx, false);
-  const windowsTree = await snapshot(ctx, true);
-  const windowsCommit = await commitTree(ctx, true, windowsTree);
+  const linuxSnapshot = await snapshot(ctx, false);
+  const windowsSnapshot = await snapshot(ctx, true);
+  const windowsCommit = await commitTree(ctx, true, windowsSnapshot);
   await command(ctx, true, ['update-ref', 'refs/wheelchair/snapshot', windowsCommit], { cwd: ctx.copy.linux });
   await command(ctx, false, ['fetch', ctx.copy.linux, `+refs/wheelchair/snapshot:${windowsRef}`], { cwd: ctx.worktree });
   if (hooks?.afterSnapshot) await hooks.afterSnapshot();
-  const linuxCommit = await commitTree(ctx, false, linuxTree, base);
+  const masked = (state.unresolved || []).filter(file => containsMarkers(ctx, file));
+  const mask = new Map(masked.map(file => [file, base]));
+  const linuxTree = base ? await replaceEntries(ctx, linuxSnapshot, mask) : linuxSnapshot;
+  const windowsTree = base ? await replaceEntries(ctx, windowsSnapshot, mask) : windowsSnapshot;
+  const linuxCommit = await commitTree(ctx, false, linuxSnapshot, base);
   let resultTree = linuxTree;
+  let resultWindows = linuxTree;
+  let conflicts = [];
+  const unresolved = [...masked];
   if (base) {
     const baseTree = (await command(ctx, false, ['rev-parse', `${base}^{tree}`], { cwd: ctx.worktree })).stdout.toString().trim();
     if (linuxTree === baseTree) resultTree = windowsTree;
     else if (windowsTree !== baseTree && windowsTree !== linuxTree) {
-      const mergeWindows = await commitTree(ctx, false, windowsTree, base);
-      const merge = await command(ctx, false, ['merge-tree', '--write-tree', `--merge-base=${base}`, linuxCommit, mergeWindows], { cwd: ctx.worktree, allowFailure: true });
-      if (merge.code) throw Object.assign(new Error(`merge failed: ${merge.stdout.toString()} ${merge.stderr}`), { status: 422 });
-      resultTree = merge.stdout.toString().trim();
+      const left = await commitTree(ctx, false, linuxTree, base);
+      const right = await commitTree(ctx, false, windowsTree, base);
+      const merge = await command(ctx, false, ['merge-tree', '--write-tree', '-z', '--name-only', `--merge-base=${base}`, left, right], { cwd: ctx.worktree, allowFailure: true });
+      if (merge.code > 1) throw Object.assign(new Error(`merge failed: ${merge.stderr}`), { status: 422 });
+      const parts = merge.stdout.toString().split('\0');
+      resultTree = parts.shift();
+      if (merge.code === 1) {
+        const paths = [];
+        while (parts.length && parts[0]) paths.push(parts.shift());
+        const ref = conflictRef(ctx);
+        await command(ctx, false, ['update-ref', ref, windowsCommit], { cwd: ctx.worktree });
+        conflicts = paths.map(file => ({ path: file, ref }));
+        const nonText = new Map();
+        for (const file of paths) {
+          if (await isTextConflict(ctx, file, base, linuxTree, windowsTree)) unresolved.push(file);
+          else nonText.set(file, linuxTree);
+        }
+        resultTree = await replaceEntries(ctx, resultTree, nonText);
+        resultWindows = await replaceEntries(ctx, resultTree, new Map(paths.map(file => [file, linuxTree])));
+      }
     }
   }
+  if (!conflicts.length) resultWindows = resultTree;
   const result = await commitTree(ctx, false, resultTree, base);
-  const toWindows = await changedPaths(ctx, windowsTree, resultTree);
-  const toLinux = await changedPaths(ctx, linuxTree, resultTree);
-  const linuxApply = await command(ctx, false, ['read-tree', '-m', '-u', linuxCommit, result], { ...indexOptions(ctx, false), allowFailure: true });
+  const resultWin = await commitTree(ctx, false, resultWindows, base);
+  const linuxApplyTree = await replaceEntries(ctx, resultTree, new Map(masked.map(file => [file, linuxSnapshot])));
+  const windowsApplyTree = await replaceEntries(ctx, resultWindows, new Map(masked.map(file => [file, windowsSnapshot])));
+  const linuxApplyCommit = await commitTree(ctx, false, linuxApplyTree, base);
+  const windowsApplyCommit = await commitTree(ctx, false, windowsApplyTree, base);
+  const toWindows = await changedPaths(ctx, windowsSnapshot, windowsApplyTree);
+  const toLinux = await changedPaths(ctx, linuxSnapshot, linuxApplyTree);
+  const linuxApply = await command(ctx, false, ['read-tree', '-m', '-u', linuxCommit, linuxApplyCommit], { ...indexOptions(ctx, false), allowFailure: true });
   if (linuxApply.code) throw Object.assign(new Error(`Linux apply failed: ${linuxApply.stderr}`), { status: 422 });
-  await command(ctx, false, ['push', ctx.copy.linux, `${result}:refs/wheelchair/linux`], { cwd: ctx.worktree });
-  const windowsApply = await command(ctx, true, base ? ['read-tree', '-m', '-u', windowsCommit, result] : ['read-tree', '--reset', '-u', result], { ...indexOptions(ctx, true), allowFailure: true });
+  await command(ctx, false, ['push', ctx.copy.linux, `+${windowsApplyCommit}:refs/wheelchair/linux`], { cwd: ctx.worktree });
+  const windowsApply = await command(ctx, true, base ? ['read-tree', '-m', '-u', windowsCommit, windowsApplyCommit] : ['read-tree', '--reset', '-u', windowsApplyCommit], { ...indexOptions(ctx, true), allowFailure: true });
   if (windowsApply.code) throw Object.assign(new Error(`Windows apply failed: ${windowsApply.stderr}`), { status: 422 });
-  await command(ctx, false, ['update-ref', baseRef, result], { cwd: ctx.worktree });
-  await command(ctx, true, ['update-ref', 'refs/wheelchair/base', result], { cwd: ctx.copy.linux });
-  return { to_windows: toWindows, to_linux: toLinux, conflicts: [], unresolved: [], skipped: [] };
+  await command(ctx, false, ['push', ctx.copy.linux, `+${resultWin}:refs/wheelchair/linux`], { cwd: ctx.worktree });
+  await command(ctx, false, ['update-ref', baseRef, resultWin], { cwd: ctx.worktree });
+  await command(ctx, true, ['update-ref', 'refs/wheelchair/base', resultWin], { cwd: ctx.copy.linux });
+  return { to_windows: toWindows, to_linux: toLinux, conflicts, unresolved, skipped: [] };
 }
 
 async function reconcileUnlocked(ctx, hooks) {
   const state = readState(ctx.stateDir, ctx.key);
   try {
-    const result = await reconcileAttempt(ctx, hooks);
+    const result = await reconcileAttempt(ctx, hooks, state);
     state.last_ok = new Date().toISOString();
     state.last_failed = null;
     state.used_since_ok = false;
