@@ -424,7 +424,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S1 spend line + S2 thinking levels | settings.js/.css, providers.js, routes.js, codex/model.sh + tests, service.js effort line, pi.js command(), pi.test.js, openrouter settings tests | standard (claude, claude-sonnet-5-5) | wc-32fed9258dca-worker | codex, machine, viewer node, browser | in progress |
 | T2 | S5 report survives a failed log read — tricky | chat.js, sessions.js deliverReport, machine-client.js, report tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-2 | viewer node | in progress |
-| T3 | S3 read-only aside path guard extension — tricky | machine/adapters/pi-guard.js, machine/test/pi-guard.test.js, test-support/smoke/pi-guard.js | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-3 | machine, pi-guard smoke | in progress |
+| T3 | S3 read-only aside path guard extension — tricky | machine/adapters/pi-guard.js, machine/test/pi-guard.test.js, test-support/smoke/pi-guard.js | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-3 | machine, pi-guard smoke | done |
 | T4 | S4 Pi version check (after T1, T2) | service.js version probe/cliStatus/launch version/exit reason, usage.js, ready.js, settings.js machine line, sessions.js stuck card, pi tests | standard | | machine, viewer node | not started |
 | T5 | S3 aside wiring, spend dedupe, live check (after T3, T4) — tricky | providers.js, asides.js, aside-turns.js, pi.js asideArgv/spend, aside tests, pi-live smoke | standard | | machine, viewer node, live aside | not started |
 
@@ -433,3 +433,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 - Round 1: IDEA's Why says a report lost to a brief read failure is never recovered; in fact the quiet reminder asks the agent to repeat it. S5 still saves that extra turn and misleading nudge.
 - Ready check 2026-11-21: hub and machine service answer; pi 1.5.2 installed; Codex preflight passes.
 - Build accepted: approval 257ab768-b85c-4bb5-8d55-31ee5a3c1231
+- 2026-11-21 — Choice: T3, pi-guard.test.js: imports the ESM extension as a data URL so Node 20 can load it from the CommonJS repo.
+- 2026-11-21 — Choice: T3, test-support/smoke/pi-guard.js: drives Pi's own extension loader/runner and real read/ls tools, no model call.
+- 2026-11-21 — Choice: T3, guard fixtures: the narrow-space case is a symlink to a real path containing U+202F, so refusal is tested after realpath.
+- 2026-11-21 — T3 accepted (band: self): guard re-tested (unit 1/1 pass, real-Pi offline check passed); grep/find/ls/read all use `path`.
