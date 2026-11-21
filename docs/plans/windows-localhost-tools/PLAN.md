@@ -59,10 +59,12 @@ tree. Read `MAP.md` and `docs/maps/project-tools.md`, `docs/maps/windows-bridge-
 
 - **Marked tool:** an entry of `.mcp.json` `mcpServers` named in the top-level
   `"wheelchair": {"windows": [...]}` list (D4) that is *eligible*: `type` is `http`, its `url`
-  parses with `new URL()`, the scheme is `http:` and the hostname is `localhost` or
-  `127.0.0.1`. Path, query and fragment may be anything. Its **tool port** is the URL's port,
-  or 80 when none is given. The reader (section 1) and the form (section 7) use this same rule,
-  in one shared function.
+  string matches `^http://(localhost|127\.0\.0\.1)(:(\d{1,5}))?(?=[/?#]|$)` (case-insensitive)
+  and the port, if given, is 1-65535. The matched part is the **origin text**; what follows
+  (path, query, fragment) may be anything. Its **tool port** is the captured port, or 80. Forms
+  `new URL()` would also accept (`http:localhost:8080`, backslashes, `HTTP://LOCALHOST` with
+  odd spacing, userinfo) are not eligible. The reader (section 1), the status route (section 6),
+  the form (section 7) and the rewrite (section 2) use this one shared function.
 - **Forward:** for one tool port, a Linux TCP listener on `127.0.0.1:<private port>` in the
   machine service plus one Windows relay process, piping each accepted connection to Windows
   `127.0.0.1:<tool port>`.
@@ -100,11 +102,12 @@ before `commandFor` (`:847`):
    forward cannot be had is withheld (section 3).
 3. Build the config once, passing the shared `context.replaceEntries` (D17): for each tool
    with a forward, `{<name>: <the .mcp.json entry with only url replaced>}`; for each
-   withheld tool, `{<name>: null}`. The rewritten URL is made by **text** replacement of the
-   origin, never by re-serializing a parsed URL: the original `url` string's leading
-   `http://<host>[:<port>]` (exactly as written) becomes `http://127.0.0.1:<private port>`, and
-   everything after it (path, query, fragment, including any `${...}` text) is kept byte for
-   byte. Headers and other fields are unchanged.
+   withheld tool, `{<name>: null}`. The rewritten URL is made by **text** replacement, never by
+   re-serializing a parsed URL: the origin text matched by the shared rule (Terms) becomes
+   `http://127.0.0.1:<private port>`, and everything after it (path, query, fragment,
+   including any `${...}` text) is kept byte for byte. If the shared function does not match
+   at rewrite time, the tool is withheld (`null`), never passed with its original URL. Headers
+   and other fields are unchanged.
 
 A forward got for a tool the CLI then does not load (for example Codex skipping all project
 tools because the overrides grew too large) is left as is: forwards are not owned by sessions
@@ -114,23 +117,33 @@ copy.
 
 ### 3. Putting the rewritten entry in each CLI's config (D2, D5, D8, D17)
 
-`context.replaceEntries` is shared with thread 135e4c312559 (Windows stdio go-between); if
-that thread has already added it to main when this is built, reuse it and only fill it;
-otherwise add it as below. Each adapter first applies its existing validation to the
-**original** `.mcp.json` entry (for example the `${` checks, `machine/adapters/codex.js:39`,
-`machine/adapters/agy.js:42`); an entry the adapter would skip stays skipped, whatever
-`replaceEntries` says. For an entry that passes:
+**Shared contract (D17).** `context.replaceEntries` is shared with thread 135e4c312559
+(Windows stdio go-between, `wc/135e4c312559:docs/plans/win-tool-gobetween/PLAN.md` §2). This
+is the contract both plans use; if main already has the map when this is built, reuse it and
+add whatever part below is missing (for example `null`):
 
-- **Claude:** every name in `replaceEntries` is added to `disabledMcpjsonServers`. Names with
-  an entry go into `<stateDir>/mcp-config/<session>.json` (atomic, mode 0600, since headers may
-  carry keys) as `{"mcpServers": {<name>: <entry>}}`, and `--mcp-config <that path>` is added
-  to argv. One file per session, holding every replaced entry. Stale files are removed by the
-  existing stale-file sweep pattern (`sweepAgyTools`, `service.js:477-535`: no matching live
-  session, older than 60 s).
-- **Codex:** `codexOverrides` (`machine/adapters/codex.js:52-100`) uses the replacement entry
-  for named tools and omits `null` ones.
-- **Antigravity:** `machine/adapters/agy.js:39-43` uses the replacement entry; `null` ones are
-  omitted.
+- A name mapped to an **entry**: Codex (`machine/adapters/codex.js`) and Antigravity
+  (`machine/adapters/agy.js`) translate the replacement entry instead of the `.mcp.json` one,
+  through the same translation code, so env handling, validation such as the `${` checks
+  (`codex.js:39`, `agy.js:42`) and Codex's size budget apply as today. Because the URL rewrite
+  keeps everything after the origin text byte for byte, an HTTP entry the adapter would skip
+  for its URL is skipped the same way after rewriting.
+- **Windows classification uses the original entry:** whether an entry is a Windows program
+  (Codex's `WHEELCHAIR_WINDOWS_PROJECT`/`WSLENV` passthrough, `codex.js:81`, and `loaded`'s
+  `windows`, `machine/adapters/common.js:19`) is decided from the `.mcp.json` entry, not the
+  replacement.
+- A name mapped to **`null`**: the entry is omitted for that session (Codex and Antigravity
+  leave it out; Claude only disables it).
+- **Claude** (`machine/adapters/claude.js`): every name in `replaceEntries` is added to
+  `disabledMcpjsonServers`; names with an entry are given, under the same names, in one
+  per-session file `{"mcpServers": {...}}` at `<stateDir>/settings/<session name>.mcp.json`
+  (mode 0600, atomic) passed with `--mcp-config <path>`; no `--strict-mcp-config`. The file is
+  removed when the session stops; the stale-file sweep pattern (`sweepAgyTools`,
+  `service.js:477-535`) also removes files with no live session older than 60 s.
+- Pi and Kimi: unchanged.
+- Test: one launch with a replaced entry, a `null` entry and an untouched entry, for each of
+  the three CLIs; if the go-between is on main, include a wrapped stdio tool in that launch.
+
 - **Withheld:** a tool mapped to `null` is not given to the CLI in any form, and
   a line is printed to the machine service's log (stderr, `service.js:850`, as other project
   tools warnings are; it is a diagnostic, not a user surface):
@@ -507,6 +520,24 @@ Risks (local failures not on the page); C4.
 §2 textual URL rewrite; §3 adapters validate the original entry first; §5 restart wording
 (tmux used for one decision, unknown restores all); §6 stale note wording, failed request
 state; §7 absent `windows` keeps marks, `[]` clears; Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Shared `replaceEntries` contract differs between the two plans | upheld | §3 one shared contract (path, cleanup, `null`, translation); sent to the other lead |
+| mechanics | blocking | Eligibility accepts URLs the textual rewrite can't match | upheld | Terms: one regex-based shared function; §2 withhold on no match |
+| mechanics | blocking | Incompatible shared contracts by merge order | upheld | Same as intent finding (§3) |
+| mechanics | major | Windows classification must use the original entry | upheld | §3 contract bullet |
+
+### Round 8 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 7:** Terms: eligibility is one regex-based shared function that also
+yields the origin text; §2 rewrite uses it and withholds on no match; §3 rewritten as the
+shared `replaceEntries` contract aligned with the go-between plan (Claude file
+`<stateDir>/settings/<session name>.mcp.json`, removed at stop plus sweep; translation from
+the replacement entry; Windows classification from the original; `null` omits) with a combined
+launch test.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
