@@ -32,6 +32,7 @@ created: 2026-11-20
 | 10 | Checklist has two steps (install, sign in); no "choose" step | Choosing is optional: all harnesses default on | defaulted |
 | 15 | Supersedes 13: a harness is added to Workers try first only when nothing in Lead order is installed, at most once, however it was installed | Review round 2: Settings-only trigger missed terminal and vendor-link installs; avoid silently adding pay-per-token OpenRouter for users who already have a working lead | review-round-2 |
 | 17 | Supersedes 13 and 15: the hub never changes Lead or Worker order on its own. A harness that is signed in but not reachable from Lead order shows "Add to Lead order" in Settings and as a checklist step | Review round 3: the automatic append raced Settings drafts, missed a Lead order without `any`, and depended on a page being open; an explicit button avoids all three | review-round-3 |
+| 18 | Keep the one-tap "Add to Lead order" button (over a plain link, or leaving Pi out) | Collin picked it after the review budget stopped | user |
 | 16 | Install result survives a service restart (job writes a result file); was Deferred D4 | Review round 2: setup steps must run inside the job, which makes the result file free | review-round-2 |
 | 11 | Supersedes 9: switching a harness off is refused only when Lead order (with `any` expanded) would have no enabled harness | Review round 1: the "lead model setting" does not exist; the old rule blocked Codex-only users from leaving Claude out | review-round-1 |
 | 12 | The switch stops new placements only; running agents, asides and retries of an unanswered start continue | Review round 1 | review-round-1 |
@@ -375,6 +376,15 @@ npm --prefix viewer run test:browser
 | mechanics | major | Placement ignores whether the CLI is installed | upheld | S3.4 |
 | mechanics | major | Restart test may not kill the service | upheld | S2.7 |
 | mechanics | major | Page doesn't recover from a machine blip during install | upheld | S4.3 |
+
+### Round 4 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 3:** S1.6 (keep existing `install_shims` shims, incl. `node`); S2.7 (restart test kills the service process); S3.4 (signed in requires CLI installed); S3.7 (`?fresh=1` only, no per-install memory); S3.8 replaced: no automatic order changes, `in_lead_order` and `POST /settings/lead-order/add`; S3.9 optional `lead` step; S3.10 tests; S4.2 Add to Lead order; S4.3 recovery from unreachable machine; S5.1 lead-step button; Decisions 17–18.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
