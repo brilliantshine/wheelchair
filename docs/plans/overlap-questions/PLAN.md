@@ -79,6 +79,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 50 | Done marker matched by its card suffix (sources `user`, `idea-change`, `defaulted`); a no-card Decision also allows a later re-ask; a held overlap cancelled before IDEA.md confirmation is not asked and is logged when PLAN.md is created | Round 26 findings | review-round-26 |
 | 51 | A cancelled held overlap stays unasked also when a peer asks; a cancel's card suffix names only a card posted for that question; a peer missing from `session leads` counts as finished; restart honours recent cancels before PLAN.md exists | Round 27 findings | review-round-27 |
 | 52 | Supersedes the "held" rules (Decisions 3, 50-51 parts): a feature's first overlap look moves to right after IDEA.md confirmation, so nothing is held before it; a peer asking earlier gets an answer from what the lead knows | Rounds 25-27 kept finding gaps in the held state; the user picked "Look after confirming" (card 8a2638cf) | user |
+| 53 | Feature looks (including user-requested and restart ones) wait for PLAN.md; look (a) repeats when the map arrives; a confirmed IDEA without PLAN.md gets PLAN.md first on restart; a failed `session leads` is retried; a pre-confirmation chat decision is logged when PLAN.md is created | Round 28 findings | review-round-28 |
 
 ## Spec
 
@@ -137,8 +138,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ### 1. Asking (protocol/app/lead.md, "Other leads on this machine")
 
 "When to look" (a) moves from "after the mapper's `result` arrives" to "right after IDEA.md is
-confirmed and PLAN.md is created"; an overlap the lead learned earlier (for example from a peer's
-message) is simply part of that look. Otherwise discovery and peer messaging stay as they are:
+confirmed and PLAN.md is created, and again when the mapper's `result` arrives if that is later"
+(the peer message names the areas from IDEA.md, and from MAP.md once it exists); an overlap the
+lead learned earlier (for example from a peer's message) is simply part of that look. Every
+feature look, including (c) when the user asks and the restart look, waits for PLAN.md: before
+it exists the lead may say what it finds, but asks and records nothing. A restarted lead whose
+IDEA.md is confirmed but has no PLAN.md creates it first (lead.md step 4), then looks. If
+`session leads` fails (the app is unreachable), the lead retries it after a minute, as for "hub
+unavailable", before deciding anything from it. A clear decision the user gave in chat about a
+thread before confirmation is logged as that thread's Decision (source `user`) in the commit
+that creates PLAN.md, instead of being asked again. Otherwise discovery and peer messaging stay as they are:
 the other "When to look" times and the small fix's look before edits, the "Overlap" message to a peer lead, "Replies", "Never wait",
 "Another project", "Passing a question on" and "Only leads talk". Every instruction there to
 tell the user about an overlap "in one line" (in "When to look", in "Overlap" for a thread with
@@ -281,7 +290,7 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| An overlap learned from a peer message before PLAN.md exists, still waiting to be asked, is lost if the lead also restarts before asking, and the peer's summary in `session leads` does not reveal it | Needs a restart inside a short window plus a peer summary that hides the overlap; the restart re-look covers the usual case | review-round-1 |
+| An overlap learned only from a peer's message before IDEA.md is confirmed is forgotten if the lead restarts before the look after confirmation and `session leads` does not reveal it | Needs a restart inside a short window plus a peer summary that hides the overlap; the restart re-look covers the usual case | review-round-1 |
 | A fresh question for an already-answered overlap, still waiting behind another card at a restart, can look already asked | Needs an obsolete answer, a waiting re-ask and a restart together | review-round-7 |
 | On a small fix, a later chat instruction overriding a card answer can be missed if the lead dies before edits and the message has fallen out of the last 20 in the restart context | Needs a reversal, a restart and many messages in between, before a small fix's edits | review-round-11 |
 | A chat answer resolved while the app is down is queued; if the user presses an option on the same card before the queue drains, the hub keeps the press and drops the resolve silently | Needs an app outage, a chat answer and a press on the same card inside the reconnect window | review-round-12 |
@@ -295,6 +304,15 @@ merging of branches; no sub-lead or worker rule changes.
 
 ## Review Rounds
 
+### Round 29 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 28:** Decision 53: §1 opening paragraph (look timing, map repeat, PLAN.md gate for every feature look, restart order, `session leads` retry, pre-confirmation chat decisions); one Accepted Risk reworded.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ### Round 28 — 2026-11-21
 
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
@@ -303,6 +321,12 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | First look may run before the map exists | upheld | Repeats when the map arrives (Decision 53) |
+| intent | minor | Pre-confirmation chat dismissal asked again | upheld | Logged when PLAN.md is created (Decision 53) |
+| intent | minor | Accepted Risk row still says "held" | upheld | Reworded |
+| mechanics | major | User-requested and restart looks before confirmation | upheld | All feature looks wait for PLAN.md (Decision 53) |
+| mechanics | major | Confirmed IDEA with no PLAN.md at restart | upheld | PLAN.md created first (Decision 53) |
+| mechanics | major | Recheck fails while the app is down | downgraded (minor) | Retried like "hub unavailable" (Decision 53) |
 
 ### Round 27 — 2026-11-21
 
