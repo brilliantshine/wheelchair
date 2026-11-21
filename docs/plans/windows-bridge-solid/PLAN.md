@@ -146,7 +146,7 @@ that uv must be installed on Windows and the package committed to the project.
 |---|---|
 | `copies` | `[{ path, bytes }]`, one per Windows copy of this thread (`%LOCALAPPDATA%/Wheelchair/copies/<thread>/*`) |
 | `copies_bytes` | Sum of `copies` |
-| `git_bytes` | Size of the repository's common `.git` (`git count-objects -v`: `size` + `size-pack`, in bytes). Information only: it covers the whole repository, not just what the bridge added |
+| `git_bytes` | Git object storage of the repository (`git count-objects -v`: loose `size` + `size-pack`, in bytes). Information only: it covers the whole repository, not just what the bridge added |
 | `conflict_refs` | Count of refs under `refs/wheelchair/conflicts/` in that repository |
 | `windows_free_bytes` | Free space on the drive holding `%LOCALAPPDATA%` |
 | `measured_at` | ISO time of the copy measurement, or null while the first one runs |
@@ -217,9 +217,10 @@ it and never sees the stale copy.
 **Stop waits for wrapped tools.** While a go-between's real tool runs, the go-between keeps
 a file `<stateDir>/win-tools/<session name>/<go-between pid>` (created when it starts the real
 tool, removed after the tool's job has closed and its pipes are shut). `WinBridge.onStop` for
-**any** session (wrapped or not) whose copy key has at least one session recorded as `wrapped`
-in the launch record waits until the `win-tools` directories of every session registered on
-that copy key are empty (polling, up to 15 s; entries whose pid is no longer alive are
+**any** session (wrapped or not) waits, before its final stop reconcile, until the `win-tools`
+directories of every session registered on its copy key are empty. This is decided by listing
+those directories, not by the launch record (which can already be gone for a sibling whose
+tmux ended while its go-between is still shutting down); an absent directory counts as empty (polling, up to 15 s; entries whose pid is no longer alive are
 removed) before the final stop reconcile, so a tool's last writes are in
 the final Windows snapshot. A timeout logs it and reconciles anyway. The same gate applies to
 `WinBridge.sweep()`'s final reconcile: a copy is not swept-reconciled while any session sharing
@@ -228,8 +229,11 @@ pids; the next sweep tries again. This covers sessions that end without `onStop`
 crash, or the handoff `kill` path in `machine/service.js`). Archive checks the same copy-wide
 gate in `WinBridge.archiveCheck`, before it reconciles, commits or removes anything: while the
 gate is closed for any of the thread's copies, `archiveCheck` returns the existing `pending`
-result (so archive retries later, as it already does for running reconciles), and
-`onWorktreeRemoved` / `archiveFinish` never run for that thread until it opens.
+result, and `onWorktreeRemoved` / `archiveFinish` never run for that thread until it opens.
+As today for `pending`, the app shows "Archive again to retry" and the user archives again;
+nothing retries automatically. Verifier copies are not gated: a verifier's worktree is a
+throwaway whose Windows copy is removed without a reconcile by design, so its tool's last
+writes are not kept anyway.
 
 **Marking the copy used.** A pre-launch readying reconcile clears the copy's "used since last
 reconcile" state before the CLI exists. So, for a session with `windows_tools`, right after its
@@ -299,10 +303,13 @@ existing caller keeps its meaning. A new `bridgeHealth()` on `WinBridge` returns
 - not `kernel` → `{ ok: true }` (never warns).
 - `kernel && !interop` → reason "Windows interop is off in WSL, so Windows programs can't run".
 - `wsl` → `winEnv.versions()` with a 15 s overall deadline; its `reason` if not ok; on the
-  deadline, reason "Windows didn't answer within 15 seconds". Each probe looks Windows Git up
-  afresh (a fresh `Get-Command git.exe`, replacing whatever `gitExe()` held, success or
-  failure); other callers keep using the last successful path between probes. So the warning
-  clears on the next probe after the user installs or moves Git.
+  deadline, reason "Windows didn't answer within 15 seconds". Each probe does its own fresh
+  lookups of `git.exe` and `%LOCALAPPDATA%` and reports their failures as the reason. A
+  successful probe lookup replaces the path `createWinEnv` uses for regular bridge operations;
+  a failed one does not (operations keep the last successful path and fail on their own if it
+  no longer works). A failed `%LOCALAPPDATA%` or `git.exe` lookup made by a regular operation
+  is not memoized either, so the next operation tries again. So the warning, and the
+  operations, recover after the user fixes Windows without a service restart.
 On a Microsoft kernel the machine runs the check in the background at startup and every 10
 minutes, and caches the result; callers read the cache and never wait for a probe, except as
 the approval card says.
@@ -351,6 +358,8 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   is still starting.
 - Go-between EOF: client closing stdin before ready exits without starting the tool;
   during the handoff stops the tool and exits.
+- A failed `%LOCALAPPDATA%` lookup at startup recovers on the next operation and probe. A
+  stop waits on a sibling's go-between file even after the sibling's launch record is gone.
 - Archive: `archiveCheck` returns `pending` while a wrapped tool on the thread's copy is
   still shutting down, and nothing is committed or removed until it ends. An unwrapped lead
   stopping last on a copy waits for a wrapped sibling's tool. An HTTP entry carrying a stray
@@ -605,12 +614,19 @@ cleanup of copies or git data.
 
 ### Round 11 — 2026-11-21
 
-**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+**Lanes:** gpt (intent); gpt (mechanics); cross-family: no (claude unavailable at start).
 
 **Changed since Round 10:** item 3 shutdown gate for any session on a copy with a wrapped session, archive gate moved to `archiveCheck`, "Marking the copy used" scoped; `loaded.windows` stdio only; item 1 interop-off button message; item 4 fresh Git lookup per probe; Validation; IDEA.md disk criterion and non-WSL constraint.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Archive's `stop()` removes a wrapped verifier's copy before the gate | declined | Verifier copies are throwaways removed without reconcile by design (machine/lib/win.js:210-224); no kept work is at stake. Spec now says so |
+| intent | blocking | A cached `%LOCALAPPDATA%` failure leaves operations broken while the probe says healthy | upheld | item 4 probe checks it; no failure memoized |
+| intent | minor | `git_bytes` labelled as `.git` size but measures objects | upheld | item 2 label |
+| mechanics | blocking | Gate keyed on launch records that vanish while a go-between still shuts down | upheld | item 3 gate lists `win-tools` dirs always |
+| mechanics | blocking | Verifier worktree removed before `archiveCheck` | declined | as the intent row: throwaway copy by design |
+| mechanics | major | Failed Git lookup after success: which path operations use | upheld | item 4: probe success replaces, failure doesn't |
+| mechanics | minor | `pending` needs the user to archive again | upheld | item 3 states the manual retry |
 
 ## Implementation Tasks
 
