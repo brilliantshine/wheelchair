@@ -20,10 +20,14 @@ draw a picture when the answer has a shape, as readily as you set in Settings.
 1. Install the [basic tools](#dependencies) on the machine that will run the agents
    (Linux with systemd or macOS with launchd; on Windows, see "On Windows"). Sign in to
    GitHub CLI and Tailscale.
-2. Run `./install.sh --serve` (see "Install"). Accept the offered Tailscale commands to
-   publish the app on your tailnet.
-3. Open the link printed by the installer on each device. It carries a token that signs
-   the browser in. `node viewer/server.js --rotate-token` signs every device out.
+2. Run `./install.sh --serve` (see "Install"). Serving is what starts the app and the
+   service that runs agent sessions. Accept the offered `tailscale serve ...` commands
+   (`sudo tailscale` on Linux) to publish the app on your tailnet, or run the ones it
+   prints later; until they run, other devices can't reach the app.
+3. Open the link printed by the installer on each device (`node viewer/server.js --url`
+   prints it again). It carries a token that signs the browser in; after that,
+   `https://<machine>.<tailnet>.ts.net/wheelchair/app/` works on its own.
+   `node viewer/server.js --rotate-token` signs every device out.
 4. Follow the home page checklist to install and sign in to an agent from Settings.
    Settings also holds your models, diagram preference, writing style and project folder.
 
