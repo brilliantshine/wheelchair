@@ -33,7 +33,7 @@ class WinDisk {
       const copies = [];
       for (const dir of dirs.filter(item => item.isDirectory())) {
         const windows = path.win32.join(path.win32.dirname(ctx.copy.windows), dir.name);
-        const quoted = `'${windows.replace(/['\u2018\u2019\u201a\u201b]/g, "''")}'`;
+        const quoted = `'${windows.replace(/['\u2018\u2019\u201a\u201b]/g, ch => ch + ch)}'`;
         const body = `$ErrorActionPreference = 'Stop'\n(Get-ChildItem -LiteralPath ${quoted} -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object -Sum Length).Sum`;
         const result = await this.winEnv.ps(script('copysize', { path: windows }, body));
         if (result.code !== 0) throw new Error(result.stderr.trim() || 'PowerShell copy measurement failed');

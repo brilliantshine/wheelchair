@@ -77,3 +77,17 @@ test('large git storage never produces a warning', async t => {
   assert.ok(result.git_bytes > 20e9);
   assert.ok(!result.warnings.some(warning => /git/i.test(warning)));
 });
+
+test('copy walk doubles typographic quotes without changing them', async t => {
+  const root = makeTempSync('win-disk-quotes-');
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const copies = path.join(root, 'copies');
+  await fs.mkdir(path.join(copies, 'O’Brien'), { recursive: true });
+  const ctx = { threadId: 't', key: 'k', stateDir: root, worktree: root, copy: { linux: path.join(copies, 'current'), windows: 'C:\\copies\\current' } };
+  let walkScript;
+  const disk = new WinDisk({ localAppData: async () => root, toLinux: p => p, ps: async value => { walkScript = value; return { code: 0, stdout: '0' }; } });
+  await disk.info(ctx);
+  await disk.cache.get('t').pending;
+  assert.match(walkScript, /O’’Brien/);
+  assert.doesNotMatch(walkScript, /O''Brien/);
+});
