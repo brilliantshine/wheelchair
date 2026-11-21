@@ -1992,6 +1992,13 @@ class MachineService {
         } finally { this.sensitivityWriting = false; }
       }
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
+      if (request.method === 'POST' && url.pathname === '/v1/project-tools/unity-prep') {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        try { await this.projectTools.identity(input.path); } catch (error) { return send(response, 400, { error: error.message }); }
+        this.unityPrep ||= require('./lib/unity-prep').createUnityPrep({ detected: this.win.detected, winEnv: this.win.winEnv });
+        return send(response, 200, await this.unityPrep(input));
+      }
       if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);

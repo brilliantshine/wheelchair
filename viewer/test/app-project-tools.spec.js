@@ -36,8 +36,8 @@ const readBody = (over = {}) => ({
 });
 
 // Stubs the picker and /project-tools/*; `replies` queues [status, body] for save/remove-key.
-async function stub(page, { read = readBody(), replies = [], gate = null } = {}) {
-  const calls = { read: [], save: [], remove: [] };
+async function stub(page, { read = readBody(), replies = [], gate = null, unity = [] } = {}) {
+  const calls = { read: [], save: [], remove: [], unity: [] };
   await page.route('**/wheelchair/api/new-thread*', (route) => route.fulfill({ json: {
     machine: 'hub', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'alpha', path: '/tmp/proj-alpha' }, { name: 'beta', path: '/tmp/proj-beta' }], found: [], previous: [] } }));
   await page.route('**/wheelchair/api/project-tools/*', async (route) => {
@@ -48,6 +48,7 @@ async function stub(page, { read = readBody(), replies = [], gate = null } = {})
       const out = typeof read === 'function' ? await read(calls.read.length, body) : read;
       return Array.isArray(out) ? route.fulfill({ status: out[0], json: out[1] }) : route.fulfill({ json: out });
     }
+    if (kind === 'unity-prep') { calls.unity.push(body); return route.fulfill({ json: unity.shift() || { command: 'uvx' } }); }
     (kind === 'save' ? calls.save : calls.remove).push(body);
     if (gate) await gate;
     const [status, json] = replies.shift() || [200, { outcome: 'saved', key_revision: 1, keys: ['API_KEY'], warnings: [] }];
@@ -1027,4 +1028,25 @@ test('R8-2: a field value with HTML is shown as text and creates no element', as
   const card = tool(page, 'x');
   await expect(card).toContainText('note: <b>x</b>');
   await expect(card.locator('b')).toHaveCount(0);
+});
+
+test('Unity preset adds distinct tools and reports preparation', async ({ page }) => {
+  const calls = await open(page, { unity: [ { command: '/mnt/c/uvx.exe', fetch: { state: 'running' } }, { command: '/mnt/c/uvx.exe', fetch: { state: 'ready' } }, { command: 'uvx' }, { command: null, message: 'Install uv' } ] });
+  expect(calls.unity).toHaveLength(0);
+  await page.getByRole('button', { name: 'Add MCP for Unity' }).click();
+  await expect(tool(page, 'unity')).toContainText('/mnt/c/uvx.exe --from mcpforunityserver mcp-for-unity --transport stdio');
+  await expect(page.getByText('Getting MCP for Unity ready on Windows…')).toBeVisible();
+  await expect(page.getByText('Ready', { exact: true })).toBeVisible({ timeout: 6000 });
+  expect(calls.unity[1].poll).toBe(true);
+  await page.getByRole('button', { name: 'Add MCP for Unity' }).click();
+  await expect(tool(page, 'unity-2')).toContainText('uvx --from mcpforunityserver');
+  await page.getByRole('button', { name: 'Add MCP for Unity' }).click();
+  await expect(page.getByText('Install uv', { exact: true })).toBeVisible();
+  await expect(tool(page, 'unity-3')).toHaveCount(0);
+});
+
+test('Unity preset reports a failed fetch', async ({ page }) => {
+  await open(page, { unity: [{ command: 'uvx', fetch: { state: 'failed', reason: 'network' } }] });
+  await page.getByRole('button', { name: 'Add MCP for Unity' }).click();
+  await expect(page.getByText("Couldn't fetch it: network; the first agent will fetch it instead")).toBeVisible();
 });
