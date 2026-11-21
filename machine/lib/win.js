@@ -24,6 +24,7 @@ class WinBridge {
     this.running = new Map();
     this.toolSessions = new Set();
     this.stopped = new Set();
+    this.stopTasks = new Map();
     this.usage = new Map();
     this.archiveAttempted = new Set();
     this.readyTimeoutMs = options.readyTimeoutMs ?? 45000;
@@ -200,16 +201,19 @@ class WinBridge {
     this.stopped.add(session.name);
     this.toolSessions.delete(session.name);
     const termination = this.killSession(session.name);
-    Promise.resolve(termination).then(async () => {
+    const task = Promise.resolve(termination).then(async () => {
       const ctx = await this.context(session);
       if (this.readying.has(ctx.key)) await this.readying.get(ctx.key);
       if (!this.exists(ctx)) return;
       if (session.role === 'verifier') await this.remove(ctx, false);
       else if ((session.role === 'lead' || session.role === 'sub-lead') && !this.liveSharing(ctx, session.name) && readState(this.stateDir, ctx.key).used_since_ok && fs.existsSync(ctx.worktree)) await this.sync(ctx);
-    }).catch(err => this.service.log(err));
+    }).catch(err => this.service.log(err)).finally(() => this.stopTasks.delete(session.name));
+    this.stopTasks.set(session.name, { task, session });
   }
 
   async onWorktreeRemoved(session, { kind }) {
+    const stopping = this.stopTasks.get(session.name);
+    if (stopping) await stopping.task;
     const ctx = await this.context(session);
     if (this.readying.has(ctx.key)) await this.readying.get(ctx.key);
     if (!this.exists(ctx)) return;
@@ -232,7 +236,8 @@ class WinBridge {
   archiveCheck(threadId) {
     const pending = [];
     for (const ctx of this.registry().filter(item => item.threadId === threadId)) {
-      const running = this.readying.get(ctx.key) || this.running.get(ctx.key);
+      const stopping = [...this.stopTasks.values()].find(item => item.session.worktree && worktreeKey(item.session.worktree) === ctx.key);
+      const running = stopping?.task || this.readying.get(ctx.key) || this.running.get(ctx.key);
       if (running) {
         this.archiveAttempted.add(ctx.key);
         pending.push(ctx.state.last_session);

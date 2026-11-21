@@ -869,12 +869,16 @@ class MachineService {
     return this.stopFatal(session);
   }
   async stopFatal(session) {
+    this.win.onStop(session);
     this.tmux(['kill-session', '-t', `=${session.name}`]);
     const live = this.liveTmux();
     if (!live || live.has(session.name)) return { pending: true, end_reason: session.end_reason };
     session.status = 'stopped'; session.prompt_open = false; session.stopped_at = new Date().toISOString();
     await this.persistSessions();
-    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+    if (session.role === 'verifier' && session.created_worktree) {
+      const removed = command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+      if (removed.ok) this.win.onWorktreeRemoved(session, { kind: 'verifier' }).catch(error => this.log(error));
+    }
     return { ok: true, end_reason: session.end_reason };
   }
   async kimiBinding(session) {
@@ -1096,8 +1100,12 @@ class MachineService {
     session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     this.screens.killSession(name);
+    this.win.onStop(session);
     await this.persistSessions();
-    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+    if (session.role === 'verifier' && session.created_worktree) {
+      const removed = command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+      if (removed.ok) this.win.onWorktreeRemoved(session, { kind: 'verifier' }).catch(error => this.log(error));
+    }
     this.sweepAgyTools();
   }
   gitPath(worktree, name) {
@@ -1178,6 +1186,7 @@ class MachineService {
       const result = command('git', ['-C', worktree, 'worktree', 'remove', worktree]);
       if (!result.ok) { kept.push({ worktree, reason: result.stderr.trim() || 'git worktree remove failed' }); continue; }
       removed.push(worktree);
+      await this.win.onWorktreeRemoved(session, { kind: 'other' }).catch(error => this.log(error));
     }
     const keptWorktrees = new Set(kept.map(item => path.resolve(item.worktree)));
     for (const session of sessions) {
@@ -1411,7 +1420,7 @@ class MachineService {
     if (!branch.ok || !branch.stdout.trim() || branch.stdout.trim() === 'HEAD') die('worker branch cannot be determined');
     if (!command('git', ['merge-base', '--is-ancestor', branch.stdout.trim(), 'HEAD'], { cwd }).ok) die('worker branch is not fully merged into yours');
     const result = command('git', ['worktree', 'remove', path.resolve(worker.worktree)], { cwd });
-    if (result.ok) { worker.worktree_removed = true; await this.persistSessions(); }
+    if (result.ok) { worker.worktree_removed = true; await this.persistSessions(); await this.win.onWorktreeRemoved(worker, { kind: 'merge' }).catch(error => this.log(error)); }
     return { ok: result.ok, status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
   async git(session, input) {
