@@ -19,9 +19,9 @@ own once the copy is ready, with no action from the agent and no delay to the ag
 - Today the agent starts after at most 45 seconds of waiting, even if the Windows copy is
   still being prepared. A Windows tool started then points at a copy that is missing or
   half-made, and it stays broken for the whole session.
-- Cleanup (the final sync back, the periodic sweep, archiving) does not wait for those
-  Windows tools to stop, so changes they are still writing can be lost or the copy removed
-  under them.
+- (Background for the follow-up thread, not fixed here.) Cleanup (the final sync back, the
+  periodic sweep, archiving) does not wait for those Windows tools to stop, so changes they
+  are still writing can be lost or the copy removed under them.
 
 ## What good looks like
 
@@ -36,7 +36,7 @@ own once the copy is ready, with no action from the agent and no delay to the ag
 - Windows tools reached over `localhost` (HTTP or SSE): that is the thread "Windows localhost
   tools from WSL".
 - Tools that are not Windows programs.
-- Making a normal stop wait until the agent's Windows tools have finished writing (today's
+- Making a normal stop, the periodic sweep or archiving wait until the agent's Windows tools have finished writing (today's
   agents don't wait either): saved for the two-part follow-up (PLAN.md D9).
 
 ## Constraints

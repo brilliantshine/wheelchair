@@ -67,8 +67,9 @@ field (item 3) and added to `WSLENV` if missing, so the tool gets the copy path 
 launch-time environment lookup timed out (`machine/service.js:893-899`). As today, interop
 passes Windows only the variables `WSLENV` names.
 
-**Stop the tool** means: close its stdin, wait up to 2 s for it to exit, then send SIGTERM to
-the spawned interop process. What happens to its Windows descendants is the same as today for
+**Stop the tool** means: close its stdin; wait up to 2 s for it to exit; if still running,
+send SIGTERM to the spawned interop process and wait up to 3 s more; if still running, send
+SIGKILL and wait for its `exit` event (at most 1 s more), then go on regardless. What happens to its Windows descendants is the same as today for
 an unwrapped tool whose CLI ends (Deferred 3).
 
 "Loaded" means present in the adapter's final configuration for this session (after its skip
@@ -125,12 +126,14 @@ wrapped entry:
   session throws before the task exists** (for example resolving the copy context,
   `machine/lib/win.js:153-156`, whose errors today are only logged); a later successful sync
   replaces it with `ready`.
-- Removed when the session stops (stop path).
+- Removed when the session stops (stop path). The stop path first invalidates the session's
+  attempt token, then removes the file, so a readying result that finishes after the stop
+  writes nothing (the guard below checks the token, not only that the session is registered).
 - **Failed or cancelled start:** every path where `startIn` gives up after the ready file or
   the Claude `--mcp-config` file was written (`die`, cancelled start, tmux failure) removes
   both. Writes are tied to the start attempt: `WinBridge` records a per-attempt token when it
   writes `waiting`, and a later readying result writes the file only if that session name is
-  still starting or registered with the same token. A late result for a dead attempt writes
+  still starting or registered with the same token and its token has not been invalidated. A late result for a dead attempt writes
   nothing.
 
 The go-between branches on `state` only, never on `reason` text. A missing or unreadable file
@@ -152,8 +155,10 @@ that `tools` array to the cache (it tracks outstanding client request ids and th
 match responses). Paginated lists are not cached. A missing or unparseable cache means "no
 remembered list". In addition, right after every start of the real tool has finished its
 handshake (step 1, 3a or 3b), the go-between sends the real tool its own `tools/list` request
-(id `"wc-go-between-list-<random uuid>"`, generated per probe), caches the result as above and does not pass
-the response to the client; so a client that never lists again (Codex) still leaves a list for
+(id `"wc-go-between-list-<random uuid>"`, generated per request) and, while the result has a
+`nextCursor`, further `tools/list` requests with that cursor (at most 20 pages); it caches the
+concatenated `tools` of all pages (nothing if any page fails or the limit is hit) and passes
+none of these responses to the client; so a client that never lists again (Codex) still leaves a list for
 the next session. The service computes the path; the go-between only reads and writes it.
 
 1. **Ready at start** (ready file says `ready`): start the real tool at once and pipe
@@ -200,7 +205,9 @@ the next session. The service computes the path; the go-between only reads and w
        to stderr, stop the tool (item 1), then exit 1.
 4. While not ready, a ready file that says `failed` changes the sentence for later answers;
    a later `ready` still starts the tool (step 3).
-5. Once the real tool runs, if it exits on its own the go-between exits with its exit code.
+5. Once the real tool runs and (for 3b) its handshake has succeeded, if it exits on its own the
+   go-between exits with its exit code. Until the 3b handshake succeeds, the 3b failure rule
+   above takes precedence: an exit then is a handoff failure (exit 1).
    If the client closes stdin, **or the go-between receives SIGHUP, SIGTERM or SIGINT** (a
    normal stop kills tmux, which signals it): before the ready point, exit 0 at once without
    starting the tool; during the handoff or afterwards, stop the tool (item 1), then exit. The signal handlers stay installed until then, so a second
@@ -249,13 +256,20 @@ New tests in `machine/test/` must cover:
   code; a `prepareLaunch` context error writes `failed`.
 - Shared map: `replaceEntries[name] = null` omits the entry for Codex and Antigravity and only
   disables it for Claude, and leaves it out of `loaded`.
+- Stop after removal: a readying result finishing after the session stopped does not recreate
+  the ready file.
+- Probe pagination: a tool that pages its list gets every page cached; a failing page caches
+  nothing.
+- Exit during handoff: a real tool exiting 0 before its 3b `initialize` answer makes the
+  go-between exit 1 with errors for queued requests.
 - Stale files: the sweep removes ready and Claude config files of dead sessions but not of
   starting ones.
 
-Live check once built (needs a WSL machine with a Windows stdio MCP server and a fresh copy):
-start a Claude agent and a Codex agent before the copy is ready; Claude's tools appear after
-ready; Codex shows the remembered list (or none on first ever use) and a call made before
-ready returns the real tool's answer once ready.
+Live check once built (needs a WSL machine with a Windows stdio MCP server and a fresh copy),
+in three separate runs: (1) cold cache: a Codex agent started before ready lists no tools, and
+after that session the cache file exists; (2) warm cache: a Codex agent started before ready
+lists the remembered tools, and a call made before ready returns the real tool's answer once
+ready; (3) a Claude agent started before ready sees the tools appear after ready.
 
 ### Not doing
 
@@ -357,6 +371,23 @@ Deferred 3; Spec 1 now says how the go-between starts and stops the real tool di
 interop; old Spec 5 and 6 removed (old 7 is now 5); Spec 3 and 4 references updated; stale-file
 sweep no longer covers tools dirs; Validation trimmed; Accepted Risks about the stop wait marked
 moved; C3 reworded; IDEA.md "What good looks like" and "Not doing" updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | IDEA.md Why/Not doing still imply sweep and archive waits are built | upheld | IDEA.md reworded (background for follow-up; Not doing names sweep and archive) |
+| mechanics | major | Stop ends at SIGTERM without waiting for exit | upheld | Spec 1: wait 3 s, then SIGKILL and wait for exit |
+| mechanics | major | Child exit during handoff: exit 1 or its own code? | upheld | Spec 4 step 5: 3b failure rule wins until handshake succeeds |
+| mechanics | major | Late readying result recreates the ready file after a normal stop | upheld | Spec 3: stop invalidates the token first; test |
+| mechanics | major | Paginating servers never warm the cache | upheld | Spec 4: probe follows `nextCursor`, up to 20 pages |
+| mechanics | minor | Live check mixes cold and warm cache | upheld | Validation: three separate runs |
+
+### Round 5 — 2026-11-21
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 4:** IDEA.md Why/Not doing wording; Spec 1 stop sequence (SIGTERM, then
+SIGKILL); Spec 3 stop invalidates the attempt token; Spec 4 probe pagination and step 5
+precedence during handoff; Validation additions and the three-run live check.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
