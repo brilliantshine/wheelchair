@@ -10,9 +10,11 @@ created: 2026-11-21
 ## What we're building
 
 Agents working in wheelchair can save a short lesson when they learn something the hard
-way, such as "an extra question card is a minor review finding, not a major one". Every
-agent started later reads the saved lessons alongside its role rules, whichever AI runs
-it. Collin can see, edit and remove the lessons in the app.
+way, such as "an extra question card is a minor review finding, not a major one". A
+lesson is for the agent's own type (lead, sub-lead, worker, reviewer, verifier, mapper):
+later agents of that type read it alongside their role rules, whichever AI runs them,
+unless the lesson is marked as only for one AI. Collin can see, edit and remove the
+lessons in the app.
 
 ## Why — the problem
 
@@ -25,7 +27,10 @@ cannot see or edit it from the app.
 
 - An agent that learns something worth keeping saves it as a lesson, without Collin
   having to ask.
-- The next agent started, on any AI, has that lesson in its starting instructions.
+- The next agent of the same type, on any AI, has that lesson in its starting
+  instructions. Agents of other types do not.
+- A lesson about one AI's habits (say, a Codex quirk) is marked as such and reaches only
+  agents on that AI.
 - Collin opens a page in the app, sees every lesson in plain words, and can edit or remove
   any of them. A removed lesson stops reaching new agents.
 - The list stays short: lessons are few, specific and still true.
