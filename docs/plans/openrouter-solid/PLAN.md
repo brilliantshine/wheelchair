@@ -98,17 +98,16 @@ first turn forks the lead's Pi session, later turns resume the fork.
   loads a small static wheelchair Pi extension (`-e`, one file under `machine/adapters/`,
   checking against the handler's `ctx.cwd`, which is the worktree since the aside is spawned with
   `cwd: i.cwd`) whose `tool_call` handler blocks (`{ block: true, reason }`) any
-  read/grep/find/ls call whose path argument resolves, the way Pi itself resolves it, to a file
-  or directory that falls outside both the worktree and wheelchair's own
+  read/grep/find/ls call whose path argument resolves (see Resolving) to a file or directory that falls outside both the worktree and wheelchair's own
   `protocol/` directory (the aside prompt tells it to read `protocol/app/aside.md`,
   `machine/lib/aside-turns.js:98`). A call with no path uses the worktree.
-  "The way Pi resolves it": first Pi's `resolveToCwd` rules (`~` expansion, leading `@` stripped,
-  unicode spaces normalized, relative to `ctx.cwd`; Pi `dist/core/tools/path-utils.js:42`), then,
-  for `read`, every alternate name `resolveReadPath` may try (`path-utils.js:45-70`). Each
-  candidate that exists is checked by `realpath`; one that does not exist is checked by the
-  `realpath` of its nearest existing parent. The call is blocked if any candidate falls outside the
-  allowed directories. Use Pi's exported functions if the installed package exports them;
-  otherwise mirror that logic in the extension. Full access loads no such extension. The
+  Resolving: the handler resolves the path once with Pi's `resolveToCwd` rules (`~` expansion,
+  leading `@` stripped, unicode spaces normalized, relative to `ctx.cwd`; Pi
+  `dist/core/tools/path-utils.js:42`, copied into the extension since Pi does not export it),
+  blocks it if it does not exist, otherwise takes its `realpath`, checks that, and writes the
+  checked real path back into the call's input (`event.input.path`; `tool_call` may mutate input,
+  Pi `docs/extensions.md:364`). Pi then opens exactly the checked path, so its alternate-name
+  lookups never apply. Full access loads no such extension. The
   message is passed on stdin or as the final argument, whichever Pi's `-p` supports
   (`cli.md`). Login env comes from `adapter.loginEnv(dir)` as for other providers.
 - Output parsing (Pi JSON mode, `json.md`): the first record is the session header
@@ -126,8 +125,6 @@ first turn forks the lead's Pi session, later turns resume the fork.
 - Redaction: `reply`, `error` and any stderr text are passed through `adapters/pi.js`
   `redact` before the aside result is stored or returned, so an OpenRouter key never reaches
   hub state.
-- Version tie: the machine records the Pi version a session launched with (from the
-  S4 probe at launch) and S4's failure notes use that recorded version, not the current one.
 - Version gate: an OpenRouter aside on a machine whose Pi is refused by S4 (older than 1.5.2,
   or not installed) finishes at once as `state: failed` with S4's problem text. It is checked
   inside the runner, not at request validation, so the hub gets a terminal result and does not
@@ -144,7 +141,7 @@ first turn forks the lead's Pi session, later turns resume the fork.
   file plus its fork counting copied entries once, a read-only aside whose read of a path outside
   the worktree (including the account's `auth.json`) is blocked, run against Pi's real resolver
   with harmless fixtures: `../` escapes, `~/...`, an `@`-prefixed path, a symlink inside the
-  worktree pointing outside, and a read of `protocol/app/aside.md` that is allowed, and resume argv carrying
+  worktree pointing outside, a missing path (blocked), and a read of `protocol/app/aside.md` that is allowed, and resume argv carrying
   `--tools` for both access settings (pattern of existing aside tests); hub test that an OpenRouter lead
   allows an aside (update `viewer/test/app-asides.test.js` where it pins the refusal).
 - Live check (costs money; keep it to one fork turn and one resume turn, model
@@ -170,6 +167,8 @@ first turn forks the lead's Pi session, later turns resume the fork.
 - Settings shows the problem or warning in plain words on each OpenRouter account's machine
   line (where `settings.js:1232` shows Kimi's problem); the warning is styled as a note,
   not an error.
+- Version tie: the machine records the Pi version a session launched with (from the
+  S4 probe at launch) and S4's failure notes use that recorded version, not the current one.
 - On an untested or unknown version, these messages end with a note: " Pi X is newer than the
   version wheelchair was tested with (1.5.2); that may be the cause." (unknown: " Pi's version
   couldn't be read; that may be the cause."):
@@ -352,6 +351,8 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Rewrite the checked real path into the tool input instead of mirroring Pi's resolver | upheld | S3 adopts it |
+| intent | minor | Version tie bullet belongs in S4 | upheld | Moved to S4 |
 
 ## Implementation Tasks
 
