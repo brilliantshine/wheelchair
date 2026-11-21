@@ -17,7 +17,7 @@ the pull request and Collin merges it.
 
 Today every finished thread stops at an open pull request, and Collin has to go to GitHub
 (often from a phone) to merge it, even when the work was planned, reviewed and verified and
-nothing is left for Collin to check. That extra step slows down threads he already trusts.
+nothing is left for Collin to check. That extra step slows down threads Collin already trusts.
 
 ## What good looks like
 
