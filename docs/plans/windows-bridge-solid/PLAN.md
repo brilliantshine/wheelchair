@@ -53,9 +53,13 @@ and `sse`; Codex and Antigravity load stdio and `http` (they skip `sse`, as toda
 anything their existing per-entry reasons reject); Pi and Kimi load none. "Loaded entries"
 below always means this set, taken from the adapter's final built configuration for the
 session (after item 4's wrapping and after Codex's override size budget, which can drop every
-entry), not from `.mcp.json` alone. The order in `startIn` is: build the adapter command
-(with wrapping), read the loaded entries from it, then claim forwards and decide readying from
-those. An entry that ends up not loaded claims no forward and triggers no readying.
+entry), not from `.mcp.json` alone. The order in `startIn` is: (1) work out the candidate
+marked entries the CLI would load and try to claim their forwards (§1), noting which must be
+withheld; (2) build the adapter command once, with withheld entries removed and item 4's
+wrapping applied; (3) read the loaded entries from that final build; (4) release any forward
+claimed in (1) for an entry that did not end up loaded, and decide readying, ready enrollment
+and the Unity prompt lines from the loaded entries only. Launch artifacts (settings files,
+`--mcp-config`, Antigravity plugin files) are written only from the final build.
 
 ### 1. Windows localhost tools (HTTP and SSE)
 
@@ -119,6 +123,14 @@ is not rewritten: the agent CLI connects to the port in WSL as written.
 - Claimed before the agent CLI is launched (in `startIn`, before tmux), kept while any live
   session uses that port, closed within 60 s of the last such session stopping or its thread
   archiving.
+- **One meaning per port.** On a WSL machine (not mirrored), a loopback port is either a
+  Windows port or a Linux port for all live sessions. While the machine forwards a port, any
+  session whose loaded entries include an unmarked `http`/`sse` entry on `localhost` or
+  `127.0.0.1` with that port has that entry withheld, with the warning `<tool>: port <port>
+  is forwarded to Windows for another project, so this Linux tool was left out of this
+  session`. Conversely, a marked entry is withheld (as for a taken port, below) while any live
+  session loads an unmarked entry on that port. The machine keeps, per live session, the
+  loopback ports of its loaded unmarked entries (in `win-forwards.json` too) to check this.
 - **Port taken on Linux.** If `127.0.0.1:<port>` (or `[::1]:<port>` when needed, see above)
   cannot be bound because another Linux process holds it, the marked entry is withheld from that
   session's CLI so it never connects to the unrelated process (its headers may carry keys):
@@ -152,25 +164,29 @@ Antigravity (plugin) need no URL change.
 MCP for Unity runs as a stdio tool started per agent (D15): `uvx --from mcpforunityserver
 mcp-for-unity --transport stdio`, which talks to whichever Unity Editors have the MCP for Unity
 package open, over Windows localhost. On WSL it runs on Windows (`uvx.exe`), so it is an
-ordinary Windows `.exe` stdio tool: it readies the copy, gets `WHEELCHAIR_WINDOWS_PROJECT`, and
-is wrapped by item 4's go-between. Each agent has its own server process.
+ordinary Windows `.exe` stdio tool: it readies the copy and gets `WHEELCHAIR_WINDOWS_PROJECT`.
+It is **not** wrapped by item 4's go-between: it never reads the copy, and a restart would drop
+the agent's Editor selection. Each agent has its own server process.
 
 **The button.** The Project tools form gets an "Add MCP for Unity" button. It adds an entry
 named `unity` (`unity-2`, ... if taken), stdio, args `["--from", "mcpforunityserver",
 "mcp-for-unity", "--transport", "stdio"]`, and a command:
-- WSL machine: the Linux path of Windows `uvx.exe`. The form asks the machine (a new field on
-  the existing project tools read response, `windows_uvx`), which resolves it once per call
-  with PowerShell `(Get-Command uvx.exe).Source` and converts it with `winEnv.toLinux`, with a
-  10 s deadline. Not found → the button stays enabled but fills nothing and shows "Install uv
-  on Windows first: https://docs.astral.sh/uv/getting-started/installation/".
+- WSL machine: the Linux path of Windows `uvx.exe`. Pressing the button sends a new request
+  to the machine (`POST /v1/project-tools/unity-prep`, same auth as the project tools read),
+  which resolves the path with PowerShell `(Get-Command uvx.exe).Source` and `winEnv.toLinux`
+  (10 s deadline, result cached for 10 minutes), fills the entry, and then fetches the server
+  once on Windows in the background (`uvx.exe --from mcpforunityserver mcp-for-unity --help`,
+  5 minute deadline) so the first agent does not wait for the download. The form shows
+  "Getting MCP for Unity ready on Windows…" then "Ready" or "Couldn't fetch it: <reason>; the
+  first agent will fetch it instead" (polling the same route; saving is never blocked by it).
+  The page load does not call PowerShell. Not found → the button fills nothing and shows
+  "Install uv on Windows first: https://docs.astral.sh/uv/getting-started/installation/".
 - Any other machine: `uvx`.
 The user edits or saves it like any entry; the button only fills the form. The server version
 is not pinned (MCP for Unity's own setup does not pin it).
 
 Help text under it: "Add the MCP for Unity package to your Unity project and commit it, so
-every Windows copy has it. Each agent opens Unity on its own copy and picks that Editor. The
-first start downloads the server; if an agent's Unity tools fail the first time, start a new
-agent." It
+every Windows copy has it. Each agent opens Unity on its own copy and picks that Editor." It
 links to `https://coplaydev.github.io/unity-mcp/getting-started/install`.
 
 **Pointing each agent at its own copy's Editor.** One machine can have several Editors open
@@ -180,7 +196,8 @@ these lines to the session's prompt file before launch (same mechanism as item 5
 filling every placeholder itself:
 
 > Unity: your project copy on Windows is `<copy_windows path>`. Open Unity on it yourself
-> (`wc.js win start "<unity exe>" -projectPath "<copy_windows path>"`), never on another path.
+> (`wc.js win start -- "<unity exe>" -projectPath "<copy_windows path>"`), never on another
+> path.
 > Before any other Unity MCP call, list the connected Unity instances, select the one whose
 > project path is your copy, and check the selection; if none matches, don't use the Unity
 > tools until it appears. Never act on another instance.
@@ -188,7 +205,8 @@ filling every placeholder itself:
 `<unity exe>` is `C:\Program Files\Unity\Hub\Editor\<version>\Editor\Unity.exe`, where
 `<version>` is `m_EditorVersion` from the session worktree's `ProjectSettings/ProjectVersion.txt`,
 if that file exists under the Windows mount. Otherwise the sentence reads "Open Unity <version
-or 'the project's version'> on it yourself with `wc.js win start` (Unity is usually under
+or 'the project's version'> on it yourself with `wc.js win start -- "<Unity.exe>" -projectPath
+"<copy_windows path>"` (Unity is usually under
 `C:\Program Files\Unity\Hub\Editor`)".
 
 For a sandboxed Codex session (which cannot `win start`), the second sentence is instead: "You
@@ -226,49 +244,58 @@ unchanged in shape apart from the new fields; it prints each `disk.warnings` lin
 ### 4. Restarting Windows stdio tools after the copy is ready
 
 **Which tools.** On a WSL machine, for tool roles, every loaded stdio entry whose command
-`isWindowsProgram` is launched through a go-between: `machine/lib/win-tool-proxy.js`, run as
-`<node> <proxy> --ready-file <path> -- <command> <args...>`, where `<node>` is
-`process.execPath`. HTTP tools are never wrapped (their server is not started by the CLI).
+`isWindowsProgram`, except one whose args include `mcp-for-unity` (§2), is launched through a
+go-between: `machine/lib/win-tool-proxy.js`, run as `<node> <proxy> --ready-file <path> --
+<command> <args...>`, where `<node>` is `process.execPath`. HTTP tools are never wrapped
+(their server is not started by the CLI).
 
 **Per CLI.**
 - Codex and Antigravity: their translated entries get the wrapped command and args. The
   Codex env passthrough of `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` stays.
-- Claude loads `.mcp.json` itself, so its Windows stdio entries are added to
+- Claude loads `.mcp.json` itself, so its wrapped entries are added to
   `disabledMcpjsonServers` and given instead, wrapped and under the same names, in a
   per-session file passed with `--mcp-config` (in `<stateDir>/settings/`, mode 0600).
 - Pi and Kimi load no project tools; unchanged.
 
 **Ready file.** `<stateDir>/win-ready/<session name>` (mode 0600, written atomically) holds
-JSON `{"ok": true, "at": "<iso>"}` or `{"ok": false, "reason": "...", "at": "<iso>"}`.
-- `ok: true` is written only after a reconcile of that session's copy (its `create` + `sync`)
+JSON `{"state": "ready" | "waiting" | "failed", "reason": "...", "at": "<iso>"}` (`reason`
+only for `failed`). The go-between branches on `state` only, never on reason text.
+- `ready` is written only after a reconcile of that session's copy (its `create` + `sync`)
   **finishes successfully after the session's start began**: the session's own readying
   task, a shared readying task it awaited, or any later successful `win sync`/`run`/`start`
   sync of that copy. An existing `.git` alone never counts.
-- `ok: false` is written when the session's readying task fails or is still running when the
-  45 s wait ends (`reason` "Windows copy is still being readied"); a later success replaces
-  it with `ok: true`.
+- `waiting` is written before launch and stays while the readying task is still running
+  (including past the 45 s wait).
+- `failed` is written when the readying task fails; a later success replaces it with `ready`.
 - Removed when the session stops.
 
 **Enrollment survives restarts.** When a session is started with at least one wrapped tool,
-its session record (persisted in the machine's sessions file) gets `win_wrapped: true` and
-`win_ready: "pending"`, updated to `"ok"` or `"failed"` together with the ready file. On
-machine service startup, for every live session with `win_wrapped: true` and `win_ready` not
-`"ok"`, the machine runs the readying (create + sync) again and writes the result. Sessions
-without `win_wrapped` are never readied by this recovery.
+its session record (persisted in the machine's sessions file) gets `win_wrapped: true`. Every
+state change writes the ready file first, then mirrors the state into the record's
+`win_ready`. On machine service startup, for every live session with `win_wrapped: true` whose
+ready file or `win_ready` is not `ready` (or is missing), the machine runs the readying (create
+and sync) again and writes the result. Sessions without `win_wrapped` are never readied by this
+recovery.
 
 So a copy that existed but was stale at start still counts as not ready until the first
 reconcile after start finishes; if that finishes within the 45 s wait, the tool starts after
 it and is never restarted.
 
+**Process tree.** The go-between starts the real tool so that ending it ends every Windows
+process it started (for example a launcher's child server): through a launcher that puts the
+tool in a Windows Job Object with kill-on-close, as `machine/lib/win-apps.js` does for apps,
+with the tool's stdio passed through. "Stop the tool" below means: close the job (all
+descendants end), then wait until the tool's stdio pipes close (up to 5 s), before anything
+new starts.
+
 **Go-between behaviour.** It reads JSON-RPC messages line by line on both sides.
 1. Starts the real tool at once and pipes stdin/stdout both ways; stderr passes through.
-2. Remembers the client's `initialize` request, whether it has been answered, and
-   `notifications/initialized`.
-3. If the ready file holds `ok: true` when it starts, it only pipes and never restarts.
+2. Remembers the client's `initialize` request and whether it has been answered, and whether
+   the client's `notifications/initialized` was delivered to the current tool.
+3. If the ready file says `ready` when it starts, it only pipes and never restarts.
 4. **Restart on ready.** Otherwise it watches the ready file (poll every 2 s is fine). The
-   first time it reads `ok: true`:
-   a. Stop forwarding client messages to the tool and queue them. Stop the real tool (end its
-      process; kill it if still running after 5 s).
+   first time it reads `ready`:
+   a. Stop forwarding client messages to the tool and queue them. Stop the tool.
    b. Answer every request already sent to the old tool and unanswered, other than an
       unanswered `initialize`, with a JSON-RPC error (`code -32000`, message "Windows tool
       restarted because its project copy became ready; try again").
@@ -277,24 +304,24 @@ it and is never restarted.
       Otherwise send it the remembered `initialize`. If the client's `initialize` had not been
       answered yet (including one held by step 5), pass the new tool's response to the client
       as that answer; otherwise drop it. Wait for a successful response (up to 60 s).
-   d. Then send `notifications/initialized` if the client had sent it, flush the queue in
-      order, and, if the client had already been initialized, send the client
+   d. Then send `notifications/initialized` only if it had been delivered to the old tool (one
+      still in the queue is delivered once, from the queue), flush the queue in order, and, if
+      the client had already been initialized, send the client
       `notifications/tools/list_changed`. Resume piping.
    e. If the new tool fails to start or its `initialize` fails or times out, answer the
       queued and pending requests with a JSON-RPC error carrying the reason, write it to
       stderr, and exit 1.
    Restarts at most once.
-5. **Tool exits before ready.** If the real tool exits while the ready file is missing or
-   `ok: false` with reason "still being readied", the go-between does not exit: it holds an
-   unanswered `initialize` (never answers it with an error), and answers other pending and new
-   requests with a JSON-RPC error (`code -32000`,
-   "Windows tool is waiting for its project copy to be ready; try again shortly") and
-   performs step 4's restart (from 4c) when `ok: true` appears. If the ready file instead
-   holds `ok: false` with any other reason (readying failed), it answers with that reason
-   and keeps doing so; a later `ok: true` still triggers the one restart.
+5. **Tool exits before ready.** If the real tool exits while the ready file is missing, says
+   `waiting` or says `failed`, the go-between does not exit. It holds any unanswered
+   `initialize`, whether sent before the exit or arriving after it (never answering it with
+   an error), and answers other pending and new requests with a JSON-RPC error (`code
+   -32000`): for `waiting` or missing, "Windows tool is waiting for its project copy to be
+   ready; try again shortly"; for `failed`, "Windows project copy couldn't be readied:
+   <reason>". When the file says `ready`, it performs step 4 from 4c.
 6. After the ready point (or with no restart pending), if the real tool exits on its own, the
    go-between exits with its code, as an unwrapped tool would.
-7. If the client closes stdin, the go-between ends the real tool and exits.
+7. If the client closes stdin, the go-between stops the tool (process tree as above) and exits.
 
 ### 5. Broken bridge warning
 
@@ -351,10 +378,17 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   `ProjectVersion.txt` (or the fallback sentence); the sandboxed Codex variant.
 - `win info`: `disk` fields and each warning threshold with fake sizes, no `git_bytes`
   warning; `forwards` states.
-- Ready file: `ok: true` only after a successful reconcile after start (not for an existing
-  `.git` with readying still running); `ok: false` on timeout and failure; replaced by a later
-  `win sync` success; restored after a service restart.
-- Go-between, with a fake MCP tool: no restart when ready at start; restart on ready with a
+- Ready file: `ready` only after a successful reconcile after start (not for an existing
+  `.git` with readying still running); `waiting` past the 45 s wait; `failed` on failure;
+  replaced by a later `win sync` success; recovery runs when either the file or the record is
+  not `ready` after a service restart.
+- Ports: a forwarded port withholds another session's unmarked entry on the same port, and
+  the reverse; withholding that changes Codex's budget result rebuilds once and the forward is
+  released when the entry is not loaded.
+- Go-between, with a fake MCP tool: the `mcp-for-unity` entry is not wrapped; stopping the
+  tool ends a child process it started; `initialized` arriving during the restart is
+  delivered once; `initialize` arriving after a pre-ready exit is held; no restart when ready
+  at start; restart on ready with a
   pending request answered by the error, `initialize` replayed, `list_changed` sent; restart
   while the client's `initialize` is still pending passes the new tool's answer to it; tool
   exiting before ready keeps the connection and answers with the waiting error, then
@@ -371,11 +405,13 @@ request with a random token the harness chose; it then starts a session whose `.
 marks an HTTP entry on that port (written before the session starts), and checks that a
 request to `http://127.0.0.1:<port>/` from WSL returns that token (proving the answer came
 from Windows), and that after stopping the listener a request fails within 5 s rather than
-hanging. When `WHEELCHAIR_UNITY` is set and Windows has `uvx.exe`, the Unity part also: opens the
-Editor on the fixture copy (as today), runs the preset's command through the go-between (with a
-ready file already `ok: true`), sends MCP `initialize` and `tools/list` over its stdio and
-checks for tools, then reads the instance list and checks one instance's project path is the
-fixture copy. Otherwise it prints `Unity MCP part skipped`.
+hanging. When `WHEELCHAIR_UNITY` is set and Windows has `uvx.exe`, the Unity part also: adds the MCP
+for Unity package to the fixture's `Packages/manifest.json` (the git URL from MCP for Unity's
+install docs) in the harness's working copy before the copy is made, opens the Editor on the
+fixture copy and waits for its window (as today), then, **before** the existing `win stop`,
+runs the preset's command directly (not wrapped), sends MCP `initialize` and `tools/list` over
+its stdio and checks for tools, reads the instance list and checks one instance's project path
+is the fixture copy; then stops the Editor as today. Otherwise it prints `Unity MCP part skipped`.
 
 ### Not doing
 
@@ -451,6 +487,26 @@ copies or git data; no IPv6-only Windows servers.
 **Lanes:** claude (intent); other family (mechanics); cross-family: yes.
 
 **Changed since Round 2:** "Which tools a session loads" (from the final built config); §1 `::1` listener rules and late binding, listeners stay bound while used, save carries the Windows list, restart record holds addresses; §2 rewritten for the stdio preset (D15): button and `windows_uvx`, help text, prompt trigger and filled Unity path, sandboxed Codex sentence; §3 warnings to stderr; §4 enrollment in the session record, go-between steps 4c and 5; Validation (Unity button and prompt tests, live Unity part via the stdio preset); Accepted Risks (restart window); C1 reworded.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Unity preset wrapped by the go-between; a restart drops the Editor selection | upheld | §2, §4: `mcp-for-unity` entries not wrapped |
+| intent | minor | `uvx.exe` lookup slows every Project tools page load | upheld | §2 separate request on button press, cached |
+| intent | minor | First Unity start may fail while uvx downloads | upheld | §2 server fetched on Windows at button press |
+| mechanics | blocking | Unity prompt's `win start` lacks the required `--` | upheld | §2 command text (machine/lib/win-args.js:35) |
+| mechanics | blocking | Live Unity check can't discover the fixture Editor | upheld | §Validation adds the package and checks before stop |
+| mechanics | blocking | A forward can capture another session's unmarked entry on the same port | upheld | §1 one meaning per port |
+| mechanics | major | Port withholding can change Codex's budget result after the build | upheld | "Which tools a session loads" order (1)-(4) |
+| mechanics | major | Ready file and session record can disagree after a restart | upheld | §4 file first, recover when either is not ready |
+| mechanics | major | Restart stops only the launcher, not its child server | upheld | §4 Process tree (Job Object) |
+| mechanics | major | Pre-ready branch keyed on reason text that doesn't match | upheld | §4 ready file `state` field |
+| mechanics | major | `notifications/initialized` can be sent twice | upheld | §4 step 4d |
+
+### Round 4 — 2026-11-21
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round 3:** "Which tools a session loads" order (1)-(4); §1 one meaning per port; §2 Unity entry not wrapped, `unity-prep` request with background fetch, help text, `win start --` syntax; §4 rewritten parts: which tools (Unity excluded), ready file `state` field, enrollment write order and recovery, process tree, go-between steps 2, 4a, 4d, 5, 7; Validation (ports, ready file, go-between tests, live Unity part).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
