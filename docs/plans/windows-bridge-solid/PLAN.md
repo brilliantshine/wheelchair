@@ -165,21 +165,22 @@ unchanged in shape apart from the new fields; it prints each `disk.warnings` lin
 These keep the parent bridge's final stop reconcile from being skipped for sessions with
 Windows tools.
 
-**Launch record.** tmux sessions survive a service restart, but `WinBridge.toolSessions` is in
-memory. After step (3) and **before tmux is started**, the machine writes the session's launch
-record to `<stateDir>/win-sessions.json` (one entry per session name; written atomically, mode
-0600) for every session with `windows_tools` (any loaded Windows stdio tool, including the
-Unity entry). The entry is removed when its start fails, or once the session is confirmed
-gone: its tmux session absent from `liveTmux()`, checked by the stop path after `kill-session`
-and by `WinBridge.sweep()` (every 60 s) for any recorded session no longer in `liveTmux()` and
-not still starting (names in the service's `startingNames` are skipped, as the Antigravity
-tool-file sweep already does). This file, not the sessions file, is what startup recovery
-reads, so a restart during launch is covered.
+**Windows tool flag on the session record.** tmux sessions survive a service restart, but
+`WinBridge.toolSessions` is in memory. In step (3) the machine sets `windows_tools: true` or
+`false` on the session object (true when it loads any Windows stdio tool, including the Unity
+entry); the existing `persistSessions()` after tmux starts saves it with the rest of the
+session record. No separate file.
 
 **Recovery after a service restart.** On startup, after `recoverFromTmux`, every live session
-in the launch record is added back to `WinBridge.toolSessions` (and its copy registered as
-today), so the copy's "used since last reconcile" tracking and the final stop reconcile work as
-before the restart.
+whose record has `windows_tools: true` is added back to `WinBridge.toolSessions` (and its copy
+registered as today), so the copy's "used since last reconcile" tracking and the final stop
+reconcile work as before the restart. A live tool-role session whose record has no
+`windows_tools` field at all (started before this change, for example across the upgrade that
+installs it) is classified at startup by building its adapter configuration from its worktree's
+current `.mcp.json` and CLI (no launch) and reading `loaded`; the result is stored on the record
+and acted on the same way. A session recovered from tmux with no record (the restart landed
+between tmux start and `persistSessions()`) is classified the same way from its recovered
+worktree.
 
 **Marking the copy used.** A pre-launch readying reconcile clears the copy's "used since last
 reconcile" state before the CLI exists. So, for a session with `windows_tools`, right after its
@@ -191,7 +192,8 @@ done, as the parent plan requires), it is not skipped because readying finished 
 ### 4. Broken bridge warning
 
 **Detection.** `detectWsl()` returns `{ wsl, kernel, interop, mount }`: `kernel` is the
-Microsoft kernel test, `interop` the binfmt test, and `wsl` stays `kernel && interop` so every
+Microsoft kernel test, `interop` the binfmt test (the registration file exists **and** its
+first line is `enabled`; a `disabled` registration counts as interop off), and `wsl` stays `kernel && interop` so every
 existing caller keeps its meaning. A new `bridgeHealth()` on `WinBridge` returns `{ ok: true }`,
 `{ ok: false, reason }` or `{ ok: null }` (not known yet):
 - not `kernel` → `{ ok: true }` (never warns).
@@ -248,10 +250,10 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   runs the final reconcile; a Git-missing probe clears after Git appears without a service
   restart; the `loaded` list for a Codex Windows entry says `windows: true` and readying runs,
   and an entry dropped by Codex's budget is absent.
-- Restart tracking: after a service restart, a live session with `windows_tools` in the
-  launch record is back in `toolSessions`, including one restarted during launch, and its
-  stop runs the final reconcile; a handoff-killed session's record is removed by the next
-  sweep, but not while it is still starting.
+- Restart tracking: after a service restart, a live session with `windows_tools: true` in its
+  record is back in `toolSessions`, and its stop runs the final reconcile; a live session
+  record without the field (pre-upgrade) is classified from its `.mcp.json` and tracked. A
+  `disabled` binfmt registration counts as interop off.
 - Detection and warnings: interop off on a Microsoft kernel gives the reason; approval card
   gets the warning only when the project has Windows tools; a probe past 15 s gives the
   timeout reason; session start never waits; non-WSL machines get none.
@@ -281,7 +283,7 @@ of copies or git data.
 |------|--------------|-------|
 | (Split off with localhost forwarding, D20.) In mirrored mode, a Linux server started later on a marked tool's loopback port, while the Windows tool is down, receives that live CLI's requests | Rare path: needs the opt-in mirrored mode, the Windows tool down, and a Linux server on the same port; it is the user's own service | review-round-8 |
 | (Split off with the go-between, D21.) A go-between that crashes while its Windows tool keeps writing lets the shutdown gate pass early | Rare path: needs the go-between itself to crash mid-session | review-round-8 |
-| A service restart between tmux creation and session persistence can ready a different copy in recovery | Rare path: a restart inside that launch window plus a pane directory that differs from the worktree | review-round-8 |
+| A service restart between tmux creation and session persistence can register and track a different copy in recovery (worktree taken from the tmux pane's folder) | Rare path: a restart inside that launch window plus a pane directory that differs from the worktree | review-round-8 |
 | (Split off with localhost forwarding, D20.) An unmarked URL written with an IPv4-mapped address (`http://[::ffff:127.0.0.1]:<port>`) is not covered by port reservations and can reach a Windows forward | Rare path: unusual hand-written address form | review-round-5 |
 | (Split off with localhost forwarding, D20.) While the machine service is down (restart or crash), a forwarded port is unbound; a Linux process that takes it in that window can receive a live CLI's requests and headers for that tool | Rare path: needs a service restart and another Linux process binding that exact port in the gap; startup re-claims it and reports a failure | review-round-2 |
 
@@ -503,6 +505,20 @@ of copies or git data.
 **Lanes:** claude (intent); other family (mechanics); cross-family: yes.
 
 **Changed since Round 11:** the go-between (old item 3) split into its own thread (D21); item 3 is now "Fixes to the existing bridge's Windows tool tracking" (launch record with `windows_tools` only, restart recovery, marking the copy used); "Which tools a session loads" without wrapping (`loaded: [{name, windows}]`); item 1 no longer mentions wrapping; Validation trimmed; IDEA.md updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Separate launch-record file only covers a rare window; use the session record | upheld | item 3 flag on the session record; no new file |
+| intent | minor | Accepted risk row still says recovery readies a copy | upheld | row reworded |
+| mechanics | blocking | Sessions running across the upgrade are never enrolled | upheld | item 3 classifies records without the field at startup |
+| mechanics | blocking | Shared launch record needs serialized writes | upheld | moot: the file is gone; the existing sessions record is used |
+| mechanics | blocking | Disabled binfmt registration counted as interop on | upheld | item 4 checks `enabled` |
+
+### Round 13 — 2026-11-21
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round 12:** item 3 uses a `windows_tools` field on the session record instead of `win-sessions.json`, with startup classification for records lacking it; item 4 binfmt `enabled` check; Validation; Accepted Risks row 3 wording.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
