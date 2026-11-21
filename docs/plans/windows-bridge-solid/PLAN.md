@@ -571,5 +571,11 @@ of copies or git data.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Adapters return `loaded: [{name, windows}]` from their final config (Spec: Which tools a session loads) | `machine/adapters/*.js`; adapter tests, new `machine/test/adapters-loaded.test.js` | standard (any) | | `bash machine/test/run.sh` | not started |
+| T2 | Item 4: `detectWsl` kernel/interop (binfmt `enabled`), lookups not memoized on failure, winEnv probe, `bridgeHealth` with background probe, approval-card warning, fixtures | `machine/lib/win-env.js`; `win.js` constructor/startup/health; approval block in `service.js`; win tests, new `win-health.test.js` | standard (any) | | `bash machine/test/run.sh` | not started |
+| T4 | Item 1 button: Project tools "Add MCP for Unity", `unity-prep` route + `machine/lib/unity-prep.js`, viewer pass-through, README Unity paragraph | `viewer/pages/project-tools.js`, `viewer/app/routes.js` list, new `machine/lib/unity-prep.js`, route lines in `service.js`, README, project-tools tests, new `machine/test/unity-prep.test.js` | standard (claude) | | machine, viewer node and browser suites | not started |
+| T6 | Live harness Unity MCP part (skips without `WHEELCHAIR_UNITY`) | `machine/test/windows-live.{js,sh}` | standard (any) | | `bash machine/test/windows-live.sh` | not started |
+| T3 | Item 2: `win info` `disk` object, cached background copy walks, warnings; `wc.js win info` prints warnings to stderr (after T2) | `win.js` `info()` only, new `machine/lib/win-disk.js`, `viewer/app/wc.js` win info printing, new tests | standard (any) | | machine and viewer node suites | waiting on T2 |
+| T5 | Session wiring (tricky): `startIn` uses `built.loaded` for readying, Unity prompt lines, broken-bridge prompt line, mark copy used after launch and after late readying, restart recovery of tool sessions (after T1, T2) | `machine/service.js` `startIn`/startup; `win.js` `prepareLaunch` and new tracking methods; win-service/win tests | standard (any) | | `bash machine/test/run.sh` | waiting on T1, T2 |
 
 ## Log
