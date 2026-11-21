@@ -1,6 +1,6 @@
 ---
 slug: easy-onboarding
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-20
 ---
 
@@ -687,3 +687,4 @@ Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
 - 2026-11-21 — Choice: T4, app-settings.spec.js: section count and indexes updated for the new first tab.
 - 2026-11-21 — Choice: T4, app.css: shared checklist styles go in `app.css`.
 - 2026-11-21 — Choice: T4, settings.js: install fetches abort after 8 s; the 5 s retry also runs when the `/harnesses` fetch itself fails; account links read "Open Accounts" and "Add an account".
+- 2026-11-21 — Full validation on `d90ebeea`: installer 208/1 (the pre-existing live-folder check), machine 484/484, node 764/764, browser 1174 passed / 34 skipped / 0 failed. COMPLETION.md written; status verifying.
