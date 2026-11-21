@@ -11,7 +11,7 @@ const { appError } = require('./state.js');
 const { outOfDate } = require('./ready.js');
 const settingsStore = require('./settings.js');
 const usage = require('./usage.js');
-const { choose, slotFor } = require('./balancer.js');
+const { choose, slotFor, reviewFamilies } = require('./balancer.js');
 const { PROVIDERS, cliOf, providerOf } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
@@ -676,7 +676,7 @@ async function sessionRequest(hub, payload) {
     const problems = projectToolProblems(thread.project_tools && thread.project_tools.state).map((line) => line.text);
     const leadEntry = [...thread.sessions].reverse().find((item) => item.role === 'lead');
     const listed = thread.sessions.map((item) => (item === leadEntry ? { ...publicSession(item), project_tools: { problems } } : publicSession(item)));
-    return { sessions: listed, review_families: (await settingsStore.load(hub)).review_families };
+    return { sessions: listed, review_families: await reviewFamilies(hub, thread) };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
   if (payload.action === 'start') require('./handoff.js').refuseFrozen(hub, thread);

@@ -278,9 +278,10 @@ mechanics-lens reviewer with `--not-provider <that provider>`. If the intent rev
 start came back `waiting`, start the mechanics reviewer with no provider flag. The hub
 drops a provider constraint it cannot meet and says so in the start output's `note`.
 Brief them from `<root>/protocol/app/reviewer.md`: one takes the **mechanics lens**, one
-the **intent lens**. With one family usable, both land on it, one per lens. If
+the **intent lens**. If both land on one family anyway, keep one per lens. If
 `review_families` is `claude`, `gpt`, `gemini`, `kimi`, or `openrouter`, start one fresh reviewer with no provider flag,
-briefed with both lenses from `reviewer.md`. Record one lane and `cross-family: no` in
+briefed with both lenses from `reviewer.md` (`session list` names the one family when
+only one is signed in, even if the setting mixes families). Record one lane and `cross-family: no` in
 the Review Rounds "Lanes" line. Include in each brief the Review Rounds table and Accepted
 Risks from PLAN.md, so settled findings are not re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
 round in depth plus one whole-Spec coherence pass. Write a short "Changed since the last

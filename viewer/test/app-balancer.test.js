@@ -39,7 +39,7 @@ test('placement ranks accounts and respects provider policy', async (t) => {
   const { Hub } = require('../app/hub.js');
   const settings = require('../app/settings.js');
   const usage = require('../app/usage.js');
-  const { choose } = require('../app/balancer.js');
+  const { choose, reviewFamilies } = require('../app/balancer.js');
   const { makeDir } = require('./helpers/server.js');
   async function fixture(changes = {}, readings = {}, signed = ['default-claude', 'default-gpt', 'gpt-two']) {
     const hub = new Hub({ stateDir: await makeDir('balance-') });
@@ -119,6 +119,25 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     const gpt = await fixture({ review_families: 'gpt' });
     assert.equal((await choose(gpt, { machine: 'hub' }, 'reviewer', 'top', { provider: 'claude' })).provider, 'gpt');
     assert.equal((await choose(gpt, { machine: 'hub' }, 'verifier', 'top', { not_provider: 'gpt' })).provider, 'gpt');
+  });
+  await t.test('mixed families report the one family when only one is signed in', async () => {
+    const lone = await fixture({}, {}, ['default-openrouter']);
+    assert.equal(await reviewFamilies(lone, { machine: 'hub' }), 'openrouter');
+    assert.equal((await choose(lone, { machine: 'hub' }, 'reviewer')).provider, 'openrouter');
+    assert.deepEqual((({ provider, note }) => ({ provider, note }))(await choose(lone, { machine: 'hub' }, 'verifier', 'top', { not_provider: 'gpt' })), { provider: 'openrouter', note: undefined });
+    assert.equal((await choose(lone, { machine: 'hub' }, 'verifier', 'top', { not_provider: 'openrouter' })).note, 'Could not avoid openrouter; using openrouter.');
+    assert.equal(await reviewFamilies(await fixture({}, {}, ['default-gpt']), { machine: 'hub' }), 'gpt');
+    assert.equal(await reviewFamilies(await fixture({}, {}, ['default-claude', 'default-gpt']), { machine: 'hub' }), 'both');
+    assert.equal(await reviewFamilies(await fixture({ review_families: 'claude' }, {}, ['default-gpt']), { machine: 'hub' }), 'claude');
+    const paused = await fixture({}, {}, ['default-claude', 'default-gpt']);
+    await settings.update(paused, (s) => { s.accounts.find((a) => a.id === 'default-claude').paused = true; });
+    assert.equal(await reviewFamilies(paused, { machine: 'hub' }), 'gpt');
+    // Claude turned off at the reviewer tier still counts: verifiers may use it at their own tier.
+    const tierOff = await fixture({}, {}, ['default-claude', 'default-gpt']);
+    await settings.update(tierOff, (s) => { s.other_agents.reviewer = 'critical'; });
+    const models = (args) => new Promise((resolve, reject) => require('node:child_process').execFile(path.join(tierOff.root, 'codex', 'model.sh'), args, (e) => (e ? reject(e) : resolve())));
+    await models(['set', 'claude', 'critical', 'none']);
+    try { assert.equal(await reviewFamilies(tierOff, { machine: 'hub' }), 'both'); } finally { await models(['reset']); }
   });
   await t.test('wait estimate accounts for every exhausted window', async () => {
     const five = future(2), week = future(5);
