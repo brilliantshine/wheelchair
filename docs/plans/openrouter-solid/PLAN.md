@@ -98,10 +98,17 @@ first turn forks the lead's Pi session, later turns resume the fork.
   loads a small static wheelchair Pi extension (`-e`, one file under `machine/adapters/`,
   checking against the handler's `ctx.cwd`, which is the worktree since the aside is spawned with
   `cwd: i.cwd`) whose `tool_call` handler blocks (`{ block: true, reason }`) any
-  read/grep/find/ls call whose path argument, resolved with `realpath` (or its nearest existing
-  parent) against the worktree, falls outside both the worktree and wheelchair's own
+  read/grep/find/ls call whose path argument resolves, the way Pi itself resolves it, to a file
+  or directory that falls outside both the worktree and wheelchair's own
   `protocol/` directory (the aside prompt tells it to read `protocol/app/aside.md`,
-  `machine/lib/aside-turns.js:98`). A call with no path uses the worktree. Full access loads no such extension. The
+  `machine/lib/aside-turns.js:98`). A call with no path uses the worktree.
+  "The way Pi resolves it": first Pi's `resolveToCwd` rules (`~` expansion, leading `@` stripped,
+  unicode spaces normalized, relative to `ctx.cwd`; Pi `dist/core/tools/path-utils.js:42`), then,
+  for `read`, every alternate name `resolveReadPath` may try (`path-utils.js:45-70`). Each
+  candidate that exists is checked by `realpath`; one that does not exist is checked by the
+  `realpath` of its nearest existing parent. The call is blocked if any candidate falls outside the
+  allowed directories. Use Pi's exported functions if the installed package exports them;
+  otherwise mirror that logic in the extension. Full access loads no such extension. The
   message is passed on stdin or as the final argument, whichever Pi's `-p` supports
   (`cli.md`). Login env comes from `adapter.loginEnv(dir)` as for other providers.
 - Output parsing (Pi JSON mode, `json.md`): the first record is the session header
@@ -135,7 +142,9 @@ first turn forks the lead's Pi session, later turns resume the fork.
   error, an error followed by a successful retry (success), a key in reply and stderr (redacted),
   an old Pi (terminal failure, no dispatch retry), read-only argv, and a spend scan over a lead
   file plus its fork counting copied entries once, a read-only aside whose read of a path outside
-  the worktree (including the account's `auth.json`) is blocked, and resume argv carrying
+  the worktree (including the account's `auth.json`) is blocked, run against Pi's real resolver
+  with harmless fixtures: `../` escapes, `~/...`, an `@`-prefixed path, a symlink inside the
+  worktree pointing outside, and a read of `protocol/app/aside.md` that is allowed, and resume argv carrying
   `--tools` for both access settings (pattern of existing aside tests); hub test that an OpenRouter lead
   allows an aside (update `viewer/test/app-asides.test.js` where it pins the refusal).
 - Live check (costs money; keep it to one fork turn and one resume turn, model
@@ -243,6 +252,12 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 |------|--------------|-------|
 | A custom OpenRouter model pin ending in a Pi thinking-level suffix (e.g. `:high`) combined with a thinking level in Settings may send a different model id than with the setting blank | Rare path: OpenRouter's own variants (`:free`, `:nitro`, ...) are not thinking-level names, so it needs a deliberately odd pin plus a level | review-round-2 |
 
+## Check Once Built
+
+| # | What to check | Round |
+|---|---------------|-------|
+| 1 | S5's per-call caps hold against a response that keeps sending small chunks past the cap (the strict client's timeout is a socket inactivity timeout, `viewer/app/machine-client.js:15-46`), not just a silent one | review-round-4 |
+
 ## Review Rounds
 
 ### Round 1 — 2026-11-20
@@ -319,6 +334,24 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 | intent | minor | 1s cap can fail a large transcript that works today | upheld | S5 first call up to 3s, retries 1s |
 | intent | minor | Aside launch version is unused | upheld | Version tie for sessions only |
 | intent | minor | Boundary extension needn't be written per turn | upheld | One static file using ctx.cwd |
+| mechanics | blocking | Guard must check the file Pi will actually open | upheld | S3 resolves like Pi (resolveToCwd + read variants), realpath each; fixture tests |
+| mechanics | major | Pi auto-loads out-of-worktree context files | declined | The aside forks the lead's session, which already holds whatever context Pi loaded for the lead; nothing new is exposed, and those files are instructions, not secrets |
+| mechanics | major | Guard blocks the aside rules / graph schema | upheld | Already resolved by the intent fix: wheelchair's protocol/ is allowed (covers aside.md and graphs.md) |
+| mechanics | major | Where the aside's launch-version note appears | declined | Superseded: the version tie now covers sessions only; aside failures show Pi's error or S4's problem text |
+| mechanics | minor | Chunked slow response vs per-call cap | check-once-built | Check Once Built #1 |
+
+### Round 5 — 2026-11-20
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 4:**
+- S3: boundary allows wheelchair's `protocol/`; one static extension using `ctx.cwd`; resolves paths the way Pi does (resolveToCwd + read variants) and realpaths each candidate; fixture tests.
+- S3/S4: launch-version tie for sessions only.
+- S5: first call up to 3s, retries up to 1s, 4s deadline.
+- New Check Once Built row 1.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
