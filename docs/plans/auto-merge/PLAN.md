@@ -50,6 +50,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | A done card for a fix pushed after it failed its check carries `unverified: true`, and the hub never merges it | Collin's "push it as it is" is permission to push, not to land | review-round-1 |
 | 14 | Repositories whose base branch uses a merge queue are not auto-merged | `gh pr merge` would queue instead of merge, and the queue could land it after the switch is turned off | review-round-1 |
 | 15 | Merge only when the check card has at least one step `agent: "matched"` and none `broken`; otherwise no merge | Collin: merge only after an agent actually tried it | user |
+| 16 | Supersedes #13: the lead marks a done card `verified: true` only when it holds a passing check of this exact change; the hub merges only if **every** done card in the thread carries it. Old leads, restarted leads that can't tell, and "push it as it is" all omit it, so they never auto-merge | Positive evidence instead of a warning flag; one unverified push holds the PR for good | review-round-2 |
+| 17 | Supersedes #14 and the `gh pr merge` call: merge through GitHub's REST merge endpoint with the exact `sha`, which merges immediately or refuses, never queues or turns on GitHub auto-merge | Removes the merge-queue lookup, the post-merge state check and `--disable-auto` | review-round-2 |
+| 18 | "Still working out" from GitHub is re-checked every 20 s for up to 2 minutes before giving up | It is a passing state right after main moves | review-round-2 |
+| 19 | With the switch on, a check card with no `matched` step also gives the "Not merged automatically" card | Collin should not wait for a merge that won't come | review-round-2 |
 
 ## Spec
 
@@ -58,7 +62,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 A new global preference `auto_merge` (`off` | `on`, default `off`) is shown on the Settings
 page. When the hub accepts a `check` card and the switch is on, the hub decides whether
 that thread's pull request may merge (gates below). If so, it re-checks the pull request
-on GitHub and runs `gh pr merge <pr-url> --merge --match-head-commit <head>`. A success
+on GitHub and merges it at exactly that commit. A success
 shows up as the existing `merged` card; anything else gives one app `needs` card saying it
 was not merged and why. With the switch off, nothing happens and threads end exactly as
 today. Leads never merge.
@@ -77,61 +81,68 @@ today. Leads never merge.
 
 ### 2. The `done` card's new field
 
-`unverified` (boolean, optional; `cards-lead.md` done table): true when the change in this
-done card failed its own check and was pushed at the user's request ("push it as it is"
-after a small fix's or an after-done fix's surviving gap; a planned build whose surviving
-gap the user chose to ship). `card.js` validation accepts it.
+`verified` (boolean, optional; `cards-lead.md` done table; `card.js` validation accepts it).
+The lead sets `verified: true` only when, for the commits this done card covers, it holds a
+passing check: the sub-lead's build `result` (planned build), or a passing verifier
+`result` for the small fix, after-done fix or repair at this head (including a lead-check
+pass whose only gaps were rare paths). It omits it when the user chose "push it as it is",
+when shipping a surviving gap, and whenever it cannot tell (for example a restarted lead
+whose context has no such result).
 
 ### 3. The hub's auto-merge (new module `viewer/app/auto-merge.js`)
 
 Called right after a `check` card is saved in `viewer/app/cards.js` (the `kind === 'check'`
-branch), without delaying the card post's response. It runs under `hub.withThread` for
-the thread and does nothing more if any gate fails, in this order (a failing gate before 4
-is silent: no card, no record):
+branch), without delaying the card post's response. Under `hub.withThread`, reload the
+thread and check, in order:
 
-1. `auto_merge` setting is `on`.
-2. The check card's `head` equals the current done card's `head` (`currentDone`), and the
-   done card has no `unverified: true`.
-3. `thread.auto_merge_attempts` has no entry for this `head`.
-4. The check card has at least one step `agent: "matched"` and no step `agent: "broken"`.
+1. `auto_merge` setting is `on`. Else stop, silently.
+2. The check card's `head` equals the current done card's `head` (`currentDone`). Else stop,
+   silently.
+3. `thread.auto_merge_attempts` has no entry for this `head`. Else stop, silently.
+4. Every non-retracted `done` card in the thread has `verified: true`. Else outcome
+   `held`, reason "a change in this pull request was pushed without passing its check".
+5. The check card has no step `agent: "broken"`. Else stop, silently (the check card's
+   own Fix it now / Leave it already asks Collin).
+6. The check card has at least one step `agent: "matched"`. Else outcome `held`, reason "no
+   agent could try any of the Check it yourself steps".
 
-Then it records `thread.auto_merge_attempts[head] = { at, outcome: 'started' }` and saves
-before contacting GitHub. Then, outside the thread lock:
+A `held` outcome is recorded and noticed as in Finishing below, without contacting GitHub.
+Otherwise record `thread.auto_merge_attempts[head] = { at, outcome: 'started' }`, save, and
+leave the lock. Then:
 
-5. `gh pr view <pr_url> --json state,mergeStateStatus,headRefName,baseRefName,headRefOid,statusCheckRollup`
-   and `judgePr` from `viewer/app/pr-gate.js`. If it is `MERGED`, stop (the merged sweep
-   reports it). If not ok, outcome `not-ready` with `judgePr`'s reason.
-6. Merge queue: `gh api graphql` for `repository(owner,name){ mergeQueue(branch:<base>){ id } }`.
-   A non-null queue: outcome `refused`, reason "this repository merges through a merge
-   queue, which auto-merge doesn't use".
-7. `gh pr merge <pr_url> --merge --match-head-commit <head>` (no `--auto`, no
-   `--delete-branch`), timeout 60 s.
-8. `gh pr view <pr_url> --json state`. `MERGED`: outcome `merged`. Otherwise, run
-   `gh pr merge <pr_url> --disable-auto` (ignore its result), outcome `failed`, with the
-   first line of `gh`'s stderr as the reason or "GitHub did not merge it".
+7. `gh pr view <pr_url> --json state,mergeStateStatus,headRefName,baseRefName,headRefOid,statusCheckRollup`,
+   judged by `judgePr` (`viewer/app/pr-gate.js`). `MERGED`: outcome `already-merged`
+   (no card). `CLOSED`: outcome `closed` (no card). While the reason is "GitHub is still
+   working out…" or `gh` could not be reached, repeat every 20 s, at most 2 minutes. Any
+   other not-ok, or still not ok after 2 minutes: outcome `not-ready` with the reason.
+8. `gh api -X PUT repos/<owner>/<repo>/pulls/<number>/merge -f sha=<head> -f merge_method=merge`,
+   timeout 60 s. Exit 0 with `"merged": true`: outcome `merged`. A non-zero exit: outcome
+   `failed`, reason the API's `message` (for example a required review, branch protection,
+   a merge queue, or the head having moved) or the first stderr line. A timeout: outcome
+   `unknown`.
 
-For any outcome other than `merged`, update the record and add an app `needs` card
-(`{ system: true }`), title "Not merged automatically", body: the reason in plain words,
-then "The pull request is still open; you can merge it on GitHub." The `merged` card the
-sweep posts later is the success signal; no other card is added on success.
+**Finishing.** Under `hub.withThread`, reload the thread, set the outcome on
+`auto_merge_attempts[head]` (`{ at, outcome, reason }`) and, for `held`, `not-ready`,
+`failed` and `unknown`, add an app `needs` card (`{ system: true }`) in the same save:
+title "Not merged automatically", body the reason in plain words, then "The pull request is
+still open; you can merge it on GitHub." (`unknown`: "GitHub didn't answer in time; check
+the pull request on GitHub."). Success adds nothing: the merged sweep posts the `merged`
+card.
 
-A hub restart while an attempt is `started` leaves it as is: it is not retried.
-
-The hub's own `gh` login is used. If it cannot merge, step 7 fails and the `needs` card
-says so.
+A hub restart while an attempt is `started` leaves it as is: it is not retried. The hub's
+own `gh` login is used; if it cannot merge, step 8 fails and the card says so.
 
 ### 4. Lead protocol (`protocol/app/lead.md`, `cards-lead.md`)
 
 - Step 8: replace "Never merge." with "Never merge: the app merges finished pull requests
   itself when the user's auto-merge setting is on."
-- Set `unverified: true` on the done card wherever the lead posts a done for work the user
-  chose to push after it failed its check (step 1 small fix, step 7 surviving gap, step 9
-  "push it as it is").
+- Every place the lead posts `done` (steps 1, 8, 9, and Making the pull request mergeable)
+  states the `verified` rule from §2.
 - Check card `update` text: phrase the merge so it holds either way ("Once the pull
   request is merged, …"), never "merge the pull request".
 - A "Not merged automatically" card is the app's own; the lead does not resolve it and
   need not react.
-- `cards-lead.md` done table gets the `unverified` row.
+- `cards-lead.md` done table gets the `verified` row.
 
 ### 5. Not changed
 
@@ -143,23 +154,26 @@ the open pull request, and that fix's own done and check card go through the sam
 ### Edge cases
 
 - Switch turned off before the check card: nothing happens.
-- Every step `not-tried` (for example a protocol-only change): gate 4 fails silently; the PR
-  stays open as today.
-- PR head moved after the check: `judgePr` or `--match-head-commit` stops it; `needs` card.
-- PR already merged by Collin: step 5 stops silently.
-- Branch protection or required review: step 7 fails; `needs` card.
-- A check failing on the same commit after done: step 5's `judgePr` stops it.
+- Every step `not-tried`: gate 6, `held` card; the PR stays open.
+- PR head moved after the check: `judgePr` or the API's `sha` stops it; card.
+- PR already merged or closed by Collin: step 7 stops without a card.
+- Branch protection, required review or merge queue: step 8 fails; card.
+- A check failing on the same commit after done: step 7's `judgePr` stops it.
 - Check card posted while the hub is down (queued): the merge happens when the hub accepts
   the card, since the trigger is the hub's acceptance.
+- A thread with any earlier done lacking `verified` (pushed as is, or posted by an older
+  lead): gate 4 holds it for the rest of the thread.
 
 ### Validation
 
 - `cd viewer && npm test` passes, including new tests (stubbed `gh` on PATH) for:
-  preferences round-trip and validation of `auto_merge`; every gate in §3 1–4 (no `gh`
-  call when one fails); one attempt per head; step 5 not-ready → `needs` card and no
-  merge call; merge queue present → no merge call; step 7 argv exactly
-  `pr merge <url> --merge --match-head-commit <head>`; step 8 not MERGED → `--disable-auto`
-  and `needs` card; `done` card `unverified` accepted by validation.
+  preferences round-trip and validation of `auto_merge`; gates 1–3 and 5 stop with no
+  `gh` call and no card; gates 4 and 6 give a `held` record and card with no `gh` call;
+  one attempt per head; step 7 retries "still working out" then gives `not-ready`; step 7
+  `MERGED`/`CLOSED` give no card; step 8 argv exactly
+  `api -X PUT repos/<o>/<r>/pulls/<n>/merge -f sha=<head> -f merge_method=merge`; a step 8
+  failure gives the card with the API message; finishing keeps a card saved by another
+  writer during the GitHub calls; `done` card `verified` accepted by validation.
 - `grep -n "auto_merge" viewer/app/settings.js viewer/app/routes.js viewer/pages/settings.js`
   shows the setting in all three.
 
@@ -217,9 +231,28 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 2 — 2026-11-21
 
-**Lanes:** claude (intent); non-claude (mechanics); cross-family: yes.
+**Lanes:** claude / opus 5.5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 1:** The merge moved from a lead command to the hub, triggered when it accepts a check card (§3, Decisions 10–15): readiness re-check with `judgePr`, merge-queue refusal, one attempt per head, post-merge state check with `--disable-auto`, app `needs` card on failure; new `unverified` done-card field (§2); lead protocol changes reduced (§4); merge requires at least one `matched` step.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | A later verified fix merges an earlier unverified push | upheld | Every done must be `verified` (#16) |
+| intent | major | One "still working out" read ends the merge | upheld | Re-check for 2 minutes (#18) |
+| intent | minor | No notice when no step was tried | upheld | `held` card (#19) |
+| mechanics | blocking | Same as intent's first | upheld | #16 |
+| mechanics | blocking | Restarted lead loses the push-only decision | upheld | `verified` is positive; a lead that can't tell omits it (#16) |
+| mechanics | blocking | Old leads post done without the flag | upheld | Absent `verified` holds (#16) |
+| mechanics | major | `--disable-auto` cancels Collin's own auto-merge | upheld | No `--disable-auto`; REST merge never enables it (#17) |
+| mechanics | major | Saving after GitHub calls can overwrite | upheld | Finishing reloads under the lock, outcome and card in one save |
+| mechanics | blocking (rare path) | Queue enabled between lookup and merge | upheld | Moot: REST merge never queues (#17) |
+| mechanics | minor | Notice always says "open" | upheld | Closed/merged give no card; timeout has its own wording |
+
+### Round 3 — 2026-11-21
+
+**Lanes:** claude (intent); non-claude (mechanics); cross-family: yes.
+
+**Changed since Round 2:** §2 replaced: `unverified` became a positive `verified` done-card field, required on every done in the thread (#16). §3 rewritten: gate order (4 verified, 5 broken, 6 matched) with `held` cards; GitHub's REST merge endpoint replaces `gh pr merge`, the merge-queue lookup and `--disable-auto` (#17); "still working out" re-checked for 2 minutes (#18); finishing reloads under the lock. §4 lead rule for `verified`. Edge cases and Validation updated.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
