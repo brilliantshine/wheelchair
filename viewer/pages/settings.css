@@ -188,6 +188,8 @@ button.danger { color: var(--bad-text); }
 .bar { flex: 1; min-width: 0; height: 12px; border-radius: 6px; background: var(--panel-2); overflow: hidden; }
 .usage-prov.amber .bar > span { background: var(--warn); }
 .usage-left { flex: 0 0 76px; text-align: right; font-size: 13px; }
+.usage-name-spend { flex: 0 0 auto; }
+.usage-spend-text { flex: 1 1 auto; min-width: 0; text-align: left; font-size: 13px; }
 .usage-line { margin: 0; font-size: 13px; }
 .usage-line.amber { color: var(--warn); }
 .usage-line.dim { color: var(--dim); }

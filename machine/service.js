@@ -777,7 +777,7 @@ class MachineService {
     if (dir) adapter.seed(dir, account.id);
     await adapter.prepare?.(dir);
     const options = startOptions(input);
-    if (['kimi', 'pi'].includes(input.cli)) options.effort = null;
+    if (input.cli === 'kimi') options.effort = null;
     const createdWorktree = !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
     if (reserved) this.refuseSharedWorktree(reserved, name);
