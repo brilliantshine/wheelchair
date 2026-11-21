@@ -357,8 +357,7 @@ test('launch marking causes a final reconcile after readying', async () => {
   apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
   await bridge.beforeLaunch(session, { windowsTools: true });
   const ctx = await bridge.context(session);
-  await bridge.sync(ctx);
-  assert.equal(readState(service.stateDir, ctx.key).used_since_ok, false);
+  writeState(service.stateDir, ctx.key, { ...readState(service.stateDir, ctx.key), used_since_ok: false });
   let reconciles = 0;
   const sync = bridge.sync.bind(bridge);
   bridge.sync = async (...args) => { reconciles++; return sync(...args); };
@@ -368,12 +367,25 @@ test('launch marking causes a final reconcile after readying', async () => {
   assert.equal(reconciles, 1);
 });
 
+test('without launch marking, readying does not cause a final reconcile', async () => {
+  const { bridge, session, service, apps } = realFixture();
+  apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
+  await bridge.beforeLaunch(session, { windowsTools: true });
+  const ctx = await bridge.context(session);
+  writeState(service.stateDir, ctx.key, { ...readState(service.stateDir, ctx.key), used_since_ok: false });
+  let reconciles = 0;
+  const sync = bridge.sync.bind(bridge);
+  bridge.sync = async (...args) => { reconciles++; return sync(...args); };
+  bridge.onStop(session);
+  await bridge.stopTasks.get(session.name).task;
+  assert.equal(reconciles, 0);
+});
+
 test('restart recovery tracks a live lead and reconciles on stop', async () => {
   const { bridge, session, service, apps } = realFixture();
   await bridge.beforeLaunch(session, { windowsTools: true });
   const ctx = await bridge.context(session);
-  await bridge.sync(ctx);
-  assert.equal(readState(service.stateDir, ctx.key).used_since_ok, false);
+  writeState(service.stateDir, ctx.key, { ...readState(service.stateDir, ctx.key), used_since_ok: false });
   bridge.toolSessions.clear();
   apps.startup = async () => {};
   apps.sweep = async () => ({ copyKeys: [] });
