@@ -13,6 +13,11 @@ const COPIES_WARNING_BYTES = 20 * GB;
 const CONFLICT_WARNING_COUNT = 10;
 const FREE_WARNING_BYTES = 10 * GB;
 
+function script(op, args, body) {
+  const data = Buffer.from(JSON.stringify(args)).toString('base64');
+  return `# wc:${op} ${data}\n${body}`;
+}
+
 class WinDisk {
   constructor(winEnv) {
     this.winEnv = winEnv;
@@ -20,6 +25,7 @@ class WinDisk {
   }
 
   refresh(ctx, entry) {
+    entry.attempted_at = Date.now();
     entry.pending = (async () => {
       let dirs;
       try { dirs = await fs.readdir(path.dirname(ctx.copy.linux), { withFileTypes: true }); }
@@ -27,8 +33,9 @@ class WinDisk {
       const copies = [];
       for (const dir of dirs.filter(item => item.isDirectory())) {
         const windows = path.win32.join(path.win32.dirname(ctx.copy.windows), dir.name);
-        const quoted = `'${windows.replace(/'/g, "''")}'`;
-        const result = await this.winEnv.ps(`$ErrorActionPreference = 'Stop'\n(Get-ChildItem -LiteralPath ${quoted} -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object -Sum Length).Sum`);
+        const quoted = `'${windows.replace(/['\u2018\u2019\u201a\u201b]/g, "''")}'`;
+        const body = `$ErrorActionPreference = 'Stop'\n(Get-ChildItem -LiteralPath ${quoted} -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object -Sum Length).Sum`;
+        const result = await this.winEnv.ps(script('copysize', { path: windows }, body));
         if (result.code !== 0) throw new Error(result.stderr.trim() || 'PowerShell copy measurement failed');
         const value = result.stdout.trim();
         const bytes = value === '' ? 0 : Number(value);
@@ -44,10 +51,10 @@ class WinDisk {
   async info(ctx) {
     let entry = this.cache.get(ctx.threadId);
     if (!entry) {
-      entry = { copies: [], measured_at: null, pending: null, reason: null };
+      entry = { copies: [], measured_at: null, attempted_at: null, pending: null, reason: null };
       this.cache.set(ctx.threadId, entry);
     }
-    if (!entry.pending && (!entry.measured_at || Date.now() - Date.parse(entry.measured_at) > REFRESH_MS)) this.refresh(ctx, entry);
+    if (!entry.pending && (entry.attempted_at === null || Date.now() - entry.attempted_at > REFRESH_MS)) this.refresh(ctx, entry);
     const copies = entry.copies;
     const disk = { copies, copies_bytes: copies.reduce((sum, copy) => sum + copy.bytes, 0), git_bytes: null, conflict_refs: null, windows_free_bytes: null, measured_at: entry.measured_at, warnings: [] };
     const errors = entry.reason ? [entry.reason] : [];
