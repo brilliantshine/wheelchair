@@ -38,6 +38,12 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { aside_access: 'bypass' } })).status, 400);
     assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { aside_access: 'full' } })).body.aside_access, 'full');
     assert.equal((await api(context, '/settings')).body.aside_access, 'full');
+    assert.equal(initial.body.auto_merge, 'off');
+    const autoMergeError = await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge: 'maybe' } });
+    assert.match(JSON.stringify(autoMergeError.body), /auto_merge must be off or on/);
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge: 'on' } })).body.auto_merge, 'on');
+    assert.equal((await api(context, '/settings')).body.auto_merge, 'on');
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge: 'off' } })).body.auto_merge, 'off');
     const all = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('All workers') });
     const project = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Project workers', '/tmp/project', 'Use the project convention.') });
     assert.equal(all.status, 201);
