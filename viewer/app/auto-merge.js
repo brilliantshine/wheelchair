@@ -36,8 +36,8 @@ async function attempt(hub, threadId, checkCardId) {
     thread.auto_merge_attempts ||= {};
     const at = new Date().toISOString();
     if (reason) {
-      const card = notice(thread, head, reason, 'held');
-      thread.auto_merge_attempts[head] = { at, outcome: 'held', reason, card: card.id };
+      const record = thread.auto_merge_attempts[head] = { at, outcome: 'held', reason };
+      if (!thread.cards.some(c => c.kind === 'merged' && c.pr_url === done.pr_url)) record.card = notice(thread, head, reason, 'held').id;
     } else {
       thread.auto_merge_attempts[head] = { at, outcome: 'started' };
       context = { thread, done, head, url: done.pr_url };

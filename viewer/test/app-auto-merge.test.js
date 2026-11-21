@@ -48,6 +48,19 @@ test('silent gates and held gates', async () => {
     } finally { f.restore(); }
   }
 });
+test('held gate does not add notice when pull request already has a merged card', async () => {
+  const f = await fixture(); try {
+    const t = await f.hub.thread('one');
+    t.cards[1].steps = [{ ...step, agent: 'not-tried' }];
+    t.cards.push({ kind: 'merged', pr_url: url });
+    await f.hub.save(t);
+    const result = await f.run();
+    assert.equal(result.auto_merge_attempts[head].outcome, 'held');
+    assert.ok(!result.auto_merge_attempts[head].card);
+    assert.ok(!result.cards.some(c => c.auto_merge));
+    assert.deepEqual(await f.calls(), []);
+  } finally { f.restore(); }
+});
 test('GitHub outcomes and exact merge arguments', async () => {
   for (const [status, state, api, outcome, message] of [
     ['UNKNOWN', 'OPEN', '', 'not-ready', 'still working out'], ['CLEAN', 'MERGED', '', 'already-merged'], ['CLEAN', 'CLOSED', '', 'closed'],
