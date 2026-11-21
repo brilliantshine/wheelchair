@@ -425,7 +425,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 | T1 | S1 spend line + S2 thinking levels | settings.js/.css, providers.js, routes.js, codex/model.sh + tests, service.js effort line, pi.js command(), pi.test.js, openrouter settings tests | standard (claude, claude-sonnet-5-5) | wc-32fed9258dca-worker | codex, machine, viewer node, browser | done |
 | T2 | S5 report survives a failed log read — tricky | chat.js, sessions.js deliverReport, machine-client.js, report tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-2 | viewer node | done |
 | T3 | S3 read-only aside path guard extension — tricky | machine/adapters/pi-guard.js, machine/test/pi-guard.test.js, test-support/smoke/pi-guard.js | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-3 | machine, pi-guard smoke | done |
-| T4 | S4 Pi version check (after T1, T2) | service.js version probe/cliStatus/launch version/exit reason, usage.js, ready.js, settings.js machine line, sessions.js stuck card, pi tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-4 | machine, viewer node | in progress |
+| T4 | S4 Pi version check (after T1, T2) | service.js version probe/cliStatus/launch version/exit reason, usage.js, ready.js, settings.js machine line, sessions.js stuck card, pi tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-4 | machine, viewer node | done |
 | T5 | S3 aside wiring, spend dedupe, live check (after T3, T4) — tricky | providers.js, asides.js, aside-turns.js, pi.js asideArgv/spend, aside tests, pi-live smoke | standard | | machine, viewer node, live aside | not started |
 
 ## Log
@@ -448,3 +448,10 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 - 2026-11-21 — Choice: T1, machine/adapters/pi.js: `--thinking` sits after `--approve`, before `-e` (unreported; found by scout).
 - 2026-11-21 — Choice: T1, app-openrouter-settings.test.js: round-trip added to the existing file on the heavy slot (unreported; found by scout).
 - 2026-11-21 — T1 accepted (band: scout): codex 159/0, pi.test 12/0, settings/routes 41/0, new spec 2/2 (chromium, firefox) re-run by sub-lead; full browser suite deferred to final validation. sessions.js:349 comment already says Kimi only, nothing to fix.
+- 2026-11-21 — Choice: T4, machine/service.js: only bare `X.Y.Z` (optional `v`) stdout counts as a version; prerelease or other output is unknown (real Pi 1.5.2 prints `1.5.2`).
+- 2026-11-21 — Choice: T4, viewer/app/usage.js: the Pi warning also shows on signed-out OpenRouter lines; machine line value becomes `{state, warning}`; `cliProblems` includes pi.
+- 2026-11-21 — Choice: T4, machine/service.js: the pane-gone reason is reconciled at GET /v1/status and GET /v1/sessions, in checkReady and checkPrompt, only for starting/stuck sessions; set directly (not via fatalKimi), and stopped by the existing pollKimiTurns sweep.
+- 2026-11-21 — Choice: T4, machine/service.js: a second Pi gate in startIn, after worktree creation (unreported; found by scout).
+- 2026-11-21 — Choice: T4, machine/service.js: a session with no recorded pi_version (launched before this change) gets the unknown note (unreported; found by scout).
+- 2026-11-21 — Choice: T4, viewer/pages/settings.js: warning shown as `mstate note`; `states[stateName(st)]` lookup; option name `piVersionTimeoutMs` (unreported; found by scout).
+- 2026-11-21 — T4 accepted (band: scout): pi.test 15/0, hub/usage/settings tests 158/0, browser send-now/settings/accounts specs 184/184 re-run by sub-lead. Residual: no machine-level test of the stuck note, of the /v1/status reconcile path, or of accounts signed out on a Pi problem (behaviour present in the code).
