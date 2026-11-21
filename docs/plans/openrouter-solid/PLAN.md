@@ -426,7 +426,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 | T2 | S5 report survives a failed log read — tricky | chat.js, sessions.js deliverReport, machine-client.js, report tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-2 | viewer node | done |
 | T3 | S3 read-only aside path guard extension — tricky | machine/adapters/pi-guard.js, machine/test/pi-guard.test.js, test-support/smoke/pi-guard.js | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-3 | machine, pi-guard smoke | done |
 | T4 | S4 Pi version check (after T1, T2) | service.js version probe/cliStatus/launch version/exit reason, usage.js, ready.js, settings.js machine line, sessions.js stuck card, pi tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-4 | machine, viewer node | done |
-| T5 | S3 aside wiring, spend dedupe, live check (after T3, T4) — tricky | providers.js, asides.js, aside-turns.js, pi.js asideArgv/spend, aside tests, pi-live smoke | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-5 | machine, viewer node, live aside | in progress |
+| T5 | S3 aside wiring, spend dedupe, live check (after T3, T4) — tricky | providers.js, asides.js, aside-turns.js, pi.js asideArgv/spend, aside tests, pi-live smoke | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-5 | machine, viewer node, live aside | done |
 
 ## Log
 
@@ -455,3 +455,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 - 2026-11-21 — Choice: T4, machine/service.js: a session with no recorded pi_version (launched before this change) gets the unknown note (unreported; found by scout).
 - 2026-11-21 — Choice: T4, viewer/pages/settings.js: warning shown as `mstate note`; `states[stateName(st)]` lookup; option name `piVersionTimeoutMs` (unreported; found by scout).
 - 2026-11-21 — T4 accepted (band: scout): pi.test 15/0, hub/usage/settings tests 158/0, browser send-now/settings/accounts specs 184/184 re-run by sub-lead. Residual: no machine-level test of the stuck note, of the /v1/status reconcile path, or of accounts signed out on a Pi problem (behaviour present in the code).
+- 2026-11-21 — Choice: T5, machine/adapters/pi.js spend(): rows without an entry id are each counted (no dedupe key).
+- 2026-11-21 — Choice: T5, test-support/smoke/pi-aside-live.js: isolated temp account and worktree with a copy of auth.json, so the real Pi session store is untouched. Sub-lead fix: the temp folder now comes from test-support/run-dir.js (removed at exit) so the key copy is not left in /tmp.
+- 2026-11-21 — Choice: T5, machine/lib/aside-turns.js: Pi's message goes on stdin (Pi prepends piped stdin to the prompt); the version check is injected as a `piProblem` constructor option; header check uses the first JSON record (unreported; seen in diff).
+- 2026-11-21 — T5 accepted (band: self): diff read against S3; live aside check run by sub-lead on deepseek/deepseek-v4.1-flash-1017 (fork | PASS | new id and reply; resume | PASS | same id and reply).
