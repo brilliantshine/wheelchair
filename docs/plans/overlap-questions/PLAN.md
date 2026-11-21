@@ -61,6 +61,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 32 | Split off: how a Spec change the user asks for in chat during a running review or after approval is saved, counted, survives a restart and withdraws the approval moves to its own thread (stub). Supersedes Decisions 30 and the chat-change parts of 31; a late overlap here gets only the one-line mention and a follow-up offer | Rounds 10-12 kept finding gaps there, and they are gaps in the existing review rules, not about overlaps; the user picked "Split it off" (card 72ce279f) | user |
 | 33 | Overlap questions from a peer follow the card window; (b)'s own overlap sentence is replaced; a re-ask posts its replacement only after the retract is confirmed | Round 13 findings | review-round-13 |
 | 34 | Peer overlap questions get four explicit paths (settled, held, in window, late) and the answer goes back to the peer, recorded on the Open Question for restarts; every retract 503 is retried after a minute | Round 14 findings | review-round-14 |
+| 35 | Peer replies are best effort and never hold the plan: the Decision carries who asked and the reply follows its commit; a small fix does not reply after a restart; only a re-ask and the talk-instead approval retract wait for a retract to succeed | Round 15 findings | review-round-15 |
 
 ## Spec
 
@@ -132,9 +133,11 @@ paths:
 - after the card window: the late-overlap mention, and the lead answers the peer from what it
   knows, saying its user was not asked.
 When a held or carded peer question is settled, the lead sends the answer back to that peer as a
-`message`. For a feature, the Open Question line records who asked (`asked by <session name>,
-question <id>`) so a restarted lead still replies; it is removed with the Decision once the reply
-is sent. Unrelated peer questions pass on as today.
+`message`, best effort: a refused reply (the peer archived or has no live lead) is dropped with a
+Log line. For a feature, the Open Question line records who asked (`asked by <session name>,
+question <id>`); the Decision Log entry copies it, the Open Question is removed with the Decision
+as usual, and the reply is sent right after that commit. On a small fix nothing records who asked,
+so a lead restarted before the answer does not reply to the peer. Unrelated peer questions pass on as today.
 
 - **One question at a time:** an overlap card waits behind any open `question` card of yours
   and is asked next. For a feature, a waiting or asked overlap is in PLAN.md's Open Questions
@@ -193,7 +196,9 @@ On `[wc:context restart]`, after rereading the plan and cards:
   unreachable; the retract was not recorded; try again in a minute" when the spool is behind or
   the hub is unreachable). Its success and refusals come straight from the hub. Every retract a
   lead makes (overlap, approval, deferred, offer, question, needs, sudo) that gets this 503 is
-  retried after a minute until it succeeds or is refused; `cards-lead.md` `retract` says so, so
+  retried after a minute until it succeeds or is refused. The lead holds only where it needs the
+  result (a re-ask, the approval retract at "talk instead of building"); elsewhere it carries on
+  and retries later in the same turn or the next. `cards-lead.md` `retract` says so, so
   the existing retract steps (for example the deferred card on a switch to thorough) keep working
   through an outage.
 - `viewer/app/card.js` `retractable`, before the generic `card is already answered`: an approval
@@ -256,6 +261,7 @@ merging of branches; no sub-lead or worker rule changes.
 | A chat answer resolved while the app is down is queued; if the user presses an option on the same card before the queue drains, the hub keeps the press and drops the resolve silently | Needs an app outage, a chat answer and a press on the same card inside the reconnect window | review-round-12 |
 | A late-overlap mention learned in a hidden turn is lost if the lead dies before its next visible reply and the peer list does not reveal it | Needs a restart inside that window; the restart re-look covers the usual case | review-round-13 |
 | On a small fix, a re-ask whose original card was withdrawn is lost if the lead dies before posting the replacement | Needs a restart within seconds of the retract | review-round-13 |
+| A re-ask whose retract got a 503 is lost if the lead restarts during the retry wait; the old card stays open with its old options | Needs an app outage and a restart within that minute | review-round-15 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
@@ -269,6 +275,11 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Small-fix peer reply lost on restart | upheld | Stated: no reply after a restart (Decision 35) |
+| intent | minor | Whether the lead waits on a retract retry | upheld | Holds only where it needs the result (Decision 35) |
+| mechanics | major | Open Question held until the peer reply is delivered | upheld | Decoupled; reply best effort (Decision 35) |
+| mechanics | major | Small-fix peer link not persisted | downgraded (minor) | Defined behavior: no reply after a restart; the peer never waits on it |
+| mechanics | major | Re-ask lost during a 503 retry at restart | accepted-risk | Rare path; Accepted Risks |
 
 ### Round 14 — 2026-11-21
 
