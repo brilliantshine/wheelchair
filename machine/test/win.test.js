@@ -172,3 +172,56 @@ test('sweep reconciles a dead lead with no apps', async () => {
   await bridge.sweep();
   assert.equal(fs.readFileSync(path.join(session.worktree, 'new-file'), 'utf8'), 'windows');
 });
+
+test('sessions sharing a worktree share the copy and Windows tool use triggers stop sync', async () => {
+  const { bridge, session, service, apps } = realFixture();
+  apps.killSession = async () => ({ wasRunning: false, copyKeys: [] });
+  await bridge.beforeLaunch(session, { windowsTools: true });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  const other = { ...session, name: 'wc-other-worker', role: 'worker' };
+  service.sessions[other.name] = other;
+  service.liveTmux = () => new Set([session.name, other.name]);
+  assert.equal((await bridge.handle(other, { op: 'info', args: [] })).copy_linux, info.copy_linux);
+  fs.writeFileSync(path.join(info.copy_linux, 'tool-edit'), 'tool');
+  service.liveTmux = () => new Set([session.name]);
+  bridge.onStop(session);
+  for (let i = 0; i < 500 && !fs.existsSync(path.join(session.worktree, 'tool-edit')); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(fs.readFileSync(path.join(session.worktree, 'tool-edit'), 'utf8'), 'tool');
+});
+
+test('archive deletes copies while retaining conflict refs', async () => {
+  const { bridge, session } = realFixture();
+  await bridge.handle(session, { op: 'sync', args: [] });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  fs.writeFileSync(path.join(session.worktree, 'file'), 'linux\n');
+  fs.writeFileSync(path.join(info.copy_linux, 'file'), 'windows\n');
+  const conflict = await bridge.handle(session, { op: 'sync', args: [] });
+  const ref = conflict.conflicts[0].ref;
+  await bridge.archiveFinish(session.thread_id);
+  assert.equal(fs.existsSync(info.copy_linux), false);
+  assert.equal(git(session.worktree, 'show', `${ref}:file`), 'windows');
+  assert.ok(git(session.worktree, 'for-each-ref', '--format=%(refname)', 'refs/wheelchair/conflicts').split('\n').length >= 2);
+});
+
+test('cleanup removes a vanished linked worktree copy without a reconcile', async () => {
+  const { bridge, session } = realFixture();
+  const main = session.worktree;
+  const linked = `${main}-linked`;
+  git(main, 'worktree', 'add', '-b', 'linked', linked);
+  session.worktree = linked;
+  await bridge.handle(session, { op: 'sync', args: [] });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  git(main, 'worktree', 'remove', '--force', linked);
+  await bridge.onWorktreeRemoved(session, { kind: 'other' });
+  assert.equal(fs.existsSync(info.copy_linux), false);
+});
+
+test('info reports a PowerShell startup failure and environment names are case insensitive', async () => {
+  const { bridge, session } = fixture();
+  bridge.winEnv.localAppData = async () => { throw new Error('PowerShell unavailable'); };
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  assert.equal(info.ok, false);
+  assert.equal(info.ready, false);
+  assert.equal(info.reason, 'PowerShell unavailable');
+  await assert.rejects(bridge.handle(session, { op: 'run', args: ['--env', 'wheelchair_session_token=secret', '--', 'cmd.exe'] }), { status: 400 });
+});

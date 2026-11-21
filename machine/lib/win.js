@@ -69,8 +69,11 @@ class WinBridge {
     if (!fs.existsSync(file)) return;
     const state = readState(this.stateDir, key);
     state.used_since_ok = true;
-    state.used_at = new Date().toISOString();
-    this.usage.set(key, (this.usage.get(key) || 0) + 1);
+    const now = Date.now();
+    const failedAt = state.last_failed ? Date.parse(state.last_failed.at) : 0;
+    state.used_at = new Date(Math.max(now, failedAt + 1)).toISOString();
+    const prior = this.usage.get(key);
+    this.usage.set(key, { count: (prior?.count || 0) + 1, at: state.used_at });
     writeState(this.stateDir, key, state);
   }
 
@@ -100,11 +103,21 @@ class WinBridge {
   async sync(ctx) {
     const prior = this.running.get(ctx.key) || Promise.resolve();
     const task = prior.catch(() => {}).then(async () => {
-      const usage = this.usage.get(ctx.key) || 0;
+      const usage = this.usage.get(ctx.key)?.count || 0;
+      let succeeded = false;
       try {
-        return await reconcile(ctx);
+        const result = await reconcile(ctx);
+        succeeded = true;
+        return result;
       } finally {
-        if ((this.usage.get(ctx.key) || 0) !== usage || this.hasLiveTools(ctx)) this.markKey(ctx.key);
+        const latest = this.usage.get(ctx.key);
+        if (latest && latest.count !== usage) {
+          const state = readState(this.stateDir, ctx.key);
+          state.used_since_ok = true;
+          state.used_at = latest.at;
+          writeState(this.stateDir, ctx.key, state);
+        }
+        if (succeeded && this.hasLiveTools(ctx)) this.markKey(ctx.key);
       }
     });
     this.running.set(ctx.key, task);
@@ -120,6 +133,13 @@ class WinBridge {
       if (this.exists(ctx)) {
         this.register(ctx, session);
         this.markKey(ctx.key);
+      } else if (this.readying.has(ctx.key) && !windowsTools) {
+        this.readying.get(ctx.key).then(() => {
+          if (this.exists(ctx)) {
+            this.register(ctx, session);
+            this.markKey(ctx.key);
+          }
+        }).catch(err => this.service.log(err));
       }
       if (!windowsTools) return;
       let task = this.readying.get(ctx.key);
@@ -180,8 +200,8 @@ class WinBridge {
     const termination = this.killSession(session.name);
     Promise.resolve(termination).then(async () => {
       const ctx = await this.context(session);
-      if (!this.exists(ctx)) return;
       if (this.readying.has(ctx.key)) await this.readying.get(ctx.key);
+      if (!this.exists(ctx)) return;
       if (session.role === 'verifier') await this.remove(ctx, false);
       else if ((session.role === 'lead' || session.role === 'sub-lead') && !this.liveSharing(ctx, session.name) && readState(this.stateDir, ctx.key).used_since_ok && fs.existsSync(ctx.worktree)) await this.sync(ctx);
     }).catch(err => this.service.log(err));
@@ -189,8 +209,8 @@ class WinBridge {
 
   async onWorktreeRemoved(session, { kind }) {
     const ctx = await this.context(session);
-    if (!this.exists(ctx)) return;
     if (this.readying.has(ctx.key)) await this.readying.get(ctx.key);
+    if (!this.exists(ctx)) return;
     if (this.running.has(ctx.key)) await this.running.get(ctx.key).catch(() => {});
     const state = readState(this.stateDir, ctx.key);
     if (kind === 'verifier' || kind === 'merge') return this.remove(ctx, false);
@@ -273,9 +293,16 @@ class WinBridge {
     this.check(session);
     const op = body?.op;
     const args = parseWinOp(op, body?.args);
+    if (args.env?.some(([key]) => key.toUpperCase() === 'WHEELCHAIR_SESSION_TOKEN')) throw error(400, 'invalid environment variable');
     if ((op === 'run' || op === 'start') && session.cli === 'codex' && session.codex_mode !== 'unrestricted') throw error(403, SANDBOX);
     try {
-      const ctx = await this.context(session);
+      let ctx;
+      try {
+        ctx = await this.context(session);
+      } catch (err) {
+        if (op !== 'info') throw err;
+        return { wsl: true, ok: false, ready: false, reason: err.message, copy_windows: null, copy_linux: null, sandboxed: session.cli === 'codex' && session.codex_mode !== 'unrestricted' };
+      }
       if (this.exists(ctx)) {
         this.register(ctx, session);
         this.markKey(ctx.key);
