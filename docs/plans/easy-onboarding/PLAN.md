@@ -704,3 +704,4 @@ Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
 - 2026-11-21 — Choice: R1-2, settings.js: when the visible list shrinks past a hidden provider's index, the hidden provider takes the first free slot; `any` is re-appended last; the "then whatever's left" toggle keeps the saved order.
 - 2026-11-21 — Choice: R1-2, settings.js: a pending picker change shows "Checking <machine>…" in place of rows; Install does nothing while pending.
 - 2026-11-21 — Choice: R1-2, app-harnesses.spec.js: the Install test holds the picker's plain `/harnesses` request (the picker doesn't send `?fresh=1`); the sign-in test uses Antigravity.
+- 2026-11-21 — Remediation 1 complete; validation on `9e1a29cd`: installer 208/1 (pre-existing), machine 486/486, node 764/764, browser 1186 passed / 34 skipped. Verification attempt 2 started.

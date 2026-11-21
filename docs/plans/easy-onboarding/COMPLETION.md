@@ -112,3 +112,25 @@ T4 worker branch alone: 1174 passed, 34 skipped, 0 failed.
 - Accepted Risks in PLAN.md stand as written.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-21
+
+Verification attempt 1 on `c281731a`: the Claude verifier (claude-opus-5-5) passed it; the GPT verifier (gpt-6.2-sol) failed it with 9 gaps. Five were judged rare paths and recorded in PLAN.md Accepted Risks (round verification-1). The lead had the other four fixed, none deferred (`REMEDIATION-1.md`):
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| S2.3: Node check read the service's Node, not the recipe PATH's | The job runs `node -e 'process.stdout.write(process.versions.node)'` with its own env before an npm recipe; too old or no working node → `failed` with the S2.3 message | `machine/lib/harness-install.js:49-55` | `machine/test/harness-install.test.js` "npm recipe checks PATH Node 20.19.0 / 22.19.0 / invalid" |
+| S4.6: editing the visible order moved hidden providers | Hidden providers keep their saved slots; visible ones fill the rest; `any` last | `viewer/pages/settings.js` `orderEditor` (~`:1359-1377`) | `viewer/test/app-harnesses.spec.js` hidden-entry order test |
+| S4.1–4.3: Install could target the previous machine | Install and Try again use the shown machine (`hz.machine`); rows show "Checking <machine>…" until that machine's status loads; a poll for another machine stops before touching rows | `viewer/pages/settings.js` (~`:1564-1571`, `:1623-1628`, `:1685-1701`) | `app-harnesses.spec.js` held-picker Install test |
+| S4.2: sign-in card stayed after switch-off | A successful switch-off closes that harness's sign-in card | `viewer/pages/settings.js` `setHarness` (~`:1596`) | `app-harnesses.spec.js` sign-in close test |
+
+Lanes: R1-1 standard gpt-6.1-terra; R1-2 standard claude-sonnet-5-5.
+
+Validation on `9e1a29cd` (both remediation tasks merged):
+```
+bash install/test/run.sh          FAIL real wheelchair directory is byte-identical after suite
+                                  RESULT 208 passed, 1 failed   (pre-existing live-folder check, see above)
+bash machine/test/run.sh          # tests 486 / # pass 486 / # fail 0
+node --test viewer/test/*.test.js # tests 764 / # pass 764 / # fail 0
+npm --prefix viewer run test:browser   34 skipped / 1186 passed (15.4m) / exit 0
+```
