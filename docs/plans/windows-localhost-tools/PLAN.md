@@ -42,7 +42,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D9 | Off WSL the mark is ignored and the entry loads as today | No Windows to reach; the same server may run locally | defaulted |
 | D11 | The relay's refusal reasons are kept per forward and checked once at claim time; a problem becomes a session warning the user sees with other project tools warnings, but the tool is still given (its server may start later) | IDEA: user can see why; refusing at start would break tools started after the session | review-round-1 |
 | D12 | Windows warnings are stored per session apart from the per-CLI lines and shown on the thread's project tools card as start-time snapshots | Per-CLI lines are recomputed by other starts and would erase them | review-round-2 |
-| D10 | The Windows relay refuses a connection when no Windows process listens on the port or the listener is `wslrelay` | Stops a Linux program on the same port receiving the headers through WSL localhostForwarding (parent C3) | defaulted |
+| D13 | The relay connects first and then identifies the owner of that exact accepted connection; no owner cache | Names the listener the dial really reached (dual-stack `::` servers included), no stale-cache window | review-round-3 |
+| D14 | Windows warnings are pruned at the next start in the thread for sessions no longer live, independent of forwards; release never updates the hub | The thread card only updates from starts; keeps all-withheld sessions covered | review-round-3 |
+| D10 | The Windows relay refuses a connection when no Windows process accepted it or the accepting process is `wslrelay` (mechanism superseded by D13) | Stops a Linux program on the same port receiving the headers through WSL localhostForwarding (parent C3) | defaulted |
 
 ## Spec
 
@@ -74,7 +76,9 @@ eligible is left out with a warning, recorded like other project tools warnings:
 - any other ineligible entry: `<tool>: "Runs on Windows" only applies to an http://localhost
   or http://127.0.0.1 address`.
 - unknown name: ignored silently (a rename the user hasn't saved yet).
-A `wheelchair` value that is not an object, or `windows` not an array of strings, is ignored
+A missing `wheelchair` key, or a `wheelchair` object without `windows`, means no marks (no
+warning). A `wheelchair` value that is not an object, or `windows` present but not an array of
+strings, is ignored
 with one warning `"wheelchair" in .mcp.json is not in the expected form; ignored`. Unknown
 keys under `wheelchair` are ignored. Validation of the rest of the document is unchanged.
 Off WSL, `mcp.windows` is computed but unused (D9): no forwards, no withholding, and none of
@@ -142,13 +146,16 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   started on the first connection. It multiplexes all connections for the forward over its
   stdin/stdout with binary frames `[type:1][conn:4][len:4][payload]`, types `open`, `data`,
   `close`, `refused`. A new connection never starts a new Windows process.
-  - On `open`, the relay finds the Windows listener a `127.0.0.1:<tool port>` dial reaches:
-    from `Get-NetTCPConnection -State Listen -LocalPort <port>`, the row with `LocalAddress`
-    `127.0.0.1` if one exists, else the row with `0.0.0.0`; rows on other addresses (IPv6,
-    other IPs) are ignored. Its owner is that row's `OwningProcess` → process name. Result may
-    be cached 2 s. No such row, an owner named `wslrelay`, or an owner that cannot be
-    established (lookup error, process gone) → `refused` (D10, fail closed). Otherwise it
-    connects to `127.0.0.1:<tool port>`; a failed connect → `refused`.
+  - On `open`, the relay **connects first, then identifies who accepted** (D13): it connects to
+    `127.0.0.1:<tool port>` (a failed connect → `refused`, `Windows refused the connection`, or
+    `nothing on Windows is listening on port <n>` when the connect is refused outright), and
+    sends nothing yet. It then looks up the accepting end of that exact connection:
+    `Get-NetTCPConnection -LocalPort <tool port> -RemotePort <relay's own local port>
+    -RemoteAddress 127.0.0.1` → `OwningProcess` → process name. This names whatever listener
+    the dial really reached, whatever address it is bound to (`127.0.0.1`, `0.0.0.0`, dual-stack
+    `::`). An owner named `wslrelay`, or an owner that cannot be established (no row, lookup
+    error, process gone) → close that Windows connection and `refused` (fail closed). Only then
+    is any data passed. No caching: the check is per connection.
   - `refused` carries a reason, `nothing on Windows is listening on port <n>`, `port <n> on
     Windows leads back to Linux` (the `wslrelay` case), `couldn't check who holds port <n> on
     Windows` or `Windows refused the connection`;
@@ -160,13 +167,15 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
     last reason is kept for `win info`.
   - IPv4 only on Windows: the relay always dials `127.0.0.1` (parent D9).
 - **Check at claim:** after a session's claims, the relay is started (if not running) and
-  sent one `check` frame per forward. It runs exactly the `open` steps (owner lookup, then a
-  TCP connect to `127.0.0.1:<tool port>` which it closes at once) and answers `check-result`
+  sent one `check` frame per forward. It runs exactly the `open` steps (connect, identify the
+  owner, then close the connection without sending data) and answers `check-result`
   with the same reason `refused` would carry, or none. A reason becomes a **Windows warning**
   for the session (section 6): `<tool>: when this session started, <reason>; calls fail until
   its Windows server is running`. The tool is still given to the session (the server
   may start later). A check that does not answer within 10 s gives the warning `<tool>: couldn't
-  check Windows for port <n>`. The session start does not wait for more than those 10 s.
+  check Windows for port <n>`. Checks for a session's forwards run in parallel, and the start
+waits for them (at most those 10 s) **before** `updateProjectTools` builds the session's
+`project_tools` (`service.js:785,851`), so check and withheld warnings are in the start reply.
 - **Release(session):** remove the session from every forward. A forward with no sessions
   left closes its listener, destroys every open socket (long-lived streams included) and ends
   the relay (close stdin, then kill after 5 s).
@@ -214,11 +223,15 @@ Windows copy lookup fails (`win.js:391` onward): forwarding does not depend on t
 another CLI starts (`service.js:767-775`), which cannot reproduce launch-time results, so
 Windows warnings are kept apart: the project tools state (`updateProjectTools`,
 `stateDir/project-tools/<thread>.json`) gains `windows: {<session name>: [lines]}`, set when
-that session starts, never recomputed by other starts, and deleted when the session is
-released (section 5). The thread's project tools card (`viewer/app/sessions.js:144-185`)
-lists these lines with the others. They are a snapshot from when each session started; the
-card text says so through the warning wording ("when this session started"). The agent can
-read the live state with `win info`.
+that session starts (an empty list removes its entry) and never recomputed by other starts.
+Cleanup is independent of forwards (D14): at each start in the thread, `updateProjectTools`
+drops entries for sessions not in `this.sessions` with a live tmux (tmux-aware names, section
+5; a `null` from `liveTmux()` drops nothing). Releasing a session does not touch them and
+sends nothing to the hub. The viewer (`viewer/app/sessions.js:144-185`) carries `windows`
+through into the stored state (`:163`) and lists its lines on the thread's project tools card
+with the others. Like every line on that card, they are a snapshot from the latest start in the
+thread; the wording ("when this session started") says so. The agent can read the live state
+with `win info`.
 
 ### 7. Project tools page
 
@@ -251,7 +264,7 @@ npm --prefix viewer run test:browser
 ```
 
 New tests, with a fake `spawnPs` that runs a Node stand-in for the relay speaking the same
-frames and dialling a local test server:
+frames and dialling a local test server (these cover the Linux side and the frames only):
 - `readProjectMcp`: eligible (including a URL with a path and query), SSE, non-localhost and
   malformed `wheelchair` cases and their warnings; off WSL nothing forwards and no mark
   warnings; WSL kernel with interop off withholds marked tools.
@@ -263,13 +276,25 @@ frames and dialling a local test server:
 - Release waits for tmux to be gone; a starting session is skipped by the sweep; a failed start
   releases; claims for tools the second build does not load are released and not recorded.
 - Two concurrent starts on different ports: both claims are in `forwards.json` afterwards.
-- Claim-time check: no Windows listener, `wslrelay` owner, owner lookup failing and a refused
-  connect each give their warning; the tool is still loaded. Owner choice: a `127.0.0.1` row
-  wins over `0.0.0.0`; IPv6-only rows count as none.
-- Two tools on one port in one session: dropping one from the second build keeps the claim;
-  `win info` shows both names, also after a restart.
-- Windows warnings survive a later start of another CLI in the same thread and disappear when
-  the session is released.
+- Claim-time check: each `check-result` reason gives its warning; the tool is still loaded;
+  the warning is in the start reply's `project_tools`.
+- Two tools on one port, one dropped by the second build: the claim is kept and recorded with
+  the remaining name only.
+- Two tools on one port, both loaded: `win info` shows both names, also after a restart.
+- Windows warnings survive a later start of another CLI in the same thread; a session whose
+  marked tools were all withheld (no forward) has its warnings dropped at the next start after
+  its tmux is gone; the viewer keeps `windows` in the stored state.
+- `.mcp.json` with `wheelchair: {}` or `wheelchair: {"other": 1}` gives no warning.
+
+The shipped relay script itself is tested by `machine/test/win-relay-live.test.js`, which runs
+`machine/lib/win-relay.ps1` through the real `powershell.exe` and skips (reporting "skipped:
+not WSL") when interop is unavailable. Using Windows-side listeners it starts itself with
+PowerShell (`[System.Net.Sockets.TcpListener]`), it checks: a listener on `127.0.0.1`, on
+`0.0.0.0` and dual-stack `::` each pass data; no listener gives `nothing on Windows is
+listening`; and a Linux listener reached through WSL localhostForwarding (a Node server on the
+tool port in WSL, no Windows listener) is refused as `leads back to Linux` (skip that case when
+localhostForwarding is off). Run it on this WSL machine before verification:
+`node --test machine/test/win-relay-live.test.js`.
 - A session name containing `.` is matched to its tmux name by the sweep and the restore.
 - `win info` fallback reply (copy lookup failing) includes `forwards`.
 - Restart: forwards.json restored to the same private port for live sessions; a taken port is
@@ -360,6 +385,15 @@ Accepted Risks (sweep snapshot race).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Release deletes Windows warnings but the hub card never updates | upheld | §6 warnings pruned at next start, release touches nothing (D14) |
+| mechanics | blocking | All-withheld session has warnings but no forward record, never cleaned | upheld | §6 cleanup independent of forwards (D14) |
+| mechanics | blocking | Rare path: positive owner cache can pass a Linux listener | declined | No longer applies: §4 now checks per connection with no cache (D13) |
+| mechanics | major | Shared-port test expects a dropped alias in `win info` | upheld | Validation split into two cases |
+| mechanics | major | Owner selection tested only against a Node stand-in | upheld | Validation: live `win-relay-live.test.js` with real powershell.exe |
+| mechanics | minor | `wheelchair` without `windows` warns | upheld | §1 absent = no marks |
+| intent | blocking | Dual-stack `::` Windows servers refused | upheld | §4 connect then identify accepting owner (D13) |
+| intent | major | Check warnings may miss the start reply's `project_tools` | upheld | §4 start waits for checks before `updateProjectTools` |
+| intent | minor | Released session's warning stays on card; viewer drops `windows` | upheld | §6 snapshot semantics; viewer carries `windows` |
 
 ## Implementation Tasks
 
