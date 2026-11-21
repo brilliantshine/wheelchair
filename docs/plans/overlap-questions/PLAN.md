@@ -50,6 +50,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 22 | A pushed small fix (`no plan` with a `pr_url`) counts as finished; overlap cards need one to three change options; restart review recovery also checks live reviewers | Round 5 findings | review-round-5 |
 | 23 | Overlap Watch List items stay until their Decision is logged; a bare general "Change it" gets a follow-up card; the approval retract is skipped when none was posted | Round 6 findings | review-round-6 |
 | 24 | After the review budget was reached again (rounds 4-6), run another review round with the plan as it is | User's pick (card 4bcb64a3) | user |
+| 25 | No general "Change it" button: overlap cards offer "Keep the plan as it is" plus one to three concrete changes, and the box takes any other; a concrete typed answer settles in approved too; a round restarted by recovery counts the answer applied in it | Round 7 findings | review-round-7 |
 
 ## Spec
 
@@ -77,9 +78,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - **Settling an answer:** an answer that clearly picks one of the card's options is acted on.
   One that does not (an objection, a condition, something else) gets a follow-up overlap card
   for the same thread with the current stage's options, and no Done marker until that one is
-  settled. A bare pick of a general "Change it" is not settled: it gets a follow-up overlap card
-  asking what to change. The original card counts as handled once a later overlap card with the same
-  `about_thread` exists. In planning and review, a typed answer may also be its own option, handled like any
+  settled. The original card counts as handled once a later overlap card with the same
+  `about_thread` exists. In planning, review and approved, a concrete typed or chat answer may also be its own option, handled like any
   planning answer.
 - **Late overlap:** a new overlap learned once a build has started (the approval card's
   `answered_action` is `start-building`) or once a small fix's edits are made. It never gets a
@@ -125,8 +125,8 @@ Stages:
   confirmation, before any design question (it then follows "Planning").
 - **Planning (status `planning`):** an Open Question in PLAN.md, asked as an overlap card
   (today's (b) rule, now for every new overlap in planning). Options: "Keep the plan as it is"
-  and one to three "Change it: <what>" (a general "Change it" when no concrete change is clear
-  yet; the user then says what in the card's box or chat). The answer is handled like any planning answer, with the
+  and one to three concrete "Change it: <what>" options; any other change the user types in the
+  card's box or in chat. The answer is handled like any planning answer, with the
   Done marker.
 - **Review (status `ready-for-review`):** the same options. The card is a `user-decision` of the
   round it belongs to:
@@ -137,6 +137,8 @@ Stages:
     posts `phase: fixing`, `found: 1` after triage.
   - Answer arrives while reviewers run: do not change the Spec; fold it in after triage, with the
     Done marker. "Keep the plan" logs the Decision only; a change also edits the Spec.
+  - A round restarted under §2 counts an answer applied during that recovery: its row and its
+    `found`/`fixed` go in the restarted round's triage, once.
   - A round whose triage is done stays `fixing` while the card is open. When it is answered:
     "Keep" with no other upheld blocking/major finding makes it clean; a change means another
     round. The next round may start before the card is answered when the current round already
@@ -240,10 +242,22 @@ merging of branches; no sub-lead or worker rule changes.
 | An overlap learned from a peer message before PLAN.md exists, still waiting to be asked, is lost if the lead also restarts before asking, and the peer's summary in `session leads` does not reveal it | Needs a restart inside a short window plus a peer summary that hides the overlap; the restart re-look covers the usual case | review-round-1 |
 | A retract saved by the hub whose reply is lost in a network drop returns 503; the retry then gets `card was already withdrawn`, which the lead treats as success | Handled by the distinct refusal; listed so later rounds don't re-raise | review-round-4 |
 | A lead that dies while launching round N+1's reviewers may restart the round under the pinned pass N | Needs a death within the seconds of a launch; a misnumbered round is cosmetic | review-round-6 |
+| An item marked `late` in §1 Approved stays on the Watch List with no Decision | Needs Start building to cross the retract; the item is harmless text | review-round-7 |
+| A fresh question for an already-answered overlap, still waiting behind another card at a restart, can look already asked | Needs an obsolete answer, a waiting re-ask and a restart together | review-round-7 |
+| An approval card still queued on the machine at a restart can be missed, so the retract is skipped and the approval arrives beside an overlap question | Needs an app outage at approval, an overlap and a restart together | review-round-7 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 8 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 7:** Decision 25: §1 Planning options (no general "Change it"); Terms "Settling an answer" (bare-pick rule removed; typed answers settle in approved too); §1 Review restarted-round counting; three Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 7 — 2026-11-21
 
@@ -253,6 +267,12 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | General "Change it" button cannot work with the box | upheld | Dropped (Decision 25) |
+| intent | minor | Rare path: `late` Watch List item never closes | accepted-risk | Rare path; Accepted Risks |
+| mechanics | major | Bare "Change it" and typed answers in Approved | upheld | General button dropped; typed answers settle in approved (Decision 25) |
+| mechanics | major | Re-asked overlap waiting at restart looks already asked | accepted-risk | Rare path (three things together); Accepted Risks |
+| mechanics | major | Restarted round omits the decision applied during recovery | downgraded (minor) | Counts and rows only; §1 Review says it counts once in the restarted round |
+| mechanics | blocking | Rare path: queued approval missed at restart | accepted-risk | Rare path; Accepted Risks |
 
 ### Round 6 — 2026-11-21
 
