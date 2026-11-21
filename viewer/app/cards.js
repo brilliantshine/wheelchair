@@ -174,6 +174,7 @@ async function acceptCard(hub, payload) {
       target.queue ||= [];
       const message = { text: `[wc:from ${session.name}] ${card.asks === true ? `[question ${card.id}] ` : ''}${card.text}`, source: 'session', at: new Date().toISOString() };
       target.queue.push(message);
+      if (target.started_by === session.name && target.quiet_card) require('./quiet.js').reset(thread, target);
       thread.queues[target.name] = target.queue;
     }
     if (card.kind === 'result') {
