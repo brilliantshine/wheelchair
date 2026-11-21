@@ -30,6 +30,8 @@ created: 2026-11-20
 | 8 | Decision 3 is met by always putting `~/.local/bin` and `~/.kimi-code/bin` on the service PATH, where every recipe lands; no adapter resolver changes | Avoids touching the OpenRouter thread's lines; PATH lookup is per call | defaulted |
 | 9 | Turning off the harness the lead model runs on is refused until another lead model is picked | Otherwise every new thread would be stuck | defaulted |
 | 10 | Checklist has two steps (install, sign in); no "choose" step | Choosing is optional: all harnesses default on | defaulted |
+| 15 | Supersedes 13: a harness is added to Workers try first only when nothing in Lead order is installed, at most once, however it was installed | Review round 2: Settings-only trigger missed terminal and vendor-link installs; avoid silently adding pay-per-token OpenRouter for users who already have a working lead | review-round-2 |
+| 16 | Install result survives a service restart (job writes a result file); was Deferred D4 | Review round 2: setup steps must run inside the job, which makes the result file free | review-round-2 |
 | 11 | Supersedes 9: switching a harness off is refused only when Lead order (with `any` expanded) would have no enabled harness | Review round 1: the "lead model setting" does not exist; the old rule blocked Codex-only users from leaving Claude out | review-round-1 |
 | 12 | The switch stops new placements only; running agents, asides and retries of an unanswered start continue | Review round 1 | review-round-1 |
 | 13 | A successful install from Settings adds that harness to Workers try first if missing | Review round 1: default orders exclude OpenRouter, so a Pi-only user would wait forever | review-round-1 |
@@ -59,17 +61,26 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    present, whether or not they exist yet. Both the systemd unit (`414`) and the launchd plist
    (`347`) get it. No adapter resolver changes (`machine/adapters/pi.js:16`, `kimi.js:8-12`
    stay as they are).
-4. **End message** when serving: after the existing URL output, print `Next: open that link;
-   the home page walks you through installing and signing in to an agent.`
+4. **End message** when serving: just before the bookmark URL line (which stays the last
+   line, as fixtures require), print `Next: open the link below; the home page walks you
+   through installing and signing in to an agent.`
 5. **README**: the first-time path becomes: install the basic tools, run `./install.sh --serve`,
    open the link, follow the checklist. Dependencies lists all five harnesses as optional,
    installable from Settings → Harnesses; drop "at least one CLI required".
-6. **Fixtures** in `install/test/run.sh`: replace the `neither` case's assertions
-   (`install/test/run.sh:430-435`) with: exit 0; prints the "No agent CLI yet" line; writes no
-   Claude or Codex homes; runs the stale-viewer check; service unit PATH contains
-   `$HOME/.local/bin` and `$HOME/.kimi-code/bin`. Add a case with one prerequisite shimmed
-   absent (`tmux`): exit 1, output names `tmux`, no state files written. All other existing
-   fixtures still pass.
+6. **Fixtures** in `install/test/run.sh`. Change these, alongside the behavior:
+   - `neither` (`430-435`): run it serving, the way `explicit_serve` does, and replace its
+     assertions with: exit 0; prints the "No agent CLI yet" line; writes no Claude or Codex
+     homes; runs the stale-viewer check; machine unit PATH contains `$HOME/.local/bin` and
+     `$HOME/.kimi-code/bin`.
+   - Restricted-PATH cases (`run_case`, `163-169`): also shim each S1.1 prerequisite (`node
+     npm tmux git gh curl`), linking the real tool when present and otherwise writing a stub
+     script that exits 0, so those cases still reach what they test.
+   - `no_pi` (`326`): keep "absent pi is not reported"; replace the PATH assertion with
+     "`$HOME/.local/bin` is on the machine unit PATH even with pi absent".
+   - New case: `tmux` absent from the shim → exit 1, output names `tmux`, no state files
+     written.
+   - The bookmark-last assertions (`651`, `730`) stay unchanged and must pass (S1.4).
+   All other existing fixtures still pass.
 
 ### S2. Machine (`machine/`)
 
@@ -82,16 +93,19 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    shell command run with `/bin/sh -c` as the service user, never with sudo:
    | provider | command |
    |---|---|
-   | claude | `curl -fsSL https://claude.ai/install.sh \| bash` |
+   | claude | script `https://claude.ai/install.sh` |
    | gpt | `npm install -g --prefix "$HOME/.local" @openai/codex@latest` |
-   | gemini | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` |
-   | kimi | `curl -fsSL https://code.kimi.com/kimi-code/install.sh \| bash` |
+   | gemini | script `https://antigravity.google/cli/install.sh` |
+   | kimi | script `https://code.kimi.com/kimi-code/install.sh` |
    | openrouter | `npm install -g --prefix "$HOME/.local" <pi package>@latest` |
+   A "script" recipe downloads first and runs only a complete download, so a failed download
+   fails the install: `t=$(mktemp) && curl -fsSL <url> -o "$t" && bash "$t"; r=$?; rm -f "$t";
+   exit $r`.
    Before committing, the worker confirms each URL answers (`curl -fsI <url>`) and picks the
    current, non-deprecated Pi package with `npm view <name> deprecated engines` for
    `@earendil-works/pi-coding-agent` and `@mariozechner/pi-coding-agent`. Each recipe carries a
    comment with its vendor docs URL. **A recipe whose URL or package cannot be confirmed is
-   left out of the module**; such a provider has `recipe: false` (S2.4) and Settings shows a
+   left out of the module**; such a provider has `recipe: false` (S2.6) and Settings shows a
    link to its vendor docs instead of Install (S4.2). Tests override recipes with the
    environment variable `WHEELCHAIR_HARNESS_RECIPES` (path to a JSON object provider →
    command); production never sets it.
@@ -100,35 +114,40 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    the recipe). Before starting it, the machine compares `node --version`; if lower, the
    install does not run and ends `failed` with the tail `<Harness> needs Node <min> or newer;
    this machine has <version>. Update Node, then try again.`
-4. **Routes** (hub auth, beside `GET /v1/status`, `service.js:1953`):
-   - `POST /v1/harnesses/<provider>/install` → starts the recipe as a detached child process
-     (its own process group, not tmux). Output goes to `~/.wheelchair/installs/<provider>.log`
-     (truncated at start) and the child's pid to `~/.wheelchair/installs/<provider>.pid`.
-     Returns 202 `{state:"running"}`. Unknown provider or `recipe: false` → 404. Already
-     running → 409 `{error:"already installing"}`.
+4. **The install job** is one detached child process (its own process group, not tmux):
+   `node machine/lib/harness-install.js <provider>`. It runs, in order, the Node check (S2.3),
+   the recipe, the setup steps and validation (S2.5), all inside the job, so a service restart
+   mid-install never skips them. Output from every step goes to
+   `~/.wheelchair/installs/<provider>.log` (truncated at start); the job's pid is in
+   `<provider>.pid`; when it ends it writes `<provider>.result`, JSON `{state:"succeeded"|"failed",
+   exit_code, finished_at}`, then removes the pid file. Starting a job removes any old result.
+5. **Setup and validation, inside the job, after the recipe exits 0:**
+   - for `claude` or `gpt`: `python3 <clone>/install/unseen.py` with a present list of that
+     one harness, as `install.sh:137-139` does, then `sensitivity/set.sh`;
+   - the CLI resolves the way `cliStatus` does (`service.js:1636-1650`) and, for claude, codex,
+     agy and kimi, `<cli> --version` exits 0 (pi: resolve only).
+   All pass → `succeeded`. Recipe non-zero → `failed` with its exit code. Recipe passed but the
+   CLI is not found → `failed`, log ending `Installed, but wheelchair can't find <cli> on its
+   path. Re-run ./install.sh from the wheelchair folder once.` (a machine installed before
+   S1.3). A failing setup step → `failed` with that step's output.
+6. **Routes** (hub auth, beside `GET /v1/status`, `service.js:1953`):
+   - `POST /v1/harnesses/<provider>/install` → starts the job; 202 `{state:"running"}`.
+     Unknown provider or `recipe: false` → 404. Running → 409 `{error:"already installing"}`.
    - `GET /v1/harnesses/<provider>/install` → `{state, exit_code, output_tail, started_at,
      finished_at}`; `state` is `idle | running | succeeded | failed`; `output_tail` is the last
-     40 lines of the log, as text.
-   - **Running across a service restart.** "Running" means: in-memory state says running, or
-     the `.pid` file names a live process (`process.kill(pid, 0)` succeeds). This check guards
-     the 409 and drives GET, so after a plain restart a still-running install shows
-     `running` with its log tail and a second start is refused. When the process is gone
-     after a restart, the pid file is removed and the state is `idle` (result not kept; D4).
+     40 lines of the log. Running = the pid file names a live process (`process.kill(pid,
+     0)`); otherwise the result file gives `succeeded`/`failed`; neither → `idle`. A pid file
+     whose process is gone and no result file → `failed`, tail ending `The install stopped
+     before finishing.` This needs no in-memory state, so it is the same after a service
+     restart.
    - `GET /v1/status` adds `recipes: {<provider>: true|false}` for the five providers.
-5. **After the recipe exits 0**, the machine:
-   - for `claude` or `gpt`: runs `python3 <clone>/install/unseen.py` with a present list of
-     that one harness, as `install.sh:137-139` does, then `sensitivity/set.sh`;
-   - confirms the CLI resolves the way `cliStatus` does (`service.js:1636-1650`) and, for
-     claude, codex, agy and kimi, that `<cli> --version` exits 0 (pi: resolve only).
-   All pass → `succeeded`. The recipe exits non-zero → `failed` with its exit code. The recipe
-   passed but the CLI is not found → `failed`, tail ending `Installed, but wheelchair can't
-   find <cli> on its path. Re-run ./install.sh from the wheelchair folder once.` (a machine
-   installed before S1.3). A failing setup step → `failed` with that step's output.
-6. **Tests** in `machine/test/run.sh` using `WHEELCHAIR_HARNESS_RECIPES` with fake commands that
+7. **Tests** in `machine/test/run.sh` using `WHEELCHAIR_HARNESS_RECIPES` with fake commands that
    drop a fake executable into a temp `$HOME/.local/bin`: success; non-zero exit; 409 on a
-   second start; 409 after a simulated restart while the pid is alive; unknown provider 404;
-   not-found-after-install message; Node-too-old refusal; claude's setup step invoked
-   (shimmed); session launch and login commands carry `PATH=`.
+   second start; a simulated service restart while a fake recipe is still running, after which
+   the recipe exits 0 and the job still runs the (shimmed) setup step and validation and GET
+   reports `succeeded`; unknown provider 404; a failed download in a script recipe →
+   `failed`;
+   not-found-after-install message; Node-too-old refusal; claude's setup step invoked; session launch and login commands carry `PATH=`.
 
 ### S3. Hub (`viewer/app/`)
 
@@ -148,12 +167,16 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    `updateSettings`, returns `describe()`. Unknown provider → 404; non-boolean → 400.
    Refused with 409 only when switching off would leave `lead_order`, expanded as the balancer
    does (`balancer.js:51`: `any` → `worker_order`), with no enabled provider; message: `Lead
-   order would have no harness left. Add another to Lead order first.`
+   order would have no harness left. Add another to Lead order first.` The same check guards
+   writes of `lead_order` and `worker_order` through the balancing route
+   (`viewer/app/routes.js:253-255`): a write that leaves the expanded Lead order with no
+   enabled provider → 409 with the same message.
 4. **Placement.** In `viewer/app/balancer.js`, a provider whose switch is off is never
    eligible: drop it from the expanded order before the provider loop (`58-63`) and in the
    worker check (`48`). A review family whose harness is off counts as unavailable, so the
    existing fallback (`38-47`) applies. `usage.rank` gives such accounts the reason `skipped:
-   left out in Settings`.
+   left out in Settings`. `reservedProvider` (`balancer.js:23-26`) uses the same enabled
+   order, so a switched-off provider is never the one saved for leads.
 5. **Ready** (`viewer/app/ready.js`): when the thread's own provider is off, not ready with
    `<Harness> is left out in Settings`.
 6. **Harness status** `GET /harnesses` → 
@@ -171,23 +194,33 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    (`412-421`): `POST` and `GET /machines/<machine>/harnesses/<provider>/install` →
    `hub.call(machine, '/v1/harnesses/<provider>/install', method)`. Unreachable → 502 with the
    machine name. When a GET returns `succeeded` for the first time for that start, the hub (a)
-   drops the status cache for all machines (`cache.delete(hub)` in `usage.js`), and (b) if the
-   provider is not in `worker_order`, appends it (so `lead_order`'s `any` can reach it; the
-   default `worker_order` lacks `openrouter`, `settings.js:38`).
-8. **Onboarding status** `GET /onboarding` → `{show, steps:[{id:"install", label:"Install an
+   drops the status cache for all machines (`cache.delete(hub)` in `usage.js`). `GET
+   /harnesses?fresh=1` also drops it first.
+8. **Making sure a lead can start.** Each time the hub builds `/harnesses` data (also used by
+   `/onboarding`), if no provider in the enabled, expanded Lead order is installed on any
+   reachable machine, but some enabled provider is installed somewhere and is neither in
+   `worker_order` nor in the new settings list `worker_order_auto_added`, the hub appends the
+   first such provider (display order) to `worker_order` and to `worker_order_auto_added`
+   (array of provider keys, normalized like `worker_order_seen`, default `[]`). So a Pi-only
+   machine works however Pi got installed, a provider is added at most once (removing it
+   later sticks), and nothing is added for a user whose Lead order already reaches an
+   installed harness. `/harnesses` returns `auto_added: [...]`.
+9. **Onboarding status** `GET /onboarding` → `{show, steps:[{id:"install", label:"Install an
    agent harness", done}, {id:"signin", label:"Sign in to it", done}]}`, from `GET
    /harnesses` data. `install` is done when some reachable machine has an enabled harness
    installed. `signin` is done when some reachable machine has a provider that is enabled,
    installed and `signed_in` on that same machine, and appears in the expanded `lead_order`.
    `show` is true when not both are done and at least one machine is reachable; false when
    none is reachable.
-9. **Tests** in `viewer/test/`: normalize defaults and bad values; `describe` includes
+10. **Tests** in `viewer/test/`: normalize defaults and bad values; `describe` includes
    `harnesses`; PUT 200/400/404 and the lead-order 409 (default `['claude','any']` with only
    claude off → 200); balancer never places a new session on a switched-off provider, falls
    back for a switched-off review family, and does not block an aside or an unanswered-start
    retry; Ready reason; `/harnesses` shape with one reachable and one unreachable machine;
-   forwarders pass through, 502, and on first `succeeded` clear the cache and append to
-   `worker_order`; onboarding for no CLI, installed-not-signed-in, installed on one machine
+   forwarders pass through, 502, and on first `succeeded` clear the cache; the S3.8 append
+   (Pi-only: appended once; removed later: not re-added; Claude installed with default orders:
+   nothing appended); order writes refused when they empty the enabled Lead order;
+   reservation skips a switched-off provider; onboarding for no CLI, installed-not-signed-in, installed on one machine
    with sign-in only on another (not done), Pi-only after install (done), and done.
 
 ### S4. Settings page (`viewer/pages/settings.js`)
@@ -198,7 +231,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    rows.
 2. One row per harness, in display order: the name; its state on the picked machine: `Not
    installed`, `Installed <version>` (version omitted when null), or `Signed in`; a **Use**
-   switch (shared by all machines); and an action:
+   switch (shared by all machines); when the provider is in `auto_added`, the note `Added to
+   Workers try first so agents can start on it.`; and an action:
    - `recipe: false` and not installed → a link "Install from <vendor>'s site" to the docs URL
      kept in a page constant per provider;
    - not installed, or the last install on this machine `failed` → **Install** (or **Try
@@ -211,10 +245,12 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    `failed` → `Install failed`, the tail, and **Try again**, even when the CLI is now on disk;
    `succeeded` → re-fetch `/harnesses`. Pressing Install POSTs, then polls the same way; a 409
    just starts polling.
-4. **Sign in** starts the existing sign-in flow (`POST /accounts/:id/signin`, then the existing
-   login UI) for the first non-retired account of that provider, on the picked machine. With
-   no such account, it scrolls to the accounts section's add-account control for that
-   provider.
+4. **Sign in** uses the first account of that provider that is neither retired nor paused. It
+   mounts the existing sign-in card (`viewer/pages/settings.js:1082-1140`) inline under that
+   harness row, for the picked machine (not in the Accounts panel), and when the card closes
+   re-fetches `GET /harnesses?fresh=1`. If every such account is paused, the row says `All
+   <Harness> accounts are paused` with a link to `#accounts`. With no account, the row links
+   to `#accounts` (where add and restore controls live).
 5. **Switching off** a harness with `threads_using > 0` first asks "<N> threads use
    <Harness>. Their running agents keep going, but no new agent starts on it. Leave it out?"
    A 409 shows its message under the row.
@@ -256,7 +292,6 @@ npm --prefix viewer run test:browser
 | D1 | Cancel a running install | Installs finish in a minute or two; waiting is fine | planning | Add `DELETE /v1/harnesses/<p>/install` killing the child's process group; Cancel button in S4 |
 | D2 | Time limit for a stuck install | A hung recipe only blocks that one harness's button | planning | Kill after 15 min, state `failed` with "took too long" |
 | D3 | Plain-language failure explanations | The raw output tail already shows what went wrong | planning | Map common failures (no network, disk full, npm prefix not writable) to one plain line above the tail |
-| D4 | Install result survives a machine service restart | A running install is still seen after restart (S2.4); only the finished result and exit code are lost | planning | Persist state next to `~/.wheelchair/installs/<p>.log` |
 
 ## Accepted Risks
 
@@ -294,6 +329,26 @@ npm --prefix viewer run test:browser
 **Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
 
 **Changed since Round 1:** S1.2, S1.6 (fixture); S2.1 (PATH in tmux env), S2.2–S2.4 (unconfirmed recipes left out, Node check, pid-file running state, `recipes` in status); S3.1–S3.3 (describe, switch governs new placements only, lead-order 409), S3.6 `/harnesses`, S3.7 cache drop and worker_order append, S3.8 same-machine onboarding; S4 (load-time install state, Sign in, switch-off confirm, order editors hidden); Decisions 11–14.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Worker-order append only fires on a watched Settings install | upheld | S3.8 (Decision 15) |
+| intent | minor | Append silently adds pay-per-token OpenRouter | upheld | S3.8 only when Lead order reaches nothing installed; row note S4.2 |
+| mechanics | blocking | S1.6 contradicts several existing fixtures | upheld | S1.6 lists each change; S1.4 Next line before the URL |
+| mechanics | blocking | Setup steps lost if the service restarts mid-install | upheld | S2.4–S2.6 job runs everything, result file (Decision 16) |
+| mechanics | blocking | Pi-only placement depends on a browser seeing success | upheld | S3.8 |
+| mechanics | blocking | Balancing route can empty the enabled Lead order | downgraded (major) | S3.3 guard on order writes |
+| mechanics | major | curl pipe hides download failure | upheld | S2.2 download then run |
+| mechanics | major | Sign-in card mount and refresh undefined | upheld | S4.4 |
+| mechanics | major | Paused-only accounts; Antigravity restore | upheld | S4.4 |
+| mechanics | major | Restart test doesn't prove setup still runs | upheld | S2.7 tests |
+| mechanics | minor | Lead reservation ignores the switch | upheld | S3.4 |
+
+### Round 3 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 2:** S1.4 (Next line before the URL), S1.6 (each fixture change listed); S2.2 (script recipes download then run), S2.4–S2.7 (install job runs Node check, recipe, setup and validation; result file; restart semantics; tests); S3.3 (guard on order writes), S3.4 (reservation), S3.7–S3.8 (`?fresh=1`; worker-order append only when Lead order reaches nothing installed, at most once, `worker_order_auto_added`); S4.2 (auto-added note), S4.4 (Sign in inline, paused and no-account cases); Deferred D4 folded into the Spec; Decisions 15–16.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
