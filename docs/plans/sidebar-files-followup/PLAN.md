@@ -274,6 +274,21 @@ New tests, at least:
 | mechanics | major | Lock test would fail on chat's existing transcript fetch | upheld | Validation scoped to `/v1/plan-files` calls |
 | mechanics | minor | Pan/zoom reset does not fit the graph for export | upheld | S1: export bounds from content bbox, 8192 px cap; wide-graph test |
 
+### Round 2 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 1:**
+- S1: graph export bounds from content bbox, 8192 px cap; HTML download is a hub route that prefixes a CSP meta (Decision 12, IDEA updated).
+- S2: remote ZIP lists live then reads; any machine failure is 502, never a partial ZIP.
+- S4: `kept_files` counts requested names present in `kept/` (retry-safe); missing `kept_files` from an older machine means 0.
+- S5: `list` returns files only; picture rows stay card-driven; remote picture reads use the thread slug like archived reads.
+- Validation: lock test scoped to `/v1/plan-files`; wide-graph and CSP-prefix browser tests; retry test.
+- Decision 11 corrects Decision 10's rationale and records the mid-turn lag.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
