@@ -305,8 +305,11 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   entries whose values have since changed simply no longer read it. A request that fails
   (HTTP error, machine unreachable) stores "Couldn't check: <error>" for each key it covered.
   Check again removes the stored result for that entry's key and schedules a check at once.
-  A stored result older than 30 s counts as missing at the next render (so it is re-checked).
-  A save reread clears the store.
+  Results do not expire; each line shows when its check ran ("checked 2 min ago", relative
+  time refreshed on render). The store has its own **epoch**, advanced when a save reread
+  clears it and whenever the guard changes; every request records the epoch and the key it
+  was made for, and a reply is stored only if the epoch is unchanged and that request is still
+  the pending one for its key.
   Turning the switch off hides the line; turning it on, or editing the URL or kind, reads (or
   schedules) the key for the new values. Store entries for a stale guard are discarded.
 - `win info` is unchanged. No thread cards, per-session warning state or session-record
@@ -371,11 +374,11 @@ frames and dialling a local test server (these cover the Linux side and the fram
   built from the request's `Host` sends the client back to `127.0.0.1:<private port>` and the
   follow-up goes through the forward; a streamed response arrives in pieces as sent; a
   restored forward pipes connections.
-- Status page: a request that fails shows "Couldn't check"; a result older than 30 s is
-  re-checked at the next render and a save clears all results; two rows with the same name and
+- Status page: a request that fails shows "Couldn't check"; each line shows when it was checked; a save clears all results and a reply to a
+  request made before the save is not stored; two rows with the same name and
   different URLs in one request each get their own result; Cancel, Keep changes, a same-project reload and the Unity poll's re-render while
   a check is pending all end with a line for the current values (no stuck "Checking…", no
-  stale result); Keep changes before the debounce fires still gets a result; editing a URL A → B → A before the check fires shows A's stored result only if it is under 30 s old;
+  stale result); Keep changes before the debounce fires still gets a result; editing a URL A → B → A before the check fires shows A's stored result;
   renaming or changing kind during a check schedules a new check or hides the line.
 - Flow control: a client that stops reading a streamed response gets its connection aborted
   at 4 MiB waiting while a second connection and a status check on the same forward keep
@@ -695,6 +698,12 @@ clears the store; Validation regrouped.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | 256 KiB bound can't be met by the writer rule (in-flight bytes) | upheld | Pending user choice on relay design (budget card) |
+| mechanics | major | Relay dispatch blocks on slow connects/lookups | upheld | Pending user choice on relay design |
+| mechanics | major | Client disconnect before `opened` leaves the queue undefined | upheld | Pending user choice on relay design |
+| mechanics | major | Pre-save replies refill the cleared status store | upheld | §6 store epoch, reply must match the pending request |
+| intent | minor | 30 s age rule doesn't expire results on an idle page | upheld | §6 age rule dropped; line shows when checked |
+| intent | minor | PowerShell flow control untested | upheld | Pending user choice on relay design |
 
 ## Implementation Tasks
 
