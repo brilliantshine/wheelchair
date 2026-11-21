@@ -214,7 +214,9 @@ async function archive(hub, id) {
     thread.pending_cancels = thread.pending_cancels.filter((id) => id !== turnId);
   }
   await hub.save(thread);
-  const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id });
+  const leads = new Set((thread.sessions || []).filter((s) => s.role === 'lead').map((s) => s.name));
+  const keep = [...new Set((thread.cards || []).filter((c) => ['file', 'image'].includes(c.kind) && !c.retracted_at && leads.has(c.session) && typeof c.file === 'string').map((c) => c.file))];
+  const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id, keep });
   thread.archive = result;
   if (result.pending === true) {
     const names = result.pending_sessions?.join(', ') || 'a session';
@@ -240,6 +242,7 @@ async function archive(hub, id) {
     return result;
   }
   thread.archived = true;
+  thread.kept_files = Array.isArray(result.kept_uploads) ? result.kept_uploads.filter((name) => typeof name === 'string') : [];
   for (const card of thread.cards) {
     if (card.kind === 'merged' && !card.answered) require('./cards.js').resolveCard(card, 'user', 'Archived');
   }

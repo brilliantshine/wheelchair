@@ -35,7 +35,7 @@ async function features(hub) {
     let thread = listed;
     const needs = [];
     addNeeds(needs, thread);
-    if (!thread.slug && thread.worktree) {
+    if (!thread.slug && thread.worktree && !await require('./remote-plan.js').isRemote(hub, thread)) {
       const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
       if (names.length === 1) { thread = structuredClone(thread); await recordSlug(hub, thread, names[0]); }
     }
@@ -97,15 +97,16 @@ async function newPlanDirectories(worktree, defaultBranch = 'main') {
 // Archiving usually removes the worktree, and then git checks only fail; skipping them keeps
 // the thread list, which every page polls, from spawning git for each one on every poll. A
 // worktree the archive failed to remove is still searched.
-async function discoverSlug(thread) {
+async function discoverSlug(thread, hub) {
   if (thread.slug || !thread.worktree) return null;
+  if (hub && await require('./remote-plan.js').isRemote(hub, thread)) return null;
   if (thread.archived && await fs.stat(thread.worktree).then(() => false, (error) => error.code === 'ENOENT' || error.code === 'ENOTDIR')) return null;
   const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
   return names.length === 1 ? names[0] : null;
 }
 
 async function findSlug(hub, thread) {
-  const slug = await discoverSlug(thread);
+  const slug = await discoverSlug(thread, hub);
   if (!slug) return;
   thread.slug = slug;
   await hub.save(thread);

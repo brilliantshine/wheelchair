@@ -66,7 +66,7 @@ test('archived documents list is cached without a worktree and route reads the b
   const bin = await makeTemp('document-git-');
   const log = path.join(bin, 'calls');
   const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
-  await fs.writeFile(path.join(bin, 'git'), `#!/bin/sh\ncase "$*" in *cat-file*) echo call >> "${log}"; case "$*" in *IDEA.md*) exit 1;; esac; exit 0;; *show*) echo archived; exit 0;; esac\nexec "${realGit}" "$@"\n`);
+  await fs.writeFile(path.join(bin, 'git'), `#!/bin/sh\ncase "$*" in *cat-file*) echo call >> "${log}"; case "$*" in *IDEA.md*) exit 1;; esac; echo 8; exit 0;; *rev-parse*wc/example*) echo abc123; exit 0;; *show*) echo archived; exit 0;; esac\nexec "${realGit}" "$@"\n`);
   await fs.chmod(path.join(bin, 'git'), 0o755);
   const c = await setup({ env: { PATH: `${bin}:${process.env.PATH}` } });
   try {
@@ -78,5 +78,43 @@ test('archived documents list is cached without a worktree and route reads the b
     const response = await download(c, t.id, 'MAP.md');
     assert.equal(await response.text(), 'archived\n');
     assert.equal(response.headers.get('content-disposition'), 'attachment; filename="example-MAP.md"');
+  } finally { await close(c); }
+});
+
+test('archived listing follows branch tip and excludes oversized blobs', async () => {
+  const documents = require('../app/documents.js');
+  const dir = await makeTemp('document-tip-');
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore' });
+  git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com');
+  const plan = path.join(dir, 'docs/plans/example'); await fs.mkdir(plan, { recursive: true });
+  await fs.writeFile(path.join(plan, 'MAP.md'), 'first'); git('add', '.'); git('commit', '-m', 'first');
+  const record = { id: 'tip-test', project: dir, branch: 'HEAD', slug: 'example', archived: true };
+  assert.deepEqual(await documents.list(record), ['MAP.md']);
+  await fs.writeFile(path.join(plan, 'PLAN.md'), 'next');
+  await fs.writeFile(path.join(plan, 'MAP.md'), Buffer.alloc(2 * 1024 * 1024 + 1));
+  git('add', '.'); git('commit', '-m', 'second');
+  assert.deepEqual(await documents.list(record), ['PLAN.md']);
+});
+
+test('ZIP serves live and archived eligible documents and 404 for an empty plan', async () => {
+  const c = await setup();
+  try {
+    const t = await thread(c), worktree = await makeTemp('zip-docs-');
+    const git = (...args) => execFileSync('git', ['-C', worktree, ...args], { stdio: 'ignore' });
+    git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com');
+    const dir = path.join(worktree, 'docs/plans/example'); await fs.mkdir(dir, { recursive: true });
+    await update(c, t.id, { worktree, project: worktree, slug: 'example' });
+    const get = () => fetch(`${c.server.url}/api/threads/${t.id}/docs.zip?token=${c.server.token}`);
+    assert.equal((await get()).status, 404);
+    await fs.writeFile(path.join(dir, 'MAP.md'), 'map');
+    await fs.writeFile(path.join(dir, 'PLAN.md'), Buffer.alloc(2 * 1024 * 1024 + 1));
+    git('add', '.'); git('commit', '-m', 'docs');
+    for (const archived of [false, true]) {
+      await update(c, t.id, { archived, branch: 'HEAD' });
+      const response = await get(); assert.equal(response.status, 200);
+      const data = Buffer.from(await response.arrayBuffer());
+      const entries = JSON.parse(execFileSync('python3', ['-c', 'import io,json,sys,zipfile; z=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())); print(json.dumps({n:z.read(n).decode() for n in z.namelist()}))'], { input: data }));
+      assert.deepEqual(entries, { 'example/MAP.md': 'map' });
+    }
   } finally { await close(c); }
 });
