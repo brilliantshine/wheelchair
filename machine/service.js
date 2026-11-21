@@ -3,7 +3,7 @@
 const { TryService } = require('./lib/try');
 const { startupWarning } = require('./lib/startup-warning');
 const { createProjectTools } = require('./lib/project-tools');
-const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
+const { TOOL_ROLES, readProjectMcp, hasWindowsProgram } = require('./lib/project-mcp');
 const { missingPrograms } = require('./lib/project-programs');
 const { projectIdentity, readKeyStore, launchKeys, keyReferences } = require('./lib/project-keys');
 
@@ -778,16 +778,19 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    const read = await readProjectMcp(worktree);
+    const { wsl, mount } = this.win.detected;
+    const read = await readProjectMcp(worktree, { wsl, mount });
+    const windowsTools = hasWindowsProgram((wsl ? read : await readProjectMcp(worktree, { wsl: true, mount })).mcp, { mount });
     const { mcp, warnings } = read;
     const tools = TOOL_ROLES.has(input.role);
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
-    if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath() });
+    if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
     const context = input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {};
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
+    if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     if (built.toolFiles) {
       const root = path.join(this.stateDir, 'agy-tools');
@@ -825,6 +828,11 @@ class MachineService {
       } catch (error) { console.error("the key store on this machine can't be read"); }
     }
     const env = this.launchEnv(session, adapter);
+    if (tools) {
+      await this.win.beforeLaunch(session, { windowsTools });
+      const extra = await this.win.sessionEnv(session, { ...process.env, ...Object.fromEntries(env) });
+      env.push(...Object.entries(extra));
+    }
     env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
     const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
     const redactions = new Set(built.redactions || []);
