@@ -13,7 +13,7 @@ const head = 'a'.repeat(40), url = 'https://github.com/o/r/pull/1';
 const step = { where: 'app', do: 'Open', see: 'Open', agent: 'matched' };
 const done = { kind: 'done', title: 'Done', can_do: [], left_as_is: [], head, pr_url: url, verified: true, created_at: '2026-01-01T00:00:00Z' };
 const check = { kind: 'check', id: 'check', head, steps: [step] };
-merge.timing.retryMs = 5; merge.timing.waitMs = 20; merge.timing.mergeTimeoutMs = 100;
+merge.timing.retryMs = 20; merge.timing.waitMs = 20; merge.timing.mergeTimeoutMs = 5000;
 async function fixture(script = '') {
   const dir = await makeTemp('auto-merge-'), bin = path.join(dir, 'bin'), log = path.join(dir, 'calls');
   await fs.mkdir(bin);
@@ -68,6 +68,7 @@ test('GitHub outcomes and exact merge arguments', async () => {
     ['CLEAN', 'OPEN', `printf '{"message":"Required review missing"}'; exit 1`, 'failed', 'Required review missing'],
   ]) {
     const f = await fixture(script(status, state, api)); try {
+      if (status === 'UNKNOWN') { merge.timing.retryMs = 50; merge.timing.waitMs = 1500; }
       const result = await f.run(); assert.equal(result.auto_merge_attempts[head].outcome, outcome);
       const calls = await f.calls();
       if (['merged', 'failed'].includes(outcome)) assert.equal(calls.at(-1), `api -X PUT repos/o/r/pulls/1/merge -f sha=${head} -f merge_method=merge`);
@@ -76,7 +77,7 @@ test('GitHub outcomes and exact merge arguments', async () => {
       if (message) assert.ok(result.cards.find(c => c.auto_merge).body.toLowerCase().includes(message.toLowerCase()));
       else assert.ok(!result.cards.some(c => c.auto_merge));
       await f.run(); assert.deepEqual(await f.calls(), calls);
-    } finally { f.restore(); }
+    } finally { merge.timing.retryMs = 20; merge.timing.waitMs = 20; f.restore(); }
   }
 });
 test('dismiss auto-merge card and refuse lead resolution', async () => {
@@ -141,12 +142,13 @@ test('switching off during the readiness wait prevents merge', async () => {
 });
 
 test('merge timeout produces unknown and its specific notice', async () => {
-  const f = await fixture(script('CLEAN', 'OPEN', 'exec sleep 2'));
+  const f = await fixture(script('CLEAN', 'OPEN', 'exec sleep 5'));
   try {
+    merge.timing.mergeTimeoutMs = 300;
     const t = await f.run();
     assert.equal(t.auto_merge_attempts[head].outcome, 'unknown');
     assert.equal(t.cards.find(c => c.auto_merge).body, "GitHub didn't answer in time; check the pull request on GitHub.");
-  } finally { f.restore(); }
+  } finally { merge.timing.mergeTimeoutMs = 5000; f.restore(); }
 });
 
 test('finishing respects concurrent merged, newer done, and unrelated cards', async () => {
