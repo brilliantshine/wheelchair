@@ -265,6 +265,10 @@ function parsePi(raw, thread, sessionName) {
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
 
+function hasPiEntry(raw, entryId) {
+  return transcriptRows(raw).some((row) => row.id === entryId && row.type === 'message' && row.message?.role === 'assistant');
+}
+
 function piReport(raw, entryId) {
   if (entryId == null) return '';
   const row = transcriptRows(raw).find((item) => item.id === entryId && item.type === 'message' && item.message?.role === 'assistant');
@@ -305,7 +309,22 @@ function transcriptItems(cli, raw, thread, sessionName) {
 // while the agent works, falls back to the last copy this hub read, so the chat never empties
 // for one poll and refills on the next. A report reader passes nothing: a stale copy could
 // hand it an earlier message as the report.
-async function sessionTranscript(hub, thread, session, { keepLast = false } = {}) {
+async function sessionTranscript(hub, thread, session, { keepLast = false, strict = false, timeout = 5000 } = {}) {
+  if (strict) {
+    let timer;
+    const controller = new AbortController();
+    try {
+      return await Promise.race([
+        (async () => {
+          const result = await hub.client.passThrough(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}/transcript`, 'GET', undefined, timeout, controller.signal);
+          if (result.status !== 404 && (result.status < 200 || result.status >= 300)) throw new Error('machine refused transcript');
+          if (result.status !== 404 && result.body?.data) return result.body.data;
+          return session.transcript_path ? fs.readFile(session.transcript_path, 'utf8') : '';
+        })(),
+        new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('machine timeout')); }, timeout); }),
+      ]);
+    } finally { clearTimeout(timer); controller.abort(); }
+  }
   const key = `${thread.machine}/${session.name}`;
   const route = `/v1/sessions/${encodeURIComponent(session.name)}/transcript`;
   const store = keepLast ? (hub.transcripts ??= new Map()) : null;
@@ -407,4 +426,4 @@ async function chat(hub, id) {
   };
 }
 
-module.exports = { cardBubble, chat, lastAssistantText, sessionTranscript, stripStyleTrailer, textOf, transcriptItems, unwrap };
+module.exports = { cardBubble, chat, hasPiEntry, lastAssistantText, sessionTranscript, stripStyleTrailer, textOf, transcriptItems, unwrap };
