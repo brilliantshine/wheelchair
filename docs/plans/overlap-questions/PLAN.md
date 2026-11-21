@@ -76,6 +76,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 47 | A dropped overlap answers peers without a card; finished-peer removals use the named drop line; every follow-up for an unsettled answer inherits validity (supersedes the first-only limit in 46); small-fix drops record nothing; restart uses Terms "New overlap" | Round 24 findings | review-round-24 |
 | 48 | Supersedes the drop records in 46-47: cancelling an overlap question (or its becoming moot by this thread's decision) counts as the answer "Keep the plan as it is", logged as a Decision with the Done marker; a finished peer before posting is also logged as a Decision. No separate drop records | The last rounds drew findings on the separate drop record; the user picked "As 'keep the plan'" (card 09b79ae6) | user |
 | 49 | A cancel is settled: on a feature a Decision by thread id (card suffix only if a card was posted; `defaulted` when moot), on a small fix "Go ahead" unless chat says otherwise; a finished peer on a small fix is only mentioned | Round 25 findings | review-round-25 |
+| 50 | Done marker matched by its card suffix (sources `user`, `idea-change`, `defaulted`); a no-card Decision also allows a later re-ask; a held overlap cancelled before IDEA.md confirmation is not asked and is logged when PLAN.md is created | Round 26 findings | review-round-26 |
 
 ## Spec
 
@@ -95,7 +96,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
   thread and not in a Decision Log entry of this plan. An overlap already asked is asked again,
   inside the card window, only for a feature, and only when information learned after its answer was
-  acted on (its Done marker is committed) changes what that answer would do. Information
+  acted on (its Done marker, or for a question with no card its Decision, is committed) changes what that answer would do. Information
   mentioned beside an open card never starts a re-ask. A small fix never re-asks: news about an
   answered small-fix overlap before the edits gets the one-line mention, and the user's latest
   instruction in chat wins.
@@ -120,9 +121,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   is settled; the original card counts as handled once a later overlap card with the same
   `about_thread` exists.
 - **Done marker:** a Decision Log entry naming the other thread's id and ending
-  `(overlap card <id>)`, source `user`, or `idea-change` when the answer removes something
-  IDEA.md's What or What good looks like promises (the answer is the user's agreement: the
-  item moves to Not doing). It is committed in the same commit as the Spec change it causes.
+  `(overlap card <id>)`; it is matched by that suffix, not by source. Source `user`; `idea-change`
+  when the answer removes something IDEA.md's What or What good looks like promises (the answer
+  is the user's agreement: the item moves to Not doing); `defaulted` for a question made moot by
+  this thread (§1). It is committed in the same commit as the Spec change it causes.
   Small-fix answers need no marker. On a small fix, the latest instruction wins: a later chat
   message from the user about that overlap overrides the card's answer, and once the fix's
   edits are committed every answered small-fix overlap card is handled. Before acting on any overlap
@@ -201,6 +203,8 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
     `defaulted` for moot. If a card was posted, the entry ends `(overlap card <id>)` (the last
     posted card for that thread, so a waiting follow-up is covered too); if none was, it has no
     card suffix and Terms "New overlap" still excludes the thread.
+  - Before IDEA.md is confirmed (no PLAN.md yet), a cancelled held overlap is simply not asked
+    after confirmation; it is logged as that Decision in the commit that creates PLAN.md.
   - On a small fix it counts as "Go ahead with the fix" unless the user's chat says otherwise,
     and nothing is recorded.
   - An open card is then resolved with that note (a user cancel) or retracted (moot); a waiting
@@ -279,9 +283,20 @@ merging of branches; no sub-lead or worker rule changes.
 | An answer given in the seconds while the lead withdraws an obsolete overlap card (or a restart between the drop commit and the retract) is acted on as a live answer | A race within seconds, or a restart in that gap | review-round-21 |
 | During an upgrade, a card queued by an updated machine and drained by a hub still on the old version gets a fresh id, so a retract with the printed id finds nothing | Needs mixed versions mid-upgrade plus an app outage; the Ready check requires matching versions | review-round-22 |
 | On a small fix, an overlap the user cancelled before it was asked is asked again if the lead restarts before the edits | Needs a cancel and a restart before a small fix's edits; nothing records it on a small fix | review-round-24 |
+| If the user cancels in chat while also answering the card's box, the cancel can be committed before the stored answer is seen | Two conflicting answers by the user within seconds | review-round-26 |
+| A held overlap cancelled before IDEA.md is confirmed is asked anyway if the lead restarts before PLAN.md exists and the cancel has left the recent messages | Needs a cancel, a restart and many messages before confirmation | review-round-26 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 
 ## Review Rounds
+
+### Round 27 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 26:** Decision 50: Terms "New overlap" re-ask gate covers no-card Decisions; Terms "Done marker" matched by suffix with `defaulted` listed; §1 cancel before IDEA.md confirmation; two Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 26 — 2026-11-21
 
@@ -291,6 +306,10 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | No-card cancel can never be re-asked | upheld | Its Decision counts for re-ask (Decision 50) |
+| intent | minor | Done marker sources incomplete | upheld | Matched by suffix; `defaulted` listed (Decision 50) |
+| mechanics | major | Chat cancel committed before a stored card answer | accepted-risk | Two conflicting answers within seconds; Accepted Risks |
+| mechanics | major | Cancel of a held overlap before PLAN.md exists | upheld | Not asked; logged when PLAN.md is created (Decision 50) |
 
 ### Round 25 — 2026-11-21
 
