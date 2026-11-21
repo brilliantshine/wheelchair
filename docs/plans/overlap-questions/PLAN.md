@@ -881,8 +881,15 @@ merging of branches; no sub-lead or worker rule changes.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Card id = delivery id; duplicate receipt id; `about_thread` on question; spooled 202 id; `card.js` receipt; tests (Spec §3 code) | viewer/app/cards.js, viewer/app/card.js, machine/service.js, viewer/test/, machine/test/ | standard / gpt-6.1-terra | wc-ebf1a18d38b1-worker | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | in progress |
-| T2 | Protocol text: lead.md overlap rules, restart, retract ids; cards.md; cards-lead.md; machine/API.md (Spec Terms, §1, §2, §3 docs) | protocol/app/lead.md, protocol/app/cards.md, protocol/app/cards-lead.md, machine/API.md | standard / claude-sonnet-5-5 | wc-ebf1a18d38b1-worker-2 | `node --test viewer/test/*.test.js`; Validation greps | in progress |
+| T2 | Protocol text: lead.md overlap rules, restart, retract ids; cards.md; cards-lead.md; machine/API.md (Spec Terms, §1, §2, §3 docs) | protocol/app/lead.md, protocol/app/cards.md, protocol/app/cards-lead.md, machine/API.md | standard / claude-sonnet-5-5 | wc-ebf1a18d38b1-worker-2 | `node --test viewer/test/*.test.js`; Validation greps | done |
 
 ## Log
 
 - 2026-11-21 — Build accepted: approval 83a8a539-6f15-4f19-8c06-c881fa25635d
+- 2026-11-21 — Choice: T2, lead.md: overlap Terms and asking rules live in a new `## Overlap questions` section after "Other leads on this machine", which keeps short pointers
+- 2026-11-21 — Choice: T2, lead.md retract ids: one general sentence near the top (plus "keep the ids of cards you may withdraw"), with pointers only at the approval retracts
+- 2026-11-21 — Choice: T2, cards-lead.md `reach`: row says "a thread id, like `about_thread` on a `question`"
+- 2026-11-21 — Choice: T2, machine/API.md: "no hub configured" and "a backlog" worded as plain spool cases; retracts noted as queued like any card
+- 2026-11-21 — Choice: T2, cards.md: added "Keep the id" sentence after the receipt description (scout-listed, not in the report)
+- 2026-11-21 — Choice: T2, lead.md: subheadings "Passing a peer's overlap question on." and "Asking."; restart bullet drops the "(rare ...)" aside (scout-listed, not in the report)
+- 2026-11-21 — T2 accepted (band: scout): all Spec Terms, §1, §2 and §3 docs items present; minor wording drift only (implicit "learned earlier is part of the look", no separate "Feature, before PLAN.md" bullet; both covered by Terms "Before PLAN.md")
