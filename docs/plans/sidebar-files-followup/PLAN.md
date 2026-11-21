@@ -50,9 +50,11 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
 - The picture page (`viewer/pages/picture.js`) gets a **Download** button for every picture
   it can show.
 - **Graph pictures:** clone the rendered SVG from the graph viewer
-  (`viewer/index.html:1888-1906`); set the clone's `viewBox` to the drawn content's bounding
-  box (`getBBox()` of the content group, measured on the live SVG) plus a 24 px margin, and its
-  width/height to that box, independent of the viewport, pan or zoom; copy each
+  (`viewer/index.html:1888-1906`); on the clone, remove the pan/zoom `transform` from the
+  content group (the `<g>` created at `viewer/index.html:1905`); set the clone's `viewBox` to
+  that group's `getBBox()` measured on the live SVG (which is in the group's own, untransformed
+  coordinates) plus a 24 px margin, and its width/height to that box, so the export is
+  independent of the viewport, pan or zoom; copy each
   element's computed style that affects drawing (fill, stroke, stroke-width, stroke-dasharray,
   opacity, font-family, font-size, font-weight, text-anchor, dominant-baseline) inline,
   serialize it, draw it onto a canvas at 2× scale on the page's background colour, and
@@ -65,16 +67,24 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
 - **HTML pictures:** download the `.html` file itself (Decision 8), with
   `content-disposition: attachment`. The saved file must stay inert when opened: the hub
   inserts, as the very first bytes of the file, `<meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">` (a policy at
-  least as strict as the one the picture page serves it with, `viewer/app/routes.js:17-18`).
-  The download is a hub route (`.../diagram-html?file=<name>&download=1`, local, archived or
-  remote) that adds this prefix; the client never builds the file itself.
+  content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;
+  base-uri 'none'; form-action 'none'">`: every directive of the in-app policy
+  (`viewer/app/routes.js:17`) that a `<meta>` policy can carry (`frame-ancestors` and
+  `sandbox` are ignored in `<meta>`; with no script, frame or connect source allowed, the
+  file cannot run script, submit forms, load or send anything).
+- The download URL is the **same URL the picture page already displays the HTML from**, plus
+  `&download=1`: the local-live `/wheelchair/diagram-html?path=...` route
+  (`viewer/server.js:1673-1696`, which already resolves the card's plan and registered file)
+  and the thread-scoped `.../diagram-html?file=` route (archived and remote, S5). Each route,
+  given `download=1`, adds the prefix and `content-disposition: attachment` with the S1 file
+  name; without it, it behaves as today. The client never builds the file itself. This is the
+  one new behaviour for local threads besides S1–S4's buttons.
 - File name: the picture's title, reduced to `[A-Za-z0-9._-]`, spaces to `-`, max 80
   characters, falling back to the graph file name; extension `.png` or `.html`.
 - Saving uses a blob URL on an `<a download>` element, which works in phone Safari and
   Chrome. The canvas never reads cross-origin images, so it is never tainted.
-- Works for local, remote and archived threads alike, since it runs on what the page already
-  rendered.
+- Graph and form PNGs work for local, remote and archived threads alike, since they run on
+  what the page already rendered.
 
 ### S2. Download all documents (D2)
 
@@ -129,23 +139,24 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   mode 0700; `rename`, falling back to copy-then-unlink across file systems). A name that
   does not exist is skipped. Any other failure is reported like a failed uploads removal
   (`uploads_removed: false` plus `uploads_error`), so today's retry contract
-  (`viewer/app/threads.js:226-241`) applies unchanged. The response adds `kept_files: <n>`,
-  where `n` is the number of requested names present in `kept/<thread>/` after the move
-  step, whether moved by this attempt or an earlier one, so a retried archive reports files
-  an earlier attempt already preserved.
-- A machine not yet updated ignores `keep` and returns no `kept_files`; the hub treats a
-  missing `kept_files` as 0 (links stay hidden, the same as today's behaviour).
+  (`viewer/app/threads.js:226-241`) applies unchanged. The response adds `kept: [names]`:
+  the requested names present in `kept/<thread>/` after the move step, whether moved by this
+  attempt or an earlier one, so a retried archive reports files an earlier attempt already
+  preserved.
+- A machine not yet updated ignores `keep` and returns no `kept`; the hub treats a missing
+  `kept` as empty (links stay hidden, the same as today's behaviour).
 - `GET /v1/uploads/:threadId/:file` (`machine/service.js:1973-1981`) serves
   `uploads/<thread>/<file>` and, if absent, `kept/<thread>/<file>`, with the same name check,
   headers and symlink refusal.
 - `reserveUpload` (`machine/service.js:300-315`) takes the highest `N-` prefix across both
   `uploads/<thread>/` and `kept/<thread>/`, so a restored thread never reuses a kept number.
 - Kept files are never removed (Decision 7). A thread restore leaves them in `kept/`.
-- **Hub record:** on a finished archive whose response has `kept_files > 0`, set
-  `thread.kept_files = true`. The sidebar rows and file chat card show their links on an
-  archived thread only when `thread.kept_files` is true (today they are always suppressed:
-  `viewer/pages/thread.js:405-445,1139`); otherwise archived rows stay link-free as today.
-  Archived image cards with kept files display their image again.
+- **Hub record:** on a finished archive, set `thread.kept_files` to the response's `kept`
+  list (an array of stored names; absent or empty means none). The chat response carries it.
+  On an archived thread, a sent row, file chat card or image card shows its link, preview or
+  image only when its `card.file` is in `thread.kept_files` (today they are always
+  suppressed: `viewer/pages/thread.js:405-445,1139`); any other keeps today's archived
+  "Removed when the thread was archived" state.
 
 ### S5. Documents and pictures of remote threads (D5, D6, D7)
 
@@ -180,7 +191,8 @@ working tree.
   `documents.list` skip remote threads (return null / use the cache). After the chat lock is
   released (as `refreshHandoffStatus` does: `viewer/app/hub.js:267-295`), and after the
   thread-list poll finishes its per-thread section, the hub fires a background refresh for
-  each remote thread whose cache is older than 30 s and has no refresh in flight. The
+  each remote thread whose last refresh **attempt** (successful or not) started more than
+  30 s ago and has no refresh in flight. The
   refresh snapshots `machine`, `project`, `default_branch`, `slug`; calls `discover` if no
   slug, then `list`; then takes `withThread`, re-reads the thread and stores the result only
   if `machine`, `project` and `slug` (when it had one) still match. A discovered slug is
@@ -188,9 +200,12 @@ working tree.
   Failures keep the last good cache and are not shown as errors.
 - The chat response and thread list use the cached file list for remote threads, and the
   chat response adds `remote: true` for them.
-- **Document reads** (doc route, download, S2 zip) for a remote thread call `read` outside
-  any lock. A machine error or timeout returns 502 with a plain message ("Couldn't reach
-  <machine>"), as the file route does today.
+- **Document and picture reads** for a remote thread call `read` outside any lock. Status
+  mapping (doc route, graph route, diagram-html route): a machine **404** (missing ref or
+  file) becomes the hub's existing 404 for that route, so the doc page and picture page show
+  their existing not-found state; a machine 400 becomes 404; a connection error, timeout or
+  any other status becomes 502 "Couldn't reach <machine>", which the picture page shows as
+  its existing "lost contact" notice. The S2 ZIP is stricter, as stated there.
 - **Picture rows stay card-driven, as today:** one row per `diagram` card file
   (`viewer/pages/thread.js:381-394`); nothing lists graph files independently. Remote reads,
   like today's archived reads (`viewer/app/threads.js:270-290`), read the picture from
@@ -205,6 +220,11 @@ working tree.
   these thread-scoped URLs (and `/wheelchair/?archive=<id>&file=` for the graph viewer)
   when `ctx.archived || ctx.remote`, instead of hub-local worktree paths. The graph viewer
   path for `archive=` must therefore accept remote live threads too.
+- **Revision for polling:** the thread-scoped graph route returns `{graph, hash}` where
+  `hash` is the SHA-1 hex of the exact JSON text read (local archived or remote), and
+  `getArchivedGraph` (`viewer/index.html:431-442`) uses that `hash` instead of
+  `JSON.stringify(body).length + ':archived'`, so a same-length edit on a remote live thread
+  redraws the open picture. (Callers of the route read `graph` from the new wrapper.)
 - Local threads (live or archived) behave exactly as today.
 
 ### Non-goals
@@ -231,14 +251,19 @@ New tests, at least:
   remote discovery stores the slug only when the snapshot still matches; no machine call
   happens while `withThread`/`withChatThread` is held (fake machine that checks a lock flag
   on `/v1/plan-files` requests only; chat's existing transcript fetch is unchanged).
+- Viewer route tests also: remote picture read maps machine 404 to 404 and an unreachable
+  machine to 502; the graph route's `hash` changes on a same-length edit; archived rows show
+  links only for names in `thread.kept_files`.
 - Machine tests: `/v1/plan-files` discover/list/read on a temp repo, input refusals,
   2 MiB refusal; archive moves only listed names to `kept/`, a retried archive after a
   completed move reports the right `kept_files`, serves them afterwards, still
   removes everything else; a move failure yields `uploads_removed: false`; `reserveUpload`
   numbering across `kept/`.
 - Browser tests: picture page Download produces a PNG blob for a graph (including one wider
-  than a 390 px phone viewport, whose PNG contains every node) and a form, and an `.html`
-  download for an HTML picture whose first bytes are the CSP meta; file preview page renders Markdown and text and shows
+  than a 390 px phone viewport, panned and zoomed before downloading, whose PNG contains every
+  node) and a form, and an `.html`
+  download for an HTML picture whose first bytes are the CSP meta, and which, opened as a
+  page, runs no inline script and does not submit a form; file preview page renders Markdown and text and shows
   "Too big to preview"; Download all link appears; archived thread with `kept_files` shows
   download links.
 
@@ -288,6 +313,15 @@ New tests, at least:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | S1 "local, archived or remote" HTML download contradicts S5 "local threads exactly as today" | upheld | S1: download reuses the displayed URL + `download=1`; named as the one new local behaviour |
+| intent | minor | S1 "works for all threads" no longer true for HTML | upheld | S1 limited to graph and form PNGs |
+| mechanics | blocking | Pan/zoom transform left on cloned group crops export | upheld | S1: remove transform, bbox in group coordinates; test pans/zooms first |
+| mechanics | blocking | Saved HTML policy weaker than in-app (form-action, base-uri) | upheld (major) | S1: meta carries every meta-capable directive; behaviour test |
+| mechanics | major | Local-live HTML download can't resolve the card's file | upheld | S1: download = displayed URL + `download=1` on both routes |
+| mechanics | major | Kept count can't say which files survived | upheld | S4: `kept` names list; per-file links |
+| mechanics | blocking | Remote picture 404 vs 502 mapping undefined | upheld (major) | S5: status mapping |
+| mechanics | blocking | Remote live graph hash from length misses same-length edits | upheld (major) | S5: SHA-1 content hash from route |
+| mechanics | minor | Failed refresh retried every poll | upheld | S5: 30 s from last attempt |
 
 ## Implementation Tasks
 
