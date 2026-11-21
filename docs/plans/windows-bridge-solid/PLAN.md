@@ -113,12 +113,18 @@ entries include a Windows stdio entry with `mcp-for-unity` among its args, the m
 these lines to the session's prompt file before launch (same mechanism as item 4's line),
 filling every placeholder itself:
 
-> Unity: your project copy on Windows is `<copy_windows path>`. Open Unity on it yourself
+> Unity: your project copy on Windows is `<copy_windows path>`.
+> Open Unity on it yourself
 > (`wc.js win start -- "<unity exe>" -projectPath "<copy_windows path>"`), never on another
 > path.
 > Before any other Unity MCP call, list the connected Unity instances, select the one whose
 > project path is your copy, and check the selection; if none matches, don't use the Unity
 > tools until it appears. Never act on another instance.
+
+If the copy's Windows path could not be resolved before launch (for example a failed
+`%LOCALAPPDATA%` lookup), the machine does not wait: the first sentence instead reads "Unity: run
+`wc.js win info` and use its `copy_windows` path as your project copy on Windows", and every
+later `<copy_windows path>` reads "that path".
 
 `<unity exe>` is `C:\Program Files\Unity\Hub\Editor\<version>\Editor\Unity.exe`, where
 `<version>` is `m_EditorVersion` from the session worktree's `ProjectSettings/ProjectVersion.txt`,
@@ -172,15 +178,14 @@ entry); the existing `persistSessions()` after tmux starts saves it with the res
 session record. No separate file.
 
 **Recovery after a service restart.** On startup, after `recoverFromTmux`, every live session
-whose record has `windows_tools: true` is added back to `WinBridge.toolSessions` (and its copy
-registered as today), so the copy's "used since last reconcile" tracking and the final stop
-reconcile work as before the restart. A live tool-role session whose record has no
-`windows_tools` field at all (started before this change, for example across the upgrade that
-installs it) is classified at startup by building its adapter configuration from its worktree's
-current `.mcp.json` and CLI (no launch) and reading `loaded`; the result is stored on the record
-and acted on the same way. A session recovered from tmux with no record (the restart landed
-between tmux start and `persistSessions()`) is classified the same way from its recovered
-worktree.
+whose record has `windows_tools: true` is added back to `WinBridge.toolSessions`, its copy
+registered as today **and marked used** (`markKey`), so the final stop reconcile runs even if a
+reconcile before the restart had cleared the copy's "used since last reconcile" state. A live
+tool-role session whose record has no `windows_tools` field at all (started before this change,
+for example across the upgrade that installs it, or recovered from tmux with no record) is
+treated conservatively as `windows_tools: true` when a Windows copy already exists for its
+worktree, and `false` otherwise; the result is stored on the record. Over-counting costs at
+most one extra final reconcile.
 
 **Marking the copy used.** A pre-launch readying reconcile clears the copy's "used since last
 reconcile" state before the CLI exists. So, for a session with `windows_tools`, right after its
@@ -250,10 +255,15 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   runs the final reconcile; a Git-missing probe clears after Git appears without a service
   restart; the `loaded` list for a Codex Windows entry says `windows: true` and readying runs,
   and an entry dropped by Codex's budget is absent.
+- Existing positive WSL test fixtures (`machine/test/win-env.test.js`,
+  `machine/test/win-service.test.js` and any other that writes a binfmt registration) write
+  `enabled` as the first line, so they keep testing the working-interop path.
+- Recovery marks the copy used: from a persisted `used_since_ok: false`, a recovered session's
+  stop runs the final reconcile. A pre-upgrade record with an existing copy is tracked; one
+  without a copy is not. The Unity prompt's fallback sentence when the copy path is unknown.
 - Restart tracking: after a service restart, a live session with `windows_tools: true` in its
-  record is back in `toolSessions`, and its stop runs the final reconcile; a live session
-  record without the field (pre-upgrade) is classified from its `.mcp.json` and tracked. A
-  `disabled` binfmt registration counts as interop off.
+  record is back in `toolSessions`, and its stop runs the final reconcile. A `disabled` binfmt
+  registration counts as interop off.
 - Detection and warnings: interop off on a Microsoft kernel gives the reason; approval card
   gets the warning only when the project has Windows tools; a probe past 15 s gives the
   timeout reason; session start never waits; non-WSL machines get none.
@@ -519,6 +529,20 @@ of copies or git data.
 **Lanes:** claude (intent); other family (mechanics); cross-family: yes.
 
 **Changed since Round 12:** item 3 uses a `windows_tools` field on the session record instead of `win-sessions.json`, with startup classification for records lacking it; item 4 binfmt `enabled` check; Validation; Accepted Risks row 3 wording.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Rebuilding adapter config at startup needs inputs the record lacks | upheld | item 3 conservative rule, no rebuild |
+| mechanics | blocking | Recovery doesn't mark the copy used | upheld | item 3 recovery marks used |
+| mechanics | blocking | Classifying from the current `.mcp.json` can misclassify after an edit | upheld | item 3 conservative: existing copy means tracked |
+| mechanics | major | Unity prompt when the copy path is unavailable | upheld | item 1 fallback sentence |
+| mechanics | minor | Positive WSL fixtures write empty binfmt files | upheld | §Validation fixtures write `enabled` |
+
+### Round 14 — 2026-11-21
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round 13:** item 3 recovery marks the copy used and treats records without the field conservatively (existing copy means tracked); item 1 Unity prompt fallback when the copy path is unknown; Validation (fixtures, recovery).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
