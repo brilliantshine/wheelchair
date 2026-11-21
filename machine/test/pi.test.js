@@ -97,3 +97,11 @@ test('Pi waits for every startup download to complete', () => {
   assert.equal(pi.readyText({}, `${download}\nFailed to download fd: fetch failed\n${ready}`), true);
   assert.equal(pi.readyText({}, `${download}\nfd installed to /tmp/fake/fd\nrg not found. Downloading...\n${ready}`), false);
 });
+test('Pi warns that project tools, including Windows-side ones, are not loaded', () => {
+  const root = makeTempSync('pi-adapter-mcp-');
+  const session = { name: 'wc-test-worker', cli_session_id: '123' };
+  const mcp = { names: ['unity'] };
+  assert.deepEqual(pi.command({ role: 'worker' }, session, root, { stateDir: root, promptPath: '/prompt', tools: true, mcp }).warnings, [{ names: ['unity'], text: "project tools aren't supported on Pi yet; this agent runs without them" }]);
+  assert.equal(pi.command({ role: 'reviewer' }, session, root, { stateDir: root, promptPath: '/prompt', tools: false, mcp }).warnings, undefined);
+  assert.equal(pi.command({ role: 'worker' }, session, root, { stateDir: root, promptPath: '/prompt', tools: true, mcp: { names: [] } }).warnings, undefined);
+});
