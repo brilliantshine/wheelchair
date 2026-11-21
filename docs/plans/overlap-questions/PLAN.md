@@ -73,6 +73,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 44 | Supersedes the checking parts of Decisions 41-43: new information while an overlap card is open is only mentioned in one line beside it; the answer is acted on as given, with no re-check or follow-up card | The last recurring findings came from the re-check; the user picked "Just mention it" (card d9a87c36) | user |
 | 45 | A re-ask needs information learned after the answer was acted on; a card is withdrawn only by this thread's decision or the user's instruction, never by news about the other thread; a follow-up card for an unsettled answer inherits the original's validity | Round 22 findings | review-round-22 |
 | 46 | A small fix never re-asks (news before edits is mentioned; the user's chat wins); a peer question joining an open card is a one-line mention; only the first follow-up inherits validity; a recorded drop (Log line) keeps an overlap from being asked again, also for waiting ones and on restart | Round 23 findings | review-round-23 |
+| 47 | A dropped overlap answers peers without a card; finished-peer removals use the named drop line; every follow-up for an unsettled answer inherits validity (supersedes the first-only limit in 46); small-fix drops record nothing; restart uses Terms "New overlap" | Round 24 findings | review-round-24 |
 
 ## Spec
 
@@ -141,6 +142,8 @@ the sentence that turns a new overlap into an Open Question with "keep the plan 
 change it" options is replaced by a pointer to this section; (b) keeps only its timing. In
 "Passing a question on", a peer's question about an overlap with this thread takes one of these
 paths:
+- the overlap was dropped (an `Overlap with <thread id> dropped` Log line): answer the peer from
+  that, with no card;
 - the overlap is already settled and not reopened (a Decision Log entry with no later open
   `Overlap with` Open Question or open overlap card for that thread, which take precedence; or on
   a small fix the latest instruction
@@ -164,9 +167,10 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   IDEA.md confirmation), so status stays `planning` until it is settled. The commit that logs
   its Decision removes it. Before posting a waiting overlap card (live or on restart), the lead
   rechecks the other thread in `session leads`: if it has finished (Terms "Overlap"), it removes
-  the Open Question with a Log line and gives the one-line mention instead. The first follow-up
-  card for an unsettled answer (Terms "Settling an answer") skips this recheck: it inherits the
-  original card's validity, live and on restart; any later follow-up goes through the recheck.
+  the Open Question with the Log line `Overlap with <thread id> dropped: finished` and gives the
+  one-line mention instead. A follow-up card
+  for an unsettled answer (Terms "Settling an answer") skips this recheck: it inherits the
+  original card's validity, live and on restart.
 - **Card text:** `fits` names the other thread by its title; each option's `consequence` says
   what the answer does to this thread. At most four options.
 - **Small fix, before edits:** post the card and edit nothing until it is answered. Options:
@@ -192,7 +196,9 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   applies because of this thread's own decision or the user's instruction (for example they
   cancel it in chat); new information about the other thread never withdraws it (it is only
   mentioned). This applies to a waiting overlap too (no card yet): the lead commits the drop and
-  posts nothing. The lead first commits the removal
+  posts nothing. On a small fix there is nothing to record: a dropped waiting overlap is simply
+  not posted (an open card is retracted), and the user's latest instruction in chat covers it.
+  On a feature, the lead first commits the removal
   of its Open Question with a Log line `Overlap with <thread id> dropped: <why>`, then retracts the
   card.
 
@@ -204,8 +210,7 @@ On `[wc:context restart]`, after rereading the plan and cards:
   is no longer in the card window (rare: the answer would have to cross the move to review),
   treat it as a late overlap.
 - An open overlap card stays open and is not asked again.
-- Run `wc.js session leads` once and treat any overlap not covered by an overlap card or a
-  Decision Log entry as new, using the same paths as live discovery: held before IDEA.md is
+- Run `wc.js session leads` once and treat any new overlap (Terms "New overlap") using the same paths as live discovery: held before IDEA.md is
   confirmed, a card inside the window, else a late overlap. A planned thread
   also asks any `Overlap with` Open Question not yet asked.
 
@@ -268,6 +273,8 @@ merging of branches; no sub-lead or worker rule changes.
 | A session that puts its own `delivery_id` in a card file can choose the card's id, or have its card dropped as a duplicate | Needs an agent tampering with its own card file; it only affects its own thread | review-round-17 |
 | An answer given in the seconds while the lead withdraws an obsolete overlap card (or a restart between the drop commit and the retract) is acted on as a live answer | A race within seconds, or a restart in that gap | review-round-21 |
 | During an upgrade, a card queued by an updated machine and drained by a hub still on the old version gets a fresh id, so a retract with the printed id finds nothing | Needs mixed versions mid-upgrade plus an app outage; the Ready check requires matching versions | review-round-22 |
+| On a small fix, an overlap the user cancelled before it was asked is asked again if the lead restarts before the edits | Needs a cancel and a restart before a small fix's edits; nothing records it on a small fix | review-round-24 |
+| A dropped overlap is never asked again, even if later planning brings the shared area back | Needs a drop followed by a reversal of its reason in the same plan; the user can raise it in chat | review-round-24 |
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 
 ## Review Rounds
@@ -280,6 +287,15 @@ merging of branches; no sub-lead or worker rule changes.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Peer question about a dropped overlap has no path | upheld | Dropped path (Decision 47) |
+| intent | minor | §2 restart omits the drop exclusion | upheld | Points to Terms |
+| intent | minor | Small-fix drop has nowhere to record | upheld | Records nothing; chat covers it |
+| intent | minor | Rare path: small-fix cancel lost on restart | accepted-risk | Accepted Risks |
+| intent | minor | Rare path: drop is permanent | accepted-risk | Accepted Risks |
+| intent | minor | Rare path: finished-peer line unnamed | upheld | Named `dropped: finished` (cheap) |
+| mechanics | major | Peer question reopens a dropped overlap | upheld | Same as intent (Decision 47) |
+| mechanics | major | Small-fix cancellation record | upheld | Records nothing; rare restart case accepted |
+| mechanics | major | Second follow-up dropped leaves an unsettled answer | upheld | Every follow-up inherits validity (Decision 47) |
 
 ### Round 23 — 2026-11-21
 
