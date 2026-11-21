@@ -186,3 +186,4 @@ No change to when an agent counts as quiet or to the reminders before the card; 
 - 2026-11-21 — Verification attempt 2 at 1f732426: Claude verifier PASS; GPT verifier FAIL with one gap (duplicate-start test seeds a dismissed card, not an open one). A Spec Validation item, so fixed; 0 rare paths. Remediation 2 opened.
 - 2026-11-21 — R2 accepted (band: scout): diff is exactly the brief's replacement block; sub-lead re-ran app-quiet.test.js 24/24 and the full node suite 789/789 after merge.
 - 2026-11-21 — R2: worker reported "Choices: none"; the scout found none in the diff.
+- 2026-11-21 — Verification attempt 3 at 7b2089db: Claude and GPT verifiers both PASS, no gaps; 0 rare paths accepted. Failures seen only under concurrent suite load (app-uploads-archive, run.test port collision, app-agents-decks popover) were outside this change and passed in isolation.
