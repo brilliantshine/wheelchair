@@ -13,6 +13,11 @@ agents own neither tmux nor the machine secret.
 | `test/try.test.js` | Try endpoint, record, switching and status tests against isolated repositories. |
 | `lib/aside-turns.js` | Durable headless aside turns, CLI spawning, parsing and restart recovery. |
 | `lib/sudo.js` | Durable sudo request registration, polling, outcome delivery and cancellation. |
+| `lib/win.js` | Windows bridge lifecycle, session routing, readying and copy cleanup. |
+| `lib/win-env.js` | WSL detection, Windows paths, interop and PowerShell environment. |
+| `lib/win-sync.js` | Windows worktree copies and Git reconciliation. |
+| `lib/win-args.js` | Windows bridge argument validation. |
+| `test/windows-live.sh` | Live Windows bridge check, exit 77 when not WSL. |
 | `lib/screen.js` | Per-session invisible X screens for `POST /v1/agent/screen`: Xvfb with a per-screen cookie, app launch (sandboxed for Codex), screenshots, validated xdotool input, one systemd user slice per screen for teardown, the 60 s sweep and startup cleanup. `test/screen-live.sh` drives it against real Xvfb. |
 | `lib/screen-input.js` | X-tool layer for screens: window listing, screenshots, pointer, typing, key deadlines and releases, auto-focus. |
 | `lib/screen-args.js` | Pure validation of `wc.js screen` arguments (fixed key list, limits) and `xwininfo` output parsing. |
