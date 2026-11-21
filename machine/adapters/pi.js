@@ -56,7 +56,7 @@ module.exports = {
     const extension = template.replace('HOOK_PATH', JSON.stringify(path.join(c.root, 'machine/hook.sh'))).replace('SESSION_NAME', JSON.stringify(session.name));
     fs.mkdirSync(path.dirname(extensionPath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(extensionPath, extension, { mode: 0o600 });
-    return { ...(context.tools && context.mcp?.names.length ? { warnings: [{ names: [...context.mcp.names], text: "project tools aren't supported on Pi yet; this agent runs without them" }] } : {}), argv: [resolveCli(), '--provider', 'openrouter', '--model', input.model || 'openrouter/auto', '--session-id', session.cli_session_id, '--approve', '-e', extensionPath, '--append-system-prompt', context.promptPath, ...(input.role === 'reviewer' ? ['--tools', 'read,grep,find,ls'] : [])] };
+    return { loaded: [], ...(context.tools && context.mcp?.names.length ? { warnings: [{ names: [...context.mcp.names], text: "project tools aren't supported on Pi yet; this agent runs without them" }] } : {}), argv: [resolveCli(), '--provider', 'openrouter', '--model', input.model || 'openrouter/auto', '--session-id', session.cli_session_id, '--approve', '-e', extensionPath, '--append-system-prompt', context.promptPath, ...(input.role === 'reviewer' ? ['--tools', 'read,grep,find,ls'] : [])] };
   },
   firstMessage(input) { return input.brief || input.first_message || ''; },
   readyText(session, pane) {
