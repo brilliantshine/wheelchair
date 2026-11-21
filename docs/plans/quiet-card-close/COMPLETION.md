@@ -2,7 +2,13 @@
 slug: quiet-card-close
 date: 2026-11-21
 implemented-by: "T1 standard gpt (gpt-6.1-terra); T2 standard claude (claude-sonnet-5-5); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: gpt / gpt-6.2-sol (PASS)
+    checks: T1 gpt, T2 claude
+  - round: 1
+    lane: claude / claude-opus-5-5 (FAIL, 1 gap)
+    checks: T1 gpt, T2 claude
 ---
 
 # Completion Report — Close the "agent stopped without reporting" card
@@ -78,3 +84,22 @@ The T2 worker also reported a full browser run of 1164 passed.
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1
+
+Gap (Claude verifier, attempt 1): the new test "dismissed quiet episode rearms the ladder after starter message or child start" (`viewer/test/app-quiet.test.js`) was flaky under load. It edited the thread and called `checkQuiet` through a second Hub outside the server's thread lock, racing the server's 20 ms retry timer. Product code unchanged.
+
+Fix (R1, gpt standard, second attempt at effort xhigh): the test now drives the ladder through real turn-ended events, using `feed` so each session is mid-turn with an empty queue before its ladder. It waits on the agent reminder, the starter reminder and a new unanswered quiet card with a different id. Worker case: starter message reset. Sub-lead case: child start reset, with the lead as starter.
+
+Evidence (sub-lead re-run):
+
+```text
+$ for r in 1 2; do for i in 1 2 3 4 5 6; do node --test viewer/test/app-quiet.test.js > q-$r-$i.log 2>&1 & done; wait; grep -h '^# fail' q-$r-*.log | sort | uniq -c; done
+      6 # fail 0
+      6 # fail 0
+$ node --test viewer/test/*.test.js
+# tests 789
+# pass 789
+# fail 0
+```
+
