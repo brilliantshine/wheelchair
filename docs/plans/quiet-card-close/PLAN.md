@@ -154,6 +154,7 @@ No change to when an agent counts as quiet or to the reminders before the card; 
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub side: S1 quiet auto-close, S2 dismiss + read-time `blocking` flag, S2b, S3 docs, node tests | viewer/app/{quiet,cards,card,sessions,threads,chat}.js, viewer/app/API.md, protocol/app/cards.md, cards-lead.md, docs/maps/system-needs-quiet.md, viewer/test/app-{quiet,hub,project-tools-card}.test.js | standard / gpt (gpt-6.1-terra) | wc-4866136bd5dd-worker | `node --test viewer/test/*.test.js` | done |
 | T2 | Thread page Dismiss button (S2 page) and browser test; after T1 | viewer/pages/thread.js, viewer/test/app-needs.spec.js | standard / claude (claude-sonnet-5-5) | wc-4866136bd5dd-worker-2 | `npm --prefix viewer run test:browser`, `node --test viewer/test/*.test.js` | done |
+| R1 | Remediation 1: make the rearm test in app-quiet.test.js stable (no product change) | viewer/test/app-quiet.test.js | standard / gpt (gpt-6.1-terra) | | 6x2 concurrent app-quiet runs, `node --test viewer/test/*.test.js` | in progress |
 
 ## Log
 - 2026-11-21 Ready check at approval: hub and machine answer session list; Claude and GPT sessions started this thread (both logged in); codex/preflight.sh: token fresh. Ready.
@@ -173,3 +174,4 @@ No change to when an agent counts as quiet or to the reminders before the card; 
 - 2026-11-21 — Choice: T2, thread.js: the Dismiss button uses plain styling (not primary).
 - 2026-11-21 — Choice: T2, thread.js: the needs-case condition is restructured so a blocking card with a session shows Open terminal alone.
 - 2026-11-21 — Choice: T2, app-needs.spec.js: the quiet card in the test has a session, so it also shows Open terminal.
+- 2026-11-21 — Verification attempt 1 at f7584922: GPT verifier PASS; Claude verifier FAIL with one gap (new rearm test in app-quiet.test.js flaky under load). Judged normal use (Spec validation command); 0 rare paths. Remediation 1 opened.
