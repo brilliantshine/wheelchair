@@ -215,6 +215,15 @@ Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
+### Round 2 — 2026-11-21
+
+**Lanes:** claude (intent); non-claude (mechanics); cross-family: yes.
+
+**Changed since Round 1:** The merge moved from a lead command to the hub, triggered when it accepts a check card (§3, Decisions 10–15): readiness re-check with `judgePr`, merge-queue refusal, one attempt per head, post-merge state check with `--disable-auto`, app `needs` card on failure; new `unverified` done-card field (§2); lead protocol changes reduced (§4); merge requires at least one `matched` step.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
