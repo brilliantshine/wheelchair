@@ -15,10 +15,7 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q3: Merge when no step was tried?
-- **Context:** Check steps can all end `not-tried` (protocol-only changes, no agent could try the exact version). Raised in review round 1.
-- **Options:** (a) merge only with at least one `matched` step and none broken; (b) merge unless a step is broken.
-- **Recommendation:** (a).
+(none)
 
 ## Watch List
 
@@ -52,6 +49,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | One attempt per done head, recorded before `gh` runs; never retried | Decision 4; makes restarts and repeated sweeps safe | review-round-1 |
 | 13 | A done card for a fix pushed after it failed its check carries `unverified: true`, and the hub never merges it | Collin's "push it as it is" is permission to push, not to land | review-round-1 |
 | 14 | Repositories whose base branch uses a merge queue are not auto-merged | `gh pr merge` would queue instead of merge, and the queue could land it after the switch is turned off | review-round-1 |
+| 15 | Merge only when the check card has at least one step `agent: "matched"` and none `broken`; otherwise no merge | Collin: merge only after an agent actually tried it | user |
 
 ## Spec
 
@@ -72,8 +70,8 @@ today. Leads never merge.
 - `viewer/app/routes.js` PUT preferences: accept `body.auto_merge` in `['off','on']`, else
   400 `auto_merge must be off or on`; include `auto_merge` in the response object.
 - `viewer/pages/settings.js`: one on/off control, label "Merge pull requests when done",
-  help text: "When on, a thread merges its own pull request after an agent tried its Check
-  it yourself steps and none broke. It never merges past failing checks, conflicts or
+  help text: "When on, a thread merges its own pull request once an agent has seen at least one
+  Check it yourself step work and none broke. It never merges past failing checks, conflicts or
   GitHub's rules." Saved like the other preference controls.
 - Nothing is written into agents' instructions.
 
@@ -95,8 +93,7 @@ is silent: no card, no record):
 2. The check card's `head` equals the current done card's `head` (`currentDone`), and the
    done card has no `unverified: true`.
 3. `thread.auto_merge_attempts` has no entry for this `head`.
-4. The check card meets the rule from Open Questions Q3 [pending the user's answer] and has
-   no step `agent: "broken"`.
+4. The check card has at least one step `agent: "matched"` and no step `agent: "broken"`.
 
 Then it records `thread.auto_merge_attempts[head] = { at, outcome: 'started' }` and saves
 before contacting GitHub. Then, outside the thread lock:
@@ -146,6 +143,8 @@ the open pull request, and that fix's own done and check card go through the sam
 ### Edge cases
 
 - Switch turned off before the check card: nothing happens.
+- Every step `not-tried` (for example a protocol-only change): gate 4 fails silently; the PR
+  stays open as today.
 - PR head moved after the check: `judgePr` or `--match-head-commit` stops it; `needs` card.
 - PR already merged by Collin: step 5 stops silently.
 - Branch protection or required review: step 7 fails; `needs` card.
@@ -199,11 +198,11 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | major | All-`not-tried` check merges, against Decision 5 | user-decision | Q3 |
+| intent | major | All-`not-tried` check merges, against Decision 5 | user-decision | Collin: leave it open (#15) |
 | intent | minor | Restart retries a refused merge | upheld | No lead restart branch: hub records one attempt per head (#12) |
 | intent | minor | Hub could merge itself | upheld | Adopted (#10); credentials concern handled by the `needs` card |
 | intent | minor | Say why the gate can skip GitHub | upheld | Moot: hub re-checks readiness (#11) |
-| mechanics | blocking | All-`not-tried` merges | user-decision | Q3 (same as intent's) |
+| mechanics | blocking | All-`not-tried` merges | user-decision | #15 |
 | mechanics | blocking | Checks can fail after done; `gh` merges UNSTABLE | upheld | Re-check with `judgePr` before merge (#11) |
 | mechanics | blocking | Merge queue / auto-merge reports success while open | upheld | No merge-queue repos; verify MERGED after, else `--disable-auto` (#14) |
 | mechanics | blocking | A person's PR from the thread branch could be merged | declined | The `wc/<thread>` branch is the thread's own; the done gate already binds branch, base and head (pr-gate.js:8-14). IDEA excludes PRs not from wheelchair threads, which this is not |
