@@ -1,6 +1,6 @@
 ---
 slug: auto-merge
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -15,10 +15,7 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: Is the setting global, or per project?
-- **Context:** Settings preferences today are global (MAP.md 1).
-- **Options:** (a) one global switch; (b) per project.
-- **Recommendation:** (a).
+(none)
 
 ## Watch List
 
@@ -44,22 +41,106 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | If GitHub refuses the merge (review required, branch protection, head moved), the PR stays open, the lead says so in one line, and nothing retries the merge | Never bypass GitHub's rules (IDEA Constraints) | defaulted |
 | 5 | Merge only after the check agent has tried the Check it yourself steps and the check card has no broken step; a broken step keeps the PR open so Fix it now fixes it in place | One more look before main; fixes stay in the same thread | user |
 | 6 | After a broken check, "Leave it" does not merge; the PR stays open for Collin. A later fix that passes its check merges as usual | "Leave it" leaves the decision with Collin | defaulted |
+| 7 | One global switch on the Settings page | Matches the other settings; simplest | user |
+| 8 | The hub decides whether a merge is allowed; the machine service runs `gh pr merge` in the thread's worktree | The hub holds the setting and the cards; the machine has the credentials that already push and open the PR (MAP.md 6) | defaulted |
+| 9 | The check card's `update` text is phrased to work whether or not the merge is automatic ("Once the pull request is merged, …") | The lead writes it before the merge happens | defaulted |
 
 ## Spec
 
-The settled design, grown as decisions land. Bar: a fresh agent with no conversation
-history can implement from this section alone — behavior, boundaries, edge cases,
-non-goals, and concrete validation commands.
+### Behaviour in one paragraph
 
-A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
-Spec is still churning. See `protocol/diagrams.md`.
+A new global preference `auto_merge` (`off` | `on`, default `off`) is shown on the Settings
+page. With it on, after a thread's lead has posted the `check` card for its current done
+head, the lead asks for the merge with `wc.js pr merge --head <done head>`. The hub allows
+it only when every gate below holds; the machine service then runs
+`gh pr merge <pr-url> --merge --match-head-commit <done head>` in the thread's worktree.
+With it off, the command is refused with `auto-merge is off` and the lead does nothing
+more, so threads end exactly as today.
 
-## Deferred
+### 1. The setting
 
-Optional; present only in the lighter modes.
+- `viewer/app/settings.js`: add `auto_merge` to defaults (`'off'`), normalization (anything
+  other than `'on'` becomes `'off'`) and the preferences response.
+- `viewer/app/routes.js` PUT preferences: accept `body.auto_merge` in `['off','on']`, else
+  400 `auto_merge must be off or on`; include `auto_merge` in the response object.
+- `viewer/pages/settings.js`: one on/off control, label "Merge pull requests when done",
+  help text: "When on, a thread merges its own pull request after its Check it yourself
+  steps were tried and none broke. It never merges past failing checks, conflicts or
+  GitHub's rules." Saved like the other preference controls.
+- The setting is read by the hub at the moment of each merge request; nothing is written
+  into agents' instructions, and running threads see a change at their next request.
 
-| # | Item | Why it can wait | Source | Notes for the follow-up |
-|---|------|-----------------|--------|-------------------------|
+### 2. The merge command
+
+- `viewer/app/wc.js`: new top-level command `pr` with one operation, `merge`, requiring
+  `--head <40-char lowercase hex>`; anything else is a usage error. It posts to the
+  machine service's agent endpoint (same auth path as `/git`), new path `/pr-merge`,
+  body `{ head }`.
+- `machine/service.js` `/pr-merge`: authenticates the calling session as for `/git`, then
+  asks the hub over the existing machine→hub channel (`/api/machine/session`, as session
+  start/stop do, `machine/service.js:1563-1580`) with `{ action: 'pr-merge-gate', head,
+  calling_session }`. If the hub allows, it gets back `{ pr_url }` and runs
+  `gh pr merge <pr_url> --merge --match-head-commit <head>` in the session's recorded
+  worktree. It returns `{ ok, status, stdout, stderr }` like `/git`. A hub refusal is
+  returned as `{ ok: false, refused: <reason> }` with a non-2xx status and `gh` is not run.
+- Hub gate (`pr-merge-gate`), checked in this order, each refusal a 422 with the text shown:
+  1. caller is the thread's lead: `only the lead can merge`
+  2. `auto_merge` is `on`: `auto-merge is off`
+  3. the thread's latest non-retracted `done` card exists and its `head` equals `head`:
+     `that is not the current done head`
+  4. a non-retracted `check` card with that `head` exists: `no check card for this head yet`
+  5. no step on that check card has `agent: "broken"`: `the check found something broken`
+  6. the thread has a `pr_url` (from the done card): `this thread has no pull request`
+  On success it returns `{ pr_url }`. The gate does not query GitHub; `--match-head-commit`
+  and GitHub's own rules decide the rest.
+- Update `viewer/app/API.md` and `machine/API.md` for the new command and endpoint.
+
+### 3. Lead protocol (`protocol/app/lead.md`, and `cards.md`'s command list)
+
+- Remove "Never merge." from step 8 and say instead that the lead merges only through
+  `wc.js pr merge`, as step 10 describes.
+- Step 10, Posting: after the `check` card is accepted (or the duplicate refusal), if no
+  step is `broken`, run `wc.js pr merge --head <done head>`:
+  - success: say in one line of the reply that the pull request was merged.
+  - `auto-merge is off`: do nothing, say nothing about merging.
+  - any other refusal or a `gh` failure: say in one line that it was not merged and why,
+    in plain words, and that the user can still merge it on GitHub. Never retry, never merge any other way.
+- A broken step: no merge. "Fix it now" goes through step 9 as today; the fix's own done
+  and check card then follow this same rule. "Leave it": no merge.
+- Check card `update` text: phrase the merge step so it holds either way ("Once the pull
+  request is merged, …"), never "merge the pull request".
+- Restart (step 10 Restart): if the latest current done card has a check card at the
+  same head with no broken step, and `gh pr view --json state,headRefOid` shows `OPEN` at
+  that head, run `wc.js pr merge --head <head>` as in Posting.
+- First release: in the thread that builds this feature the installed hub lacks the
+  command; that thread does not merge.
+- `cards.md` "The commands, in one place": add `node <root>/viewer/app/wc.js pr merge --head <commit>`.
+
+### 4. Not changed
+
+Planning, review, verification, the done gate, `pr-wait.py`, the merged-card sweep (it
+posts the `merged` card within a minute of the merge, as for a manual merge), and after-done
+handling of merged PRs (stubs).
+
+### Edge cases
+
+- Setting turned off between the check card and the merge request: refused, PR stays open.
+- PR head moved after the check (someone pushed): `--match-head-commit` makes `gh` fail;
+  reported in one line, not retried.
+- PR already merged by Collin: `gh` fails or reports merged; the lead reports it in one line
+  only if it failed.
+- Branch protection or required review: `gh` fails; reported, PR stays open.
+- Check card with every step `not-tried`: allowed (none broke).
+
+### Validation
+
+- `cd viewer && npm test` passes, including new tests for: preferences round-trip and
+  validation of `auto_merge`; each hub gate refusal and the allow case; `wc.js pr merge`
+  argument checking.
+- `cd machine && node --test test/*.test.js` passes, including a test that `/pr-merge`
+  does not run `gh` on a hub refusal and runs exactly
+  `gh pr merge <url> --merge --match-head-commit <head>` (stubbed `gh`) on allow.
+- `grep -n "Never merge" protocol/app/lead.md` prints nothing.
 
 ## Accepted Risks
 
@@ -82,7 +163,7 @@ stays as review history.
 
 ## Review Rounds
 
-### Round 1 — <date>
+### Round 1 — 2026-11-21
 
 **Lanes:** <family / model>; <family / model>; cross-family: <yes|no>.
 
