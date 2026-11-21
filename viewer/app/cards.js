@@ -12,7 +12,7 @@ function addCard(thread, card, meta = {}) {
   const at = new Date().toISOString();
   const record = {
     ...card,
-    id: crypto.randomUUID(),
+    id: meta.deliveryId || crypto.randomUUID(),
     session: meta.session || null,
     at,
     created_at: at,
@@ -59,8 +59,8 @@ async function acceptCard(hub, payload) {
     require('./handoff.js').refuseFrozen(hub, thread);
     if (thread.archived) throw appError(409, 'thread is archived');
     thread.delivered_ids ||= [];
-    if (payload.delivery_id && thread.delivered_ids.includes(payload.delivery_id)) {
-      return { ok: true, duplicate: true };
+    if (payload.delivery_id && (thread.delivered_ids.includes(payload.delivery_id) || thread.cards.some((card) => card.id === payload.delivery_id))) {
+      return { ok: true, duplicate: true, id: payload.delivery_id };
     }
     const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
     if (payload.kind === 'lesson' && typeof input.for === 'string' && !['lead', 'sub-lead', 'worker', 'mapper'].includes(session.role)) {
@@ -166,7 +166,7 @@ async function acceptCard(hub, payload) {
     }
 
     const stored = ['image', 'file'].includes(checked.card.kind) ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
-    const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name });
+    const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name, deliveryId: payload.delivery_id });
     if (card.kind === 'sudo') thread.sudo_index[card.request_id] = card.id;
     if (card.kind === 'message' || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }
     if (card.kind === 'message' && !crossThread) {

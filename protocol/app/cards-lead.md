@@ -56,6 +56,7 @@ One decision for the user. Also used to confirm IDEA.md.
 | `progress` | string | no | For example "decision 4 of roughly 9" |
 | `doc` | string | no | One of `MAP.md`, `IDEA.md` or `PLAN.md` |
 | `passes_on` | string | no | The id of the question message this passes on |
+| `about_thread` | string | no | For an overlap card: the other thread's id, 12 lowercase hex characters. Stored on the card, never shown |
 
 A press comes back as `[card <id>] picked: <option label>`. Under the options the card has
 a box for their own words; sending it closes the card and comes back as
@@ -288,7 +289,7 @@ Asks the user to let this thread's lead talk to the lead of a thread in another 
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `thread` | string | yes | The other thread's id, from `session leads --all-projects`; the one card field that holds a thread id |
+| `thread` | string | yes | The other thread's id, from `session leads --all-projects`; a thread id, like `about_thread` on a `question` |
 | `why` | string | yes | One line, in the user's terms, on why the leads should talk |
 
 The user sees "Let this thread's lead talk to the lead of **<thread title>** (<last path segment of its project>)?", the `why`, and two buttons, **Allow** and **Don't allow**. One answer only; a second press is refused `card is already answered`. An open `reach` card counts in "Needs you". Only one `reach` card may be open per thread (`a reach request is already open`).
@@ -313,7 +314,7 @@ card of its own.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `card` | string | yes | The target card's id |
+| `card` | string | yes | The target card's id: the one `card.js` printed when you posted it, or from the restart context |
 | `note` | string | yes | One line saying why it was withdrawn |
 
 Only a lead may retract, and any lead of the thread may retract an earlier lead's card.

@@ -600,7 +600,7 @@
         h('h2', { id: 'others', text: 'Other agents' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
+            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
             modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']])),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
@@ -1100,7 +1100,7 @@
 
   const PLAN_OPTIONS = {
     claude: [['unknown', 'Not sure'], ['pro', 'Pro'], ['max5', 'Max 5x'], ['max20', 'Max 20x']],
-    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
+    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['prolite', 'Pro Lite'], ['pro', 'Pro'], ['promax', 'Pro Max']],
     gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
     kimi: [['unknown', 'Not sure']],
     openrouter: [['unknown', 'Not sure']],

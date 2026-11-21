@@ -32,7 +32,22 @@ const DEFAULT_STYLE = Object.freeze({
   text: "Be concise. Cut anything that makes it longer without changing the meaning.\nBuild up to technical terms and ground them, so I don't skim past something I only half get.",
 });
 
-const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 }, gemini: { unknown: 1, pro: 1, ultra: 4 }, kimi: { unknown: 1 }, openrouter: { unknown: 1 } };
+const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, prolite: 5, pro: 10, promax: 25 }, gemini: { unknown: 1, pro: 1, ultra: 4 }, kimi: { unknown: 1 }, openrouter: { unknown: 1 } };
+// The plan id a CLI reports (Codex's rate-limit `plan_type`), mapped to our plan id.
+const REPORTED_PLANS = { gpt: { plus: 'plus', prolite: 'prolite', pro: 'pro', promax: 'promax' } };
+// Weights the app used to give a plan before the table above changed; still treated as "not set by hand".
+const OLD_PLAN_WEIGHTS = { gpt: { pro: [6] } };
+// The plan and weight an account should take from what its CLI reported, or null when it should stay as is:
+// an unrecognised report, nothing to change, or a weight the user typed in themselves.
+function reportedPlan(account, planType) {
+  const reported = String(planType || '').trim().toLowerCase(), table = REPORTED_PLANS[account.provider];
+  const plan = table && Object.hasOwn(table, reported) ? table[reported] : null;
+  if (!plan) return null;
+  const defaults = [PLANS[account.provider][account.plan], ...(OLD_PLAN_WEIGHTS[account.provider]?.[account.plan] || [])];
+  if (!defaults.includes(account.weight)) return null;
+  const weight = PLANS[account.provider][plan];
+  return plan === account.plan && weight === account.weight ? null : { plan, weight };
+}
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
 function defaults() {
   return { lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini', 'kimi'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
@@ -373,4 +388,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { applyLesson, validLessonText, MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };
+module.exports = { applyLesson, validLessonText, MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, reportedPlan, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };

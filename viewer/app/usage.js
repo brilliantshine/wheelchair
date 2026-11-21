@@ -42,7 +42,20 @@ async function change(hub, fn) {
   const file = path.join(hub.state.dir, 'usage.json');
   return hub.state.queued(file, async () => { const data = await store(hub); data.readings ||= {}; data.seen ||= {}; const result = await fn(data); await atomicWrite(file, `${JSON.stringify(data, null, 2)}\n`); return result; });
 }
-async function record(hub, reading) { return change(hub, (data) => { const old = data.readings[reading.account]; if (!old || Date.parse(reading.at) > Date.parse(old.at)) data.readings[reading.account] = { ...reading, ...(!reading.limited_until && Date.parse(old?.limited_until) > Date.now() ? { limited_until: old.limited_until } : {}) };  }); }
+async function record(hub, reading) { const newest = await change(hub, (data) => { const old = data.readings[reading.account]; if (!old || Date.parse(reading.at) > Date.parse(old.at)) { data.readings[reading.account] = { ...reading, ...(!reading.limited_until && Date.parse(old?.limited_until) > Date.now() ? { limited_until: old.limited_until } : {}) }; return true; } return false; }); if (newest) await adoptReportedPlan(hub, reading); }
+// A CLI that reports its plan (Codex does) sets the account's plan and weight, unless the user typed a weight.
+async function adoptReportedPlan(hub, reading) {
+  if (!reading?.plan_type || !reading.account) return;
+  try {
+    const account = (await settingsModule.load(hub)).accounts.find((a) => a.id === reading.account);
+    if (!account || !settingsModule.reportedPlan(account, reading.plan_type)) return;
+    await settingsModule.update(hub, (value) => {
+      const current = value.accounts.find((a) => a.id === reading.account);
+      const next = current && settingsModule.reportedPlan(current, reading.plan_type);
+      if (next) Object.assign(current, next);
+    });
+  } catch { /* the reading still records; the plan is picked up from the next one */ }
+}
 async function readings(hub) { return (await store(hub)).readings || {}; }
 async function lastChosen(hub) { return (await store(hub)).last_chosen || {}; }
 async function recordChosen(hub, provider, id) { return change(hub, (data) => { (data.last_chosen ||= {})[provider] = id; }); }

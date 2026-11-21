@@ -31,7 +31,8 @@ function requestJson(urlText, method, headers = {}, body, timeout = 5000, strict
       (response) => {
         response.setEncoding('utf8');
         let output = '';
-        if (strict) response.on('aborted', () => reject(new Error('machine connection dropped')));
+        response.on('aborted', () => reject(new Error('machine connection dropped')));
+        response.on('error', reject);
         response.on('data', (chunk) => { output += chunk; });
         response.on('end', () => {
           try {

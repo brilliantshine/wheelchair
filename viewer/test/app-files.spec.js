@@ -47,8 +47,8 @@ test.describe('desktop', () => {
     await expect(side.locator('h3')).toHaveText(['Project documents', 'Sent to you']);
     const docs = side.locator('.files-section').first();
     await expect(docs.locator('a.file')).toHaveText(['IDEA.md', 'PLAN.md', 'Flow picture']);
-    await expect(docs.getByRole('link', { name: 'Download' })).toHaveCount(2);
-    await expect(docs.getByRole('link', { name: 'Download' }).last()).toHaveAttribute('href', `/wheelchair/api/threads/${made.id}/doc?file=PLAN.md&download=1`);
+    await expect(docs.getByRole('link', { name: 'Download', exact: true })).toHaveCount(2);
+    await expect(docs.getByRole('link', { name: 'Download', exact: true }).last()).toHaveAttribute('href', `/wheelchair/api/threads/${made.id}/doc?file=PLAN.md&download=1`);
     await expect(side.getByText('MAP.md')).toHaveCount(0);
     const sent = side.locator('.sent-row');
     await expect(sent.locator('.file-title, a.file')).toHaveText(['Big sheet', 'Screenshot', 'Quarterly report']);

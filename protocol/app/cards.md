@@ -23,10 +23,16 @@ Rules for every card:
 - The file holds one JSON object. `kind` must equal the kind on the command line.
 - Fields marked required must be present and non-empty. A field not listed for the kind
   is refused.
-- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient; `reach` is the one card that carries a thread id, the other thread's.) The app learns who you
+- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient; `reach` carries the other thread's id, and `question.about_thread` the other thread's id for an overlap card: the only exceptions.) The app learns who you
   are from your session token and which thread you belong to from its own record, and it
   assigns every card its `id`.
 - A card is accepted only for the thread your session belongs to.
+- On success `card.js` prints exactly one JSON line. For a kind that makes a stored card it is
+  `{"id":"<id>","kind":"<kind>"}`; for `title`, `resolve` and `retract` it is `{"ok":true}`.
+  Either gains `"queued":true` when the machine's response body has `spooled: true` (the app was
+  unreachable and the card waits on the machine; a delivered post can also return HTTP 202, which
+  adds nothing). It never prints any other card field. Keep the id: a queued card's printed id is
+  the id it gets, so `retract` and `resolve` can name it.
 - Text fields are plain sentences for a person, not codenames. A card the user sees is read
   on a phone, so write the short version.
 

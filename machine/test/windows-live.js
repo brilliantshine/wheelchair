@@ -70,6 +70,57 @@ async function poll(fn, timeout, description) {
   while (Date.now() < until) { const result = await fn(); if (result) return result; await delay(1000); }
   throw new Error(`timed out waiting for ${description}`);
 }
+// MCP stdio uses one JSON-RPC message per line. Keep every request and shutdown bounded.
+async function unityMcp(uvx, project) {
+  const server = spawn(uvx, ['--from', 'mcpforunityserver', 'mcp-for-unity', '--transport', 'stdio'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let buffer = '', stderr = '', next = 0, closed = false;
+  const pending = new Map();
+  const fail = error => { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(error); } pending.clear(); };
+  server.stderr.on('data', b => { stderr = (stderr + b).slice(-4000); });
+  server.stdout.on('data', b => {
+    buffer += b.toString();
+    let end;
+    while ((end = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+      let message; try { message = JSON.parse(line); } catch { continue; }
+      const p = pending.get(message.id); if (!p) continue;
+      pending.delete(message.id); clearTimeout(p.timer);
+      if (message.error) p.reject(new Error(`MCP ${p.method}: ${JSON.stringify(message.error)}`)); else p.resolve(message.result);
+    }
+  });
+  server.stdin.on('error', fail);
+  server.on('error', fail);
+  server.on('close', () => { closed = true; fail(new Error(`MCP server closed: ${stderr}`)); });
+  const send = (method, params, timeout = 30000) => new Promise((resolve, reject) => {
+    if (closed) return reject(new Error(`MCP server closed: ${stderr}`));
+    const id = ++next, timer = setTimeout(() => { pending.delete(id); reject(new Error(`MCP ${method} timed out`)); }, timeout);
+    pending.set(id, { resolve, reject, timer, method });
+    server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`, error => { if (error && pending.has(id)) { clearTimeout(timer); pending.delete(id); reject(error); } });
+  });
+  try {
+    await send('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'wheelchair-live', version: '1' } }, 300000);
+    server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+    const tools = await send('tools/list', {}); expect(Array.isArray(tools.tools) && tools.tools.length > 0, 'Unity MCP lists tools', tools);
+    const normalize = value => value.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+    const until = Date.now() + 120000; let found = false;
+    while (Date.now() < until) {
+      let result;
+      try { result = await send('resources/read', { uri: 'mcpforunity://instances' }, Math.min(10000, until - Date.now())); }
+      catch (e) { if (/timed out/.test(e.message)) continue; throw e; }
+      for (const content of result.contents || []) {
+        let data; try { data = JSON.parse(content.text); } catch { continue; }
+        if ((data.instances || []).some(instance => typeof instance.path === 'string' && normalize(instance.path) === normalize(project))) found = true;
+      }
+      if (found) break;
+      await delay(Math.min(1000, Math.max(0, until - Date.now())));
+    }
+    expect(found, "set MCP for Unity's transport to Stdio in Window > MCP for Unity");
+    console.log('ok - Unity MCP instance matches fixture copy');
+  } finally {
+    server.stdin.destroy(); server.kill('SIGKILL');
+    if (!closed) await Promise.race([new Promise(resolve => server.once('close', resolve)), delay(5000)]);
+  }
+}
 // Decode 8-bit, non-interlaced RGB/RGBA PNGs, including all five PNG row filters.
 function variedPng(file) {
   const png = fs.readFileSync(file);
@@ -142,6 +193,23 @@ async function main() {
   fs.writeFileSync(sessions, `${session.name}\n`);
   fs.writeFileSync(path.join(repo, 'linux.txt'), 'base linux\n'); fs.writeFileSync(path.join(repo, 'windows.txt'), 'base windows\n');
   await commit(['linux.txt', 'windows.txt'], 'base');
+  let uvx;
+  if (!process.env.WHEELCHAIR_UNITY) console.log('Unity MCP part skipped: WHEELCHAIR_UNITY unset');
+  else {
+    const windowsUvx = command('powershell.exe', ['-NoProfile', '-Command', '(Get-Command uvx.exe -ErrorAction SilentlyContinue).Source']);
+    if (!windowsUvx) console.log('Unity MCP part skipped: uvx.exe not found');
+    else uvx = command('wslpath', ['-u', windowsUvx]);
+    fs.cpSync(path.join(__dirname, 'fixtures/unity-min'), repo, { recursive: true });
+    if (uvx) {
+      const manifestPath = path.join(repo, 'Packages/manifest.json');
+      fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+      const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : {};
+      manifest.dependencies ||= {};
+      manifest.dependencies['com.coplaydev.unity-mcp'] = 'https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#main';
+      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    }
+    await commit(['.gitignore', 'Packages', 'Assets'], 'Unity fixture');
+  }
   const info = await win('info'); expect(info.ok && info.ready, 'info reports ready', info); copy = info.copy_linux;
   await win('sync'); fs.writeFileSync(path.join(repo, 'linux.txt'), 'linux edit\n'); fs.writeFileSync(path.join(copy, 'windows.txt'), 'windows edit\n'); await win('sync');
   expect(fs.readFileSync(path.join(copy, 'linux.txt'), 'utf8') === 'linux edit\n' && fs.readFileSync(path.join(repo, 'windows.txt'), 'utf8') === 'windows edit\n', 'sync round trip');
@@ -153,8 +221,7 @@ async function main() {
   await win('stop'); await poll(async () => !(await win('windows')).windows.some(w => w.title === title), 30000, 'window removal'); expect(true, 'stop removes WinForms window');
   await commit(['linux.txt', 'windows.txt'], 'round trip');
   if (!process.env.WHEELCHAIR_UNITY) { console.log('Unity part skipped'); return 77; }
-  fs.cpSync(path.join(__dirname, 'fixtures/unity-min'), repo, { recursive: true });
-  await commit(['.gitignore', 'Packages', 'Assets'], 'Unity fixture'); await win('sync');
+  await win('sync');
   const unityInput = process.env.WHEELCHAIR_UNITY;
   const unity = /^\/mnt\//.test(unityInput) ? (await win('path', unityInput)).path : unityInput;
   const project = info.copy_windows;
@@ -169,7 +236,7 @@ async function main() {
   const status = command('git', ['-C', repo, 'status', '--porcelain']);
   const diff = command('git', ['-C', repo, 'diff', '--stat']);
   expect(status === '', 'Unity worktree is clean', `git status --porcelain:\n${status}\ngit diff --stat:\n${diff}`);
-  const editor = await win('start', '--', unity, '-projectPath', project); const editorWindow = await windowWith(w => w.app_id === editor.id && /unity/i.test(w.title), 'Unity Editor window', 300000); expect(!!editorWindow, 'windows lists Unity Editor'); await screenshot(editorWindow, 'unity'); await win('stop');
+  const editor = await win('start', '--', unity, '-projectPath', project); const editorWindow = await windowWith(w => w.app_id === editor.id && /unity/i.test(w.title), 'Unity Editor window', 300000); expect(!!editorWindow, 'windows lists Unity Editor'); await screenshot(editorWindow, 'unity'); if (uvx) await unityMcp(uvx, project); await win('stop');
   return 0;
 }
 (async () => {
