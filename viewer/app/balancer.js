@@ -32,12 +32,15 @@ async function machineNameOf(hub, thread) {
 // What leads and sub-leads are told about review families. "Mix families" with only one
 // family signed in means one reviewer per round on that family, not two on it. Only sign-in
 // counts, not per-tier models, so verifier choices for multi-family setups are unchanged.
-async function reviewFamilies(hub, thread) {
-  const settings = await settingsStore.load(hub);
+// Placement uses the same answer, so a lone family outside the worker order still gets them.
+function effectiveFamilies(settings, machines, machineName) {
   if (settings.review_families !== 'both') return settings.review_families;
-  const [machines, machineName] = await Promise.all([usage.machineAccounts(hub), machineNameOf(hub, thread)]);
   const signed = Object.keys(PROVIDERS).filter((p) => signedIn(settings, machines, machineName, p));
   return signed.length === 1 ? signed[0] : 'both';
+}
+async function reviewFamilies(hub, thread) {
+  const [settings, machines, machineName] = await Promise.all([settingsStore.load(hub), usage.machineAccounts(hub), machineNameOf(hub, thread)]);
+  return effectiveFamilies(settings, machines, machineName);
 }
 async function choose(hub, thread, role, tier, constraints = {}) {
   let { provider, not_provider: excluded } = constraints;
@@ -48,15 +51,16 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   const machineName = await machineNameOf(hub, thread);
   const reserved = reservedProvider(settings, machines, machineName);
   let fallbackReview = null, droppedProvider = null, strictReview = null;
-  if (['reviewer', 'verifier'].includes(role) && settings.review_families !== 'both') {
-    const family = settings.review_families;
+  const families = effectiveFamilies(settings, machines, machineName);
+  if (['reviewer', 'verifier'].includes(role) && families !== 'both') {
+    const family = families;
     let used = signedIn(settings, machines, machineName, family);
     if (used) {
       try { await exec(path.join(hub.root, 'codex', 'model.sh'), [family, slot]); }
       catch (e) { if (e.code === 3) used = false; else throw e; }
     }
     provider = undefined; excluded = undefined;
-    if (used) strictReview = family; else fallbackReview = family;
+    if (used) strictReview = family; else if (settings.review_families !== 'both') fallbackReview = family;
   }
   if (role === 'worker' && provider && !signedIn(settings, machines, machineName, provider)) { droppedProvider = provider; provider = undefined; }
   if (!thread.provider && thread.cli && thread.sessions?.length) thread.provider = providerOf(thread.cli);

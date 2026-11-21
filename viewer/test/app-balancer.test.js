@@ -88,9 +88,10 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     assert.ok((await choose(hub, { machine: 'hub' }, 'worker', 'top', { not_provider: 'gpt' })).wait);
     for (const role of ['reviewer', 'verifier']) {
       const selection = await choose(hub, { machine: 'hub' }, role, 'top', { provider: 'claude' });
-      assert.equal(selection.provider, 'gpt'); assert.match(selection.note, /claude.*gpt/);
+      // Only GPT is signed in, so Mix families acts as GPT-only and flags are ignored, with no note.
+      assert.equal(selection.provider, 'gpt'); assert.equal(selection.note, undefined);
       const excluded = await choose(hub, { machine: 'hub' }, role, 'top', { not_provider: 'gpt' });
-      assert.equal(excluded.provider, 'gpt'); assert.match(excluded.note, /gpt/);
+      assert.equal(excluded.provider, 'gpt'); assert.equal(excluded.note, undefined);
     }
     for (const role of ['lead', 'sub-lead', 'mapper']) for (const flag of ['provider', 'not_provider']) await assert.rejects(choose(hub, { machine: 'hub' }, role, 'top', { [flag]: 'gpt' }), { status: 400 });
     await assert.rejects(choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'gpt', not_provider: 'claude' }), { status: 400 });
@@ -121,6 +122,9 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     assert.equal((await choose(gpt, { machine: 'hub' }, 'verifier', 'top', { not_provider: 'gpt' })).provider, 'gpt');
   });
   await t.test('mixed families report the one family when only one is signed in', async () => {
+    const lone = await fixture({}, {}, ['default-openrouter']);
+    assert.equal(await reviewFamilies(lone, { machine: 'hub' }), 'openrouter');
+    assert.equal((await choose(lone, { machine: 'hub' }, 'reviewer')).provider, 'openrouter');
     assert.equal(await reviewFamilies(await fixture({}, {}, ['default-gpt']), { machine: 'hub' }), 'gpt');
     assert.equal(await reviewFamilies(await fixture({}, {}, ['default-claude', 'default-gpt']), { machine: 'hub' }), 'both');
     assert.equal(await reviewFamilies(await fixture({ review_families: 'claude' }, {}, ['default-gpt']), { machine: 'hub' }), 'claude');
