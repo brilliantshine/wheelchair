@@ -49,6 +49,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D17 | Share one per-session entry-replacement mechanism with thread 135e4c312559 (Windows stdio go-between): `context.replaceEntries = {<name>: <entry>}` applied by all three adapters, Claude via `disabledMcpjsonServers` plus one per-session `--mcp-config` file; whichever thread builds first adds it, the other reuses it | Same need in both threads; avoids two clashing mechanisms; the other thread's user agreed too | user |
 | D18 | The Linux side of a forward is an HTTP proxy that sets `Host` to `localhost:<tool port>` (revised in round 9 from "original authority") and rewrites loopback origins at the tool port in `Location`, `Content-Location` and `WWW-Authenticate` to the private origin, one relay connection per request; refusals become `502` with the reason | Servers that check `Host` (DNS-rebinding protection) would reject the private authority; the 502 text tells the agent why | review-round-8 |
 | D19 | The forward is a plain byte pipe again: no `Host` or response rewriting; supersedes D18 | User's choice: all round 9 holes came from rewriting; tools built on the official MCP libraries accept localhost on any port, and `Host`-built redirects stay on the private port | user |
+| D20 | Accept that a Windows tool redirecting to an absolute address hardcoded at its own port (not built from `Host`) sends the CLI to Linux `localhost:<tool port>`, where a Linux program on that port could receive custom headers | User's choice after D19: needs a hardcoded redirect, a secret custom header and a Linux listener on the same port together | user |
 | D10 | The Windows relay refuses a connection when no Windows process accepted it or the accepting process is `wslrelay` (mechanism superseded by D13) | Stops a Linux program on the same port receiving the headers through WSL localhostForwarding (parent C3) | defaulted |
 
 ## Spec
@@ -389,6 +390,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| (User-accepted, D20.) A Windows tool that redirects to an absolute URL hardcoded with its own port sends the CLI to Linux `localhost:<tool port>`; a Linux program there could receive custom headers such as API keys | The user accepted it rather than rewrite replies (D19, D20) | review-round-10 |
 | A client that half-closes its side (TCP FIN) before the reply loses the reply, since `close` ends both directions | Rare path: the HTTP clients the CLIs use do not half-close | review-round-10 |
 | A tool withheld because the local port could not be opened or the record could not be saved is not reflected on the Project tools page, which may show "Reachable on Windows" | Rare path: local bind or state-file write failures on a healthy machine; the reason is in the machine service log | review-round-5 |
 | Port 0 can pick a port that an unmarked Linux tool is configured for while its server is down; that tool then reaches the Windows forward | Rare path: needs a Linux tool configured on a port in the kernel's ephemeral range, its server down, and the kernel picking exactly that port | review-round-4 |
@@ -615,12 +617,24 @@ hides the status.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | major | Redirects built from a hardcoded address (not `Host`) still leave the forward; custom headers could reach a Linux program on the tool port | user-decision | Question to the user (fix needs rewriting, reversed by D19) |
+| intent | major | Redirects built from a hardcoded address (not `Host`) still leave the forward; custom headers could reach a Linux program on the tool port | user-decision | User accepted the risk (D20); Accepted Risks |
 | intent | minor | `127.0.0.1` replaces `localhost`; Not doing too narrow | upheld | §4 why `127.0.0.1`; Not doing widened |
 | intent | minor | C5 still says per request | upheld | C5 reworded |
 | mechanics | blocking | Rare path: TCP half-close not forwarded | accepted-risk | Accepted Risks (clients don't half-close) |
 | mechanics | major | No flow control after `opened` | upheld | §4 per-connection 4 MiB bound, shared pipe never paused |
 | mechanics | major | Status checks survive Cancel/reload | upheld | §6 per-render token |
+
+### Round 11 — 2026-11-21
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 10:** §4 per-connection flow control (4 MiB, shared pipe never paused);
+§4 why the host is always `127.0.0.1`; Not doing widened to tools that check the host name or
+port; §6 status requests tied to a per-render token (Cancel, reload); C5 reworded; D20 and
+two Accepted Risks (hardcoded redirects, user-accepted; TCP half-close); Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
