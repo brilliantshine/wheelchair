@@ -539,6 +539,15 @@ npm --prefix viewer run test:browser
 | mechanics | blocking | Saved failure vs Sign in for a `recipe: false` vendor install | accepted-risk | Rare path (Accepted Risks) |
 | mechanics | major | Switch-off wait could be read as blocking every role | upheld | S3.2 scoped to pinned lead/sub-lead starts |
 
+### Round 10 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 9:** S3.2 (switch-off wait scoped to pinned lead/sub-lead starts); Decisions 7 and 10 marked refined; one Accepted Risks row. Budget reset by Collin's "Keep going".
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
