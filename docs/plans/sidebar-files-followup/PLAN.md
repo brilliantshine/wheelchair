@@ -56,8 +56,9 @@ whose `thread.machine` does not resolve to the hub's own machine (resolution as 
   coordinates) plus a 24 px margin, and its width/height to that box, so the export is
   independent of the viewport, pan or zoom; copy each
   element's computed style that affects drawing (fill, fill-opacity, stroke, stroke-opacity,
-  stroke-width, stroke-dasharray, opacity, font-family, font-size, font-weight, text-anchor, dominant-baseline) inline,
-  serialize it, draw it onto a canvas at 2× scale on the page's background colour, and
+  stroke-width, stroke-dasharray, opacity, visibility, text-transform, letter-spacing, font-family, font-size, font-weight, text-anchor, dominant-baseline) inline,
+  remove the viewer's hidden label-measurement element (`text.label-metric`,
+  `viewer/index.html:1902`) from the clone; serialize it, draw it onto a canvas at 2× scale on the page's background colour, and
   save the canvas as PNG. If either canvas side would exceed 8192 px, scale down to fit.
 - **Form pictures** (timeline, before-after, layers, side-by-side): draw the form onto a
   canvas from its JSON with a small drawer per form, following the same reading order and
@@ -181,7 +182,9 @@ working tree.
   under `docs/plans` in `base..wc/<id>`, minus directories present at the base. Returns
   `{slug}` when exactly one, else `{slug: null}`.
 - `action: "list"`: `slug` required and valid (`documents.validSlug` rules). Returns
-  `{files: [...]}`: which of the three plan files exist at `wc/<id>`.
+  `{files: [...]}`: which of the three plan files exist at `wc/<id>` and are at most 2 MiB
+  (`git cat-file -s`), matching the local 2 MiB rule (`viewer/app/documents.js:13`); an
+  oversized file is not listed, so it never appears in the sidebar or the ZIP.
 - `action: "read"`: `slug` and `file` required. `file` is one of the three plan files or
   `graphs/<name>` with `<name>` matching `^[A-Za-z0-9._-]+\.(json|html)$`. Returns the blob
   via `git show wc/<id>:docs/plans/<slug>/<file>`, refused past 2 MiB (`git cat-file -s`
@@ -283,7 +286,7 @@ New tests, at least:
   links only for names in `thread.kept_files`; a rebase-kept archive still stays unarchived.
 - Machine tests: `/v1/plan-files` discover/list/read on a temp repo, input refusals,
   2 MiB refusal; archive moves only listed names to `kept/`, a retried archive after a
-  completed move reports the right `kept_files`, serves them afterwards, still
+  completed move reports the right `kept_uploads` (the viewer test checks `thread.kept_files`), serves them afterwards, still
   removes everything else; a move failure yields `uploads_removed: false`; `reserveUpload`
   numbering across `kept/`.
 - Browser tests: picture page Download produces a PNG blob for a graph (including one wider
@@ -387,6 +390,16 @@ New tests, at least:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Form 404 text contradicts "existing 404" mapping | upheld | Pending the split question (remote pictures) |
+| intent | minor | Machine retry test names `kept_files` | upheld | Validation names `kept_uploads` |
+| mechanics | blocking | `/graph` wrapper breaks form pictures | upheld | Pending the split question (remote pictures) |
+| mechanics | blocking | Recovery skips initial fit and breadcrumbs | downgraded (major) | Pending the split question (remote pictures) |
+| mechanics | major | 404 then 502 leaves "graph is gone" showing | upheld | Pending the split question (remote pictures) |
+| mechanics | major | Overlapping 10 s polls can redraw stale graphs | upheld | Pending the split question (remote pictures) |
+| mechanics | major | Form cache keeps failed reads for the tab's life | upheld | Pending the split question (remote pictures) |
+| mechanics | major | Oversized remote document listed then unreadable | upheld | S5: `list` excludes files over 2 MiB |
+| mechanics | minor | Export style list misses visibility and text styles; measurement element leaks | upheld | S1: styles added, measurement element removed |
+| mechanics | minor | Machine retry test names `kept_files` | upheld | Same fix as intent finding |
 
 ## Implementation Tasks
 
