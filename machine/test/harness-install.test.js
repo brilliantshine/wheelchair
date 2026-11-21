@@ -41,15 +41,22 @@ test('detached install routes persist through service restart and validate', asy
 });
 test('full node version comparison', () => { assert.equal(newer('22.18.9', '22.19.0'), false); assert.equal(newer('22.19.0', '22.19.0'), true); assert.equal(newer('23.0.0', '22.19.0'), true); });
 
-test('npm recipe refuses an old Node before running', async () => {
-  const root = await makeTemp('harness-old-node-');
-  const recipes = path.join(root, 'recipes.json'), preload = path.join(root, 'old.js');
-  fs.writeFileSync(recipes, JSON.stringify({openrouter: 'touch "$HOME/ran"'}));
-  fs.writeFileSync(preload, "Object.defineProperty(process.versions, 'node', {value: '22.18.9'});");
-  const env = {...process.env, HOME: root, WHEELCHAIR_HARNESS_RECIPES: recipes, NODE_OPTIONS: `--require=${preload}`};
-  const result = spawnSync(process.execPath, ['-e', `const h = require(${JSON.stringify(path.resolve(__dirname, '../lib/harness-install'))}); h.start('openrouter');`], {env, encoding: 'utf8'});
-  assert.equal(result.status, 0, result.stderr);
-  let state; for (let i = 0; i < 100; i++) { await delay(30); const f = path.join(root, '.wheelchair/installs/openrouter.result'); if (fs.existsSync(f)) { state = JSON.parse(fs.readFileSync(f)); break; } }
-  assert.equal(state.state, 'failed'); assert.equal(fs.existsSync(path.join(root, 'ran')), false);
-  assert.match(fs.readFileSync(path.join(root, '.wheelchair/installs/openrouter.log'), 'utf8'), /Pi \(OpenRouter\) needs Node 22\.19\.0 or newer; this machine has 22\.18\.9\. Update Node, then try again\./);
-});
+for (const [version, expected] of [['20.19.0', 'failed'], ['22.19.0', 'succeeded'], ['invalid', 'failed']]) {
+  test(`npm recipe checks PATH Node ${version}`, async () => {
+    const root = await makeTemp('harness-path-node-');
+    const bin = path.join(root, '.local/bin'); fs.mkdirSync(bin, { recursive: true });
+    const recipes = path.join(root, 'recipes.json');
+    fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\n[ "$1" = -e ] && printf '%s' '${version}'\n`, { mode: 0o755 });
+    fs.writeFileSync(recipes, JSON.stringify({openrouter: `touch "$HOME/ran"; printf '#!/bin/sh\\nexit 0\\n' > "$HOME/.local/bin/pi"; chmod +x "$HOME/.local/bin/pi"`}));
+    const env = {...process.env, HOME: root, PATH: `${bin}:/usr/local/bin:/usr/bin:/bin`, WHEELCHAIR_HARNESS_RECIPES: recipes};
+    const result = spawnSync(process.execPath, ['-e', `const h = require(${JSON.stringify(path.resolve(__dirname, '../lib/harness-install'))}); h.start('openrouter');`], {env, encoding: 'utf8'});
+    assert.equal(result.status, 0, result.stderr);
+    let state; for (let i = 0; i < 100; i++) { await delay(30); const f = path.join(root, '.wheelchair/installs/openrouter.result'); if (fs.existsSync(f)) { state = JSON.parse(fs.readFileSync(f)); break; } }
+    assert.equal(state.state, expected);
+    assert.equal(fs.existsSync(path.join(root, 'ran')), expected === 'succeeded');
+    if (expected === 'failed') {
+      const found = version === 'invalid' ? 'no working node on its path' : version;
+      assert.equal(fs.readFileSync(path.join(root, '.wheelchair/installs/openrouter.log'), 'utf8').trim(), `Pi (OpenRouter) needs Node 22.19.0 or newer; this machine has ${found}. Update Node, then try again.`);
+    }
+  });
+}

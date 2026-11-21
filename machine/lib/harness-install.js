@@ -46,8 +46,12 @@ async function job(p, started_at) {
   try {
     const recipe = loadRecipes()[p], cli = names[p];
     if (!recipe) throw new Error('no recipe');
-    if (recipe.node && !newer(process.versions.node, recipe.node)) {
-      console.error(`${labels[p]} needs Node ${recipe.node} or newer; this machine has ${process.versions.node}. Update Node, then try again.`);
+    const node = recipe.node ? spawnSync('node', ['-e', 'process.stdout.write(process.versions.node)'], { env: process.env, encoding: 'utf8' }) : null;
+    const version = node?.status === 0 ? node.stdout.trim() : '';
+    if (recipe.node && !/^\d+\.\d+\.\d+$/.test(version)) {
+      console.error(`${labels[p]} needs Node ${recipe.node} or newer; this machine has no working node on its path. Update Node, then try again.`);
+    } else if (recipe.node && !newer(version, recipe.node)) {
+      console.error(`${labels[p]} needs Node ${recipe.node} or newer; this machine has ${version}. Update Node, then try again.`);
     } else {
       const installed = run('/bin/sh', ['-c', recipe.command]); code = installed.status ?? 1;
       if (code === 0 && (p === 'claude' || p === 'gpt')) {
