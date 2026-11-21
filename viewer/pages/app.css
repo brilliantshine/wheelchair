@@ -202,3 +202,17 @@ ul#list li.row.current .title { font-weight: 600; }
 .attachment-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
 .attachment-thumb { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; }
 .attachment-remove { padding: 0; min-height: 24px; border: 0; background: transparent; font-size: 18px; }
+
+/* Home checklist: "Set up an agent" (threads.js) */
+.card.onboarding { display: flex; flex-direction: column; gap: 8px; list-style: none; }
+.card.onboarding h3 { margin: 0; font-size: 15px; }
+.ob-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ob-step { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.ob-step.done { color: var(--dim); }
+.ob-step .ob-tick { flex: none; width: 1.2em; }
+.ob-step.done .ob-tick { color: var(--good-text, #5fbf8a); }
+.ob-text { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.ob-reason { font-size: 12px; }
+.card.onboarding p { margin: 0; font-size: 12px; }
+.card.onboarding .btn-link { align-self: flex-start; }
+.card.onboarding .btn-link { display: inline-block; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none; background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); }

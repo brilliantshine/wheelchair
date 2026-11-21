@@ -5,7 +5,7 @@
 // copy of its own beyond the unsaved editor drafts.
 (() => {
   const API = '/wheelchair/api';
-  const SECTIONS = [['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools']];
+  const SECTIONS = [['harnesses', 'Harnesses'], ['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools']];
   const TIERS = [
     ['light', 'Light', 'Spelled-out changes, few files'],
     ['standard', 'Standard', 'Most building'],
@@ -482,7 +482,7 @@
 
     const head = h('tr', {}, h('th', { scope: 'col', text: 'Provider' }),
       TIERS.map(([, label, desc]) => h('th', { scope: 'col' }, h('span', { class: 'tier-name', text: label }), h('span', { class: 'tier-desc', text: desc }))));
-    const body = PROVIDERS.map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
+    const body = PROVIDERS.filter(([provider]) => harnessOn(provider)).map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
       h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli }), provider === 'openrouter' && h('span', { class: 'hint', text: 'Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.' })),
       TIERS.map(([slot, label]) => {
         const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
@@ -599,7 +599,7 @@
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
-            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']])),
+            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']].filter(([v]) => v === 'both' || harnessOn(v)))),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
@@ -1057,6 +1057,7 @@
 
   // The timer runs only while Accounts or Usage is shown.
   function syncSection() {
+    if (section === 'harnesses') enterHarnesses(); else stopHarnesses();
     const live = section === 'accounts' || section === 'usage';
     if (live && !usageTimer) usageTimer = window.wcPoller(refreshUsage, 30000);
     if (!live && usageTimer) { usageTimer.stop(); usageTimer = null; }
@@ -1083,11 +1084,13 @@
     if (!signCard) return;
     clearInterval(signCard.poll); clearTimeout(signCard.close);
     signCard.el.remove();
+    const inRow = signCard.harness;
     signCard = null;
     refreshUsage();
+    if (inRow) loadHarnesses(true);
   }
 
-  function openSignin(account, machine) {
+  function openSignin(account, machine, harness) {
     closeSignin();
     const terminal = `/wheelchair/app/terminal?login=${encodeURIComponent(account.id)}&machine=${encodeURIComponent(machine)}`;
     const status = h('p', { class: 'hint waiting', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Starting sign-in on ' + machine + '…'));
@@ -1105,7 +1108,7 @@
         inlineErr(codeBox, e.message);
         if (e.status === 409 && account.provider === 'openrouter') {
           field.value = '';
-          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine) }));
+          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine, harness) }));
         }
       }
     } });
@@ -1116,9 +1119,9 @@
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
       h('div', { class: 'head-line' }, h('h2', { text: `Sign in ${account.name} on ${machine}` }), closeBtn),
       status, actions, codeBox, pasteWrap, h('div', { class: 'actions' }, termLink));
-    const card = { account: account.id, machine, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
+    const card = { account: account.id, machine, harness: harness || null, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
     signCard = card;
-    const hostEl = document.getElementById('signin-host');
+    const hostEl = harness ? document.querySelector(`[data-signin-host="${harness}"]`) : document.getElementById('signin-host');
     if (hostEl) hostEl.replaceChildren(root);
 
     const fail = () => {
@@ -1292,7 +1295,7 @@
       saveAdd(form);
     } });
     const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; renderPanel(); } },
-      Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini').map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
+      Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini' && harnessOn(v)).map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
     const name = h('input', { id: 'add-name', value: adding.name, 'aria-label': 'Account name', placeholder: 'Name, e.g. Work', required: true, oninput: () => { adding.name = name.value; } });
     const plan = planSelect(adding.provider, adding.plan);
     plan.id = 'add-plan';
@@ -1322,8 +1325,8 @@
       h('div', {}, h('h1', { text: 'Accounts' }),
         h('p', { class: 'lede', text: 'The logins agents run on. New sessions pick the account with the most room.' }),
         usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
-      h('div', { id: 'signin-host' }, signCard ? signCard.el : null),
-      Object.entries(PROVIDER_NAME).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
+      h('div', { id: 'signin-host' }, signCard && !signCard.harness ? signCard.el : null),
+      Object.entries(PROVIDER_NAME).filter(([provider]) => harnessOn(provider)).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
         h('h2', { text: label }),
         provider === 'gemini' && h('p', { class: 'hint', text: 'Antigravity supports one account per machine' }),
         accountRows(provider).filter((a) => provider !== 'gemini' || a.id === 'default-gemini').map(accountCard),
@@ -1347,10 +1350,12 @@
   // An order editor: the providers in order, up/down to move; leads may end in "then whatever's left".
   function orderEditor(key, label) {
     ensureDraft();
-    const real = balDraft[key].filter((p) => p !== 'any');
+    const all = balDraft[key].filter((p) => p !== 'any');
+    const real = all.filter(harnessOn);
+    const left = all.filter((p) => !harnessOn(p)); // switched off: hidden here, kept in the saved order
     const hasAny = balDraft[key].includes('any');
-    const missing = Object.keys(PROVIDER_NAME).filter((p) => !real.includes(p));
-    const commit = (list) => { balDraft[key] = hasAny && key === 'lead_order' ? [...list, 'any'] : list; renderPanel(); };
+    const missing = Object.keys(PROVIDER_NAME).filter((p) => harnessOn(p) && !real.includes(p));
+    const commit = (list) => { balDraft[key] = hasAny && key === 'lead_order' ? [...list, ...left, 'any'] : [...list, ...left]; renderPanel(); };
     const move = (i, d) => { const next = real.slice(); const [item] = next.splice(i, 1); next.splice(i + d, 0, item); commit(next); };
     return h('div', { class: 'order', 'data-order': key, role: 'group', 'aria-label': label },
       h('ol', {}, real.map((p, i) => h('li', {}, h('span', { text: PROVIDER_NAME[p] }),
@@ -1359,7 +1364,7 @@
         real.length > 1 && h('button', { type: 'button', class: 'small', text: 'Remove', 'aria-label': `Leave ${PROVIDER_NAME[p]} out`, onclick: () => commit(real.filter((x) => x !== p)) })))),
       missing.map((p) => h('button', { type: 'button', class: 'small', text: `+ ${PROVIDER_NAME[p]}`, onclick: () => commit([...real, p]) })),
       key === 'lead_order' && h('label', { class: 'check' },
-        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...real, 'any'] : real; renderPanel(); } }),
+        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...real, ...left, 'any'] : [...real, ...left]; renderPanel(); } }),
         h('span', { text: "then whatever's left" })));
   }
 
@@ -1372,6 +1377,7 @@
       inlineErr(host, '');
       renderPanel();
       setNote(SAVED, false);
+      loadHarnesses(true);
     } catch (e) { inlineErr(host, e.message); setNote('', false); }
   }
 
@@ -1461,6 +1467,228 @@
     return row;
   }
 
+  // ---------------------------------------------------------------- Harnesses
+
+  const HARNESSES = [
+    ['claude', 'Claude Code', 'Anthropic', 'https://docs.claude.com/en/docs/claude-code/setup'],
+    ['gpt', 'Codex', 'OpenAI', 'https://github.com/openai/codex'],
+    ['gemini', 'Antigravity', 'Google', 'https://antigravity.google/cli'],
+    ['kimi', 'Kimi Code', 'Kimi', 'https://code.kimi.com'],
+    ['openrouter', 'Pi (OpenRouter)', 'Pi', 'https://www.npmjs.com/package/@earendil-works/pi-coding-agent'],
+  ];
+  // A switch the hub does not report counts as on (an older hub, or a fresh read still on its way).
+  function harnessOn(provider) { return !data || !data.harnesses || data.harnesses[provider] !== false; }
+
+  // hz: the Harnesses section's own state. `jobs` holds the last install state per "machine/provider",
+  // `polls` the running install pollers.
+  const hz = { data: null, error: '', machine: null, seq: 0, jobs: {}, polls: {}, reachTimer: null, checked: null, confirmOff: null, rowErr: {}, active: false };
+
+  function harnessMachine() {
+    const list = (hz.data && hz.data.machines) || [];
+    if (!list.length) return null;
+    if (!list.some((m) => m.name === hz.machine)) {
+      const start = hz.data.can_start && hz.data.can_start.machine;
+      hz.machine = (list.find((m) => m.name === start) || list.find((m) => m.reachable) || list[0]).name;
+    }
+    return list.find((m) => m.name === hz.machine);
+  }
+
+  function stopPoll(key) {
+    const run = hz.polls[key];
+    if (run) { run.stopped = true; clearTimeout(run.timer); delete hz.polls[key]; }
+  }
+  function stopHarnesses() {
+    hz.active = false;
+    for (const key of Object.keys(hz.polls)) stopPoll(key);
+    clearTimeout(hz.reachTimer); hz.reachTimer = null;
+    hz.checked = null;
+  }
+  function paintHarnesses() { if (section === 'harnesses') renderPanel(); }
+
+  function enterHarnesses() {
+    stopHarnesses();
+    hz.active = true;
+    loadHarnesses(true);
+  }
+
+  async function loadHarnesses(fresh) {
+    const seq = ++hz.seq;
+    let res;
+    try { res = await api('/harnesses' + (fresh ? '?fresh=1' : '')); } catch (e) {
+      if (seq !== hz.seq) return;
+      hz.error = e.message; paintHarnesses();
+      if (hz.active) { clearTimeout(hz.reachTimer); hz.reachTimer = setTimeout(() => loadHarnesses(true), 5000); }
+      return;
+    }
+    if (seq !== hz.seq) return;
+    hz.data = res; hz.error = '';
+    if (data && res.switches) data.harnesses = { ...(data.harnesses || {}), ...res.switches };
+    const machine = harnessMachine();
+    clearTimeout(hz.reachTimer); hz.reachTimer = null;
+    if (!hz.active) return;
+    paintHarnesses();
+    if (machine && !machine.reachable) {
+      hz.checked = null;
+      hz.reachTimer = setTimeout(() => loadHarnesses(true), 5000);
+    } else if (machine && hz.checked !== machine.name) {
+      for (const key of Object.keys(hz.polls)) stopPoll(key);
+      hz.checked = machine.name;
+      for (const [provider] of HARNESSES) if (harnessOn(provider)) pollInstall(machine.name, provider, 'GET');
+    }
+  }
+
+  // Poll one provider's install on one machine every 2 s until it is idle, failed or succeeded.
+  // A 502, network error or no answer keeps polling and marks the row as unreachable meanwhile.
+  function pollInstall(machine, provider, firstMethod) {
+    const key = machine + '/' + provider;
+    stopPoll(key);
+    const run = { stopped: false, timer: null };
+    hz.polls[key] = run;
+    const url = API + `/machines/${encodeURIComponent(machine)}/harnesses/${encodeURIComponent(provider)}/install`;
+    const finish = () => { stopPoll(key); };
+    const again = () => { if (!run.stopped) run.timer = setTimeout(() => step('GET'), 2000); };
+    async function step(method) {
+      if (run.stopped) return;
+      let res = null; let body = {};
+      try {
+        res = await fetch(url, { method, signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+        body = await res.json().catch(() => ({}));
+      } catch { res = null; }
+      if (run.stopped) return;
+      if (!res || res.status >= 500) {
+        hz.jobs[key] = { ...(hz.jobs[key] || { state: 'running', tail: '' }), offline: true };
+        paintHarnesses(); return again();
+      }
+      if (res.status === 404 && method === 'POST') { finish(); delete hz.jobs[key]; loadHarnesses(true); return; }
+      if (res.status === 404) { finish(); delete hz.jobs[key]; paintHarnesses(); return; }
+      if (res.status === 409 && method === 'POST') return step('GET');
+      if (!res.ok) { hz.jobs[key] = { state: 'failed', tail: body.error || ('http ' + res.status) }; finish(); paintHarnesses(); return; }
+      const tail = body.output_tail || '';
+      if (body.state === 'running') { hz.jobs[key] = { state: 'running', tail }; paintHarnesses(); return again(); }
+      finish();
+      if (body.state === 'failed') { hz.jobs[key] = { state: 'failed', tail }; paintHarnesses(); return; }
+      delete hz.jobs[key];
+      if (body.state === 'succeeded') loadHarnesses(true); else paintHarnesses();
+    }
+    step(firstMethod);
+  }
+
+  async function setHarness(provider, enabled) {
+    hz.confirmOff = null; delete hz.rowErr[provider];
+    try {
+      const res = await api('/settings/harnesses/' + encodeURIComponent(provider), { method: 'PUT', body: { enabled } });
+      if (data && res && res.harnesses) data.harnesses = res.harnesses;
+    } catch (e) { hz.rowErr[provider] = e.message; paintHarnesses(); return; }
+    paintHarnesses();
+    await loadHarnesses(true);
+    const machine = harnessMachine();
+    if (enabled && machine && machine.reachable) pollInstall(machine.name, provider, 'GET');
+    else if (!enabled && machine) { stopPoll(machine.name + '/' + provider); delete hz.jobs[machine.name + '/' + provider]; paintHarnesses(); }
+  }
+
+  // The first account of the provider that is neither retired nor paused.
+  function signinAccount(provider) {
+    const mine = ((data && data.accounts) || []).filter((a) => a.provider === provider && !((data.retired_accounts || []).includes(a.id)));
+    return { usable: mine.find((a) => !a.paused) || null, any: mine.length > 0 };
+  }
+
+  function linkReasons(text) {
+    return String(text).split(/(Workers try first|Leads try)/).map((part) => (part === 'Workers try first'
+      ? h('a', { href: '#usage', text: part }) : part === 'Leads try' ? h('a', { href: '#models', text: part }) : part));
+  }
+
+  function harnessRow(info, machine) {
+    const [provider, name, vendor, docs] = info;
+    const st = (machine.harnesses || {})[provider] || { installed: false, version: null, signed_in: false, recipe: false };
+    const on = harnessOn(provider);
+    const job = hz.jobs[machine.name + '/' + provider];
+    const stateText = st.signed_in ? 'Signed in' : st.installed ? 'Installed' + (st.version ? ' ' + st.version : '') : 'Not installed';
+    const actions = h('div', { class: 'h-actions' });
+    const extra = [];
+    const install = (label) => h('button', { type: 'button', class: 'small primary', text: label, 'aria-label': `${label} ${name}`, onclick: () => {
+      hz.jobs[machine.name + '/' + provider] = { state: 'running', tail: '' };
+      pollInstall(machine.name, provider, 'POST'); paintHarnesses();
+    } });
+    if (on) {
+      if (job && job.state === 'running') {
+        actions.append(h('span', { class: 'hint waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }),
+          document.createTextNode(job.offline ? `Can't reach ${machine.name}, retrying…` : 'Installing…')));
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (job && job.state === 'failed' && st.recipe !== false) {
+        actions.append(h('span', { class: 'inline-err', role: 'alert', text: 'Install failed' }));
+        if (st.recipe !== null) actions.append(install('Try again'));
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (!st.installed) {
+        if (st.recipe === false) actions.append(h('a', { class: 'btn-link', href: docs, target: '_blank', rel: 'noopener', text: `Install from ${vendor}'s site` }));
+        else if (st.recipe === true) actions.append(install('Install'));
+      } else if (!st.signed_in) {
+        const { usable, any } = signinAccount(provider);
+        if (usable) actions.append(h('button', { type: 'button', class: 'small primary', text: 'Sign in', 'aria-label': `Sign in ${name}`, onclick: () => { openSignin(usable, machine.name, provider); paintHarnesses(); } }));
+        else if (any) actions.append(h('span', { class: 'hint', text: `All ${name} accounts are paused ` }), h('a', { href: '#accounts', text: 'Open Accounts' }));
+        else actions.append(h('a', { href: '#accounts', text: 'Add an account' }));
+      }
+    }
+    const confirming = hz.confirmOff === provider;
+    const count = (hz.data.threads_using || {})[provider] || 0;
+    const sw = h('label', { class: 'h-switch' },
+      h('input', { type: 'checkbox', role: 'switch', checked: on, 'aria-label': `Use ${name}`, onchange: (ev) => {
+        if (ev.target.checked) return setHarness(provider, true);
+        ev.target.checked = true;
+        if (count > 0) { hz.confirmOff = provider; paintHarnesses(); } else setHarness(provider, false);
+      } }),
+      h('span', { text: 'Use' }));
+    const row = h('div', { class: 'h-row' + (on ? '' : ' off'), 'data-provider': provider },
+      h('div', { class: 'h-head' },
+        h('div', { class: 'h-name' }, h('strong', { text: name }), h('span', { class: 'hint h-state', text: stateText })),
+        sw),
+      actions,
+      confirming && h('div', { class: 'actions h-confirm' },
+        h('span', { text: `${count} ${count === 1 ? 'thread uses' : 'threads use'} ${name}. Their running agents keep going, but no new agent starts on it. Leave it out?` }),
+        h('button', { type: 'button', class: 'danger small', text: 'Leave it out', onclick: () => setHarness(provider, false) }),
+        h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { hz.confirmOff = null; paintHarnesses(); } })),
+      hz.rowErr[provider] && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] }),
+      extra,
+      h('div', { class: 'h-signin', 'data-signin-host': provider }, signCard && signCard.harness === provider && signCard.machine === machine.name ? signCard.el : null));
+    return row;
+  }
+
+  function renderHarnesses() {
+    const head = h('div', {}, h('h1', { text: 'Harnesses' }),
+      h('p', { class: 'lede', text: 'The agent programs wheelchair can run. Install and sign in to the ones you use, and leave out the rest.' }));
+    if (!hz.data) {
+      return h('div', { class: 'models harnesses' }, head, hz.error
+        ? h('p', { class: 'inline-err', role: 'alert', text: 'Could not read harnesses: ' + hz.error })
+        : h('p', { class: 'v-empty waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Loading harnesses…')));
+    }
+    const machines = hz.data.machines || [];
+    const machine = harnessMachine();
+    const parts = [head];
+    if (machines.length > 1) {
+      parts.push(h('label', { class: 'h-picker' }, h('span', { text: 'Machine' }),
+        h('select', { 'aria-label': 'Machine', onchange: (ev) => {
+          hz.machine = ev.target.value; hz.checked = null; hz.confirmOff = null;
+          for (const key of Object.keys(hz.polls)) stopPoll(key);
+          loadHarnesses(false);
+        } }, machines.map((m) => h('option', { value: m.name, text: m.name, selected: m.name === hz.machine })))));
+    }
+    const cs = hz.data.can_start;
+    if (cs && ((cs.lead && !cs.lead.ok) || (cs.worker && !cs.worker.ok))) {
+      const reasons = [['lead', cs.lead], ['worker', cs.worker]].filter(([, r]) => r && !r.ok && r.reason).map(([, r]) => r.reason);
+      parts.push(h('div', { class: 'h-notice', role: 'status' },
+        h('strong', { text: `Agents can't start yet on ${cs.machine}:` }),
+        [...new Set(reasons)].map((r) => h('p', {}, linkReasons(r)))));
+    }
+    if (!machine) parts.push(h('p', { class: 'v-empty', text: 'No machines are known yet.' }));
+    else if (!machine.reachable) {
+      parts.push(h('p', { class: 'hint waiting h-offline', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode(`Can't reach ${machine.name}, retrying…`)));
+    } else {
+      const old = HARNESSES.some(([p]) => ((machine.harnesses || {})[p] || {}).recipe === null);
+      if (old) parts.push(h('p', { class: 'h-notice', role: 'status', text: 'This machine needs updating: re-run ./install.sh on it.' }));
+      parts.push(h('div', { class: 'box h-rows' }, HARNESSES.map((info) => harnessRow(info, machine))));
+    }
+    return h('div', { class: 'models harnesses' }, parts);
+  }
+
   // ---------------------------------------------------------------- shell
 
   function renderSections() {
@@ -1482,6 +1710,7 @@
     if (!data) return;
     const view = section === 'tools' ? renderProjectTools()
       : section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
+      : section === 'harnesses' ? renderHarnesses()
       : section === 'accounts' ? renderAccounts() : section === 'usage' ? renderUsage() : renderModels();
     const keep = document.getElementById('error');
     panel.replaceChildren(keep, view);
