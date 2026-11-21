@@ -653,7 +653,13 @@ npm --prefix viewer run test:browser
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Installer: S1 (prereq check, no-CLI install, service PATH, Next line, README, fixtures) | `install.sh`, `install/test/run.sh`, `README.md` | standard (provider pending) | wc-ff891978fb1d-worker | `bash install/test/run.sh`; `bash -n install.sh` | running |
+| T2 | Machine: S2 (tmux PATH, recipes, install job, routes, tests) | `machine/service.js` (S2 parts), `machine/lib/harness-*.js`, `machine/test/`, `machine/API.md`, `machine/AGENTS.md` | standard (provider pending) | wc-ff891978fb1d-worker-2 | `bash machine/test/run.sh` | running |
+| T3 | Hub: S3 (switches, placement, `/harnesses`, `can_start`, `/onboarding`, forwarders, wc.js reason, thread waiting line) — tricky | `viewer/app/**`, `viewer/pages/thread.js` (waiting line), `viewer/test/*.test.js`, `viewer/AGENTS.md` | standard (provider pending) | wc-ff891978fb1d-worker-3 | `node --test viewer/test/*.test.js` | running |
+| T4 | Pages: S4 Harnesses section, S5 home checklist, browser tests | `viewer/pages/settings.{js,css,html}`, `viewer/pages/threads.{js,html}`, new `viewer/test/*.spec.js` | standard, claude | wc-ff891978fb1d-worker-4 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | running |
 
 ## Log
 
 Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
+- 2026-11-21 — S2.2 checks run by the sub-lead: all three script URLs answer (`claude.ai` and `code.kimi.com` 302 to their downloads, Antigravity 200); scripts read, not run: Claude Code and Antigravity install to `~/.local/bin`, Kimi Code to `~/.kimi-code/bin`, so S1.3's PATH list needs no extra folder. Pi package `@earendil-works/pi-coding-agent` (`@mariozechner/...` deprecated), `engines.node >=22.19.0`; Codex `>=16`. All five ship a recipe.
+- 2026-11-21 — Dispatched T1–T4 in parallel (disjoint ownership); T4 on Claude (interface work).
