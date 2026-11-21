@@ -430,8 +430,9 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Hub/machine/card backend: S2-S5, S7 route, node tests (tricky) | viewer/app/{settings,routes,card,cards}.js, machine/service.js, viewer/test/app-lessons.test.js | standard / gpt-6.1-terra | wc-7a7ad5f5b389-worker | `npm test` incl. app-lessons.test.js | in progress |
-| T2 | Settings page Lessons entry and editor, thread notice, hash route, preview caption, Playwright spec (S5 caption, S6, S7 UI) | viewer/pages/settings.js, viewer/pages/thread.js, page CSS, viewer/test/app-lessons.spec.js | standard / claude-sonnet-5-5 | | playwright app-settings + app-lessons specs | not started (after T1) |
+| T1 | Hub/machine/card backend: S2-S5, S7 route, node tests (tricky) | viewer/app/{settings,routes,card,cards}.js, machine/service.js, viewer/test/app-lessons.test.js | standard / gpt-6.1-terra | wc-7a7ad5f5b389-worker | `npm test` incl. app-lessons.test.js | done |
+| T2 | Settings page Lessons entry and editor, thread notice, hash route, preview caption, Playwright spec (S5 caption, S6, S7 UI) | viewer/pages/settings.js, viewer/pages/thread.js, page CSS, viewer/test/app-lessons.spec.js | standard / claude-sonnet-5-5 | | playwright app-settings + app-lessons specs | in progress |
+| T4 | Harden app-lessons.test.js assertions the S10 list names but T1 checked loosely | viewer/test/app-lessons.test.js | light / gpt | | node --test test/app-lessons.test.js | in progress |
 | T3 | Protocol text S8 | protocol/app/{cards,lead,sub-lead,worker,mapper,reviewer,verifier}.md | standard / claude-sonnet-5-5 | wc-7a7ad5f5b389-worker-2 | protocol-rules.test.js | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -446,3 +447,8 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — Choice: T3, lead.md: Lessons section placed before `## Archiving`; the other role files get it at the end.
 - 2026-11-21 — Choice: T3, role Lessons sections: "Not lessons" lists condensed, one-line intro per section, rule-conflict path worded as "post a `stub`" (lead) / "send the lead a `message`" (others).
 - 2026-11-21 — Choice: T3, cards.md: a one-line intro to the `lesson` section; `only_ai`/`only_project` rows reworded from S4.
+- 2026-11-21 — T1 accepted (band: self): code matches S2-S5 and S7; the sub-lead added `lesson` to protocol-rules.test.js sharedKinds at merge. Tests pass but some S10 items are asserted loosely (no-new-notice on repeats, cleared markers, AI marker text, full-list markers, assertFits over 12,000 with lessons, CLI refusal); T4 hardens them.
+- 2026-11-21 — Choice: T1, settings.js: project marker in agent instructions uses the project's last path segment ("only in <name>").
+- 2026-11-21 — Choice: T1, routes.js: PUT /settings/lessons refuses unknown body and row fields (400).
+- 2026-11-21 — Choice: T1, cards.js: a lesson card failing field validation returns 400 (other kinds keep 422); a no-change repeat returns `{ ok: true, lesson: <id> }` and records no card.
+- 2026-11-21 — Choice: T1, settings.js: normalize() drops lesson entries with a malformed id, a duplicate id, or a bad saved_at; keeps the first 12 per role.

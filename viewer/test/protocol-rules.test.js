@@ -32,7 +32,7 @@ for (const role of ['worker', 'mapper', 'sub-lead', 'reviewer', 'verifier']) {
 
 const roles = ['lead', 'sub-lead', 'worker', 'mapper', 'reviewer', 'verifier'];
 const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'image', 'file', 'stub', 'sudo', 'reach', 'retract', 'title'];
-const sharedKinds = ['progress', 'message', 'result'];
+const sharedKinds = ['progress', 'message', 'result', 'lesson'];
 const sections = text => [...text.matchAll(/^### `([^`]+)`$/gm)].map(match => match[1]);
 
 test('each schema kind has one card section, in its intended file', () => {
