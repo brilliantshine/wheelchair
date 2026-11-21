@@ -66,6 +66,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 37 | A retract 503 is retried within the same turn, anything depending on the withdrawal waits, and after 10 minutes a `needs` card offers Keep going; a peer's "settled" means settled under "Settling an answer" | Round 16 findings | review-round-16 |
 | 38 | Supersedes the retry part of 37: a retract 503 gets one retry after a minute, then a `needs` card and the turn ends (lead.md's existing pattern); a terminal refusal ends retrying and the waiting step is rechecked; a re-ask writes its new information to the Open Question first; an open re-ask takes precedence over an older decision when a peer asks | Round 17 findings | review-round-17 |
 | 39 | Retract retries: the sudo "try again" refusal is retryable; one `needs` card covers all failed retracts that something waits on; Talk about it posts no new question while the card is open; an answered refusal is handled from the press that follows | Round 18 findings | review-round-18 |
+| 40 | Supersedes Decisions 12 (retract part), 13, 20 (refusal), 34-35 and 37-39 (retract retries): retracts stay queued as today; no new refusals; no retry or `needs` rules. A re-ask retracts and reposts in queue order. Knowing whether Start building won when an approval is withdrawn belongs to the split-off thread (Decision 32) | Rounds 16-18 drew findings only on the synchronous retract; the user picked "Keep them queued" (card 291fb31d) | user |
 
 ## Spec
 
@@ -167,9 +168,9 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   overlap (Terms). No card.
 - **Re-asking an open card:** to re-ask an open overlap card with new information, first (for a
   feature) commit the new information to its `Overlap with` Open Question, then retract the card
-  and post the new one only once the retract succeeds (or is refused as `card was already
-  withdrawn`). If the retract is refused because the card was answered, act on that answer
-  against its own options instead. On a 503, retry as in §3; post nothing until it succeeds.
+  and post the new one (the machine's queue keeps them in order). If the user answers the old
+  card before the retract lands, their press arrives as a message: act on it against the old
+  card's options, and retract the new card if that answer settles it.
 - **Withdrawn card:** when the lead retracts an overlap card because it no longer applies, it
   removes its Open Question in the same commit, with a Log line `Overlap with <thread id>
   dropped: <why>`.
@@ -187,7 +188,7 @@ On `[wc:context restart]`, after rereading the plan and cards:
   Decision Log entry as new (a card inside the window, else a late overlap). A planned thread
   also asks any `Overlap with` Open Question not yet asked.
 
-### 3. Card ids and retract (machine, hub, card.js)
+### 3. Card ids (machine, hub, card.js)
 
 - `viewer/app/cards.js` `acceptCard`/`addCard`: a stored card's `id` is the payload's
   `delivery_id` when present (the machine always sets one: `crypto.randomUUID()` or the spool
@@ -195,51 +196,24 @@ On `[wc:context restart]`, after rereading the plan and cards:
   as today (app-made cards). A delivery whose id is already in `delivered_ids` or is already a
   card id in this thread returns `{ ok: true, duplicate: true, id: <delivery_id> }`. So the id
   printed when a card is queued is the id it gets.
-- `machine/service.js` card post: unchanged spooling. The 202 spooled response becomes
-  `{ ok: true, spooled: true, id: <delivery_id> }`.
-- `retract` is never queued: the machine relays it like `done` (no spool; 503 "the app is
-  unreachable; the retract was not recorded; try again in a minute" when the spool is behind or
-  the hub is unreachable). Its success and refusals come straight from the hub. Every retract a
-  lead makes (overlap, approval, deferred, offer, question, needs, sudo) that gets this 503 is
-  retried once after a minute, as lead.md already does for an operation that fails because
-  something is unreachable. The sudo refusal `couldn't reach <machine> to cancel the sudo
-  request; try again` is retried the same way; its already-running or finished refusals are
-  final. If it fails again and a step waits on it, the lead posts one `needs` card naming every
-  card it could not withdraw and what waits on each, and ends its turn; "Keep going" retries the
-  retracts and then the waiting steps; "Talk about it" is explained in the reply, with no new
-  `question` card while the card being withdrawn is still open. A retract nothing waits on is
-  noted in the reply and retried on the next turn. Anything that replaces or depends on the withdrawn card (a re-ask, a
-  fresh offer or reach card, the approval retract at "talk instead of building") waits for the
-  retract. Any other refusal ends the retrying: `card is already answered` (or `card was already
-  withdrawn`) means the card is closed; the lead ends its turn, handles the user's press (it
-  arrives as the next message, by card id), and then goes on with the waiting step if the old
-  card no longer blocks it. `cards-lead.md` `retract` says so, so
-  the existing retract steps (for example the deferred card on a switch to thorough) keep working
-  through an outage.
-- `viewer/app/card.js` `retractable`, before the generic `card is already answered`: an approval
-  card whose `answered_action` is `start-building` is refused with `Start building was already
-  pressed`; a card with `retracted_at` is refused with `card was already withdrawn`.
+- `machine/service.js` card post: unchanged spooling, `retract` included (it stays queued as
+  today). The 202 spooled response becomes `{ ok: true, spooled: true, id: <delivery_id> }`.
 - `question` cards accept an optional `about_thread`: a string of 12 lowercase hex characters.
   Stored on the card, never rendered.
 - `viewer/app/card.js` on success prints exactly one JSON line: `{"id":"<id>","kind":"<kind>"}`
   for kinds that create a stored card, with `"queued":true` added when the machine spooled it;
-  `{"ok":true}` for `title`, `resolve`, `retract`. Never any other field of the card.
-- `protocol/app/lead.md`: where it says to retract an approval card (mode change, pull-back,
-  talk instead of building), the id is the one `card.js` printed for it, or from the restart
-  context. At the "talk instead of building" retract, `Start building was already pressed`
-  means the build stands: the lead says so in a line, noting that archiving the thread stops
-  it and closes the thread, and keeps talking, without stopping the
-  sub-lead.
-- Docs: `protocol/app/cards.md` "Posting a card" documents the output and names the
-  exceptions to "succeeds once the card is on disk, even if the app is down" (`done` and
-  `retract` are never queued), and its rule that cards never carry a thread id names
-  `question.about_thread` as an exception alongside `reach`. `cards-lead.md`: the `reach` field
-  description no longer says it is the only card field holding a thread id; `question` table
-  gains `about_thread`; `retract` says the id comes from `card.js`'s output or the restart
-  context, that it is never queued, and lists the two new refusals in its refusal order.
-  `machine/API.md`: the card route's sentence on when a spooled 202 is returned is replaced to
-  cover every case (no answer, HTTP 500/502/503/504, a backlog, no hub configured), documents the
-  queued `id`, and says `retract` is relayed synchronously (503 when the app is unreachable).
+  `{"ok":true}` for `title`, `resolve`, `retract` (plus `"queued":true` when spooled). Never any
+  other field of the card.
+- `protocol/app/lead.md`: where it says to retract a card it posted (approval on a mode change,
+  pull-back or talk instead of building; offers; questions that no longer apply), the id is the
+  one `card.js` printed for it, or from the restart context.
+- Docs: `protocol/app/cards.md` "Posting a card" documents the output, and its rule that cards
+  never carry a thread id names `question.about_thread` as an exception alongside `reach`.
+  `cards-lead.md`: the `reach` field description no longer says it is the only card field
+  holding a thread id; `question` table gains `about_thread`; `retract` says the id comes from
+  `card.js`'s output or the restart context. `machine/API.md`: the card route's sentence on when
+  a spooled 202 is returned is replaced to cover every case (no answer, HTTP 500/502/503/504, a
+  backlog, no hub configured) and documents the queued `id`.
 
 ### Non-goals
 
@@ -251,12 +225,9 @@ merging of branches; no sub-lead or worker rule changes.
 - `node --test viewer/test/*.test.js` passes, with new tests: a card's id equals its
   `delivery_id`; a re-delivery returns the same id with `duplicate: true`; `about_thread` is
   accepted on `question` (12 hex) and refused otherwise or on other kinds; `card.js` prints
-  `{id,kind}`, `{id,kind,queued}` and `{ok}`, and never a text field; retracting an approval
-  answered with Start building is refused with `Start building was already pressed`, and
-  retracting a withdrawn card with `card was already withdrawn`.
-- `bash machine/test/run.sh` passes, with tests: the spooled response carries `id` equal to the
-  delivery id and the drained card's hub id equals it; a retract with the hub down returns 503
-  and writes nothing to the spool, and a retract sent after the hub returns succeeds.
+  `{id,kind}`, `{id,kind,queued}`, `{ok}` and `{ok,queued}`, and never a text field.
+- `bash machine/test/run.sh` passes, with a test that the spooled response carries `id` equal to
+  the delivery id and the drained card's hub id equals it.
 - `grep -n "overlap card" protocol/app/lead.md` shows the card-window, late-overlap and restart
   rules; `grep -n "Your user decides in chat\|tell your user in one line that it exists" protocol/app/lead.md`
   finds nothing.
@@ -282,6 +253,15 @@ merging of branches; no sub-lead or worker rule changes.
 | A restart in the middle of a multi-commit "Drop the fix" leaves some fix commits unreverted with no completion rule | Needs a crash within the seconds a few reverts take; moot since Decision 18 removed Drop the fix | review-round-2 |
 
 ## Review Rounds
+
+### Round 19 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 18:** Decision 40: §3 rewritten (retracts stay queued; synchronous relay, new refusals, retry and `needs` rules removed; `{ok,queued}` receipt); §1 "Re-asking an open card" simplified; Validation updated. Accepted Risks about retract replies and retries are moot.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 18 — 2026-11-21
 
