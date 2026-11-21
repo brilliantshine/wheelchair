@@ -102,14 +102,22 @@ Gaps and judgment are in `REMEDIATION-1.md`. One rare path (a ready response jus
 | A held outcome added the notice even with a `merged` card for the PR (R1-a, gpt light / gpt-6-luna) | `viewer/app/auto-merge.js:39-40`: the held branch adds the card only when no `merged` card for `done.pr_url` exists | `viewer/test/app-auto-merge.test.js:51` ("held gate does not add notice when pull request already has a merged card") |
 | The switch's save note said "Saved, applies to new sessions" (R1-b, claude light / claude-haiku-5-5) | `viewer/pages/settings.js:495,507` `modeGroup` takes an optional saved note; `:594` passes `'Saved'` | `viewer/test/app-settings.spec.js:258` (clicks On, note is exactly `Saved`, On survives a reload) |
 
-Validation after both merges:
+Validation after both merges (feature branch):
 
 ```
-$ cd viewer && node --test test/*.test.js
+$ cd viewer && node --test test/*.test.js        (run twice, same result both times)
+not ok 436 - 6 message clears debt
 # tests 793
-# pass 793
-# fail 0
+# pass 792
+# fail 1
+
+$ cd viewer && node --test test/app-quiet.test.js    (three runs)
+# pass 18 # fail 0
+# pass 18 # fail 0
+# pass 18 # fail 0
 
 $ cd viewer && npx playwright test test/app-settings.spec.js --reporter=line   (R1-b branch)
   70 passed (34.3s)
 ```
+
+The one failure is a timing test (`viewer/test/app-quiet.test.js:38`: wait 220 ms, then expect no reminder). It covers the quiet-session path, which this build does not change (`git diff main -- viewer/app/quiet.js viewer/test/app-quiet.test.js` is empty). It fails only under full parallel-suite load. The verifier at attempt 1 also saw quiet-session timing failures on its first run, and its retry passed 792/792. R1-a's branch passed 793/793. Treated as a pre-existing flaky test, not a regression; residual risk noted here.
