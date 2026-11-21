@@ -52,9 +52,11 @@ Antigravity, Kimi Code, Pi (OpenRouter).
 ### S1. Installer (`install.sh`, `install/test/run.sh`, `README.md`)
 
 1. **Prerequisite check, first thing after the clone guard.** Check `node`, `npm`, `tmux`,
-   `git`, `gh`, `python3`, `curl` with `command -v`, and that `node --version` is 20 or newer
-   (the viewer's Playwright needs it); an older Node is reported like a missing tool, with its
-   version. If any is missing, print one line per
+   `git`, `gh`, `python3`, `curl` with `command -v`, and that Node is 20 or newer (wheelchair
+   targets Node 20 and later, and the installer's Playwright browser download needs it). Read
+   the version with `node -e 'process.stdout.write(process.versions.node)'`, which the
+   fixtures' `node` shim passes through to the real Node (`install/test/run.sh:101-105`). An
+   older Node is reported like a missing tool, with its version. If any is missing, print one line per
    missing tool with how to get it (macOS: `brew install <pkg>`; Linux: "install <pkg> with
    your package manager", plus `https://cli.github.com` for gh), and exit 1 before writing
    anything. Tailscale stays checked only when serving, as today.
@@ -87,7 +89,9 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    - `no_pi` (`326`): keep "absent pi is not reported"; replace the PATH assertion with
      "`$HOME/.local/bin` is on the machine unit PATH even with pi absent".
    - New case: `tmux` absent from the shim → exit 1, output names `tmux`, no state files
-     written. New case: a `node` shim reporting `v18.0.0` → exit 1, output names Node 20.
+     written. New case: Node 18 — the case points `WHEELCHAIR_REAL_NODE` (which the shared
+     shim execs for `-e`) at a stub that prints `18.0.0` → exit 1, output names Node 20. The
+     shared shim itself is not changed.
    - The bookmark-last assertions (`651`, `730`) stay unchanged and must pass (S1.4).
    All other existing fixtures still pass.
 
@@ -188,8 +192,10 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    that provider is off. The wait carries that reason in the session's `waiting_reason`
    (`sessions.js:284`), and, for a lead, the thread's waiting line (`viewer/pages/thread.js:1300`) shows
    `<Harness> is left out in Settings. Turn it back on under Settings → Harnesses.` instead of
-   the refill wording (a waiting sub-lead's reason shows where sub-lead waits already
-   show; the thread banner is unchanged for it). Sessions already running keep running. Two dispatches continue an already-placed session and are
+   the refill wording (the thread banner stays lead-only). For any waiting start,
+   `wc.js session start` prints `waiting: <waiting_reason>` after its existing `waiting for
+   room until …` line when the reason is the left-out one (`viewer/app/wc.js:184-188`), so a
+   lead asking for a sub-lead on a switched-off harness learns why. Sessions already running keep running. Two dispatches continue an already-placed session and are
    not new placements, so the switch does not affect them: an aside fork of a live lead
    (`viewer/app/asides.js:34-46`) and a retry of an unanswered start
    (`viewer/app/sessions.js:232-241`). Turning the switch back on lets waiting starts proceed.
@@ -224,7 +230,9 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    fetch to keep, per CLI, `installed`, `version`, and `recipes`; a machine whose status has no
    `recipes` field runs a service from before this feature, and every `recipe` there is
    `null`); `signed_in` is true when the
-   machine reports a logged-in account for that provider that is not paused in hub settings.
+   machine reports a logged-in account for that provider that is an active account in hub
+   settings (present in `accounts`, not retired) and not paused. A login row for a retired
+   or unknown account does not count.
    An unreachable machine is `{name, reachable:false, harnesses:{}}`.
 7. **Install forwarders** in `viewer/app/routes.js`, resolving the machine as the sign-in
    routes do (`412-421`): `POST` and `GET /machines/<machine>/harnesses/<provider>/install` →
@@ -327,7 +335,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    shown again (hash navigation back to `#harnesses`) and after any order save on the page,
    it re-fetches `/harnesses?fresh=1`, so a fixed order clears the notice. The notice reflects
    the hub's default machine (`can_start.machine`) whichever machine is picked.
-3. **Install state on load.** On page load and whenever the picked machine changes, the page
+3. **Install state on load.** On page load, whenever the picked machine changes, and when a provider's switch is turned
+   on (for that provider), the page
    GETs install state for each enabled provider on that machine. `running` → shows
    `Installing…` with the output tail (monospace, scrolls, fits a phone) and polls every 2 s;
    `failed` → `Install failed`, the tail, and **Try again**, even when the CLI is now on disk;
@@ -398,6 +407,8 @@ npm --prefix viewer run test:browser
 |------|--------------|-------|
 | A CLI removed from a machine less than 15 s before a new start can still be chosen once (status cache) | Removing a harness CLI is unusual, and the start then fails with the machine's existing missing-CLI error; rare path | review-round-5 |
 | After a failed Settings install, an update removes that harness's recipe and the user installs it from the vendor site: the row may show Try again (→ vendor link) instead of Sign in | Needs a failed install, a recipe removed by an update, and a vendor install, in that order; sign-in is still reachable under Accounts; rare path | review-round-9 |
+| An install that succeeds but could not write the diagram block (a non-empty Codex override) shows only in the install log | Needs a pre-existing non-empty override; only the diagram hint is missing; rare path | review-round-12 |
+| A harness switched off after a failed install and switched back on in another tab may show Sign in instead of Try again until reload | Needs a failed install, a switch-off, and a stale tab; rare path | review-round-12 |
 | The only signed-in worker harness has its Standard tier set to Not used, so the start step gives the no-room reason | Variant of the Lead-model-None risk: needs a deliberate Not used on the only harness; rare path | review-round-11 |
 | The only signed-in harness has its Lead model set to None, so the checklist completes but no lead starts | Every provider ships default models (`codex/model.sh:33-38`); needs a deliberate None on the only harness; rare path | review-round-5 |
 
@@ -593,6 +604,13 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Node version read conflicts with the fixture shim | upheld | S1.1 reads via `node -e`; S1.6 Node 18 case via `WHEELCHAIR_REAL_NODE` |
+| intent | minor | Node 20 reason names the wrong user | upheld | S1.1 |
+| mechanics | blocking | Same shim conflict | upheld | As above |
+| mechanics | major | Sub-lead's left-out reason never reaches the lead | upheld | S3.2 `wc.js` prints the reason |
+| mechanics | major | `signed_in` counts retired accounts | downgraded (minor) | S3.6 active accounts only |
+| mechanics | major | Enabling a harness doesn't load its install state | downgraded (minor) | S4.3 loads on switch-on |
+| mechanics | minor | Dial warning invisible after success | accepted-risk | Rare path (Accepted Risks) |
 
 ## Implementation Tasks
 
