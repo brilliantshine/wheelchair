@@ -315,7 +315,7 @@ verdict, and act:
 You may not downgrade or decline a finding you have not checked against the Spec or the
 code; the verdict cites evidence. A reviewer's severity is an opinion, not a gate, and
 severity is what the finding would do to an implementing worker: `blocking` (would build
-the wrong thing or could not implement it), `major` (in normal use, would lose the user's
+the wrong thing or could not implement it), `major` (not blocking, but in normal use would lose the user's
 decision or work, or leave a worker genuinely unable to proceed), `minor` (everything
 else). The full ladder is in `reviewer.md`. A finding whose worst outcome is an extra prompt
 to the user, a repeated message, or wording a careful reader reconciles the obvious way is
