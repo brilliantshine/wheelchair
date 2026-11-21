@@ -1,6 +1,6 @@
 ---
 slug: sidebar-files-followup
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done        # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-20
 ---
 
@@ -529,3 +529,4 @@ Build accepted: approval a40eb86e-c69f-46d8-815d-be9ef02baa25
 - 2026-11-21 — Choice: R1, `viewer/pages/picture.js`: `formPng(cache, key, name)` reads the cache entry that `draw` filled (key `card.id`); a failed load shows "Could not load this diagram (<message>)".
 - 2026-11-21 — Choice: R2, `viewer/test/app-picture-download.spec.js`: the pan is an alt-drag (the middle button is not tested); the test checks the scale changed after the zoom, and that the scale held while the translation moved after the pan.
 - 2026-11-21 — R1 and R2 accepted (band: scout): the picture-download spec (10 tests) re-run by sub-lead and passing in both browsers; scout confirmed no fetch remains in the download path, and both transform assertions run before Download.
+- 2026-11-21 — Verification attempt 2 (bd1d90f9): Claude verifier PASS; GPT verifier FAIL only on two load-flaky tests this branch does not touch (`app-quiet` "6 message clears debt", Firefox `app-views` tree viewport). The lead ruled attempt 2 a pass, with no hardening here. 0 rare paths in this attempt (3 in attempt 1).
