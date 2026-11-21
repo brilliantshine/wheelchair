@@ -432,7 +432,7 @@ Filled by Stage 3. One row per worker brief.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub/machine/card backend: S2-S5, S7 route, node tests (tricky) | viewer/app/{settings,routes,card,cards}.js, machine/service.js, viewer/test/app-lessons.test.js | standard / gpt-6.1-terra | wc-7a7ad5f5b389-worker | `npm test` incl. app-lessons.test.js | in progress |
 | T2 | Settings page Lessons entry and editor, thread notice, hash route, preview caption, Playwright spec (S5 caption, S6, S7 UI) | viewer/pages/settings.js, viewer/pages/thread.js, page CSS, viewer/test/app-lessons.spec.js | standard / claude-sonnet-5-5 | | playwright app-settings + app-lessons specs | not started (after T1) |
-| T3 | Protocol text S8 | protocol/app/{cards,lead,sub-lead,worker,mapper,reviewer,verifier}.md | standard / claude-sonnet-5-5 | wc-7a7ad5f5b389-worker-2 | protocol-rules.test.js | in progress |
+| T3 | Protocol text S8 | protocol/app/{cards,lead,sub-lead,worker,mapper,reviewer,verifier}.md | standard / claude-sonnet-5-5 | wc-7a7ad5f5b389-worker-2 | protocol-rules.test.js | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -442,3 +442,7 @@ Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
 
 - 2026-11-21 — Build accepted: approval 537a56ed-bf03-4f19-a1ff-c11f14e99b32
+- 2026-11-21 — T3 accepted (band: scout): scout found cards.md paraphrased S4's 503 and refusal texts and left out replace's marker rules; the sub-lead fixed those in cards.md at merge, plus a double blank line in lead.md. protocol-rules.test.js sharedKinds needs `lesson` once T1 adds the schema (fixed at T1 merge).
+- 2026-11-21 — Choice: T3, lead.md: Lessons section placed before `## Archiving`; the other role files get it at the end.
+- 2026-11-21 — Choice: T3, role Lessons sections: "Not lessons" lists condensed, one-line intro per section, rule-conflict path worded as "post a `stub`" (lead) / "send the lead a `message`" (others).
+- 2026-11-21 — Choice: T3, cards.md: a one-line intro to the `lesson` section; `only_ai`/`only_project` rows reworded from S4.

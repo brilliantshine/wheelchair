@@ -869,7 +869,6 @@ It is the state machine, not a label. You write these, at these moments, and no 
 The sub-lead writes `implementing` and `verifying`. Never edit `status:` to get past a
 gate; each stage refuses to run out of order.
 
-
 ## Lessons
 
 Save a `lesson` card (see `cards.md`) for the lead, reviewers, verifiers and mappers.

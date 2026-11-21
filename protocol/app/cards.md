@@ -114,16 +114,21 @@ sees. See your role's Lessons section for when to save one.
 | `only_project` | boolean | no | `add`/`replace`: true limits the lesson to this thread's project |
 | `why` | string | `add`, `replace`, `remove` | One line, shown to the user: what went wrong and how it was proven |
 
+On a `replace`, an absent `only_ai` or `only_project` keeps the stored one; `only_ai: "any"`
+and `only_project: false` clear it. On an `add`, absent means no limit.
+
 A `lesson` card is never queued; the machine relays it synchronously. On the 503 (`the app
-did not confirm the lesson`), run the same card again in a minute (repeating is safe).
-Refusals (422), each a sentence you can act on:
+did not confirm the lesson; run the same card again in a minute (repeating it is safe)`),
+do exactly that. Refusals (422), each a sentence you can act on:
 
 - `a <saver> may not save lessons for <target>s`.
 - `lessons for <role>s are full (12): replace or remove one instead`, then every lesson for
-  that role as `[<id>] <first 80 characters>`. If none is worth dropping, do not save.
+  that role, one per line as `[<id>] <first 80 characters>` with its markers. If none is
+  worth dropping, do not save.
 - `no lesson <id> for <role>s`: a `replace` naming an id not present for that role, or a
   `replace` or `remove` naming an id kept under another role.
-- A lesson marked "(edited by the user)" cannot be replaced or removed by an agent.
+- `the user edited this lesson; agents leave it as it is`: a `replace` or `remove` of a
+  lesson marked "(edited by the user)".
 
 ## The kinds never shown
 
