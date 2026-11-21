@@ -194,3 +194,58 @@ test('raw bytes, executable mode, force-added and newly ignored files', async ()
   assert.ok(fs.statSync(linux('exec')).mode & 0o111);
   assert.equal(fs.readFileSync(linux('later-ignored'), 'utf8'), 'keep local');
 });
+
+test('seeding copies only ignored paths accepted by the new worktree', async () => {
+  const source = await fixture();
+  fs.writeFileSync(path.join(source.worktree, '.gitignore'), 'cache-one\ncache-two\n');
+  await reconcile(source);
+  fs.writeFileSync(path.join(source.copy.linux, 'cache-one'), 'one');
+  fs.writeFileSync(path.join(source.copy.linux, 'cache-two'), 'two');
+  const newCopy = { linux: path.join(path.dirname(source.copy.linux), 'seeded'), windows: 'C:\\seeded' };
+  fs.writeFileSync(path.join(source.worktree, '.gitignore'), 'cache-one\n');
+  const ctx = { ...source, copy: newCopy, key: 'seeded', sources: [{ copy: source.copy, last_ok: '2026-01-01' }] };
+  const result = await ensureCopy(ctx);
+  assert.equal(result.created, true);
+  assert.equal(fs.readFileSync(path.join(newCopy.linux, 'cache-one'), 'utf8'), 'one');
+  assert.equal(fs.existsSync(path.join(newCopy.linux, 'cache-two')), false);
+});
+
+test('deleting unresolved copies saves the Windows snapshot and removes copy refs', async () => {
+  const { deleteCopy } = require('../lib/win-sync');
+  const ctx = await fixture();
+  const linux = path.join(ctx.worktree, 'initial');
+  const windows = path.join(ctx.copy.linux, 'initial');
+  await reconcile(ctx);
+  fs.writeFileSync(linux, 'linux\n');
+  fs.writeFileSync(windows, 'windows\n');
+  const result = await reconcile(ctx);
+  await deleteCopy(ctx, { saveUnresolved: true });
+  assert.equal(fs.existsSync(ctx.copy.linux), false);
+  const refs = git(ctx.worktree, 'for-each-ref', '--format=%(refname)', 'refs/wheelchair');
+  assert.doesNotMatch(refs, /refs\/wheelchair\/test\/(base|windows)/);
+  const conflicts = refs.split('\n').filter(ref => ref.startsWith('refs/wheelchair/conflicts/'));
+  assert.equal(conflicts.length, 2);
+  assert.ok(conflicts.includes(result.conflicts[0].ref));
+  assert.ok(conflicts.every(ref => git(ctx.worktree, 'show', `${ref}:initial`) === 'windows'));
+});
+
+test('concurrent reconciles for the same copy are serialized', async () => {
+  const ctx = await fixture();
+  let release;
+  let entered;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const firstEntered = new Promise(resolve => { entered = resolve; });
+  const order = [];
+  const first = reconcile(ctx, { hooks: { afterSnapshot: async () => {
+    order.push('first');
+    entered();
+    await blocked;
+  } } });
+  await firstEntered;
+  const second = reconcile(ctx, { hooks: { afterSnapshot: async () => { order.push('second'); } } });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(order, ['first']);
+  release();
+  await Promise.all([first, second]);
+  assert.deepEqual(order, ['first', 'second']);
+});
