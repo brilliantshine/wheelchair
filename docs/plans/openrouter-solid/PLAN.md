@@ -140,21 +140,18 @@ already saved (`sessions.js:567-569,642-645`), so the report is never recovered.
   call throws; a transcript that is genuinely absent (machine answers with no data, or 404)
   returns `''`.
 - `deliverReport`: when the read throws, or when the CLI is `pi` and the turn's `entry_id` is
-  not yet in the transcript (the machine's copy can lag, `machine/service.js:1403-1407`),
-  record `target.report_pending = { turn_id, entry_id, since }` instead of dropping it. A text
-  found inline in the hook payload (non-Pi) is used at once, as today.
-- The existing hub timer (`retryQueues`, `sessions.js:876-890`, every 5s) retries each pending
-  report read under the thread lock. On success it delivers exactly as today and clears the
-  pending entry. While pending, the quiet reminder (`quiet.arm`) is not armed for that session.
-- After 2 minutes of failed retries, the pending entry is dropped and the session falls back to
-  today's quiet path (the agent is reminded to repeat its report), so nothing waits forever.
-- A genuinely absent or empty transcript behaves as today. A delivered report is never
-  delivered twice (`target.finished` guard stays).
-- Pending state is saved in the thread record, so a hub restart within the window resumes it.
+  not yet in the transcript (the machine's copy can lag or fail, `machine/service.js:1403-1407`),
+  retry the read inline: up to 3 more attempts, 1 second apart, within the same event handling.
+  A text found inline in the hook payload (non-Pi) is used at once, as today.
+- If every attempt fails, behave as today for a missing report: no result, and `quiet.arm`
+  reminds the agent to repeat its report (`viewer/app/quiet.js:8-9`). That reminder is the
+  recovery path; nothing is persisted and no timer is added.
+- A genuinely absent or empty transcript behaves as today (no retries). A delivered report is
+  never delivered twice (`target.finished` guard stays).
 - Tests in `viewer/test/` (pattern of `app-chat.test.js:362-375`): a reviewer whose first
   transcript read fails and second succeeds gets exactly one result delivered; a Pi verifier
-  whose entry appears on a later read gets its report; an absent transcript still produces no
-  report and arms the quiet check; after the window, the quiet check is armed.
+  whose entry appears on a later read gets its report; an absent transcript makes one read only,
+  produces no report and arms the quiet check; all attempts failing arms the quiet check.
 
 ### Non-goals
 
@@ -192,6 +189,8 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | S5 over-built: the quiet reminder already recovers the report; persisted pending + 2-minute timer not needed | upheld | S5 now retries inline (3 attempts, 1s apart) then falls to the quiet reminder; IDEA's "never recovered" overstates: today recovery costs an extra agent turn (noted in Log) |
+| intent | minor | Pi missing-entry rule would delay the quiet reminder ~2 minutes | upheld | Resolved by the same change: at most ~3s delay |
 
 ## Implementation Tasks
 
@@ -199,3 +198,5 @@ Plus the live aside check in S3 (one fork, one resume, deepseek/deepseek-v4.1-fl
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- Round 1: IDEA's Why says a report lost to a brief read failure is never recovered; in fact the quiet reminder asks the agent to repeat it. S5 still saves that extra turn and misleading nudge.
