@@ -1,0 +1,14 @@
+#!/usr/bin/env node
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const i = process.argv.indexOf('-EncodedCommand');
+const script = Buffer.from(process.argv[i+1], 'base64').toString('utf16le');
+const match = script.match(/^# wc:([a-z]+) ([A-Za-z0-9+/=]+)\r?\n/);
+if (!match) { process.stderr.write('missing operation header\n'); process.exit(1); }
+const args = JSON.parse(Buffer.from(match[2], 'base64').toString());
+const linux = p => { const m = p.match(/^([a-z]):[\\/](.*)$/i); if (!m) throw new Error(`not a Windows path: ${p}`); return path.join(process.env.WC_FAKE_MOUNT,m[1].toLowerCase(),...m[2].split(/[\\/]/)); };
+if (match[1] === 'localappdata') console.log(process.env.WC_FAKE_LOCALAPPDATA);
+else if (match[1] === 'gitpath') console.log(process.env.WC_FAKE_GIT_PATH);
+else if (match[1] === 'seed') for (const p of args.paths) { const src = path.join(linux(args.source),p); const dest = path.join(linux(args.destination),p); fs.mkdirSync(path.dirname(dest),{recursive:true}); fs.copyFileSync(src,dest); }
+else { process.stderr.write(`unknown operation ${match[1]}\n`); process.exit(1); }
