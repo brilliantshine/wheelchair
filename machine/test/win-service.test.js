@@ -126,7 +126,7 @@ test('Codex readying follows the override budget', async () => {
   const e = await service(); try {
     const dir = repo(e.root);
     const servers = {};
-    for (let i = 0; i < 220; i++) servers[`windows_${i}`] = { command: '/mnt/c/a.exe', args: ['x'.repeat(40)] };
+    for (let i = 0; i < 20; i++) servers[`windows_${i}`] = { command: '/mnt/c/a.exe', args: ["'".repeat(1000)] };
     const json = JSON.stringify({ mcpServers: servers });
     assert.ok(Buffer.byteLength(json) < 32 * 1024);
     write(path.join(dir, '.mcp.json'), json);
