@@ -434,6 +434,11 @@ npm --prefix viewer run test:browser
 | An install that succeeds but could not write the diagram block (a non-empty Codex override) shows only in the install log | Needs a pre-existing non-empty override; only the diagram hint is missing; rare path | review-round-12 |
 | A harness switched off after a failed install and switched back on in another tab may show Sign in instead of Try again until reload | Needs a failed install, a switch-off, and a stale tab; rare path | review-round-12 |
 | The only signed-in worker harness has its Standard tier set to Not used, so the start step gives the no-room reason | Variant of the Lead-model-None risk: needs a deliberate Not used on the only harness; rare path | review-round-11 |
+| `PUT /settings/harnesses/<p>` with a JSON `null` body returns 500 instead of 400 | The page always sends `{enabled: bool}`; needs malformed input the client never writes; rare path | verification-1 |
+| An account whose id is an `Object.prototype` key (e.g. `constructor`) can read as signed in on `/harnesses` | Needs a deliberately odd account id; rare path | verification-1 |
+| A harness whose executable was removed while its credentials remain shows "Signed in" beside Install | Needs a CLI removed by hand after sign-in; placement already treats it as signed out (S3.4); rare path | verification-1 |
+| After a failed install, a machine outage during the next poll keeps "Install failed" instead of "Can't reach …, retrying…" | Needs a failed install and an outage together; polling continues and recovers; rare path | verification-1 |
+| An older `/onboarding` response arriving after a newer one can briefly bring the checklist back | Race between two 5 s polls inside one response time; the next poll corrects it; rare path | verification-1 |
 | The only signed-in harness has its Lead model set to None, so the checklist completes but no lead starts | Every provider ships default models (`codex/model.sh:33-38`); needs a deliberate None on the only harness; rare path | review-round-5 |
 
 ## Review Rounds
@@ -688,3 +693,4 @@ Build accepted: approval ef6abadb-8d25-4656-8988-2ccd4795d14e
 - 2026-11-21 — Choice: T4, app.css: shared checklist styles go in `app.css`.
 - 2026-11-21 — Choice: T4, settings.js: install fetches abort after 8 s; the 5 s retry also runs when the `/harnesses` fetch itself fails; account links read "Open Accounts" and "Add an account".
 - 2026-11-21 — Full validation on `d90ebeea`: installer 208/1 (the pre-existing live-folder check), machine 484/484, node 764/764, browser 1174 passed / 34 skipped / 0 failed. COMPLETION.md written; status verifying.
+- 2026-11-21 — Verification attempt 1 on `c281731a`: Claude verifier PASS; GPT verifier FAIL with 9 gaps. 5 judged rare paths and recorded in Accepted Risks (verification-1); 4 remain, sent to the lead for defer/fix.
