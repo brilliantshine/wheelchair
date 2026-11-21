@@ -252,8 +252,14 @@ async function reconcileAttempt(ctx, hooks, state) {
     }
     folded.set(lower, file);
   }
-  const tracked = await command(ctx, false, ['ls-files', '-z'], { cwd: ctx.worktree });
-  const windowsSnapshot = (await snapshot(ctx, true, new Set(entries(tracked.stdout)))).tree;
+  let windowsSnapshot;
+  if (base) {
+    const tracked = await command(ctx, false, ['ls-files', '-z'], { cwd: ctx.worktree });
+    windowsSnapshot = (await snapshot(ctx, true, new Set(entries(tracked.stdout)))).tree;
+  } else {
+    // No Windows snapshot is taken before the first checkout installs ignore rules.
+    windowsSnapshot = (await command(ctx, true, ['mktree'], { cwd: ctx.copy.linux, input: '' })).stdout.toString().trim();
+  }
   const windowsCommit = await commitTree(ctx, true, windowsSnapshot);
   await command(ctx, true, ['update-ref', 'refs/wheelchair/snapshot', windowsCommit], { cwd: ctx.copy.linux });
   await command(ctx, false, ['fetch', ctx.copy.linux, `+refs/wheelchair/snapshot:${windowsRef}`], { cwd: ctx.worktree });

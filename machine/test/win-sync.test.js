@@ -224,6 +224,27 @@ test('seeding accepts robocopy success code 1 and reports failure code 8', async
   await assert.rejects(ensureCopy(failed), /seed failed \(exit 8\)/);
 });
 
+test('first and second reconciles preserve seeded ignored files outside both indexes and base', async () => {
+  const source = await fixture();
+  fs.writeFileSync(path.join(source.worktree, '.gitignore'), 'Library/\n');
+  await reconcile(source);
+  fs.mkdirSync(path.join(source.copy.linux, 'Library'));
+  fs.writeFileSync(path.join(source.copy.linux, 'Library', 'cache'), 'seeded');
+  const ctx = { ...source, copy: { linux: path.join(path.dirname(source.copy.linux), 'seed-library'), windows: 'C:\\seed-library' }, key: 'seed-library', sources: [{ copy: source.copy, last_ok: 'now' }] };
+  await ensureCopy(ctx);
+  for (let i = 0; i < 2; i++) {
+    await reconcile(ctx);
+    assert.equal(fs.readFileSync(path.join(ctx.copy.linux, 'Library', 'cache'), 'utf8'), 'seeded');
+    const linux = await ctx.winEnv.git(['ls-files', '-z'], { cwd: ctx.worktree, env: { GIT_INDEX_FILE: path.join(ctx.stateDir, 'win/copies', ctx.key, 'linux.index') } });
+    const windows = await ctx.winEnv.gitWin(['ls-files', '-z'], { cwd: ctx.copy.linux, env: { GIT_INDEX_FILE: '.git/wheelchair.index' } });
+    assert.equal(linux.code, 0);
+    assert.equal(windows.code, 0);
+    assert.ok(!linux.stdout.toString().split('\0').includes('Library/cache'));
+    assert.ok(!windows.stdout.toString().split('\0').includes('Library/cache'));
+    assert.doesNotMatch(git(ctx.worktree, 'ls-tree', '-r', '--name-only', `refs/wheelchair/${ctx.key}/base`), /Library\/cache/);
+  }
+});
+
 test('deleting unresolved copies saves the Windows snapshot and removes copy refs', async () => {
   const { deleteCopy } = require('../lib/win-sync');
   const ctx = await fixture();
