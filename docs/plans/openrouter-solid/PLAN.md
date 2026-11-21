@@ -429,7 +429,7 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 | T4 | S4 Pi version check (after T1, T2) | service.js version probe/cliStatus/launch version/exit reason, usage.js, ready.js, settings.js machine line, sessions.js stuck card, pi tests | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-4 | machine, viewer node | done |
 | T5 | S3 aside wiring, spend dedupe, live check (after T3, T4) — tricky | providers.js, asides.js, aside-turns.js, pi.js asideArgv/spend, aside tests, pi-live smoke | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-5 | machine, viewer node, live aside | done |
 | R1a | Remediation 1 gap 1: spend spec retrying assertions | viewer/test/app-openrouter-spend.spec.js | standard (claude, claude-sonnet-5-5) | wc-32fed9258dca-worker-6 | spend spec x20 | done |
-| R1b | Remediation 1 gaps 2-3: aside UTF-8 decoding, pre-header Pi errors | machine/lib/aside-turns.js, machine/test/aside-turns.test.js | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-7 | machine | in progress |
+| R1b | Remediation 1 gaps 2-3: aside UTF-8 decoding, pre-header Pi errors | machine/lib/aside-turns.js, machine/test/aside-turns.test.js | standard (gpt-6.1-terra) | wc-32fed9258dca-worker-7 | machine | done |
 
 ## Log
 
@@ -465,3 +465,5 @@ Plus `node test-support/smoke/pi-guard.js` (offline, real Pi 1.5.2) and the live
 - 2026-11-21 — Verification 1: Claude verifier PASS; GPT verifier FAIL with 4 gaps; 1 judged rare (Accepted Risks), 3 remain (spend spec flake, UTF-8 chunk split in aside output, pre-header Pi failure loses error/limit).
 - 2026-11-21 — worker didn't report its choices beyond 'none'; I listed 0 (the boolean expect.poll height check was dictated by the brief).
 - 2026-11-21 — R1a accepted (band: scout): spend spec re-run x10 per browser by sub-lead, 20/20 pass.
+- 2026-11-21 — worker didn't report its choices beyond 'none'; I listed 3: R1b, aside-turns.js: header failure folded into a `validHeader` flag; exit 0 with stderr and no header reports the stderr line (per brief); test (d) extends the existing missing/mismatched header loop.
+- 2026-11-21 — R1b accepted (band: scout): aside-turns tests 7/7 re-run by sub-lead; mismatched header never saved as conversation_id; error redacted before the limit check.
