@@ -74,7 +74,7 @@ the sudo helper is meant to act on your machine, not on a container.
    systemd=true
    ```
 3. Inside WSL, install the [dependencies](#dependencies) and sign in to `gh` and `claude` or
-   `codex`, `agy`, or `kimi`. Install Tailscale inside WSL, since the installer runs `tailscale serve` there,
+   `codex`, `agy`, `kimi`, or `pi`. Install Tailscale inside WSL, since the installer runs `tailscale serve` there,
    and quit it on Windows: Tailscale traffic breaks when both run at once.
 4. Clone wheelchair and your projects under the Linux home folder (`~/...`), never under
    `/mnt/c`. Windows drives are slow from WSL, and git and file permissions misbehave there.
@@ -256,7 +256,7 @@ next. Start at the root one. `CONTRIBUTING.md` has the conventions and validatio
 
 ## Dependencies
 
-- `claude`, `codex` (v0.146+), `agy`, or `kimi` (Kimi Code). One alone works; multiple CLIs let reviews and checks use
+- `claude`, `codex` (v0.146+), `agy`, `kimi` (Kimi Code), or `pi` (OpenRouter). One alone works; multiple CLIs let reviews and checks use
   another family. Codex sessions run through the app like any other.
 - `tmux`, which runs every agent session.
 - `git` and the GitHub CLI `gh`, signed in, so threads can push branches and open pull

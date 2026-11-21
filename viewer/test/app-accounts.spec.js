@@ -77,7 +77,7 @@ async function mock(page, state) {
     if (signin) {
       state.calls.push([method, path, body]);
       if (method === 'POST' && !signin[2]) return json(201, { state: 'starting' });
-      if (method === 'POST' && signin[3] === 'code') return json(200, { ok: true });
+      if (method === 'POST' && signin[3] === 'code') return state.codeError ? json(409, { error: state.codeError }) : json(200, { ok: true });
       if (signin[3] === 'pane') return json(200, { text: 'LOGIN-PANE-TEXT\n' });
       return json(200, state.signin);
     }
@@ -161,6 +161,40 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       state.signin = { state: 'done', url: null, code: null, wantsCode: false, logged_in: true };
       await expect(card).toHaveClass(/done/, { timeout: 6000 });
       await expect(card).toHaveCount(0, { timeout: 6000 });
+    });
+
+    test('a failed code on a Claude account shows the error and keeps the code, with no Start again', async ({ page }) => {
+      const state = { signin: { state: 'waiting', url: 'https://claude.example/login', code: null, wantsCode: true, logged_in: false }, codeError: 'tmux submit failed' };
+      await mock(page, state);
+      await open(page, 'accounts');
+      await page.locator('.acct[data-account="default-claude"] li[data-machine="beelink"] button').click();
+      const card = page.locator('.signin-card');
+      await card.getByPlaceholder('Paste the code here').fill('abc-123');
+      await card.getByRole('button', { name: 'Send code' }).click();
+      await expect(card.locator('.inline-err')).toHaveText('tmux submit failed');
+      await expect(card.getByPlaceholder('Paste the code here')).toHaveValue('abc-123');
+      await expect(card.getByRole('button', { name: 'Start again' })).toHaveCount(0);
+    });
+
+    test('a failed key on an OpenRouter account clears the key and offers one Start again', async ({ page }) => {
+      const usage = usageBody();
+      usage.providers.openrouter = { label: 'OpenRouter', left: null, accounts: [{ id: 'default-openrouter', provider: 'openrouter', name: 'default', plan: 'unknown', weight: 1, paused: false, machines: { beelink: 'signed_out' }, reading: null, live_sessions: 0 }] };
+      const state = { usage, signin: { state: 'waiting', url: null, code: null, wantsCode: true, logged_in: false }, codeError: 'the sign-in screen has moved on; start again' };
+      await mock(page, state);
+      await open(page, 'accounts');
+      await page.locator('.acct[data-account="default-openrouter"] li[data-machine="beelink"] button').click();
+      const card = page.locator('.signin-card');
+      const key = card.getByPlaceholder('Paste your OpenRouter key');
+      await key.fill('sk-or-test-1');
+      await card.getByRole('button', { name: 'Send code' }).click();
+      await expect(card.locator('.inline-err')).toHaveText('the sign-in screen has moved on; start again');
+      await expect(key).toHaveValue('');
+      await expect(card.getByRole('button', { name: 'Start again' })).toHaveCount(1);
+      await key.fill('sk-or-test-2');
+      await card.getByRole('button', { name: 'Send code' }).click();
+      await expect.poll(() => state.calls.filter((c) => c[1].endsWith('/code')).length).toBe(2);
+      await expect(key).toHaveValue('');
+      await expect(card.getByRole('button', { name: 'Start again' })).toHaveCount(1);
     });
 
     test('Antigravity sign-in opens Google and posts the code', async ({ page }) => {
@@ -318,7 +352,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await mock(page, state);
       await open(page, 'models');
       const group = page.getByRole('radiogroup', { name: 'Reviewers and checkers' });
-      await expect(group.getByRole('radio')).toHaveText(['Mix families', 'Claude', 'GPT', 'Antigravity', 'Kimi Code']);
+      await expect(group.getByRole('radio')).toHaveText(['Mix families', 'Claude', 'GPT', 'Antigravity', 'Kimi Code', 'OpenRouter']);
       await group.getByRole('radio', { name: 'Antigravity' }).click();
       await expect(group.getByRole('radio', { name: 'Antigravity' })).toHaveAttribute('aria-checked', 'true');
       expect(state.calls.find((c) => c[1] === '/settings/preferences')[2]).toEqual({ review_families: 'gemini' });
@@ -496,7 +530,7 @@ test.describe('accounts interface paths', () => {
     await mock(page, state);
     await page.clock.install();
     await open(page, 'accounts');
-    await expect(page.locator('.acct')).toHaveCount(5);
+    await expect(page.locator('.acct')).toHaveCount(6);
     let seen = state.usageGets;
     await page.clock.runFor(30500);
     await expect.poll(() => state.usageGets).toBeGreaterThan(seen);

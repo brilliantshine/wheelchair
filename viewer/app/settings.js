@@ -32,7 +32,7 @@ const DEFAULT_STYLE = Object.freeze({
   text: "Be concise. Cut anything that makes it longer without changing the meaning.\nBuild up to technical terms and ground them, so I don't skim past something I only half get.",
 });
 
-const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 }, gemini: { unknown: 1, pro: 1, ultra: 4 }, kimi: { unknown: 1 } };
+const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 }, gemini: { unknown: 1, pro: 1, ultra: 4 }, kimi: { unknown: 1 }, openrouter: { unknown: 1 } };
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
 function defaults() {
   return { lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini', 'kimi'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
@@ -217,7 +217,7 @@ function normalize(saved) {
   const balancing = {};
   for (const key of BALANCING) balancing[key] = validBalancing(key, saved[key]) ? saved[key] : base[key];
   const orderSeen = Array.isArray(saved.worker_order_seen) ? saved.worker_order_seen.filter((provider) => Object.hasOwn(PROVIDERS, provider)) : ['claude', 'gpt'];
-  balancing.worker_order = [...balancing.worker_order, ...Object.keys(PROVIDERS).filter((provider) => !balancing.worker_order.includes(provider) && !orderSeen.includes(provider))];
+  balancing.worker_order = [...balancing.worker_order, ...Object.keys(PROVIDERS).filter((provider) => !balancing.worker_order.includes(provider) && !orderSeen.includes(provider) && provider !== 'openrouter')];
   if (!validBalancing('save_for_leads', saved.save_for_leads) && typeof saved.save_claude_for_leads === 'boolean') balancing.save_for_leads = saved.save_claude_for_leads;
   return {
     lead_names: Array.isArray(saved.lead_names) ? saved.lead_names : [],
@@ -228,7 +228,7 @@ function normalize(saved) {
     codex_mode: saved.codex_mode === 'unrestricted' ? 'unrestricted' : 'sandboxed',
     aside_access: saved.aside_access === 'full' ? 'full' : 'read-only',
     tool_steps: saved.tool_steps === 'hide' ? 'hide' : 'show',
-    review_families: ['both', 'claude', 'gpt', 'gemini', 'kimi'].includes(saved.review_families) ? saved.review_families : 'both',
+    review_families: ['both', 'claude', 'gpt', 'gemini', 'kimi', 'openrouter'].includes(saved.review_families) ? saved.review_families : 'both',
     other_agents: { ...base.other_agents, ...(saved.other_agents || {}) },
     escalation: Object.fromEntries(Object.entries(ESCALATION_VALUES).map(([key, allowed]) => [key, allowed.includes(saved.escalation?.[key]) ? saved.escalation[key] : base.escalation[key]])),
     templates: Array.isArray(saved.templates) ? saved.templates : [],

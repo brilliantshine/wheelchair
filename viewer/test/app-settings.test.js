@@ -332,9 +332,9 @@ test('lead name list choice saves, validates and migrates', async () => {
 test('gemini settings migrate and enforce account and model rules', async () => {
   const saved = settings.normalize({ worker_order: ['claude', 'gpt'], lead_order: ['gpt', 'any'], review_families: 'gemini', accounts: [] });
   assert.deepEqual(saved.worker_order, ['claude', 'gpt', 'gemini', 'kimi']);
-  assert.deepEqual(saved.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi']);
+  assert.deepEqual(saved.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi', 'openrouter']);
   assert.deepEqual(settings.normalize(saved).worker_order, saved.worker_order);
-  assert.deepEqual(settings.defaults().worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi']);
+  assert.deepEqual(settings.defaults().worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi', 'openrouter']);
   assert.deepEqual(saved.lead_order, ['gpt', 'any']);
   assert.ok(saved.accounts.some((account) => account.id === 'default-gemini'));
   assert.equal(saved.review_families, 'gemini');
@@ -358,7 +358,7 @@ test('removed worker providers stay removed after saving', async () => {
       assert.equal(saved.status, 200);
       assert.deepEqual((await api(context, '/settings')).body.worker_order, worker_order);
       const stored = JSON.parse(await fs.readFile(path.join(context.state, 'settings.json'), 'utf8'));
-      assert.deepEqual(stored.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi']);
+      assert.deepEqual(stored.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi', 'openrouter']);
     }
   });
 });

@@ -27,7 +27,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, including Project tools forwarding, module composition, and the page-facing JSON contract. |
 | `app/names.js`, `agents.js` | Lead name allocation and the public agent tree and machine reachability view. |
-| `app/providers.js` | Hub provider names, CLI mappings and labels: Claude, GPT, Antigravity (`gemini`) and Kimi Code (`kimi`). |
+| `app/providers.js` | Hub provider names, CLI mappings and labels: Claude, GPT, Antigravity (`gemini`) Kimi Code (`kimi`), and OpenRouter (`openrouter`, CLI `pi`). |
 | `app/balancer.js` | Provider and account placement, constraints and waiting decisions. |
 | `app/usage-poll.js` | Idle account usage polling and machine selection. |
 | `app/usage.js` | Account usage persistence, machine sign-in state, forecasts and ranking. |

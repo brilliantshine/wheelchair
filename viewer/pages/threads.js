@@ -12,7 +12,7 @@
     idea: 'Idea', planning: 'Planning', review: 'Review', building: 'Building', verifying: 'Verifying', done: 'Done',
   };
   const QUICK_STAGE = { building: 'Building', verifying: 'Verifying', verified: 'Verified' };
-  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
+  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
   let threads = [];
   let notices = [];
   let titles = {};

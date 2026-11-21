@@ -705,7 +705,7 @@ test('pane history captures requested scrollback and rejects invalid values', as
   const env = await service(await temp()); try {
     await start(env);
     assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane?history=2000', undefined, hubHeader)).status, 200);
-    assert.match(await log(env), /tmux capture-pane -p -e -S -2000 -t wc-t-lead/);
+    assert.match(await log(env), /tmux capture-pane -p -e -S -2000 -t =wc-t-lead:/);
     await fs.writeFile(env.fake.log, '');
     assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane', undefined, hubHeader)).status, 200);
     assert.doesNotMatch(await log(env), /capture-pane.* -S /);
@@ -978,7 +978,7 @@ test('account starts bind the CLI environment, validate directories, and report 
     const invalid = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'x', worktree: root, account: { id: 'bad', dir: '~/elsewhere/bad' } }, hubHeader);
     assert.equal(invalid.status, 400);
     const status = await api(env, 'GET', '/v1/status', undefined, hubHeader);
-    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'default-kimi', 'one', 'two']);
+    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'default-kimi', 'default-openrouter', 'one', 'two']);
     const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/elsewhere/bad' }, hubHeader); assert.equal(preflight.status, 400);
   } finally { await env.close(); process.env.HOME = oldHome; }
 });
@@ -1029,7 +1029,7 @@ test('login sessions start, expose state, accept code and stay out of session re
     await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude.txt'), 'utf8'));
     assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'waiting');
     assert.equal((await api(env, 'POST', '/v1/logins/test/code', { code: 'test-code' }, hubHeader)).status, 200);
-    assert.match(await log(env), /test-code[\s\S]*send-keys -t wc-login-test Enter/);
+    assert.match(await log(env), /test-code[\s\S]*paste-buffer -p -d -b \S+ -t =wc-login-test:[\s\S]*send-keys -t =wc-login-test: Enter/);
     await write(env.fake.pane, '__wc_login_exit 0'); assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'done');
     process.env.FAKE_CLAUDE_AUTH = '{"loggedIn":false}'; assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'failed'); delete process.env.FAKE_CLAUDE_AUTH;
     process.env.FAKE_SESSIONS = 'wc-login-test'; await env.instance.recoverFromTmux(); assert.equal(env.instance.sessions['wc-login-test'], undefined);

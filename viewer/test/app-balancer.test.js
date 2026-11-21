@@ -441,3 +441,26 @@ test('lead and sub-lead use distinct model slots', async () => {
   assert.equal(await slotFor(null, 'lead'), 'lead');
   assert.equal(await slotFor(null, 'sub-lead'), 'sub-lead');
 });
+
+test('OpenRouter explicit placement outside order respects review family', async () => {
+  const { Hub } = require('../app/hub.js');
+  const settings = require('../app/settings.js');
+  const { choose } = require('../app/balancer.js');
+  const { makeDir } = require('./helpers/server.js');
+  const hub = new Hub({ stateDir: await makeDir('balance-openrouter-') });
+  await hub.state.init();
+  await settings.update(hub, s => { s.worker_order = ['claude']; s.save_for_leads = false; });
+  hub.machines = async () => ({ m: { name: 'm' } });
+  hub.call = async () => ({ accounts: [
+    { id: 'default-openrouter', cli: 'pi', logged_in: true },
+    { id: 'default-claude', cli: 'claude', logged_in: true },
+    { id: 'default-gpt', cli: 'codex', logged_in: true },
+  ] });
+  hub.allThreads = async () => [];
+  const thread = { machine: 'm' };
+  for (const role of ['worker', 'reviewer', 'verifier']) assert.equal((await choose(hub, thread, role, 'heavy', { provider: 'openrouter' })).provider, 'openrouter');
+  assert.equal((await choose(hub, thread, 'worker', 'heavy')).provider, 'claude');
+  assert.ok((await choose(hub, thread, 'worker', 'heavy', { provider: 'gpt' })).wait);
+  await settings.update(hub, s => { s.review_families = 'claude'; });
+  assert.equal((await choose(hub, thread, 'reviewer', 'heavy', { provider: 'openrouter' })).provider, 'claude');
+});

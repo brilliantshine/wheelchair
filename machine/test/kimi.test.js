@@ -322,7 +322,7 @@ test('service login endpoints use exact targets for prefix sibling and stale req
     const stale = await fetch(`http://127.0.0.1:${port}/v1/logins/team/keys`, { method: 'POST', headers: { 'x-wheelchair-machine-secret': 'secret', 'content-type': 'application/json' }, body: JSON.stringify({ keys: 'x' }) });
     assert.equal(stale.status, 409); assert.equal(calls.at(-1)[2], '=wc-login-team:');
     const staleCode = await fetch(`http://127.0.0.1:${port}/v1/logins/team/code`, { method: 'POST', headers: { 'x-wheelchair-machine-secret': 'secret', 'content-type': 'application/json' }, body: JSON.stringify({ code: '1234' }) });
-    assert.equal(staleCode.status, 409); assert.equal(calls.at(-1)[2], '=wc-login-team:');
+    assert.equal(staleCode.status, 409); assert.equal(calls.at(-1)[0], 'delete-buffer'); assert.equal(calls.at(-1)[2], calls.at(-2)[2]);
     const saved = { resolveCli: kimi.resolveCli, loginCommand: kimi.loginCommand, seed: kimi.seed };
     try {
       kimi.resolveCli = () => '/fake/kimi'; kimi.loginCommand = () => ['/fake/kimi', 'login']; kimi.seed = () => {};
@@ -465,7 +465,7 @@ test('readiness polling opens one Kimi permission hold and clears it on input', 
 test('recovery prioritizes anchored Kimi markers over reply text', async () => {
   const machine = Object.create(MachineService.prototype); machine.sessions = {}; machine.persistSessions = async () => {};
   const panes = { 'wc-a-worker': 'Codex and Antigravity CLI\n│ >\nAsk When Needed K3 thinking: high\ncontext: 12%', 'wc-b-worker': 'Codex\ncontext: 20%', 'wc-c-worker': 'Antigravity CLI', 'wc-d-worker': 'Claude says context: 3% and Ask When Needed thinking\n│ >' };
-  machine.liveTmux = () => new Set(Object.keys(panes)); machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1)] : '/tmp' });
+  machine.liveTmux = () => new Set(Object.keys(panes)); machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1).replace(/^=(.*):$/, '$1')] : '/tmp' });
   await machine.recoverFromTmux(); assert.deepEqual(Object.values(machine.sessions).map(s => s.cli), ['kimi', 'codex', 'agy', 'claude']); assert.match(machine.sessions['wc-a-worker'].end_reason, /Lost track/);
 });
 
