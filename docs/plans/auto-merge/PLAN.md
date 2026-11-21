@@ -411,7 +411,7 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | `auto_merge` preference: settings, PUT preferences, Settings page row (Spec §1) | viewer/app/settings.js, viewer/app/routes.js, viewer/pages/settings.js, viewer/test/app-settings.test.js | light / claude-haiku-5-5 | wc-91de6c1c2eb1-worker | `node --test test/app-settings.test.js`; full `node --test test/*.test.js`; grep auto_merge; app-settings.spec.js | in progress |
+| T1 | `auto_merge` preference: settings, PUT preferences, Settings page row (Spec §1) | viewer/app/settings.js, viewer/app/routes.js, viewer/pages/settings.js, viewer/test/app-settings.test.js | light / claude-haiku-5-5 | wc-91de6c1c2eb1-worker | `node --test test/app-settings.test.js`; full `node --test test/*.test.js`; grep auto_merge; app-settings.spec.js | done |
 | T2 | tricky: hub auto-merge module, check trigger, `verified` validation, result commit delivery, card closing and dismiss (Spec §2 hub parts, §3) | viewer/app/auto-merge.js (new), viewer/app/cards.js, viewer/app/card.js, viewer/app/threads.js, viewer/pages/thread.js, viewer/test/app-auto-merge.test.js | standard / (assigned at start) | — | `node --test test/app-auto-merge.test.js`; full suite; needs/check-card/merged specs | not started (after T1) |
 | T3 | Lead protocol text (Spec §4) | protocol/app/lead.md, protocol/app/cards-lead.md | standard / claude-sonnet-5-5 | wc-91de6c1c2eb1-worker-2 | greps for verified / Never merge / Not merged automatically | done |
 
@@ -427,3 +427,6 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — Choice: T3, lead.md §10 Posting: the "Not merged automatically" line sits after the `leave it` sentence.
 - 2026-11-21 — Choice: T3, lead.md:139: line left unwrapped to keep the diff small.
 - 2026-11-21 — T3 accepted (band: scout): all §4 edits present; one-line reply on dismissed is consistent with cards-lead.md's older dismissed rule. Sub-lead added "or nothing" to rule (b) so an empty diff (small fix, done head = verified commit) counts as passing; Spec §2's "both hold" introduces three bullets, read as all three.
+- 2026-11-21 — Choice: T1, viewer/pages/settings.js: `AUTO_MERGE_HINT` defined inside the render function beside `asideHint`.
+- 2026-11-21 — Choice: T1, viewer/test/app-settings.test.js: the 400 check matches the error detail with `assert.match`; it omitted the status assertion, which the sub-lead added.
+- 2026-11-21 — T1 accepted (band: scout): matches the brief; re-ran app-settings.test.js (16 pass) and the full suite (780 pass). Report's "not committed" line was stale (commit 943b12e0).
