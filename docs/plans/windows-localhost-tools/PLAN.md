@@ -236,7 +236,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 
 ### Round 1 — 2026-11-21
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since the last round:** n/a (first round — whole Spec in scope)
 
