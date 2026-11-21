@@ -1,6 +1,6 @@
 ---
 slug: overlap-questions
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-20
 ---
 
@@ -14,16 +14,6 @@ Background: split from lead-chat (`docs/plans/lead-chat/PLAN.md` on main, Decisi
 Review Rounds 4-6). Map: `MAP.md`, `docs/maps/overlap-decision-flow.md`.
 
 ## Open Questions
-
-### Q1: During a build, may the user stop it because another thread overlaps?
-- **Context:** A running build never changes. The question card during a build could also
-  offer to stop it (for a duplicate). Archiving the thread from its page already stops every
-  session.
-- **Options:** (A) No stop option: "let it finish" or "let it finish, then start a follow-up
-  thread"; to stop, the user archives the thread. (B) Add "Stop the build": the lead stops the
-  sub-lead and its workers, and the thread ends with no pull request.
-- **Recommendation:** A. Archiving already does exactly this, with a confirmation, and a
-  second way to stop a build adds restart and half-built-state rules.
 
 ## Watch List
 
@@ -43,6 +33,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | During a build, the answer acts at once without writing to the worktree (a follow-up `stub` card, or nothing); the running build never changes | The sub-lead owns the worktree; a stub card is itself durable, so nothing is pending | defaulted |
 | 6 | The machine's delivery id becomes the card's id, so `card.js` can print the id even when the card is queued while the app is offline | The machine already gives every card a random UUID delivery id before queuing (`machine/service.js:1323`, `:2055`); no second round trip | defaulted |
 | 7 | `card.js` prints `{"id","kind"}` (plus `"queued":true` when queued) for kinds that make a stored card, and `{"ok":true}` for `title`, `resolve`, `retract`; never card text | Settled in lead-chat round 4-5 | defaulted |
+| 8 | During a build the overlap card offers no way to stop it: "Let it finish" or "Let it finish, then start a follow-up thread"; to stop, the user archives the thread | User's pick (card 84bc0114); archiving already stops every session with a confirmation | user |
 
 ## Spec
 
@@ -94,7 +85,7 @@ look" (b) clause's question wording with these rules. The other bullets stay as 
 - **Building (Start building accepted until `done`):** the running build never changes and the
   lead writes nothing to the worktree. Options: "Let it finish" and "Let it finish, then start a
   follow-up thread" (the lead posts a `stub` card at once with `depends_on_parent: true`,
-  naming the other thread and what to reconcile). [Q1 may add a stop option.]
+  naming the other thread and what to reconcile). No stop option: to stop a build, the user archives the thread (Decision 8).
 - **Done (step 9):** options "Leave it" and "Start a thread about it" (a `stub` card).
 - A peer's message that only reports information still gets no reply (Replies bullet
   unchanged).
@@ -147,6 +138,15 @@ merging of branches; no sub-lead or worker rule changes.
 |------|--------------|-------|
 
 ## Review Rounds
+
+### Round 1 — 2026-11-20
+
+**Lanes:** pending.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
