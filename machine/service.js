@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 const { TryService } = require('./lib/try');
+const { providers, loadRecipes } = require('./lib/harness-recipes');
+const harnessInstall = require('./lib/harness-install');
 const { startupWarning } = require('./lib/startup-warning');
 const { createProjectTools } = require('./lib/project-tools');
 const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
@@ -695,20 +697,7 @@ class MachineService {
       return fs.realpathSync(worktree) === fs.realpathSync(path.join(this.stateDir, 'worktrees', project, 'wc', thread));
     } catch { return false; }
   }
-  async tmuxPath() {
-    return new Promise(resolve => {
-      let stdout = '', done = false;
-      const finish = value => { if (!done) { done = true; clearTimeout(timer); resolve(value); } };
-      let child;
-      try { child = spawn('tmux', ['show-environment', '-g', 'PATH'], { stdio: ['ignore', 'pipe', 'ignore'] }); }
-      catch { return resolve(process.env.PATH || ''); }
-      const timer = setTimeout(() => { child.kill('SIGKILL'); finish(process.env.PATH || ''); }, 2000);
-      child.stdout.setEncoding('utf8');
-      child.stdout.on('data', chunk => { stdout += chunk; });
-      child.on('error', () => finish(process.env.PATH || ''));
-      child.on('close', code => finish(code === 0 && stdout.startsWith('PATH=') ? stdout.slice(5).replace(/\r?\n$/, '') : (process.env.PATH || '')));
-    });
-  }
+  async tmuxPath() { return process.env.PATH || ''; }
   validProjectToolsState(value) {
     const plain = v => v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype;
     const lines = v => Array.isArray(v) && v.every(line => plain(line) && Array.isArray(line.names) && line.names.every(name => typeof name === 'string') && typeof line.text === 'string');
@@ -794,7 +783,7 @@ class MachineService {
     }
   }
   launchEnv(session, adapter) {
-    return [['WHEELCHAIR_LANE', '1'], ...(adapter.sessionNameEnv ? [['WHEELCHAIR_SESSION_NAME', session.name]] : []), ['WHEELCHAIR_STATE_DIR', this.stateDir], ['WHEELCHAIR_MACHINE_ORIGIN', `http://${this.config.host}:${this.config.port}`], ...Object.entries(adapter.loginEnv(session.account_dir))];
+    return [['PATH', process.env.PATH || ''], ['WHEELCHAIR_LANE', '1'], ...(adapter.sessionNameEnv ? [['WHEELCHAIR_SESSION_NAME', session.name]] : []), ['WHEELCHAIR_STATE_DIR', this.stateDir], ['WHEELCHAIR_MACHINE_ORIGIN', `http://${this.config.host}:${this.config.port}`], ...Object.entries(adapter.loginEnv(session.account_dir))];
   }
   async startIn(input, name, adapter, account, dir, options, createdWorktree, created, promptPath, rolePrompt) {
     const worktree = created.worktree;
@@ -1526,7 +1515,7 @@ class MachineService {
     await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
     this.tmux(['kill-session', '-t', cli === 'pi' ? `=${name}:` : cli === 'kimi' ? `=${name}` : name]);
-    const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
+    const cmd = ['env', `PATH=${process.env.PATH || ''}`, ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
     const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
     const cwd = adapter.loginCwd?.(this.stateDir);
     const result = this.tmux(['new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...(cwd ? ['-c', cwd] : []), ['sh', '-c', script].map(shellQuote).join(' ')]);
@@ -1596,7 +1585,7 @@ class MachineService {
     }
     for (const entry of accounts) delete entry.authenticated;
     if (kimi.problem) for (const entry of accounts) if (entry.cli === 'kimi') { entry.logged_in = false; delete entry.problem; }
-    return { version: this.version, claude, codex, agy, kimi, pi, accounts, sessions: this.sessionList() };
+    return { version: this.version, claude, codex, agy, kimi, pi, recipes: Object.fromEntries(providers.map(p => [p, !!loadRecipes()[p]])), accounts, sessions: this.sessionList() };
   }
   checkKimiVersion(executable = adapters.kimi.resolveCli()) {
     if (!executable) return Promise.resolve();
@@ -1949,6 +1938,15 @@ class MachineService {
           const result = await commandAsync(script, [input.level], { timeout: 30000 });
           return result.ok ? send(response, 200, { level: input.level, text: result.stdout }) : send(response, 422, failure(result));
         } finally { this.sensitivityWriting = false; }
+      }
+      if (pathBits[0] === 'v1' && pathBits[1] === 'harnesses' && pathBits[3] === 'install' && pathBits.length === 4 && ['GET', 'POST'].includes(request.method)) {
+        await this.authorize(request, 'hub');
+        const provider = pathBits[2];
+        if (!providers.includes(provider)) return send(response, 404, { error: 'unknown provider' });
+        if (request.method === 'GET') return send(response, 200, harnessInstall.state(provider));
+        if (!loadRecipes()[provider]) return send(response, 404, { error: 'no recipe' });
+        if (!harnessInstall.start(provider)) return send(response, 409, { error: 'already installing' });
+        return send(response, 202, { state: 'running' });
       }
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
       if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
