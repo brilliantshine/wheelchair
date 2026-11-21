@@ -128,8 +128,12 @@ is not rewritten: the agent CLI connects to the port in WSL as written.
   session uses the port**, whatever happens to the relay, so the port is never released to
   another Linux process while a CLI still holds its URL.
 - Claimed before the agent CLI is launched (in `startIn`, before tmux), kept while any live
-  session uses that port, and closed as soon as the last such session stops or its thread
-  archives. Teardown closes the listeners, destroys every accepted connection still open
+  session uses that port. A session stops using its ports only once its tmux session is
+  confirmed gone (absent from `liveTmux()`), not merely marked stopped: the stop path
+  releases them after a successful `kill-session` check, and `WinBridge.sweep()` (every 60 s)
+  releases the ports, reservations and launch record of any recorded session no longer in
+  `liveTmux()`, which covers handoff kills and crashes. The forward closes as soon as its last
+  user is released, or when its thread archives. Teardown closes the listeners, destroys every accepted connection still open
   (for example a long-lived SSE stream) and stops the relay; the port's `windows`
   reservation is released only after all of that has finished, so an opposite-meaning reservation can never reach a listener still open.
 - **One meaning per port.** On a WSL machine (not mirrored), a loopback port is either a
@@ -165,8 +169,9 @@ means mirrored); a missing command or any other output counts as not mirrored (D
 mirrored mode no forward is made: WSL reaches Windows `127.0.0.1` directly. But a Linux
 process listening on the same port on `127.0.0.1` or `[::1]` would receive the CLI's requests
 (and headers) instead, so in step (1) the machine checks `/proc/net/tcp` and `/proc/net/tcp6`
-for a listening socket on that port; if one exists the marked entry is withheld exactly as in
-"Port taken on Linux". Port reservations still apply in mirrored mode.
+for a socket in LISTEN state on that port bound to `127.0.0.1`, `::1`, `0.0.0.0` or `::` (the
+binds a loopback URL can reach); if one exists the marked entry is withheld exactly as in
+"Port taken on Linux". A listener bound only to another address does not count. Port reservations still apply in mirrored mode.
 
 **Machine service restart and the launch record.** tmux sessions survive a service restart,
 so forwards and Windows tool state must too. In step (4), **before tmux is started**, the
@@ -316,7 +321,11 @@ a file `<stateDir>/win-tools/<session name>/<go-between pid>` (created when it s
 tool, removed after the tool's job has closed and its pipes are shut). `WinBridge.onStop` for a
 `wrapped` session waits until that directory is empty (polling, up to 15 s; entries whose pid
 is no longer alive are removed) before the final stop reconcile, so a tool's last writes are in
-the final Windows snapshot. A timeout logs it and reconciles anyway.
+the final Windows snapshot. A timeout logs it and reconciles anyway. The same gate applies to
+`WinBridge.sweep()`'s final reconcile: a copy is not swept-reconciled while any session sharing
+it (registered for that copy key) still has entries in its `win-tools` directory with live
+pids; the next sweep tries again. This covers sessions that end without `onStop` (a CLI
+crash, or the handoff `kill` path in `machine/service.js`).
 
 **Process tree.** The go-between starts the real tool so that ending it ends every Windows
 process it started: through a launcher that puts the tool in a Windows Job Object with
@@ -365,8 +374,10 @@ nothing ever needs restarting. The go-between reads JSON-RPC messages line by li
 4. While not ready, a `failed` ready file changes the `instructions`/error sentence for later
    messages; a later `ready` still starts the tool (step 3).
 5. After the real tool is running, if it exits on its own, the go-between exits with its code,
-   as an unwrapped tool would. If the client closes stdin, the go-between stops the tool
-   (process tree as above) and exits.
+   as an unwrapped tool would. If the client closes stdin at any time, the go-between ends:
+   before the ready point it exits at once without ever starting the real tool (and stops
+   polling the ready file); during the 3b handoff or afterwards it stops the tool (process tree
+   as above), then exits.
 
 ### 5. Broken bridge warning
 
@@ -412,7 +423,8 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   Windows process for both; relay refuses when the fake listener lookup says none or
   `wslrelay`; Linux port taken → entry withheld (Claude `disabledMcpjsonServers`, Codex and
   Antigravity drop it) with the warning; listener closed after the last session; mirrored
-  mode makes no forward and withholds nothing; restart of the service re-claims recorded
+  mode makes no forward and, with no Linux listener on a loopback or wildcard bind for that
+  port, withholds nothing (a listener on another address does not count); restart of the service re-claims recorded
   listeners for live sessions.
 - Project tools form and save: switch shown only on WSL and for `http://localhost` /
   `http://127.0.0.1`; list kept in step with renames and deletes; Unity button fills the
@@ -439,8 +451,11 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
 - Teardown: with an open SSE-style stream through the forward, the last session stopping
   destroys it and only then releases the `windows` reservation. Mirrored mode with a Linux
   listener on `[::1]:<port>` withholds the marked entry.
-- Stop: a wrapped tool still shutting down delays the final reconcile until its file is
-  gone; its last write is in the snapshot.
+- Stop: a wrapped tool still shutting down delays the final reconcile, in `onStop` and in
+  the sweep, until its file is gone; its last write is in the snapshot. A session killed
+  through the handoff path has its ports and reservations released by the next sweep.
+- Go-between EOF: client closing stdin before ready exits without starting the tool;
+  during the handoff stops the tool and exits.
 - Restart tracking: after a service restart, a withheld marked tool still shows its launch
   outcome in `win info`; a live session with `windows_tools` in the
   launch record is back in `toolSessions`, and its stop runs the final reconcile. A
@@ -628,6 +643,20 @@ copies or git data; no IPv6-only Windows servers.
 **Lanes:** claude (intent); other family (mechanics); cross-family: yes.
 
 **Changed since Round 6:** §1 mirrored mode Linux-listener check, teardown destroys open connections before releasing, launch record stores each marked tool's port and outcome; §4 heading, failed sentence adds retry, Stop waits for wrapped tools, go-between steps 3a/3b; Validation (teardown, mirrored, stop, handshake orders); D19.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | Sweep's final reconcile skips the wrapped-tool shutdown gate | upheld | §4 gate applies to `sweep()` |
+| mechanics | major | Port teardown needs confirmed tmux exit and a path for sessions killed without stop | upheld | §1 release on confirmed absence; sweep releases |
+| mechanics | blocking | No EOF rule before ready or during handoff | upheld | §4 step 5 |
+| mechanics | major | Mirrored check catches non-loopback listeners | upheld | §1 loopback and wildcard binds only |
+| intent | minor | Validation still says mirrored mode withholds nothing | upheld | §Validation Forward bullet |
+
+### Round 8 — 2026-11-21
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round 7:** §1 port release on confirmed tmux absence and by the sweep; mirrored check limited to loopback and wildcard binds; §4 shutdown gate also in `sweep()`, go-between EOF rule (step 5); Validation (mirrored, stop, EOF).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
