@@ -30,6 +30,7 @@ const { readLines: readCodexSteps } = require('./lib/codex-steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
 const { ScreenManager, screenTools } = require('./lib/screen');
+const { WinBridge } = require('./lib/win');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
@@ -267,6 +268,7 @@ class MachineService {
     this.options = options;
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
     this.screens = new ScreenManager(this);
+    this.win = new WinBridge(this, options.win || {});
   }
 
   async refreshStartupWarning() {
@@ -389,6 +391,9 @@ class MachineService {
     this.checkKimiVersion();
     await this.recoverFromTmux();
     await this.screens.startup();
+    await this.win.startup();
+    this.winTimer = setInterval(() => this.win.sweep().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_WIN_SWEEP_MS || 60000));
+    this.winTimer.unref();
     this.screenTimer = setInterval(() => this.screens.sweep().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SCREEN_SWEEP_MS || 60000));
     this.screenTimer.unref();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
@@ -2041,6 +2046,7 @@ class MachineService {
         }
       }
       if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, agent.cli === 'kimi' ? { ignored: true } : await this.hook(agent.name, input)); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/win') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.win.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
@@ -2059,7 +2065,7 @@ class MachineService {
     this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }
