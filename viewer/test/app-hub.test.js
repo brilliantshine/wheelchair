@@ -1802,7 +1802,7 @@ test('keep going and talk about it close a lead needs card and reach the lead', 
   });
 });
 
-test('dismiss closes a lead needs card as user and refuses a system one', async () => {
+test('dismiss closes lead needs and refuses a live held system card', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0].name;
@@ -1812,6 +1812,13 @@ test('dismiss closes a lead needs card as user and refuses a system one', async 
     const system = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.system);
     const refused = await api(context, `/threads/${made.id}/cards/${system.id}/dismiss`, { method: 'POST', body: {} });
     assert.equal(refused.status, 422);
+    const view = (await api(context, `/threads/${made.id}/chat`)).body;
+    assert.equal(view.cards.find(c => c.id === system.id).blocking, true);
+    assert.equal(view.thread.cards.find(c => c.id === system.id).blocking, true);
+    const held = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));
+    assert.equal(held.sessions.find(s => s.name === lead).needs_open, true);
+    assert.equal(held.sessions.find(s => s.name === lead).permission_open, true);
+    assert.equal(held.cards.find(c => c.id === system.id).blocking, undefined);
     const missing = await api(context, `/threads/${made.id}/cards/nope/dismiss`, { method: 'POST', body: {} });
     assert.equal(missing.status, 404);
     const ok = await api(context, `/threads/${made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} });
@@ -2207,5 +2214,22 @@ test('restart context preserves stub summary and all card kinds', async () => {
     const state = JSON.parse(message.replace(/^\[wc:context restart] Thread state:\n/, ''));
     assert.equal(state.stub_summary, 'Summary only'); assert.equal(state.card_kinds[a.id], 'deferred'); assert.equal(state.card_kinds[b.id], 'deferred');
     assert.doesNotMatch(message, /commits|cherry-pick/i);
+  });
+});
+
+test('nonblocking system needs dismiss without notifying lead, including stale holds', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context); const lead = made.sessions[0].name;
+    const hub = new (require('../app/hub.js').Hub)({ stateDir: context.state });
+    let t = await hub.thread(made.id);
+    const add = title => require('../app/cards.js').addCard(t, { kind: 'needs', title, body: 'test' }, { system: true });
+    const quiet = add('An agent stopped without reporting'); const ended = add('Session ended'); const stale = add('Permission needed'); const stopped = add('Session stuck at startup');
+    t.sessions.push({ name: 'stopped-held', live: false, needs_open: true, needs_card: stopped.id, queue: [] }); await hub.save(t);
+    for (const c of [quiet, ended, stale, stopped]) {
+      assert.equal((await api(context, `/threads/${made.id}/cards/${c.id}/dismiss`, { method: 'POST', body: {} })).status, 200);
+      t = await hub.thread(made.id); const saved = t.cards.find(x => x.id === c.id);
+      assert.equal(saved.resolved_by, 'user'); assert.equal(saved.resolved_note, 'Dismissed');
+      assert.ok(!(t.queues[lead] || []).some(q => q.text.includes(c.id)));
+    }
   });
 });

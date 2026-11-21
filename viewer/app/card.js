@@ -235,6 +235,10 @@ function validate(kind, card, role, options = {}) {
 // Which card a resolve may close: an open needs card a lead posted in this thread, or, for a
 // lead, an open question. The hub's own needs cards (system) close themselves or have their
 // own button.
+function blockingNeeds(thread, cardId) {
+  return (thread.sessions || []).some((session) => session.live && session.needs_card === cardId && session.needs_open);
+}
+
 function resolvable(thread, cardId, mode) {
   const target = (thread.cards || []).find((item) => item.id === cardId && !item.replaced);
   if (!target) return { ok: false, reason: 'no such card in this thread' };
@@ -316,4 +320,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fields, resolvable, retractable, roles, shown, truncateTitle, validate };
+module.exports = { blockingNeeds, fields, resolvable, retractable, roles, shown, truncateTitle, validate };
