@@ -492,7 +492,7 @@
     const table = h('table', { class: 'tiers' }, h('thead', {}, head), h('tbody', {}, body));
 
     // One segmented choice per CLI; each saves its own key through the preferences route.
-    const modeGroup = (key, label, choices) => {
+    const modeGroup = (key, label, choices, saved = SAVED) => {
       const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
         choices.map(([value, text]) => h('button', {
           type: 'button', role: 'radio', 'aria-checked': String(data[key] === value), text,
@@ -504,7 +504,7 @@
               data[key] = res[key];
               inlineErr(row, '');
               renderPanel();
-              setNote(SAVED, false);
+              setNote(saved, false);
             } catch (e) { inlineErr(row, e.message); setNote('', false); }
           },
         })));
@@ -591,7 +591,7 @@
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Merge pull requests when done' }), h('span', { class: 'hint', text: AUTO_MERGE_HINT })),
-            modeGroup('auto_merge', 'Merge pull requests when done', [['off', 'Off'], ['on', 'On']])),
+            modeGroup('auto_merge', 'Merge pull requests when done', [['off', 'Off'], ['on', 'On']], 'Saved')),
           enterRow(),
           folderRow(),
           nameRow())),
