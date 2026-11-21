@@ -106,9 +106,11 @@ test('child starts reset quiet card on new and duplicate starts, but not refusal
   assert.equal(bad.status, 403); assert.equal((await f.session(f.sub)).quiet_card, id);
   await f.start(f.sub, 'worker', 'new-child');
   assert.equal((await f.session(f.sub)).quiet_stage, 0); assert.equal((await f.read()).cards.find(c => c.id === id).answered, true);
-  id = await seedQuiet(f, f.sub, true);
-  await f.start(f.sub, 'worker', 'new-child');
-  assert.equal((await f.session(f.sub)).quiet_card, undefined); assert.equal((await f.session(f.sub)).quiet_stage, 0);
+  id = await seedQuiet(f, f.sub);
+  const dup = await machinePost(f.c, '/machine/session', { calling_session: f.sub.name, action: 'start', role: 'worker', attempt_id: 'new-child', brief: 'work' });
+  assert.equal(dup.status, 200); assert.equal(dup.body.duplicate, true);
+  const fresh = await f.read(); const sub = fresh.sessions.find(x => x.name === f.sub.name);
+  assert.equal(sub.quiet_card, undefined); assert.equal(sub.quiet_stage, 0); assert.equal(fresh.cards.find(c => c.id === id).answered, true);
 }));
 test('starter message before warning leaves quiet stage unchanged', () => run(async f => {
   const t = await f.read(); const s = t.sessions.find(x => x.name === f.worker.name); s.quiet_stage = 1; s.turn_ended = false; await f.hub.save(t);
