@@ -205,6 +205,22 @@ test('archive waits for successful final sync then deletes the copy', async () =
   assert.equal(fs.existsSync(path.dirname(info.copy_linux)), false, 'the thread copies folder is removed too');
 });
 
+test('archive removes the thread folder when the copy went with its worktree first', async () => {
+  const { bridge, session } = realFixture();
+  await bridge.handle(session, { op: 'sync', args: [] });
+  const info = await bridge.handle(session, { op: 'info', args: [] });
+  await bridge.onWorktreeRemoved(session, { kind: 'other' });
+  for (let i = 0; i < 100 && fs.existsSync(info.copy_linux); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(fs.existsSync(info.copy_linux), false);
+  const sibling = path.join(path.dirname(path.dirname(info.copy_linux)), 'other-thread');
+  fs.mkdirSync(sibling, { recursive: true });
+  await bridge.archiveFinish(session.thread_id);
+  assert.equal(fs.existsSync(path.dirname(info.copy_linux)), false);
+  assert.equal(fs.existsSync(sibling), true, 'other threads and the copies root stay');
+  await bridge.archiveFinish('.');
+  assert.equal(fs.existsSync(path.dirname(sibling)), true);
+});
+
 test('archive waits once for a final sync and retains a failed copy', async () => {
   const { bridge, session } = realFixture();
   await bridge.handle(session, { op: 'sync', args: [] });
