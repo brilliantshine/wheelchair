@@ -1,6 +1,6 @@
 'use strict';
 
-const { PROVIDERS, providerOf } = require('./providers.js');
+const { PROVIDERS, DISPLAY_NAMES, providerOf } = require('./providers.js');
 const settings = require('./settings.js');
 
 // Spec lifecycle step 6: the hub, not the lead, owns the machine readiness gate.
@@ -28,6 +28,8 @@ async function preflightFailed(hub, machine) {
 
 async function check(hub, thread) {
   const absent = [];
+  const ownProvider = thread.provider || providerOf(thread.cli);
+  if (hub.state && ownProvider && !(await settings.load(hub)).harnesses[ownProvider]) return { ok: false, missing: [`${DISPLAY_NAMES[ownProvider]} is left out in Settings`] };
   let status;
   try {
     status = await hub.call(thread.machine, '/v1/status', 'GET');

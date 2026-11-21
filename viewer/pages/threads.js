@@ -18,6 +18,7 @@
   let titles = {};
   let stages = {};   // thread id -> stage label, from the features data
   let waiting = {};  // thread id -> number of open cards that need you
+  let onboarding = null; // GET /onboarding when show is true, else null
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -83,6 +84,23 @@
       .sort((a, b) => stamp(b) - stamp(a));
     listEl.textContent = '';
     emptyEl.hidden = shown.length > 0;
+    if (onboarding) {
+      const li = el('li', 'card onboarding'); li.id = 'onboarding';
+      li.appendChild(el('h3', '', 'Set up an agent'));
+      const steps = el('ul', 'ob-steps');
+      for (const step of onboarding.steps || []) {
+        const item = el('li', 'ob-step' + (step.done ? ' done' : ''));
+        item.dataset.step = step.id;
+        item.appendChild(el('span', 'ob-tick', step.done ? '\u2713' : '\u25CB'));
+        const text = el('span', 'ob-text'); text.appendChild(el('span', '', step.label));
+        if (step.id === 'start' && !step.done && step.reason) text.appendChild(el('span', 'ob-reason dim', step.reason));
+        item.appendChild(text); steps.appendChild(item);
+      }
+      li.appendChild(steps);
+      li.appendChild(el('p', 'dim', "Leave out the ones you don't use."));
+      const open = el('a', 'btn-link primary', 'Open Settings'); open.href = '/wheelchair/app/settings#harnesses';
+      li.appendChild(open); listEl.appendChild(li);
+    }
     for (const notice of notices) {
       const li = el('li', 'card amber'); li.appendChild(el('p', '', notice.text));
       const dismiss = el('button', 'small', 'Dismiss'); dismiss.type = 'button';
@@ -126,7 +144,18 @@
     if (cached && Array.isArray(cached.threads)) apply(cached.threads, cached.features || {});
   } catch (e) { /* draw on the first fetch instead */ }
 
+  async function pollOnboarding() {
+    try {
+      const res = await fetch(API + '/onboarding');
+      if (!res.ok) throw new Error('http ' + res.status);
+      const body = await res.json();
+      onboarding = body && body.show && Array.isArray(body.steps) && body.steps.length ? body : null;
+    } catch (e) { onboarding = null; }
+    render();
+  }
+
   async function poll() {
+    pollOnboarding();
     try {
       const [res, features] = await Promise.all([
         fetch(API + '/threads?view=list'),

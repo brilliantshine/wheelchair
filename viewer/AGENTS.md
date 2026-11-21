@@ -30,6 +30,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, including Project tools forwarding, module composition, and the page-facing JSON contract. |
 | `app/names.js`, `agents.js` | Lead name allocation and the public agent tree and machine reachability view. |
 | `app/providers.js` | Hub provider names, CLI mappings and labels: Claude, GPT, Antigravity (`gemini`) Kimi Code (`kimi`), and OpenRouter (`openrouter`, CLI `pi`). |
+| `app/harnesses.js` | Harness status, placement eligibility and first-run checklist. |
 | `app/balancer.js` | Provider and account placement, constraints and waiting decisions. |
 | `app/usage-poll.js` | Idle account usage polling and machine selection. |
 | `app/usage.js` | Account usage persistence, machine sign-in state, forecasts and ranking. |
