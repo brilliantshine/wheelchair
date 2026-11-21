@@ -26,7 +26,7 @@ async function fixture(script = '') {
   return { hub, thread, dir, log, restore: () => { process.env.PATH = old; }, calls: async () => (await fs.readFile(log, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean), run: async () => { merge.afterCheck(hub, 'one', 'check'); await merge.settled(); return hub.thread('one'); } };
 }
 const view = (status = 'CLEAN', state = 'OPEN') => JSON.stringify({ state, mergeStateStatus: status, headRefName: 'branch', baseRefName: 'main', headRefOid: head, statusCheckRollup: [] });
-const script = (status = 'CLEAN', state = 'OPEN', api = `printf '{"merged":true}'`) => `if [ "$1" = pr ]; then printf '%s' '${view(status, state)}'; else ${api}; fi`;
+const script = (status = 'CLEAN', state = 'OPEN', api = `printf '{"merged":true}'`) => `if [ "$1" = pr ]; then printf '%s' '${view(status, state)}'; else ${api || ':'}; fi`;
 
 test('done verified validation', () => { for (const v of [true, false, undefined]) assert.equal(validate('done', (({ created_at, ...rest }) => ({ ...rest, verified: v }))(done), 'lead').ok, true); assert.equal(validate('done', (({ created_at, ...rest }) => ({ ...rest, verified: 'yes' }))(done), 'lead').ok, false); });
 test('silent gates and held gates', async () => {
@@ -69,5 +69,125 @@ test('GitHub outcomes and exact merge arguments', async () => {
 test('dismiss auto-merge card and refuse lead resolution', async () => {
   const f = await fixture(); try { const t = await f.hub.thread('one'); t.cards.push({ kind: 'needs', id: 'n', system: true, auto_merge: true, answered: false }); await f.hub.save(t);
     assert.equal(resolvable(t, 'n', 'lead').ok, false); await dismiss(f.hub, 'one', 'n'); assert.equal((await f.hub.thread('one')).cards.at(-1).answered, true);
+  } finally { f.restore(); }
+});
+
+
+async function waitForCall(f) {
+  for (let i = 0; i < 500; i++) {
+    if ((await f.calls()).length) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error('gh did not start');
+}
+async function addLead(f) {
+  const t = await f.hub.thread('one');
+  t.sessions.push({ name: 'lead', role: 'lead', live: false });
+  await f.hub.save(t);
+}
+const post = (f, card, session = 'lead') => f.hub.acceptCard({ ...card, thread_id: 'one', session });
+const needs = { kind: 'needs', id: 'notice', system: true, auto_merge: true, auto_merge_head: head, answered: false };
+
+test('result delivery includes commit when supplied', async () => {
+  const f = await fixture();
+  try {
+    const t = await f.hub.thread('one');
+    t.sessions = [{ name: 'lead', role: 'lead', queue: [] }, { name: 'worker', role: 'worker', started_by: 'lead' }];
+    await f.hub.save(t); f.hub.deliver = async () => {};
+    await post(f, { kind: 'result', task: 'T2', outcome: 'done', summary: 'Finished', commit: head }, 'worker');
+    await post(f, { kind: 'result', task: 'T2', outcome: 'done', summary: 'Finished again' }, 'worker');
+    assert.deepEqual((await f.hub.thread('one')).sessions[0].queue.map(q => q.text), [
+      `[wc:from worker] result (commit ${head}): Finished`, '[wc:from worker] result: Finished again',
+    ]);
+  } finally { f.restore(); }
+});
+
+test('accepting a check triggers auto-merge', async () => {
+  const f = await fixture(script());
+  try {
+    await addLead(f); const t = await f.hub.thread('one'); t.cards = [t.cards[0]]; await f.hub.save(t);
+    await post(f, { kind: 'check', head, update: 'Checked', steps: [step] });
+    await merge.settled();
+    assert.ok((await f.calls())[0].startsWith(`pr view ${url} `));
+    assert.equal((await f.hub.thread('one')).auto_merge_attempts[head].outcome, 'merged');
+  } finally { await merge.settled(); f.restore(); }
+});
+
+test('switching off during the readiness wait prevents merge', async () => {
+  const f = await fixture(); const gate = path.join(f.dir, 'gate'), count = path.join(f.dir, 'count');
+  try {
+    await fs.writeFile(path.join(f.dir, 'bin', 'gh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${f.log}'\nif [ ! -f '${count}' ]; then touch '${count}'; while [ ! -f '${gate}' ]; do sleep 0.01; done; printf '%s' '${view('UNKNOWN')}'; else printf '%s' '${view()}'; fi\n`, { mode: 0o755 });
+    merge.timing.waitMs = 1000;
+    merge.afterCheck(f.hub, 'one', 'check'); await waitForCall(f);
+    await settings.update(f.hub, v => { v.auto_merge = 'off'; }); await fs.writeFile(gate, ''); await merge.settled();
+    const t = await f.hub.thread('one');
+    assert.equal(t.auto_merge_attempts[head].outcome, 'switched-off');
+    assert.ok((await f.calls()).length >= 2); assert.ok((await f.calls()).every(c => c.startsWith('pr view ')));
+    assert.ok(!t.cards.some(c => c.auto_merge));
+  } finally { await fs.writeFile(gate, ''); await merge.settled(); merge.timing.waitMs = 20; f.restore(); }
+});
+
+test('merge timeout produces unknown and its specific notice', async () => {
+  const f = await fixture(script('CLEAN', 'OPEN', 'exec sleep 2'));
+  try {
+    const t = await f.run();
+    assert.equal(t.auto_merge_attempts[head].outcome, 'unknown');
+    assert.equal(t.cards.find(c => c.auto_merge).body, "GitHub didn't answer in time; check the pull request on GitHub.");
+  } finally { f.restore(); }
+});
+
+test('finishing respects concurrent merged, newer done, and unrelated cards', async () => {
+  for (const change of ['merged', 'newer', 'unrelated']) {
+    const f = await fixture(); const gate = path.join(f.dir, 'gate');
+    try {
+      await fs.writeFile(path.join(f.dir, 'bin', 'gh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${f.log}'\nwhile [ ! -f '${gate}' ]; do sleep 0.01; done\nprintf '%s' '${view('BLOCKED')}'\n`, { mode: 0o755 });
+      merge.afterCheck(f.hub, 'one', 'check'); await waitForCall(f);
+      await f.hub.withThread('one', async () => {
+        const t = await f.hub.thread('one');
+        if (change === 'merged') t.cards.push({ kind: 'merged', pr_url: url });
+        if (change === 'newer') t.cards.push({ ...done, head: 'b'.repeat(40) });
+        if (change === 'unrelated') t.cards.push({ kind: 'needs', id: 'concurrent', title: 'Concurrent writer' });
+        await f.hub.save(t);
+      });
+      await fs.writeFile(gate, ''); await merge.settled();
+      const t = await f.hub.thread('one');
+      assert.equal(t.auto_merge_attempts[head].outcome, 'not-ready', change);
+      assert.equal(t.cards.some(c => c.auto_merge), change === 'unrelated', change);
+      if (change === 'unrelated') assert.ok(t.cards.some(c => c.id === 'concurrent'));
+    } finally { await fs.writeFile(gate, ''); await merge.settled(); f.restore(); }
+  }
+});
+
+test('pollMerged closes open auto-merge notices', async () => {
+  const f = await fixture(`printf '{"state":"MERGED"}'`);
+  try {
+    const t = await f.hub.thread('one'); t.cards.push({ ...needs }); await f.hub.save(t);
+    await f.hub.pollMerged(); const fresh = await f.hub.thread('one');
+    assert.ok(fresh.cards.some(c => c.kind === 'merged' && c.pr_url === url));
+    assert.equal(fresh.cards.find(c => c.id === 'notice').resolved_note, 'Merged');
+    assert.equal(fresh.cards.find(c => c.id === 'notice').answered, true);
+  } finally { f.restore(); }
+});
+
+test('done acceptance closes notices for older heads and leaves same head open', async () => {
+  for (const newHead of [head, 'b'.repeat(40)]) {
+    const f = await fixture(`printf '%s' '${JSON.stringify({ ...JSON.parse(view()), headRefOid: newHead })}'`);
+    try {
+      await addLead(f); const t = await f.hub.thread('one'); t.cards.push({ ...needs }); await f.hub.save(t);
+      const { created_at, ...input } = done;
+      await post(f, { ...input, head: newHead });
+      const notice = (await f.hub.thread('one')).cards.find(c => c.id === 'notice');
+      assert.equal(notice.answered, newHead !== head);
+      if (newHead !== head) assert.equal(notice.resolved_note, 'Replaced by a newer version');
+    } finally { f.restore(); }
+  }
+});
+
+test('lead resolve through acceptCard refuses auto-merge needs', async () => {
+  const f = await fixture();
+  try {
+    await addLead(f); const t = await f.hub.thread('one'); t.cards.push({ ...needs }); await f.hub.save(t);
+    await assert.rejects(post(f, { kind: 'resolve', card: 'notice', note: 'Resolved' }), { status: 422, message: 'a system needs card closes itself' });
+    assert.equal((await f.hub.thread('one')).cards.find(c => c.id === 'notice').answered, false);
   } finally { f.restore(); }
 });
