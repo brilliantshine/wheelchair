@@ -33,6 +33,19 @@ function status(over = {}, extra = {}) {
   };
 }
 const json = (route, body, code = 200) => route.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify(body) });
+// A settings GET stub: fetch the real body, patch it, fulfil. The test can end while the real
+// response is still in flight (a reload after a POST), so any late failure is swallowed here
+// instead of failing the test with "Test ended while running route callback".
+async function patchSettings(r, patch) {
+  try {
+    const body = await (await r.fetch()).json();
+    await json(r, patch(body));
+  } catch {
+    await r.abort().catch(() => {});
+  }
+}
+// The page's settings reload after a POST: registered before the click that sends the POST.
+const settingsGet = (page) => page.waitForResponse((res) => res.request().method() === 'GET' && res.url().endsWith('/api/settings'));
 
 // Routes the page needs; `world` is read on each request so a test can change it mid-run.
 async function stub(page, world) {
@@ -50,6 +63,7 @@ const row = (page, p) => page.locator(`.h-row[data-provider="${p}"]`);
 for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop', { width: 1280, height: 900 }]]) {
   test.describe(label, () => {
     test.use({ viewport: size });
+    test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }); });
 
     test('five rows, states, vendor link, no sideways scroll', async ({ page }) => {
       const s = status();
@@ -225,7 +239,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await expect(page.getByLabel('Use Claude Code')).not.toBeChecked();
       expect(put.url).toContain('/settings/harnesses/claude');
       expect(put.body).toEqual({ enabled: false });
-      expect(world.calls.filter((c) => c.includes('fresh=1')).length).toBeGreaterThan(1);
+      await expect.poll(() => world.calls.filter((c) => c.includes('fresh=1')).length).toBeGreaterThan(1);
     });
 
     test('a 409 on switch-off shows its message under the row', async ({ page }) => {
@@ -243,7 +257,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       s.switches.kimi = false;
       s.machines[0].harnesses.kimi = h();
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
-      await page.route('**/api/settings', async (r) => { const b = await (await r.fetch()).json(); b.harnesses = { ...s.switches }; return json(r, b); });
+      await page.route('**/api/settings', (r) => patchSettings(r, (b) => { b.harnesses = { ...s.switches }; return b; }));
       await openPage(page, context, '/app/settings#harnesses');
       await expect(page.getByLabel('Use Kimi Code')).not.toBeChecked();
       await expect(row(page, 'kimi').getByRole('button')).toHaveCount(0);
@@ -271,11 +285,10 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
     test('switching a harness off hides its account row, review-family option and order entries', async ({ page }) => {
       const s = status();
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
-      await page.route('**/api/settings', async (r) => {
-        const b = await (await r.fetch()).json();
+      await page.route('**/api/settings', (r) => patchSettings(r, (b) => {
         b.harnesses = { claude: true, gpt: true, gemini: false, kimi: true, openrouter: true };
-        return json(r, b);
-      });
+        return b;
+      }));
       await openPage(page, context, '/app/settings#accounts');
       await expect(page.locator('.prov-group[data-provider="claude"]')).toBeVisible();
       await expect(page.locator('.prov-group[data-provider="gemini"]')).toHaveCount(0);
@@ -295,13 +308,12 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       s.switches.gpt = false;
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
       let saved = null;
-      await page.route('**/api/settings', async (r) => {
-        const b = await (await r.fetch()).json();
+      await page.route('**/api/settings', (r) => patchSettings(r, (b) => {
         b.harnesses = { ...s.switches };
         b.worker_order = ['gpt', 'claude', 'gemini', 'kimi'];
         b.lead_order = ['gpt', 'claude', 'gemini', 'kimi', 'any'];
-        return json(r, b);
-      });
+        return b;
+      }));
       await page.route('**/api/settings/balancing', async (r) => {
         saved = r.request().postDataJSON();
         return json(r, { ...saved, reserved_provider: null });
@@ -360,11 +372,9 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
 
     // Accounts-panel stubs: settings carries the live switches and one signed-out Claude account.
     async function stubAccounts(page, s, posts) {
-      await page.route('**/api/settings', async (r) => {
+      await page.route('**/api/settings', (r) => {
         if (r.request().method() !== 'GET') return r.continue();
-        const b = await (await r.fetch()).json();
-        b.harnesses = { ...s.switches };
-        return json(r, b);
+        return patchSettings(r, (b) => { b.harnesses = { ...s.switches }; return b; });
       });
       await page.route('**/api/usage', async (r) => {
         const acct = { id: 'acct-claude', provider: 'claude', name: 'Work', plan: 'unknown', weight: 1, paused: false, machines: { hub: 'signed_out' }, reading: null, next: false, live_sessions: 0 };
@@ -394,9 +404,11 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await page.locator('#add-account').click();
       await expect(page.locator('#add-provider')).toHaveValue('gpt');
       await page.locator('#add-name').fill('Spare');
+      const reloaded = settingsGet(page);
       await page.locator('.add-form button[type="submit"]').click();
       await expect.poll(() => posts.length).toBe(1);
       expect(posts[0].provider).toBe('gpt');
+      await reloaded;
     });
 
     test('switching off the provider chosen in an open Add account form resets it', async ({ page }) => {
@@ -415,11 +427,13 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       expect(value).not.toBe('gpt');
       expect(await page.locator('#add-provider option').evaluateAll((o) => o.map((x) => x.value))).toContain(value);
       await page.locator('#add-name').fill('Spare');
+      const reloaded = settingsGet(page);
       await page.locator('.add-form button[type="submit"]').click();
       if (value === 'claude') await page.locator('#add-anyway').click(); // one Claude account exists: the terms step
       await expect.poll(() => posts.length).toBeGreaterThan(0);
       expect(posts[0].provider).toBe(value);
       expect(posts[0].provider).not.toBe('gpt');
+      await reloaded;
     });
 
     test('switching Claude Code off closes a sign-in card opened from Accounts', async ({ page }) => {
