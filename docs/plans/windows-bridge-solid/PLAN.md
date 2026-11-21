@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D15 | Supersedes D5's mode: the MCP for Unity preset is a stdio tool started per agent (`uvx.exe` on Windows, wrapped by the go-between), not the Editor's HTTP address. The localhost forward (item 1) is still built for other tools | User's choice; agents usually start before Unity is open, and the HTTP way would fail for that whole session; one server per agent keeps agents apart | user |
 | D16 | Supersedes D15's "wrapped by the go-between": the MCP for Unity entry is not wrapped (it still readies the copy) | It never reads the copy, and a restart would drop the agent's Editor selection | review-round-3 |
 | D17 | Before the copy is ready, a go-between whose tool has exited answers `initialize` itself and lists no tools, then sends `tools/list_changed` once the real tool is up | Holding `initialize` would outlast CLI start deadlines (Codex 10 s) | review-round-4 |
+| D18 | Supersedes D14's restart and D17: the go-between never starts the real tool before the copy is ready; it answers the handshake itself until then, then starts the tool and sends `tools/list_changed`. Wrapped tools started before ready expose tools only for that session | Same behaviour the user chose (agents start promptly, tools work once the copy is ready) with no restart, so no handshake replay, stall or duplicate-notification cases | review-round-5 |
 ## Spec
 
 Background: the bridge as built is described in `docs/maps/windows-bridge-runtime.md` and
@@ -126,8 +127,9 @@ is not rewritten: the agent CLI connects to the port in WSL as written.
   session uses the port**, whatever happens to the relay, so the port is never released to
   another Linux process while a CLI still holds its URL.
 - Claimed before the agent CLI is launched (in `startIn`, before tmux), kept while any live
-  session uses that port, closed within 60 s of the last such session stopping or its thread
-  archiving.
+  session uses that port, and closed as soon as the last such session stops or its thread
+  archives. The port's `windows` reservation is released only after its listeners have
+  closed, so an opposite-meaning reservation can never reach a listener still open.
 - **One meaning per port.** On a WSL machine (not mirrored), a loopback port is either a
   Windows port or a Linux port for all live and starting sessions. "Unmarked loopback entry"
   means an unmarked `http`/`sse` entry whose host is `localhost`, `127.0.0.1` or `[::1]`.
@@ -144,8 +146,9 @@ is not rewritten: the agent CLI connects to the port in WSL as written.
     warning `<tool>: port <port> is used by a Linux tool in another session, so it can't reach
     Windows; left out of this session`, and `win info` shows it as `"used by a Linux tool"`.
   Reservations are released in step (4) for entries not loaded, when a start fails or is
-  cancelled, and when the session stops. They are recorded per session in
-  `win-forwards.json` (both meanings) and rebuilt from it for live sessions at startup.
+  cancelled, and when the session stops (a `windows` one after its listeners close, above).
+  They are recorded in the launch record (below) and rebuilt from it for live sessions at
+  startup.
 - **Port taken on Linux.** If `127.0.0.1:<port>` (or `[::1]:<port>` when needed, see above)
   cannot be bound because another Linux process holds it, the marked entry is withheld from that
   session's CLI so it never connects to the unrelated process (its headers may carry keys):
@@ -160,10 +163,15 @@ means mirrored); a missing command or any other output counts as not mirrored (D
 mirrored mode no forward is made and nothing is withheld: WSL reaches Windows `127.0.0.1`
 directly.
 
-**Machine service restart.** tmux sessions survive a service restart, so forwards must too.
-The machine records, per session, the ports it forwarded, the addresses bound for each
-(`127.0.0.1`, `::1`) and the marked tool names in `<stateDir>/win-forwards.json` (written atomically, mode 0600, entry removed when the session
-stops). On startup, after `recoverFromTmux`, it re-claims the listeners for every recorded
+**Machine service restart and the launch record.** tmux sessions survive a service restart,
+so forwards and Windows tool state must too. In step (4), **before tmux is started**, the
+machine writes the session's launch record to `<stateDir>/win-sessions.json` (one entry per
+session name; written atomically, mode 0600; entry removed when the session stops or its start
+fails): its port reservations with meanings, the addresses bound for each forwarded port
+(`127.0.0.1`, `::1`), its marked tool names, `wrapped` (has at least one go-between) and
+`windows_tools` (has any Windows tool: wrapped stdio, the Unity entry, or a marked HTTP/SSE
+entry). This file, not the sessions file, is what startup recovery reads, so a restart during
+launch is covered. On startup, after `recoverFromTmux`, it re-claims the listeners for every recorded
 session that is still live, with the recorded addresses; a port that can no longer be bound
 is recorded as `failed: port in use on Linux` and shown by `win info`. The window while the
 service is down is an accepted risk (see Accepted Risks).
@@ -286,71 +294,61 @@ only for `failed`). The go-between branches on `state` only, never on reason tex
 - `failed` is written when the readying task fails; a later success replaces it with `ready`.
 - Removed when the session stops.
 
-**Enrollment survives restarts.** When a session is started with at least one wrapped tool,
-its session record (persisted in the machine's sessions file) gets `win_wrapped: true`. Every
-state change writes the ready file first, then mirrors the state into the record's
-`win_ready`. On machine service startup, for every live session with `win_wrapped: true` whose
-ready file or `win_ready` is not `ready` (or is missing), the machine runs the readying (create
-and sync) again and writes the result. Sessions without `win_wrapped` are never readied by this
-recovery.
-
-**Windows tool tracking survives restarts.** Any session whose loaded entries include a
-Windows tool (wrapped stdio, the Unity entry, or a marked HTTP/SSE entry) gets `win_tools:
-true` in its persisted session record. On machine service startup, every live session with
-`win_tools: true` is added back to `WinBridge.toolSessions` (and its copy registered as today),
-so the copy's "used since last reconcile" tracking and the final stop reconcile work as
-before the restart.
+**Recovery after a service restart.** On startup, after `recoverFromTmux`, for every live
+session in the launch record: with `windows_tools`, it is added back to
+`WinBridge.toolSessions` (and its copy registered as today), so the copy's "used since last
+reconcile" tracking and the final stop reconcile work as before the restart; with `wrapped`
+and a ready file that is missing or not `ready`, the machine runs the readying (create and
+sync) again and writes the result.
 
 So a copy that existed but was stale at start still counts as not ready until the first
 reconcile after start finishes; if that finishes within the 45 s wait, the tool starts after
-it and is never restarted.
+it and never sees the stale copy.
 
 **Process tree.** The go-between starts the real tool so that ending it ends every Windows
-process it started (for example a launcher's child server): through a launcher that puts the
-tool in a Windows Job Object with kill-on-close, as `machine/lib/win-apps.js` does for apps,
-with the tool's stdio passed through. "Stop the tool" below means: close the job (all
-descendants end), then wait until the tool's stdio pipes close (up to 5 s), before anything
-new starts.
+process it started: through a launcher that puts the tool in a Windows Job Object with
+kill-on-close, as `machine/lib/win-apps.js` does for apps, with the tool's stdio passed
+through. "Stop the tool" means: close the job (all descendants end), then wait until the
+tool's stdio pipes close (up to 5 s).
 
-**Go-between behaviour.** It reads JSON-RPC messages line by line on both sides.
-1. Starts the real tool at once and pipes stdin/stdout both ways; stderr passes through.
-2. Remembers the client's `initialize` request and whether it has been answered, and whether
-   the client's `notifications/initialized` was delivered to the current tool.
-3. If the ready file says `ready` when it starts, it only pipes and never restarts.
-4. **Restart on ready.** Otherwise it watches the ready file (poll every 2 s is fine). The
-   first time it reads `ready`:
-   a. Stop forwarding client messages to the tool and queue them. Stop the tool.
-   b. Answer every request already sent to the old tool and unanswered, other than an
-      unanswered `initialize`, with a JSON-RPC error (`code -32000`, message "Windows tool
-      restarted because its project copy became ready; try again").
-   c. Start the tool again. If the client has not sent `initialize` yet, skip to d (the
-      client's own `initialize`, queued or still to come, goes to the new tool as normal).
-      Otherwise send it the remembered `initialize`. If the client's `initialize` had not been
-      answered yet, pass the new tool's response to the client as that answer; otherwise
-      drop it. Wait for a successful response (up to 60 s).
-   d. Then send `notifications/initialized` only if it had been delivered to the old tool (one
-      still in the queue is delivered once, from the queue), flush the queue in order, and, if
-      the client had already been initialized, send the client
-      `notifications/tools/list_changed`. Resume piping.
-   e. If the new tool fails to start or its `initialize` fails or times out, answer the
-      queued and pending requests with a JSON-RPC error carrying the reason, write it to
-      stderr, and exit 1.
-   Restarts at most once.
-5. **Tool exits before ready.** If the real tool exits while the ready file is missing, says
-   `waiting` or says `failed`, the go-between does not exit. It answers any unanswered
-   `initialize` itself, at once (whether sent before the exit or arriving after it), with a
-   successful result: the client's `protocolVersion`, `serverInfo` `{name: "<tool name>
-   (waiting for Windows copy)", version: "0"}`, and `capabilities` `{tools: {listChanged:
-   true}}`; then answers `tools/list` with an empty list, and other pending and new requests
-   with a JSON-RPC error (`code -32000`): for `waiting` or missing, "Windows tool is waiting for its project copy to be
-   ready; try again shortly"; for `failed`, "Windows project copy couldn't be readied:
-   <reason>". This keeps the CLI's own start deadline (Codex defaults to 10 s) from dropping
-   the tool. When the file says `ready`, it performs step 4 from 4c, treating the client's
-   `initialize` as already answered (the new tool's response is dropped) and sending
-   `notifications/tools/list_changed` at the end so the client lists the real tools.
-6. After the ready point (or with no restart pending), if the real tool exits on its own, the
-   go-between exits with its code, as an unwrapped tool would.
-7. If the client closes stdin, the go-between stops the tool (process tree as above) and exits.
+**Go-between behaviour (D18).** The real tool is never started before its copy is ready, so
+nothing ever needs restarting. The go-between reads JSON-RPC messages line by line.
+
+1. **Ready at start** (ready file says `ready`): it starts the real tool at once and only
+   pipes stdin/stdout both ways (stderr passes through), like an unwrapped tool, until either
+   side ends (step 5).
+2. **Not ready at start:** it does not start the real tool. It answers the client itself:
+   - `initialize` → at once, a successful result with the client's requested
+     `protocolVersion`, `capabilities` `{tools: {listChanged: true}}`, `serverInfo`
+     `{name: "<tool name>", version: "0"}` and `instructions` saying the state: "Waiting for
+     the Windows project copy to be ready; this tool's real tools appear when it is." or, when
+     the ready file says `failed`, "The Windows project copy couldn't be readied: <reason>.
+     This tool has no tools until it is."
+   - `notifications/initialized` and other client notifications → swallowed.
+   - `tools/list` → an empty list. `ping` → an empty result.
+   - any other request → a JSON-RPC error (`code -32000`) with the same sentence as
+     `instructions`.
+3. **When the ready file first says `ready`** (poll every 2 s is fine): it queues client
+   messages, starts the real tool, sends it the client's `initialize` params (or, if the
+   client has not sent `initialize` yet, waits and forwards the client's own handshake as in
+   step 1 instead), waits up to 60 s for a successful response, then sends
+   `notifications/initialized`, flushes the queue in order, sends the client
+   `notifications/tools/list_changed`, and from then on pipes as in step 1. The real tool's
+   `initialize` response is not passed to the client (it already has one).
+   - If its `protocolVersion` differs from the one the go-between answered, the go-between
+     writes a line saying so to stderr and carries on.
+   - Only tools are exposed for such a session: prompts, resources and other capabilities the
+     real tool offers are not advertised (the go-between already answered `initialize`), and
+     their requests are still forwarded if a client sends them. Accepted limit: a tool wrapped
+     and started before its copy is ready has tools only for that session.
+   - If the real tool fails to start, exits, or its `initialize` fails or times out, the
+     go-between answers queued requests with a JSON-RPC error carrying the reason, writes it
+     to stderr, and exits 1.
+4. While not ready, a `failed` ready file changes the `instructions`/error sentence for later
+   messages; a later `ready` still starts the tool (step 3).
+5. After the real tool is running, if it exits on its own, the go-between exits with its code,
+   as an unwrapped tool would. If the client closes stdin, the go-between stops the tool
+   (process tree as above) and exits.
 
 ### 5. Broken bridge warning
 
@@ -411,28 +409,29 @@ New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests d
   warning; `forwards` states.
 - Ready file: `ready` only after a successful reconcile after start (not for an existing
   `.git` with readying still running); `waiting` past the 45 s wait; `failed` on failure;
-  replaced by a later `win sync` success; recovery runs when either the file or the record is
-  not `ready` after a service restart.
+  replaced by a later `win sync` success; after a service restart, a live `wrapped` session
+  whose ready file is not `ready` is readied again, including one restarted during launch
+  (launch record written before tmux).
 - Ports: a forwarded port withholds another session's unmarked entry on the same port
   (including `[::1]`), and the reverse, with the `"used by a Linux tool"` state; a marked and
   an unmarked entry on one port in one project keep the marked one; two starts racing for
   one port with opposite meanings never both get it; an oversized Codex config whose
   withheld entry brings it under budget loads the rest, and a reservation for an entry the
   budget drops is released.
-- Restart tracking: after a service restart, a live session with `win_tools` is back in
-  `toolSessions`, and its stop runs the final reconcile.
-- Go-between, with a fake MCP tool: the `mcp-for-unity` entry is not wrapped; stopping the
-  tool ends a child process it started; `initialized` arriving during the restart is
-  delivered once; `initialize` arriving after a pre-ready exit is answered at once by the
-  go-between, `tools/list` returns empty, and on ready `list_changed` is sent; no restart when ready
-  at start; restart on ready with a
-  pending request answered by the error, `initialize` replayed, `list_changed` sent; restart
-  while the client's `initialize` is still pending passes the new tool's answer to it; tool
-  exiting before ready keeps the connection and answers with the waiting error, then
-  restarts on ready. A real-CLI check (Codex, with a fake Windows tool that exits until a
-  ready file appears) shows the tool's tools appear in the session after ready; replacement `initialize` failure exits 1; exits with the tool's code
-  after the ready point; Claude gets `--mcp-config` with the wrapped entry and the original in
-  `disabledMcpjsonServers`; Codex and Antigravity get wrapped commands.
+- Restart tracking: after a service restart, a live session with `windows_tools` in the
+  launch record is back in `toolSessions`, and its stop runs the final reconcile. A
+  `windows` reservation is not released until its listeners have closed.
+- Go-between, with a fake MCP tool: the `mcp-for-unity` entry is not wrapped; ready at start
+  pipes only; not ready at start answers `initialize` (client's version, `instructions` with
+  the waiting or failed sentence), swallows `notifications/initialized`, lists no tools, and
+  never starts the real tool; on ready it starts it, sends `initialize` then
+  `notifications/initialized` before any queued request, then `list_changed`; a protocol
+  version mismatch is logged and tolerated; the real tool failing its `initialize` exits 1;
+  exits with the tool's code afterwards; stopping the tool ends a child process it started.
+  A real-CLI check (Codex, with a fake Windows tool and a ready file that appears 20 s after
+  start) shows the tool's tools appear in the session after ready. Claude gets
+  `--mcp-config` with the wrapped entry and the original in `disabledMcpjsonServers`; Codex and
+  Antigravity get wrapped commands.
 - Detection and warnings: interop off on a Microsoft kernel gives the reason; approval card
   gets the warning only when the project has Windows tools; a probe past 15 s gives the
   timeout reason; session start never waits; non-WSL machines get none.
@@ -462,6 +461,7 @@ copies or git data; no IPv6-only Windows servers.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| An unmarked URL written with an IPv4-mapped address (`http://[::ffff:127.0.0.1]:<port>`) is not covered by port reservations and can reach a Windows forward | Rare path: unusual hand-written address form | review-round-5 |
 | While the machine service is down (restart or crash), a forwarded port is unbound; a Linux process that takes it in that window can receive a live CLI's requests and headers for that tool | Rare path: needs a service restart and another Linux process binding that exact port in the gap; startup re-claims it and reports a failure | review-round-2 |
 
 ## Check Once Built
@@ -572,6 +572,14 @@ copies or git data; no IPv6-only Windows servers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Synthetic `initialize` leaves the replacement without `notifications/initialized` | upheld | D18; §4 step 3 sends it before queued requests |
+| mechanics | blocking | A pre-ready tool that stalls in `initialize` still hits the CLI deadline | upheld | D18: real tool not started before ready |
+| mechanics | major | Synthetic handshake fixes version and capabilities; real ones discarded | upheld | §4 step 3 mismatch logged; tools-only accepted limit |
+| mechanics | blocking | IPv4-mapped loopback URL bypasses reservations | accepted-risk | Rare path: unusual hand-written address |
+| mechanics | blocking | Reservation released while the listener stays open 60 s | upheld | §1 close at once; release after close |
+| mechanics | blocking | Restart during launch loses Windows tool enrollment | upheld | §1 launch record written before tmux; §4 recovery |
+| intent | minor | Stand-in tool gives no sign the copy failed | upheld | §4 step 2 `instructions` by state |
+| intent | minor | Stand-in drops prompts/resources | upheld | §4 step 3 accepted limit stated |
 
 ## Implementation Tasks
 
