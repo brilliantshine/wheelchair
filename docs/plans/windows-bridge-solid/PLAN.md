@@ -33,7 +33,12 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D6 | A `localhost` HTTP/SSE tool is sent to Windows only when the user turns on a "Runs on Windows" switch for it in Project tools; the MCP for Unity preset has it on | User's choice; guessing could take a port a Linux service wants later | user |
 | D7 | The switch is stored in `.mcp.json` outside `mcpServers`, as a top-level `"wheelchair": {"windows": ["<tool name>", ...]}`, so provider CLIs that load `mcpServers` from the file never see an unknown field in an entry | The save flow already keeps other top-level keys; an extra key inside an entry risks a CLI rejecting the entry | defaulted |
 | D8 | Windows stdio tools that started before the copy was ready are restarted by a go-between the bridge puts in front of each one; the agent keeps its connection and starts as fast as today | User's choice; holding the start can take minutes on a first copy | user |
-
+| D9 | Only IPv4 loopback Windows servers are supported; the switch applies to `http://localhost` and `http://127.0.0.1`, not `[::1]` | WSL mirrored mode reaches Windows loopback over IPv4 only; one address family keeps the forward simple; MCP for Unity listens on IPv4 | review-round-1 |
+| D10 | Networking mode comes from `wslinfo --networking-mode` only; anything else counts as not mirrored | Simpler than guessing the Windows user's `.wslconfig` | review-round-1 |
+| D11 | Supersedes part of D3: no warning on `git_bytes` (information only); conflict snapshot warning at 10 or more; broken-bridge approval warning only when the project has Windows tools | The whole-repository size is noise on large repositories; one kept snapshot is not a limit; warn only where work depends on the bridge | review-round-1 |
+| D12 | Each agent binds to its own copy's Editor through instructions added to its prompt: open Unity on its copy, select the MCP for Unity instance whose project path is the copy, verify, never act on another | One MCP for Unity server on Windows serves every Editor and routes per client session; URLs cannot separate threads | review-round-1 |
+| D13 | Marked tools are withheld from a session when the Linux port is held by another process; forwards and readying follow only entries the session's CLI loads; forwards are recorded and restored across machine restarts | Stops keys in headers reaching an unrelated Linux service; no wasted ports or 45 s waits for tools never loaded; tmux sessions outlive the service | review-round-1 |
+| D14 | Tool readiness is a ready file written only after a successful reconcile following the session's start; the go-between keeps the client connection if the tool exits before that, and handles a restart during an unfinished `initialize` | Fixes skipped restarts on a stale or mid-reconcile copy and lost connections | review-round-1 |
 ## Spec
 
 Background: the bridge as built is described in `docs/maps/windows-bridge-runtime.md` and
@@ -41,56 +46,91 @@ Background: the bridge as built is described in `docs/maps/windows-bridge-runtim
 widened detection). Nothing in this Spec changes behaviour on a machine that is not WSL;
 every new code path returns early there, and the non-WSL tests keep passing unchanged.
 
+**Which tools a session loads.** Several rules below depend on whether the session's CLI
+actually loads an entry. Loaded entries per CLI, for tool roles: Claude loads stdio, `http`
+and `sse`; Codex and Antigravity load stdio and `http` (they skip `sse`, as today, and skip
+anything their existing per-entry reasons reject); Pi and Kimi load none. "Loaded entries"
+below always means this set, computed from the adapter's own skip rules (the entries it does
+not warn about), not from `.mcp.json` alone.
+
 ### 1. Windows localhost tools (HTTP and SSE)
 
 **Marking.** `.mcp.json` may carry a top-level `"wheelchair": {"windows": ["<name>", ...]}`
 (D6, D7). A name counts only if it names an `http` or `sse` entry in `mcpServers` whose URL
-parses and whose host is `localhost`, `127.0.0.1` or `[::1]`; other names are ignored with a
-project tools warning `<tool>: "Runs on Windows" only applies to a localhost address`. Unknown
-keys under `wheelchair` are ignored. `readProjectMcp` returns the valid list as
-`mcp.windowsHttp` (array of names); `checkDocumentText` still accepts any other top-level key.
-`hasWindowsProgram` returns true also when `mcp.windowsHttp` is non-empty, so these tools
-trigger copy readying like a Windows `.exe` stdio tool.
+parses, uses `http:`, and whose host is `localhost` or `127.0.0.1`; other names are ignored
+with a project tools warning `<tool>: "Runs on Windows" only applies to an http://localhost
+or http://127.0.0.1 address`. Unknown keys under `wheelchair` are ignored. `readProjectMcp`
+returns the valid list as `mcp.windowsHttp` (array of names); `checkDocumentText` still
+accepts any other top-level key.
+
+**Supported addresses.** The Windows server must listen on IPv4 loopback (`127.0.0.1`, or all
+addresses); IPv6-only Windows servers are not supported (D9). The Windows side of the forward
+always dials `127.0.0.1:<port>`.
+
+**Copy readying.** A session's "Windows tools" (the `windowsTools` flag passed to
+`beforeLaunch`) is true when its loaded entries include a Windows `.exe` stdio tool (as
+today, `hasWindowsProgram`) or a marked tool. A marked tool its CLI does not load triggers
+nothing (no readying, no forward).
 
 **Project tools form** (`viewer/pages/project-tools.js`, saved through
 `machine/lib/project-tools.js`): HTTP entries get a "Runs on Windows" switch, shown only when
-the machine reports WSL and the URL host is one of the three above. Saving writes or removes the
-tool's name in `wheelchair.windows`, removes the `wheelchair` key when the list empties and it
-has no other keys, and keeps every other top-level key as today. Renaming or deleting a tool
-updates the list. SSE stays not editable in the form (as today) but a hand-written SSE entry
-listed in `wheelchair.windows` is honoured.
+the machine reports WSL and the URL is `http://localhost` or `http://127.0.0.1`. Saving
+writes or removes the tool's name in `wheelchair.windows`, removes the `wheelchair` key when
+the list empties and it has no other keys, and keeps every other top-level key as today.
+Renaming or deleting a tool updates the list. SSE stays not editable in the form (as today)
+but a hand-written SSE entry listed in `wheelchair.windows` is honoured where loaded.
 
 **Forward.** On a WSL machine whose networking mode is not mirrored, the machine keeps one
-forward per distinct port named by a marked tool of any live tool-role session (the URL is
-not rewritten: the agent CLI connects to `127.0.0.1:<port>` in WSL as written):
+forward per distinct port named by a loaded marked tool of any live tool-role session. The URL
+is not rewritten: the agent CLI connects to the port in WSL as written.
 
-- Linux side: a TCP listener on `127.0.0.1:<port>` in the machine service (and on `::1` when
-  the URL used `[::1]`).
-- Windows side: one long-lived relay process per port, started through interop
-  (`createWinEnv`'s PowerShell or a script shipped in the repo and run by `powershell.exe`),
-  which multiplexes all connections for that port over its stdin/stdout with simple framing
+- Linux side: a TCP listener in the machine service on `127.0.0.1:<port>`, and also on
+  `[::1]:<port>` when the URL host is `localhost` and the machine has IPv6 loopback (a failed
+  `::1` bind is ignored). Both feed the same Windows relay.
+- Windows side: one long-lived relay process per port, started through interop with
+  `powershell.exe` running a script shipped in the repo (not written at run time). It
+  multiplexes every connection for that port over its stdin/stdout with simple framing
   (connection id, open, data, close) and connects each to Windows `127.0.0.1:<port>`. A new
   connection must not spawn a new Windows process.
+- **No loop through WSL.** WSL's default `localhostForwarding` can publish the Linux listener
+  on Windows localhost when no Windows server holds the port, so the relay could dial itself.
+  Before each connect, the relay looks up the Windows process listening on `127.0.0.1:<port>`
+  (`Get-NetTCPConnection -State Listen -LocalPort <port>`, owning process name); if there is
+  none, or it is `wslrelay`, it refuses that connection (Linux side closes it) instead of
+  dialling. The lookup result may be cached for 2 s.
 - If the Windows side refuses a connection, the Linux side closes that connection; the relay
   stays up. If the relay process dies, the next connection restarts it once; a second death
-  within 60 s closes the listener and records the reason.
-- Started before the agent CLI is launched (in `startIn`, before tmux), kept while any live
+  within 60 s closes the listeners and records the reason.
+- Claimed before the agent CLI is launched (in `startIn`, before tmux), kept while any live
   session uses that port, closed within 60 s of the last such session stopping or its thread
   archiving.
-- If the Linux port is already taken by another process, no forward is made for it and the
-  project tools warning `<tool>: port <port> is in use on Linux, so it can't reach Windows`
-  is recorded and printed to the session log, as other project tools warnings are.
+- **Port taken on Linux.** If `127.0.0.1:<port>` cannot be bound because another Linux
+  process holds it (or the forward has failed), the marked entry is withheld from that
+  session's CLI so it never connects to the unrelated process (its headers may carry keys):
+  Claude gets the name added to `disabledMcpjsonServers`; Codex and Antigravity drop the
+  entry. The project tools warning `<tool>: port <port> is in use on Linux, so it can't reach
+  Windows; left out of this session` is recorded and printed to the session log, as other
+  project tools warnings are. A session that shares a forward the machine already holds is
+  fine.
 
-**Mirrored networking.** Mode is read with `wslinfo --networking-mode` when that command
-exists (output `mirrored` means mirrored); otherwise from `networkingMode` in the `[wsl2]`
-section of the Windows user's `.wslconfig`; anything unreadable counts as not mirrored. In
-mirrored mode no forward is made; localhost already reaches Windows.
+**Mirrored networking.** Mode is read with `wslinfo --networking-mode` (output `mirrored`
+means mirrored); a missing command or any other output counts as not mirrored (D10). In
+mirrored mode no forward is made and nothing is withheld: WSL reaches Windows `127.0.0.1`
+directly.
+
+**Machine service restart.** tmux sessions survive a service restart, so forwards must too.
+The machine records, per session, the ports it forwarded and the marked tool names in
+`<stateDir>/win-forwards.json` (written atomically, mode 0600, entry removed when the session
+stops). On startup, after `recoverFromTmux`, it re-claims the listeners for every recorded
+session that is still live; a port that can no longer be bound is recorded as `failed: port
+in use on Linux` (the CLI keeps its configuration; the agent sees connection errors and `win
+info` says why).
 
 **Per CLI.** URLs pass through unchanged, so Claude (file-loaded), Codex (HTTP override) and
-Antigravity (plugin) need no change. SSE is still skipped on Codex and Antigravity as today.
+Antigravity (plugin) need no URL change.
 
-`win info` gains `forwards: [{ tool, port, state: "up" | "port in use" | "failed: <reason>" | "mirrored" }]`
-for this session's marked tools.
+`win info` gains `forwards: [{ tool, port, state: "up" | "port in use" | "failed: <reason>" |
+"mirrored" | "not loaded" }]` for this session's marked tools.
 
 ### 2. MCP for Unity preset
 
@@ -98,11 +138,26 @@ The Project tools form gets an "Add MCP for Unity" button (shown on every machin
 switch part only on WSL). It adds an entry named `unity` (`unity-2`, ... if taken):
 `{"type": "http", "url": "http://localhost:8080/mcp"}`, with "Runs on Windows" on when the
 machine is WSL. The user edits or saves it like any entry; the button only fills the form.
-Help text under it: "Install the MCP for Unity package in your Unity project, then start its
-server from Window > MCP for Unity. The port must match the one shown there." The preset
-links to `https://coplaydev.github.io/unity-mcp/getting-started/install`.
+Help text under it: "Add the MCP for Unity package to your Unity project and commit it, so
+every Windows copy has it. Each agent opens Unity on its own copy and picks that Editor in
+the MCP. The port must match the one shown in Window > MCP for Unity." It links to
+`https://coplaydev.github.io/unity-mcp/getting-started/install`.
 
-`README.md`'s Windows bridge section gets a short "Unity" paragraph saying the same.
+**Pointing each agent at its own copy's Editor.** One MCP for Unity server on Windows
+`localhost:8080` serves every running Editor; agents in different threads reach the same
+server, and the server routes by an active instance chosen per client session. So, for a
+tool-role session whose loaded entries include a marked tool named `unity` or `unity-<n>`,
+or whose URL is the preset's, the machine adds these lines to the session's prompt file
+before launch (same mechanism as item 5's line):
+
+> Unity: your project copy on Windows is `<copy_windows path>`. Open Unity on it yourself
+> (`wc.js win start "<Unity.exe>" -projectPath "<copy>"`), never on another path. Before any
+> other Unity MCP call, list the connected Unity instances, select the one whose project path
+> is your copy, and check the selection; if none matches, don't use the Unity tools until it
+> appears. Never act on another instance.
+
+`README.md`'s Windows bridge section gets a short "Unity" paragraph saying the same,
+including that the package must be committed to the project.
 
 ### 3. Disk report
 
@@ -112,7 +167,7 @@ links to `https://coplaydev.github.io/unity-mcp/getting-started/install`.
 |---|---|
 | `copies` | `[{ path, bytes }]`, one per Windows copy of this thread (`%LOCALAPPDATA%/Wheelchair/copies/<thread>/*`) |
 | `copies_bytes` | Sum of `copies` |
-| `git_bytes` | Size of the repository's common `.git` (`git count-objects -v`: `size` + `size-pack`, in bytes) |
+| `git_bytes` | Size of the repository's common `.git` (`git count-objects -v`: `size` + `size-pack`, in bytes). Information only: it covers the whole repository, not just what the bridge added |
 | `conflict_refs` | Count of refs under `refs/wheelchair/conflicts/` in that repository |
 | `windows_free_bytes` | Free space on the drive holding `%LOCALAPPDATA%` |
 | `measured_at` | ISO time of the copy measurement, or null while the first one runs |
@@ -123,15 +178,15 @@ thread, and refreshed in the background when older than 10 minutes; `win info` n
 for a copy walk. The git count, ref count and free space are read on every call (fast).
 A failed measurement leaves the last value and adds `disk.reason`.
 
-Warnings (D3): `copies_bytes` over 20 GB → "This thread's Windows copies use <n> GB."; `git_bytes`
-over 10 GB → "The repository's git data uses <n> GB; `git gc` may shrink it."; `conflict_refs`
-over 0 → "<n> kept conflict snapshots; see README to remove them."; `windows_free_bytes` under
-10 GB → "Only <n> GB free on the Windows drive." Nothing is ever deleted. `wc.js win info`'s
-printed output shows the warnings first.
+Warnings (D3, amended D11): `copies_bytes` over 20 GB → "This thread's Windows copies use <n>
+GB."; `conflict_refs` 10 or more → "<n> kept conflict snapshots; see README to remove them.";
+`windows_free_bytes` under 10 GB → "Only <n> GB free on the Windows drive." No warning on
+`git_bytes`. Nothing is ever deleted. `wc.js win info`'s printed output shows the warnings
+first.
 
 ### 4. Restarting Windows stdio tools after the copy is ready
 
-**Which tools.** On a WSL machine, for tool roles, every stdio entry whose command
+**Which tools.** On a WSL machine, for tool roles, every loaded stdio entry whose command
 `isWindowsProgram` is launched through a go-between: `machine/lib/win-tool-proxy.js`, run as
 `<node> <proxy> --ready-file <path> -- <command> <args...>`, where `<node>` is
 `process.execPath`. HTTP tools are never wrapped (their server is not started by the CLI).
@@ -142,47 +197,84 @@ printed output shows the warnings first.
 - Claude loads `.mcp.json` itself, so its Windows stdio entries are added to
   `disabledMcpjsonServers` and given instead, wrapped and under the same names, in a
   per-session file passed with `--mcp-config` (in `<stateDir>/settings/`, mode 0600).
-- Pi loads no project tools; unchanged.
+- Pi and Kimi load no project tools; unchanged.
 
-**Ready file.** The machine writes `<stateDir>/win-ready/<session name>` (mode 0600) when
-that session's copy is ready: at launch if the copy already exists and its readying has no
-error, otherwise when the readying task finishes without error. The file is removed when the
-session stops. Its content is the time it became ready.
+**Ready file.** `<stateDir>/win-ready/<session name>` (mode 0600, written atomically) holds
+JSON `{"ok": true, "at": "<iso>"}` or `{"ok": false, "reason": "...", "at": "<iso>"}`.
+- `ok: true` is written only after a reconcile of that session's copy (its `create` + `sync`)
+  **finishes successfully after the session's start began**: the session's own readying
+  task, a shared readying task it awaited, or any later successful `win sync`/`run`/`start`
+  sync of that copy. An existing `.git` alone never counts.
+- `ok: false` is written when the session's readying task fails or is still running when the
+  45 s wait ends (`reason` "Windows copy is still being readied"); a later success replaces
+  it with `ok: true`.
+- On machine service startup, for every live tool session whose ready file is missing or
+  `ok: false` and whose readying was interrupted, the machine runs the readying (create +
+  sync) again and writes the result.
+- Removed when the session stops.
 
-**Go-between behaviour.**
+So a copy that existed but was stale at start still counts as not ready until the first
+reconcile after start finishes; if that finishes within the 45 s wait, the tool starts after
+it and is never restarted.
+
+**Go-between behaviour.** It reads JSON-RPC messages line by line on both sides.
 1. Starts the real tool at once and pipes stdin/stdout both ways; stderr passes through.
-2. Remembers the client's `initialize` request and `notifications/initialized` (JSON-RPC
-   lines).
-3. If the ready file already existed when it started, it only pipes and never restarts.
-4. Otherwise it watches for the ready file (poll every 2 s is fine). When it appears: stop the
-   real tool (end its process; if it has not exited after 5 s, kill it), answer every request
-   the client sent that has no response yet with a JSON-RPC error (`code -32000`, message
-   "Windows tool restarted because its project copy became ready; try again"), start the tool
-   again, replay `initialize` and `notifications/initialized`, drop the replayed `initialize`
-   response, then send the client `notifications/tools/list_changed`, and resume piping.
-5. Restarts at most once. If the real tool exits on its own, the go-between exits with its
-   code, as an unwrapped tool would.
-6. If the client closes stdin, the go-between ends the real tool and exits.
+2. Remembers the client's `initialize` request, whether it has been answered, and
+   `notifications/initialized`.
+3. If the ready file holds `ok: true` when it starts, it only pipes and never restarts.
+4. **Restart on ready.** Otherwise it watches the ready file (poll every 2 s is fine). The
+   first time it reads `ok: true`:
+   a. Stop forwarding client messages to the tool and queue them. Stop the real tool (end its
+      process; kill it if still running after 5 s).
+   b. Answer every request already sent to the old tool and unanswered, other than an
+      unanswered `initialize`, with a JSON-RPC error (`code -32000`, message "Windows tool
+      restarted because its project copy became ready; try again").
+   c. Start the tool again and send it the remembered `initialize`. If the client's
+      `initialize` had not been answered yet, pass the new tool's response to the client as
+      that answer; otherwise drop it. Wait for a successful response (up to 60 s).
+   d. Then send `notifications/initialized` if the client had sent it, flush the queue in
+      order, and, if the client had already been initialized, send the client
+      `notifications/tools/list_changed`. Resume piping.
+   e. If the new tool fails to start or its `initialize` fails or times out, answer the
+      queued and pending requests with a JSON-RPC error carrying the reason, write it to
+      stderr, and exit 1.
+   Restarts at most once.
+5. **Tool exits before ready.** If the real tool exits while the ready file is missing or
+   `ok: false` with reason "still being readied", the go-between does not exit: it answers
+   pending and new requests (including `initialize`) with a JSON-RPC error (`code -32000`,
+   "Windows tool is waiting for its project copy to be ready; try again shortly") and
+   performs step 4's restart (from 4c) when `ok: true` appears. If the ready file instead
+   holds `ok: false` with any other reason (readying failed), it answers with that reason
+   and keeps doing so; a later `ok: true` still triggers the one restart.
+6. After the ready point (or with no restart pending), if the real tool exits on its own, the
+   go-between exits with its code, as an unwrapped tool would.
+7. If the client closes stdin, the go-between ends the real tool and exits.
 
 ### 5. Broken bridge warning
 
 **Detection.** `detectWsl()` returns `{ wsl, kernel, interop, mount }`: `kernel` is the
 Microsoft kernel test, `interop` the binfmt test, and `wsl` stays `kernel && interop` so every
-existing caller keeps its meaning. A new `bridgeHealth()` on `WinBridge` returns
-`{ ok: true }` or `{ ok: false, reason }`:
-- `kernel && !interop` → reason "Windows interop is off in WSL, so Windows programs can't run".
-- `wsl` → `winEnv.versions()`; its `reason` if not ok.
+existing caller keeps its meaning. A new `bridgeHealth()` on `WinBridge` returns `{ ok: true }`,
+`{ ok: false, reason }` or `{ ok: null }` (not known yet):
 - not `kernel` → `{ ok: true }` (never warns).
-Results are cached for 60 s.
+- `kernel && !interop` → reason "Windows interop is off in WSL, so Windows programs can't run".
+- `wsl` → `winEnv.versions()` with a 15 s overall deadline; its `reason` if not ok; on the
+  deadline, reason "Windows didn't answer within 15 seconds".
+On a Microsoft kernel the machine runs the check in the background at startup and every 10
+minutes, and caches the result; callers read the cache and never wait for a probe, except as
+the approval card says.
 
 **Where it shows.**
-- Approval card: when a lead posts `approval` on Linux, if `bridgeHealth()` is not ok,
-  `warnings` gets "The Windows bridge won't work on <hostname>: <reason>. Builds that don't
-  use Windows are unaffected." (beside the screen tools warning, same 10-warning cap).
-- Agent at session start: for tool-role sessions, when not ok, one line is added to the
-  session's prompt file before launch: "Windows bridge: not working on this machine
-  (<reason>). Don't rely on `wc.js win` until the user fixes it." It is checked within the
-  existing start, never adding more than the 60 s cached check's single PowerShell call.
+- Approval card: when a lead posts `approval` on Linux, the bridge result is not ok, and the
+  lead's worktree has Windows tools by `.mcp.json` (a Windows `.exe` stdio entry or a marked
+  entry, regardless of CLI), `warnings` gets "The Windows bridge won't work on <hostname>:
+  <reason>. Builds that don't use Windows are unaffected." (beside the screen tools warning,
+  same 10-warning cap). If the cache is `ok: null`, the post waits up to 15 s for the running
+  probe; still unknown → no warning.
+- Agent at session start: for tool-role sessions, when the cached result is `ok: false`, one
+  line is added to the session's prompt file before launch: "Windows bridge: not working on
+  this machine (<reason>). Don't rely on `wc.js win` until the user fixes it." `ok: null` adds
+  nothing. Session start never waits on a probe.
 
 ### Validation
 
@@ -195,29 +287,50 @@ bash machine/test/windows-live.sh   # on the user's WSL2 PC only
 
 New tests (fake interop, fake PowerShell, temp dirs, as the existing win tests do):
 
-- `project-mcp-reader`: `wheelchair.windows` parsing, non-localhost names ignored with the
-  warning, `hasWindowsProgram` true for a marked HTTP tool.
+- `project-mcp-reader`: `wheelchair.windows` parsing; `[::1]`, `https:` and non-local names
+  ignored with the warning; `windowsTools` true for a loaded marked HTTP tool, false for a
+  marked SSE tool on Codex and for any marked tool on Pi and Kimi.
 - Forward: a fake relay pipes two concurrent connections to a local echo server; one
-  Windows process for both; port-in-use warning; listener closed after the last session;
-  mirrored mode makes no forward.
-- Project tools form and save: switch shown only on WSL and for localhost; list kept in step
-  with renames and deletes; Unity button fills the entry; other top-level keys kept.
-- `win info`: `disk` fields and each warning threshold with fake sizes; `forwards`.
-- Go-between: with a fake MCP tool, no restart when ready at start; restart on ready with
-  pending request answered by the error, `initialize` replayed, `list_changed` sent; exits
-  with the tool's code; Claude gets `--mcp-config` with the wrapped entry and the original
-  in `disabledMcpjsonServers`; Codex and Antigravity get wrapped commands.
+  Windows process for both; relay refuses when the fake listener lookup says none or
+  `wslrelay`; Linux port taken → entry withheld (Claude `disabledMcpjsonServers`, Codex and
+  Antigravity drop it) with the warning; listener closed after the last session; mirrored
+  mode makes no forward and withholds nothing; restart of the service re-claims recorded
+  listeners for live sessions.
+- Project tools form and save: switch shown only on WSL and for `http://localhost` /
+  `http://127.0.0.1`; list kept in step with renames and deletes; Unity button fills the
+  entry; other top-level keys kept.
+- Unity prompt lines added only for sessions loading the `unity` marked entry, with the
+  session's copy path.
+- `win info`: `disk` fields and each warning threshold with fake sizes, no `git_bytes`
+  warning; `forwards` states.
+- Ready file: `ok: true` only after a successful reconcile after start (not for an existing
+  `.git` with readying still running); `ok: false` on timeout and failure; replaced by a later
+  `win sync` success; restored after a service restart.
+- Go-between, with a fake MCP tool: no restart when ready at start; restart on ready with a
+  pending request answered by the error, `initialize` replayed, `list_changed` sent; restart
+  while the client's `initialize` is still pending passes the new tool's answer to it; tool
+  exiting before ready keeps the connection and answers with the waiting error, then
+  restarts on ready; replacement `initialize` failure exits 1; exits with the tool's code
+  after the ready point; Claude gets `--mcp-config` with the wrapped entry and the original in
+  `disabledMcpjsonServers`; Codex and Antigravity get wrapped commands.
 - Detection and warnings: interop off on a Microsoft kernel gives the reason; approval card
-  gets the warning; non-WSL machines get none.
+  gets the warning only when the project has Windows tools; a probe past 15 s gives the
+  timeout reason; session start never waits; non-WSL machines get none.
 
-`machine/test/windows-live.sh` gains, when `WHEELCHAIR_UNITY` is set and an MCP for Unity
-server answers on Windows `localhost:8080`: a request through the forward to `/mcp`
-returns an HTTP response (any status). Otherwise it prints `Unity MCP part skipped`.
+`machine/test/windows-live.sh` gains a localhost part: it starts, on Windows through `wc.js
+win start`, a small PowerShell HTTP listener on a free `127.0.0.1` port that answers every
+request with a random token the harness chose; it then starts a session whose `.mcp.json`
+marks an HTTP entry on that port (written before the session starts), and checks that a
+request to `http://127.0.0.1:<port>/` from WSL returns that token (proving the answer came
+from Windows), and that after stopping the listener a request fails within 5 s rather than
+hanging. When `WHEELCHAIR_UNITY` is set and an MCP for Unity server answers on Windows
+`localhost:8080`, it also sends an MCP `initialize` POST to `/mcp` through the forward and
+checks for a JSON-RPC result; otherwise it prints `Unity MCP part skipped`.
 
 ### Not doing
 
 As IDEA.md. Also: no rewriting of URLs; no restart of HTTP tools; no automatic cleanup of
-copies or git data.
+copies or git data; no IPv6-only Windows servers.
 
 
 ## Accepted Risks
@@ -229,6 +342,9 @@ copies or git data.
 
 | # | What to check | Round |
 |---|---------------|-------|
+| C1 | MCP for Unity's active-instance selection is per client session in HTTP mode, so two agents selecting different Editors do not override each other | lead (D12) |
+| C2 | Claude accepts a `--mcp-config` server with the same name as a `.mcp.json` server listed in `disabledMcpjsonServers`, and ignores the top-level `wheelchair` key in `.mcp.json` | lead (D7, item 4) |
+| C3 | With default WSL `localhostForwarding`, requests fail promptly while the Windows server is down and reach it once it starts, with no loop through the relay | review-round-1 |
 
 ## Review Rounds
 
@@ -240,6 +356,22 @@ copies or git data.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Unity preset never points the agent at its own copy's Editor; one port serves every Editor | upheld | D12; Spec §2 prompt lines, help text says commit the package |
+| intent | minor | Ready file at launch skips the restart for an existing but stale copy | upheld | D14; ready only after a reconcile following start |
+| intent | minor | `git_bytes` warning is noise; conflict-ref warning at 1 is not a limit | upheld | D11; §3 |
+| intent | minor | Broken-bridge approval warning fires on projects with no Windows tools | upheld | D11; §5 gated |
+| intent | minor | `.wslconfig` fallback adds a guess for little gain | upheld | D10 |
+| mechanics | blocking | Unity session not bound to its copy's Editor | upheld | D12, C1 |
+| mechanics | blocking | Linux port collision lets the CLI reach an unrelated Linux service with its headers | upheld | D13; §1 Port taken on Linux |
+| mechanics | blocking | Go-between exits when the tool exits before ready, losing the connection | upheld | D14; §4 step 5 |
+| mechanics | blocking | Restart during a pending `initialize` never completes the handshake | upheld | D14; §4 step 4 |
+| mechanics | blocking | `[::1]` accepted but Windows dials 127.0.0.1; mirrored mode address families undefined | upheld | D9 |
+| mechanics | major | Existing `.git` counted ready while a reconcile still runs | upheld | D14; §4 Ready file |
+| mechanics | major | Machine restart drops forwards while tmux sessions survive | upheld | D13; §1 Machine service restart; ready-file restore |
+| mechanics | major | Ports and readying for tools the CLI never loads (Pi, Kimi, SSE on Codex/Antigravity) | upheld | D13; "Which tools a session loads" |
+| mechanics | major | Cold health probe can exceed the start budget | upheld | §5 background probe, 15 s deadline, start never waits |
+| mechanics | major | Live check can pass against a Linux service | upheld | §Validation live part proves a Windows token |
+| mechanics | minor | Check once built: localhostForwarding may loop the relay to itself | upheld | §1 No loop through WSL; C3 |
 
 ## Implementation Tasks
 
