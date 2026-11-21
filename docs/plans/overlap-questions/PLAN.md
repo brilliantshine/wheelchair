@@ -82,6 +82,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 53 | Feature looks (including user-requested and restart ones) wait for PLAN.md; look (a) repeats when the map arrives; a confirmed IDEA without PLAN.md gets PLAN.md first on restart; a failed `session leads` is retried; a pre-confirmation chat decision is logged when PLAN.md is created | Round 28 findings | review-round-28 |
 | 54 | The first feature look runs right after PLAN.md is created (after the map and confirmation, as lead.md step 4 already orders); a failed `session leads` follows the existing "hub unavailable" rule; Terms "Card window" mentions logged chat decisions | Round 29 findings | review-round-29 |
 | 55 | "Before PLAN.md" is its own branch ahead of the card-window and late rules (peers included); pre-PLAN chat decisions are logged during the first look, once the thread is identified; the pre-post recheck uses the scope that found the thread | Round 30 findings | review-round-30 |
+| 56 | Mode: two-part. D1-D5 move to Deferred (other-project cards, pre-PLAN chat decisions, restart recovery of chat answers, finished-peer recheck, re-asks); the Spec keeps the core | After rounds 28-30 the core was stable and the remaining findings were hardening; the user picked "Switch to two-part" (card 93e7d90b) | user |
 
 ## Spec
 
@@ -93,6 +94,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   `pr_url`, which the peer list takes from that card). A finished thread's overlap is
   mentioned in one line of the reply, not asked. Its identity is the other thread's id
   (`thread` in `session leads`), never its title.
+- **This project only:** overlap cards are asked only about threads in this thread's project
+  (the default `session leads` list). A thread in another project, found when the user names it,
+  gets the one-line mention (Deferred, D1).
 - **Overlap card:** a `question` card carrying the new optional field `about_thread` (§3), the
   other thread's id. The app stores it and never shows it.
 - **Card window:** when overlap cards are asked: a small fix before its edits, and a feature
@@ -101,12 +105,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   created, whatever it learns (a peer's message or question, the user's words); its first look
   comes right after PLAN.md is created (§1). This comes before the card-window and late rules.
 - **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this
-  thread and not in a Decision Log entry of this plan. An overlap already asked is asked again,
-  inside the card window, only for a feature, and only when information learned after its answer was
-  acted on (its Done marker, or for a question with no card its Decision, is committed) changes what that answer would do. Information
-  mentioned beside an open card never starts a re-ask. A small fix never re-asks: news about an
-  answered small-fix overlap before the edits gets the one-line mention, and the user's latest
-  instruction in chat wins.
+  thread and not in a Decision Log entry of this plan. An overlap already asked is not asked again:
+  news about it gets the one-line mention, and the user's latest instruction in chat wins
+  (re-asks are Deferred, D5).
 - **Late overlap:** a new overlap learned after the card window has closed (status `ready-for-review` or
   later, or once a small fix's edits are made). It never gets a card: the lead says in one line
   of its next visible reply which thread overlaps, what it is doing, and that a follow-up thread
@@ -116,9 +117,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   is harmless.
 - **Actionable answer** of an overlap card, in this order: `answered_value` when
   `answered_action` is `picked` or `answered` (a press or the card's own box); else
-  `resolved_note` when the lead resolved it from a chat answer; else, on restart only, a chat
-  answer to it in `recent_messages` sent after the card was posted (then resolve the card with
-  a note of it). A card with `retracted_at` has no answer. A chat answer is resolved on the card
+  `resolved_note` when the lead resolved it from a chat answer (recovering a chat answer from
+  `recent_messages` on restart is Deferred, D3). A card with `retracted_at` has no answer. A chat answer is resolved on the card
   as soon as it arrives; if that resolve is refused because the card was already answered, the
   stored card answer wins.
 - **Settling an answer:** an answer that clearly picks one option, cancels the question (§1
@@ -148,9 +148,7 @@ feature look, including (c) when the user asks and the restart look, waits for P
 it exists the lead may say what it finds, but asks and records nothing. A restarted lead whose
 IDEA.md is confirmed but has no PLAN.md creates it first (lead.md step 4), then looks. If
 `session leads` fails, the lead follows the existing "hub unavailable" rule (cards.md) and
-decides nothing from it until it answers; the step that needed it waits. During the first look, a clear decision the user gave in
-chat before PLAN.md about a thread that look identifies is logged as that thread's Decision
-(source `user`) instead of being asked. Otherwise discovery and peer messaging stay as they are:
+decides nothing from it until it answers; the step that needed it waits. (Logging chat decisions given before PLAN.md, instead of asking, is Deferred, D2.) Otherwise discovery and peer messaging stay as they are:
 the other "When to look" times and the small fix's look before edits, the "Overlap" message to a peer lead, "Replies", "Never wait",
 "Another project", "Passing a question on" and "Only leads talk". Every instruction there to
 tell the user about an overlap "in one line" (in "When to look", in "Overlap" for a thread with
@@ -168,8 +166,7 @@ paths:
   a small fix the latest instruction
   that settles it under "Settling an answer"; a vague or conditional answer awaiting a follow-up
   is not settled, so the in-window path applies): answer
-  the peer from that decision, with no new card, unless the question brings information that would start a re-ask under
-  Terms "New overlap" (inside the card window only);
+  the peer from that decision, with no new card;
 - before PLAN.md is created: the lead answers the peer from what it knows and asks its user
   nothing yet; the first look covers it;
 - inside the card window: it becomes the overlap card for that thread, or joins one: for an open
@@ -184,15 +181,8 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
 - **One question at a time:** an overlap card waits behind any open `question` card of yours
   and is asked next. For a feature, a waiting or asked overlap is in PLAN.md's Open Questions
   (`Overlap with <thread id>: <what>`), so status stays `planning` until it is settled. The commit that logs
-  its Decision removes it. Before posting a waiting overlap card (live or on restart), the lead
-  rechecks the other thread in `session leads`, in the same scope that found it (`--all-projects`
-  for a thread from another project; a thread listed without a stage counts as active): if it has finished (Terms "Overlap"), or is no
-  longer listed at all (archived), it removes
-  the Open Question in the commit that logs a Decision `Overlap with <thread id>: the other thread
-  finished; mentioned only` (source `defaulted`), and gives the one-line mention instead. On a
-  small fix it just gives the one-line mention and records nothing. A follow-up card
-  for an unsettled answer (Terms "Settling an answer") skips this recheck: it inherits the
-  original card's validity, live and on restart.
+  its Decision removes it. A waiting card is posted as it is when its turn comes
+  (rechecking whether the other thread finished meanwhile is Deferred, D4).
 - **Card text:** `fits` names the other thread by its title; each option's `consequence` says
   what the answer does to this thread. At most four options.
 - **Small fix, before edits:** post the card and edit nothing until it is answered. Options:
@@ -206,15 +196,14 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
   no other concrete change fits. Any other change the user types in the box or in chat. The
   answer is handled like any planning answer, with the Done marker.
 - **Feature, before PLAN.md is created:** nothing is asked or recorded; the look right after
-  PLAN.md is created finds the overlap and makes it an Open Question, unless a chat decision
-  about that thread was logged.
+  PLAN.md is created finds the overlap and makes it an Open Question.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): late
   overlap (Terms). No card.
 - **New information while a card is open:** the open card is never retracted to re-ask it, and
   its answer is never re-checked. The
   lead says the new information in one line of its next visible reply, beside the open card, and
   acts on the answer as the user gives it. A card stays valid even if the other thread finishes
-  meanwhile; the finished-peer recheck applies only before posting.
+  meanwhile.
 - **Cancelled or moot question:** when the user cancels an overlap question (in chat, or by
   typing it in the card's box), or this thread's own decision makes it moot, it is settled
   (Decision 48):
@@ -222,9 +211,7 @@ peer (Decision 36), so nothing records who asked. Unrelated peer questions pass 
     thread's id, in the commit that removes its Open Question: source `user` for a cancel,
     `defaulted` for moot. If a card was posted for this question (the original card, when its
     follow-up is still waiting), the entry ends `(overlap card <id>)` with that card's id; if
-    none was (including an unposted re-ask), it has no card suffix. Either way Terms "New
-    overlap" excludes the thread, and the latest settlement for that thread is the baseline for
-    any later re-ask.
+    none was, it has no card suffix. Either way Terms "New overlap" excludes the thread.
   - On a small fix it counts as "Go ahead with the fix" unless the user's chat says otherwise,
     and nothing is recorded.
   - An open card is then resolved with that note (a user cancel) or retracted (moot); a waiting
@@ -290,6 +277,16 @@ merging of branches; no sub-lead or worker rule changes.
   rules; `grep -n "Your user decides in chat\|tell your user in one line that it exists" protocol/app/lead.md`
   finds nothing.
 
+## Deferred
+
+| # | Item | Why it can wait | Source | Notes for the follow-up |
+|---|------|-----------------|--------|-------------------------|
+| D1 | Overlap cards for threads in other projects | Same-project overlaps are the common case; other projects get the one-line mention | planning | Recheck in the scope that found the thread (`--all-projects`); a thread listed without a stage counts as active (Round 30) |
+| D2 | Log a clear chat decision the user gave before PLAN.md instead of asking about it | At worst the user is asked once about something they already said | planning | Log during the first look once the thread id is known (Rounds 28-30); restart loses it if the message left the last 20 |
+| D3 | Recover an unresolved chat answer to an overlap card from `recent_messages` on restart | Needs a restart between the chat answer and its resolve; the lead resolves at once | planning | Handle it by "Settling an answer"; resolve the card with a note (Rounds 2-3) |
+| D4 | Recheck whether the other thread finished before posting a waiting card | At worst one extra card the user answers "keep" | planning | Log a `defaulted` Decision and mention; the first follow-up for a vague answer inherits validity (Rounds 20-27) |
+| D5 | Re-ask an answered overlap when later information changes what the answer would do | The user can raise it in chat; news is mentioned | planning | Only after the answer was acted on; never from news beside an open card; small fixes never re-ask (Rounds 22-27) |
+
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
@@ -308,6 +305,15 @@ merging of branches; no sub-lead or worker rule changes.
 | A replacement lead re-posts an overlap card or stub that the dead lead's post still has queued on the machine (the app was down), making a duplicate | Needs a lead death during an app outage right after posting; a duplicate card is visible and harmless | review-round-2 |
 
 ## Review Rounds
+
+### Round 31 — 2026-11-21
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 30:** Round 30 fixes (Decision 55), then Decision 56: mode two-part; new `## Deferred` (D1-D5); Terms "This project only", "New overlap" (no re-asks), "Actionable answer" (no restart chat recovery); §1 no pre-PLAN chat logging, no finished-peer recheck, peer settled path without re-ask.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 30 — 2026-11-21
 
