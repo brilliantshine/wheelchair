@@ -89,6 +89,8 @@ instanceIdleTimeout=-1
 
 #### Windows bridge
 
+Store-packaged apps such as Windows 11's Notepad, Calculator and Paint hand their windows to processes Windows starts outside the bridge, so `windows`, `shot` and `stop` cannot reach them; use classic desktop programs.
+
 Install Git for Windows on Windows and make sure both it and WSL's git are version 2.43 or newer. The bridge requires WSL interop enabled (the default): `[interop]` with `enabled=true` in `/etc/wsl.conf`. From a thread, ask the lead to run `wc.js win info`; it checks both git versions inside the installed machine service. If it fails, run `wsl --shutdown` from Windows, reopen WSL and check again.
 
 Windows-side project tools use full `/mnt/c/...` paths to an `.exe`; wrap `.cmd` or `.bat` tools with `cmd.exe /c`. `WHEELCHAIR_WINDOWS_PROJECT` names the session's Windows copy. Once conflict refs under `refs/wheelchair/conflicts/` are no longer needed, remove them with `git update-ref -d <ref>`.

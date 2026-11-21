@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { makeTempSync } = require('../../test-support/run-dir');
 const { WinBridge } = require('../lib/win');
+const { readState, writeState } = require('../lib/win-sync');
 
 function fixture(wsl = true) {
   const root = makeTempSync('win-bridge-');
@@ -117,8 +118,11 @@ test('run timeout syncs, status syncs an exit and launch environment excludes th
 
 test('readying times out without blocking launch and does not create copies for ordinary sessions', async () => {
   const { bridge, session, root } = realFixture();
+  const ctx = await bridge.context(session);
+  assert.equal(fs.existsSync(ctx.copy.linux), false);
   await bridge.beforeLaunch(session, { windowsTools: false });
   assert.equal(fs.existsSync(path.join(root, 'state')), false);
+  assert.equal(fs.existsSync(ctx.copy.linux), false);
   bridge.readyTimeoutMs = 5;
   let release;
   const original = bridge.create.bind(bridge);
@@ -140,10 +144,18 @@ test('worker merge cleanup deletes its copy and stop does not reconcile', async 
   await bridge.handle(session, { op: 'sync', args: [] });
   const info = await bridge.handle(session, { op: 'info', args: [] });
   fs.writeFileSync(path.join(info.copy_linux, 'new-file'), 'windows');
+  const ctx = await bridge.context(session);
+  const state = readState(bridge.stateDir, ctx.key);
+  state.used_since_ok = true;
+  writeState(bridge.stateDir, ctx.key, state);
+  assert.equal(readState(bridge.stateDir, ctx.key).used_since_ok, true);
+  let reconciles = 0;
+  const originalSync = bridge.sync.bind(bridge);
+  bridge.sync = async (...args) => { reconciles++; return originalSync(...args); };
   bridge.onStop(session);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(fs.existsSync(path.join(session.worktree, 'new-file')), false);
   await bridge.onWorktreeRemoved(session, { kind: 'merge' });
+  assert.equal(reconciles, 0);
+  assert.equal(fs.existsSync(path.join(session.worktree, 'new-file')), false);
   assert.equal(fs.existsSync(info.copy_linux), false);
 });
 
