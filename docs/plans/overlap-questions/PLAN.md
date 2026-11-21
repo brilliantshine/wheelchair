@@ -880,7 +880,7 @@ merging of branches; no sub-lead or worker rule changes.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Card id = delivery id; duplicate receipt id; `about_thread` on question; spooled 202 id; `card.js` receipt; tests (Spec §3 code) | viewer/app/cards.js, viewer/app/card.js, machine/service.js, viewer/test/, machine/test/ | standard / gpt-6.1-terra | wc-ebf1a18d38b1-worker | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | in progress |
+| T1 | Card id = delivery id; duplicate receipt id; `about_thread` on question; spooled 202 id; `card.js` receipt; tests (Spec §3 code) | viewer/app/cards.js, viewer/app/card.js, machine/service.js, viewer/test/, machine/test/ | standard / gpt-6.1-terra | wc-ebf1a18d38b1-worker | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | done |
 | T2 | Protocol text: lead.md overlap rules, restart, retract ids; cards.md; cards-lead.md; machine/API.md (Spec Terms, §1, §2, §3 docs) | protocol/app/lead.md, protocol/app/cards.md, protocol/app/cards-lead.md, machine/API.md | standard / claude-sonnet-5-5 | wc-ebf1a18d38b1-worker-2 | `node --test viewer/test/*.test.js`; Validation greps | done |
 
 ## Log
@@ -893,3 +893,10 @@ merging of branches; no sub-lead or worker rule changes.
 - 2026-11-21 — Choice: T2, cards.md: added "Keep the id" sentence after the receipt description (scout-listed, not in the report)
 - 2026-11-21 — Choice: T2, lead.md: subheadings "Passing a peer's overlap question on." and "Asking."; restart bullet drops the "(rare ...)" aside (scout-listed, not in the report)
 - 2026-11-21 — T2 accepted (band: scout): all Spec Terms, §1, §2 and §3 docs items present; minor wording drift only (implicit "learned earlier is part of the look", no separate "Feature, before PLAN.md" bullet; both covered by Terms "Before PLAN.md")
+- 2026-11-21 — T1: worker's report said "Choices: none"; the scout's list is logged instead (worker didn't report its choices; I listed 5)
+- 2026-11-21 — Choice: T1, viewer/app/cards.js: delivery id reaches `addCard` as `meta.deliveryId`
+- 2026-11-21 — Choice: T1, viewer/app/card.js: `about_thread` may be absent but not `null`
+- 2026-11-21 — Choice: T1, viewer/app/card.js: receipt reads `id` from the 2xx body (stored card record, or `{ok,duplicate,id}`, or the spooled body); a non-JSON 2xx body makes card.js exit with an error
+- 2026-11-21 — Choice: T1, tests: new `viewer/test/card-receipt.test.js`; machine spool test extended in `machine/test/service.test.js`
+- 2026-11-21 — Choice: T1, machine/service.js: agent-supplied `delivery_id` still passed through (already an Accepted Risk, review-round-17)
+- 2026-11-21 — T1 accepted (band: scout): Spec §3 code matches; viewer suite's one failure (`app-uploads-archive.test.js` stalled upload) passes alone twice, load flake; sub-lead adds a delivered-202 receipt test case the worker's test lacked
