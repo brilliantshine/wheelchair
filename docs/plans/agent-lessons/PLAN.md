@@ -359,7 +359,7 @@ stays as review history.
 
 ### Round 3 — 2026-11-21
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:**
 - S2, S5, S8: the lead also writes mapper lessons and keeps a "you keep for mappers" block (decision 14).
