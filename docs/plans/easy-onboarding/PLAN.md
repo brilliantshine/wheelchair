@@ -38,7 +38,8 @@ created: 2026-11-20
 | 16 | Install result survives a service restart (job writes a result file); was Deferred D4 | Review round 2: setup steps must run inside the job, which makes the result file free | review-round-2 |
 | 17 | (refined by 19) Supersedes 13 and 15: the hub never changes Lead or Worker order on its own. A harness that is signed in but not reachable from Lead order shows "Add to Lead order" in Settings and as a checklist step | Review round 3: the automatic append raced Settings drafts, missed a Lead order without `any`, and depended on a page being open; an explicit button avoids all three | review-round-3 |
 | 18 | Keep the one-tap "Add to Lead order" button (over a plain link, or leaving Pi out) | Collin picked it after the review budget stopped | user |
-| 19 | The one-tap button is "Let agents use <Harness>": it adds the harness to Workers try first, and also to Lead order when Lead order has no `any`. Refines 18 | Review round 4: adding to Lead order alone let a lead start but left every worker and reviewer waiting | review-round-4 |
+| 19 | (refined by 20) The one-tap button is "Let agents use <Harness>": it adds the harness to Workers try first, and also to Lead order when Lead order has no `any`. Refines 18 | Review round 4: adding to Lead order alone let a lead start but left every worker and reviewer waiting | review-round-4 |
+| 20 | The row button shows only for a signed-in harness missing from Workers try first; it adds to Lead order only when Lead order reaches no working harness. Refines 19 | Review round 5: a deliberate Lead order like `['claude']` is normal and must not be flagged or changed | review-round-5 |
 
 ## Spec
 
@@ -200,25 +201,31 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    fetch to keep, per CLI, `installed`, `version`, and `recipes`); `signed_in` is true when the
    machine reports a logged-in account for that provider that is not paused in hub settings.
    An unreachable machine is `{name, reachable:false, harnesses:{}}`.
-7. **Install forwarders** in `viewer/app/routes.js`, following the sign-in pattern
-   (`412-421`): `POST` and `GET /machines/<machine>/harnesses/<provider>/install` →
-   `hub.call(machine, '/v1/harnesses/<provider>/install', method)`. Unreachable → 502 with the
+7. **Install forwarders** in `viewer/app/routes.js`, resolving the machine as the sign-in
+   routes do (`412-421`): `POST` and `GET /machines/<machine>/harnesses/<provider>/install` →
+   the machine's `/v1/harnesses/<provider>/install`, through `hub.client.passThrough`
+   (`machine-client.js:96`) as the project-tools forwarder does (`routes.js:67-79`), so the
+   machine's status (202, 404, 409) and body reach the page unchanged (`hub.call` drops the
+   status). Unreachable → 502 with the
    machine name. `GET /harnesses?fresh=1` drops the status cache for all machines first
    (`cache.delete(hub)` in `usage.js`); the page asks for it after an install or sign-in ends
    (S4.3, S4.4). The hub keeps no per-install memory.
-8. **Letting agents use a harness.** `/harnesses` reports, per provider, `usable`: true when
-   the provider is in `worker_order` and in `lead_order` expanded as the balancer does (`any`
-   → `worker_order`). New route `POST /settings/harnesses/<provider>/use` → appends the
-   provider to `worker_order` if missing, and, when `lead_order` contains no `any` and not the
-   provider, appends it to `lead_order` too; returns `describe()`. Unknown provider → 404. The
-   hub never changes either order on its own.
+8. **Letting agents use a harness.** `/harnesses` reports, per provider, `in_worker_order`
+   (the provider is in `worker_order`), and at top level `lead_reachable`: some enabled
+   provider in `lead_order`, expanded as the balancer does (`any` → `worker_order`), is
+   installed and `signed_in` on a reachable machine. New route `POST
+   /settings/harnesses/<provider>/use` → appends the provider to `worker_order` if missing;
+   and, only when `lead_reachable` was false and `lead_order` has no `any` and lacks the
+   provider, appends it to `lead_order` too (a Lead order that already reaches a working
+   harness is never touched). Returns `describe()`. Unknown provider → 404. The hub never
+   changes either order on its own.
 9. **Onboarding status** `GET /onboarding` → `{show, steps:[{id:"install", label:"Install an
    agent harness", done}, {id:"signin", label:"Sign in to it", done}]}`, from `GET
    /harnesses` data. `install` is done when some reachable machine has an enabled harness
    installed. `signin` is done when some reachable machine has a provider that is enabled,
    installed and `signed_in` on that same machine. A third step `{id:"use", label:"Let agents
-   use it", done}` is included only when `signin` is done for some provider but no such
-   provider is `usable`; it is done otherwise. Each step not done carries `provider`
+   use it", done}` is included only when `signin` is done for some provider but either no
+   signed-in provider is `in_worker_order` or `lead_reachable` is false; it is done otherwise. Each step not done carries `provider`
    (the first matching one, display order) so the card can act.
    `show` is true when not every included step is done and at least one machine is reachable; false when
    none is reachable.
@@ -228,7 +235,8 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    back for a switched-off review family, and does not block an aside or an unanswered-start
    retry; Ready reason; `/harnesses` shape with one reachable and one unreachable machine;
    forwarders pass through and 502; `?fresh=1` clears the cache; `harnesses/<p>/use` (with and
-   without `any` in Lead order, already usable, unknown); onboarding's `use` step for Pi-only
+   without `any` in Lead order; Lead order `['claude']` with Claude signed in → only
+   `worker_order` changes; already in; unknown); onboarding's `use` step for Pi-only
    with default orders and with saved Lead order `['claude']`; after pressing use on a Pi-only
    setup, the balancer places both a lead and an ordinary worker on Pi; balancer skips a provider whose CLI is not installed
    though its account is logged in; order writes refused when they empty the enabled Lead order;
@@ -249,21 +257,24 @@ Antigravity, Kimi Code, Pi (OpenRouter).
    - not installed, or the last install on this machine `failed` → **Install** (or **Try
      again** after a failure);
    - installed, not signed in → **Sign in**;
-   - installed, signed in, not `usable` → the note `Agents won't start on this yet.` and
-     **Let agents use <Harness>** (`POST /settings/harnesses/<p>/use`). On success the page
-     replaces its settings data with the response and re-initialises the Lead and Worker
-     order drafts (`balDraft`, `settings.js:1336-1371`) from it, so a later save on this page
-     keeps the addition.
+   - installed, signed in, not `in_worker_order` → the note `Agents won't start on this
+     yet.` and **Let agents use <Harness>** (`POST /settings/harnesses/<p>/use`). On success
+     the page replaces its settings data with the response and, in the existing drafts
+     (`balDraft`, `settings.js:1336-1371`), adds the provider to the `worker_order` and
+     `lead_order` drafts where the response added it and the draft lacks it, leaving every
+     other draft edit as it was, so a later save on this page keeps both.
    No action when the switch is off.
 3. **Install state on load.** On page load and whenever the picked machine changes, the page
    GETs install state for each enabled provider on that machine. `running` → shows
    `Installing…` with the output tail (monospace, scrolls, fits a phone) and polls every 2 s;
    `failed` → `Install failed`, the tail, and **Try again**, even when the CLI is now on disk;
    `succeeded` → re-fetch `/harnesses?fresh=1`. Pressing Install POSTs, then polls the same way;
-   a 409 just starts polling. If the POST or a poll fails (502, network error, no answer), the
-   row shows `Can't reach <machine>, retrying…` and keeps polling GET every 2 s until it
+   a 409 just starts polling. If the POST or a poll fails with 502, a network error or no
+   answer, the row shows `Can't reach <machine>, retrying…` and keeps polling GET every 2 s until it
    answers, then shows whatever state it reports, so a job that started or kept running
-   during the outage is picked up without a reload. Likewise, while `/harnesses` reports the
+   during the outage is picked up without a reload. A 404 from the install routes on a
+   reachable machine means its service predates this feature: the row shows `This machine
+   needs updating: re-run ./install.sh on it.` and does not retry. Likewise, while `/harnesses` reports the
    picked machine `reachable:false` (on opening Settings or on a refresh), the section shows
    `Can't reach <machine>, retrying…` and re-fetches `/harnesses?fresh=1` every 5 s; when it is
    reachable again the rows render and step 3's load-time install check runs.
@@ -322,6 +333,8 @@ npm --prefix viewer run test:browser
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A CLI removed from a machine less than 15 s before a new start can still be chosen once (status cache) | Removing a harness CLI is unusual, and the start then fails with the machine's existing missing-CLI error; rare path | review-round-5 |
+| The only signed-in harness has its Lead model set to None, so the checklist completes but no lead starts | Every provider ships default models (`codex/model.sh:33-38`); needs a deliberate None on the only harness; rare path | review-round-5 |
 | A second Settings tab opened before "Let agents use" was pressed elsewhere can save its older order back | Needs two open tabs plus an unrelated save in the stale one; rare path | review-round-4 |
 
 ## Review Rounds
@@ -408,6 +421,22 @@ npm --prefix viewer run test:browser
 **Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
 
 **Changed since Round 4:** Decision Log sorted; S3.4 (installed check moved into `machineAccounts`); S3.8 replaced by "Let agents use" (`usable`, `POST /settings/harnesses/<p>/use`, adds to Workers try first and, without `any`, Lead order); S3.9 `use` step; S3.10 tests incl. worker placement; S4.2 drafts re-initialised; S4.3 machine-level retry; S5 button and tests; Accepted Risks row; Decision 19.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | `usable` flags normal setups and would change a deliberate Lead order | upheld | S3.8, S4.2 (Decision 20) |
+| intent | minor | Decisions 17–18 wording says "Add to Lead order" | declined | Marked refined by 19 and 20; record is accurate |
+| mechanics | blocking | Removed CLI still chosen within the 15 s cache | accepted-risk | Rare path (Accepted Risks) |
+| mechanics | blocking | Only harness with Lead model None | accepted-risk | Rare path: defaults set every model (Accepted Risks) |
+| mechanics | blocking | Resetting drafts discards pending edits | upheld | S4.2 merges into drafts |
+| mechanics | major | `hub.call` drops the machine's status | upheld | S3.7 uses `passThrough` |
+| mechanics | major | Older service's 404 loops as an outage | downgraded (minor) | S4.3 404 → "needs updating" |
+
+### Round 6 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 5:** S3.7 (forwarders via `passThrough`); S3.8 (`in_worker_order`, `lead_reachable`, narrower `use` route); S3.9 `use` step condition; S3.10 tests; S4.2 row button condition and draft merge; S4.3 404 handling; two Accepted Risks; Decision 20.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
