@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -304,7 +306,7 @@ test('service login endpoints use exact targets for prefix sibling and stale req
   const root = makeTempSync('kimi-http-'), secret = path.join(root, 'secret'), http = require('node:http'); fs.writeFileSync(secret, 'secret');
   const probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
-  const machine = new MachineService({ stateDir: root, host: '127.0.0.1', port, secretFile: secret });
+  const machine = new MachineService({ win: noWsl, stateDir: root, host: '127.0.0.1', port, secretFile: secret });
   const calls = []; machine.tmux = args => { calls.push(args); return { ok: true, stdout: '' }; };
   await machine.listen();
   try {
@@ -477,7 +479,7 @@ test('HTTP status stays responsive while a slow version check runs and launch aw
   process.env.HOME = root; process.env.PATH = `${bin}:/usr/bin:/bin`; delete process.env.KIMI_CODE_HOME;
   const http = require('node:http'), probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const freePort = probe.address().port; await new Promise(resolve => probe.close(resolve));
-  const machine = new MachineService({ stateDir: root, host: '127.0.0.1', port: freePort, secretFile: secret });
+  const machine = new MachineService({ win: noWsl, stateDir: root, host: '127.0.0.1', port: freePort, secretFile: secret });
   machine.createWorktree = async () => ({ worktree: root }); machine.checkReady = async () => {}; machine.tmux = () => ({ ok: true, stdout: '' });
   try {
     await machine.listen(); const port = machine.server.address().port;

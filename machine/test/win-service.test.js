@@ -61,7 +61,7 @@ test('route authentication, role restrictions and non-WSL tool filtering', async
       const reviewerLine = log.split('\n').find(line => line.includes('new-session') && line.includes(reviewer.name));
       assert.equal(leadLine.includes('WHEELCHAIR_WINDOWS_PROJECT='), wsl); assert.equal(leadLine.includes('WSLENV='), wsl);
       assert.doesNotMatch(reviewerLine, /WHEELCHAIR_WINDOWS_PROJECT=|WSLENV=/);
-      if (!wsl) { const settings = JSON.parse(fs.readFileSync(path.join(e.state, 'settings', `${lead.name}.json`))); assert.deepEqual(settings.disabledMcpjsonServers, ['windows']); assert.equal(settings.enableAllProjectMcpServers, true); }
+      if (!wsl) { const settings = JSON.parse(fs.readFileSync(path.join(e.state, 'settings', `${lead.name}.json`))); assert.deepEqual(settings.disabledMcpjsonServers, ['windows']); assert.equal(settings.enableAllProjectMcpServers, true); assert.deepEqual(lead.project_tools.clis.claude.lines, []); assert.doesNotMatch(JSON.stringify(lead.project_tools), /windows/); }
     } finally { await e.close(); }
   }
 });

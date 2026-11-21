@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -60,7 +62,7 @@ test('service start logs warnings only for tool roles', async () => {
   const root = await makeTemp('project-mcp-service-'); const bin = path.join(root, 'bin'); await fs.mkdir(bin);
   for (const name of ['git', 'tmux', 'systemd-run']) await fs.writeFile(path.join(bin, name), `#!/bin/sh\n${name === 'systemd-run' ? 'exit 1' : name === 'tmux' ? 'if [ "$1" = capture-pane ]; then printf "auto mode on\\n❯ Ready\\n"; fi' : 'echo deadbeef'}\n`, { mode: 0o755 });
   const prior = process.env.PATH; process.env.PATH = `${bin}:${prior}`;
-  const instance = new MachineService({ stateDir: path.join(root, 'state'), host: '127.0.0.1', port: 0 });
+  const instance = new MachineService({ win: noWsl, stateDir: path.join(root, 'state'), host: '127.0.0.1', port: 0 });
   const lines = []; const oldError = console.error; const oldPrepare = agy.prepare;
   agy.prepare = () => {}; console.error = (...args) => lines.push(args.join(' '));
   try {

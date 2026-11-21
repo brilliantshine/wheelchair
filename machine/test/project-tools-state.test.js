@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -25,7 +27,7 @@ esac
   const old = { PATH: process.env.PATH, TOOLS_PATH: process.env.TOOLS_PATH, TOOLS_CALLS: process.env.TOOLS_CALLS, HOME: process.env.HOME };
   process.env.PATH = `${bin}:${old.PATH}`; process.env.TOOLS_PATH = '-PATH'; process.env.TOOLS_CALLS = path.join(root, 'calls'); process.env.HOME = home;
   const services = [];
-  async function service() { const s = new MachineService({ stateDir: state, host: '127.0.0.1', port: 1 }); await s.init(); services.push(s); return s; }
+  async function service() { const s = new MachineService({ win: noWsl, stateDir: state, host: '127.0.0.1', port: 1 }); await s.init(); services.push(s); return s; }
   t.after(async () => { for (const s of services) { await Promise.all(s.projectToolsWrites.values()); for (const timer of [s.pollTimer, s.stepsTimer, s.trustTimer, s.agyToolsTimer]) clearInterval(timer); } for (const [k,v] of Object.entries(old)) if (v === undefined) delete process.env[k]; else process.env[k] = v; });
   let n = 0;
   const start = (s, opts = {}) => s.start({ name: `wc-test-${++n}`, role: 'lead', cli: 'codex', thread_id: 'thread', token: 'token', project: 'project', worktree: work, ...opts });
@@ -145,7 +147,7 @@ test('invalid saved state falls back and valid saved state loads', async t => {
 
 test('thread project-tools state does not replace the Settings project tools handler', async () => {
   const root = await makeTemp('tools-state-names-');
-  const service = new MachineService({ stateDir: path.join(root, 'state') });
+  const service = new MachineService({ win: noWsl, stateDir: path.join(root, 'state') });
   assert.equal(typeof service.projectTools.read, 'function');
   assert.ok(service.projectToolsState instanceof Map);
 });
