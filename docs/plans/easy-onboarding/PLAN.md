@@ -289,6 +289,15 @@ npm --prefix viewer run test:browser
 | mechanics | major | Polling only after POST; failed-after-binary hides retry | upheld | S4.3 |
 | mechanics | major | Sign-in link target undefined | upheld | S4.4 |
 
+### Round 2 — 2026-11-21
+
+**Lanes:** intent (claude preferred); mechanics (other family); cross-family: yes.
+
+**Changed since Round 1:** S1.2, S1.6 (fixture); S2.1 (PATH in tmux env), S2.2–S2.4 (unconfirmed recipes left out, Node check, pid-file running state, `recipes` in status); S3.1–S3.3 (describe, switch governs new placements only, lead-order 409), S3.6 `/harnesses`, S3.7 cache drop and worker_order append, S3.8 same-machine onboarding; S4 (load-time install state, Sign in, switch-off confirm, order editors hidden); Decisions 11–14.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
