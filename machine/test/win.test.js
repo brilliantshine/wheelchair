@@ -202,6 +202,7 @@ test('archive waits for successful final sync then deletes the copy', async () =
   assert.equal(fs.readFileSync(path.join(session.worktree, 'final'), 'utf8'), 'windows');
   await bridge.archiveFinish(session.thread_id);
   assert.equal(fs.existsSync(info.copy_linux), false);
+  assert.equal(fs.existsSync(path.dirname(info.copy_linux)), false, 'the thread copies folder is removed too');
 });
 
 test('archive waits once for a final sync and retains a failed copy', async () => {
@@ -215,6 +216,7 @@ test('archive waits once for a final sync and retains a failed copy', async () =
   assert.deepEqual(bridge.archiveCheck(session.thread_id).pending, []);
   await bridge.archiveFinish(session.thread_id);
   assert.equal(fs.existsSync(info.copy_linux), true);
+  assert.equal(fs.existsSync(path.dirname(info.copy_linux)), true);
 });
 
 test('sweep reconciles a dead lead with no apps', async () => {
