@@ -124,6 +124,15 @@ test('replaces a stub context marker and keeps its lead reply', () => {
   assert.deepEqual(items.map((item) => item.text), ['Started from Parent feature', 'I have started.']);
 });
 
+test('hides a switch marker with no line of its own and keeps the reply', () => {
+  const transcript = lines([
+    { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: '[wc:context switch] moved accounts, carry on' } },
+    { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Carrying on.' }] } },
+  ]);
+  const items = transcriptItems('claude', transcript, {});
+  assert.deepEqual(items.map((item) => [item.type, item.text]), [['assistant', 'Carrying on.']]);
+});
+
 test('replaces a restart context marker and keeps its lead reply', () => {
   const transcript = lines([
     {

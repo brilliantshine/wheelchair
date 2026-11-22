@@ -124,7 +124,7 @@ test('agents reads stage from worktree or saved status without one', async () =>
   await fs.mkdir(path.join(dir, 'docs/plans/feature'), { recursive: true });
   await fs.writeFile(path.join(dir, 'docs/plans/feature/PLAN.md'), '---\nstatus: implementing\n---\n');
   const threads = [{ id: 'worktree', slug: 'feature', worktree: dir }, { id: 'saved', slug: 'feature', project: dir, last_status: 'verifying' }, { id: 'no-slug', last_status: 'verifying' }].map((t) => ({ ...t, title: t.id, sessions: [lead()] }));
-  const hub = { allThreads: async () => threads, machines: async () => ({}), state: { resolveMachine: async () => null } };
+  const hub = { allThreads: async () => threads, machines: async () => ({}), state: { resolveMachine: async () => null, settings: async () => null } };
   const result = await require('../app/agents.js').agents(hub);
   assert.deepEqual(Object.fromEntries(result.leads.map((t) => [t.thread_id, t.stage])), { worktree: 'building', saved: 'verifying', 'no-slug': 'idea' });
 });
@@ -156,4 +156,26 @@ test('review reports and finished timestamps use the newest result', () => {
   assert.deepEqual(node(root, 'short').report, { findings: 1, first: 'short finding' }); assert.equal(node(root, 'short').finished_at, 'ended');
   assert.equal(node(root, 'empty').finished_at, 'created'); assert.equal('report' in node(root, 'empty'), false);
   assert.deepEqual(node(root, 'live').report, { findings: 0, first: null }); assert.equal('finished_at' in node(root, 'live'), false);
+});
+
+test('agents carry the account name and the latest move, with removed accounts named as such', () => {
+  const accounts = [{ id: 'a1', name: 'Work' }, { id: 'a2', name: 'Home' }];
+  const mk = (extra) => ({ name: 'w', role: 'worker', started_by: 'lead', live: true, turn_ended: true, ...extra });
+  const sessions = [
+    { name: 'lead', role: 'lead', live: true, turn_ended: true },
+    mk({ name: 'none', account: 'a1' }),
+    mk({ name: 'one', account: 'a2', switches: [{ from: 'a1', to: 'a2', at: 't1' }] }),
+    mk({ name: 'two', account: 'a1', switches: [{ from: 'a1', to: 'a2', at: 't1' }, { from: 'a2', to: 'a1', at: 't2' }] }),
+    mk({ name: 'gone', account: 'zzz', switches: [{ from: 'yyy', to: 'zzz', at: 't1' }] }),
+    mk({ name: 'waiting' }),
+  ];
+  const [tree] = buildAgents([{ id: 'a', title: 'T', sessions, cards: [] }], {}, accounts);
+  const by = (n) => tree.children.find((s) => s.name === n);
+  assert.deepEqual([by('none').account_name, by('none').moved_from], ['Work', null]);
+  assert.deepEqual([by('one').account_name, by('one').moved_from], ['Home', 'Work']);
+  assert.deepEqual([by('two').account_name, by('two').moved_from], ['Work', 'Home']);
+  assert.deepEqual([by('gone').account_name, by('gone').moved_from], ['a removed account', 'a removed account']);
+  assert.deepEqual([by('waiting').account_name, by('waiting').moved_from], [null, null]);
+  assert.equal(by('one').switches, undefined);
+  assert.equal(by('one').account, 'a2');
 });
