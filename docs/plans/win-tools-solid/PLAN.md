@@ -73,9 +73,11 @@ and Job Object material describes that work, not this plan.
    live tool-role session whose ready file exists and is not `{"state":"ready"}` is a
    wrapped session whose tools are still waiting. No new session-record fields (D15).
 2. **On service start**, `WinBridge.startup` (`machine/lib/win.js:397-417`) keeps today's
-   loop unchanged, and additionally, for each live tool-role session (same filter) with
-   such a ready file: adds it to `toolSessions` and registers and marks its copy **even if
-   the copy does not exist yet** (the copy key and paths come from `context(session)`). Sessions without a ready file are handled exactly as today.
+   loop unchanged and, for each live tool-role session (same filter) with such a ready
+   file, starts 1.3's readying. That readying itself adds the session to `toolSessions`
+   (`win.js:213`) and registers and marks the copy when it creates it (`win.js:100-104`);
+   an existing copy is already registered by today's loop. Sessions without a ready file
+   are handled exactly as today.
 3. For each of those: run the same readying a launch does (`beginReady` for a fresh token,
    then `prepareLaunch(session, { windowsTools: true, wrappedTools: true, token })`), in the background, not awaited by startup. Its
    outcome publishes `ready` or `failed` exactly as at launch. A `ready` file is left alone
@@ -292,6 +294,19 @@ caller writes its own outcome; Validation; Accepted Risks row removed; scope not
 | mechanics | blocking | A caller whose 45 s wait expired before the shared task settles is still left at `waiting` | upheld | Spec 1.5: outcome handler on the task, independent of the caller's wait |
 | mechanics | major | Gap between startup returning and recovery appearing in `readying` | upheld | Spec 1.4: `recovering` map set synchronously, `pendingReady` helper |
 | mechanics | major | Restart mid copy creation leaves a partial copy that recovery marks ready | upheld (`win-sync.js:73` treats `.git` as done) | Spec 1.6: completion marker |
+| intent | minor | Spec 1.2's extra tracking step repeats what readying does | upheld | Spec 1.2 simplified |
+
+
+### Round 6 — 2026-11-22
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 5:** Spec 1.2 simplified; Spec 1.4 (`recovering` map, `pendingReady`);
+Spec 1.5 (task resolves to an outcome; per-caller handler independent of its wait);
+Spec 1.6 (copy completion marker); Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
