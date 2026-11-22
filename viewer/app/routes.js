@@ -8,6 +8,7 @@ const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
 const { discoverSlug, findSlug } = require('./views.js');
 const settings = require('./settings.js');
+const cards = require('./cards.js');
 const diagramSensitivity = require('./diagram-sensitivity.js');
 const usage = require('./usage.js');
 const balancer = require('./balancer.js');
@@ -458,7 +459,7 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
   if (!authenticated) throw appError(401, 'machine secret required');
   if (bits[1] === 'cards' && request.method === 'POST') {
     const result = await hub.acceptCard(body);
-    return send(response, result.duplicate ? 200 : 202, result);
+    return send(response, result[cards.REPLAY] ? 200 : 202, result);
   }
   if (bits[1] === 'events' && request.method === 'POST') {
     const result = await hub.event(body);

@@ -6,6 +6,7 @@ const path = require('node:path');
 const { appError } = require('./state.js');
 const { resolvable, retractable, truncateTitle, validate } = require('./card.js');
 
+const REPLAY = Symbol('replay');
 const SINGLETONS = new Set(['offer', 'idea', 'deferred', 'progress']);
 
 function addCard(thread, card, meta = {}) {
@@ -60,7 +61,7 @@ async function acceptCard(hub, payload) {
     if (thread.archived) throw appError(409, 'thread is archived');
     thread.delivered_ids ||= [];
     if (payload.delivery_id && (thread.delivered_ids.includes(payload.delivery_id) || thread.cards.some((card) => card.id === payload.delivery_id))) {
-      return { ok: true, duplicate: true, id: payload.delivery_id };
+      return { replay: { ok: true, duplicate: true, id: payload.delivery_id } };
     }
     const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
     if (payload.kind === 'lesson' && typeof input.for === 'string' && !['lead', 'sub-lead', 'worker', 'mapper'].includes(session.role)) {
@@ -219,7 +220,7 @@ async function acceptCard(hub, payload) {
     // a dead target must not turn a valid card into a rejected one.
     return { card, targetName, ...(crossThread ? { targetThread: crossThread, senderTitle: require('./peers.js').threadName(thread) } : {}) };
   });
-  if (result.duplicate) return result;
+  if (result.replay) return Object.defineProperty(result.replay, REPLAY, { value: true });
   if (result.card?.kind === 'check') require('./auto-merge.js').afterCheck(hub, payload.thread_id, result.card.id);
   if (result.targetName) {
     const thread = await hub.thread(payload.thread_id);
@@ -291,4 +292,4 @@ async function sudoOutcome(hub, body) {
   });
 }
 
-module.exports = { currentDone, SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, retractCard, sudoOutcome, validSudoStatus };
+module.exports = { REPLAY, currentDone, SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, retractCard, sudoOutcome, validSudoStatus };

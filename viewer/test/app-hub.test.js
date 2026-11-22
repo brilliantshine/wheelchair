@@ -2250,9 +2250,17 @@ test('stub additions validate and append only to unopened candidates', async () 
     const date = new Date().toISOString().slice(0, 10);
     for (const duplicate of [false, true]) {
       const result = await card(context, parent.id, lead, { ...base, adds_to: id, duplicate });
-      assert.equal(result.status, duplicate ? 200 : 202); assert.equal(result.body.thread_id, id); assert.equal(result.body.target_title, 'Target');
+      assert.equal(result.status, 202); assert.equal(result.body.thread_id, id); assert.equal(result.body.target_title, 'Target');
     }
     assert.equal((await hub.thread(id)).context, `Original context\n\nAdded from "${parentName}" (${date}): More detail\n\nAlso came up in "${parentName}" (${date}): More detail`);
+    const deliveryId = 'duplicate-note-retry';
+    const payload = { thread_id: parent.id, session: lead, ...base, adds_to: id, duplicate: true, summary: 'Retry detail', delivery_id: deliveryId };
+    const first = await machinePost(context, '/machine/cards', payload);
+    const replay = await machinePost(context, '/machine/cards', payload);
+    assert.equal(first.status, 202);
+    assert.equal(replay.status, 200);
+    assert.deepEqual(replay.body, { ok: true, duplicate: true, id: deliveryId });
+    assert.equal((await hub.thread(id)).context, `Original context\n\nAdded from "${parentName}" (${date}): More detail\n\nAlso came up in "${parentName}" (${date}): More detail\n\nAlso came up in "${parentName}" (${date}): Retry detail`);
     assert.equal((await hub.state.allThreads()).length, beforeCount);
     for (const invalid of [{ ...base, adds_to: id, depends_on_parent: true }, { ...base, adds_to: id, commits: [] }, { ...base, duplicate: true }]) assert.equal((await card(context, parent.id, lead, invalid)).status, 422);
     const targetFile = path.join(context.state, 'threads', `${id}.json`);
