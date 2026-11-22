@@ -39,6 +39,7 @@ never built (MAP.md).
 | D8 | Wrapped tools keep interop's working directory rather than switching to the copy | Same behaviour as an unwrapped tool today; tools find the copy through `WHEELCHAIR_WINDOWS_PROJECT` | review-round-2 |
 | D9 | Making a normal stop (and the sweep and archive) wait for a session's Windows tools to finish writing moves to the two-part follow-up (Deferred 3). The go-between starts the real tool directly through interop, as the CLI does today; no Windows launcher or Job Object. IDEA.md's "Stopping the agent normally brings back everything its Windows tools wrote" moves to Not doing | User's choice after three review rounds, most findings being in that part; agents do not have this wait today | idea-change |
 | D10 | Run another review round after round 6 (budget reset) | User's choice; remaining findings small and shrinking | user |
+| D11 | From round 10, realistic edge-case hardening findings (not needed for normal use) go to Deferred with source `review-round-N` instead of the Spec; anything the feature cannot work without, or that would build the wrong thing, is still fixed here | User's choice after nine rounds of shrinking edge-case findings; this is what two-part mode is for | user |
 
 ## Spec
 
@@ -507,6 +508,17 @@ Deferred 1 note; Validation additions.
 | mechanics | major | Client closing its read end while the tool runs starts no shutdown | upheld | Spec 4 step 6: stdout `error`/`close` acts as stdin close |
 | mechanics | major | Pooled sweep could delete a live session's ready file or Claude config | upheld | Spec 2: selection per directory; test with both files |
 | mechanics | major | Spawn failure undefined in steps 1 and 3a | upheld | Spec 4: stderr reason, finish with 1 |
+
+### Round 10 — 2026-11-21
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 9:** Spec 4 step 6 stdout `error`/`close` acts as stdin close; Spec 4
+spawn failure in steps 1 and 3a; Spec 2 sweep selection per directory; Validation additions;
+D11.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
