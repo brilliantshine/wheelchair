@@ -2,6 +2,8 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
+const fsp = require('node:fs/promises');
 const { spawnSync } = require('node:child_process');
 const { detectWsl, createWinEnv, worktreeKey, copyPaths } = require('./win-env');
 const { ensureCopy, reconcile, readState, writeState, deleteCopy } = require('./win-sync');
@@ -24,6 +26,8 @@ class WinBridge {
     this.healthDeadlineMs = options.healthDeadlineMs ?? 15000;
     this.healthIntervalMs = options.healthIntervalMs ?? 600000;
     this.readying = new Map();
+    this.readyTokens = new Map();
+    this.readyQueues = new Map();
     this.readyErrors = new Map();
     this.running = new Map();
     this.toolSessions = new Set();
@@ -106,6 +110,48 @@ class WinBridge {
     return Object.values(this.service.sessions).some(session => this.toolSessions.has(session.name) && live.has(session.name) && session.status !== 'stopped' && worktreeKey(session.worktree) === ctx.key);
   }
 
+  readyQueue(name, operation) {
+    const prior = this.readyQueues.get(name) || Promise.resolve();
+    const task = prior.catch(() => {}).then(operation);
+    this.readyQueues.set(name, task);
+    task.finally(() => { if (this.readyQueues.get(name) === task) this.readyQueues.delete(name); }).catch(() => {});
+    return task;
+  }
+
+  writeReady(name, token, state, extra = {}) {
+    return this.readyQueue(name, async () => {
+      const dir = path.join(this.stateDir, 'win-ready');
+      await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
+      const file = path.join(dir, name);
+      const temp = path.join(dir, `.${name}.${crypto.randomUUID()}.tmp`);
+      try {
+        await fsp.writeFile(temp, JSON.stringify({ state, ...extra, at: new Date().toISOString() }), { mode: 0o600 });
+        if (this.readyTokens.get(name)?.token === token) await fsp.rename(temp, file);
+      } finally { await fsp.rm(temp, { force: true }); }
+    });
+  }
+
+  async beginReady(session) {
+    const token = crypto.randomUUID();
+    this.readyTokens.set(session.name, { token, key: null });
+    await this.writeReady(session.name, token, 'waiting');
+    return token;
+  }
+
+  removeReady(name) {
+    if (!this.detected.wsl || !this.stateDir) return Promise.resolve();
+    return this.readyQueue(name, async () => {
+      this.readyTokens.delete(name);
+      await fsp.rm(path.join(this.stateDir, 'win-ready', name), { force: true });
+    });
+  }
+
+  async publishReady(ctx, state, extra) {
+    const writes = [];
+    for (const [name, value] of this.readyTokens) if (value.key === ctx.key) writes.push(this.writeReady(name, value.token, state, extra));
+    await Promise.all(writes.map(write => write.catch(err => this.service.log(err))));
+  }
+
   async sync(ctx) {
     const prior = this.running.get(ctx.key) || Promise.resolve();
     const task = prior.catch(() => {}).then(async () => {
@@ -114,6 +160,7 @@ class WinBridge {
       try {
         const result = await reconcile(ctx);
         succeeded = true;
+        await this.publishReady(ctx, 'ready', { copy: ctx.copy.windows });
         return result;
       } finally {
         const latest = this.usage.get(ctx.key);
@@ -132,8 +179,10 @@ class WinBridge {
 
   async beforeLaunch(session, options = {}) {
     let timer;
+    let token;
+    if (this.detected.wsl && TOOL_ROLES.has(session.role) && options.wrappedTools) token = await this.beginReady(session);
     try {
-      await Promise.race([this.prepareLaunch(session, options), new Promise(resolve => {
+      await Promise.race([this.prepareLaunch(session, { ...options, token }), new Promise(resolve => {
         timer = setTimeout(() => {
           this.readyErrors.set(worktreeKey(session.worktree), 'Windows copy is still being readied');
           resolve();
@@ -150,10 +199,12 @@ class WinBridge {
     if (task) task.then(() => this.markKey(key)).catch(err => this.service.log(err));
   }
 
-  async prepareLaunch(session, { windowsTools } = {}) {
+  async prepareLaunch(session, { windowsTools, wrappedTools, token } = {}) {
     try {
       if (!this.detected.wsl || !TOOL_ROLES.has(session.role)) return;
+      if (wrappedTools && !token) token = await this.beginReady(session);
       const ctx = await this.context(session);
+      if (token && this.readyTokens.get(session.name)?.token === token) this.readyTokens.get(session.name).key = ctx.key;
       if (!windowsTools && !this.exists(ctx) && !this.readying.has(ctx.key)) return;
       if (windowsTools) this.toolSessions.add(session.name);
       if (this.exists(ctx)) {
@@ -177,6 +228,7 @@ class WinBridge {
             this.readyErrors.delete(ctx.key);
           } catch (err) {
             this.readyErrors.set(ctx.key, err.message);
+            await this.publishReady(ctx, 'failed', { reason: err.message });
             this.service.log(err);
           } finally {
             this.readying.delete(ctx.key);
@@ -193,6 +245,7 @@ class WinBridge {
       })]);
       clearTimeout(timer);
     } catch (err) {
+      if (token) await this.writeReady(session.name, token, 'failed', { reason: err.message }).catch(e => this.service.log(e));
       this.service.log(err);
     }
   }
@@ -221,6 +274,7 @@ class WinBridge {
 
   // T4 calls this once per stop, possibly after setting session.status to stopped.
   onStop(session) {
+    if (this.detected.wsl) this.removeReady(session.name).catch(err => this.service.log(err));
     if (!this.detected.wsl || this.stopped.has(session.name)) return;
     this.stopped.add(session.name);
     this.toolSessions.delete(session.name);
