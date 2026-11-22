@@ -139,7 +139,7 @@ In each role's editor, a **Waiting to add** section lists that role's waiting le
 
 From `viewer/`:
 
-- `npm test` passes, including new node tests in `test/app-lessons.test.js` (or a new `test/app-lessons-history.test.js`) covering: each S2 row records history with the right `changed_by`; 20-version and 50-removed caps; normalize keeps `kept_at`, `lesson_history`, `lesson_waiting` and drops invalid entries; restore of a version and of a removed lesson, refusal at 12, `saved_by: 'user'` after restore; new ids avoid history ids; stale at 90 days and Keep clearing it; S5 match/skip/add/waiting/not_kept/invalid and running it twice, same text with different provider or project both kept, skip of a lesson matching an older history version, `kept_at` set on add, a 72-lesson import into a hub with every role full (72 waiting, existing waiting entries untouched); Add re-checking key and capacity; a repeated identical restore recording nothing; restore by `vid` and the 409 when the version is gone; restore bringing back `thread`; file export/import round-trip and refusal of a non-lessons file; handoff v3 export carrying only this thread's lessons, with the project filter and `project: true`, file import skipping unknown project paths and keeping a saved directory's path, import into another project path, v2 file import unchanged, Retry of a pending handoff operation running no lessons merge; `lessonBlocks` output unchanged by history, waiting and `kept_at`.
+- `npm test` passes, including new node tests in `test/app-lessons.test.js` (or a new `test/app-lessons-history.test.js`) covering: each S2 row records history with the right `changed_by`; 20-version and 50-removed caps; normalize keeps `kept_at`, `lesson_history`, `lesson_waiting` and drops invalid entries; restore of a version and of a removed lesson, refusal at 12, `saved_by: 'user'` after restore; new ids avoid history ids; stale at 90 days and Keep clearing it; S5 match/skip/add/waiting/invalid and running it twice, same text with different provider or project both kept, skip of a lesson matching an older history version, `kept_at` set on add, a 72-lesson import into a hub with every role full (72 waiting, existing waiting entries untouched); Add re-checking key and capacity; a repeated identical restore recording nothing; restore by `vid` and the 409 when the version is gone; restore bringing back `thread`; file export/import round-trip and refusal of a non-lessons file; handoff v3 export carrying only this thread's lessons, with the project filter and `project: true`, file import skipping unknown project paths and keeping a saved directory's path, import into another project path, v2 file import unchanged, Retry of a pending handoff operation running no lessons merge; `lessonBlocks` output unchanged by history, waiting and `kept_at`.
 - Existing handoff tests (`test/app-handoff*.test.js`) pass. They may be updated where they depend on the version: export assertions now expect 3; unsupported-version cases use 4; fixtures meant as version 1 or 2 are explicit files without `lessons` rather than clones of the current export.
 - `npx playwright test test/app-lessons.spec.js test/app-handoff.spec.js` passes, with new browser cases: History toggle and Restore; Removed section and Restore; stale mark and Keep; Waiting to add Add/Discard; Export then Import showing the counts.
 
@@ -223,6 +223,20 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Repeated restore re-records history, can evict a version | downgraded (minor: worst case one old history version lost on a lost-response retry) | S2 restore row is a no-op when already identical |
 | mechanics | minor | Add from Waiting doesn't re-check key/capacity | upheld (minor) | S5 Add re-checks inside one update |
 | mechanics | minor | Unknown-project check ignores saved directories | upheld (minor) | S6 uses `knownProjects` |
+
+### Round 3 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 2:**
+- S1/S5/S7: `lesson_waiting` has no cap and `not_kept` is gone (Decision 14); handoff import note removed; waiting count on the Templates item (S4).
+- S7: the lessons merge runs immediately before `createLocked`/`advanceLocked`, after every import-level check.
+- S2: an identical repeated restore changes nothing.
+- S5: Add from Waiting re-checks key and capacity in one update.
+- S6: unknown-project check uses `knownProjects`; summary wording.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
