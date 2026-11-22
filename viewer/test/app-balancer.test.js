@@ -45,7 +45,7 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     const hub = new Hub({ stateDir: await makeDir('balance-') });
     await hub.state.init();
     hub.machines = async () => ({ hub: { name: 'hub' } });
-    hub.call = async () => ({ accounts: signed.map((id) => ({ id, logged_in: true })) });
+    hub.call = async () => ({ claude: { installed: true }, codex: { installed: true }, agy: { installed: true }, kimi: { installed: true }, pi: { installed: true }, accounts: signed.map((id) => ({ id, cli: id.includes('gpt') ? 'codex' : id.includes('gemini') ? 'agy' : 'claude', logged_in: true })) });
     hub.allThreads = async () => [];
     await settings.update(hub, (s) => { s.accounts.push({ id: 'gpt-two', provider: 'gpt', name: 'two', plan: 'unknown', weight: 1, paused: false }); Object.assign(s, changes); });
     for (const [id, reading] of Object.entries(readings)) await usage.record(hub, { account: id, at: new Date().toISOString(), ...reading });
@@ -347,7 +347,7 @@ test('worker placement uses account login on its own machine', async () => {
   await hub.state.init();
   await settings.update(hub, s => { s.accounts.push({ id: 'gpt-b', provider: 'gpt', name: 'B', plan: 'unknown', weight: 1, paused: false }); });
   hub.machines = async () => ({ a: { name: 'a' }, b: { name: 'b' } });
-  hub.call = async machine => ({ accounts: [
+  hub.call = async machine => ({ codex: { installed: true }, accounts: [
     { id: 'default-gpt', cli: 'codex', logged_in: machine === 'a' },
     { id: 'gpt-b', cli: 'codex', logged_in: machine === 'b' },
   ] });
@@ -470,7 +470,7 @@ test('OpenRouter explicit placement outside order respects review family', async
   await hub.state.init();
   await settings.update(hub, s => { s.worker_order = ['claude']; s.save_for_leads = false; });
   hub.machines = async () => ({ m: { name: 'm' } });
-  hub.call = async () => ({ accounts: [
+  hub.call = async () => ({ pi: { installed: true }, claude: { installed: true }, codex: { installed: true }, accounts: [
     { id: 'default-openrouter', cli: 'pi', logged_in: true },
     { id: 'default-claude', cli: 'claude', logged_in: true },
     { id: 'default-gpt', cli: 'codex', logged_in: true },

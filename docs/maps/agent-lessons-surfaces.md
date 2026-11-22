@@ -1,0 +1,35 @@
+# Map: agent instructions, state and user text
+
+Checked against: `adba2647ebd1d3edccd384dcb242fdb103a38a3a` (origin/main and worktree HEAD).
+Files covered: `protocol/app/`, `machine/service.js`, `machine/adapters/`, `viewer/app/settings.js`, `viewer/app/sessions.js`, `viewer/app/state.js`, `viewer/app/routes.js`, `viewer/app/diagram-sensitivity.js`, `viewer/app/documents.js`, `viewer/app/machine-client.js`, `viewer/app/card.js`, `viewer/app/cards.js`, `viewer/app/chat.js`, `viewer/pages/settings.js`, `viewer/pages/thread.js`, `viewer/pages/doc.js`, `viewer/pages/agents.js`, `viewer/server.js`, `sensitivity/set.sh`, `codex/model.sh`, `install.sh`.
+
+```text
+Settings + project + role -> hub builds role layers -> machine composes prompt file
+  -> provider CLI receives prompt -> agent works
+User on phone -> viewer and hub -> settings store or machine service -> state
+Agent card -> machine spool -> hub validates and stores -> thread renders
+```
+
+## Agent start
+
+The hub chooses the provider, resolves model and scout, builds `roleLayers(settings, role, thread.project, scout, provider)`, and passes `role_layers` with the project, role, account and brief to the selected machine (`viewer/app/sessions.js:315`, `:324`, `:358`, `:377`). Layers contain behavior templates, user name, sub-lead escalation, lead-only writing style, and lead/sub-lead scout instructions (`viewer/app/settings.js:162`). The machine reads `protocol/app/<role>.md`, adds realism for lead, sub-lead, reviewer and verifier, adds cards rules to lead, sub-lead, worker and mapper, appends layers, and writes a per-session prompt before creating the worktree (`machine/service.js:154`, `:156`, `:781`). `role_prompt` replaces the normal contents and ignores layers (`machine/service.js:158`). The Settings prompt preview mirrors composition and the current layer size guard is 12,000 characters (`viewer/app/settings.js:188`, `:197`).
+
+Claude passes the prompt file via `--append-system-prompt-file` (`machine/adapters/claude.js:68`); Pi/OpenRouter passes it via `--append-system-prompt` (`machine/adapters/pi.js:61`). Codex, Antigravity and Kimi instead send a first `[wc:role]` message asking the agent to read the prompt file (`machine/adapters/codex.js:144`, `machine/adapters/agy.js:69`, `machine/adapters/kimi.js:168`); the service queues that first message (`machine/service.js:867`), and chat hides the marker and its reply (`viewer/app/chat.js:127`). Adding text to the shared layers or machine composition would reach these normal session starts across providers; a project-specific source and delivery failure policy still need design. A snapshot only applies at session start. The role-prompt override is an explicit exception, and separate aside sessions have their own prompt path (`machine/lib/aside-turns.js:1`, `machine/adapters/pi.js:64`).
+
+The diagram dial is a different global mechanism: `sensitivity/set.sh` targets only present Claude `~/.claude/CLAUDE.md` and Codex `~/.codex/AGENTS.md`, rendering the owned region from the protocol (`sensitivity/set.sh:10`, `:24`, `:254`). Settings fans out to machine endpoints, which invoke that writer; the hub stores no dial value (`viewer/app/diagram-sensitivity.js:3`, `:26`, `:45`; `machine/service.js:1996`). It is not a five-provider delivery mechanism.
+
+## State and editing
+
+Hub and machine default to `~/.local/state/wheelchair` on their respective machines (`viewer/app/state.js:9`, `machine/service.js:35`); the hub keeps threads, machine/project lists and `settings.json` there, with queued atomic read-modify-write for settings (`viewer/app/state.js:64`, `:241`). The machine keeps its session registry, prompt files and worktrees under its own state directory (`machine/service.js:231`, `:609`, `:781`). Account-specific CLI folders are `~/.wheelchair/accounts/<id>` (`machine/service.js:66`, `viewer/app/sessions.js:361`). Model pins instead default to `~/.wheelchair/models` (`codex/model.sh:62`); Settings invokes `codex/model.sh` for changes (`viewer/app/routes.js:257`, `viewer/app/settings.js:277`). A project is identified by the thread's project path, and role templates can target it (`viewer/app/sessions.js:324`, `viewer/pages/settings.js:734`). These examples do not establish cross-machine synchronization for project lessons.
+
+Settings exposes sections for models, templates, writing style and project tools (`viewer/pages/settings.js:8`): template create/edit/delete (`:656`, `:679`), free-text style editing and save (`:937`, `:977`), and model and diagram controls (`:188`, `:140`). Routes validate and update settings (`viewer/app/routes.js:201`, `:359`, `:396`); the settings store normalizes and queues writes (`viewer/app/settings.js:260`, `:268`). The thread Files panel lists documents, pictures and sent files (`viewer/pages/thread.js:381`, `:418`, `:436`). Plan documents are a read-only allowlist of MAP, IDEA and PLAN, checked for path, file type, size and realpath, with archived versions looked up on a branch (`viewer/app/documents.js:9`, `:13`, `:34`; `viewer/app/routes.js:578`).
+
+The browser accesses the viewer via its authenticated app pages and secure remember cookie (`viewer/server.js:1262`, `:1707`, `:1751`); installer can configure Tailscale Serve (`install.sh:296`). Page requests reach the hub; its machine client addresses the selected machine over HTTP with its machine secret (`viewer/app/machine-client.js:61`, `:67`, `:72`). Browser writes have an origin check (`viewer/server.js:1296`).
+
+## Cards and existing memory
+
+The CLI reads a JSON card and validates it before posting with the session token (`viewer/app/card.js:285`). The machine authenticates agent cards and spools them for the hub (`machine/service.js:2141`, `:2169`, `:2184`); the hub revalidates with the actual session role and records the card (`viewer/app/cards.js:56`, `:158`). A new shown kind needs a schema, allowed-role entry and shown classification (`viewer/app/card.js:10`, `:28`, `:184`), protocol instructions (`protocol/app/cards.md:1`), and rendering and any interaction handling (`viewer/pages/thread.js:827`, `:742`); pinning or special persistence/delivery requires corresponding hub behavior (`viewer/app/cards.js:11`, `:169`). Reviewer and verifier have no current posting role in the card validator (`viewer/app/card.js:28`), and receive no card rules in their prompts (`machine/service.js:154`).
+
+A targeted source search for `memory`, `lesson` and `MEMORY.md` found the lead's restart instruction pointing to plan documents and cards as its memory (`protocol/app/lead.md:95`) and an agent-screen context-fill indicator called memory (`viewer/pages/agents.js:75`). These are not a shared lessons store. Historical plans include individual lessons; they are feature documents, not an injected cross-provider mechanism (e.g. `docs/plans/group-boxes/REMEDIATION-2.md:20`).
+
+Not looked at: provider-native memory internals and external CLI behavior; all historical plans and fixture transcripts; every aside and handoff/restart edge case; a complete audit of unrelated maps or every card action.

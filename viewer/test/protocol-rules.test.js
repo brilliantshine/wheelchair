@@ -32,7 +32,7 @@ for (const role of ['worker', 'mapper', 'sub-lead', 'reviewer', 'verifier']) {
 
 const roles = ['lead', 'sub-lead', 'worker', 'mapper', 'reviewer', 'verifier'];
 const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'image', 'file', 'stub', 'sudo', 'reach', 'retract', 'title'];
-const sharedKinds = ['progress', 'message', 'result'];
+const sharedKinds = ['progress', 'message', 'result', 'lesson'];
 const sections = text => [...text.matchAll(/^### `([^`]+)`$/gm)].map(match => match[1]);
 
 test('each schema kind has one card section, in its intended file', () => {
@@ -100,4 +100,23 @@ test('lead.md has the Other leads on this machine section, as a standing rule', 
   for (const phrase of ['lead-chat', 'Decision Log', 'PLAN.md of lead-chat', 'Decision ']) {
     assert.ok(!match[1].includes(phrase), phrase);
   }
+});
+
+test('lead.md Overlap questions covers any project, earlier chat, finished check and re-ask', () => {
+  const m = read('lead').match(/^## Overlap questions\n([\s\S]*?)(?=^## )/m);
+  assert.ok(m, 'section present');
+  assert.ok(!m[1].includes('This project only'));
+  for (const phrase of [
+    'apply to a thread in any project',
+    'earlier user message (before or after PLAN.md was created)',
+    'using its output only for this finished check',
+    'whether or not it still counts as an overlap',
+    'whether that thread was doing it then',
+  ]) assert.ok(m[1].includes(phrase), phrase);
+});
+
+test('lead.md Restarting what died resolves an unrecorded chat answer', () => {
+  const m = read('lead').match(/^## Restarting what died\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  assert.ok(m, 'section present');
+  assert.ok(m[1].includes('resolved from the latest such message'));
 });

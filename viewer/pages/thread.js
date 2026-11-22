@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  const LESSON_ROLE_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers' };
   const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
   const API = '/wheelchair/api';
   const id = new URLSearchParams(location.search).get('id') || '';
@@ -29,6 +30,27 @@
   const PINS_KEY = 'wheelchair.pinsFolded';
   let pinsFolded = false;
   try { pinsFolded = localStorage.getItem(PINS_KEY) === '1'; } catch (e) { /* stays open */ }
+  // The thread list (left) and files panel (right) fold to a thin rail on wide screens. Like the
+  // pinned strip, a per-viewer convenience kept in this browser only.
+  const shellEl = document.querySelector('.shell');
+  for (const [btnId, cls, key, label, openGlyph, shutGlyph] of [
+    ['list-collapse', 'list-collapsed', 'wheelchair.listCollapsed', 'the thread list', '\u00ab', '\u00bb'],
+    ['side-collapse', 'side-collapsed', 'wheelchair.sideCollapsed', 'the files panel', '\u00bb', '\u00ab'],
+  ]) {
+    const btn = $(btnId);
+    const apply = (shut) => {
+      shellEl.classList.toggle(cls, shut);
+      btn.setAttribute('aria-expanded', String(!shut));
+      btn.textContent = shut ? shutGlyph : openGlyph;
+      btn.title = (shut ? 'Show ' : 'Hide ') + label; btn.setAttribute('aria-label', btn.title);
+    };
+    let shut = false; try { shut = localStorage.getItem(key) === '1'; } catch (e) { /* stays open */ }
+    apply(shut);
+    btn.addEventListener('click', () => {
+      const next = !shellEl.classList.contains(cls); apply(next);
+      try { localStorage.setItem(key, next ? '1' : '0'); } catch (e) { /* this page only */ }
+    });
+  }
   let archiveAsk = false;
   let exportAsk = false;
   let handoffState = null;
@@ -57,6 +79,21 @@
     if (disabled) b.disabled = true;
     if (onclick) b.addEventListener('click', onclick);
     return b;
+  }
+  // A done-card line whose "Start a thread about it" link shows only on hover, or on a tapped
+  // (focused) line on touch. A tap that lands where the link was still faded only reveals it:
+  // the press counts only if the link was showing when the pointer went down.
+  function threadLinkRow(card, text) {
+    const row = el('div', 'bullet'); row.tabIndex = 0;
+    row.appendChild(el('span', 'bullet-text', text));
+    let shownAtDown = false;
+    const link = button('Start a thread about it', 'link', (ev) => {
+      if (ev.detail !== 0 && !shownAtDown) return; // detail 0: keyboard activation
+      press(card, 'start-thread', text);
+    }, thread().archived);
+    row.addEventListener('pointerdown', () => { shownAtDown = getComputedStyle(link).opacity === '1'; });
+    row.appendChild(link);
+    return row;
   }
   const SVG = 'http://www.w3.org/2000/svg';
   // A fixed-path line icon, built as nodes.
@@ -762,6 +799,21 @@
     await poll(true);
     render();
   }
+  async function dismissCard(card) {
+    if (pressing[card.id]) return;
+    pressing[card.id] = true;
+    try {
+      await post(T + '/cards/' + encodeURIComponent(card.id) + '/dismiss', {});
+      delete cardErrors[card.id];
+    } catch (e) {
+      cardErrors[card.id] = e.message;
+    } finally {
+      delete pressing[card.id];
+    }
+    sigs.chat = null; sigs.pinned = null;
+    await poll(true);
+    render();
+  }
   // What a pressed question or offer shows as its pick: the offer's mapped label, else the value itself.
   function pickedLabel(card) {
     if (card.kind === 'offer') {
@@ -1014,10 +1066,25 @@
           const ul = el('ul'); for (const i of card.items) ul.appendChild(el('li', '', i)); box.appendChild(ul);
         }
         // A session-level card (stuck, permission) goes straight to that session's terminal.
-        if (card.system && card.session && !card.answered) {
-          const a = el('a', 'btn primary', 'Open terminal');
-          a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
-          const actions = el('div', 'actions'); actions.appendChild(a); box.appendChild(actions);
+        // One that no live session is held on (not blocking) can also be dismissed.
+        if (card.system && !card.answered && (card.session || !card.blocking)) {
+          const actions = el('div', 'actions');
+          if (card.session) {
+            const a = el('a', 'btn primary', 'Open terminal');
+            a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
+            actions.appendChild(a);
+          }
+          if (!card.blocking) actions.appendChild(button('Dismiss', '', () => dismissCard(card), thread().archived));
+          box.appendChild(actions);
+        }
+        if (card.system && card.auto_merge && !card.answered) {
+          const actions = el('div', 'actions');
+          actions.appendChild(button('Dismiss', '', async () => {
+            try { await post(T + '/cards/' + encodeURIComponent(card.id) + '/dismiss', {}); delete cardErrors[card.id]; }
+            catch (e) { cardErrors[card.id] = e.message; }
+            sigs.chat = null; sigs.pinned = null; await poll(true); render();
+          }, thread().archived));
+          box.appendChild(actions);
         }
         // A card a lead posted stays until it is settled. The user answers it with either
         // button, and the lead always replies, so nothing closes silently.
@@ -1062,17 +1129,13 @@
         if (card.note) inset.appendChild(prose('dim', card.note));
         inset.appendChild(el('div', 'eyebrow', 'What you can do now'));
         for (const c of card.can_do || []) {
-          const row = el('div', 'bullet'); row.appendChild(el('span', 'bullet-text', c));
-          row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', c), thread().archived));
-          inset.appendChild(row);
+          inset.appendChild(threadLinkRow(card, c));
         }
         if ((card.left_as_is || []).length) {
           const left = el('div', 'left-as-is');
           left.appendChild(el('div', 'eyebrow', 'Left as is · ' + card.left_as_is.length + (card.left_as_is.length === 1 ? ' thing' : ' things')));
           for (const l of card.left_as_is) {
-            const row = el('div', 'bullet'); row.appendChild(el('span', 'bullet-text', l));
-            row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', l), thread().archived));
-            left.appendChild(row);
+            left.appendChild(threadLinkRow(card, l));
           }
           inset.appendChild(left);
         }
@@ -1212,6 +1275,23 @@
         }
         break;
       }
+      case 'lesson': {
+        const snap = card.snapshot || {};
+        const plural = LESSON_ROLE_PLURAL[card.for] || (card.for + 's');
+        const verb = card.action === 'remove' ? 'Removed a lesson for ' : card.action === 'replace' ? 'Updated a lesson for ' : 'Saved a lesson for ';
+        const marks = [];
+        if (snap.provider) marks.push('only on ' + (PROVIDER_LABEL[snap.provider] || snap.provider));
+        if (snap.project) marks.push('only in ' + (String(snap.project).split('/').filter(Boolean).pop() || snap.project));
+        const line = el('p', 'lesson-line');
+        line.appendChild(el('span', 'lesson-text', verb + plural + ': ' + (snap.text || '')));
+        if (card.why) line.appendChild(el('span', 'lesson-why', card.why));
+        for (const m of marks) line.appendChild(el('span', 'lesson-mark', m));
+        const link = el('a', 'lesson-link', 'Open in Settings');
+        link.href = '/wheelchair/app/settings#templates/lessons/' + encodeURIComponent(card.for);
+        line.appendChild(link);
+        box.appendChild(line);
+        break;
+      }
       default:
         return null;
     }
@@ -1309,6 +1389,7 @@
     const lead = leads().filter((s) => s.live || s.status === 'waiting').pop();
     if (!lead) return '';
     if (lead.status === 'waiting' && lead.waiting_until) {
+      if (lead.waiting_reason && lead.waiting_reason.endsWith(' is left out in Settings')) return lead.waiting_reason + '. Turn it back on under Settings → Harnesses.';
       // The provider the wait is pinned to, else the lead's, else the thread's; none set → room.
       const provider = [lead.waiting_provider, lead.provider, thread().provider].find((p) => PROVIDER_LABEL[p]);
       if (!provider) return 'Waiting for room, about ' + clock(lead.waiting_until);
@@ -1372,6 +1453,7 @@
     placeIds();
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
+    syncJump();
     const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
     queuedNote.hidden = queuedTotal === 0;
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
@@ -1471,6 +1553,16 @@
     } catch (e) { showError(e.message.startsWith('Upload failed:') ? e.message : 'Message not sent: ' + e.message); }
     finally { uploading = false; renderAttachments(); render(); }
   });
+
+  // A small button back to the latest message, once scrolled up more than about two screens.
+  function syncJump() {
+    const jumpEl = $('jump-bottom');
+    const fromBottom = document.body.scrollHeight - (window.innerHeight + window.scrollY);
+    jumpEl.hidden = fromBottom < window.innerHeight * 2;
+  }
+  $('jump-bottom').addEventListener('click', () => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); });
+  window.addEventListener('scroll', syncJump, { passive: true });
+  window.addEventListener('resize', syncJump);
 
   poll();
   loadAccountNames();

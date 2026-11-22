@@ -33,6 +33,21 @@ for (const [label, size] of SIZES) {
 
     const open = (page, id) => page.goto(`${ctx.server.url}/app/thread?id=${id}`);
 
+    test('a jump-to-bottom button shows only when scrolled well up', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      for (let i = 0; i < 30; i++) await ctx.post(made.id, { kind: 'needs', title: `Thing ${i}`, body: 'Line one.\nLine two.\nLine three.' });
+      await open(page, made.id);
+      await expect(page.locator('#chat')).toContainText('Thing 29');
+      const jump = page.locator('#jump-bottom');
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await expect(jump).toBeHidden();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect(jump).toBeVisible();
+      await jump.click();
+      await expect.poll(() => page.evaluate(() => document.body.scrollHeight - (window.innerHeight + window.scrollY))).toBeLessThan(5);
+      await expect(jump).toBeHidden();
+    });
+
     test('deferred cards show mode, bullets and locking', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.post(made.id, { kind: 'deferred', mode: 'two-part', bullets: [{ id: 'a', text: 'Later' }] });
@@ -519,15 +534,19 @@ for (const [label, size] of SIZES) {
       await page.locator('#pinned').getByRole('button', { name: 'Talk about this' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'talk', value: 'Moves lose work' });
 
+      // The link stays hidden until the line is hovered.
+      const leftRow = page.locator('.card-done .bullet', { hasText: 'Resize terminal' });
+      await expect(leftRow.getByRole('button', { name: 'Start a thread about it' })).toHaveCSS('opacity', '0');
+      await leftRow.hover();
       req = pressTo(dn.id);
-      await page.locator('.card-done .bullet', { hasText: 'Resize terminal' })
-        .getByRole('button', { name: 'Start a thread about it' }).click();
+      await leftRow.getByRole('button', { name: 'Start a thread about it' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'start-thread', value: 'Resize terminal' });
 
       // Every can_do entry offers it too, with the same press form.
+      const doRow = page.locator('.card-done .bullet', { hasText: 'Use it' });
+      await doRow.hover();
       req = pressTo(dn.id);
-      await page.locator('.card-done .bullet', { hasText: 'Use it' })
-        .getByRole('button', { name: 'Start a thread about it' }).click();
+      await doRow.getByRole('button', { name: 'Start a thread about it' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'start-thread', value: 'Use it' });
 
       req = pressTo(ideaCard.id);

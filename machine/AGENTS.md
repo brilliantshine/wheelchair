@@ -9,11 +9,13 @@ agents own neither tmux nor the machine secret.
 | `service.js` | Dependency-free Node HTTP service, session registry, tmux/git boundary, worktrees (each new one links the clone's installed `node_modules` and lists the links in git's exclude file; `from_remote_branch` builds one at an exact pushed commit), the hub-only `/v1/handoff` actions (claims, branch inspection, kill/running) and durable archive markers, readiness, transcript copies, and durable spools. |
 | `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`, `kimi.js`, `pi.js`; Pi also reads offline OpenRouter spend). |
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
+| `lib/harness-recipes.js`, `lib/harness-install.js` | Harness install recipes and detached jobs, persisted state, setup and validation. |
+| `test/harness-install.test.js` | Harness install job and route coverage. |
 | `lib/try.js` | Folder-local Try records, checks, Git switches and metadata-only status. |
 | `test/try.test.js` | Try endpoint, record, switching and status tests against isolated repositories. |
 | `lib/aside-turns.js` | Durable headless aside turns, CLI spawning, parsing and restart recovery. |
 | `lib/sudo.js` | Durable sudo request registration, polling, outcome delivery and cancellation. |
-| `lib/win.js` | Windows bridge lifecycle, session routing, readying and copy cleanup, Windows tool tracking across restarts, cached bridge health (background probe). |
+| `lib/win.js` | Windows bridge lifecycle, session routing, readying and copy cleanup, Windows tool tracking across restarts, cached bridge health (background probe), and the per-session ready file (`win-ready/<session>`) the Windows tool go-between polls. |
 | `lib/win-env.js` | WSL detection (kernel, enabled interop), Windows paths, interop and PowerShell environment, the health probe. |
 | `lib/win-disk.js` | `win info` disk report: cached background copy-size walks, Git object size, conflict ref count, Windows free space and warnings. |
 | `lib/win-prompt.js` | Pure builder for the bridge-broken and MCP for Unity lines added to a tool-role session's prompt file. |
@@ -24,6 +26,8 @@ agents own neither tmux nor the machine secret.
 | `lib/win-relay.ps1` | The Windows relay a forward runs per connection (`connect`) or per status check (`check`): dials the tool port, refuses ports that lead back to Linux, then pipes bytes. |
 | `lib/win-args.js` | Windows bridge argument validation. |
 | `lib/win-apps.js` | Windows app tracking for the bridge: PowerShell wrapper in a named Job Object, run/start/status/stop, window listing and screenshots, `apps.json`, restart cleanup and sweep. |
+| `lib/win-tool-wrap.js` | Pure builder of the per-session `replaceEntries` map that launches WSL tool roles' Windows stdio MCP entries through the go-between, and the tool-list cache key. |
+| `lib/win-tool-proxy.js` | The Windows tool go-between: stands in for a Windows stdio MCP server until the copy's ready file says `ready`, then starts the real tool, hands off and keeps its last tool list in `win-tool-lists/`. |
 | `test/windows-live.sh`, `test/windows-live.js` | Live Windows bridge check through the real service on a WSL machine, with an optional Unity part (`WHEELCHAIR_UNITY`, fixture `test/fixtures/unity-min/`) that also checks the MCP for Unity stdio server when Windows has `uvx.exe`; exit 77 when not WSL or Unity is skipped. |
 | `lib/screen.js` | Per-session invisible X screens for `POST /v1/agent/screen`: Xvfb with a per-screen cookie, app launch (sandboxed for Codex), screenshots, validated xdotool input, one systemd user slice per screen for teardown, the 60 s sweep and startup cleanup. `test/screen-live.sh` drives it against real Xvfb. |
 | `lib/screen-input.js` | X-tool layer for screens: window listing, screenshots, pointer, typing, key deadlines and releases, auto-focus. |

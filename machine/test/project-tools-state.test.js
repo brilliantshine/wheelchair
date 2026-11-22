@@ -35,17 +35,17 @@ esac
   return { root, bin, state, work, worker, service, start, file, calls: process.env.TOOLS_CALLS };
 }
 
-test('tmux PATH, timeout and unset fallback drive program checks', async t => {
+test('service PATH drives program checks', async t => {
   const f = await fixture(t), s = await f.service();
-  await fsp.writeFile(path.join(f.bin, 'runner'), '#!/bin/sh\n', { mode: 0o755 });
+  // `runner` lives in its own folder, so the fake tmux stays on PATH and no real session starts.
+  const tools = path.join(f.root, 'tools'); await fsp.mkdir(tools);
+  await fsp.writeFile(path.join(tools, 'runner'), '#!/bin/sh\n', { mode: 0o755 });
   await f.file(f.work, { a: { command: 'runner' } });
-  process.env.TOOLS_PATH = 'PATH=/nonexistent';
+  const original = process.env.PATH;
   assert.equal((await f.start(s)).project_tools.programs.length, 1);
-  process.env.TOOLS_PATH = `PATH=${f.bin}`;
-  assert.deepEqual((await f.start(s)).project_tools.programs, []);
-  process.env.TOOLS_PATH = '-PATH'; assert.deepEqual((await f.start(s)).project_tools.programs, []);
-  process.env.TOOLS_PATH = 'hang'; const before = Date.now();
-  assert.deepEqual((await f.start(s)).project_tools.programs, []); assert.ok(Date.now() - before >= 1900 && Date.now() - before < 5000);
+  process.env.PATH = `${original}:${tools}`;
+  try { assert.deepEqual((await f.start(s)).project_tools.programs, []); }
+  finally { process.env.PATH = original; }
 });
 
 test('state ownership, invalid files, failure, reset, retry and persistence', async t => {
@@ -58,8 +58,7 @@ test('state ownership, invalid files, failure, reset, retry and persistence', as
   assert.equal(worker.project_tools.seq, 2); assert.deepEqual(worker.project_tools.file, first.project_tools.file); assert.deepEqual(worker.project_tools.programs, first.project_tools.programs);
   await f.file(f.worker, {}); const noreset = await f.start(s, { worktree: f.worker }); assert.equal(noreset.project_tools.clis.codex.lines.length, 1);
   await fsp.writeFile(path.join(f.work, '.mcp.json'), '{'); const failure = await f.start(s); assert.equal(failure.project_tools.file.length, 1); assert.equal(failure.project_tools.programs.length, 1);
-  const calls = (await fsp.readFile(f.calls, 'utf8')).split('\n').length;
-  await f.file(f.work, { invalid: {} }); const invalid = await f.start(s); assert.equal(invalid.project_tools.file.length, 1); assert.deepEqual(invalid.project_tools.programs, []); assert.equal((await fsp.readFile(f.calls, 'utf8')).split('\n').length, calls);
+  await f.file(f.work, { invalid: {} }); const invalid = await f.start(s); assert.equal(invalid.project_tools.file.length, 1); assert.deepEqual(invalid.project_tools.programs, []); assert.equal(fs.existsSync(f.calls), false);
   await f.file(f.work, {}); const reset = await f.start(s); assert.deepEqual(reset.project_tools.clis, {}); assert.deepEqual(reset.project_tools.file, []);
   await s.projectToolsWrites.get('thread'); const disk = JSON.parse(await fsp.readFile(path.join(f.state, 'project-tools/thread.json'))); assert.equal(disk.seq, reset.project_tools.seq);
   assert.ok(!('project_tools' in s.sessionList()[0])); assert.ok(!('project_tools' in s.status().sessions[0]));

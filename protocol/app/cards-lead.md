@@ -87,6 +87,8 @@ first; if it changed, the card updates and nothing starts. When it holds, it com
 
 Something only the user can fix or decide, where a question card does not fit.
 
+The user can dismiss any system needs card except a "Permission needed" or "Session stuck at startup" card while its live session is still held, and the quiet card also closes when its agent’s starter messages it or the agent starts another agent.
+
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `title` | string | yes | One line |
@@ -131,6 +133,7 @@ the same treatment: say what you will do now instead of going quiet.
 | `pr_url` | string | yes | The pull request, for the Review pull request link |
 | `head` | string | yes | The full 40-character lowercase hex commit id pushed by the lead: the remote branch tip read after the push |
 | `note` | string | no | Anything they must know, such as "this fix failed its check and was pushed at your request" |
+| `verified` | boolean | no | `true` only when the lead holds a passing check of this exact change (lead.md, Making the pull request mergeable); omitted otherwise. The app auto-merges only when every done card in the thread has it |
 
 The app accepts the card only when GitHub says this thread's pull request, at `head`, is merged or ready to merge; otherwise `card.js` fails with the reason. A `done` card is never queued, so "the app is unreachable" means try again.
 
@@ -322,7 +325,7 @@ The hub checks these refusals in order (422):
 
 1. `no such card in this thread`: missing, in another thread, or replaced.
 2. `only a question, offer, approval, needs, sudo, deferred or reach card can be retracted`.
-3. `a system needs card closes itself`.
+3. `a system needs card closes itself` (the user can dismiss it unless its live session is still held).
 4. `card is already answered`: including a previous retraction, resolution or press; sudo
    cards are checked by state instead.
 

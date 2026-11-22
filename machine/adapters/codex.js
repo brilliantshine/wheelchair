@@ -49,12 +49,12 @@ function codexEntryReason(name, entry) {
   return null;
 }
 // The -c overrides for every server Codex can take, measured against the budget as a whole.
-function codexOverrides(mcp, { wsl = false, mount = '/mnt', replaceEntries } = {}) {
+function codexOverrides(mcp, { wsl = false, mount = '/mnt', replaceEntries = {} } = {}) {
   const args = [], warnings = [], included = [];
   for (const name of Object.keys(mcp?.servers || {})) {
-    const original = mcp.servers[name], replacement = c.replacement(replaceEntries, name);
-    if (replacement.has && replacement.entry === null) continue;
-    const entry = replacement.has ? replacement.entry : original;
+    const original = mcp.servers[name];
+    const entry = Object.hasOwn(replaceEntries, name) ? replaceEntries[name] : original;
+    if (entry === null) continue;
     const reason = codexEntryReason(name, entry);
     if (reason) { warnings.push({ names: [name], text: `${serverLabel(name)}: skipped on Codex: ${reason}` }); continue; }
     included.push(name);
@@ -141,8 +141,8 @@ module.exports = {
     // Every project override is redacted in the stored command (Spec §3): '-c' then 'key=value'.
     const redactions = [];
     for (let i = projectStart + 1; i < argv.length; i += 2) redactions.push(i);
-    const names = context?.tools && !tooLarge ? Object.keys(context.mcp?.servers || {}).filter(name => { const replacement = c.replacement(context.replaceEntries, name); return !(replacement.has && replacement.entry === null) && !codexEntryReason(name, replacement.has ? replacement.entry : context.mcp.servers[name]); }) : [];
-    return { argv, warnings, redactions, loaded: c.loadedTools(names, context?.mcp, context?.mount) };
+    const names = context?.tools && !tooLarge ? Object.keys(context.mcp?.servers || {}).filter(name => { const entry = Object.hasOwn(context.replaceEntries || {}, name) ? context.replaceEntries[name] : context.mcp.servers[name]; return entry !== null && !codexEntryReason(name, entry); }) : [];
+    return { argv, warnings, redactions, loaded: c.loadedTools(names, context?.mcp, context?.mount, context?.replaceEntries) };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('Ask Codex to do anything'); }, answerPrompts() { return null; },

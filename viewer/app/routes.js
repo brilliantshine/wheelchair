@@ -11,7 +11,8 @@ const settings = require('./settings.js');
 const diagramSensitivity = require('./diagram-sensitivity.js');
 const usage = require('./usage.js');
 const balancer = require('./balancer.js');
-const { PROVIDERS, cliOf } = require('./providers.js');
+const harnesses = require('./harnesses.js');
+const { PROVIDERS, DISPLAY_NAMES, cliOf } = require('./providers.js');
 const threadsModule = require('./threads.js');
 const UPLOAD_LIMIT = 25 * 1024 * 1024;
 const HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox";
@@ -90,6 +91,16 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   }
   if (bits[0] === 'new-thread' && bits.length === 1 && request.method === 'GET') {
     return send(response, 200, await newThread(hub, url.searchParams.get('machine') || 'hub'));
+  }
+  if (bits[0] === 'harnesses' && bits.length === 1 && request.method === 'GET') return send(response, 200, await harnesses.describe(hub, url.searchParams.get('fresh') === '1'));
+  if (bits[0] === 'onboarding' && bits.length === 1 && request.method === 'GET') return send(response, 200, await harnesses.onboarding(hub));
+  if (bits[0] === 'machines' && bits.length === 5 && bits[2] === 'harnesses' && bits[4] === 'install' && ['GET', 'POST', 'DELETE'].includes(request.method)) {
+    const name = bits[1], provider = bits[3];
+    if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
+    if (!(await hub.state.resolveMachine(await hub.machines(), name))) throw appError(404, 'machine not found');
+    if (request.method === 'POST' && (await settings.load(hub)).harnesses[provider] === false) return send(response, 409, { error: `${DISPLAY_NAMES[provider]} is switched off` });
+    try { const result = await hub.client.passThrough(name, `/v1/harnesses/${provider}/install`, request.method, body); return send(response, result.status, result.body); }
+    catch { return send(response, 502, { error: `${name} isn't reachable.` }); }
   }
   if (bits[0] === 'settings') return handleSettings(hub, request, response, url, bits, body);
   if (bits[0] === 'usage') {
@@ -204,6 +215,28 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (request.method === 'POST') { const result = await diagramSensitivity.write(hub, body); return send(response, result.status, result.body); }
   }
   if (bits.length === 1 && request.method === 'GET') return send(response, 200, { ...await settings.describe(hub), reserved_provider: await reservedLabel(hub, await settings.load(hub)) });
+  if (bits[1] === 'harnesses' && bits.length === 3 && request.method === 'PUT') {
+    const provider = bits[2];
+    if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
+    if (typeof body.enabled !== 'boolean') throw appError(400, 'enabled must be a boolean');
+    await settings.update(hub, (value) => { value.harnesses[provider] = body.enabled; if (!body.enabled && !harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
+    if (!body.enabled) {
+      // Stop any install of this harness on every known machine; the answers are ignored.
+      hub.machines().then((all) => { for (const name of Object.keys(all || {})) Promise.resolve().then(() => hub.client.passThrough(name, `/v1/harnesses/${provider}/install`, 'DELETE', {})).catch(() => {}); }).catch(() => {});
+    }
+    return send(response, 200, await settings.describe(hub));
+  }
+  if (bits[1] === 'lessons' && bits.length === 3 && request.method === 'PUT') {
+    const role = bits[2];
+    if (!settings.ROLES.has(role) || !body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !['edits', 'removals'].includes(key)) || !Array.isArray(body.edits) || !Array.isArray(body.removals) || body.edits.some((edit) => !edit || typeof edit !== 'object' || Array.isArray(edit) || Object.keys(edit).some((key) => !['id', 'text'].includes(key)) || typeof edit.id !== 'string' || !settings.validLessonText(edit.text)) || body.removals.some((id) => typeof id !== 'string')) throw appError(400, 'invalid lesson edits');
+    const value = await settings.update(hub, (current) => {
+      const list = current.lessons[role];
+      if (body.edits.some((edit) => !list.some((item) => item.id === edit.id))) throw appError(409, 'an agent removed a lesson you edited; reload to see the current list');
+      for (const edit of body.edits) { const item = list.find((entry) => entry.id === edit.id); item.text = edit.text; item.saved_by = 'user'; item.saved_at = new Date().toISOString(); }
+      current.lessons[role] = list.filter((item) => !body.removals.includes(item.id));
+    });
+    return send(response, 200, { lessons: value.lessons[role] });
+  }
   if (bits[1] === 'accounts') {
     if (bits.length === 2 && request.method === 'POST') {
       let account;
@@ -251,7 +284,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
     }
   }
   if (bits[1] === 'balancing' && bits.length === 2 && request.method === 'PUT') {
-    const value = await settings.update(hub, (value) => { for (const [key, v] of Object.entries(body)) { if (!settings.BALANCING.includes(key) || !settings.validBalancing(key, v)) throw appError(400, `invalid ${key}`); value[key] = v; } });
+    const value = await settings.update(hub, (value) => { for (const [key, v] of Object.entries(body)) { if (!settings.BALANCING.includes(key) || !settings.validBalancing(key, v)) throw appError(400, `invalid ${key}`); value[key] = v; } if (!harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
     return send(response, 200, { ...Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])), reserved_provider: await reservedLabel(hub, value) });
   }
   if (bits[1] === 'models' && request.method === 'PUT') {
@@ -311,6 +344,10 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (!['read-only', 'full'].includes(body.aside_access)) throw appError(400, 'aside_access must be read-only or full');
         value.aside_access = body.aside_access;
       }
+      if (body.auto_merge !== undefined) {
+        if (!['off', 'on'].includes(body.auto_merge)) throw appError(400, 'auto_merge must be off or on');
+        value.auto_merge = body.auto_merge;
+      }
       if (body.review_families !== undefined) {
         if (!['both', 'claude', 'gpt', 'gemini', 'kimi', 'openrouter'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude, gpt, gemini, kimi or openrouter');
         value.review_families = body.review_families;
@@ -340,7 +377,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         for (const role of ['reviewer', 'verifier', 'mapper', 'scout', 'scout-heavy']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));

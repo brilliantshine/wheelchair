@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 'use strict';
+const { wrapEntries, cacheKey } = require('./lib/win-tool-wrap');
 const { TryService } = require('./lib/try');
+const { providers, loadRecipes } = require('./lib/harness-recipes');
+const harnessInstall = require('./lib/harness-install');
 const { createProjectTools } = require('./lib/project-tools');
 const { TOOL_ROLES, readProjectMcp, hasWindowsProgram, serverLabel } = require('./lib/project-mcp');
 const { windowsTarget, rewriteUrl } = require('./lib/win-mark');
@@ -492,26 +495,33 @@ class MachineService {
   }
   sweepAgyTools() {
     if (!this.stateDir) return;
-    const dir = path.join(this.stateDir, 'agy-tools');
-    let entries;
-    // Read the directory first so a machine with no Antigravity tool files never asks tmux.
-    try { entries = fs.readdirSync(dir); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return; }
-    if (!entries.length) return;
+    const specs = [
+      { dir: path.join(this.stateDir, 'agy-tools'), name: entry => decodeURIComponent(entry), legacy: true },
+      { dir: path.join(this.stateDir, 'settings'), name: entry => entry.endsWith('.mcp.json') ? entry.slice(0, -'.mcp.json'.length) : null },
+      { dir: path.join(this.stateDir, 'win-ready'), name: entry => entry },
+    ];
+    const scans = specs.map(spec => {
+      let entries;
+      try { entries = fs.readdirSync(spec.dir); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return { ...spec, decoded: [] }; }
+      const decoded = entries.map(entry => {
+        let name;
+        try { name = spec.name(entry); safeName(name, 'session name'); if (!name.startsWith('wc-')) name = null; } catch { name = null; }
+        return { entry, name };
+      }).filter(item => spec.legacy || item.name);
+      return { ...spec, decoded };
+    });
+    if (!scans.some(scan => scan.decoded.length)) return;
     const starting = new Set(this.startingNames.keys());
     const live = this.liveTmux();
     if (!live) return;
+    for (const { dir, decoded } of scans) {
     const groups = new Map();
-    const decoded = entries.map(entry => {
-      let name;
-      try { name = decodeURIComponent(entry); safeName(name, 'session name'); if (!name.startsWith('wc-')) name = null; } catch { name = null; }
-      const item = { entry, name };
-      if (name) {
-        const tmuxName = name.replace(/[.:]/g, '_');
-        if (!groups.has(tmuxName)) groups.set(tmuxName, []);
-        groups.get(tmuxName).push(item);
-      }
-      return item;
-    });
+    for (const item of decoded) {
+      if (!item.name) continue;
+      const tmuxName = item.name.replace(/[.:]/g, '_');
+      if (!groups.has(tmuxName)) groups.set(tmuxName, []);
+      groups.get(tmuxName).push(item);
+    }
     const protectedEntries = new Set();
     const mtime = item => {
       if (!('mtime' in item)) {
@@ -547,6 +557,7 @@ class MachineService {
       if (age === null || Date.now() - age < 60000) continue;
       try { fs.rmSync(path.join(dir, item.entry), { recursive: true, force: true }); }
       catch (error) { this.log(error); }
+    }
     }
   }
   // Spec "Machine service on the hub": a live wc-* tmux session missing from sessions.json (a lost or
@@ -744,20 +755,7 @@ class MachineService {
       return fs.realpathSync(worktree) === fs.realpathSync(path.join(this.stateDir, 'worktrees', project, 'wc', thread));
     } catch { return false; }
   }
-  async tmuxPath() {
-    return new Promise(resolve => {
-      let stdout = '', done = false;
-      const finish = value => { if (!done) { done = true; clearTimeout(timer); resolve(value); } };
-      let child;
-      try { child = spawn('tmux', ['show-environment', '-g', 'PATH'], { stdio: ['ignore', 'pipe', 'ignore'] }); }
-      catch { return resolve(process.env.PATH || ''); }
-      const timer = setTimeout(() => { child.kill('SIGKILL'); finish(process.env.PATH || ''); }, 2000);
-      child.stdout.setEncoding('utf8');
-      child.stdout.on('data', chunk => { stdout += chunk; });
-      child.on('error', () => finish(process.env.PATH || ''));
-      child.on('close', code => finish(code === 0 && stdout.startsWith('PATH=') ? stdout.slice(5).replace(/\r?\n$/, '') : (process.env.PATH || '')));
-    });
-  }
+  async tmuxPath() { return process.env.PATH || ''; }
   validProjectToolsState(value) {
     const plain = v => v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype;
     const lines = v => Array.isArray(v) && v.every(line => plain(line) && Array.isArray(line.names) && line.names.every(name => typeof name === 'string') && typeof line.text === 'string');
@@ -843,7 +841,7 @@ class MachineService {
     }
   }
   launchEnv(session, adapter) {
-    return [['WHEELCHAIR_LANE', '1'], ...(adapter.sessionNameEnv ? [['WHEELCHAIR_SESSION_NAME', session.name]] : []), ['WHEELCHAIR_STATE_DIR', this.stateDir], ['WHEELCHAIR_MACHINE_ORIGIN', `http://${this.config.host}:${this.config.port}`], ...Object.entries(adapter.loginEnv(session.account_dir))];
+    return [['PATH', process.env.PATH || ''], ['WHEELCHAIR_LANE', '1'], ...(adapter.sessionNameEnv ? [['WHEELCHAIR_SESSION_NAME', session.name]] : []), ['WHEELCHAIR_STATE_DIR', this.stateDir], ['WHEELCHAIR_MACHINE_ORIGIN', `http://${this.config.host}:${this.config.port}`], ...Object.entries(adapter.loginEnv(session.account_dir))];
   }
   async startIn(input, name, adapter, account, dir, options, createdWorktree, created, promptPath, rolePrompt) {
     const worktree = created.worktree;
@@ -860,10 +858,18 @@ class MachineService {
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
     const context = { wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
+    if (wsl && tools && mcp && ['claude', 'codex', 'agy'].includes(input.cli)) {
+      const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
+      const commonDir = common.ok && common.stdout.trim() || worktree;
+      context.replaceEntries = wrapEntries({ servers: mcp.servers, wsl, mount,
+        readyFile: path.join(this.stateDir, 'win-ready', name),
+        cacheFile: (n, e) => path.join(this.stateDir, 'win-tool-lists', `${cacheKey(commonDir, n, e)}.json`) });
+    }
     if (this.win?.detected?.kernel && tools && ['claude', 'codex', 'agy'].includes(input.cli) && mcp) {
       const names = (mcp.windows || []).filter(name => Object.hasOwn(mcp.servers, name));
       if (names.length) {
-        context.replaceEntries = Object.create(null);
+        // Marked HTTP tools; wrapEntries above only replaces stdio entries, so names never collide.
+        context.replaceEntries ||= Object.create(null);
         await Promise.all(names.map(async name => {
           const entry = mcp.servers[name];
           try {
@@ -883,11 +889,19 @@ class MachineService {
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
     const loaded = built.loaded || [];
     const windowsTools = loaded.some(entry => entry.windows);
+    const wrappedTools = loaded.some(entry => entry.wrapped);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
     if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
-    if (built.mcpConfigPath) await atomicWrite(built.mcpConfigPath, JSON.stringify(built.mcpConfig), 0o600);
+    try {
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
+    if (built.mcpConfig) {
+      const file = built.mcpConfig.path;
+      await mkdir(path.dirname(file));
+      const temp = `${file}.${crypto.randomUUID()}.tmp`;
+      try { await fsp.writeFile(temp, JSON.stringify(built.mcpConfig.data), { mode: 0o600 }); await fsp.rename(temp, file); }
+      finally { await fsp.rm(temp, { force: true }); }
+    }
     if (built.toolFiles) {
       const root = path.join(this.stateDir, 'agy-tools');
       for (const file of built.toolFiles.files) {
@@ -926,7 +940,7 @@ class MachineService {
     const env = this.launchEnv(session, adapter);
     if (tools) {
       const started = Date.now();
-      await this.win?.beforeLaunch(session, { windowsTools });
+      await this.win?.beforeLaunch(session, { windowsTools, wrappedTools });
       let timer;
       const remaining = Math.max(0, (this.win?.readyTimeoutMs ?? 45000) - (Date.now() - started));
       const extra = await Promise.race([
@@ -941,7 +955,7 @@ class MachineService {
       const lines = require('./lib/win-prompt').promptLines({ health: this.win?.bridgeHealth(), wsl, loaded, mcp, copy: extra.WHEELCHAIR_WINDOWS_PROJECT, cli: session.cli, codexMode: session.codex_mode, version, unityExists });
       if (lines.length) await atomicWrite(promptPath, rolePrompt + "\n\n" + lines.join("\n"));
     }
-    env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
+    env.splice(adapter.sessionNameEnv ? 3 : 2, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
     const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
     const redactions = new Set(built.redactions || []);
     session.command = built.argv.map((arg, index) => redactions.has(index) ? `${arg.slice(0, arg.indexOf('=') + 1)}<redacted>` : arg);
@@ -956,6 +970,11 @@ class MachineService {
     if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
     if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
     this.sessions[name] = session;
+    } catch (error) {
+      try { await this.win?.removeReady(name); } catch (cleanupError) { this.log(cleanupError); }
+      await this.removeMcpConfig(name);
+      throw error;
+    }
     if (windowsTools) this.win?.afterLaunch(session);
     await this.persistSessions();
     try {
@@ -977,7 +996,13 @@ class MachineService {
     if (!session.end_reason) { session.end_reason = reason; this.copyHashes?.delete(session.name); await this.persistSessions(); }
     return this.stopFatal(session);
   }
+  async removeMcpConfig(name) {
+    if (!this.stateDir) return;
+    try { await fsp.rm(path.join(this.stateDir, 'settings', `${name}.mcp.json`), { force: true }); }
+    catch (error) { this.log(error); }
+  }
   async stopFatal(session) {
+    await this.removeMcpConfig(session.name);
     this.win?.onStop(session);
     this.tmux(['kill-session', '-t', `=${session.name}`]);
     const live = this.liveTmux();
@@ -1224,6 +1249,7 @@ class MachineService {
   async stop(name) {
     const session = this.managed(name);
     if (session.end_reason) return this.stopFatal(session);
+    await this.removeMcpConfig(name);
     this.tmux(['kill-session', '-t', name]);
     this.copyHashes?.delete(name);
     session.prompt_open = false;
@@ -1650,7 +1676,7 @@ class MachineService {
     await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
     this.tmux(['kill-session', '-t', cli === 'pi' ? `=${name}:` : cli === 'kimi' ? `=${name}` : name]);
-    const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
+    const cmd = ['env', `PATH=${process.env.PATH || ''}`, ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
     const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
     const cwd = adapter.loginCwd?.(this.stateDir);
     const result = this.tmux(['new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...(cwd ? ['-c', cwd] : []), ['sh', '-c', script].map(shellQuote).join(' ')]);
@@ -1721,7 +1747,7 @@ class MachineService {
     for (const entry of accounts) delete entry.authenticated;
     if (pi.problem) for (const entry of accounts) if (entry.cli === 'pi') { entry.logged_in = false; delete entry.problem; }
     if (kimi.problem) for (const entry of accounts) if (entry.cli === 'kimi') { entry.logged_in = false; delete entry.problem; }
-    return { version: this.version, claude, codex, agy, kimi, pi, accounts, sessions: this.sessionList() };
+    return { version: this.version, claude, codex, agy, kimi, pi, recipes: Object.fromEntries(providers.map(p => [p, !!loadRecipes()[p]])), accounts, sessions: this.sessionList() };
   }
   piVersionNote(version) {
     const status = this.piVersionStatus(version, { logged_in: true });
@@ -2113,6 +2139,16 @@ class MachineService {
           return result.ok ? send(response, 200, { level: input.level, text: result.stdout }) : send(response, 422, failure(result));
         } finally { this.sensitivityWriting = false; }
       }
+      if (pathBits[0] === 'v1' && pathBits[1] === 'harnesses' && pathBits[3] === 'install' && pathBits.length === 4 && ['GET', 'POST', 'DELETE'].includes(request.method)) {
+        await this.authorize(request, 'hub');
+        const provider = pathBits[2];
+        if (!providers.includes(provider)) return send(response, 404, { error: 'unknown provider' });
+        if (request.method === 'GET') return send(response, 200, harnessInstall.state(provider));
+        if (request.method === 'DELETE') return harnessInstall.stopJob(provider) ? send(response, 202, { state: 'cancelling' }) : send(response, 409, { error: 'not installing' });
+        if (!loadRecipes()[provider]) return send(response, 404, { error: 'no recipe' });
+        if (!harnessInstall.start(provider)) return send(response, 409, { error: 'already installing' });
+        return send(response, 202, { state: 'running' });
+      }
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); await this.reconcilePiExits(); return send(response, 200, this.status()); }
       if (request.method === 'POST' && url.pathname === '/v1/project-tools/unity-prep') {
         await this.authorize(request, 'hub');
@@ -2311,8 +2347,8 @@ class MachineService {
         const waiting = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).filter(f => f.endsWith('.json'));
         if (waiting.length && this.config.hub_url) await this.drainSpool('cards');
         const behind = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).some(f => f.endsWith('.json'));
-        if (input.kind === 'done') {
-          const unavailable = { error: 'the app is unreachable; the done card was not recorded; try again in a minute' };
+        if (input.kind === 'done' || input.kind === 'lesson') {
+          const unavailable = { error: input.kind === 'lesson' ? 'the app did not confirm the lesson; run the same card again in a minute (repeating it is safe)' : 'the app is unreachable; the done card was not recorded; try again in a minute' };
           if (behind || !this.config.hub_url) return send(response, 503, unavailable);
           try {
             const payload = { ...input, session: agent.name, thread_id: agent.thread_id, delivery_id: input.delivery_id || crypto.randomUUID() };

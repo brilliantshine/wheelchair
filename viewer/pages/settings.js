@@ -5,7 +5,7 @@
 // copy of its own beyond the unsaved editor drafts.
 (() => {
   const API = '/wheelchair/api';
-  const SECTIONS = [['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools']];
+  const SECTIONS = [['harnesses', 'Harnesses'], ['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools']];
   const TIERS = [
     ['light', 'Light', 'Spelled-out changes, few files'],
     ['standard', 'Standard', 'Most building'],
@@ -36,6 +36,8 @@
   let selected = null; // a template id, or 'new'
   let draft = null;
   let confirming = false;
+  let lessonEdit = null; // the open Lessons learned editor: { role, texts, removals, confirming }
+  let lessonThreads = null; // thread id -> title, read when a Lessons editor opens
   let fullPrompt = null; // {text} | {error}
   let styleDraft = null;
   let preview = { running: false, after: null, error: '' };
@@ -482,7 +484,7 @@
 
     const head = h('tr', {}, h('th', { scope: 'col', text: 'Provider' }),
       TIERS.map(([, label, desc]) => h('th', { scope: 'col' }, h('span', { class: 'tier-name', text: label }), h('span', { class: 'tier-desc', text: desc }))));
-    const body = PROVIDERS.map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
+    const body = PROVIDERS.filter(([provider]) => harnessOn(provider)).map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
       h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli }), provider === 'openrouter' && h('span', { class: 'hint', text: 'Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.' })),
       TIERS.map(([slot, label]) => {
         const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
@@ -492,7 +494,7 @@
     const table = h('table', { class: 'tiers' }, h('thead', {}, head), h('tbody', {}, body));
 
     // One segmented choice per CLI; each saves its own key through the preferences route.
-    const modeGroup = (key, label, choices) => {
+    const modeGroup = (key, label, choices, saved = SAVED) => {
       const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
         choices.map(([value, text]) => h('button', {
           type: 'button', role: 'radio', 'aria-checked': String(data[key] === value), text,
@@ -504,7 +506,7 @@
               data[key] = res[key];
               inlineErr(row, '');
               renderPanel();
-              setNote(SAVED, false);
+              setNote(saved, false);
             } catch (e) { inlineErr(row, e.message); setNote('', false); }
           },
         })));
@@ -539,6 +541,7 @@
     const asideHint = data.aside_access === 'full'
       ? 'Never asks, no sandbox: an aside can read anywhere, run commands and change files.'
       : 'Reads files in the thread\'s worktree only. Runs no commands.';
+    const AUTO_MERGE_HINT = 'When on, a thread merges its own pull request once an agent has seen at least one Check it yourself step work and none broke. A thread where you chose to push something that failed its check, or a thread handed over from another machine, is never merged automatically. It applies to pull requests checked after it is turned on. It never merges past failing checks, conflicts or GitHub\'s rules.';
     const codexHint = data.codex_mode === 'unrestricted'
       ? 'Never asks, no sandbox: it can change anything on the machine. Reviewers stay read-only.'
       : 'Never asks: it can write only inside its worktree.';
@@ -588,6 +591,9 @@
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
+          h('div', { class: 'row-line' },
+            h('div', { class: 'what' }, h('span', { text: 'Merge pull requests when done' }), h('span', { class: 'hint', text: AUTO_MERGE_HINT })),
+            modeGroup('auto_merge', 'Merge pull requests when done', [['off', 'Off'], ['on', 'On']], 'Saved')),
           enterRow(),
           folderRow(),
           nameRow())),
@@ -599,7 +605,7 @@
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
-            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']])),
+            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']].filter(([v]) => v === 'both' || harnessOn(v)))),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
@@ -624,6 +630,7 @@
     selected = id;
     confirming = false;
     fullPrompt = null;
+    if (isLessons(id)) { lessonEdit = { role: id.slice(8), texts: {}, removals: new Set(), confirming: null }; draft = null; loadLessonThreads(); return; }
     const found = data.templates.find((t) => t.id === id);
     draft = found ? structuredClone(found) : blankDraft();
     if (found && !draft.switches) draft.switches = {};
@@ -706,7 +713,7 @@
     if (fullPrompt.error) return h('p', { id: 'full-prompt', class: 'inline-err', role: 'alert', text: fullPrompt.error });
     return h('div', { class: 'full-prompt-wrap' },
       h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text }),
-      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it.' }));
+      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it. Lessons marked for one AI or one project reach only agents on that AI or in that project.' }));
   }
 
   function switchRow(title, hint, control) {
@@ -827,6 +834,99 @@
       errHost);
   }
 
+  // ---------------------------------------------------------------- Lessons learned (written by agents)
+
+  const LESSON_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers' };
+  const isLessons = (id) => typeof id === 'string' && id.startsWith('lessons:');
+  const lessonList = (role) => (data.lessons && data.lessons[role]) || [];
+
+  async function loadLessonThreads() {
+    try {
+      const res = await api('/threads?view=list');
+      lessonThreads = Object.fromEntries((res.threads || []).map((t) => [t.id, t.title || t.slug || String(t.project || '').split('/').filter(Boolean).pop() || t.id]));
+      if (lessonEdit && section === 'templates') renderPanel();
+    } catch { lessonThreads = lessonThreads || {}; }
+  }
+
+  function lessonMarkers(item) {
+    const marks = [];
+    if (item.provider) marks.push('only on ' + ((PROVIDERS.find((p) => p[0] === item.provider) || [])[1] || item.provider));
+    if (item.project) marks.push('only in ' + (item.project.split('/').filter(Boolean).pop() || item.project));
+    if (item.saved_by === 'user') marks.push('edited by the user');
+    return marks;
+  }
+
+  async function saveLessons(errHost) {
+    const role = lessonEdit.role;
+    const list = lessonList(role);
+    const edits = [];
+    for (const item of list) {
+      if (lessonEdit.removals.has(item.id)) continue;
+      const text = lessonEdit.texts[item.id];
+      if (text === undefined || text === item.text) continue;
+      if (!text.length || text.length > 300) { inlineErr(errHost, 'A lesson needs 1 to 300 characters.'); return; }
+      edits.push({ id: item.id, text });
+    }
+    const removals = [...lessonEdit.removals];
+    lessonEdit.saving = true;
+    setLessonsBusy(true);
+    try {
+      await api('/settings/lessons/' + encodeURIComponent(role), { method: 'PUT', body: { edits, removals } });
+      await reload(false);
+      lessonEdit = { role, texts: {}, removals: new Set(), confirming: null };
+      setNote(SAVED, false);
+      renderPanel();
+    } catch (e) {
+      lessonEdit.saving = false;
+      setLessonsBusy(false);
+      inlineErr(errHost, e.message);
+    }
+  }
+
+  // While a save is in flight nothing can be typed, so no edit is lost.
+  function setLessonsBusy(busy) {
+    document.querySelectorAll('.lessons-edit .lesson-text, .lessons-edit .lesson-row button, #save-lessons').forEach((n) => {
+      const row = n.closest('.lesson-row');
+      n.disabled = busy || (n.matches('.lesson-text') && !!row && lessonEdit.removals.has(row.dataset.id));
+    });
+  }
+
+  function renderLessonEditor() {
+    const role = lessonEdit.role;
+    const plural = LESSON_PLURAL[role] || role + 's';
+    const list = lessonList(role);
+    const errHost = h('div', {});
+    const rows = list.map((item) => {
+      const removed = lessonEdit.removals.has(item.id);
+      const value = lessonEdit.texts[item.id] !== undefined ? lessonEdit.texts[item.id] : item.text;
+      const field = h('textarea', { class: 'lesson-text', rows: 2, maxLength: 300, value, disabled: removed || !!lessonEdit.saving, 'aria-label': 'Lesson text' });
+      field.addEventListener('input', () => { lessonEdit.texts[item.id] = field.value; });
+      const marks = lessonMarkers(item);
+      const title = item.thread && lessonThreads && lessonThreads[item.thread];
+      let remove;
+      if (removed) remove = h('button', { type: 'button', class: 'undo-remove', text: 'Undo', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.delete(item.id); renderPanel(); } });
+      else if (lessonEdit.confirming === item.id) remove = h('button', { type: 'button', class: 'danger confirm-remove', text: 'Really remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.add(item.id); lessonEdit.confirming = null; renderPanel(); } });
+      else remove = h('button', { type: 'button', class: 'danger remove-lesson', text: 'Remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.confirming = item.id; renderPanel(); } });
+      return h('li', { class: 'lesson-row' + (removed ? ' removed' : ''), 'data-id': item.id },
+        field,
+        h('div', { class: 'lesson-foot' },
+          h('span', { class: 'lesson-marks' },
+            marks.map((m) => h('span', { class: 'lesson-mark', text: m })),
+            title ? h('a', { class: 'lesson-from', href: '/wheelchair/app/thread?id=' + encodeURIComponent(item.thread), text: 'saved from ' + title }) : null,
+            removed ? h('span', { class: 'lesson-mark', text: 'will be removed when you save' }) : null),
+          remove));
+    });
+    return h('div', { class: 'tpl-edit lessons-edit' },
+      noteEl(),
+      h('h2', { text: 'Lessons learned · ' + (roleInfo(role)[1]) }),
+      h('p', { class: 'hint lesson-warning', text: 'Agents keep this list up to date. Editing is not recommended; a lesson you edit is marked as yours and agents leave it alone.' }),
+      list.length ? h('ul', { class: 'lesson-rows' }, rows) : h('p', { class: 'empty-note', text: `No lessons for ${plural} right now.` }),
+      list.length ? h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'primary', id: 'save-lessons', text: 'Save', disabled: !!lessonEdit.saving, onclick: () => saveLessons(errHost) }),
+        h('span', { class: 'grow', id: 'using', text: `Changes apply to ${plural} started after you save.` })) : h('p', { class: 'hint', id: 'using', text: `Changes apply to ${plural} started after you save.` }),
+      errHost);
+  }
+
   function renderTemplates() {
     if (selected === null) select(data.templates[0] ? data.templates[0].id : 'new');
     const list = h('nav', { class: 'tpl-list', 'aria-label': 'Templates' },
@@ -835,8 +935,16 @@
       h('button', { type: 'button', class: 'new', id: 'new-template', text: '+ New template', onclick: () => { select('new'); renderPanel(); } }));
     for (const [role, label] of ROLES) {
       const items = data.templates.filter((t) => t.role === role);
-      if (!items.length) continue;
+      const lessons = lessonList(role);
+      if (!items.length && !lessons.length) continue;
       list.append(h('span', { class: 'group-label', text: label }));
+      if (lessons.length) {
+        const id = 'lessons:' + role;
+        list.append(h('button', {
+          type: 'button', class: 'tpl-item tpl-lessons', 'data-lessons': role, 'aria-current': String(selected === id),
+          onclick: () => { select(id); renderPanel(); },
+        }, h('span', { class: 'nm', text: 'Lessons learned' }), h('span', { class: 'tag agent-tag', text: 'Written by agents · ' + lessons.length })));
+      }
       for (const t of items) {
         const tags = [];
         if (t.in_use) tags.push(t.scope === 'all' ? 'in use' : 'in use here');
@@ -847,7 +955,7 @@
         }, h('span', { class: 'nm', text: t.name }), h('span', { class: 'tag', text: tags.join(' · ') })));
       }
     }
-    return h('div', { class: 'tpl' }, list, draft ? renderEditor() : h('p', { class: 'empty-note', text: 'No templates yet.' }));
+    return h('div', { class: 'tpl' }, list, lessonEdit && isLessons(selected) ? renderLessonEditor() : draft ? renderEditor() : h('p', { class: 'empty-note', text: 'No templates yet.' }));
   }
 
   // ---------------------------------------------------------------- Writing style
@@ -996,7 +1104,7 @@
 
   const PLAN_OPTIONS = {
     claude: [['unknown', 'Not sure'], ['pro', 'Pro'], ['max5', 'Max 5x'], ['max20', 'Max 20x']],
-    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
+    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['prolite', 'Pro Lite'], ['pro', 'Pro'], ['promax', 'Pro Max']],
     gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
     kimi: [['unknown', 'Not sure']],
     openrouter: [['unknown', 'Not sure']],
@@ -1057,6 +1165,7 @@
 
   // The timer runs only while Accounts or Usage is shown.
   function syncSection() {
+    if (section === 'harnesses') enterHarnesses(); else stopHarnesses();
     const live = section === 'accounts' || section === 'usage';
     if (live && !usageTimer) usageTimer = window.wcPoller(refreshUsage, 30000);
     if (!live && usageTimer) { usageTimer.stop(); usageTimer = null; }
@@ -1083,11 +1192,13 @@
     if (!signCard) return;
     clearInterval(signCard.poll); clearTimeout(signCard.close);
     signCard.el.remove();
+    const inRow = signCard.harness;
     signCard = null;
     refreshUsage();
+    if (inRow) loadHarnesses(true);
   }
 
-  function openSignin(account, machine) {
+  function openSignin(account, machine, harness) {
     closeSignin();
     const terminal = `/wheelchair/app/terminal?login=${encodeURIComponent(account.id)}&machine=${encodeURIComponent(machine)}`;
     const status = h('p', { class: 'hint waiting', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Starting sign-in on ' + machine + '…'));
@@ -1105,7 +1216,7 @@
         inlineErr(codeBox, e.message);
         if (e.status === 409 && account.provider === 'openrouter') {
           field.value = '';
-          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine) }));
+          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine, harness) }));
         }
       }
     } });
@@ -1116,9 +1227,9 @@
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
       h('div', { class: 'head-line' }, h('h2', { text: `Sign in ${account.name} on ${machine}` }), closeBtn),
       status, actions, codeBox, pasteWrap, h('div', { class: 'actions' }, termLink));
-    const card = { account: account.id, machine, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
+    const card = { account: account.id, provider: account.provider, machine, harness: harness || null, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
     signCard = card;
-    const hostEl = document.getElementById('signin-host');
+    const hostEl = harness ? document.querySelector(`[data-signin-host="${harness}"]`) : document.getElementById('signin-host');
     if (hostEl) hostEl.replaceChildren(root);
 
     const fail = () => {
@@ -1283,8 +1394,12 @@
     } catch (e) { adding.warn = false; renderPanel(); inlineErr(document.querySelector('.add-form') || form, e.message); }
   }
 
+  function addProviders() { return Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini' && harnessOn(v)); }
+
   function addForm() {
-    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: 'claude', name: '', plan: 'unknown', warn: false }; renderPanel(); } });
+    const offered = addProviders();
+    if (!offered.length) return null;
+    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: offered[0][0], name: '', plan: 'unknown', warn: false }; renderPanel(); } });
     const form = h('form', { class: 'box add-form', onsubmit: (ev) => {
       ev.preventDefault();
       if (!adding.name.trim()) { inlineErr(form, 'Give the account a name.'); return; }
@@ -1293,7 +1408,7 @@
       saveAdd(form);
     } });
     const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; renderPanel(); } },
-      Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini').map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
+      offered.map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
     const name = h('input', { id: 'add-name', value: adding.name, 'aria-label': 'Account name', placeholder: 'Name, e.g. Work', required: true, oninput: () => { adding.name = name.value; } });
     const plan = planSelect(adding.provider, adding.plan);
     plan.id = 'add-plan';
@@ -1323,8 +1438,8 @@
       h('div', {}, h('h1', { text: 'Accounts' }),
         h('p', { class: 'lede', text: 'The logins agents run on. New sessions pick the account with the most room.' }),
         usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
-      h('div', { id: 'signin-host' }, signCard ? signCard.el : null),
-      Object.entries(PROVIDER_NAME).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
+      h('div', { id: 'signin-host' }, signCard && !signCard.harness ? signCard.el : null),
+      Object.entries(PROVIDER_NAME).filter(([provider]) => harnessOn(provider)).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
         h('h2', { text: label }),
         provider === 'gemini' && h('p', { class: 'hint', text: 'Antigravity supports one account per machine' }),
         accountRows(provider).filter((a) => provider !== 'gemini' || a.id === 'default-gemini').map(accountCard),
@@ -1348,10 +1463,22 @@
   // An order editor: the providers in order, up/down to move; leads may end in "then whatever's left".
   function orderEditor(key, label) {
     ensureDraft();
-    const real = balDraft[key].filter((p) => p !== 'any');
+    const all = balDraft[key].filter((p) => p !== 'any');
+    const real = all.filter(harnessOn);
+    const left = all.filter((p) => !harnessOn(p)); // switched off: hidden here, kept in the saved order
     const hasAny = balDraft[key].includes('any');
-    const missing = Object.keys(PROVIDER_NAME).filter((p) => !real.includes(p));
-    const commit = (list) => { balDraft[key] = hasAny && key === 'lead_order' ? [...list, 'any'] : list; renderPanel(); };
+    const missing = Object.keys(PROVIDER_NAME).filter((p) => harnessOn(p) && !real.includes(p));
+    // Switched-off providers keep their saved index; the visible ones fill the other slots in their new order.
+    const commit = (list) => {
+      const total = left.length + list.length;
+      const out = new Array(total).fill(null);
+      const rest = [];
+      for (const p of left) { const i = all.indexOf(p); if (i < total && out[i] === null) out[i] = p; else rest.push(p); }
+      const vis = list.slice();
+      for (let i = 0; i < total; i++) if (out[i] === null) out[i] = vis.length ? vis.shift() : rest.shift();
+      balDraft[key] = hasAny && key === 'lead_order' ? [...out, 'any'] : out;
+      renderPanel();
+    };
     const move = (i, d) => { const next = real.slice(); const [item] = next.splice(i, 1); next.splice(i + d, 0, item); commit(next); };
     return h('div', { class: 'order', 'data-order': key, role: 'group', 'aria-label': label },
       h('ol', {}, real.map((p, i) => h('li', {}, h('span', { text: PROVIDER_NAME[p] }),
@@ -1360,7 +1487,7 @@
         real.length > 1 && h('button', { type: 'button', class: 'small', text: 'Remove', 'aria-label': `Leave ${PROVIDER_NAME[p]} out`, onclick: () => commit(real.filter((x) => x !== p)) })))),
       missing.map((p) => h('button', { type: 'button', class: 'small', text: `+ ${PROVIDER_NAME[p]}`, onclick: () => commit([...real, p]) })),
       key === 'lead_order' && h('label', { class: 'check' },
-        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...real, 'any'] : real; renderPanel(); } }),
+        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...all, 'any'] : all.slice(); renderPanel(); } }),
         h('span', { text: "then whatever's left" })));
   }
 
@@ -1373,6 +1500,7 @@
       inlineErr(host, '');
       renderPanel();
       setNote(SAVED, false);
+      loadHarnesses(true);
     } catch (e) { inlineErr(host, e.message); setNote('', false); }
   }
 
@@ -1462,6 +1590,286 @@
     return row;
   }
 
+  // ---------------------------------------------------------------- Harnesses
+
+  const HARNESSES = [
+    ['claude', 'Claude Code', 'Anthropic', 'https://docs.claude.com/en/docs/claude-code/setup'],
+    ['gpt', 'Codex', 'OpenAI', 'https://github.com/openai/codex'],
+    ['gemini', 'Antigravity', 'Google', 'https://antigravity.google/cli'],
+    ['kimi', 'Kimi Code', 'Kimi', 'https://code.kimi.com'],
+    ['openrouter', 'Pi (OpenRouter)', 'Pi', 'https://www.npmjs.com/package/@earendil-works/pi-coding-agent'],
+  ];
+  // A switch the hub does not report counts as on (an older hub, or a fresh read still on its way).
+  function harnessOn(provider) { return !data || !data.harnesses || data.harnesses[provider] !== false; }
+
+  // hz: the Harnesses section's own state. `jobs` holds the last install state per "machine/provider",
+  // `polls` the running install pollers.
+  const hz = { data: null, error: '', machine: null, seq: 0, jobs: {}, polls: {}, reachTimer: null, checked: null, confirmOff: null, rowErr: {}, active: false, pending: null };
+
+  function harnessMachine() {
+    const list = (hz.data && hz.data.machines) || [];
+    if (!list.length) return null;
+    if (!list.some((m) => m.name === hz.machine)) {
+      const start = hz.data.can_start && hz.data.can_start.machine;
+      hz.machine = (list.find((m) => m.name === start) || list.find((m) => m.reachable) || list[0]).name;
+    }
+    return list.find((m) => m.name === hz.machine);
+  }
+
+  function stopPoll(key) {
+    const run = hz.polls[key];
+    if (run) { run.stopped = true; clearTimeout(run.timer); delete hz.polls[key]; }
+  }
+  function stopHarnesses() {
+    hz.active = false;
+    for (const key of Object.keys(hz.polls)) stopPoll(key);
+    clearTimeout(hz.reachTimer); hz.reachTimer = null;
+    hz.checked = null;
+  }
+  function paintHarnesses() { if (section === 'harnesses') renderPanel(); }
+
+  function enterHarnesses() {
+    stopHarnesses();
+    hz.active = true;
+    loadHarnesses(true);
+  }
+
+  async function loadHarnesses(fresh) {
+    const seq = ++hz.seq;
+    let res;
+    try { res = await api('/harnesses' + (fresh ? '?fresh=1' : '')); } catch (e) {
+      if (seq !== hz.seq) return;
+      hz.pending = null;
+      hz.error = e.message; paintHarnesses();
+      if (hz.active) { clearTimeout(hz.reachTimer); hz.reachTimer = setTimeout(() => loadHarnesses(true), 5000); }
+      return;
+    }
+    if (seq !== hz.seq) return;
+    hz.pending = null;
+    hz.data = res; hz.error = '';
+    if (data && res.switches) data.harnesses = { ...(data.harnesses || {}), ...res.switches };
+    const machine = harnessMachine();
+    clearTimeout(hz.reachTimer); hz.reachTimer = null;
+    if (!hz.active) return;
+    paintHarnesses();
+    if (machine && !machine.reachable) {
+      hz.checked = null;
+      hz.reachTimer = setTimeout(() => loadHarnesses(true), 5000);
+    } else if (machine && hz.checked !== machine.name) {
+      for (const key of Object.keys(hz.polls)) stopPoll(key);
+      hz.checked = machine.name;
+      for (const [provider] of HARNESSES) if (harnessOn(provider)) pollInstall(machine.name, provider, 'GET');
+    }
+  }
+
+  // Poll one provider's install on one machine every 2 s until it is idle, failed or succeeded.
+  // A 502, network error or no answer keeps polling and marks the row as unreachable meanwhile.
+  function pollInstall(machine, provider, firstMethod) {
+    const key = machine + '/' + provider;
+    stopPoll(key);
+    const run = { stopped: false, timer: null };
+    hz.polls[key] = run;
+    const url = API + `/machines/${encodeURIComponent(machine)}/harnesses/${encodeURIComponent(provider)}/install`;
+    const finish = () => { stopPoll(key); };
+    const again = () => { if (!run.stopped) run.timer = setTimeout(() => step('GET'), 2000); };
+    async function step(method) {
+      if (run.stopped) return;
+      if (machine !== hz.machine) { finish(); return; }
+      let res = null; let body = {};
+      try {
+        res = await fetch(url, { method, signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+        body = await res.json().catch(() => ({}));
+      } catch { res = null; }
+      if (run.stopped) return;
+      if (machine !== hz.machine) { finish(); return; }
+      if (!res || res.status >= 500) {
+        hz.jobs[key] = { ...(hz.jobs[key] || { state: 'running', tail: '' }), offline: true };
+        paintHarnesses(); return again();
+      }
+      if (res.status === 404 && method === 'POST') { finish(); delete hz.jobs[key]; loadHarnesses(true); return; }
+      if (res.status === 404) { finish(); delete hz.jobs[key]; paintHarnesses(); return; }
+      if (res.status === 409 && method === 'POST') {
+        if (body.error === 'already installing') return step('GET');
+        finish(); delete hz.jobs[key]; hz.rowErr[provider] = body.error || 'Couldn\'t start the install.'; paintHarnesses(); return;
+      }
+      if (!res.ok) { hz.jobs[key] = { state: 'failed', tail: body.error || ('http ' + res.status) }; finish(); paintHarnesses(); return; }
+      const tail = body.output_tail || '';
+      if (body.state === 'running') {
+        const before = hz.jobs[key];
+        hz.jobs[key] = { state: 'running', tail, confirmed: true, cancelling: !!(before && before.cancelling), cancelErr: before && before.cancelErr };
+        paintHarnesses(); return again();
+      }
+      finish();
+      if (body.state === 'failed') { hz.jobs[key] = { state: 'failed', tail, explanation: body.explanation || null }; paintHarnesses(); return; }
+      if (body.state === 'cancelled') { hz.jobs[key] = { state: 'cancelled', tail, explanation: null }; paintHarnesses(); return; }
+      delete hz.jobs[key];
+      if (body.state === 'succeeded') refreshAfterInstall(machine, provider); else paintHarnesses();
+    }
+    step(firstMethod);
+  }
+
+  // Cancel a running install: DELETE through the hub; the poll already running reports the outcome.
+  async function cancelInstall(machine, provider) {
+    const key = machine + '/' + provider;
+    const job = hz.jobs[key];
+    if (!job || job.cancelling) return;
+    job.cancelErr = undefined;
+    job.cancelling = true; paintHarnesses();
+    let res = null;
+    try { res = await fetch(API + `/machines/${encodeURIComponent(machine)}/harnesses/${encodeURIComponent(provider)}/install`, { method: 'DELETE', signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }); } catch { res = null; }
+    const now = hz.jobs[key];
+    if (!now || now.state !== 'running') return;
+    if (res && (res.status === 202 || res.status === 409)) return;
+    now.cancelling = false;
+    now.cancelErr = (!res || res.status >= 500) ? `Couldn't cancel: ${machine} isn't reachable.` : `Couldn't cancel: update wheelchair on ${machine}.`;
+    paintHarnesses();
+  }
+
+  // A just-installed CLI's version is read in the background on the machine, so the first
+  // fresh status can say "installed" with no version yet. Re-fetch a few times, 2 s apart,
+  // until the version shows, so the row fills in without reopening the section. A sign-in
+  // card opened meanwhile stops the retries: a repaint would take focus from its fields.
+  async function refreshAfterInstall(machine, provider, tries = 4, first = true) {
+    if (!first && signCard) return;
+    await loadHarnesses(true);
+    if (!hz.active || machine !== hz.machine || tries <= 1 || signCard) return;
+    const m = ((hz.data && hz.data.machines) || []).find((entry) => entry.name === machine);
+    const st = m && m.harnesses && m.harnesses[provider];
+    if (st && st.installed && !st.version) setTimeout(() => refreshAfterInstall(machine, provider, tries - 1, false), 2000);
+  }
+
+  async function setHarness(provider, enabled) {
+    hz.confirmOff = null; delete hz.rowErr[provider];
+    try {
+      const res = await api('/settings/harnesses/' + encodeURIComponent(provider), { method: 'PUT', body: { enabled } });
+      if (data && res && res.harnesses) data.harnesses = res.harnesses;
+    } catch (e) { hz.rowErr[provider] = e.message; paintHarnesses(); return; }
+    if (!enabled && signCard && (signCard.harness === provider || signCard.provider === provider)) closeSignin();
+    if (adding) { const first = addProviders()[0]; if (!first) adding = null; else if (!addProviders().some(([v]) => v === adding.provider)) { adding.provider = first[0]; adding.plan = 'unknown'; adding.warn = false; } if (section === 'accounts') renderPanel(); }
+    paintHarnesses();
+    await loadHarnesses(true);
+    const machine = harnessMachine();
+    if (enabled && machine && machine.reachable) pollInstall(machine.name, provider, 'GET');
+    else if (!enabled && machine) { stopPoll(machine.name + '/' + provider); delete hz.jobs[machine.name + '/' + provider]; paintHarnesses(); }
+  }
+
+  // The first account of the provider that is neither retired nor paused.
+  function signinAccount(provider) {
+    const mine = ((data && data.accounts) || []).filter((a) => a.provider === provider && !((data.retired_accounts || []).includes(a.id)));
+    return { usable: mine.find((a) => !a.paused) || null, any: mine.length > 0 };
+  }
+
+  function linkReasons(text) {
+    return String(text).split(/(Workers try first|Leads try)/).map((part) => (part === 'Workers try first'
+      ? h('a', { href: '#usage', text: part }) : part === 'Leads try' ? h('a', { href: '#models', text: part }) : part));
+  }
+
+  function harnessRow(info, machine) {
+    const [provider, name, vendor, docs] = info;
+    const st = (machine.harnesses || {})[provider] || { installed: false, version: null, signed_in: false, recipe: false };
+    const on = harnessOn(provider);
+    const job = hz.jobs[machine.name + '/' + provider];
+    const stateText = st.signed_in ? 'Signed in' : st.installed ? 'Installed' + (st.version ? ' ' + st.version : '') : 'Not installed';
+    const actions = h('div', { class: 'h-actions' });
+    const extra = [];
+    const install = (label) => h('button', { type: 'button', class: 'small primary', text: label, 'aria-label': `${label} ${name}`, onclick: () => {
+      const target = hz.machine; // always the machine the picker shows
+      if (!target || hz.pending) return;
+      delete hz.rowErr[provider];
+      hz.jobs[target + '/' + provider] = { state: 'running', tail: '' };
+      pollInstall(target, provider, 'POST'); paintHarnesses();
+    } });
+    if (on) {
+      if (job && job.state === 'running') {
+        actions.append(h('span', { class: 'hint waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }),
+          document.createTextNode(job.offline ? `Can't reach ${machine.name}, retrying…` : 'Installing…')));
+        if (job.confirmed && !job.offline) {
+          if (job.cancelling) actions.append(h('span', { class: 'hint', text: 'Cancelling…' }));
+          else actions.append(h('button', { type: 'button', class: 'small', text: 'Cancel', 'aria-label': `Cancel installing ${name}`, onclick: () => cancelInstall(machine.name, provider) }));
+        }
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (job && job.state === 'failed' && st.recipe !== false) {
+        actions.append(h('span', { class: 'inline-err', role: 'alert', text: 'Install failed' }));
+        if (st.recipe !== null) actions.append(install('Try again'));
+        if (job.explanation) extra.push(h('p', { class: 'h-explain', text: job.explanation }));
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (job && job.state === 'cancelled' && !st.installed) {
+        actions.append(h('span', { class: 'hint', text: 'Install cancelled' }), install('Install'));
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (!st.installed) {
+        if (st.recipe === false) actions.append(h('a', { class: 'btn-link', href: docs, target: '_blank', rel: 'noopener', text: `Install from ${vendor}'s site` }));
+        else if (st.recipe === true) actions.append(install('Install'));
+      } else if (!st.signed_in) {
+        const { usable, any } = signinAccount(provider);
+        if (usable) actions.append(h('button', { type: 'button', class: 'small primary', text: 'Sign in', 'aria-label': `Sign in ${name}`, onclick: () => { openSignin(usable, machine.name, provider); paintHarnesses(); } }));
+        else if (any) actions.append(h('span', { class: 'hint', text: `All ${name} accounts are paused ` }), h('a', { href: '#accounts', text: 'Open Accounts' }));
+        else actions.append(h('a', { href: '#accounts', text: 'Add an account' }));
+      }
+    }
+    const confirming = hz.confirmOff === provider;
+    const count = (hz.data.threads_using || {})[provider] || 0;
+    const sw = h('label', { class: 'h-switch' },
+      h('input', { type: 'checkbox', role: 'switch', checked: on, 'aria-label': `Use ${name}`, onchange: (ev) => {
+        if (ev.target.checked) return setHarness(provider, true);
+        ev.target.checked = true;
+        if (count > 0) { hz.confirmOff = provider; paintHarnesses(); } else setHarness(provider, false);
+      } }),
+      h('span', { text: 'Use' }));
+    const row = h('div', { class: 'h-row' + (on ? '' : ' off'), 'data-provider': provider },
+      h('div', { class: 'h-head' },
+        h('div', { class: 'h-name' }, h('strong', { text: name }), h('span', { class: 'hint h-state', text: stateText })),
+        sw),
+      actions,
+      confirming && h('div', { class: 'actions h-confirm' },
+        h('span', { text: `${count} ${count === 1 ? 'thread uses' : 'threads use'} ${name}. Their running agents keep going, but no new agent starts on it. Leave it out?` }),
+        h('button', { type: 'button', class: 'danger small', text: 'Leave it out', onclick: () => setHarness(provider, false) }),
+        h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { hz.confirmOff = null; paintHarnesses(); } })),
+      (hz.rowErr[provider] || (job && job.state === 'running' && job.cancelErr)) && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] || job.cancelErr }),
+      extra,
+      h('div', { class: 'h-signin', 'data-signin-host': provider }, signCard && signCard.harness === provider && signCard.machine === machine.name ? signCard.el : null));
+    return row;
+  }
+
+  function renderHarnesses() {
+    const head = h('div', {}, h('h1', { text: 'Harnesses' }),
+      h('p', { class: 'lede', text: 'The agent programs wheelchair can run. Install and sign in to the ones you use, and leave out the rest.' }));
+    if (!hz.data) {
+      return h('div', { class: 'models harnesses' }, head, hz.error
+        ? h('p', { class: 'inline-err', role: 'alert', text: 'Could not read harnesses: ' + hz.error })
+        : h('p', { class: 'v-empty waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Loading harnesses…')));
+    }
+    const machines = hz.data.machines || [];
+    const machine = harnessMachine();
+    const parts = [head];
+    if (machines.length > 1) {
+      parts.push(h('label', { class: 'h-picker' }, h('span', { text: 'Machine' }),
+        h('select', { 'aria-label': 'Machine', onchange: (ev) => {
+          hz.machine = ev.target.value; hz.checked = null; hz.confirmOff = null; hz.pending = hz.machine;
+          for (const key of Object.keys(hz.polls)) stopPoll(key);
+          paintHarnesses();
+          loadHarnesses(false);
+        } }, machines.map((m) => h('option', { value: m.name, text: m.name, selected: m.name === hz.machine })))));
+    }
+    const cs = hz.data.can_start;
+    if (cs && ((cs.lead && !cs.lead.ok) || (cs.worker && !cs.worker.ok))) {
+      const reasons = [['lead', cs.lead], ['worker', cs.worker]].filter(([, r]) => r && !r.ok && r.reason).map(([, r]) => r.reason);
+      parts.push(h('div', { class: 'h-notice', role: 'status' },
+        h('strong', { text: `Agents can't start yet on ${cs.machine}:` }),
+        [...new Set(reasons)].map((r) => h('p', {}, linkReasons(r)))));
+    }
+    if (!machine) parts.push(h('p', { class: 'v-empty', text: 'No machines are known yet.' }));
+    else if (hz.pending === machine.name) {
+      parts.push(h('p', { class: 'v-empty waiting', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode(`Checking ${machine.name}…`)));
+    } else if (!machine.reachable) {
+      parts.push(h('p', { class: 'hint waiting h-offline', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode(`Can't reach ${machine.name}, retrying…`)));
+    } else {
+      const old = HARNESSES.some(([p]) => ((machine.harnesses || {})[p] || {}).recipe === null);
+      if (old) parts.push(h('p', { class: 'h-notice', role: 'status', text: 'This machine needs updating: re-run ./install.sh on it.' }));
+      parts.push(h('div', { class: 'box h-rows' }, HARNESSES.map((info) => harnessRow(info, machine))));
+    }
+    return h('div', { class: 'models harnesses' }, parts);
+  }
+
   // ---------------------------------------------------------------- shell
 
   function renderSections() {
@@ -1483,6 +1891,7 @@
     if (!data) return;
     const view = section === 'tools' ? renderProjectTools()
       : section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
+      : section === 'harnesses' ? renderHarnesses()
       : section === 'accounts' ? renderAccounts() : section === 'usage' ? renderUsage() : renderModels();
     const keep = document.getElementById('error');
     panel.replaceChildren(keep, view);
@@ -1492,6 +1901,12 @@
 
   function readHash() {
     const key = location.hash.replace(/^#/, '');
+    const lessonRole = (/^templates\/lessons\/([a-z-]+)$/.exec(key) || [])[1];
+    if (lessonRole && LESSON_PLURAL[lessonRole]) {
+      if (section !== 'templates') { section = 'templates'; setNote('', false); styleNote = ''; diagram = null; }
+      if (selected !== 'lessons:' + lessonRole) select('lessons:' + lessonRole);
+      return;
+    }
     const next = SECTIONS.some(([k]) => k === key) ? key : 'models';
     if (next !== section) { section = next; setNote('', false); styleNote = ''; diagram = null; }
   }

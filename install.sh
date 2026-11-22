@@ -7,6 +7,32 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Before anything else, the viewer stop included: from a worktree this script would take over the machine.
 . "$ROOT/install/guard.sh"
 guard_canonical_clone "$ROOT" "${0##*/}"
+
+missing=0
+for tool in node npm tmux git gh python3 curl; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    if [[ ${WHEELCHAIR_PLATFORM:-$(uname -s)} == Darwin ]]; then
+      printf 'Missing %s: brew install %s' "$tool" "$tool" >&2
+    else
+      printf 'Missing %s: install %s with your package manager' "$tool" "$tool" >&2
+    fi
+    [[ $tool == gh ]] && printf ' (https://cli.github.com)' >&2
+    printf '\n' >&2
+    missing=1
+  fi
+done
+if command -v node >/dev/null 2>&1; then
+  node_version=$(node -e 'process.stdout.write(process.versions.node)')
+  if [[ ! $node_version =~ ^[0-9]+(\.[0-9]+)*$ ]] || (( ${node_version%%.*} < 20 )); then
+    if [[ ${WHEELCHAIR_PLATFORM:-$(uname -s)} == Darwin ]]; then
+      printf 'Node 20 or newer required (found %s): brew install node\n' "$node_version" >&2
+    else
+      printf 'Node 20 or newer required (found %s): install node with your package manager\n' "$node_version" >&2
+    fi
+    missing=1
+  fi
+fi
+(( missing == 0 )) || exit 1
 cache_root="$HOME/.cache/agent-graphs"
 serving_file="$cache_root/.serving"
 unit_file="$HOME/.config/systemd/user/wheelchair-viewer.service"
@@ -51,8 +77,7 @@ else
 fi
 
 if (( ! claude_present && ! codex_present && ! agy_present && ! kimi_present && ! pi_present )); then
-  printf '%s: no claude, codex, agy, kimi or pi found; installed nothing\n' "${0##*/}" >&2
-  exit 1
+  echo "No agent CLI yet. After install, open the app: its setup checklist installs them from Settings."
 fi
 
 # This comes before every install action. The command succeeds when there is no viewer, and a
@@ -113,12 +138,10 @@ for i in "${!retired_names[@]}"; do
   fi
 done
 
-if (( claude_present || codex_present || agy_present || kimi_present || pi_present )); then
-  if "$ROOT/codex/model.sh" init; then
-    echo "codex models: initialized"
-  else
-    echo "codex models: warning — not initialized" >&2
-  fi
+if "$ROOT/codex/model.sh" init; then
+  echo "codex models: initialized"
+else
+  echo "codex models: warning — not initialized" >&2
 fi
 
 # Testing seam: setting this to 1 skips the viewer dependency installs.
@@ -388,6 +411,9 @@ configure_service() {
     }
     service_path="${cli_path%/*}:$service_path"
   done
+  for dir in "$HOME/.local/bin" "$HOME/.kimi-code/bin"; do
+    case ":$service_path:" in *":$dir:"*) ;; *) service_path="$service_path:$dir" ;; esac
+  done
   if [[ $(platform) == Darwin ]]; then
     configure_launch_agents "$node_path" "$service_path"
   else
@@ -433,6 +459,7 @@ EOF
   fi
   fi
   configure_tailscale_serve "$origin"
+  echo "Next: open the link below; the home page walks you through installing and signing in to an agent."
   node "$ROOT/viewer/server.js" --url
 }
 

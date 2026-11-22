@@ -63,8 +63,18 @@ async function acceptCard(hub, payload) {
       return { ok: true, duplicate: true, id: payload.delivery_id };
     }
     const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
+    if (payload.kind === 'lesson' && typeof input.for === 'string' && !['lead', 'sub-lead', 'worker', 'mapper'].includes(session.role)) {
+      throw appError(422, `a ${session.role} may not save lessons for ${input.for}s`);
+    }
     const checked = validate(payload.kind, input, session.role, { machine: true });
-    if (!checked.ok) throw appError(422, checked.reason);
+    if (!checked.ok) throw appError(payload.kind === 'lesson' ? 400 : 422, checked.reason);
+
+    if (checked.card.kind === 'lesson') {
+      const lesson = await require('./settings.js').applyLesson(hub, checked.card, session.role, thread.project, thread.id);
+      if (!lesson.changed) return { card: { ok: true, lesson: lesson.id }, targetName: null };
+      checked.card.lesson = lesson.id;
+      checked.card.snapshot = lesson.snapshot;
+    }
 
     if (checked.card.passes_on !== undefined && !thread.cards.some((item) => item.id === checked.card.passes_on && item.kind === 'message' && item.asks === true)) {
       throw appError(422, 'passes_on names no question in this thread');
@@ -157,6 +167,9 @@ async function acceptCard(hub, payload) {
 
     const stored = ['image', 'file'].includes(checked.card.kind) ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
     const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name, deliveryId: payload.delivery_id });
+    if (card.kind === 'done') {
+      for (const needs of thread.cards) if (needs.kind === 'needs' && needs.auto_merge === true && !needs.answered && needs.auto_merge_head !== card.head) resolveCard(needs, 'app', 'Replaced by a newer version');
+    }
     if (card.kind === 'sudo') thread.sudo_index[card.request_id] = card.id;
     if (card.kind === 'message' || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }
     if (card.kind === 'message' && !crossThread) {
@@ -164,6 +177,7 @@ async function acceptCard(hub, payload) {
       target.queue ||= [];
       const message = { text: `[wc:from ${session.name}] ${card.asks === true ? `[question ${card.id}] ` : ''}${card.text}`, source: 'session', at: new Date().toISOString() };
       target.queue.push(message);
+      if (target.started_by === session.name && target.quiet_card) require('./quiet.js').reset(thread, target);
       thread.queues[target.name] = target.queue;
     }
     if (card.kind === 'result') {
@@ -171,7 +185,7 @@ async function acceptCard(hub, payload) {
       if (session.started_by) {
         const target = hub.session(thread, session.started_by);
         target.queue ||= [];
-        target.queue.push({ text: `[wc:from ${session.name}] result: ${card.summary}`, source: 'result', at: new Date().toISOString() });
+        target.queue.push({ text: `[wc:from ${session.name}] result${card.commit ? ` (commit ${card.commit})` : ''}: ${card.summary}`, source: 'result', at: new Date().toISOString() });
         thread.queues[target.name] = target.queue;
       }
     }
@@ -190,6 +204,7 @@ async function acceptCard(hub, payload) {
     return { card, targetName, ...(crossThread ? { targetThread: crossThread, senderTitle: require('./peers.js').threadName(thread) } : {}) };
   });
   if (result.duplicate) return result;
+  if (result.card?.kind === 'check') require('./auto-merge.js').afterCheck(hub, payload.thread_id, result.card.id);
   if (result.targetName) {
     const thread = await hub.thread(payload.thread_id);
     await hub.deliver(thread, result.targetName);

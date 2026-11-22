@@ -33,9 +33,8 @@ module.exports = {
     const servers = {}, warnings = [];
     if (context.tools && context.mcp) {
       for (const [name, original] of Object.entries(context.mcp.servers)) {
-        const replacement = c.replacement(context.replaceEntries, name);
-        if (replacement.has && replacement.entry === null) continue;
-        const entry = replacement.has ? replacement.entry : original;
+        const entry = Object.hasOwn(context.replaceEntries || {}, name) ? context.replaceEntries[name] : original;
+        if (entry === null) continue;
         let reason, translated;
         if (!/^[A-Za-z0-9_-]+$/.test(name)) reason = 'its name must use only letters, digits, _ and -';
         else if (entry.type === 'sse') reason = 'uses sse, which Antigravity does not support here';
@@ -67,7 +66,7 @@ module.exports = {
         { path: path.join(plugin, 'mcp_config.json'), text: JSON.stringify({ mcpServers: servers }, null, 2) + '\n' },
       ] };
     }
-    return { loaded: c.loadedTools(Object.keys(servers), context.mcp, context.mount), ...(warnings.length ? { warnings } : {}), ...(toolFiles ? { toolFiles } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(toolFiles ? ['--add-dir', toolFiles.dir] : []), ...(session.permission_mode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--mode', 'auto']), ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
+    return { loaded: c.loadedTools(Object.keys(servers), context.mcp, context.mount, context.replaceEntries), ...(warnings.length ? { warnings } : {}), ...(toolFiles ? { toolFiles } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(toolFiles ? ['--add-dir', toolFiles.dir] : []), ...(session.permission_mode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--mode', 'auto']), ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('? for shortcuts') && !onboarding.some(s => pane.includes(s)); },

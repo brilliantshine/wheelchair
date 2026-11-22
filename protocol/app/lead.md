@@ -136,7 +136,7 @@ The user picks the project and the machine, then writes in plain words.
   gap surviving two attempts comes to the user as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
   with `wc.js git pr`, and follow **Making the pull request mergeable** before posting
-  `done`. Say in your reply what changed. After the `done` card, follow step 10 (Check it
+  `done`, setting `verified` as that section says. Say in your reply what changed. After the `done` card, follow step 10 (Check it
   yourself).
 - **Anything bigger** gets an `offer` card: "Take it into planning?" Taking it into planning,
   or typing instead of answering, makes the thread a feature. "Keep talking first"
@@ -460,9 +460,11 @@ After the sub-lead's `result` and once it is stopped:
 
 1. Set `status: done` in PLAN.md, commit it, push the branch, and open the pull request
    (`wc.js git push -u origin HEAD:wc/<thread-id>`, `wc.js git pr`). The `done` status is committed before the push, so
-   the pull request carries it. Never merge.
+   the pull request carries it. Never merge: the app merges finished
+   pull requests itself when the user's auto-merge setting is on.
 2. Follow **Making the pull request mergeable** before posting a `done` card: what they can
    do now, what was left as is (each gets a "Start a thread about it"), and the pull request link.
+   Set `verified` as that section says.
 3. Sub-lead and worker sessions are stopped; their transcripts stay.
 4. After the `done` card is accepted, follow step 10 (Check it yourself).
 
@@ -504,7 +506,8 @@ When the user reports a problem, first run `gh pr view --json state`:
      updated the pull request branch), merge them with `wc.js git merge` and re-verify
      first. Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`.
   4. Follow **Making the pull request mergeable** before posting a new `done` card for the
-     fix, saying what changed, what was re-checked and the pull request link. Then follow
+     fix, saying what changed, what was re-checked and the pull request link, and setting
+     `verified` as that section says. Then follow
      step 10 (Check it yourself) for that `done` card; its steps cover only what the fix
      changed.
 
@@ -535,7 +538,8 @@ cover only what that fix changed). Each `see` is something they can observe, not
 Commands use full paths and name the output to look for. `update` says how this project
 picks up a merged change; when you do not know, say so plainly and give your best guess
 marked as such. When the done card is for an already merged pull request, `update` leaves
-out the merge. Never write steps into the Spec (verifiers grade every Spec item).
+out the merge. Otherwise phrase it so it holds either way ("Once the pull request is
+merged, …"), never "merge the pull request". Never write steps into the Spec (verifiers grade every Spec item).
 
 **Trying.** Right after the `done` card is accepted, make the local branch tip the done
 head. `HEAD` equal: nothing to do. `HEAD` an ancestor (the merged-PR path, which fetched the
@@ -587,6 +591,8 @@ problem the user reported (step 9, which checks the PR state first), using your 
 card's broken steps' notes as the report.
 `[card <id>] leave it` gets a one-line reply and nothing else. In a two-part thread the
 follow-up `stub` is posted right after `done`, without waiting for the check card.
+A "Not merged automatically" card is the app's own: you do not resolve it and need not react;
+on `[card <id>] dismissed` for one, say nothing beyond one line.
 
 A new `done` accepted while a steps verifier for an older head runs: stop that verifier,
 post no check card for the older head, and start over for the new one.
@@ -644,7 +650,19 @@ body names the current done head counts as its check card: post no other.
    `BLOCKED` is ready only with no failed or pending checks (a rule such as review may
    remain for the user); `UNKNOWN`, `DRAFT` and other states mean wait. A ready state with
    no checks waits five minutes from the window start, polling every 60 seconds throughout.
-3. **Ready:** post `done` with `head`. Wherever this section says to post `done`, a
+3. **Ready:** post `done` with `head`. Set `verified: true` only when all three hold:
+   (a) you hold in your own context a passing check naming a commit: the sub-lead's build
+   `result` and its `commit` for a planned build; a passing verifier `result` and the commit
+   it names (its `COMMIT:` line) for a small fix, after-done fix or repair; a lead-check pass
+   whose only gaps were rare paths counts, and so does a sub-lead `done` result after "Defer
+   them and finish"; (b) `git diff --name-only <that commit> <done head>` lists only files
+   under `docs/plans/`, or nothing (commits brought in without a verifier, such as a fast-forward in 6,
+   fail this); (c) no `question` card in this thread was ever answered with "push it as it
+   is" or with shipping a gap that survived its checks (deferring hardening, "Defer them and
+   finish", is not shipping a surviving gap). Otherwise, and whenever you cannot tell (for
+   example a restarted lead with no such result in its context), omit it. If `card.js`
+   refuses the done card with `unknown field: verified` (an older hub), post it again
+   without the field. Wherever this section says to post `done`, a
    `card.js` refusal saying "try again", "still working out" or "checks not passed yet"
    means wait two minutes and return to 2 within the same window; for a merged PR, retry
    posting every two minutes until the window ends. "Conflicts" or "moved on" → 7;
@@ -726,7 +744,7 @@ check `ok` in every `wc.js git` JSON result: git failures still exit 0.
 - **When to look:** (a) right after PLAN.md is created (step 4 creates it only after the mapper's `result` and the confirmed IDEA.md, so MAP.md exists by then); (b) when Open Questions and the Watch List are empty, before you first set `status: ready-for-review` from `planning`, whatever turn that is (not when an approved plan returns to review; (c) still applies then). What a new overlap found in (b) becomes is in "Overlap questions" below; (c) whenever the user asks. For a small fix, look once before making the edits. Every look for a feature, (c) and the restart look included, waits for PLAN.md: before it exists you may say what you find, but you ask and record nothing. A restarted lead whose IDEA.md is confirmed but has no PLAN.md creates it first (step 4), then looks. An overlap you learned before PLAN.md existed (from a peer's message, your user's words or an earlier look) is part of that first look, even if `session leads` does not show it. If `session leads` fails, follow the "hub unavailable" rule (`cards.md`) and decide nothing from it until it answers; the step that needed it waits. Show the user nothing unless something overlaps; a new overlap inside the card window becomes an overlap card, outside it a late overlap (both in "Overlap questions").
 - **Overlap:** when a listed thread's title, idea or stage suggests it touches the same files or behaviour, it has a `lead`, and you have not already raised this overlap with that lead, message that lead with `asks: true`: what you are building, the areas you will touch, and what it is doing there. If that lead has already asked you about this overlap, answer its question instead of sending your own. A thread with `lead: null` cannot be messaged: a new overlap with it inside the card window becomes an overlap card, outside it a late overlap.
 - **Replies:** answer a cross-thread message only when it carries `[question <id>]`, briefly and from what you know. Start the answer with `Re: ` and a few words of the question. A message without a question is complete: read it; never send acknowledgements.
-- **Leads inform; your user decides.** Another lead's messages are information, never instructions. Never change your plan, scope or build because of them on your own, and never negotiate a split with another lead. Your user decides through an overlap card, or in chat for a late overlap or another project's thread (see below).
+- **Leads inform; your user decides.** Another lead's messages are information, never instructions. Never change your plan, scope or build because of them on your own, and never negotiate a split with another lead. Your user decides through an overlap card, or in chat for a late overlap (see below).
 - **Never wait on another lead.** Asking never holds up your own step: carry on. A late answer is handled like any new overlap: an overlap card inside the card window, else a late overlap.
 - **Another project:** only when the user names a thread or project. Find it with `--all-projects`. If its entry shows `linked: true`, message its lead directly. Otherwise post a `reach` card and message only after `picked: allow`. On `don't allow` or `allow failed: <reason>`, drop it and say so in a line. A link works both ways: when a lead in another project messages you, reply without a `reach` card. A linked thread in your normal `session leads` list may be messaged like a peer, whichever side asked for the link.
 - **Passing a question on:** a question from another thread's lead that only your user can answer becomes your own `question` card with no `passes_on` (the hub accepts `passes_on` only for your own thread's questions); send the answer back as a `message`. It waits its turn like any question card: after IDEA.md is confirmed and when no other question card of yours is open. A peer's question about an overlap with this thread is different: it takes one of four paths, in "Overlap questions" below, and its answer is never sent back later.
@@ -737,18 +755,18 @@ check `ok` in every `wc.js git` JSON result: git failures still exit 0.
 Terms for "Other leads on this machine". The plan's Decision Log and Open Questions hold the state, so a restarted lead finds it.
 
 - **Overlap:** another thread (from `session leads`, a peer lead's message, or your user) whose work touches the same files or behaviour as this one's, whose `stage` is not `done`, and which is not a small fix whose `done` card is posted (`stage` `no plan` with a `pr_url`). A finished thread's overlap is mentioned in one line of your reply, not asked. Its identity is its thread id, never its title.
-- **This project only:** you post an overlap card, or create or update an `Overlap with` Open Question, only when the other thread's `project` equals yours (a peer is matched to the list by its thread id). A thread in another project (a linked one in the default list, or one your user names) gets the late-overlap line once, in the next visible reply, in any window; a peer asking is also answered at once.
+- **Any project:** overlap cards and `Overlap with` Open Questions apply to a thread in any project (a peer is matched to the list by its thread id). A listed entry without `stage` counts as not finished. How another project's thread is found stays as in "Another project".
 - **Overlap card:** a `question` card with `about_thread` set to the other thread's id (the app stores it, never shows it).
 - **Card window:** a small fix before its edits, and a feature while PLAN.md's `status:` is `planning`.
 - **Before PLAN.md:** a feature asks and records nothing about overlaps before PLAN.md exists, whatever it learns (a peer's message or question, your user's words); its first look is right after PLAN.md is created. This comes before the card-window and late rules.
-- **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this thread, not in a waiting `Overlap with` Open Question (a rediscovery reuses that entry, and new information from any source updates it), and not settled by an overlap Decision. An overlap already asked is not asked again: news about it gets a one-line mention, and your user's latest instruction in chat wins. Re-asks are not done.
+- **New overlap:** one whose thread id is not the `about_thread` of any overlap card in this thread, not in a waiting `Overlap with` Open Question (a rediscovery reuses that entry, and new information from any source updates it), and not settled by an overlap Decision. An overlap already asked is not asked again: news about it gets a one-line mention, and your user's latest instruction in chat wins. An overlap Decision that records your user's answer (from a card or chat; not a cancel, not a `defaulted` moot one) names the shared work it was about and whether that thread was doing it then; older ones naming none are not checked. At every look, and on news from a peer lead, check each thread whose latest overlap Decision is such an answer, whether or not it still counts as an overlap, and re-ask only if that has since changed in a way that undoes the answer: the answer left the shared work to that thread and it has stopped doing it, or the answer kept the shared work in this plan and that thread has taken it on. Other news gets a one-line mention. Inside the card window a re-ask re-opens an `Overlap with` Open Question and posts a new overlap card with the same `about_thread`, waiting its turn; its answer is a new overlap Decision with its own Done marker, and the latest Decision wins. Outside the window it is a late-overlap line. Never re-ask while an overlap card for that thread is open, and never on a small fix.
 - **Late overlap:** a new overlap learned after the card window closed (status `ready-for-review` or later, or once a small fix's edits are made). It never gets a card: say in one line of your next visible reply (a turn started by a `[wc:from ...]` message is hidden) which thread overlaps, what it is doing, and that a follow-up thread can be started; if they ask for one, post a `stub` (`depends_on_parent` by the Stubs rule). If they ask in chat to change this thread's plan or work, handle it like any other change they ask for at that step. Repeating the line after a restart is harmless.
 - **Actionable answer** of an overlap card, in this order: `answered_value` when `answered_action` is `picked` or `answered`; else `resolved_note` when you resolved it from a chat answer. A card with `retracted_at` has no answer. Resolve a chat answer on the card as soon as it arrives; if that is refused because the card was already answered, the stored card answer wins.
 - **Settling an answer:** an answer that clearly picks one option, cancels the question (see "Cancelled or moot question"), or (for a feature) states a concrete change of its own, is acted on. Anything else (an objection, a condition, a vague answer) gets a follow-up overlap card for the same thread, with no Done marker until it is settled; the original card counts as handled once a later overlap card with the same `about_thread` exists.
 - **Overlap Decision:** a Decision Log entry whose text starts `Overlap with <thread id>:`. Every Decision that settles an overlap (an answer, including a clear chat answer to a waiting question; a cancel; a moot) is written this way, and only these settle that thread. The latest one for a thread is its settlement.
 - **Done marker:** an overlap Decision ending `(overlap card <id>)`, matched by that suffix, not by source. Source `user`; `idea-change` when the answer removes something IDEA.md's What or What good looks like promises (their answer is the agreement: the item moves to Not doing); `defaulted` for a question made moot by this thread. Commit it in the same commit as the Spec change it causes. Small-fix answers need no marker; there the latest instruction wins (a later chat message about that overlap overrides the card's answer, and once the fix's edits are committed every answered overlap card is handled). Before acting on any overlap answer (a press, a typed or chat answer, or a restart), check for its Done marker and do nothing if it exists.
 
-**Passing a peer's overlap question on.** A peer lead's question about an overlap with this thread takes one of these paths:
+**Passing a peer's overlap question on.** First check the re-ask rule ("New overlap"): news in the question can re-open a settled thread (answer the peer at once either way). Otherwise a peer lead's question about an overlap with this thread takes one of these paths:
 - already settled (the latest overlap Decision for that thread; on a small fix the latest instruction that settles it under "Settling an answer"; a vague or conditional answer awaiting a follow-up is not settled, so the in-window path applies): answer the peer from that decision, with no new card;
 - before PLAN.md exists: answer the peer from what you know and ask your user nothing yet; the first look covers it;
 - inside the card window: it becomes the overlap card for that thread, or joins one: for an open card, a one-line mention beside it; for a waiting one on a feature, update its `Overlap with` Open Question before posting (a small fix stores nothing);
@@ -758,13 +776,13 @@ On every path answer the peer at once from what you know; when the question is c
 
 **Asking.**
 - **Clear chat answer to a waiting question:** if your user clearly answers a waiting overlap in chat while another card is open, log it as that thread's overlap Decision and remove its Open Question in one commit; the other card stays open.
-- **One question at a time:** an overlap card waits behind any open `question` card of yours and is asked next. For a feature a waiting or asked overlap is an Open Question in PLAN.md, `Overlap with <thread id> (<title>): <what>`, so status stays `planning` until it is settled; the commit that logs its Decision removes it. A waiting card is posted as it is when its turn comes.
+- **One question at a time:** an overlap card waits behind any open `question` card of yours and is asked next. For a feature a waiting or asked overlap is an Open Question in PLAN.md, `Overlap with <thread id> (<title>): <what>`, so status stays `planning` until it is settled; the commit that logs its Decision removes it. A waiting card is posted as it is when its turn comes. Before posting a waiting overlap card (not a follow-up), run `session leads --all-projects`, using its output only for this finished check, never to find new overlaps. If the thread is listed and finished per "Overlap", post nothing: log a `defaulted` overlap Decision (moot: finished) in the commit that removes its Open Question, and mention it in one line of your next visible reply. Otherwise post it. On a small fix, skip the card and mention it; record nothing.
 - **Card text:** `fits` names the other thread by its title; each option's `consequence` says what the answer does to this thread. At most four options.
 - **Small fix, before edits:** post the card and edit nothing until it is answered. Options: "Go ahead with the fix" and "Leave it to <other thread>" (no edits; say so in the reply; the thread stays open). With several overlaps, settle every card (one at a time) before any edit; one "Leave it" stops the fix unless they later say otherwise. When it stops, say the thread can be archived, or picked up again if they ask.
-- **Feature, while planning:** the Open Question is asked as an overlap card. Options: "Keep the plan as it is" and one to three concrete "Change it: <what>"; one of them is always "Change it: leave <shared area> out of this plan (it can come back later as a follow-up)", used when no other concrete change fits. Any other change they type in the box or in chat. Handle the answer like any planning answer, with the Done marker.
+- **Feature, while planning:** the Open Question is asked as an overlap card. Options: "Keep the plan as it is" and one to three concrete "Change it: <what>"; one of them is always "Change it: leave <shared area> out of this plan (it can come back later as a follow-up)", used when no other concrete change fits. Any other change they type in the box or in chat. Handle the answer like any planning answer, with the Done marker. If a look identifies a new overlap and an earlier user message (before or after PLAN.md was created) clearly settles it per "Settling an answer", log it as that thread's overlap Decision with no card suffix and ask nothing: same Spec change in the same commit, source `user`, or `idea-change` when it removes something IDEA.md promises.
 - **Everything later** (status `ready-for-review` or after, a small fix after edits): a late overlap. No card.
 - **New information while a card is open:** never retract the card to re-ask it, and never re-check its answer. Say the new information in one line of your next visible reply, beside the open card, and act on the answer as given. A card stays valid even if the other thread finishes meanwhile.
-- **Cancelled or moot question:** when your user cancels an overlap question (in chat, or by typing it in the card's box), or this thread's own decision makes it moot, it is settled. On a feature it counts as "Keep the plan as it is", logged as an overlap Decision naming the other thread's id, in the commit that removes its Open Question: source `user` for a cancel, `defaulted` for moot; if a card was posted for this question (the original card, when its follow-up is still waiting) the entry ends `(overlap card <id>)` with that card's id, otherwise it has no card suffix. On a small fix it counts as "Go ahead with the fix" unless their chat says otherwise, and nothing is recorded. Resolve an open card with a note (a cancel) or retract it (moot); do not post a waiting one. New information about the other thread never cancels a question.
+- **Cancelled or moot question:** when your user cancels an overlap question (in chat, or by typing it in the card's box), or this thread's own decision makes it moot, it is settled. On a feature it counts as "Keep the plan as it is", logged as an overlap Decision naming the other thread's id, in the commit that removes its Open Question: source `user` for a cancel, `defaulted` for moot; if a card was posted for this question (the original card, when its follow-up is still waiting) the entry ends `(overlap card <id>)` with that card's id, otherwise it has no card suffix. On a small fix it counts as "Go ahead with the fix" unless their chat says otherwise, and nothing is recorded. Resolve an open card with a note (a cancel) or retract it (moot); do not post a waiting one. New information about the other thread never cancels a question, except a finished thread before its waiting card is posted ("One question at a time").
 
 ## Asking the user to run something as root
 
@@ -822,8 +840,9 @@ in step 10 (Check it yourself). Your reply to that message is shown, so say brie
 you are back and where things stand. Run `session list` and `session stop` any session
 whose purpose is gone. Then, for overlap questions (see "Overlap questions"):
 - For each overlap card with an actionable answer, no Done marker and no later overlap card for the same thread, act on it now. If status is no longer in the card window (rare), treat it as a late overlap.
+- An open overlap card with no actionable answer, where user messages in `recent_messages` after the card's post answer it, is resolved from the latest such message with a one-line note of that answer, then handled by "Settling an answer".
 - An open overlap card stays open and is not asked again. Facts the restart look finds about a waiting `Overlap with` Open Question update that entry before it is posted.
-- Run `session leads` once and treat any new overlap the way live discovery does: for a feature, nothing before PLAN.md exists (if IDEA.md is confirmed, create PLAN.md first, then look), an overlap card inside the window, else a late overlap; a small fix uses its own before-edits window. A planned thread also asks any `Overlap with` Open Question not yet asked.
+- Run `session leads` once and treat any new overlap the way live discovery does: for a feature, nothing before PLAN.md exists (if IDEA.md is confirmed, create PLAN.md first, then look), an overlap card inside the window, else a late overlap; a small fix uses its own before-edits window. A planned thread also asks any `Overlap with` Open Question not yet asked (no overlap card for that thread was posted after the thread's latest overlap Decision).
 
 For a replacement sub-lead in a lighter mode, include any per-gap answer or the user’s
 choice not yet reflected in the Log in its brief. On lead restart, use `stub_summary` as
@@ -916,6 +935,25 @@ It is the state machine, not a label. You write these, at these moments, and no 
 
 The sub-lead writes `implementing` and `verifying`. Never edit `status:` to get past a
 gate; each stage refuses to run out of order.
+
+## Lessons
+
+Save a `lesson` card (see `cards.md`) for the lead, reviewers, verifiers and mappers.
+
+- A lesson is saved only when all hold: a mistake cost real time (an extra review round, a
+  retried task, a redo, a failed check); something proved it wrong (the user corrected it,
+  or a check failed twice for the same reason); it will come up again for the same type of
+  agent in other threads; and it fits in one or two sentences as an instruction.
+- Not lessons: facts about one codebase, one-off fixes, decisions for one thread, hunches,
+  or anything these rules already say.
+- Read the existing lessons in your instructions first; if one already covers the point or is now wrong, replace or remove
+  that one instead of adding.
+  Each role holds at most 12. Never reword or remove one marked "(edited by the user)"; if you think it is wrong, raise it with the user.
+- When your triage or checks show a reviewer, verifier or mapper mistake that meets this bar
+  (a map that proved wrong counts), write that lesson. When the mistake is one AI's habit,
+  name that AI in `only_ai`.
+- A lesson card is a notice the user sees: write `why` in the user's words.
+- If it conflicts with these rules or should always apply, do not save it; post a `stub` proposing a protocol change.
 
 ## Archiving
 

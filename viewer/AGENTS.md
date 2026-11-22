@@ -18,6 +18,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/peers.js` | Same-machine peer and linked-thread discovery and lead summaries. |
 | `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js screen`, the invisible-screen commands). |
 | `app/quiet.js` | The quiet-turn detector: who owes a report, the reminders to an agent and its starter, and the system `needs` card, run on the queue retry timer. |
+| `app/auto-merge.js` | The opt-in auto-merge run after a `check` card is accepted: gates, GitHub readiness re-check, the exact-head REST merge, the attempt record per head and the "Not merged automatically" `needs` card. |
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
 | `app/asides.js` | Aside records, prompts, turn lifecycle and graph handling. |
 | `app/handoff.js` | Thread handoffs: the export file format and its validator, history text, the export points and quiet test, the frozen guard, export itself, the handed-off banner, Download again and the `handoffs/` start-up sweep. |
@@ -30,6 +31,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, including Project tools forwarding, module composition, and the page-facing JSON contract. |
 | `app/names.js`, `agents.js` | Lead name allocation and the public agent tree and machine reachability view. |
 | `app/providers.js` | Hub provider names, CLI mappings and labels: Claude, GPT, Antigravity (`gemini`) Kimi Code (`kimi`), and OpenRouter (`openrouter`, CLI `pi`). |
+| `app/harnesses.js` | Harness status, placement eligibility and first-run checklist. |
 | `app/balancer.js` | Provider and account placement, constraints and waiting decisions. |
 | `app/usage-poll.js` | Idle account usage polling and machine selection. |
 | `app/usage.js` | Account usage persistence, machine sign-in state, forecasts and ranking. |

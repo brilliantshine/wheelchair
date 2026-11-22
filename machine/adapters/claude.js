@@ -60,23 +60,17 @@ module.exports = {
     const entry = () => [{ hooks: [{ type: 'command', command: hook }] }];
     const toolEntry = () => [{ matcher: '*', hooks: [{ type: 'command', command: hook, async: true }] }];
     const settings = { cleanupPeriodDays: 30, promptSuggestionEnabled: false, ...(session.permission_mode === 'bypass' ? { skipDangerousModePermissionPrompt: true } : {}), hooks: { Stop: entry(), Notification: entry(), StopFailure: entry(), PreToolUse: toolEntry(), PostToolUse: toolEntry(), PostToolUseFailure: toolEntry() }, statusLine: { type: 'command', command: `${c.quote(path.join(c.root, 'machine', 'statusline.sh'))} claude ${c.quote(session.name)}` } };
-    const replacements = Object.create(null), replaced = [], withheld = new Set();
-    if (context.tools && context.mcp) for (const name of Object.keys(context.mcp.servers)) {
-      const replacement = c.replacement(context.replaceEntries, name);
-      if (!replacement.has) continue;
-      replaced.push(name);
-      if (replacement.entry === null) withheld.add(name);
-      else replacements[name] = replacement.entry;
-    }
-    if (context.mcp?.names.length || replaced.length) {
+    const replacements = context.replaceEntries || {};
+    const loadedNames = context.tools && context.mcp ? Object.keys(context.mcp.servers).filter(name => !Object.hasOwn(replacements, name) || replacements[name] !== null) : [];
+    const replacedNames = loadedNames.filter(name => Object.hasOwn(replacements, name) && replacements[name] != null);
+    const mcpPath = path.join(context.stateDir, 'settings', `${session.name}.mcp.json`);
+    if (context.mcp?.names.length) {
       const rejected = context.tools ? context.mcp.names.filter(name => !Object.hasOwn(context.mcp.servers, name)) : context.mcp.names;
-      const disabled = [...new Set([...rejected, ...replaced])];
-      if (disabled.length) settings.disabledMcpjsonServers = disabled;
+      for (const name of context.mcp.names) if (context.tools && Object.hasOwn(context.mcp.servers, name) && Object.hasOwn(replacements, name)) rejected.push(name);
+      if (rejected.length) settings.disabledMcpjsonServers = rejected;
       if (context.tools && Object.keys(context.mcp.servers).length) settings.enableAllProjectMcpServers = true;
     }
-    const mcpConfigPath = path.join(context.stateDir, 'settings', `${session.name}.mcp.json`);
-    const hasConfig = Object.keys(replacements).length > 0;
-    return { loaded: context.tools && context.mcp ? c.loadedTools(Object.keys(context.mcp.servers).filter(name => !withheld.has(name)), context.mcp, context.mount) : [], ...(hasConfig ? { mcpConfig: { mcpServers: replacements }, mcpConfigPath } : {}), settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, ...(hasConfig ? ['--mcp-config', mcpConfigPath] : []), '--permission-mode', session.permission_mode === 'bypass' ? 'bypassPermissions' : 'auto', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt-file', context.promptPath, '--disallowedTools', DISALLOWED_TOOLS.join(',')] };
+    return { loaded: c.loadedTools(loadedNames, context.mcp, context.mount, replacements), ...(replacedNames.length ? { mcpConfig: { path: mcpPath, data: { mcpServers: Object.fromEntries(replacedNames.map(name => [name, replacements[name]])) } } } : {}), settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, ...(replacedNames.length ? ['--mcp-config', mcpPath] : []), '--permission-mode', session.permission_mode === 'bypass' ? 'bypassPermissions' : 'auto', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt-file', context.promptPath, '--disallowedTools', DISALLOWED_TOOLS.join(',')] };
   },
   firstMessage(input) { return input.brief || input.first_message || ''; },
   readyText(session, pane) { return !pane.includes('Choose the text style that looks best with your terminal') && !pane.includes('Press Enter to continue') && !pane.includes('Yes, I trust this folder') && !pane.includes('No, exit') && !pane.includes('Yes, I accept') && pane.includes(session.permission_mode === 'bypass' ? 'bypass permissions on' : 'auto mode on') && /(^|\n).*❯\s/m.test(pane); },

@@ -117,7 +117,7 @@ test('Usage: one Kimi account signed in on one machine and with a problem on ano
 test('Usage: a named Kimi account with no home on a machine below the floor shows the version problem', async () => {
   const floor = 'Kimi Code 2.6.3 or newer is needed (found 2.6.2)';
   const hub = await hubWith({
-    a: { version: 'v1', kimi: row({ problem: floor }), accounts: [{ id: 'default-kimi', cli: 'kimi', logged_in: false }, { id: 'default-claude', cli: 'claude', logged_in: true }] },
+    a: { version: 'v1', claude: { installed: true }, kimi: row({ problem: floor }), accounts: [{ id: 'default-kimi', cli: 'kimi', logged_in: false }, { id: 'default-claude', cli: 'claude', logged_in: true }] },
     b: { version: 'v1', kimi: row(), accounts: [{ id: 'default-kimi', cli: 'kimi', logged_in: false }] },
   }, (s) => { s.accounts.push({ id: 'k-two', provider: 'kimi', name: 'Work', plan: 'unknown', weight: 1, paused: false }); });
   const machines = await usage.machineAccounts(hub);

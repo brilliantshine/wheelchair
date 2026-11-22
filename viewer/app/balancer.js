@@ -4,7 +4,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const settingsStore = require('./settings.js');
 const usage = require('./usage.js');
-const { PROVIDERS, providerOf } = require('./providers.js');
+const { PROVIDERS, DISPLAY_NAMES, providerOf } = require('./providers.js');
 const { appError } = require('./state.js');
 const exec = promisify(execFile);
 
@@ -22,7 +22,7 @@ function signedIn(settings, machines, machineName, provider) {
 }
 function reservedProvider(settings, machines, machineName) {
   const order = [...new Set(settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]))];
-  return order.find((p) => signedIn(settings, machines, machineName, p)) || null;
+  return order.find((p) => settings.harnesses[p] && signedIn(settings, machines, machineName, p)) || null;
 }
 async function machineNameOf(hub, thread) {
   const configured = await hub.machines();
@@ -35,7 +35,7 @@ async function machineNameOf(hub, thread) {
 // Placement uses the same answer, so a lone family outside the worker order still gets them.
 function effectiveFamilies(settings, machines, machineName) {
   if (settings.review_families !== 'both') return settings.review_families;
-  const signed = Object.keys(PROVIDERS).filter((p) => signedIn(settings, machines, machineName, p));
+  const signed = Object.keys(PROVIDERS).filter((p) => settings.harnesses[p] && signedIn(settings, machines, machineName, p));
   return signed.length === 1 ? signed[0] : 'both';
 }
 async function reviewFamilies(hub, thread) {
@@ -54,7 +54,7 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   const families = effectiveFamilies(settings, machines, machineName);
   if (['reviewer', 'verifier'].includes(role) && families !== 'both') {
     const family = families;
-    let used = signedIn(settings, machines, machineName, family);
+    let used = settings.harnesses[family] && signedIn(settings, machines, machineName, family);
     if (used) {
       try { await exec(path.join(hub.root, 'codex', 'model.sh'), [family, slot]); }
       catch (e) { if (e.code === 3) used = false; else throw e; }
@@ -62,10 +62,11 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     provider = undefined; excluded = undefined;
     if (used) strictReview = family; else if (settings.review_families !== 'both') fallbackReview = family;
   }
-  if (role === 'worker' && provider && !signedIn(settings, machines, machineName, provider)) { droppedProvider = provider; provider = undefined; }
+  if (role === 'worker' && provider && (!settings.harnesses[provider] || !signedIn(settings, machines, machineName, provider))) { droppedProvider = provider; provider = undefined; }
   if (!thread.provider && thread.cli && thread.sessions?.length) thread.provider = providerOf(thread.cli);
   let order = role === 'lead' && !thread.provider ? settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]) : ['lead', 'sub-lead'].includes(role) ? [thread.provider] : [...settings.worker_order];
-  order = strictReview ? [strictReview] : [...new Set(order.filter(Boolean))];
+  if (['lead', 'sub-lead'].includes(role) && thread.provider && !settings.harnesses[thread.provider]) return { wait: { provider: thread.provider, until: new Date(now + 60000).toISOString(), reason: `${DISPLAY_NAMES[thread.provider]} is left out in Settings` } };
+  order = (strictReview ? [strictReview] : [...new Set(order.filter(Boolean))]).filter((p) => settings.harnesses[p]);
   if (provider && role === 'worker') {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [provider, slot]); }
     catch (e) { if (e.code === 3) throw appError(400, `${PROVIDERS[provider].label} is not used at ${slot}`); throw e; }
@@ -113,7 +114,7 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     }
     return blockers.length ? [new Date(Math.max(...blockers)).toISOString()] : [];
   }).sort();
-  const waitingProvider = strictReview || (['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? settings.lead_order.find((p) => p !== 'any') || null : null);
+  const waitingProvider = strictReview || (['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? order[0] || null : null);
   return { wait: { provider: waitingProvider, until: resets[0] || new Date(now + 60000).toISOString(), reason: `no ${relevant.length === 1 ? relevant[0] + ' account' : 'account'} has room` } };
 }
 module.exports = { choose, slotFor, reservedProvider, reviewFamilies };

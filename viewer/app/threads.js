@@ -440,6 +440,15 @@ async function press(hub, id, cardId, input) {
 async function dismiss(hub, id, cardId) {
   const thread = await hub.thread(id);
   require('./handoff.js').refuseFrozen(hub, thread);
+  const card = thread.cards.find((item) => item.id === cardId);
+  if (card?.kind === 'needs' && card.system) {
+    if (card.answered || card.replaced) throw appError(422, 'card is already answered');
+    if (require('./card.js').blockingNeeds(thread, cardId)) throw appError(422, 'a session is waiting on this; it closes itself');
+    require('./cards.js').resolveCard(card, 'user', 'Dismissed');
+    thread.user_at = new Date().toISOString();
+    await hub.save(thread);
+    return { ok: true };
+  }
   const found = require('./card.js').resolvable(thread, cardId);
   if (!found.ok) throw appError(found.reason === 'no such card in this thread' ? 404 : 422, found.reason);
   require('./cards.js').resolveCard(found.card, 'user', null);
@@ -470,6 +479,7 @@ async function pollMerged(hub) {
           if (current.archived || mergedPr(current) !== url || current.merge_noticed_url === url) return;
           current.merge_noticed_url = url;
           current.merge_noticed_at = new Date().toISOString();
+          for (const card of current.cards) if (card.kind === 'needs' && card.auto_merge === true && !card.answered) require('./cards.js').resolveCard(card, 'app', 'Merged');
           require('./cards.js').addCard(current, { kind: 'merged', title: 'Pull request merged', pr_url: url }, { system: true });
           await hub.save(current);
         });
