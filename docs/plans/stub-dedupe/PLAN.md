@@ -210,3 +210,4 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 - 2026-11-21: Deferred row 1 (hold additions for a stopped lead) removed: moot once additions go only to unopened stubs.
 - 2026-11-21: Review budget reached (rounds 2-4 not clean since Collin's last decision). Recurring objection: deciding an opened stub already covers work. Proposed cut: opened stubs never suppress a stub; the new stub names the related one.
 - 2026-11-21: Round 5 clean (four minor findings fixed). Ready check: hub and machine service answer (`session list`), claude and codex CLIs installed, Codex preflight passes (token fresh). Ready.
+- Build accepted: approval 6c27d049-c465-477d-aefd-f736fd3482cc
