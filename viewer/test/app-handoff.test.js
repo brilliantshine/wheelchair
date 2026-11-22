@@ -411,4 +411,28 @@ test('v3 exports only this thread’s lessons in transferable scope', () => {
   ]);
   assert.equal(validateHandoffFile(JSON.stringify({ ...result, lessons: null })).what, 'invalid lessons');
   assert.equal(validateHandoffFile(JSON.stringify({ ...result, lessons: [null] })).ok, true);
+  assert.equal(validateHandoffFile(JSON.stringify({ ...result, version: 2 })).what, 'invalid fields');
+  const { lessons, ...withoutLessons } = result;
+  assert.equal(validateHandoffFile(JSON.stringify(withoutLessons)).ok, true);
+});
+
+
+test('export download includes exactly the saved lessons for the thread', async () => {
+  const { hub } = await exportFixture();
+  const settings = require('../app/settings.js');
+  const base = { saved_by: 'agent', saved_at: at };
+  await settings.update(hub, (value) => { value.lessons.worker = [
+    { id: 'L000001', text: 'Thread lesson', thread: id, ...base },
+    { id: 'L000002', text: 'Other thread', thread: 'other', ...base },
+    { id: 'L000003', text: 'Project lesson', project: '/repo', ...base },
+    { id: 'L000004', text: 'Other project', project: '/other', ...base },
+    { id: 'L000005', text: 'Thread project', project: '/repo', thread: id, ...base },
+  ]; });
+  const result = await hub.exportThread(id);
+  const downloaded = await hub.handoffFile(id);
+  assert.deepEqual(JSON.parse(downloaded.bytes).lessons, [
+    { role: 'worker', text: 'Thread lesson', ...base },
+    { role: 'worker', text: 'Thread project', project: true, ...base },
+  ]);
+  assert.deepEqual(downloaded.bytes, result.bytes);
 });

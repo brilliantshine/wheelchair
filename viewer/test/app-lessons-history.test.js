@@ -15,8 +15,10 @@ test('agent changes, restore, keep and normalization retain history', async () =
   await s.applyLesson(h, card('replace', { lesson: added.id, only_ai: 'gpt' }), 'worker', '/p', 'thread-new');
   let v = await s.load(h); let entry = v.lesson_history[added.id]; assert.equal(entry.versions.at(-1).changed_by, 'agent'); assert.equal(entry.versions.at(-1).text, 'First');
   const vid = entry.versions[0].vid;
+  const { text, provider, project, thread } = v.lessons.worker[0];
   await s.restoreLesson(h, 'worker', added.id, vid); v = await s.load(h);
-  assert.equal(v.lesson_history[added.id].versions.at(-1).changed_by, 'user');
+  const archived = v.lesson_history[added.id].versions.at(-1);
+  assert.deepEqual({ text: archived.text, provider: archived.provider, project: archived.project, thread: archived.thread, changed_by: archived.changed_by }, { text, provider, project, thread, changed_by: 'user' });
   assert.equal(v.lessons.worker[0].saved_by, 'user'); assert.equal(v.lessons.worker[0].thread, 'thread-old');
   const beforeRetry = structuredClone({ lesson: v.lessons.worker[0], history: v.lesson_history[added.id] });
   await new Promise((resolve) => setTimeout(resolve, 5));
