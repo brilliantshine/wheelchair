@@ -15,10 +15,10 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: How do lessons travel to another install or with a handoff, and what happens on a clash?
-- **Context:** Lessons live only in the hub's settings.json (`viewer/app/state.js:70`). Handoff JSON has a strict schema with no lessons (`viewer/app/handoff.js:18`). Lesson ids are random per install, so they don't identify the same lesson elsewhere (`viewer/app/settings.js:211`).
-- **Options:** (a) Settings export/import file only; (b) handoffs carry lessons automatically; (c) both, sharing one merge rule.
-- **Recommendation:** (c), matching by agent type + text; an identical lesson is skipped, a different one is added as new, and anything that won't fit under the cap of 12 is shown for the user to pick, never overwriting.
+### Q3: How are incoming lessons (file import or handoff) added?
+- **Context:** Ids don't match across installs, so incoming lessons are matched by agent type + text. The cap of 12 per type stays. Handoff import may complete later and retry (`viewer/app/handoff-import.js:26`), so adding must be safe to repeat.
+- **Options:** (a) added automatically: identical ones skipped, new ones added, overflow past 12 held for you to pick; (b) all held in Settings for you to accept or reject each; (c) automatic, incoming replaces a similar existing one.
+- **Recommendation:** (a).
 
 ### Q2: What marks a lesson as possibly stale?
 - **Context:** Nothing records reconfirmation; `saved_at` changes on every edit (`viewer/app/settings.js:213`). Lessons don't reference rules.
@@ -48,6 +48,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | Removed lessons stay findable in Settings with their history (the 50 most recently removed across all agent types) and can be restored | "A removed lesson can be found again" (IDEA.md) needs a home for them | defaulted |
 | 4 | Restoring is a user action: the restored lesson is marked "(edited by the user)" | Matches how Settings edits already make a lesson user-owned (`viewer/app/routes.js:229`) | defaulted |
 | 5 | Restoring a removed lesson into an agent type that already has 12 is refused with a plain message to remove one first | The cap of 12 stays (IDEA.md Constraints) | defaulted |
+| 6 | Lessons travel two ways: Export/Import of a lessons file in Settings, and handoffs carry lessons automatically; both use the same merge rule | Q1 answered "File and handoffs" | user |
+| 7 | A project-only lesson in a handoff is re-scoped to the project path the thread is imported into; in a file import it keeps its path | The exact path differs between installs (`viewer/app/settings.js:183`); a handoff knows the destination, a file does not | defaulted |
+| 8 | Handoffs from an install without lessons support still import; an install without support importing a newer handoff is out of scope | IDEA.md Constraints name only the first direction | defaulted |
 |   |          |           | user / defaulted / adopted / idea-change / review-round-N |
 
 ## Spec
@@ -58,6 +61,12 @@ non-goals, and concrete validation commands.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
+
+### S1 History (draft)
+Decisions 2–5.
+
+### S2 Carrying lessons (draft)
+Decisions 6–8. Merge rule: Q3.
 
 ## Deferred
 
