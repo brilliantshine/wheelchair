@@ -90,9 +90,10 @@ reviewers and verifiers (`viewer/app/balancer.js:45-80`). The switch selector:
   provider's full account list exactly as `choose()` does: the lead reserve gate
   (`margin`/`held_back`, `viewer/app/balancer.js:78`) and live-session counts for the
   tie-break. Factor those out of `choose()` so both use one copy;
-- ranks with the existing `usage.rank()`, then removes the limited account and any account
-  whose reading has `limited_until` in the future from the ranked list before taking the
-  first;
+- runs only after the hub has recorded the limit on the old account's reading (§3 hub
+  step 1), then calls the existing `usage.rank()` unchanged and takes the account it marks
+  `next`. `rank()` already skips paused, signed-out and limited accounts
+  (`viewer/app/usage.js:112-132`), so the limited account is never picked;
 - for `gpt`, runs `codex/preflight.sh` on the winner as in `viewer/app/sessions.js:292-314`
   (a failure marks it unavailable and picks once more).
 
@@ -100,9 +101,10 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
 
 ### 3. Switching
 
-**Hub**, once an account is chosen, in this order:
+**Hub**, in this order:
 
-1. Record the limit as today (the old account's reading gets `limited_until`).
+1. Record the limit as today (the old account's reading gets `limited_until`). Then choose
+   the new account (§2); none means today's hold, and the steps below do not run.
 2. Set `target.switching = {id, to, at}`, where `id` is a new `switch_id`. While it is set, nothing is delivered to the session
    (add it to `held()`, `viewer/app/sessions.js:505-511`). Only then delete
    `target.limited_until` and cancel its pending reset `Continue.`
@@ -239,8 +241,9 @@ resets; other providers; changing how accounts are signed in.
   environment; the old file is left in place; the relaunch uses `respawn-pane -k` and the
   same launch preparation as a start (project tools present); a resume that exits, and one
   that misses readiness, each end the session without a `stuck` event; a repeated
-  `switch_id` does not switch twice; the relaunch uses the request's model and the record's
-  role, thread, project, effort and permission modes (a resumed Codex reviewer keeps its
+  `switch_id` does not switch twice; the relaunch uses the request's model, `project_dir` (the
+  thread's project) and `project` (its basename), as a start sends them
+  (`viewer/app/sessions.js:369-370`), and the record's role, thread, effort and permission modes (a resumed Codex reviewer keeps its
   read-only sandbox flags; project tools are set up), the session's existing worktree and branch, creates no worktree and
   sends no first message; `switch_id` and outcome survive a snapshot restore; hook events for a `switching` session are dropped; a copy,
   launch-preparation or `respawn-pane` failure emits `switch-failed`, leaves the old CLI
@@ -253,7 +256,8 @@ resets; other providers; changing how accounts are signed in.
   that a conversation copied into the other account's directory resumes (Claude and
   Codex), and record the result in the plan's Log. The probe goes through the machine, not just the CLI:
   the resumed session must reach `ready`, take one carry-on turn whose reply uses a fact
-  given only before the switch, and produce a turn-end event the hub sees. Also record whether the resumed CLI
+  given only before the switch, and produce a turn-end event the hub sees; for Codex, that
+  turn's usage reading reaches the hub under the new account. Also record whether the resumed CLI
   appends to the copied file or starts a new one; if a new one, the machine's transcript
   copy must follow it, and the Log says how. If one CLI cannot resume across accounts, stop
   and report it (Decision 16).
@@ -438,6 +442,10 @@ resets; other providers; changing how accounts are signed in.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Taking "the first" after `rank()` can pick a paused, signed-out or limited account; recording the limit first lets `rank()` choose unchanged | upheld (`viewer/app/usage.js:114-132`) | §2 and §3 hub step 1: record limit, then take `rank()`'s `next` |
+| mechanics | blocking | Same selection problem | upheld | Same fix |
+| mechanics | minor | Test should assert project fields come from the request like a start | upheld | Validation reworded |
+| mechanics | minor | Codex probe should prove the usage reading reaches the hub under the new account | upheld | Validation probe extended |
 
 ## Implementation Tasks
 
