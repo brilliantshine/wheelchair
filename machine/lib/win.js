@@ -7,6 +7,7 @@ const { detectWsl, createWinEnv, worktreeKey, copyPaths } = require('./win-env')
 const { ensureCopy, reconcile, readState, writeState, deleteCopy } = require('./win-sync');
 const { parseWinOp } = require('./win-args');
 const { TOOL_ROLES } = require('./project-mcp');
+const { createWinForward } = require('./win-forward');
 
 const error = (status, message) => Object.assign(new Error(message), { status });
 const NOT_WSL = 'the Windows bridge only works when Wheelchair runs in WSL';
@@ -19,6 +20,8 @@ class WinBridge {
     this.options = options;
     this.detected = detectWsl(options);
     this.winEnv = options.winEnv || createWinEnv({ mount: this.detected.mount, runRoot: options.runRoot, log: service.log });
+    this.forwardReady = () => this.detected.interop === true && fs.existsSync(this.winEnv.powershellPath);
+    this.forwards = options.forwards || createWinForward({ stateDir: this.stateDir, ready: this.forwardReady, spawnRelay: script => this.winEnv.spawnPs(script, { stdio: ['pipe', 'pipe', 'pipe'] }), log: service.log });
     this.health = { ok: null };
     this.healthProbe = null;
     this.healthDeadlineMs = options.healthDeadlineMs ?? 15000;
@@ -338,6 +341,7 @@ class WinBridge {
 
   async startup() {
     if (this.detected.kernel) {
+      await this.forwards.restore(this.service.liveTmux?.() ?? null);
       this.runBridgeProbe();
       this.healthTimer = setInterval(() => this.runBridgeProbe(), this.healthIntervalMs);
       this.healthTimer.unref();

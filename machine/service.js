@@ -2,7 +2,8 @@
 'use strict';
 const { TryService } = require('./lib/try');
 const { createProjectTools } = require('./lib/project-tools');
-const { TOOL_ROLES, readProjectMcp, hasWindowsProgram } = require('./lib/project-mcp');
+const { TOOL_ROLES, readProjectMcp, hasWindowsProgram, serverLabel } = require('./lib/project-mcp');
+const { windowsTarget, rewriteUrl } = require('./lib/win-mark');
 const { missingPrograms } = require('./lib/project-programs');
 const { projectIdentity, readKeyStore, launchKeys, keyReferences } = require('./lib/project-keys');
 
@@ -267,7 +268,7 @@ class MachineService {
   constructor(options) {
     this.stateDir = path.resolve(options.stateDir || DEFAULT_STATE);
     this.tryService = new TryService({ stateDir: this.stateDir, root: ROOT, projects: params => this.projects(params) });
-    this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir });
+    this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir, wsl: () => !!this.win?.detected?.kernel });
     this.projectToolsLocks = new Map();
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
@@ -462,7 +463,7 @@ class MachineService {
     // worktree feel stalled. Stuck sessions and open prompts remain on pollTimer.
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
     this.trustTimer.unref();
-    this.agyToolsTimer = setInterval(() => this.sweepAgyTools(), 60000);
+    this.agyToolsTimer = setInterval(() => (this.sweepAgyTools(), this.sweepMcpConfigs()), 60000);
     this.agyToolsTimer.unref();
   }
   // The names of the running tmux sessions, or null when tmux could not be asked. "No server" is
@@ -473,6 +474,21 @@ class MachineService {
     if (/no server running|error connecting to .*\(No such file or directory\)/.test(ls.stderr)) return new Set();
     this.log(`tmux list-sessions failed: ${ls.stderr.trim() || `exit ${ls.status}`}`);
     return null;
+  }
+  sweepMcpConfigs() {
+    if (!this.stateDir) return;
+    const dir = path.join(this.stateDir, 'settings');
+    let entries;
+    try { entries = fs.readdirSync(dir).filter(name => name.endsWith('.mcp.json')); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return; }
+    if (!entries.length) return;
+    const live = this.liveTmux();
+    if (!live) return;
+    for (const entry of entries) {
+      const name = entry.slice(0, -'.mcp.json'.length);
+      if (this.startingNames.has(name) || live.has(name.replace(/[.:]/g, '_'))) continue;
+      const file = path.join(dir, entry);
+      try { if (Date.now() - fs.lstatSync(file).mtimeMs >= 60000) fs.rmSync(file, { force: true }); } catch (error) { if (error.code !== 'ENOENT') this.log(error); }
+    }
   }
   sweepAgyTools() {
     if (!this.stateDir) return;
@@ -717,7 +733,7 @@ class MachineService {
   commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context = {}) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable, wsl: context.wsl, mount: context.mount });
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries });
   }
 
   threadWorktree(input, worktree) {
@@ -796,7 +812,7 @@ class MachineService {
     if (this.startingNames.has(name)) return publicSession(await this.startingNames.get(name));
     const starting = this.startNamed(input, name);
     this.startingNames.set(name, starting);
-    try { return publicSession(await starting); } finally { this.startingNames.delete(name); this.sweepAgyTools(); this.cancelledStarts.delete(name); }
+    try { return publicSession(await starting); } finally { this.startingNames.delete(name); this.sweepAgyTools(); this.sweepMcpConfigs(); this.cancelledStarts.delete(name); }
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
@@ -837,19 +853,40 @@ class MachineService {
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); session.pi_version = status.version || null; }
     const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
-    const read = await readProjectMcp(worktree, { wsl, mount });
+    const read = await readProjectMcp(worktree, { wsl, mount, kernel: !!this.win?.detected?.kernel });
     const { mcp, warnings } = read;
     const tools = TOOL_ROLES.has(input.role);
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
     const context = { wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
+    if (this.win?.detected?.kernel && tools && ['claude', 'codex', 'agy'].includes(input.cli) && mcp) {
+      const names = (mcp.windows || []).filter(name => Object.hasOwn(mcp.servers, name));
+      if (names.length) {
+        context.replaceEntries = Object.create(null);
+        await Promise.all(names.map(async name => {
+          const entry = mcp.servers[name];
+          try {
+            const target = windowsTarget(entry);
+            if (!target) throw new Error('invalid Windows tool address');
+            const port = await this.win.forwards.get(target.port);
+            const url = rewriteUrl(entry.url, port);
+            if (url === null) throw new Error('invalid Windows tool address');
+            context.replaceEntries[name] = { ...entry, url };
+          } catch (error) {
+            context.replaceEntries[name] = null;
+            console.error(`${session.name}: project tools: ${serverLabel(name)}: couldn't reach Windows (${error.message || String(error)}); left out of this session`);
+          }
+        }));
+      }
+    }
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
     const loaded = built.loaded || [];
     const windowsTools = loaded.some(entry => entry.windows);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
     if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
+    if (built.mcpConfigPath) await atomicWrite(built.mcpConfigPath, JSON.stringify(built.mcpConfig), 0o600);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     if (built.toolFiles) {
       const root = path.join(this.stateDir, 'agy-tools');
@@ -1198,7 +1235,9 @@ class MachineService {
       const removed = command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
       if (removed.ok) this.win.onWorktreeRemoved(session, { kind: 'verifier' }).catch(error => this.log(error));
     }
+    await fsp.rm(path.join(this.stateDir, 'settings', `${name}.mcp.json`), { force: true });
     this.sweepAgyTools();
+    this.sweepMcpConfigs();
   }
   gitPath(worktree, name) {
     const result = command('git', ['-C', worktree, 'rev-parse', '--git-path', name]);
@@ -2081,6 +2120,30 @@ class MachineService {
         this.unityPrep ||= require('./lib/unity-prep').createUnityPrep({ detected: this.win.detected, winEnv: this.win.winEnv });
         return send(response, 200, await this.unityPrep(input));
       }
+      if (request.method === 'POST' && url.pathname === '/v1/project-tools/windows-status') {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        if (!input || typeof input !== 'object' || !Array.isArray(input.tools) || input.tools.length > 100) throw Object.assign(new Error('tools must be an array of at most 100 items'), { status: 400 });
+        const status = Object.create(null);
+        if (!this.win?.detected?.kernel) return send(response, 200, { wsl: false, status });
+        await Promise.all(input.tools.map(async tool => {
+          if (!tool || typeof tool !== 'object' || typeof tool.id !== 'string') return;
+          const target = windowsTarget(tool);
+          if (!target) return;
+          let result;
+          if (!this.win.forwardReady()) result = { state: 'unavailable', reason: 'Windows bridge not available' };
+          else {
+            let timer;
+            try {
+              const checked = await Promise.race([this.win.forwards.check(target.port), new Promise(resolve => { timer = setTimeout(() => resolve({ ok: false, reason: `couldn't check Windows for port ${target.port}` }), 10000); })]);
+              result = checked.ok ? { state: 'reachable' } : { state: 'unreachable', reason: checked.reason };
+            } catch { result = { state: 'unreachable', reason: `couldn't check Windows for port ${target.port}` }; }
+            finally { clearTimeout(timer); }
+          }
+          status[tool.id] = { ...result, ...this.win.forwards.status(target.port) };
+        }));
+        return send(response, 200, { wsl: true, status });
+      }
       if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
@@ -2218,7 +2281,7 @@ class MachineService {
             if (missing.length) warnings.push(`Screens won't work on ${os.hostname()}: missing ${missing.join(', ')}. Builds that don't use a screen are unaffected.`);
             if (this.win.detected.kernel && agent.worktree) {
               const { mount } = this.win.detected;
-              const { mcp } = await readProjectMcp(agent.worktree, { wsl: true, mount });
+              const { mcp } = await readProjectMcp(agent.worktree, { wsl: true, mount, kernel: !!this.win?.detected?.kernel });
               if (hasWindowsProgram(mcp, { mount })) {
                 let health = this.win.bridgeHealth();
                 if (health.ok === null) health = await this.win.bridgeHealthWait(15000);
