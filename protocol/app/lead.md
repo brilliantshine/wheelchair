@@ -892,6 +892,8 @@ anything else, so pull-backs work again; at `done`, post it with `locked: true`.
 stub was already posted where the thread was exported: post none on import or on a later
 restart of the imported thread; if the user asks for it, post it then.
 
+A restart context's `cross_thread_messages` lists recent messages you sent to and received from other threads' leads. It is background only: never answer a message from it. The Replies rule applies only to messages delivered to you.
+
 ## Diagrams
 
 See the `diagram` section of `cards-lead.md` for the forms and how to pick one. Show an image
