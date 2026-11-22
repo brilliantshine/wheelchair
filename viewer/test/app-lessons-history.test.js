@@ -187,3 +187,58 @@ test('new ids avoid removed history and different project scopes remain distinct
   const result = await s.mergeIncoming(h, [item('scoped', { project: '/a' }), item('scoped', { project: '/b' })], { source: 'file', known: ['/a', '/b'] });
   const scoped = (await s.load(h)).lessons.worker.filter((entry) => entry.text === 'scoped'); assert.deepEqual(scoped.map(({ id, kept_at, ...entry }) => entry), [{ text: 'scoped', project: '/a', saved_by: 'agent', saved_at: date }, { text: 'scoped', project: '/b', saved_by: 'agent', saved_at: date }]); assert.equal(result.added, 2);
 });
+
+test('restore preserves version scope and appends removed lessons', async () => {
+  const h = await hub();
+  for (const [id, scope, current] of [['L100001', { project: '/a' }, {}], ['L100002', { provider: 'gpt' }, {}], ['L100003', {}, { project: '/a' }]]) {
+    await s.update(h, (v) => { v.lessons.worker.push({ id, ...item('Current', current) }); v.lesson_history[id] = { role: 'worker', versions: [{ ...item('Old', scope), vid: 'v', changed_at: date, changed_by: 'agent' }] }; });
+    await s.restoreLesson(h, 'worker', id, 'v'); const lesson = (await s.load(h)).lessons.worker.find((l) => l.id === id);
+    assert.equal(lesson.project, scope.project); assert.equal(lesson.provider, scope.provider); assert.notEqual(lesson.saved_at, date);
+  }
+  await s.update(h, (v) => { v.lesson_history.L100004 = { role: 'worker', versions: [{ ...item('Removed'), vid: 'v', changed_at: date, changed_by: 'agent' }], removed: { at: date, by: 'agent' } }; });
+  await s.restoreLesson(h, 'worker', 'L100004'); assert.equal((await s.load(h)).lessons.worker.at(-1).id, 'L100004');
+});
+for (const source of ['import', 'waiting']) test(`${source} avoids removed history ids`, async () => {
+    const h = await hub(); await s.update(h, (v) => { v.lesson_history.L123456 = { role: 'worker', versions: [{ ...item('Old'), vid: 'v', changed_at: date, changed_by: 'agent' }], removed: { at: date, by: 'agent' } }; if (source === 'waiting') v.lesson_waiting.push({ ...item('New'), source: 'file', received_at: date, wid: 'w' }); });
+    const crypto = require('node:crypto'), original = crypto.randomBytes; let calls = 0;
+    crypto.randomBytes = (n) => n === 3 ? Buffer.from(++calls === 1 ? '123456' : 'abcdef', 'hex') : original(n);
+    try { if (source === 'import') await s.mergeIncoming(h, [item('New')], { source: 'file', known: [] }); else await s.waitingAction(h, 'worker', 'w', 'add'); } finally { crypto.randomBytes = original; }
+    assert.equal((await s.load(h)).lessons.worker[0].id, 'Labcdef', source);
+});
+test('export contains exactly the specified fields', async () => {
+  const app = await setup(); try { const h = new Hub({ stateDir: app.state, codeVersion: '' }); await h.state.init();
+    await s.update(h, (v) => { v.lessons.worker.push({ id: 'L123456', ...item('Current', { provider: 'gpt', project: '/a', thread: 't', kept_at: date }) }); v.lesson_history.Labcdef = { role: 'worker', versions: [{ ...item('Removed'), vid: 'v', changed_at: date, changed_by: 'agent' }], removed: { at: date, by: 'agent' } }; v.lesson_waiting.push({ ...item('Waiting'), source: 'file', received_at: date, wid: 'w' }); });
+    const out = (await api(app, '/settings/lessons/export')).body; assert.deepEqual(Object.keys(out), ['format', 'version', 'exported_at', 'lessons']); assert.deepEqual(out.lessons.worker, [{ text: 'Current', provider: 'gpt', project: '/a', saved_by: 'agent', saved_at: date, kept_at: date }]);
+  } finally { await close(app); }
+});
+test('merge validates authors, handles threads, and fills the twelfth slot', async () => {
+  const h = await hub(); assert.equal((await s.mergeIncoming(h, [item('Invalid', { saved_by: 'bad' })], { source: 'file', known: [] })).invalid, 1);
+  await s.mergeIncoming(h, [item('File', { thread: 'file-thread' })], { source: 'file', known: [] }); await s.mergeIncoming(h, [item('Handoff', { thread: 'handoff-thread' })], { source: 'handoff' });
+  const v = await s.load(h); assert.equal(v.lessons.worker.find((l) => l.text === 'File').thread, undefined); assert.equal(v.lessons.worker.find((l) => l.text === 'Handoff').thread, 'handoff-thread');
+  await s.update(h, (x) => { for (let i = 0; i < 9; i++) x.lessons.worker.push({ id: `L${(i + 256).toString(16).padStart(6, '0')}`, ...item(`Fill ${i}`) }); });
+  assert.deepEqual(await s.mergeIncoming(h, [item('Twelfth')], { source: 'file', known: [] }), { added: 1, skipped: 0, invalid: 0, unknown_project: 0, waiting: 0 });
+});
+test('waiting actions select role and id and discard the requested entry', async () => {
+  const h = await hub(); await s.update(h, (v) => { v.lesson_waiting.push({ ...item('First'), source: 'file', received_at: date, wid: 'one' }, { ...item('Second'), source: 'file', received_at: date, wid: 'two' }); });
+  await assert.rejects(s.waitingAction(h, 'reviewer', 'two', 'add'), { status: 409 }); await s.waitingAction(h, 'worker', 'two', 'discard'); assert.deepEqual((await s.load(h)).lesson_waiting.map((w) => w.wid), ['one']);
+});
+test('normalization rejects invalid history authors and waiting sources', () => {
+  const n = s.normalize({ lesson_history: { L123456: { role: 'worker', versions: [{ ...item('Old'), vid: 'v', changed_at: date, changed_by: 'bad' }], removed: { at: date, by: 'agent' } } }, lesson_waiting: [{ ...item('Waiting'), source: 'bad', received_at: date, wid: 'w' }] }); assert.deepEqual(n.lesson_history, {}); assert.deepEqual(n.lesson_waiting, []);
+});
+test('import refuses a newer lessons file version', async () => {
+  const app = await setup(); try { const r = await api(app, '/settings/lessons/import', { method: 'POST', body: { format: 'wheelchair-lessons', version: 2, lessons: {} } }); assert.equal(r.status, 400); } finally { await close(app); }
+});
+
+test('restore scope after agent replacement', async () => {
+  for (const [initial, replacement, expected] of [
+    [{ only_project: true }, { only_project: false }, { project: '/a', provider: undefined }],
+    [{ only_ai: 'gpt' }, { only_ai: 'any' }, { project: undefined, provider: 'gpt' }],
+    [{}, { only_project: true }, { project: undefined, provider: undefined }],
+  ]) {
+    const h = await hub(); const added = await s.applyLesson(h, card('add', initial), 'worker', '/a', 't');
+    await s.applyLesson(h, card('replace', { lesson: added.id, text: 'Replacement', ...replacement }), 'worker', '/a', 't');
+    const vid = (await s.load(h)).lesson_history[added.id].versions[0].vid;
+    await s.restoreLesson(h, 'worker', added.id, vid); const restored = (await s.load(h)).lessons.worker[0];
+    assert.equal(restored.project, expected.project); assert.equal(restored.provider, expected.provider);
+  }
+});
