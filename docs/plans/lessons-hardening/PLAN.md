@@ -100,7 +100,7 @@ In each role's editor:
 
 - A current lesson is **possibly stale** when now − max(`saved_at`, `kept_at`) ≥ 90 days.
 - Its row in Settings shows "Possibly out of date: not changed or kept since <date>" and a **Keep** button. Keep sets `kept_at` to now (no history entry, `saved_by` unchanged), and the mark goes away.
-- The Templates list item for that role shows the count of possibly stale lessons beside its lesson count (e.g. "5 · 2 may be out of date").
+- The Templates list item for that role shows the count of possibly stale lessons beside its lesson count (e.g. "5 · 2 may be out of date"), and the count of waiting lessons when non-zero (e.g. "· 3 waiting to add").
 - Agents are unchanged: no prompt text, card field or rule mentions staleness.
 
 ### S5 Merging incoming lessons
@@ -121,13 +121,13 @@ In each role's editor, a **Waiting to add** section lists that role's waiting le
 
 - The Templates section of Settings gets **Export lessons** and **Import lessons** buttons.
 - Export downloads `wheelchair-lessons.json`: `{ format: 'wheelchair-lessons', version: 1, exported_at, lessons: { <role>: [ {text, provider?, project?, saved_by, saved_at, kept_at?} ] } }` with every current lesson of every role. No ids, threads, history or waiting entries.
-- Import takes such a file (≤ 1 MB). A file whose `format`/`version` doesn't match, that isn't JSON, or whose `lessons` isn't an object of arrays is refused whole with a plain message ("This isn't a wheelchair lessons file"). Otherwise S5 runs with `source: 'file'`. A project-only lesson keeps its path only if that path is a project this hub lists (`hub.projects()`, `viewer/app/state.js:228`); otherwise it is skipped and counted as "for projects not on this machine" (Decision 12). Settings then shows "Added A, skipped S already here, W waiting for room", plus "I unreadable", "P for projects not on this machine" and "N not kept: waiting list full" when non-zero, and refreshes. The upload is its own route (e.g. `POST /settings/lessons/import`) that reads the raw body itself, refuses over 1 MB with "This file is too big for a lessons file", and parses the JSON itself so a parse failure gives the message above (the generic body reader at `viewer/app/routes.js:22-67` is not used for it).
+- Import takes such a file (≤ 1 MB). A file whose `format`/`version` doesn't match, that isn't JSON, or whose `lessons` isn't an object of arrays is refused whole with a plain message ("This isn't a wheelchair lessons file"). Otherwise S5 runs with `source: 'file'`. A project-only lesson keeps its path only if that path is a project this hub lists (`hub.projects()`, `viewer/app/state.js:228`); otherwise it is skipped and counted as "for projects not on this machine" (Decision 12). Settings then shows "Added A, skipped S already here or removed or changed here, W waiting for room", plus "I unreadable", "P for projects not on this machine (add the project, then import the file again)" and "N not kept: waiting list full" when non-zero, and refreshes. The upload is its own route (e.g. `POST /settings/lessons/import`) that reads the raw body itself, refuses over 1 MB with "This file is too big for a lessons file", and parses the JSON itself so a parse failure gives the message above (the generic body reader at `viewer/app/routes.js:22-67` is not used for it).
 
 ### S7 Handoffs carry lessons
 
 - `buildHandoffFile` (`viewer/app/handoff.js:58`) writes `version: 3` and a top-level `lessons` array: the current lessons, of any role, whose `thread` is the handed-off thread's id (the lessons this thread's agents learned; Decision 11), as `{role, text, provider?, project?, saved_by, saved_at, kept_at?}`. A project-only lesson is written with `project: true` (meaning "the thread's project") when its path is the thread's project, and left out otherwise. A thread id stays the same across a handoff (`viewer/app/handoff-import.js:15`), so merged lessons keep `thread` and travel on if the thread is handed off again.
 - `validateHandoffFile` (`:12`) accepts versions 1, 2 and 3; `lessons` is allowed (optional) only for version 3; only a `lessons` that is not an array refuses the file. Each element is checked by S5 step 1, so a malformed element (including `null`) is just counted invalid. Version 3 history is treated like version 2 (`:29`, `:31`).
-- On import, `importHandoff` (`viewer/app/handoff-import.js:8`) runs S5 on the file's lessons with `source: 'handoff'` as soon as the file has passed the repository, branch and stage checks there and before it starts the create or advance operation, turning `project: true` into `targetProject`. The lessons merge is not part of the saved handoff operation: Retry and resuming a pending operation never run it, and a file uploaded while an operation is pending (the `thread.handoff_op` path) merges no lessons. If the thread operation later fails, the merged lessons stay (Accepted Risks).
+- On import, `importHandoff` (`viewer/app/handoff-import.js:8`) runs S5 on the file's lessons with `source: 'handoff'` as soon as the file has passed the repository, branch and stage checks there and before it starts the create or advance operation, turning `project: true` into `targetProject`. The lessons merge is not part of the saved handoff operation: Retry and resuming a pending operation never run it, and a file uploaded while an operation is pending (the `thread.handoff_op` path) merges no lessons. If the thread operation later fails, the merged lessons stay (Accepted Risks). When the merge put any lessons in Waiting or counted any `not_kept`, the import result's `note` (`handoff-import.js`) adds "N lessons are waiting for room in Settings" and/or "N lessons not kept: waiting list full".
 - A version 1 or 2 file imports exactly as today (IDEA.md Constraints). An older install refusing a version 3 file is accepted (Decision 8).
 
 ### S8 Not changing
@@ -154,6 +154,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 |------|--------------|-------|
 | A handoff whose thread operation fails after the checks still adds its lessons | They are the thread's own lessons, added by the normal rules; nothing is overwritten | review-round-1 |
 | Re-importing the same file or handing the same thread back brings a discarded waiting lesson back to Waiting to add | Worst outcome is one more Discard press | review-round-1 |
+| A thread handed back after an agent on the other install replaced one of its lessons arrives with the new wording beside the old one | Nothing existing is overwritten (Decision 9); Collin can remove the old one in Settings | review-round-2 |
 
 ## Check Once Built
 
@@ -213,6 +214,10 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Handoff waiting/not-kept lessons never surfaced | upheld (minor) | S7 import note; S4 Templates item shows waiting count |
+| intent | minor | Replaced lesson's old wording comes back when a thread returns | accepted-risk (minor) | Accepted Risks; Decision 9 forbids overwriting |
+| intent | minor | "already here" wrong for removed/changed matches | upheld (minor) | S6 wording |
+| intent | minor | New install skips all project lessons with no hint | upheld (minor) | S6 message says to add the project and import again |
 
 ## Prior Work
 
