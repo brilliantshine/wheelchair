@@ -323,3 +323,5 @@ whose lead is down; a user-facing card for the pause.
 - 2026-11-22 — R1-2 accepted (band: scout): chat.js:465 line exactly as briefed; new test app-chat.test.js:459-477 seeds a held, an ordinary and a live-lead entry and asserts 2; 26/26 re-run by the sub-lead; worker's break check (old line gives 3 !== 2) reported.
 - 2026-11-22 — Choice: R1-2, app-chat.test.js:459: test name and the one-line comment above it are the worker's wording.
 - 2026-11-22 — Choice: R1-2, app-chat.test.js: the test thread carries `pinned: {}` and `cards: []` and no `imported`, the minimum for chat() to run.
+- 2026-11-22 — R1-1 accepted (band: scout): threads.js dropHeld moved after the success-path sessions-ended loop (line 252), rebase/uploads block untouched; new test app-handoff-restart.test.js:267-279 (live lead, peer + ordinary entry, archive, peer gone, ordinary kept); 29/29 re-run by the sub-lead; worker's break check reported.
+- 2026-11-22 — Choice: R1-1, app-handoff-restart.test.js:267: a separate test (brief allowed either), with its own archive stub reply, entry shapes and `thread.slug = 'plan'`. Worker reported none; listed from the scout.
