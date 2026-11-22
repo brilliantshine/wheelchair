@@ -89,7 +89,7 @@ The go-between no longer spawns the tool directly. It starts a launcher with
 these differences from `wrapperScript`:
 
 - **Job name.** The go-between picks `id = "tool-" + <uuid>`; the job is `wheelchair-<id>`,
-  so `terminateScript(id)` (`win-apps.js:94`) ends it. Pass `id`, never the full name.
+  so `toolTerminateScript(id)` (Spec 4) ends it. Pass `id`, never the full name.
 - **Program, args, directory.** Program: the entry's command through `winEnv.toWindows`.
   Args unchanged. Working directory: the go-between's own cwd via `winEnv.toWindows`
   (what interop gives an unwrapped tool today).
