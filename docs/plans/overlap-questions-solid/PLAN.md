@@ -163,7 +163,7 @@ check (`viewer/app/cards.js:69`, `:168`).
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | tricky: Spec items 1-7, lead.md overlap wording and protocol tests | protocol/app/lead.md (3 sections), viewer/test/protocol-rules.test.js, reports/T1.md | standard / claude-sonnet-5-5 | wc-213e51e374d6-worker | node --test viewer/test/protocol-rules.test.js; npm test in viewer/ | done |
-| R1-1 | Remediation 1: re-ask compares against the state the answer was given in | protocol/app/lead.md (New overlap bullet), viewer/test/protocol-rules.test.js, reports/R1-1.md | light / claude | wc-213e51e374d6-worker-2 | same | in progress |
+| R1-1 | Remediation 1: re-ask compares against the state the answer was given in | protocol/app/lead.md (New overlap bullet), viewer/test/protocol-rules.test.js, reports/R1-1.md | light / claude-haiku-5-5 | wc-213e51e374d6-worker-2 | same | done |
 
 ## Log
 - 2026-11-21 — Choice: T1, Spec item 2: placed as the last sentence of the "Feature, while planning" bullet rather than a new bullet.
@@ -171,3 +171,5 @@ check (`viewer/app/cards.js:69`, `:168`).
 - 2026-11-21 — Choice: T1, tests: stable phrases "apply to a thread in any project", "earlier user message (before or after PLAN.md was created)", "using its output only for this finished check", "whether or not it still counts as an overlap", "resolved from the latest such message".
 - 2026-11-21 — T1 accepted (band: self): diff read in full against Spec 1-7; sub-lead added "(answer the peer at once either way)" to the peer lead-in so the re-ask path keeps Spec item 5's "still answer the peer at once".
 - 2026-11-21 — Verification 1 (gpt-6.2-sol): FAIL, 1 gap (Spec 5 re-ask repeats on news the answer already knew); judged normal use, sent to REMEDIATION-1.md.
+- 2026-11-21 — Choice: R1-1, test: new phrase appended last in the phrase list (scout-noted; report said none).
+- 2026-11-21 — R1-1 accepted (band: scout): both replacements match the brief exactly; protocol-rules 38/38 and npm test 833/833 re-run by the sub-lead on the worker branch.

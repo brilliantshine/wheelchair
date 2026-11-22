@@ -51,3 +51,16 @@ The worker's own full run had one failure in `viewer/test/server.test.js` ("the 
 - Pre-PR #148 overlap Decisions name no shared work and are not checked for re-asks (by design, Spec item 5).
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-21
+
+Gap (verification 1, gpt-6.2-sol): Spec 5 re-ask could repeat on news the user's answer already knew (peer paused before Collin answered). Fix (R1-1, light / claude-haiku-5-5): an answer Decision also names whether that thread was doing the shared work then, and a re-ask needs a later change that undoes the answer — `protocol/app/lead.md:763`; test phrase `viewer/test/protocol-rules.test.js:114`.
+
+```
+$ node --test viewer/test/protocol-rules.test.js
+# pass 38
+# fail 0
+$ (cd viewer && npm test)
+# pass 833
+# fail 0
+```
