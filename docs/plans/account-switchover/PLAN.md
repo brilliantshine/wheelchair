@@ -232,6 +232,20 @@ resets; other providers; changing how accounts are signed in.
 | mechanics | major | `[wc:from app]` hides a lead's continued answer; `[wc:context restart]` shows "Lead restarted" | upheld | Decision 14, `[wc:context switch]` marker |
 | mechanics | minor | Agents display needs a label for a removed account | upheld | §5 "a removed account" |
 
+### Round 2 — 2026-11-21
+
+**Lanes:** intent / claude; mechanics / other family; cross-family: yes.
+
+**Changed since Round 1:**
+- §1: both trigger forms named (Claude `limit-hit`, Codex `turn-ended` with a future reading); events stamped with their account.
+- §2: new switch selector instead of `choose()`, excluding limited accounts before ranking.
+- §3: rewritten — hub order (ack, clear session hold, commit new account, ask machine), machine operation (stop, copy, rebind transcript source, relaunch with resume, own readiness window), `[wc:context switch]` carry-on message, Codex variant.
+- §4: fallback is now an in-place fresh relaunch (Decision 12), not the per-role restart paths.
+- §5: removed-account label. Validation extended. One Accepted Risk added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
