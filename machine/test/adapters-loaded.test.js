@@ -15,9 +15,9 @@ function call(name, tools = true, entries = servers) {
     tools, mount: '/custom', stateDir, promptPath: '/prompt', mcp: { names: [...Object.keys(entries), 'rejected'], servers: entries },
   });
 }
-const common = [{ name: 'win', windows: true }, { name: 'linux', windows: false }, { name: 'web', windows: false }];
+const common = [{ name: 'win', windows: true, wrapped: false }, { name: 'linux', windows: false, wrapped: false }, { name: 'web', windows: false, wrapped: false }];
 test('adapters report only loaded project entries and classify original transports', () => {
-  assert.deepEqual(call('claude').loaded, [...common, { name: 'events', windows: false }]);
+  assert.deepEqual(call('claude').loaded, [...common, { name: 'events', windows: false, wrapped: false }]);
   assert.deepEqual(call('codex').loaded, common);
   assert.deepEqual(call('agy').loaded, common);
   assert.deepEqual(call('pi').loaded, []);
