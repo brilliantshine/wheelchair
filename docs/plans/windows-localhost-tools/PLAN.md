@@ -816,7 +816,7 @@ Clean round.
 | T4 | Service integration: `startIn` forwarding and `replaceEntries` (§2), Claude `--mcp-config` file write/remove/sweep (§3), `WinBridge` restore (§5), `windows-status` route and read `wsl` (§6, §7) | `machine/service.js`, `machine/lib/win.js`, service tests | standard, effort xhigh (rung 1: attempt 1 hit its fails-twice guardrail with two regressions and an incomplete test matrix) / gpt-6.1-terra | wc-a1a1b7d6016d-worker-9 (attempt 1: worker-7) | full machine suite, viewer suites, live test | done |
 | T5 | Project tools page switch, status store and line, viewer route (§6, §7 page) | `viewer/pages/project-tools.js`, `viewer/app/routes.js`, viewer project-tools tests | standard / claude-sonnet-5-5 | wc-a1a1b7d6016d-worker-4 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done |
 | T6 | Strengthen the page's status-timing browser tests and fix the no-token retry loop (follow-up to T5) | `viewer/test/app-project-tools.spec.js`, `viewer/pages/project-tools.js` (`flushChecks` only) | standard / claude | wc-a1a1b7d6016d-worker-8 | `npm --prefix viewer run test:browser -- app-project-tools` | done |
-| T7 | Three status tests that still miss their claims: Unity poll re-render while pending, same-name rows batched, two keys batched | `viewer/test/app-project-tools.spec.js` | standard / claude-sonnet-5-5 | wc-a1a1b7d6016d-worker-10 | `npm --prefix viewer run test:browser -- app-project-tools` | in progress |
+| T7 | Three status tests that still miss their claims: Unity poll re-render while pending, same-name rows batched, two keys batched | `viewer/test/app-project-tools.spec.js` | standard / claude-sonnet-5-5 | wc-a1a1b7d6016d-worker-10 | `npm --prefix viewer run test:browser -- app-project-tools` | done |
 
 ## Log
 
@@ -865,3 +865,6 @@ Clean round.
 - 2026-11-21 — Choice: T6, app-project-tools.spec.js: the save-clears test uses an `opened` save (a plain `saved` reply doesn't reread); the same-project reload is reached through a 409 save; overlapping older tests kept.
 - 2026-11-21 — Choice: T6, project-tools.js: with no token, `flushChecks` drops the due keys and relies on the next render to schedule them again.
 - 2026-11-21 — T6 accepted (band: scout): only page change is the no-token fix; worker showed that removing the epoch and pending guards fails the reload and save tests. Three tests still miss their claims (Unity poll path, same-name rows, two-key batching): sent to T7.
+- 2026-11-21 — Choice: T7, app-project-tools.spec.js: same-name rows are a card plus an unsaved Edit-form copy of the same entry (entry names are unique); the poll test's Unity stub answers `running` then `ready`; the batching test starts from `windows: []` and turns two entries on itself, with a 400 ms floor measured from before the first click.
+- 2026-11-21 — worker didn't report all its choices; I listed 2 more from the scout's read.
+- 2026-11-21 — T7 accepted (band: scout): all three tests now do what the Spec names; worker's temporary page mutations (debounce 50 ms, ids forced equal, poll off) each made a test fail.
