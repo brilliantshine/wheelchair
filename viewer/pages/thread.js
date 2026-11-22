@@ -778,6 +778,21 @@
     await poll(true);
     render();
   }
+  async function dismissCard(card) {
+    if (pressing[card.id]) return;
+    pressing[card.id] = true;
+    try {
+      await post(T + '/cards/' + encodeURIComponent(card.id) + '/dismiss', {});
+      delete cardErrors[card.id];
+    } catch (e) {
+      cardErrors[card.id] = e.message;
+    } finally {
+      delete pressing[card.id];
+    }
+    sigs.chat = null; sigs.pinned = null;
+    await poll(true);
+    render();
+  }
   // What a pressed question or offer shows as its pick: the offer's mapped label, else the value itself.
   function pickedLabel(card) {
     if (card.kind === 'offer') {
@@ -1030,10 +1045,25 @@
           const ul = el('ul'); for (const i of card.items) ul.appendChild(el('li', '', i)); box.appendChild(ul);
         }
         // A session-level card (stuck, permission) goes straight to that session's terminal.
-        if (card.system && card.session && !card.answered) {
-          const a = el('a', 'btn primary', 'Open terminal');
-          a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
-          const actions = el('div', 'actions'); actions.appendChild(a); box.appendChild(actions);
+        // One that no live session is held on (not blocking) can also be dismissed.
+        if (card.system && !card.answered && (card.session || !card.blocking)) {
+          const actions = el('div', 'actions');
+          if (card.session) {
+            const a = el('a', 'btn primary', 'Open terminal');
+            a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
+            actions.appendChild(a);
+          }
+          if (!card.blocking) actions.appendChild(button('Dismiss', '', () => dismissCard(card), thread().archived));
+          box.appendChild(actions);
+        }
+        if (card.system && card.auto_merge && !card.answered) {
+          const actions = el('div', 'actions');
+          actions.appendChild(button('Dismiss', '', async () => {
+            try { await post(T + '/cards/' + encodeURIComponent(card.id) + '/dismiss', {}); delete cardErrors[card.id]; }
+            catch (e) { cardErrors[card.id] = e.message; }
+            sigs.chat = null; sigs.pinned = null; await poll(true); render();
+          }, thread().archived));
+          box.appendChild(actions);
         }
         // A card a lead posted stays until it is settled. The user answers it with either
         // button, and the lead always replies, so nothing closes silently.

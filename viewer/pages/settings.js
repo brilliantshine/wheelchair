@@ -494,7 +494,7 @@
     const table = h('table', { class: 'tiers' }, h('thead', {}, head), h('tbody', {}, body));
 
     // One segmented choice per CLI; each saves its own key through the preferences route.
-    const modeGroup = (key, label, choices) => {
+    const modeGroup = (key, label, choices, saved = SAVED) => {
       const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
         choices.map(([value, text]) => h('button', {
           type: 'button', role: 'radio', 'aria-checked': String(data[key] === value), text,
@@ -506,7 +506,7 @@
               data[key] = res[key];
               inlineErr(row, '');
               renderPanel();
-              setNote(SAVED, false);
+              setNote(saved, false);
             } catch (e) { inlineErr(row, e.message); setNote('', false); }
           },
         })));
@@ -541,6 +541,7 @@
     const asideHint = data.aside_access === 'full'
       ? 'Never asks, no sandbox: an aside can read anywhere, run commands and change files.'
       : 'Reads files in the thread\'s worktree only. Runs no commands.';
+    const AUTO_MERGE_HINT = 'When on, a thread merges its own pull request once an agent has seen at least one Check it yourself step work and none broke. A thread where you chose to push something that failed its check, or a thread handed over from another machine, is never merged automatically. It applies to pull requests checked after it is turned on. It never merges past failing checks, conflicts or GitHub\'s rules.';
     const codexHint = data.codex_mode === 'unrestricted'
       ? 'Never asks, no sandbox: it can change anything on the machine. Reviewers stay read-only.'
       : 'Never asks: it can write only inside its worktree.';
@@ -590,6 +591,9 @@
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
+          h('div', { class: 'row-line' },
+            h('div', { class: 'what' }, h('span', { text: 'Merge pull requests when done' }), h('span', { class: 'hint', text: AUTO_MERGE_HINT })),
+            modeGroup('auto_merge', 'Merge pull requests when done', [['off', 'Off'], ['on', 'On']], 'Saved')),
           enterRow(),
           folderRow(),
           nameRow())),

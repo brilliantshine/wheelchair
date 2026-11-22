@@ -171,6 +171,8 @@ function applyProjectTools(thread, started) {
     return;
   }
   const names = [...new Set(lines.flatMap((line) => (line.names.length ? line.names : ['file'])))].sort();
+  const dismissed = stored.card && thread.cards.find((item) => item.id === stored.card && item.answered && item.resolved_by === 'user');
+  if (dismissed && JSON.stringify(names) === JSON.stringify(stored.card_names)) return;
   const items = lines.slice(0, 20).map((line) => line.text);
   if (lines.length > 20) items.push(`and ${lines.length - 20} more`);
   const body = "Some project tools won't work for agents in this thread:";
@@ -689,10 +691,14 @@ async function sessionRequest(hub, payload) {
   if (payload.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(payload.effort)) throw appError(400, 'effort must be one of low, medium, high, xhigh, max');
   if (!payload.attempt_id) throw appError(400, 'attempt_id is required');
   const sameAttempt = (item) => item.started_by === caller.name && item.attempt_id === payload.attempt_id;
+  const finishStart = async (result) => {
+    if (caller.quiet_card) { quiet.reset(thread, caller); await hub.save(thread); }
+    return result;
+  };
   const duplicate = thread.sessions.find((item) => sameAttempt(item) && item.live);
-  if (duplicate) return { session: publicSession(duplicate), duplicate: true };
+  if (duplicate) return finishStart({ session: publicSession(duplicate), duplicate: true });
   const unanswered = thread.sessions.find((item) => sameAttempt(item) && item.unanswered_start);
-  if (unanswered) return { session: publicSession(await resumeUnanswered(hub, thread, unanswered)), duplicate: true };
+  if (unanswered) return finishStart({ session: publicSession(await resumeUnanswered(hub, thread, unanswered)), duplicate: true });
   if (payload.role === 'sub-lead' && thread.sessions.some((item) => item.role === 'sub-lead' && item.live)) {
     throw appError(409, 'a live sub-lead already exists');
   }
@@ -715,7 +721,7 @@ async function sessionRequest(hub, payload) {
     verify_ref: payload.role === 'verifier' ? thread.branch : undefined,
     ...(payload.role === 'worker' && payload.replaces ? await replacedWorker(hub, thread, payload.replaces) : {}),
   });
-  return { session: publicSession(started), ...(started.note ? { note: started.note } : {}) };
+  return finishStart({ session: publicSession(started), ...(started.note ? { note: started.note } : {}) });
 }
 
 // A replacement worker shares the old worker's worktree, so the old one must really be gone: the

@@ -150,6 +150,7 @@ const fields = {
     pr_url: text,
     head: (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value),
     note: (value) => value === undefined || text(value),
+    verified: (value) => value === undefined || typeof value === 'boolean',
   },
   check: {
     head: (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value),
@@ -248,13 +249,17 @@ function validate(kind, card, role, options = {}) {
 // Which card a resolve may close: an open needs card a lead posted in this thread, or, for a
 // lead, an open question. The hub's own needs cards (system) close themselves or have their
 // own button.
+function blockingNeeds(thread, cardId) {
+  return (thread.sessions || []).some((session) => session.live && session.needs_card === cardId && session.needs_open);
+}
+
 function resolvable(thread, cardId, mode) {
   const target = (thread.cards || []).find((item) => item.id === cardId && !item.replaced);
   if (!target) return { ok: false, reason: 'no such card in this thread' };
   if (target.kind !== 'needs' && !(mode === 'lead' && target.kind === 'question')) {
     return { ok: false, reason: mode === 'lead' ? 'only a needs or question card can be resolved' : 'only a needs card can be resolved' };
   }
-  if (target.kind === 'needs' && target.system) return { ok: false, reason: 'a system needs card closes itself' };
+  if (target.kind === 'needs' && target.system && !(target.auto_merge === true && mode !== 'lead')) return { ok: false, reason: 'a system needs card closes itself' };
   if (target.answered) return { ok: false, reason: 'card is already answered' };
   return { ok: true, card: target };
 }
@@ -331,4 +336,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fields, resolvable, retractable, roles, shown, truncateTitle, validate };
+module.exports = { blockingNeeds, fields, resolvable, retractable, roles, shown, truncateTitle, validate };

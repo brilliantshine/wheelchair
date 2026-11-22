@@ -409,9 +409,12 @@ async function chat(hub, id) {
   // and a stub can link the one it waits on.
   const prOf = (item) => item ? require('./handoff.js').donePr(item, { includeReplaced: true }) : null;
   const parent = thread.parent ? await hub.readSnapshot(thread.parent).catch(() => null) : null;
+  const cards = thread.cards.map((card) =>
+    !card.replaced && card.kind === 'needs' && card.system && require('./card.js').blockingNeeds(thread, card.id) ? { ...card, blocking: true } : card);
   const publicThread = {
     ...thread,
     sessions: thread.sessions.map(publicSession),
+    cards,
     pr_url: prOf(thread),
     parent_pr_url: prOf(parent),
   };
@@ -420,7 +423,7 @@ async function chat(hub, id) {
     asides: (thread.asides || []).map(require('./asides.js').brief),
     documents: await require('./documents.js').list(thread, hub),
     items: shown,
-    cards: thread.cards.filter((card) => !card.replaced),
+    cards: cards.filter((card) => !card.replaced),
     pinned: shownPins(thread),
     queued: Object.values(thread.queues).flat().length,
   };

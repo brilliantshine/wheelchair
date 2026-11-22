@@ -71,6 +71,7 @@ the old one in the pin (there is one offer, one idea list, one deferred list and
 thread). An approval unpins when Start building is accepted or it is retracted; a fresh
 approval replaces an open pinned approval. The app also posts `needs` cards of its own (a session stuck at startup, a
 permission prompt, "Sessions ended"); you never post those.
+The user can dismiss any system needs card except a "Permission needed" or "Session stuck at startup" card while its live session is still held, and the quiet card also closes when its agent’s starter messages it or the agent starts another agent.
 
 Sections for `progress`, `lesson`, `message` and `result` are below; all other kind sections are
 in `cards-lead.md`.
