@@ -44,7 +44,7 @@ test('switch rollback preserves switch outcome and discards hooks', async t => {
 
 test('relaunch readiness reports the matching switch and timeout ends it', async () => {
   const machine = Object.create(MachineService.prototype); const events = []; const killed = [];
-  machine.persistSessions = async () => {}; machine.emitEvent = async e => events.push(e); machine.tmux = args => { killed.push(args); return { ok: true }; };
+  machine.persistSessions = async () => {}; machine.emitEvent = async e => events.push(e); machine.tmux = args => { killed.push(args); return { ok: true }; }; machine.liveTmux = () => new Set();
   machine.pane = () => 'auto mode on\n❯ Try anything\n';
   const session = { name: 'wc-test', cli: 'claude', thread_id: 't', status: 'starting', active_switch: 'a', switches: { a: { state: 'running' } }, relaunched_at: new Date().toISOString() };
   await machine.checkReady(session); assert.equal(events[0].switch_id, 'a'); assert.equal(session.switches.a.state, 'done');

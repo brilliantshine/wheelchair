@@ -920,12 +920,10 @@ class MachineService {
     }
   }
   async failedResume(session) {
-    this.tmux(['kill-session', '-t', `=${session.name}`]);
-    session.status = 'stopped'; session.end_reason = 'switch-resume-failed';
-    session.stopped_at = new Date().toISOString();
+    session.end_reason = 'switch-resume-failed';
     if (session.switches?.[session.active_switch]) session.switches[session.active_switch].state = 'failed';
     delete session.active_switch;
-    await this.persistSessions();
+    await this.stopFatal(session);
   }
   async prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, resume) {
     const name = session.name;
