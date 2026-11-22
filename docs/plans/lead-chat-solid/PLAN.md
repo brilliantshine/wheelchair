@@ -41,6 +41,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | Supersedes 9: a never-opened stub has no lead session, so a message to it stays refused ("no lead by that name"); adding to a stub is thread 2c25927136e1's work | Avoids a second way to feed a stub; a held message needs a lead session to wait on (Spec S1) | defaulted |
 | 12 | A message may name any lead session of the target thread, live or ended; it goes to the latest live lead or is held. The overlap rules for `lead: null` entries in `session leads` are unchanged (still an overlap card) | Holding protects conversations already under way; changing the overlap path is out of scope | defaulted |
 | 13 | Held messages wait in the latest lead session's queue, which `restartLead` already moves to the next lead; no new store | Reuses the existing move (`viewer/app/threads.js:178`) | defaulted |
+| 14 | Supersedes 5 and 6: a pair that exchanges 20 messages within an hour is paused until Collin writes or presses something in the sending thread; one "Message limit reached" line per pause | A rolling cap only slows a loop; IDEA asks that it stop | review-round-1 |
+| 15 | The pair count reads only the sender's own `peer_log`; no `target_thread` field on cards | One thread, no cross-thread read | review-round-1 |
+| 16 | A `received` entry is written when a lead actually gets the message, not when it is queued | Avoids a restarted lead seeing a held message twice | review-round-1 |
+| 17 | Held messages do not block hand-off or archive; they are dropped then | A held message is information; it must not force a restart first | review-round-1 |
 
 ## Spec
 
@@ -56,122 +60,147 @@ Same-thread messages, `reach` cards and `session leads` output are unchanged.
 - Delivery step (`viewer/app/hub.js` `acceptCard`, target-thread update): if the target is
   still reachable (`peers.reachable`), take `peers.latestLiveLead(thread)`; if there is none,
   take the target's most recently created lead session (live or not). Push the same queue
-  entry as today (marker text, `source: 'session'`) onto that session's queue and
-  `thread.queues`. Attempt delivery only when the chosen lead is live. The step returns
-  `{ name, held }` with `held: true` when the lead was not live.
+  entry as today (marker text, `source: 'session'`) plus a field
+  `peer: { thread: <sender thread id>, title: <sender title>, session: <sender session name>, question: <card id, only when asks is true> }`
+  onto that session's queue and `thread.queues`. Attempt delivery only when the chosen lead is
+  live. The step returns `{ name, held }`, `held: true` when the lead was not live.
 - A held message reaches the next lead because `restartLead` already moves every ended
-  lead's queue to the new lead after the new restart context (both the normal and the
-  imported path; `viewer/app/threads.js:159-195`). Verify that ordering in a test; change
-  nothing there unless the test shows the message lost or placed before the context.
-- Archive and hand-off: held messages are simply never delivered (no new code).
+  lead's queue to the new lead after the new restart context (normal and imported paths;
+  `viewer/app/threads.js:159-195`). Verify that ordering in a test; change nothing there
+  unless the test shows the message lost or placed before the context.
 - Receipt: `acceptCard` returns the card plus `held: true` when held. The machine relays the
   hub body unchanged; `viewer/app/card.js` adds `"held":true` to its printed receipt when the
   body has `held === true` (alongside the existing `queued`). A machine-spooled card
   (`queued`) cannot report `held`.
-- The loss window (map: sender card saved, target step returns null) now occurs only when
-  the target stops being reachable (archived, handed off, moved machine) between the two
-  steps. That is a rare path; see Accepted Risks.
+- Hand-off and archive: queue entries carrying `peer` on a session that is not live and not
+  `pending` are ignored by the "lead is busy" checks (`viewer/app/handoff.js:98` and any other
+  check over lead queues before export or Advance; other entries still count). When an export
+  or Advance succeeds, and when archive completes, those entries are deleted from every
+  session's queue and `thread.queues`, so a later restart or import cannot deliver them.
+- First contact: a lead that has not talked with a thread still sees `lead: null` in
+  `session leads` while that thread's lead is down, and follows the existing overlap rules.
+  Holding serves conversations already under way (the sender knows a lead's session name).
 
-### S2. Cap per pair of threads
+### S2. Pausing a pair of threads that message too much
 
-- Every cross-thread message card stores `target_thread: <id>` on the sender's card.
-- Before storing a cross-thread message, count message cards with `target_thread` equal to
-  the other thread in the sender thread, plus message cards in the target thread whose
-  `target_thread` is the sender thread, with `created_at`
-  within the last 60 minutes. If the count is 20 or more, refuse with 422 and the reason
-  `message limit reached with <target title>: 20 messages in the last hour; you can send again after <HH:MM> UTC`,
-  where the time is the oldest counted message's time plus 60 minutes. Nothing is stored
-  except the S3 limit entry.
-- The count is read without the target thread's lock (no new lock ordering; the concurrent
-  opposite-send test `viewer/test/app-lead-messages.test.js:79` must still pass).
-- Constant `PAIR_LIMIT = 20`, `PAIR_WINDOW_MS = 3600000` in one place, exported for tests.
+All counts read only the sender thread's own `peer_log` (S3), inside the sender's existing
+thread update; no new lock and no read of the target thread.
+
+- Let `since` be the time of the latest `thread.sent` entry in the sender thread with source
+  `user` or `card` (Collin typed or pressed something there), or the beginning of time if none.
+- The pair is **paused** when the sender's `peer_log` has a `limit` entry for the target thread
+  after `since`. Otherwise count the `sent` and `received` entries for the target thread that
+  are after `since` and within the last 60 minutes; at 20 or more the pair becomes paused.
+- A paused send is refused with 422 and the reason
+  `message limit reached with <target title>: 20 messages within an hour; messaging that thread is paused until the user writes in this thread`.
+  The first refusal after `since` appends one `limit` entry; later refusals append nothing.
+- Implementation: the thread-update callback appends the entry and returns a refusal result;
+  the hub raises the 422 after the write completes (throwing inside `updateThread` skips the
+  write; `viewer/app/state.js:147`). Nothing else is stored.
+- Each thread checks its own side, so a loop stops in both directions: the other lead's log
+  holds the same exchange and reaches 20 on its next send.
+- Constants `PAIR_LIMIT = 20` and `PAIR_WINDOW_MS = 3600000` in one place, exported for tests.
 
 ### S3. Per-thread record of lead-to-lead traffic
 
-- New thread field `peer_log`: array of `{ at, thread, title, direction, text }`, newest last,
-  capped at 200 (oldest dropped). `direction` is `sent`, `received` or `limit`. `thread` is the
-  other thread's id and `title` its `peers.threadName` at that moment. `text` is the message
-  text (empty for `limit`).
-- `sent` entry: added to the sender thread when the card is stored. `received` entry: added to
-  the target thread in the delivery step (S1), whether delivered or held. `limit` entry: added
-  to the sender thread when S2 refuses (it is the only change that refusal makes; it must still
-  respond 422).
+- New thread field `peer_log`: array of
+  `{ at, thread, title, session, direction, text, question? }`, newest last, capped at 200
+  (oldest dropped). `direction` is `sent`, `received` or `limit`. `thread` is the other thread's
+  id, `title` its title at that moment, `session` the other lead's session name, `question` the
+  card id when the message asked for an answer. `text` is empty for `limit`.
+- `sent`: added to the sender thread when the card is stored (`session` = the card's `to`).
+- `received`: added to the target thread when delivery's machine submit succeeds
+  (`viewer/app/sessions.js` after `target.queue.shift()`), for a queue entry carrying `peer`,
+  built from that entry. A held message is therefore recorded once, when a lead actually gets it.
 - Old threads with no `peer_log` read as empty.
+- `peer_log` never reaches the browser: the chat response and the thread and thread-list
+  responses omit it (they currently spread the thread record: `viewer/app/chat.js:414`,
+  `viewer/app/routes.js:488`); the page receives only the S5 items.
 
 ### S4. Restart context
 
 - `restartLead` adds `cross_thread_messages`: the last 20 `peer_log` entries with direction
-  `sent` or `received`, each as `{ at, direction, thread, title, text }`. Omit the field when
-  there are none. `recent_messages` and every other field are unchanged.
-- `protocol/app/lead.md` "Restarting what died" gains one sentence: the restart context's
-  `cross_thread_messages` holds recent messages with other threads' leads; reread them before
-  answering a peer.
+  `sent` or `received`, each with every S3 field. Omit the field when there are none.
+  `recent_messages` and every other field are unchanged.
+- `protocol/app/lead.md` "Restarting what died" gains: the restart context's
+  `cross_thread_messages` holds recent messages with other threads' leads. If the latest
+  `received` entry from a thread has a `question` and no later `sent` entry to that thread,
+  answer it with a message to its `session` (held if that lead is down); otherwise send nothing.
 
 ### S5. "Talked with" lines in the thread
 
 - `viewer/app/chat.js` builds, from `peer_log`, items of a new type `peer`, interleaved by time
   with the other items:
-  - Walk entries in order. `sent` and `received` entries with the same `thread` fold into one
-    item while each is within 30 minutes of the previous entry for that thread; otherwise a new
-    item starts. Item: `{ type: 'peer', at: <first entry's at>, thread, title: <latest entry's title>, count }`.
+  - First drop entries the page's import cutoff would hide (the same rule as
+    `viewer/pages/thread.js:582-602` applies to items), then fold.
+  - `sent` and `received` entries with the same `thread` fold into one item while each is
+    within 30 minutes of the previous entry for that thread; otherwise a new item starts.
+    Item: `{ type: 'peer', at: <first entry's at>, thread, title: <latest entry's title>, count }`.
   - Each `limit` entry is its own item `{ type: 'peer', at, thread, title, limit: true }`.
+  - Items carry no message text.
 - `viewer/pages/thread.js` renders a `peer` item like a context line (class `ctx`): text
   `Talked with <title> · <count> message(s)` ("1 message", "N messages") or
   `Message limit reached with <title>`, with `<title>` a link to
-  `/wheelchair/app/thread?id=<thread>`. All text via `textContent` (never HTML). No message
-  text is shown anywhere.
+  `/wheelchair/app/thread?id=<thread>`. All text via `textContent`.
 - The hidden `[wc:from ...]` turns stay hidden exactly as today (`viewer/app/chat.js:125`).
 
 ### S6. Protocol text
 
 - `protocol/app/cards.md`, `message` section: a lead's message to another thread's lead may
-  name any lead of that thread, live or ended; if none is live it is held for that thread's
-  next lead and the receipt shows `"held":true`; at most 20 messages per pair of threads per
-  hour, both directions, refused with the reason. Add `held` to the receipt description in
-  "Posting a card".
-- `protocol/app/lead.md`, "Other leads on this machine", Replies or Overlap bullet: a held
-  message is normal; never resend it. On a limit refusal, stop messaging that thread and tell
-  the user in a line if something still needs saying. Keep `lead: null` threads' overlap rule
-  as it is.
-- Any copy of these files the repo keeps elsewhere (for example a generated prompt) is updated
-  the same way; `grep -rn "no live lead right now" .` must return nothing outside tests and
-  old plans.
+  name a lead session of that thread it already knows, live or ended; if none is live it is
+  held for that thread's next lead and the receipt shows `"held":true`. A pair of threads that
+  exchanges 20 messages within an hour is paused until the user writes in the sending thread;
+  the refusal says so. Add `held` to the receipt description in "Posting a card".
+- `protocol/app/lead.md`, "Other leads on this machine": keep "A thread with `lead: null`
+  cannot be messaged" for discovery and overlaps, and add that a lead you are already talking
+  with may be messaged at its known session name after it stopped; the message is held, never
+  resend it. On a limit refusal, stop messaging that thread and say in one line of your next
+  visible reply that the conversation was paused.
+- Validation of stale wording: `grep -rn "no live lead right now" viewer machine protocol --exclude-dir=test`
+  returns nothing (maps and old plans are history and keep it).
 
 ### Non-goals
 
 Showing message text in the thread; messages between machines; changing who may message whom,
-the `reach` flow or `session leads`; messaging never-opened stubs; a user-facing card for the
-cap.
+the `reach` flow or `session leads`; messaging never-opened stubs; first contact with a thread
+whose lead is down; a user-facing card for the pause.
 
 ### Validation
 
 - `node --test viewer/test/app-lead-messages.test.js viewer/test/app-hub.test.js viewer/test/app-chat.test.js viewer/test/app-handoff-restart.test.js`
 - `bash machine/test/run.sh`
 - `npm --prefix viewer run test:browser`
+- The grep in S6.
 - New tests (in `viewer/test/app-lead-messages.test.js` unless noted):
   1. Message to a thread whose only lead has ended: accepted, receipt has `held: true`, entry
-     sits on that lead's queue; `restartLead` then puts it on the new lead's queue after the
-     restart context (normal and imported restart).
-  2. Lead dies between acceptance and delivery step: message is held, not lost.
-  3. 20 messages in an hour across both directions succeed; the 21st in either direction gets
-     422 with the reason text above, stores no card, and adds one `limit` entry to the sender's
-     `peer_log`; a message 61 minutes after the oldest succeeds.
-  4. `peer_log` gets `sent` on the sender and `received` on the target; capped at 200.
-  5. Restart context includes `cross_thread_messages` (both directions, last 20) and omits it
-     when empty (`viewer/test/app-hub.test.js`).
-  6. Chat builds folded `peer` items: 3 messages within 30 minutes → one item count 3; a gap
-     over 30 minutes → two items; a limit entry → its own item (`viewer/test/app-chat.test.js`).
-  7. Browser: a `peer` item renders as a line with a link to the other thread and no message
-     text.
-  8. `card.js` prints `"held":true` when the body has it.
+     (with `peer`) sits on that lead's queue; `restartLead` then puts it on the new lead's queue
+     after the restart context (normal and imported restart).
+  2. Lead dies between acceptance and the delivery step: message is held, not lost.
+  3. Pause: 20 `sent`/`received` entries within an hour, then a send is refused with the reason
+     above, stores no card and adds one `limit` entry; a second refused send adds none; after a
+     user message in the sender thread, sends succeed again; entries older than 60 minutes do
+     not count.
+  4. `peer_log`: `sent` on the sender at acceptance; `received` on the target only after a
+     successful submit (not while held); capped at 200.
+  5. Hand-off with a held message: export is not refused as busy, and the held entry is gone
+     afterwards; archive likewise (`viewer/test/app-handoff-restart.test.js`).
+  6. Restart context includes `cross_thread_messages` with `session` and `question`, and omits
+     it when empty (`viewer/test/app-hub.test.js`).
+  7. Chat builds folded `peer` items: 3 messages within 30 minutes → one item, count 3; a gap
+     over 30 minutes → two items; a limit entry → its own item; entries before an import cutoff
+     are dropped before folding; the chat and thread-list JSON contain no `peer_log` and no
+     message text (`viewer/test/app-chat.test.js`).
+  8. Browser: a `peer` item renders as a line with a link to the other thread.
+  9. `card.js` prints `"held":true` when the body has it.
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A message is stored on the sender but never queued if the target is archived, handed off or moved machine between acceptance and the delivery step | Needs a user action inside a sub-second window; rare path (`realism.md`) | planning |
-| The pair count is read without the target's lock, so two opposite sends in the same instant can exceed 20 by one | Sub-second race between two actors; the cap still stops a loop | planning |
 | A card spooled during a hub outage and refused later by the cap reaches no sender | Needs an outage plus a loop; the `limit` line still shows in the thread | planning |
+| The hub restarts after saving the sender's card but before the target-thread step: the message is never queued, and the machine's retry is deduplicated | Needs a hub restart inside the gap between two consecutive saves; existing since lead-chat | review-round-1 |
+| The hub restarts during the machine start request of a lead restart: the new lead starts with an empty queue and held messages stay on the ended lead | Needs a hub restart inside one start request; affects all queued messages, not only these | review-round-1 |
 
 ## Review Rounds
 
@@ -180,6 +209,37 @@ cap.
 **Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | S2: a rolling cap slows a loop but never stops it; "send again after" invites retries | upheld | S2 now pauses the pair until the user writes; Decision 14 |
+| intent | minor | S2/S3: count from `peer_log` instead of a new card field and a cross-thread read | upheld | S2 reads the sender's `peer_log` only; Decision 15 |
+| intent | minor | S3/S4: `received` written at queue time duplicates held messages in restart context and shows unread lines | upheld | `received` written on successful submit; Decision 16 |
+| intent | minor | S4: entries lack the peer session and question id | upheld | S3 fields `session`, `question`; S4 lead.md rule |
+| intent | minor | S1: first contact while the target's lead is down still meets `lead: null` | upheld | Stated in S1 and Non-goals |
+| intent | minor | S5: every refused retry adds a limit line | upheld | One `limit` entry per pause (S2) |
+| mechanics | major | S1: hub restart between sender save and target step loses the message; retry deduplicated | accepted-risk | Rare path: restart inside the gap between two saves; Accepted Risks |
+| mechanics | major | S1: hub restart during a lead restart's start request strands held messages | accepted-risk | Rare path: restart inside one start request; Accepted Risks |
+| mechanics | major | S1: held messages make hand-off report the lead busy | upheld | S1 hand-off and archive bullet; Decision 17 |
+| mechanics | major | S3/S4: restart history lacks session and question; queued entries indistinct | downgraded (minor) | A missed peer answer costs no user work and leads never wait on peers; fixed with the intent findings above |
+| mechanics | minor | S2: throwing inside `updateThread` drops the `limit` entry | upheld | S2 implementation bullet |
+| mechanics | minor | S5: folding across the import cutoff hides new activity | upheld | S5 drops pre-cutoff entries before folding |
+| mechanics | minor | S3: `peer_log` text leaks into chat and thread-list payloads | upheld | S3 last bullet; test 7 |
+| mechanics | minor | S6: new rule contradicts "`lead: null` cannot be messaged" | upheld | S6 lead.md bullet |
+| mechanics | minor | S6: repo-wide grep matches the delivery map | upheld | S6 grep scoped |
+
+### Round 2 — 2026-11-21
+
+**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+
+**Changed since Round 1:**
+- S1: queue entries carry `peer`; held entries ignored by hand-off busy checks and dropped on hand-off/archive; first contact stated as out of scope.
+- S2 rewritten: pause until the user writes, counted from the sender's own `peer_log`; refusal written then raised after the write.
+- S3: `received` written on successful submit; `session`/`question` fields; `peer_log` kept out of browser payloads.
+- S4: restart fields and the unanswered-question rule.
+- S5: import cutoff before folding; no text in items.
+- S6: lead.md wording beside `lead: null`; scoped grep.
+- Accepted Risks: two hub-restart rare paths added; unlocked-count risk removed.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
