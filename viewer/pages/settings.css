@@ -290,3 +290,10 @@ button.danger { color: var(--bad-text); }
 .lesson-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
 .lesson-marks { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--dim); min-width: 0; overflow-wrap: anywhere; }
 .lesson-from { color: var(--accent-text); }
+.lesson-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.lesson-stale { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; font-size: 12px; color: var(--dim); }
+.lesson-versions { list-style: none; margin: 0; padding: 0 0 0 10px; display: flex; flex-direction: column; gap: 8px; border-left: 2px solid var(--line); }
+.lesson-version-text { margin: 0; overflow-wrap: anywhere; }
+.lesson-removed h3, .lesson-waiting h3 { font-size: 14px; margin: 8px 0; }
+.lessons-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.lessons-tools button { flex: 1 1 auto; }
