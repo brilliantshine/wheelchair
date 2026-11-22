@@ -121,6 +121,15 @@ check (`viewer/app/cards.js:69`, `:168`).
 | mechanics | minor | "Leads inform" still sends other projects to chat | declined: duplicate of the intent finding, already fixed | — |
 | mechanics | minor | D3 test phrase in wrong section | upheld (minor) | Item 7 checks "Restarting what died" |
 
+### Round 2 — 2026-11-21
+
+**Lanes:** pending.
+
+**Changed since Round 1:** item 1 (the "Leads inform" line); item 2 (any look; handled like a card answer); item 3 (latest message wins); item 4 (always `--all-projects`; small-fix path; names the exception); item 5 rewritten (answer Decisions only; checked whether or not still an overlap; restart "not yet asked"); item 7 (D3 phrase checked in "Restarting what died").
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
