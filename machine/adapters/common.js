@@ -20,3 +20,5 @@ exports.loadedTools = (names, mcp, mount) => names.map(name => {
   const entry = mcp.servers[name];
   return { name, windows: (entry.type === undefined || entry.type === 'stdio') && require('../lib/project-programs').isWindowsProgram(entry.command, mount || '/mnt') };
 });
+
+exports.replacement = (map, name) => map instanceof Map ? { has: map.has(name), entry: map.get(name) } : { has: map != null && Object.hasOwn(map, name), entry: map != null && Object.hasOwn(map, name) ? map[name] : undefined };
