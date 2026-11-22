@@ -1,6 +1,6 @@
 ---
 slug: win-tool-gobetween
-status: implementing  # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying     # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -550,7 +550,7 @@ D11.
 | T2 | Shared replacement map in Claude/Codex/Antigravity adapters, `loaded.wrapped`, pure `win-tool-wrap.js` builder (Spec 1 wrapping, 2 adapters) | `machine/lib/win-tool-wrap.js`, `machine/adapters/{common,claude,codex,agy}.js`, `machine/test/win-tool-wrap.test.js`, `machine/test/adapters-loaded.test.js` | standard (gpt-6.1-terra) | wc-135e4c312559-worker-2 | adapter tests; `bash machine/test/run.sh`; viewer tests | done |
 | T1b | tricky: go-between fixes (cancel not forwarded, one `initialized` after 3b, no "undefined" copy env) and the missing go-between Validation tests | same as T1 | standard (gpt-6.1-terra) | wc-135e4c312559-worker-3 | `node --test machine/test/win-tool-proxy.test.js`; `bash machine/test/run.sh` | done |
 | T3 | Service wiring: fill `replaceEntries`, write/remove Claude `--mcp-config` file, ready file in WinBridge (Spec 3), sweep generalization (Spec 2), failed-start cleanup | `machine/service.js`, `machine/lib/win.js`, new `machine/test/win-tool-*.test.js` (not proxy/wrap) | standard (gpt-6.1-terra), attempt 2 at effort xhigh (rung: effort +1; attempt 1 hit its fails-twice guardrail with two regressions) | wc-135e4c312559-worker-5 (attempt 1: worker-4) | `bash machine/test/run.sh`; viewer tests | partial: code merged, tests fixed in T3b |
-| T3b | Fix three ready-file tests with a timing gap, keep a failed `waiting` write from aborting a start, add young-file sweep test | `machine/lib/win.js` (`beginReady` handling only), `machine/test/win-tool-{ready,service,sweep}.test.js` | light (gpt-6-luna) | wc-135e4c312559-worker-6 | focused tests x3; `bash machine/test/run.sh` | running |
+| T3b | Fix three ready-file tests with a timing gap, keep a failed `waiting` write from aborting a start, add young-file sweep test | `machine/lib/win.js` (`beginReady` handling only), `machine/test/win-tool-{ready,service,sweep}.test.js` | light (gpt-6-luna) | wc-135e4c312559-worker-6 | focused tests x3; `bash machine/test/run.sh` | done |
 
 ## Log
 
@@ -572,3 +572,7 @@ D11.
 - 2026-11-21 — Choice: T3, temp names: `settings/<name>.mcp.json.<uuid>.tmp` and `win-ready/.<name>.<uuid>.tmp`; the sweep ignores them (a crash can leave one behind).
 - 2026-11-21 — Choice: T3, `service.js`: Claude config removed on `stop` and `stopFatal` before tmux kill, on every platform (no-op off WSL), returning early without `stateDir`; the git common dir is looked up on every WSL tool-role start of claude/codex/agy; `sweepAgyTools` keeps its name, and invalid `agy-tools` entries stay removable as before.
 - 2026-11-21 — Choice: T3, tests: patch `fsp.writeFile` globally (restored in `finally`) to gate a temp write; fake `systemd-run` exits 1.
+- 2026-11-21 — T3b accepted (band: scout): `beginReady` failures logged, start continues; three ready-file tests no longer vacuous; young-file sweep test; unwritable ready dir test. Focused tests 12/12 three runs.
+- 2026-11-21 — worker didn't report its choices accurately (report said none); I listed 2 from the scout: T3b, `win.js`: after a failed `waiting` write `prepareLaunch` retries `beginReady` once (second log line), and the token stays registered so a later reconcile can still write `ready`; T3b, `win-tool-service.test.js`: the shared `finish` helper asserts a readying task exists for every caller.
+- 2026-11-21 — Router: `machine/AGENTS.md` rows for `lib/win-tool-wrap.js`, `lib/win-tool-proxy.js`; `lib/win.js` row names the ready file.
+- 2026-11-21 — Full validation on the merged branch: focused 62/62; machine 601/605 and viewer 779/781, failures only the known environment ones. COMPLETION.md written; status verifying.
