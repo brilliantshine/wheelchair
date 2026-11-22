@@ -466,7 +466,7 @@ class MachineService {
     // worktree feel stalled. Stuck sessions and open prompts remain on pollTimer.
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
     this.trustTimer.unref();
-    this.agyToolsTimer = setInterval(() => (this.sweepAgyTools(), this.sweepMcpConfigs()), 60000);
+    this.agyToolsTimer = setInterval(() => this.sweepAgyTools(), 60000);
     this.agyToolsTimer.unref();
   }
   // The names of the running tmux sessions, or null when tmux could not be asked. "No server" is
@@ -477,21 +477,6 @@ class MachineService {
     if (/no server running|error connecting to .*\(No such file or directory\)/.test(ls.stderr)) return new Set();
     this.log(`tmux list-sessions failed: ${ls.stderr.trim() || `exit ${ls.status}`}`);
     return null;
-  }
-  sweepMcpConfigs() {
-    if (!this.stateDir) return;
-    const dir = path.join(this.stateDir, 'settings');
-    let entries;
-    try { entries = fs.readdirSync(dir).filter(name => name.endsWith('.mcp.json')); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return; }
-    if (!entries.length) return;
-    const live = this.liveTmux();
-    if (!live) return;
-    for (const entry of entries) {
-      const name = entry.slice(0, -'.mcp.json'.length);
-      if (this.startingNames.has(name) || live.has(name.replace(/[.:]/g, '_'))) continue;
-      const file = path.join(dir, entry);
-      try { if (Date.now() - fs.lstatSync(file).mtimeMs >= 60000) fs.rmSync(file, { force: true }); } catch (error) { if (error.code !== 'ENOENT') this.log(error); }
-    }
   }
   sweepAgyTools() {
     if (!this.stateDir) return;
@@ -810,7 +795,7 @@ class MachineService {
     if (this.startingNames.has(name)) return publicSession(await this.startingNames.get(name));
     const starting = this.startNamed(input, name);
     this.startingNames.set(name, starting);
-    try { return publicSession(await starting); } finally { this.startingNames.delete(name); this.sweepAgyTools(); this.sweepMcpConfigs(); this.cancelledStarts.delete(name); }
+    try { return publicSession(await starting); } finally { this.startingNames.delete(name); this.sweepAgyTools(); this.cancelledStarts.delete(name); }
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
@@ -878,9 +863,9 @@ class MachineService {
             const port = await this.win.forwards.get(target.port);
             const url = rewriteUrl(entry.url, port);
             if (url === null) throw new Error('invalid Windows tool address');
-            context.replaceEntries[name] = { ...entry, url };
+            Object.defineProperty(context.replaceEntries, name, { value: { ...entry, url }, enumerable: true, writable: true, configurable: true });
           } catch (error) {
-            context.replaceEntries[name] = null;
+            Object.defineProperty(context.replaceEntries, name, { value: null, enumerable: true, writable: true, configurable: true });
             console.error(`${session.name}: project tools: ${serverLabel(name)}: couldn't reach Windows (${error.message || String(error)}); left out of this session`);
           }
         }));
@@ -1263,7 +1248,6 @@ class MachineService {
     }
     await fsp.rm(path.join(this.stateDir, 'settings', `${name}.mcp.json`), { force: true });
     this.sweepAgyTools();
-    this.sweepMcpConfigs();
   }
   gitPath(worktree, name) {
     const result = command('git', ['-C', worktree, 'rev-parse', '--git-path', name]);

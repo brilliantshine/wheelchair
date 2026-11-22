@@ -178,13 +178,18 @@ test('startup with no live wheelchair tmux session clears the forward record', a
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.state, 'win/forwards.json'))), { forwards: [] });
 });
 
-test('MCP sweep preserves live, starting and young files and removes stale files', async t => {
-  const f = await fixture(t); const dir = path.join(f.state, 'settings'); fs.mkdirSync(dir, { recursive: true });
-  for (const name of ['wc-dead', 'wc-live.name', 'wc-starting', 'wc-young']) fs.writeFileSync(path.join(dir, `${name}.mcp.json`), '{}');
-  const old = new Date(Date.now() - 120000); for (const name of ['wc-dead', 'wc-live.name', 'wc-starting']) fs.utimesSync(path.join(dir, `${name}.mcp.json`), old, old);
-  f.service.startingNames.set('wc-starting', Promise.resolve()); f.service.liveTmux = () => null; f.service.sweepMcpConfigs(); assert(fs.existsSync(path.join(dir, 'wc-dead.mcp.json')));
-  f.service.liveTmux = () => new Set(['wc-live_name']); f.service.sweepMcpConfigs();
-  assert(!fs.existsSync(path.join(dir, 'wc-dead.mcp.json'))); for (const name of ['wc-live.name', 'wc-starting', 'wc-young']) assert(fs.existsSync(path.join(dir, `${name}.mcp.json`)));
+test('a marked tool named __proto__ next to a wrapped Windows program is rewritten, never left at its Linux URL', async t => {
+  const f = await fixture(t); f.service.win.detected.wsl = true; f.service.beforeLaunch = async () => {};
+  const dir = f.work(1234, { ['__proto__']: { type: 'http', url: 'http://localhost:1235/mcp', headers: { Secret: 'sensitive' } } });
+  const file = path.join(dir, '.mcp.json'), cfg = JSON.parse(fs.readFileSync(file));
+  cfg.mcpServers.wintool = { command: '/mnt/c/tools/wintool.exe', args: [] }; fs.writeFileSync(file, JSON.stringify(cfg));
+  for (const cli of ['claude', 'codex']) {
+    const name = `wc-proto-${cli}`; await f.start(name, cli, 'worker', 1234, dir);
+    const payload = fs.readFileSync(path.join(f.state, `argv-${name}`), 'utf8') + filesUnder(path.join(f.state, 'settings'));
+    assert(!payload.includes('localhost:1235'), `${cli} kept the Linux URL`); assert(payload.includes('127.0.0.1:21235'), `${cli} missing the private URL`);
+  }
+  f.ready(false); const name = 'wc-proto-off'; await f.start(name, 'codex', 'worker', 1234, dir);
+  assert(!fs.readFileSync(path.join(f.state, `argv-${name}`), 'utf8').includes('localhost:1235'));
 });
 
 test('windows status validates input, reports unavailable, thrown and timed-out checks and off WSL', async t => {
