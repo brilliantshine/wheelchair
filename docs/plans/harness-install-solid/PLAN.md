@@ -175,7 +175,7 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 | T1 | Machine job: Cancel (SIGTERM leader), 15-min limit, process-group stop, result reason, explanations; DELETE route; API.md; machine tests. tricky | machine/lib/harness-install.js, machine/service.js (install route), machine/API.md, machine/test/harness-install.test.js | standard / gpt-6.1-terra | wc-c3b2aec47d12-worker | node --test machine/test/harness-install.test.js; bash machine/test/run.sh | done |
 | T2 | Hub DELETE passthrough, POST refused while off, switch-off DELETE fan-out; Settings Cancel, cancelled state, explanation line; hub + browser tests | viewer/app/routes.js, viewer/pages/settings.js, .h-explain CSS, viewer/test/app-harnesses.test.js, viewer/test/app-harnesses.spec.js | standard / claude-sonnet-5-5 | wc-c3b2aec47d12-worker-2 | node --test viewer/test/app-harnesses.test.js; npm --prefix viewer run test:browser | done |
 | T3 | Fix: a Cancel failing after a poll tick leaves the row stuck on "Cancelling…" (cancelInstall compares job object identity); add browser test. | viewer/pages/settings.js (cancelInstall only), viewer/test/app-harnesses.spec.js | light / claude-haiku-5-5 | wc-c3b2aec47d12-worker-3 | npm --prefix viewer run test:browser -- app-harnesses.spec.js | done |
-| R1-1 | Remediation 1, gaps 1 and 6: async Kimi/Pi CLI check; spawn-error status null | machine/lib/harness-install.js, machine/test/harness-install.test.js | light / gpt | wc-c3b2aec47d12-worker-4 | node --test machine/test/harness-install.test.js | in progress |
+| R1-1 | Remediation 1, gaps 1 and 6: async Kimi/Pi CLI check; spawn-error status null | machine/lib/harness-install.js, machine/test/harness-install.test.js | light / gpt-6-luna | wc-c3b2aec47d12-worker-4 | node --test machine/test/harness-install.test.js | done |
 | R1-3 | Remediation 1, gap 3: Cancel error kept on the job record, not per provider | viewer/pages/settings.js, viewer/test/app-harnesses.spec.js | light / claude | wc-c3b2aec47d12-worker-5 | npm --prefix viewer run test:browser -- app-harnesses.spec.js | in progress |
 
 ## Log
@@ -198,3 +198,7 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 - 2026-11-21 — T3 accepted (band: scout): 27-line diff matches the change dictated in the brief word for word; I read it directly instead of sending it to the scout. app-harnesses.spec.js 116/116 re-run by me; the worker reports the new test failed before the fix.
 - 2026-11-21 — Choice: T3, app-harnesses.spec.js: the new test also asserts "Cancelling…" before the failure; its DELETE handler is async to await the 3 s delay.
 - 2026-11-21 — Verification 1 at d6d1d01e: Claude verifier PASS; GPT verifier FAIL with 6 gaps. 3 judged rare (Accepted Risks, verification-1); 3 sent to REMEDIATION-1.md.
+- 2026-11-21 — R1-1 accepted (band: scout): harness-install.test.js 9/9 re-run by me; scout confirmed both new tests fail on the pre-fix tree (reason undefined; exit_code -2).
+- 2026-11-21 — Choice: R1-1, harness-install.js: the async Kimi/Pi lookup prints a spawn error for sh (the adapters' spawnSync was silent).
+- 2026-11-21 — Choice: R1-1, harness-install.test.js: both new tests drive start() in a subprocess and poll the result file once a second, up to 8 s.
+- 2026-11-21 — worker reported its choices as none; I listed 2 from the scout's list.
