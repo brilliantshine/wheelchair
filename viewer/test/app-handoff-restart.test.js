@@ -250,6 +250,10 @@ test('held peer queues do not make export busy and archive drops them', async t 
   const c = await setup(); t.after(() => close(c)); const made = await makeThread(c); const hub = new Hub({ stateDir: c.state }); await hub.state.init();
   const thread = await hub.thread(made.id); const old = thread.sessions[0]; old.live = false; old.status = 'ended'; old.queue = [{ text: 'held', peer: { thread: 'other' } }]; thread.queues[old.name] = old.queue; await hub.save(thread);
   assert.equal(quietReason(hub, thread), null);
+  c.machine.handoffReplies.status = { dirty: false, branch: `wc/${made.id}`, head: 'a'.repeat(40), repository: 'github.com/owner/repo', plan_status: 'approved' };
+  old.status = 'pending'; old.queue = [{ text: 'ordinary', source: 'user' }]; thread.queues[old.name] = old.queue; await hub.save(thread);
+  await assert.rejects(hub.exportThread(made.id), /The lead is busy/);
+  old.status = 'ended'; old.queue = [{ text: 'held', peer: { thread: 'other' } }]; thread.queues[old.name] = old.queue;
   thread.slug = 'plan'; await hub.save(thread);
   c.machine.handoffReplies.status = { dirty: false, branch: `wc/${made.id}`, head: 'a'.repeat(40), repository: 'github.com/owner/repo', plan_status: 'approved' };
   c.machine.handoffReplies.push = { head: 'a'.repeat(40), repository: 'github.com/owner/repo' };
