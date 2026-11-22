@@ -1,6 +1,6 @@
 ---
 slug: windows-localhost-tools
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -58,6 +58,22 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 Builds on main as of `87923e58` (Windows bridge solid merged). Line references are to that
 tree. Read `MAP.md` and `docs/maps/project-tools.md`, `docs/maps/windows-bridge-runtime.md`,
 `docs/maps/machine-session-lifecycle.md` first.
+
+### At a glance
+
+```mermaid
+flowchart TD
+  A["User turns on 'Runs on Windows' for a localhost tool"] --> B["Session starts: the machine opens a private local port for that tool"]
+  B --> C["The agent's copy of the tool address points at the private port"]
+  C --> D["Agent connects to the private port"]
+  D --> E["A small Windows helper starts for this connection"]
+  E --> F{"Is the program on that Windows port really on Windows?"}
+  F -- "Yes" --> G["Bytes pass straight through until either side closes"]
+  F -- "No, or nothing there" --> H["Connection closed; reason shown on Project tools"]
+  I["Project tools page"] --> J["One helper per tool checks reachability and shows the result"]
+```
+
+The words in sections 1 to 7 say everything this picture shows.
 
 ### Terms
 
@@ -395,7 +411,8 @@ header line and dialling a local test server (these cover the Linux side only):
   different URLs in one request each get their own result; Cancel, Keep changes, a same-project reload and the Unity poll's re-render while
   a check is pending all end with a line for the current values (no stuck "Checking…", no
   stale result); Keep changes before the debounce fires still gets a result; editing a URL A → B → A before the check fires shows A's stored result;
-  renaming or changing kind during a check schedules a new check or hides the line.
+  renaming during a check keeps the line and its pending check (same key); changing kind during a
+  check schedules a new check or hides the line.
 - Relay per connection: client bytes sent before `OK` reach the server after it, in order;
   `REFUSED` closes the socket without a reply and sets `last_refusal`, `OK` clears it; a
   client that disconnects before `OK` gets its relay killed; no header in 12 s kills the relay
@@ -451,6 +468,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 | After a stale forward is replaced, its old private port is no longer reserved; if the Linux holder exits, a later forward could get that port and receive old sessions' requests | Rare path: needs a service restart, a Linux program in the restart gap, that program exiting, and the kernel picking the same port again | review-round-4 |
 | (No longer applies after D15: no release.) The 60 s sweep's tmux snapshot can predate a start that registered and left `startingNames` during an `await`, releasing that live session's forward | Rare path: sub-second race between the sweep and a start finishing | review-round-2 |
 | (No longer applies after D15: no release.) A start cancelled after tmux was created but before the session is registered releases its forwards in `start()`'s `finally` even if the tmux kill did not take | Rare path: needs a cancel inside that window and a failed kill | review-round-1 |
+| If the service stops while an upload is stalled because the Windows tool stopped reading, and the tool also sends nothing, that connection's relay may not notice and stays alive until the tool closes the connection | Rare path: needs a service stop at the same moment as a stalled upload to a silent tool; the cost is one idle Windows process, no data or secrets | review-round-16 |
 | While the machine service is down (restart or crash), a forward's private port is unbound; a Linux program that binds that exact port in the gap gets a live CLI's requests and headers | Rare path: needs a service restart and another program taking a kernel-picked port within seconds; startup keeps it as a stale forward and the Project tools page shows the note | planning |
 
 ## Check Once Built
@@ -776,6 +794,15 @@ Validation cases for these.
 cleanup after it records nothing, a client leaving before `OK` records nothing); clean-stop
 tracking dropped, Lifetime says no stop handler is added; `sockets` field removed; live test
 no longer expects a reply after stdin closes; Validation updated.
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | Relay can outlive the service during a stalled upload to a silent tool | accepted-risk (rare path) | Accepted Risks |
+| mechanics | minor | Rename test contradicts the status key | upheld | Validation: rename keeps the line |
+
+Clean round.
 
 ## Implementation Tasks
 
