@@ -120,15 +120,19 @@ termination:
 2. Until 8 s into the budget: wait for the launcher to exit by itself (the tool and
    everything it started get this time to finish writing after their stdin closes).
 3. If still running: run `toolTerminateScript(id)` through `winEnv.ps` with `timeoutMs` =
-   what is left minus 1 s (this also covers a launcher that never acknowledged: a job that
-   does not exist yet is simply not found).
+   what is left minus 1 s. If it prints `gone` while `notAfter` has not passed (the
+   launcher may still create its job), wait until 250 ms after `notAfter` or the launcher's
+   exit, whichever comes first, and run it once more if the launcher is still running.
+   Stopping starts after the go-between spawned the launcher, so `notAfter` (spawn + 10 s)
+   always falls inside the 12 s budget.
 4. Wait for the launcher to exit within what is left. If the budget runs out, write that to
    stderr and exit **without** removing the registry file, so the gate treats the entry as
    orphaned and ends the job (Spec 4).
 
 Every path that ends the go-between (stdin end, stdout lost, signals, `failure`, handoff
 failure) goes through `stopTool`. After `stopTool` returns, `finish` waits at most 1 s for
-pending stdout writes, then exits anyway.
+pending stdout writes, then exits anyway, so the go-between exits at most 13 s after
+stopping starts.
 
 **Sessions started before this change** keep their old go-betweens (no registry, no job)
 until they end; the gate sees no entries for them, so they get today's behaviour. No
@@ -152,7 +156,10 @@ directories whose `key` matches) and `endJob(entry, timeoutMs)`.
 `terminateScript` (`win-apps.js:94-106`, unchanged, so `AppTracker` is untouched), opens
 the same `wheelchair-<id>` job and prints `gone` when `OpenJobObject` fails with error 2
 (no such job: with kill-on-close, a job whose last handle closed has already ended every
-process in it) and `ended` after a successful `TerminateJobObject`; any other failure
+process in it). After a successful `TerminateJobObject` it polls the job's active
+process count (`QueryInformationJobObject`, as `wrapperScript` does) every 100 ms and
+prints `ended` only once it is 0, so termination is confirmed by the processes having
+exited, not by the call returning; any other failure
 throws (non-zero exit). The go-between's stop (Spec 3) and `endJob` both use it. `endJob` runs it with the given timeout and removes the registry
 file only on exit code 0 with `ended`, or with `gone` when the entry's `notAfter` has
 passed (before that, `gone` may mean the launcher has not created the job yet: the entry
@@ -210,6 +217,12 @@ readying and sync tasks. When the gate settles `ok: false`, the copy is recorded
 in `gateFailed` (logged, like a failed reconcile) instead of removing it, and clears the
 mark at its end. Its final sync is not started for such a copy.
 
+A gate refusal inside `sync` or `remove` while the copy's thread is in
+`service.archivingThreads` also adds the key to `gateFailed`, whichever caller hit it (for
+example the final sync `archiveCheck` itself started, with `archiveAttempted` already
+set). So a refused final sync is never followed by removal of that copy in the same
+archive.
+
 **Handoff kill** (`machine/service.js:2020-2033`) is unchanged: its leftovers are caught by
 the sweep, by `onWorktreeRemoved`, or by archive, all through the gate.
 
@@ -254,9 +267,11 @@ tests do:
   skips the reconcile or removal and the whole gate returns by 20 s; archive keeps such a
   copy; a live sibling is untouched.
 - stop budget: a launcher that never acknowledges, and one that acknowledges at 7 s, are
-  both terminated and the go-between exits within 12 s, also with stdout backpressured
+  both terminated and the go-between exits within 13 s, also with stdout backpressured
   (the reader holds the fd but stops reading); a fake launcher that would create its job
-  after the stop exits 125 past `notAfter`; the gate keeps an entry whose `gone` comes
+  after the stop's first termination attempt (between 8 s and `notAfter`) is ended by the
+  second attempt, or exits 125 past `notAfter`; a job whose process count stays above 0 is
+  not reported `ended`; the gate keeps an entry whose `gone` comes
   before `notAfter` and clears it after.
 - sweep: a second call while one runs returns the same promise; `liveTmux()` `null` with
   another session's entry gives `ok: false`; archive with a gate failure keeps the copy
@@ -363,6 +378,10 @@ single in-flight sweep); Validation; Accepted Risks row.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Stop's single termination attempt can say `gone` before a still-starting launcher creates its job | upheld | Spec 3 step 3: retry after `notAfter` |
+| mechanics | blocking | `TerminateJobObject` returning is not proof processes exited | upheld (Microsoft docs: termination is asynchronous) | Spec 4: `ended` only after the job's process count reaches 0 |
+| mechanics | blocking | A gate refusal inside archive's own final sync leaves `archiveAttempted` set and the copy removable | upheld | Spec 5: refusal during an archive adds to `gateFailed` |
+| mechanics | major | 12 s exit assertion vs 1 s drain after the budget | downgraded to minor: a number mismatch, not a design gap | Spec 3 and Validation: 13 s |
 
 ## Prior Work
 
