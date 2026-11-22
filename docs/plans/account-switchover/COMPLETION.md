@@ -115,3 +115,13 @@ Validation on the remediated tip:
 `bash machine/test/run.sh`: `# tests 623 # pass 605 # fail 18`. All 18 are the same Windows bridge tests as before (16 `win.test.js`, 2 `win-tool-ready.test.js`; no `wslpath` here). `win-tool-proxy.test.js` did not hang this time.
 `node --test viewer/test/*.test.js`: `# tests 849 # pass 848 # fail 1`. The one failure, `viewer/test/server.test.js:579` "the global write lock serializes concurrent writes and retry retains both changes", is in a file this build never touched, and passed alone twice (`# pass 50 # fail 0`).
 The browser suite was not re-run: no page, page script or browser-served file changed in remediation (only `machine/service.js` and a node test).
+
+### Remediation 2 — 2026-11-22
+
+Verification attempt 2 (commit 23e99161): Claude verifier PASS; GPT verifier FAIL with 3 gaps (verbatim in `REMEDIATION-2.md`). Two rare paths went to Accepted Risks with round `verification-2` (a failed tmux kill after a missed relaunch window; a failed state write when accepting a switch). One was fixed:
+
+| Gap | Fix | Lane | Evidence |
+|-----|-----|------|----------|
+| No switch test fails when `project_dir` is dropped from the relaunch inputs | `machine/test/switch.test.js:69`: the stubbed `prepareLaunch` asserts `input.project_dir` equals the request's `project_dir` (the session record has none, so it can only come from the request) | R3, light / gpt-6-luna | worker's mutation (dropping `project_dir` at `machine/service.js:907`) failed at the new assertion; restored, `git diff -- machine/service.js` empty |
+
+Validation on the remediated tip: `node --test machine/test/switch.test.js machine/test/switch-http.test.js`: `# tests 9 # pass 9 # fail 0`. Only a machine test file changed, so the other suites stand as recorded under Remediation 1 and in both attempt-2 verifier reports (viewer 849/849; browser 1310 passed).
