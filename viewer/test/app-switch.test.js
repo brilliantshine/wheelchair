@@ -55,6 +55,8 @@ test('no alternate and other providers retain the limit hold', async () => {
   }
 });
 
+// Claude limit-hit never reaches report delivery; its worker case covers the switch.
+// The GPT reviewer case exercises report suppression on a limited turn-ended.
 for (const [provider, role] of [['gpt', 'worker'], ['claude', 'worker'], ['gpt', 'reviewer']]) test(`${provider} ${role} does not report a limited turn to its starter`, async () => {
   const c = await fixture(provider), limit = future();
   const thread = await c.hub.thread(c.thread.id);
