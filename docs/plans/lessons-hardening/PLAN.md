@@ -286,7 +286,8 @@ Filled by Stage 3. One row per worker brief.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | `tricky` Server side: S1 storage/normalize, S2 history, S3 restore, S4 keep, S5 merge + Waiting Add/Discard, S6 export/import routes | `viewer/app/settings.js`, `viewer/app/routes.js` (settings/lessons routes), `viewer/test/app-lessons.test.js`, `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
 | T2 | Settings UI: S3 History/Removed/Restore, S4 stale mark + Keep + Templates counts, S5 Waiting to add, S6 Export/Import buttons (after T1) | `viewer/pages/settings.js` (lessons editor and Templates list parts only), `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | not started |
-| T3 | Handoff v3: S7 export/validate/import of the thread's lessons (after T1) | `viewer/app/handoff.js`, `viewer/app/handoff-import.js`, `viewer/app/handoff-ops.js`, `viewer/test/app-handoff*.test.js`, `viewer/test/app-handoff.spec.js` | Standard, gpt-6.1-terra | | `node --test test/app-handoff*.test.js`; `npm test`; `npx playwright test test/app-handoff.spec.js` | not started |
+| T3 | Handoff v3: S7 export/validate/import of the thread's lessons (after T1) | `viewer/app/handoff.js`, `viewer/app/handoff-import.js`, `viewer/app/handoff-ops.js`, `viewer/test/app-handoff*.test.js`, `viewer/test/app-handoff.spec.js` | Standard, gpt-6.1-terra | | `node --test test/app-handoff*.test.js`; `npm test`; `npx playwright test test/app-handoff.spec.js` | done |
+| T4 | Strengthen handoff lesson tests left thin by T3: advance-path merge, null element counted invalid, Retry with lessons present, rescoping to a different project path, explicit v1/v2 fixtures | `viewer/test/app-handoff*.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-handoff*.test.js`; `npm test` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -302,4 +303,9 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — Choice: T1, settings.js keepLesson/waitingAction: a missing lesson or `wid` answers 409 "This lesson changed; reload to see its history"; an unknown waiting action answers 400. (seen in diff, not reported)
 - 2026-11-21 — Choice: T1, routes.js: the lessons import route sits beside the handoff import route, before the generic body reader, reading the whole body and answering 413 after it. (seen in diff, not reported)
 - 2026-11-21 — T1 accepted (band: self, tricky): focused suite 16/16; `npm test` failed 1-2 tests per run in different unrelated files (app-quiet, routes, server, app-hub: port/timing under machine load), each passing alone (app-quiet + routes 46/46). Worker reported 2 choices; I listed 4 more from the diff.
+- 2026-11-21 — Choice: T3, handoff-import.js: import stamps `thread: <thread id>` on each incoming lesson element before merging (the file format carries no thread). (seen in diff)
+- 2026-11-21 — Choice: T3, handoff-import.js: advance passes `targetProject = thread?.project || project` (the existing thread's project wins). (seen in diff)
+- 2026-11-21 — Choice: T3, handoff-ops.js: merge runs when `lessons` is truthy rather than checked as an array; `startCreate` passes explicit `{file, machine, project}`. (seen in diff)
+- 2026-11-21 — Choice: T3, handoff.js: export loads the full settings via `settings.load(hub)`; a v4 file with `lessons` is refused as "invalid fields". (seen in diff)
+- 2026-11-21 — T3 accepted (band: scout): handoff node tests 89/89, `npm test` 841/841 re-run by me; worker reported "Choices: none", scout listed 4 unreported choices, logged above. Test gaps (advance merge, null-invalid count, Retry with lessons present, other project path, explicit v1/v2 fixtures) go to T4.
 
