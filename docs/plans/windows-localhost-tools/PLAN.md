@@ -821,6 +821,7 @@ Clean round.
 | T5 | Project tools page switch, status store and line, viewer route (§6, §7 page) | `viewer/pages/project-tools.js`, `viewer/app/routes.js`, viewer project-tools tests | standard / claude-sonnet-5-5 | wc-a1a1b7d6016d-worker-4 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done |
 | T6 | Strengthen the page's status-timing browser tests and fix the no-token retry loop (follow-up to T5) | `viewer/test/app-project-tools.spec.js`, `viewer/pages/project-tools.js` (`flushChecks` only) | standard / claude | wc-a1a1b7d6016d-worker-8 | `npm --prefix viewer run test:browser -- app-project-tools` | done |
 | T7 | Three status tests that still miss their claims: Unity poll re-render while pending, same-name rows batched, two keys batched | `viewer/test/app-project-tools.spec.js` | standard / claude-sonnet-5-5 | wc-a1a1b7d6016d-worker-10 | `npm --prefix viewer run test:browser -- app-project-tools` | done |
+| T8 | Remediation 2 (R2-1): an open Edit form must not undo a card-switch change | `viewer/pages/project-tools.js` (form switch), `viewer/test/app-project-tools.spec.js` | standard / gpt-6.1-terra (asked for claude; hub had no Claude room and sent it to gpt) | wc-a1a1b7d6016d-worker-11 | `npm --prefix viewer run test:browser -- app-project-tools` | in progress |
 
 ## Log
 
