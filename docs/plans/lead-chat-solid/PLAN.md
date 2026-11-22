@@ -1,6 +1,6 @@
 ---
 slug: lead-chat-solid
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -317,3 +317,4 @@ whose lead is down; a user-facing card for the pause.
 - 2026-11-21 — Choice: T2, thread.js:662: a span.peer-line wrapper keeps the flex `ctx` line one centred item.
 - 2026-11-21 — Machine suite: run whole, `bash machine/test/run.sh` hangs after 553 passing tests (twice, also on the unchanged feature branch). Run file by file (`node --test` per file, 150 s cap) nothing hangs; 46 of 48 files pass and only win.test.js (16 fail) and win-tool-ready.test.js (2 fail) fail, on `spawnSync wslpath ENOENT`. The same two files fail identically on main 7204dd2a (canonical clone), and this build changes no machine/ file: pre-existing, environment-only.
 - 2026-11-21 — T5 accepted (band: scout): six edits verbatim, 25/25 re-run by the sub-lead; worker reported no choices and the scout found none. The sub-lead corrected the one comment the brief's time change made stale (app-chat.test.js:442, 45 → 50 minutes).
+- 2026-11-22 — All tasks done; full validation green (focused 209/209, viewer 844/844, browser 1278 passed / 34 skipped, S6 grep empty; machine suite as logged). COMPLETION.md written; status verifying.
