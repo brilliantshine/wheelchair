@@ -18,7 +18,11 @@ test('agent changes, restore, keep and normalization retain history', async () =
   await s.restoreLesson(h, 'worker', added.id, vid); v = await s.load(h);
   assert.equal(v.lesson_history[added.id].versions.at(-1).changed_by, 'user');
   assert.equal(v.lessons.worker[0].saved_by, 'user'); assert.equal(v.lessons.worker[0].thread, 'thread-old');
-  const count = v.lesson_history[added.id].versions.length; await s.restoreLesson(h, 'worker', added.id, vid); assert.equal((await s.load(h)).lesson_history[added.id].versions.length, count);
+  const beforeRetry = structuredClone({ lesson: v.lessons.worker[0], history: v.lesson_history[added.id] });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await s.restoreLesson(h, 'worker', added.id, vid); v = await s.load(h);
+  assert.deepEqual(v.lessons.worker[0], beforeRetry.lesson); assert.deepEqual(v.lesson_history[added.id], beforeRetry.history);
+  const count = beforeRetry.history.versions.length;
   await s.keepLesson(h, 'worker', added.id); v = await s.load(h); assert.ok(v.lessons.worker[0].kept_at); assert.equal(v.lessons.worker[0].saved_by, 'user'); assert.equal(v.lesson_history[added.id].versions.length, count);
   await assert.rejects(s.restoreLesson(h, 'worker', added.id, 'missing'), { status: 409 });
   assert.equal(s.STALE_DAYS, 90); assert.equal(s.isLessonStale({ saved_at: date }, 90 * 86400000 - 1), false); assert.equal(s.isLessonStale({ saved_at: date }, 90 * 86400000), true); assert.equal(s.isLessonStale(v.lessons.worker[0]), false);
@@ -38,20 +42,25 @@ test('Keep clears staleness without changing the saved lesson or history', async
 test('history caps, removals, merge and waiting', async () => {
   const h = await hub(); const first = await s.applyLesson(h, card('add'), 'worker', '/p', 'one');
   for (let i = 0; i < 23; i++) await s.applyLesson(h, card('replace', { lesson: first.id, text: `Edit ${i}` }), 'worker', '/p', 'one');
-  let v = await s.load(h); assert.equal(v.lesson_history[first.id].versions.length, 20);
+  let v = await s.load(h); assert.deepEqual(v.lesson_history[first.id].versions.map((version) => version.text), Array.from({ length: 20 }, (_, i) => `Edit ${i + 2}`));
   await s.applyLesson(h, card('remove', { lesson: first.id }), 'worker', '/p', 'one');
   v = await s.load(h); assert.equal(v.lesson_history[first.id].versions.at(-1).changed_by, 'agent'); assert.equal(v.lesson_history[first.id].removed.by, 'agent');
   await s.restoreLesson(h, 'worker', first.id); v = await s.load(h); assert.equal(v.lessons.worker[0].text, 'Edit 22');
-  for (let i = 0; i < 51; i++) { const x = await s.applyLesson(h, card('add', { text: `Removed ${i}` }), 'worker', '/p', 'one'); await s.applyLesson(h, card('remove', { lesson: x.id }), 'worker', '/p', 'one'); }
-  v = await s.load(h); assert.equal(Object.values(v.lesson_history).filter((e) => e.removed).length, 50);
+  const removedIds = [];
+  for (let i = 0; i < 50; i++) { const x = await s.applyLesson(h, card('add', { text: `Removed ${i}` }), 'worker', '/p', 'one'); await s.applyLesson(h, card('remove', { lesson: x.id }), 'worker', '/p', 'one'); removedIds.push(x.id); await s.update(h, (state) => { state.lesson_history[x.id].removed.at = new Date(i * 1000).toISOString(); }); }
+  const newest = await s.applyLesson(h, card('add', { text: 'Removed 50' }), 'worker', '/p', 'one'); await s.applyLesson(h, card('remove', { lesson: newest.id }), 'worker', '/p', 'one');
+  v = await s.load(h); assert.deepEqual(Object.keys(v.lesson_history).filter((id) => v.lesson_history[id].removed).sort(), [...removedIds.slice(1), newest.id].sort()); assert.equal(v.lesson_history[removedIds[0]], undefined); assert.equal(v.lesson_history[newest.id].versions.at(-1).text, 'Removed 50');
   const incoming = [item('Fresh'), item('Fresh'), item('Fresh', { provider: 'gpt' }), item('Bad', { provider: 'bad' }), item('Lost', { project: '/missing' })];
   let counts = await s.mergeIncoming(h, incoming, { source: 'file', known: [] }); assert.deepEqual(counts, { added: 2, skipped: 1, invalid: 1, unknown_project: 1, waiting: 0 });
-  counts = await s.mergeIncoming(h, incoming, { source: 'file', known: [] }); assert.equal(counts.skipped, 3);
+  const afterMerge = await s.load(h);
+  counts = await s.mergeIncoming(h, incoming, { source: 'file', known: [] }); assert.deepEqual(counts, { added: 0, skipped: 3, invalid: 1, unknown_project: 1, waiting: 0 });
+  assert.deepEqual(await s.load(h), afterMerge);
   await s.update(h, (x) => { for (const role of s.ROLES) while (x.lessons[role].length < 12) x.lessons[role].push({ id: `L${(Math.random()*0xffffff|0).toString(16).padStart(6,'0')}`, text: `Fill ${x.lessons[role].length}`, saved_by: 'agent', saved_at: date }); });
   const existing = [item('Existing one', { source: 'file', received_at: date, wid: 'existing-one' }), item('Existing two', { source: 'handoff', received_at: date, wid: 'existing-two' })];
   await s.update(h, (x) => { x.lesson_waiting.push(...existing); });
-  counts = await s.mergeIncoming(h, [...s.ROLES].flatMap((role) => Array.from({length: 12}, (_, i) => item(`Incoming ${i}`, { role }))), { source: 'file', known: [] }); assert.equal(counts.waiting, 72);
-  v = await s.load(h); assert.equal(v.lesson_waiting.length, 74);
+  const arrivals = [...s.ROLES].flatMap((role) => Array.from({length: 12}, (_, i) => item(`Incoming ${i}`, { role })));
+  counts = await s.mergeIncoming(h, arrivals, { source: 'file', known: [] }); assert.deepEqual(counts, { added: 0, skipped: 0, invalid: 0, unknown_project: 0, waiting: 72 });
+  v = await s.load(h); assert.deepEqual(v.lesson_waiting.slice(2).map(({ role, text, saved_by, saved_at, source }) => ({ role, text, saved_by, saved_at, source })), arrivals.map((entry) => ({ ...entry, source: 'file' })));
   for (const original of existing) assert.deepEqual(v.lesson_waiting.find((entry) => entry.wid === original.wid), original);
   const w = v.lesson_waiting[0]; await assert.rejects(s.waitingAction(h, w.role, w.wid, 'add'), { status: 422 });
   assert.equal((await s.waitingAction(h, w.role, w.wid, 'discard')).result, 'discarded'); await assert.rejects(s.waitingAction(h, w.role, w.wid, 'discard'), { status: 409 });
