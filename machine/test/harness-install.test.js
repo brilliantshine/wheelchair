@@ -60,3 +60,60 @@ for (const [version, expected] of [['20.19.0', 'failed'], ['22.19.0', 'succeeded
     }
   });
 }
+
+test('failure explanations use the full log and recipe reason', async () => {
+  const root = await makeTemp('harness-explain-');
+  const dir = path.join(root, '.wheelchair/installs'); fs.mkdirSync(dir, { recursive: true });
+  const modulePath = path.resolve(__dirname, '../lib/harness-install');
+  function check(log, reason) {
+    fs.writeFileSync(path.join(dir, 'gemini.log'), log);
+    fs.writeFileSync(path.join(dir, 'gemini.result'), JSON.stringify({ state: 'failed', reason }));
+    const r = spawnSync(process.execPath, ['-e', `console.log(JSON.stringify(require(${JSON.stringify(modulePath)}).state('gemini')))`], { env: { ...process.env, HOME: root }, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout).explanation;
+  }
+  const disk = 'The disk on this machine is full. Free up some space, then try again.';
+  for (const pattern of ['ENOSPC', 'No space left on device']) assert.equal(check(pattern + '\n' + 'later\n'.repeat(50), 'recipe'), disk);
+  for (const pattern of ['EACCES', 'EPERM']) {
+    assert.equal(check(`${pattern}\nnpm ERR! path /some/folder`, 'recipe'), "npm isn't allowed to write to /some/folder on this machine (it may be owned by root from an earlier sudo npm). Fix that folder's owner, then try again.");
+    assert.match(check(`${pattern} npm`, 'recipe'), /write to one of its folders/);
+  }
+  for (const pattern of ['Could not resolve host', 'curl: (6)', 'curl: (7)', 'curl: (28)', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET', 'Network is unreachable']) assert.equal(check(pattern, 'recipe'), "This machine couldn't reach the internet to download it. Check its network, then try again.");
+  assert.equal(check('ENOSPC EACCES npm ERR! path /x ENOTFOUND', 'recipe'), disk);
+  assert.equal(check('ENOTFOUND', undefined), null); assert.equal(check('unknown', 'recipe'), null);
+  assert.match(check('ENOSPC', 'timeout'), /took too long/);
+});
+
+test('cancel and timeout stop recipe groups, including after restart', { timeout: 40000 }, async () => {
+  const root = await makeTemp('harness-stop-'), state = path.join(root, 'state'), secret = path.join(root, 'secret'), recipes = path.join(root, 'recipes.json');
+  fs.mkdirSync(state); fs.writeFileSync(secret, 'secret\n');
+  const net = require('node:net'), sock = net.createServer(); await new Promise(r => sock.listen(0, '127.0.0.1', r)); const port = sock.address().port; await new Promise(r => sock.close(r));
+  fs.writeFileSync(path.join(state, 'machine.json'), JSON.stringify({ secret_file: secret, host: '127.0.0.1', port }));
+  const env = { ...process.env, HOME: root, WHEELCHAIR_HARNESS_RECIPES: recipes, WHEELCHAIR_INSTALL_LIMIT_MS: '15000' };
+  async function launch() { const p = spawn(process.execPath, [service, '--stateDir', state, '--host', '127.0.0.1', '--port', String(port)], { env, stdio: 'ignore' }); for (let i = 0; i < 200; i++) { try { await fetch(`http://127.0.0.1:${port}/v1/status`, { headers: { 'x-wheelchair-machine-secret': 'secret' } }); return p; } catch { await delay(20); } } throw Error('service did not start'); }
+  async function api(method = 'GET', provider = 'gemini') { const r = await fetch(`http://127.0.0.1:${port}/v1/harnesses/${provider}/install`, { method, headers: { 'x-wheelchair-machine-secret': 'secret' } }); return [r.status, await r.json()]; }
+  async function waitFor(fn, ms = 8000) { const end = Date.now() + ms; while (Date.now() < end) { const value = await fn(); if (value) return value; await delay(30); } throw Error('timed out waiting'); }
+  let p = await launch();
+  try {
+    assert.equal((await api('DELETE'))[0], 409); assert.equal((await api('DELETE', 'unknown'))[0], 404);
+    for (const mode of ['cancel', 'restart', 'timeout']) {
+      if (mode === 'timeout') { p.kill('SIGKILL'); await new Promise(r => p.once('exit', r)); env.WHEELCHAIR_INSTALL_LIMIT_MS = '500'; p = await launch(); }
+      const marker = path.join(root, 'marker'), pidfile = path.join(root, 'child');
+      try { fs.unlinkSync(marker); } catch {} try { fs.unlinkSync(pidfile); } catch {}
+      // The child publishes its marker only after installing its TERM trap.
+      fs.writeFileSync(recipes, JSON.stringify({ gemini: `trap 'wait $kid; exit' TERM; sh -c 'trap "" TERM; echo $$ > "$HOME/child"; touch "$HOME/marker"; exec sleep 60' & kid=$!; wait $kid` }));
+      assert.equal((await api('POST'))[0], 202); await waitFor(() => fs.existsSync(marker));
+      const child = Number(fs.readFileSync(pidfile, 'utf8'));
+      if (mode === 'restart') { p.kill('SIGKILL'); await new Promise(r => p.once('exit', r)); p = await launch(); }
+      if (mode !== 'timeout') {
+        assert.deepEqual(await api('DELETE'), [202, { state: 'cancelling' }]);
+        assert.equal((await api())[1].state, 'running'); assert.equal((await api('POST'))[0], 409);
+      }
+      const result = await waitFor(async () => { const body = (await api())[1]; return body.state !== 'running' && body; });
+      assert.equal(result.state, mode === 'timeout' ? 'failed' : 'cancelled'); assert.equal(result.reason, mode === 'timeout' ? 'timeout' : 'cancelled');
+      if (mode === 'timeout') assert.match(result.explanation, /took too long/); else assert.equal(result.explanation, null);
+      await waitFor(() => { try { process.kill(child, 0); return false; } catch (e) { return e.code === 'ESRCH'; } });
+    }
+    fs.writeFileSync(recipes, JSON.stringify({ gemini: 'exit 17' })); assert.equal((await api('POST'))[0], 202);
+    const result = await waitFor(async () => { const body = (await api())[1]; return body.state !== 'running' && body; }); assert.equal(result.reason, 'recipe');
+  } finally { p.kill('SIGKILL'); await new Promise(r => p.once('exit', r)); }
+});
