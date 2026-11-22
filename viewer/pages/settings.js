@@ -914,26 +914,41 @@
     try {
       const res = await api('/settings/lessons/' + encodeURIComponent(role) + '/' + route, { method: 'POST', body });
       applyLessonReply(role, res);
-      keepLessonEdits(before);
+      const lost = keepLessonEdits(before);
+      if (lost.length) {
+        setNote('', false);
+        renderPanel();
+        const host = document.querySelector('.lessons-edit .lesson-err');
+        if (host) { inlineErr(host, lostSentences(lost)); host.querySelector('.inline-err').style.whiteSpace = 'pre-line'; }
+        return;
+      }
       setNote(res.result === 'already' ? 'Already in your lessons' : SAVED, false);
       renderPanel();
     } catch (e) {
       if (e.status === 409) {
         await reload(false);
-        keepLessonEdits(before);
+        const lost = keepLessonEdits(before);
         renderPanel();
         const fresh = document.querySelector('.lessons-edit .lesson-err');
-        if (fresh) { inlineErr(fresh, e.message); return; }
+        if (fresh) {
+          inlineErr(fresh, [...lostSentences(lost).split('\n').filter(Boolean), e.message].join('\n'));
+          fresh.querySelector('.inline-err').style.whiteSpace = 'pre-line';
+          return;
+        }
       }
       inlineErr(errHost, e.message);
     }
   }
 
   // After a server reply, keep unsaved text (differing from what was shown before) and pending removals for lessons that still exist.
+  // Returns the typed texts dropped because their lesson is gone.
+  const lostSentences = (lost) => lost.map((t) => `An agent removed a lesson you were editing. Your unsaved text was: \u201c${t}\u201d`).join('\n');
   function keepLessonEdits(before) {
     const ids = new Set(lessonList(lessonEdit.role).map((i) => i.id));
+    const lost = Object.entries(lessonEdit.texts).filter(([id, t]) => !ids.has(id) && t !== before[id] && typeof t === 'string' && t !== '').map(([, t]) => t);
     lessonEdit.texts = Object.fromEntries(Object.entries(lessonEdit.texts).filter(([id, t]) => ids.has(id) && t !== before[id]));
     lessonEdit.removals = new Set([...lessonEdit.removals].filter((id) => ids.has(id)));
+    return lost;
   }
 
   // Restore waits for the editor to be saved or undone; typing must not re-render, so toggle in place.
@@ -952,8 +967,7 @@
       h('div', { class: 'lesson-foot' },
         h('span', { class: 'lesson-marks' },
           lessonMarkers({ ...v, saved_by: 'agent' }).map((m) => h('span', { class: 'lesson-mark', text: m })),
-          h('span', { class: 'lesson-mark', text: v.saved_by === 'user' ? 'by you' : 'by an agent' }),
-          h('span', { class: 'lesson-mark', text: 'replaced ' + shortDate(v.changed_at) })),
+          h('span', { class: 'lesson-mark', text: `replaced by ${v.changed_by === 'user' ? 'you' : 'an agent'} ${shortDate(v.changed_at)}` })),
         h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: v.vid }, errHost) })))));
   }
 
@@ -982,7 +996,7 @@
               h('span', { class: 'lesson-mark', text: `removed by ${entry.removed.by === 'user' ? 'you' : 'an agent'} ${shortDate(entry.removed.at)}` })),
             h('span', { class: 'lesson-buttons' },
               historyToggle(id, entry.versions.length),
-              h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id }, errHost) }))),
+              h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: last.vid }, errHost) }))),
           versionRows(id, entry, errHost, dirty));
       })));
   }

@@ -126,18 +126,17 @@ test.describe('Settings', () => {
   const ago = (days) => new Date(Date.now() - days * 86400000).toISOString();
 
   test('History toggle lists versions and Restore brings one back; disabled with unsaved edits', async ({ page }) => {
-    await seed({ worker: [lesson('L0000b1', 'Newest wording.')] }, { lesson_history: { L0000b1: { role: 'worker', versions: [version('v1', 'Oldest wording.', { provider: 'gpt', project: '/tmp/proj-alpha' }), version('v2', 'Middle wording.', { saved_by: 'user' })] } } });
+    await seed({ worker: [lesson('L0000b1', 'Newest wording.')] }, { lesson_history: { L0000b1: { role: 'worker', versions: [version('v1', 'Oldest wording.', { provider: 'gpt', project: '/tmp/proj-alpha', changed_by: 'agent' }), version('v2', 'Middle wording.', { saved_by: 'user' })] } } });
     await openSettings(page, '/app/settings#templates/lessons/worker');
     const row = page.locator('.lesson-row[data-id="L0000b1"]');
     await row.getByRole('button', { name: 'History (2)' }).click();
     const versions = row.locator('.lesson-version');
     await expect(versions).toHaveCount(2);
     await expect(versions.nth(0)).toContainText('Middle wording.');
-    await expect(versions.nth(0)).toContainText('by you');
+    await expect(versions.nth(0)).toContainText('replaced by you 2026-11-01');
     await expect(versions.nth(1)).toContainText('only on GPT');
     await expect(versions.nth(1)).toContainText('only in proj-alpha');
-    await expect(versions.nth(1)).toContainText('by an agent');
-    await expect(versions.nth(1)).toContainText('replaced 2026-11-01');
+    await expect(versions.nth(1)).toContainText('replaced by an agent 2026-11-01');
     await row.locator('textarea').fill('Unsaved.');
     await expect(versions.nth(1).getByRole('button', { name: 'Restore' })).toBeDisabled();
     await expect(page.locator('#restore-hint')).toBeVisible();
@@ -177,13 +176,42 @@ test.describe('Settings', () => {
     await expect(page.locator('.lesson-version')).toHaveCount(0);
   });
 
+  test('a draft whose lesson an agent removed is shown back, not lost behind a Saved note', async ({ page }) => {
+    await seed({ worker: [lesson('L0000a5', 'Lesson A.'), lesson('L0000a6', 'Lesson B.', { saved_at: ago(120) })] });
+    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await page.locator('.lesson-row[data-id="L0000a5"] textarea').fill('My draft for A.');
+    await seed({ worker: [lesson('L0000a6', 'Lesson B.', { saved_at: ago(120) })] });
+    await page.locator('.lesson-row[data-id="L0000a6"]').getByRole('button', { name: 'Keep' }).click();
+    await expect(page.locator('.lessons-edit .lesson-err')).toContainText('An agent removed a lesson you were editing. Your unsaved text was: \u201cMy draft for A.\u201d');
+    await expect(page.locator('.note[data-for="section"]')).not.toHaveText('Saved');
+  });
+
+  test('Removed Restore names the newest version shown; a changed history answers 409', async ({ page }) => {
+    const removed = { at: '2026-11-10T10:00:00.000Z', by: 'agent' };
+    await seed({}, { lesson_history: { L0000a7: { role: 'worker', versions: [version('old', 'Old wording.'), version('shown', 'Shown wording.')], removed } } });
+    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await expect(page.locator('.lesson-removed')).toContainText('Shown wording.');
+    await seed({}, { lesson_history: { L0000a7: { role: 'worker', versions: [version('old', 'Old wording.'), version('newer', 'Newer wording.')], removed } } });
+    await page.locator('.lesson-removed').getByRole('button', { name: 'Restore' }).click();
+    await expect(page.locator('.lessons-edit .inline-err')).toBeVisible();
+    expect((await api(page, '/settings')).lessons.worker).toEqual([]);
+  });
+
+  test('History says who replaced a version, not who saved it', async ({ page }) => {
+    await seed({ worker: [lesson('L0000a8', 'Now.')] }, { lesson_history: { L0000a8: { role: 'worker', versions: [version('v1', 'Then.', { saved_by: 'agent', changed_by: 'user' })] } } });
+    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await page.locator('.lesson-row[data-id="L0000a8"]').getByRole('button', { name: 'History (1)' }).click();
+    await expect(page.locator('.lesson-version')).toContainText('replaced by you 2026-11-01');
+  });
+
   test('the Templates lessons name stays on one line, desktop and phone', async ({ page }) => {
-    await seed({ worker: [lesson('L0000g1', 'Old one.', { saved_at: ago(120) })] }, { lesson_waiting: [{ role: 'worker', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wg' }] });
+    await seed({ worker: [lesson('L0000a1', 'Old one.', { saved_at: ago(120) })] }, { lesson_waiting: [{ role: 'worker', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wg' }] });
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await openSettings(page, '/app/settings#templates');
       const nm = page.locator('.tpl-lessons .nm');
       await expect(nm).toHaveText('Lessons learned');
+      await expect(page.locator('.tpl-lessons')).toContainText('1 may be out of date');
       const box = await nm.boundingBox();
       const line = await nm.evaluate((n) => parseFloat(getComputedStyle(n).lineHeight) || n.getBoundingClientRect().height);
       expect(box.height).toBeLessThanOrEqual(line + 2);
