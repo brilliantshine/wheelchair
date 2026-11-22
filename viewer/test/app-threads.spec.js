@@ -33,6 +33,21 @@ for (const [label, size] of SIZES) {
 
     const open = (page, id) => page.goto(`${ctx.server.url}/app/thread?id=${id}`);
 
+    test('a jump-to-bottom button shows only when scrolled well up', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      for (let i = 0; i < 30; i++) await ctx.post(made.id, { kind: 'needs', title: `Thing ${i}`, body: 'Line one.\nLine two.\nLine three.' });
+      await open(page, made.id);
+      await expect(page.locator('#chat')).toContainText('Thing 29');
+      const jump = page.locator('#jump-bottom');
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await expect(jump).toBeHidden();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect(jump).toBeVisible();
+      await jump.click();
+      await expect.poll(() => page.evaluate(() => document.body.scrollHeight - (window.innerHeight + window.scrollY))).toBeLessThan(5);
+      await expect(jump).toBeHidden();
+    });
+
     test('deferred cards show mode, bullets and locking', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.post(made.id, { kind: 'deferred', mode: 'two-part', bullets: [{ id: 'a', text: 'Later' }] });
