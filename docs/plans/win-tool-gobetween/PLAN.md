@@ -546,8 +546,8 @@ D11.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | tricky: go-between `win-tool-proxy.js` (Spec 1 start/stop, 4) and its tests | `machine/lib/win-tool-proxy.js`, `machine/test/win-tool-proxy.test.js`, `machine/test/fixtures/win-tool/` | standard | | `node --test machine/test/win-tool-proxy.test.js`; `bash machine/test/run.sh` | running |
-| T2 | Shared replacement map in Claude/Codex/Antigravity adapters, `loaded.wrapped`, pure `win-tool-wrap.js` builder (Spec 1 wrapping, 2 adapters) | `machine/lib/win-tool-wrap.js`, `machine/adapters/{common,claude,codex,agy}.js`, `machine/test/win-tool-wrap.test.js`, `machine/test/adapters-loaded.test.js` | standard | | adapter tests; `bash machine/test/run.sh`; viewer tests | running |
+| T1 | tricky: go-between `win-tool-proxy.js` (Spec 1 start/stop, 4) and its tests | `machine/lib/win-tool-proxy.js`, `machine/test/win-tool-proxy.test.js`, `machine/test/fixtures/win-tool/` | standard (gpt-6.1-terra) | wc-135e4c312559-worker | `node --test machine/test/win-tool-proxy.test.js`; `bash machine/test/run.sh` | running |
+| T2 | Shared replacement map in Claude/Codex/Antigravity adapters, `loaded.wrapped`, pure `win-tool-wrap.js` builder (Spec 1 wrapping, 2 adapters) | `machine/lib/win-tool-wrap.js`, `machine/adapters/{common,claude,codex,agy}.js`, `machine/test/win-tool-wrap.test.js`, `machine/test/adapters-loaded.test.js` | standard (gpt-6.1-terra) | wc-135e4c312559-worker-2 | adapter tests; `bash machine/test/run.sh`; viewer tests | running |
 | T3 | Service wiring: fill `replaceEntries`, write/remove Claude `--mcp-config` file, ready file in WinBridge (Spec 3), sweep generalization (Spec 2), failed-start cleanup | `machine/service.js`, `machine/lib/win.js`, new `machine/test/win-tool-*.test.js` (not proxy/wrap) | standard | | `bash machine/test/run.sh`; viewer tests | after T2 |
 
 ## Log
