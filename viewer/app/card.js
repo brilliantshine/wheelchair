@@ -326,6 +326,7 @@ async function main(argv) {
   // A lesson's receipt names the lesson, including a repeat the hub saved earlier (no new card id then).
   if (kind === 'lesson' && typeof body.lesson === 'string') receipt.lesson = body.lesson;
   if (body.spooled === true) receipt.queued = true;
+  if (body.held === true) receipt.held = true;
   process.stdout.write(`${JSON.stringify(receipt)}\n`);
 }
 

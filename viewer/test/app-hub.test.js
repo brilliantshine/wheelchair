@@ -2233,3 +2233,17 @@ test('nonblocking system needs dismiss without notifying lead, including stale h
     }
   });
 });
+
+test('restart context carries recent peer messages after import cutoff and omits empty history', async () => {
+  await withContext(async context => {
+    const made = await thread(context); const hub = new Hub({ stateDir: context.state }); await hub.state.init();
+    let current = await hub.thread(made.id); current.sessions[0].live = false;
+    const message = { at: '2026-02-01T00:00:00Z', thread: 'other', title: 'Other', session: 'peer', direction: 'received', text: 'question', question: 'q' };
+    current.imported = { at: '2026-01-01T00:00:00Z', history: [] }; current.peer_log = [{ ...message, at: '2025-01-01T00:00:00Z' }, message, { ...message, direction: 'limit' }]; await hub.save(current);
+    context.machine.handoffReplies.running = { names: [] };
+    let lead = await hub.restartLead(made.id); let state = JSON.parse(lead.queue[0].text.split('Thread state:\n')[1]);
+    assert.deepEqual(state.cross_thread_messages, [message]);
+    current = await hub.thread(made.id); current.sessions.find(s => s.name === lead.name).live = false; current.peer_log = []; await hub.save(current);
+    lead = await hub.restartLead(made.id); state = JSON.parse(lead.queue[0].text.split('Thread state:\n')[1]); assert.equal(Object.hasOwn(state, 'cross_thread_messages'), false);
+  });
+});

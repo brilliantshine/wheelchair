@@ -199,19 +199,21 @@ class Hub {
     }
     const result = await this.withThread(payload.thread_id, () => cards.acceptCard(this, payload));
     if (!result.targetThread) return result;
-    await this.withThread(result.targetThread, async () => {
-      const name = await this.updateThread(result.targetThread, (thread) => {
+    const delivery = await this.withThread(result.targetThread, async () => {
+      const chosen = await this.updateThread(result.targetThread, (thread) => {
         const peers = require('./peers.js');
-        const lead = peers.reachable(this, thread) && peers.latestLiveLead(thread);
+        if (!peers.reachable(this, thread)) return null;
+        const lead = peers.latestLiveLead(thread) || [...(thread.sessions || [])].reverse().find(s => s.role === 'lead');
         if (!lead) return null;
         lead.queue ||= [];
-        lead.queue.push({ text: `[wc:from ${result.card.session}] [thread ${payload.thread_id}: ${result.senderTitle}] ${result.card.asks === true ? `[question ${result.card.id}] ` : ''}${result.card.text}`, source: 'session', at: new Date().toISOString() });
-        thread.queues[lead.name] = lead.queue;
-        return lead.name;
+        lead.queue.push({ text: `[wc:from ${result.card.session}] [thread ${payload.thread_id}: ${result.senderTitle}] ${result.card.asks === true ? `[question ${result.card.id}] ` : ''}${result.card.text}`, source: 'session', at: new Date().toISOString(), peer: { thread: payload.thread_id, title: result.senderTitle, session: result.card.session, ...(result.card.asks === true ? { question: result.card.id } : {}) } });
+        thread.queues ||= {}; thread.queues[lead.name] = lead.queue;
+        return { name: lead.name, held: !lead.live };
       });
-      if (name) await this.deliver(await this.thread(result.targetThread), name);
+      if (chosen && !chosen.held) await this.deliver(await this.thread(result.targetThread), chosen.name);
+      return chosen;
     });
-    return result.card;
+    return delivery?.held ? { ...result.card, held: true } : result.card;
   }
   createThread(input) { return threads.createThread(this, input); }
   threadBySession(name) { return threads.threadBySession(this, name); }
