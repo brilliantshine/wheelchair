@@ -1691,9 +1691,20 @@
       finish();
       if (body.state === 'failed') { hz.jobs[key] = { state: 'failed', tail }; paintHarnesses(); return; }
       delete hz.jobs[key];
-      if (body.state === 'succeeded') loadHarnesses(true); else paintHarnesses();
+      if (body.state === 'succeeded') refreshAfterInstall(machine, provider); else paintHarnesses();
     }
     step(firstMethod);
+  }
+
+  // A just-installed CLI's version is read in the background on the machine, so the first
+  // fresh status can say "installed" with no version yet. Re-fetch a few times, 2 s apart,
+  // until the version shows, so the row fills in without reopening the section.
+  async function refreshAfterInstall(machine, provider, tries = 4) {
+    await loadHarnesses(true);
+    if (!hz.active || machine !== hz.machine || tries <= 1) return;
+    const m = ((hz.data && hz.data.machines) || []).find((entry) => entry.name === machine);
+    const st = m && m.harnesses && m.harnesses[provider];
+    if (st && st.installed && !st.version) setTimeout(() => refreshAfterInstall(machine, provider, tries - 1), 2000);
   }
 
   async function setHarness(provider, enabled) {

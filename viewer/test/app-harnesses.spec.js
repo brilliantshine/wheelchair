@@ -118,6 +118,23 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       expect(world.calls.some((c) => c.includes('/harnesses?fresh=1'))).toBe(true);
     });
 
+    test('install succeeded with the version not read yet: the row fills it in without reopening', async ({ page }) => {
+      let fresh = 0;
+      const s = status();
+      const world = {
+        harnesses: (r) => {
+          if (r.request().url().includes('fresh=1')) { fresh += 1; s.machines[0].harnesses.openrouter = h({ installed: true, version: fresh >= 2 ? '1.5.2' : null }); }
+          return json(r, s);
+        },
+        install: (r) => json(r, r.request().url().includes('/openrouter/') ? { state: 'succeeded', output_tail: 'ok' } : { state: 'idle' }),
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      await expect(row(page, 'openrouter')).toContainText('Installed 1.5.2', { timeout: 8000 });
+      expect(fresh).toBeGreaterThanOrEqual(2);
+    });
+
     test('install failed shows the tail and Try again, which POSTs and polls', async ({ page }) => {
       let posted = false;
       const s = status();
