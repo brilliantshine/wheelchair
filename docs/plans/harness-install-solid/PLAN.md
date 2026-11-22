@@ -92,6 +92,15 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 
 ## Review Rounds
 
+### Round 1 — 2026-11-21
+
+**Lanes:** claude / opus (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
