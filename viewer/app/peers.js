@@ -9,6 +9,7 @@ async function sameMachine(hub, registry, a, b) {
   return Boolean(first && first === second);
 }
 function reachable(hub, thread) { return !thread.archived && !frozen(hub, thread); }
+function candidateStub(hub, thread) { return thread.stub === true && reachable(hub, thread) && !currentDone(thread) && !(thread.cards || []).some(card => card.kind === 'merged'); }
 function linked(a, b) { return (a.lead_links || []).includes(b.id) || (b.lead_links || []).includes(a.id); }
 function latestLiveLead(thread) { return [...(thread.sessions || [])].reverse().find(s => s.role === 'lead' && s.live); }
 function threadName(thread) { return thread.title || thread.slug || String(thread.project || '').split('/').filter(Boolean).at(-1) || thread.id; }
@@ -46,7 +47,7 @@ async function listLeads(hub, callerThread, { allProjects = false } = {}) {
     const sameProject = thread.project === callerThread.project;
     const isLinked = !sameProject && linked(callerThread, thread);
     const hasLead = (thread.sessions || []).some(s => s.role === 'lead');
-    if (!(isLinked || (sameProject && hasLead) || (allProjects && !sameProject && hasLead))) continue;
+    if (!(isLinked || (sameProject && (hasLead || (candidateStub(hub, thread) && !(thread.sessions || []).length))) || (allProjects && !sameProject && hasLead))) continue;
     const entry = { thread: thread.id, lead: latestLiveLead(thread)?.name || null, project: thread.project, title: threadName(thread), linked: isLinked };
     if (sameProject || isLinked) {
       const idea = thread.pinned?.idea;
@@ -59,8 +60,9 @@ async function listLeads(hub, callerThread, { allProjects = false } = {}) {
         pr_url: currentDone(thread)?.pr_url || null,
       });
     }
+    if (sameProject && candidateStub(hub, thread)) Object.assign(entry, { stub: true, summary: thread.context, takes_additions: !(thread.sessions || []).length, waits_on_parent: Boolean(thread.depends_on_parent && !thread.ready) });
     leads.push(entry);
   }
   return { leads };
 }
-module.exports = { sameMachine, reachable, linked, latestLiveLead, listLeads, reachTarget, threadName };
+module.exports = { candidateStub, sameMachine, reachable, linked, latestLiveLead, listLeads, reachTarget, threadName };
