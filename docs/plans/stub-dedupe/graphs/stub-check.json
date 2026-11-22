@@ -1,0 +1,19 @@
+{"schema":1,"title":"What an agent does before making a stub","source":"plan-proposal","source_detail":"docs/plans/stub-dedupe/PLAN.md decisions 2-5 and open question Q1",
+"explanation":"Every new stub now passes through [the comparison](#compare) first; only genuinely different work makes a new thread. Which existing stubs count as 'can take an addition' is the open question. Leaves out what the existing stub's agent does with an addition.",
+"groups":[{"id":"compare","label":null,"note":null,"visible":false,"nodes":["list","judge"]}],
+"nodes":[
+{"id":"want","label":"agent finds work that needs its own thread","kind":"step","exclusive":false,"ref":null,"note":null,"graph":null},
+{"id":"list","label":"look at existing stubs in this project, with what each is for","kind":"step","exclusive":false,"ref":"viewer/app/peers.js","note":"session leads, now including unopened stubs","graph":null},
+{"id":"judge","label":"same, close, or different?","kind":"decision","exclusive":true,"ref":null,"note":null,"graph":null},
+{"id":"dup","label":"note on the existing stub: also came up here","kind":"step","exclusive":false,"ref":null,"note":null,"graph":null},
+{"id":"add","label":"add this part to the existing stub","kind":"step","exclusive":false,"ref":null,"note":"stub card with adds_to","graph":null},
+{"id":"tell","label":"if that stub is open, its agent is told","kind":"step","exclusive":false,"ref":null,"note":null,"graph":null},
+{"id":"new","label":"make a new stub, as today","kind":"step","exclusive":false,"ref":null,"note":null,"graph":null}],
+"edges":[
+{"id":"want->list","from":"want","to":"list","label":null,"kind":"sequence","value":null,"inferred":false,"note":null},
+{"id":"list->judge","from":"list","to":"judge","label":null,"kind":"sequence","value":null,"inferred":false,"note":null},
+{"id":"judge->dup","from":"judge","to":"dup","label":"same","kind":"sequence","value":null,"inferred":false,"note":null},
+{"id":"judge->add","from":"judge","to":"add","label":"close","kind":"sequence","value":null,"inferred":false,"note":null},
+{"id":"judge->new","from":"judge","to":"new","label":"different","kind":"sequence","value":null,"inferred":false,"note":null},
+{"id":"add->tell","from":"add","to":"tell","label":null,"kind":"sequence","value":null,"inferred":false,"note":null},
+{"id":"dup->tell","from":"dup","to":"tell","label":null,"kind":"sequence","value":null,"inferred":false,"note":null}]}
