@@ -22,7 +22,7 @@ A follow-up to the overlap questions built in PR #148 (plan: `docs/plans/overlap
 ## What good looks like
 
 - An overlap with a thread in another project, found while planning or before a small fix's edits, gets the same overlap card a same-project overlap gets.
-- A clear decision Collin typed before the plan existed shows up in the plan's Decision Log and he is not asked it again.
+- A clear decision Collin typed before the plan existed shows up in the plan's Decision Log and Collin is not asked it again.
 - After a lead restart, a chat answer to an overlap card that was not yet recorded is picked up and acted on, and the card shows as answered.
 - A waiting overlap card about a thread that has since finished is not posted; Collin sees a one-line mention instead.
 - When news after an acted-on answer would change what that answer does, Collin gets one new card for it; news beside a still-open card never re-asks.
