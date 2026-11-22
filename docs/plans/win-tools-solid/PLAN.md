@@ -295,6 +295,20 @@ Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
+
+### Round 2 — 2026-11-22
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 1:** Spec 1.1-1.2 (flags on the after-tmux record; fallback for old
+records); Spec 2 Start time (no DLL cache); Spec 3 (stop budget with 4 s reserved);
+Spec 4 (confirmed termination via `terminateScript` output, `endJob`); Spec 5 rewritten
+(20 s deadline, gate inside `sync`/`remove`, `gates`/`gateFailed`, sweep and archive);
+Spec 6 rewritten (socket probe, parent read-end check, parent gone); Validation; D9-D12.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
