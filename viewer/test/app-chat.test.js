@@ -439,7 +439,7 @@ test('peer_log becomes folded peer items interleaved by time, without message te
       e('2026-03-01T09:20:00Z', 'a', 'sent'),
       e('2026-03-01T09:45:00Z', 'a', 'received', { title: 'A renamed' }),
       e('2026-03-01T10:10:00Z', 'a', 'sent', { title: 'A latest' }), // 25 minutes after the previous entry: same item; its title is the item's title
-      e('2026-03-01T11:00:00Z', 'a', 'sent'), // 45 minutes gap: a new item
+      e('2026-03-01T11:00:00Z', 'a', 'sent'), // 50 minutes gap: a new item
       e('2026-03-01T10:20:00Z', 'b', 'received'),
       e('2026-03-01T13:00:00Z', 'a', 'limit'),
     ],
