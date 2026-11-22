@@ -298,6 +298,7 @@ Filled by Stage 3. One row per worker brief.
 | R4-TESTS | Remediation 4: caps drop exactly the oldest records; identical Restore leaves the lesson deep-equal; audit every S9 node item for exact outcomes | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done (gaps 1-2; audit part moved to R4-AUDIT) |
 | R4-AUDIT | Pin exact outcomes for the remaining S9 node items R4-TESTS listed as weak | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
 | R5-TESTS | Remediation 5: agent removal appends a version; Waiting entry skipped on re-merge; Add `already` removes entry, no copy; trimmed-text match | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
+| R6-TESTS | Remediation 6: restore keeps version scope; import/waiting ids avoid history ids; export shape exact; mutation sweep of every lessons function | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -356,4 +357,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-22 — Verification 5 (db8a21d7): both FAIL on S9 test strength only (code correct per both); 3 distinct gaps, none rare, go to REMEDIATION-5.md. Gap 1 is the second fix on agent-removal history coverage (first: R1 gap 6).
 - 2026-11-22 — Choice: R5-TESTS, app-lessons-history.test.js: separate focused tests for agent removal, Waiting retry and trimmed matching; the Add `already` check extends the existing test; Waiting retry fills the role by direct `update` pushes with fixed ids; agent-removal setup replaces the text with 'Changed' first. (last two seen by scout)
 - 2026-11-22 — R5-TESTS accepted (band: scout): focused 21/21 re-run by me; I re-applied four mutations (no Waiting clause, no trim, `already` keeps the entry, removal marker without a version) and each failed its test, then restored. `npm test` 847/849 with failures in app-quiet and server tests (untouched files), both passing alone (74/74).
-
+- 2026-11-22 — Verification 6 (9a595e40): claude PASS, gpt FAIL with 3 new S9 test-strength gaps (code correct); REMEDIATION-6.md adds a mutation sweep over every lessons function to end the one-gap-per-round pattern.
