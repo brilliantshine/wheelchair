@@ -44,7 +44,7 @@ function parseUsage(raw, now = Date.now()) {
 }
 const DISALLOWED_TOOLS = ['Artifact', 'Workflow', 'ScheduleWakeup', 'SendFeedback', 'ShareOnboardingGuide', 'ReportFindings', 'ListAgents', 'ArtifactComments', 'ArtifactData', 'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger', 'PushNotification', 'PublishPlugin', 'DesignSync', 'EnterWorktree', 'ExitWorktree', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'EndConversation'];
 module.exports = {
-  provider: 'claude', loginEnv, parseUsage,
+  provider: 'claude', loginEnv, usual, parseUsage,
   usageProbe(dir, options = {}) { return run('claude', ['-p', '/usage', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', '', '--settings', JSON.stringify({ env: { ANTHROPIC_BASE_URL: closedPort } })], { ...options, env: { ...process.env, ...loginEnv(dir), ANTHROPIC_BASE_URL: closedPort }, parse: parseUsage }); },
   asideArgv(input, context) { return ['claude', '-p', '--output-format', 'json', '--model', input.model, ...(input.effort ? ['--effort', input.effort] : []), ...(input.access === 'full' ? ['--permission-mode', 'bypassPermissions'] : ['--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob']), '--strict-mcp-config', '--system-prompt-snapshot', 'off', '--append-system-prompt', context.prompt, '--resume', input.from, ...(input.mode === 'fork' ? ['--fork-session', '--session-id', input.new_id] : [])]; },
   loginCommand() { return ['claude', 'auth', 'login']; },
@@ -70,13 +70,14 @@ module.exports = {
       if (rejected.length) settings.disabledMcpjsonServers = rejected;
       if (context.tools && Object.keys(context.mcp.servers).length) settings.enableAllProjectMcpServers = true;
     }
-    return { loaded: c.loadedTools(loadedNames, context.mcp, context.mount, replacements), ...(replacedNames.length ? { mcpConfig: { path: mcpPath, data: { mcpServers: Object.fromEntries(replacedNames.map(name => [name, replacements[name]])) } } } : {}), settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, ...(replacedNames.length ? ['--mcp-config', mcpPath] : []), '--permission-mode', session.permission_mode === 'bypass' ? 'bypassPermissions' : 'auto', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt-file', context.promptPath, '--disallowedTools', DISALLOWED_TOOLS.join(',')] };
+    return { loaded: c.loadedTools(loadedNames, context.mcp, context.mount, replacements), ...(replacedNames.length ? { mcpConfig: { path: mcpPath, data: { mcpServers: Object.fromEntries(replacedNames.map(name => [name, replacements[name]])) } } } : {}), settingsPath, settings, argv: ['claude', context.resume ? '--resume' : '--session-id', session.cli_session_id, '--settings', settingsPath, ...(replacedNames.length ? ['--mcp-config', mcpPath] : []), '--permission-mode', session.permission_mode === 'bypass' ? 'bypassPermissions' : 'auto', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt-file', context.promptPath, '--disallowedTools', DISALLOWED_TOOLS.join(',')] };
   },
   firstMessage(input) { return input.brief || input.first_message || ''; },
   readyText(session, pane) { return !pane.includes('Choose the text style that looks best with your terminal') && !pane.includes('Press Enter to continue') && !pane.includes('Yes, I trust this folder') && !pane.includes('No, exit') && !pane.includes('Yes, I accept') && pane.includes(session.permission_mode === 'bypass' ? 'bypass permissions on' : 'auto mode on') && /(^|\n).*❯\s/m.test(pane); },
   // First-run screens on an account whose config lost its onboarding flag: the theme picker
   // and the security notes take Enter (the default); trust and bypass default to "No, exit".
   answerPrompts(session, pane) {
+    if (pane.includes('Try the new fullscreen renderer?')) return { step: 'renderer', keys: ['Down', 'Enter'] };
     if (pane.includes('Choose the text style that looks best with your terminal')) return { step: 'theme', keys: ['Enter'] };
     if (pane.includes('Security notes:') && pane.includes('Press Enter to continue')) return { step: 'notes', keys: ['Enter'] };
     if (pane.includes('Yes, I trust this folder')) return { step: 'trust', keys: ['Down', 'Enter'] };
