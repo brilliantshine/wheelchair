@@ -13,9 +13,10 @@ const card = (action, extra = {}) => ({ action, for: 'worker', text: 'First', ..
 test('agent changes, restore, keep and normalization retain history', async () => {
   const h = await hub(); const added = await s.applyLesson(h, card('add'), 'worker', '/p', 'thread');
   await s.applyLesson(h, card('replace', { lesson: added.id, only_ai: 'gpt' }), 'worker', '/p', 'thread');
-  let v = await s.load(h); let entry = v.lesson_history[added.id]; assert.equal(entry.versions[0].changed_by, 'agent');
+  let v = await s.load(h); let entry = v.lesson_history[added.id]; assert.equal(entry.versions.at(-1).changed_by, 'agent'); assert.equal(entry.versions.at(-1).text, 'First');
   const vid = entry.versions[0].vid;
   await s.restoreLesson(h, 'worker', added.id, vid); v = await s.load(h);
+  assert.equal(v.lesson_history[added.id].versions.at(-1).changed_by, 'user');
   assert.equal(v.lessons.worker[0].saved_by, 'user'); assert.equal(v.lessons.worker[0].thread, 'thread');
   const count = v.lesson_history[added.id].versions.length; await s.restoreLesson(h, 'worker', added.id, vid); assert.equal((await s.load(h)).lesson_history[added.id].versions.length, count);
   await s.keepLesson(h, 'worker', added.id); v = await s.load(h); assert.ok(v.lessons.worker[0].kept_at); assert.equal(v.lessons.worker[0].saved_by, 'user'); assert.equal(v.lesson_history[added.id].versions.length, count);
@@ -29,6 +30,7 @@ test('history caps, removals, merge and waiting', async () => {
   for (let i = 0; i < 23; i++) await s.applyLesson(h, card('replace', { lesson: first.id, text: `Edit ${i}` }), 'worker', '/p', 'one');
   let v = await s.load(h); assert.equal(v.lesson_history[first.id].versions.length, 20);
   await s.applyLesson(h, card('remove', { lesson: first.id }), 'worker', '/p', 'one');
+  v = await s.load(h); assert.equal(v.lesson_history[first.id].versions.at(-1).changed_by, 'agent'); assert.equal(v.lesson_history[first.id].removed.by, 'agent');
   await s.restoreLesson(h, 'worker', first.id); v = await s.load(h); assert.equal(v.lessons.worker[0].text, 'Edit 22');
   for (let i = 0; i < 51; i++) { const x = await s.applyLesson(h, card('add', { text: `Removed ${i}` }), 'worker', '/p', 'one'); await s.applyLesson(h, card('remove', { lesson: x.id }), 'worker', '/p', 'one'); }
   v = await s.load(h); assert.equal(Object.values(v.lesson_history).filter((e) => e.removed).length, 50);
@@ -36,16 +38,36 @@ test('history caps, removals, merge and waiting', async () => {
   let counts = await s.mergeIncoming(h, incoming, { source: 'file', known: [] }); assert.deepEqual(counts, { added: 2, skipped: 1, invalid: 1, unknown_project: 1, waiting: 0 });
   counts = await s.mergeIncoming(h, incoming, { source: 'file', known: [] }); assert.equal(counts.skipped, 3);
   await s.update(h, (x) => { for (const role of s.ROLES) while (x.lessons[role].length < 12) x.lessons[role].push({ id: `L${(Math.random()*0xffffff|0).toString(16).padStart(6,'0')}`, text: `Fill ${x.lessons[role].length}`, saved_by: 'agent', saved_at: date }); });
+  const existing = [item('Existing one', { source: 'file', received_at: date, wid: 'existing-one' }), item('Existing two', { source: 'handoff', received_at: date, wid: 'existing-two' })];
+  await s.update(h, (x) => { x.lesson_waiting.push(...existing); });
   counts = await s.mergeIncoming(h, [...s.ROLES].flatMap((role) => Array.from({length: 12}, (_, i) => item(`Incoming ${i}`, { role }))), { source: 'file', known: [] }); assert.equal(counts.waiting, 72);
-  v = await s.load(h); const w = v.lesson_waiting[0]; await assert.rejects(s.waitingAction(h, w.role, w.wid, 'add'), { status: 422 });
+  v = await s.load(h); assert.equal(v.lesson_waiting.length, 74);
+  for (const original of existing) assert.deepEqual(v.lesson_waiting.find((entry) => entry.wid === original.wid), original);
+  const w = v.lesson_waiting[0]; await assert.rejects(s.waitingAction(h, w.role, w.wid, 'add'), { status: 422 });
   assert.equal((await s.waitingAction(h, w.role, w.wid, 'discard')).result, 'discarded'); await assert.rejects(s.waitingAction(h, w.role, w.wid, 'discard'), { status: 409 });
 });
 test('handoff projects and file routes', async () => {
   const h = await hub(); const c = await s.mergeIncoming(h, [item('Thread', { project: true, thread: 't' }), item('Bad', { project: '/p' })], { source: 'handoff', targetProject: '/target' });
   assert.equal(c.added, 1); assert.equal(c.invalid, 1); assert.equal((await s.load(h)).lessons.worker[0].project, '/target');
   const app = await setup(); try {
+    const store = new Hub({ stateDir: app.state, codeVersion: '' }); await store.state.init();
+    const seeded = [item('User GPT', { provider: 'gpt', saved_by: 'user' }), item('Saved project', { project: '/saved' }), item('Agent thread', { thread: 'thread-one' })];
+    await s.update(store, (v) => { v.saved_dirs = [{ path: '/saved' }]; v.lessons.worker = seeded.map((lesson, i) => ({ id: `L00000${i}`, ...lesson })); });
     const exp = await api(app, '/settings/lessons/export'); assert.equal(exp.status, 200);
+    assert.equal(exp.body.format, 'wheelchair-lessons'); assert.equal(exp.body.version, 1);
+    const exported = Object.values(exp.body.lessons).flat(); assert.equal(exported.length, 3);
+    for (const lesson of exported) { assert.equal('id' in lesson, false); assert.equal('thread' in lesson, false); }
+    await s.update(store, (v) => { v.lessons.worker = []; });
     const imp = await api(app, '/settings/lessons/import', { method: 'POST', body: exp.body }); assert.equal(imp.status, 200);
+    assert.deepEqual(imp.body, { added: 3, skipped: 0, invalid: 0, unknown_project: 0, waiting: 0 });
+    const imported = (await s.load(store)).lessons.worker;
+    for (const original of seeded) {
+      const lesson = imported.find((entry) => entry.text === original.text); assert.ok(lesson);
+      for (const field of ['text', 'provider', 'project', 'saved_by', 'saved_at']) assert.equal(lesson[field], original[field]);
+      assert.ok(lesson.kept_at); assert.equal('thread' in lesson, false);
+    }
+    const again = await api(app, '/settings/lessons/import', { method: 'POST', body: exp.body });
+    assert.equal(again.body.skipped, 3); assert.equal(again.body.added, 0);
     assert.equal((await api(app, '/settings/lessons/import', { method: 'POST', body: {} })).status, 400);
   } finally { await close(app); }
 });
