@@ -7,16 +7,16 @@ const { spawn } = require('node:child_process');
 const readline = require('node:readline');
 
 const argv = process.argv.slice(2);
-const options = { '--hold-ms': '50000', '--poll-ms': '2000', '--init-ms': '60000', '--stop-ms': '2000,3000,1000' };
+const options = { '--hold-ms': '50000', '--poll-ms': '2000', '--init-ms': '60000', '--stop-ms': '2000,3000,1000', '--probe-ms': '2000' };
 let i = 0;
 while (i < argv.length && argv[i] !== '--') {
   const key = argv[i++];
-  if (!['--ready-file', '--list-cache', '--name', '--hold-ms', '--poll-ms', '--init-ms', '--stop-ms'].includes(key) || i === argv.length || argv[i] === '--') {
+  if (!['--ready-file', '--list-cache', '--name', '--hold-ms', '--poll-ms', '--init-ms', '--stop-ms', '--probe-ms'].includes(key) || i === argv.length || argv[i] === '--') {
     console.error('Invalid proxy option'); process.exit(2);
   }
   options[key] = argv[i++];
 }
-if (argv[i] !== '--' || !argv[i + 1] || !options['--ready-file'] || !options['--list-cache'] || !options['--name'] || !/^\d+$/.test(options['--hold-ms']) || !/^\d+$/.test(options['--poll-ms']) || !/^\d+$/.test(options['--init-ms']) || !/^\d+,\d+,\d+$/.test(options['--stop-ms'])) {
+if (argv[i] !== '--' || !argv[i + 1] || !options['--ready-file'] || !options['--list-cache'] || !options['--name'] || !/^\d+$/.test(options['--hold-ms']) || !/^\d+$/.test(options['--poll-ms']) || !/^\d+$/.test(options['--init-ms']) || !/^\d+,\d+,\d+$/.test(options['--stop-ms']) || !/^[1-9]\d*$/.test(options['--probe-ms'])) {
   console.error('Invalid proxy arguments'); process.exit(2);
 }
 const command = argv[i + 1], args = argv.slice(i + 2);
@@ -139,6 +139,31 @@ function poll() {
   if (state === 'ready') { clearInterval(poller); startTool(initialized); }
   else if (state === 'failed') { for (const item of [...held]) { removeItem(item); replyError(item.msg, sentence()); } }
 }
+const startPpid = process.ppid;
+let stdoutTarget = '';
+try { stdoutTarget = fs.readlinkSync('/proc/self/fd/1'); } catch {}
+function parentHasReader() {
+  let entries;
+  try { entries = fs.readdirSync(`/proc/${startPpid}/fd`); } catch { return false; }
+  for (const fd of entries) {
+    try {
+      if (fs.readlinkSync(`/proc/${startPpid}/fd/${fd}`) !== stdoutTarget) continue;
+      const info = fs.readFileSync(`/proc/${startPpid}/fdinfo/${fd}`, 'utf8');
+      const flags = /^flags:\s*([0-7]+)\s*$/m.exec(info);
+      if (flags && (parseInt(flags[1], 8) & 3) !== 1) return true;
+    } catch {}
+  }
+  return false;
+}
+const socketCheck = /^socket:\[.*\]$/.test(stdoutTarget);
+const pipeCheck = /^pipe:\[\d+\]$/.test(stdoutTarget) && parentHasReader();
+const readerPoller = setInterval(() => {
+  if (stopping || finishing || stdoutDead) { clearInterval(readerPoller); return; }
+  if (process.ppid !== startPpid || (pipeCheck && !parentHasReader())) return stdoutLost();
+  if (socketCheck && writes === 0) {
+    try { fs.writeSync(1, Buffer.alloc(0)); } catch { stdoutLost(); }
+  }
+}, Number(options['--probe-ms']));
 const poller = setInterval(poll, Number(options['--poll-ms']));
 poll();
 readline.createInterface({ input: process.stdin }).on('line', line => {

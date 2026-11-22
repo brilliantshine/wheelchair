@@ -8,11 +8,11 @@ const { makeTempSync } = require('../../test-support/run-dir');
 const proxy = path.join(__dirname, '../lib/win-tool-proxy.js');
 const server = path.join(__dirname, 'fixtures/win-tool/server.js');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-function launch({ ready = false, env = {}, cache, command = process.execPath, args, pause = false } = {}) {
+function launch({ ready = false, env = {}, cache, command = process.execPath, args, pause = false, probeMs = 2000, preload } = {}) {
   const dir = makeTempSync('proxy-'), readyFile = path.join(dir, 'ready'), list = path.join(dir, 'cache', 'list'), record = path.join(dir, 'record');
   if (ready) fs.writeFileSync(readyFile, JSON.stringify({ state: 'ready', copy: 'C:\\copy' }));
   if (cache) { fs.mkdirSync(path.dirname(list)); fs.writeFileSync(list, JSON.stringify({ tools: cache })); }
-  const child = spawn(process.execPath, [proxy, '--ready-file', readyFile, '--list-cache', list, '--name', 'example', '--hold-ms', '100', '--poll-ms', '10', '--init-ms', '200', '--stop-ms', '20,30,20', '--', command, ...(args || (command === process.execPath ? [server] : []))], { env: { ...process.env, WHEELCHAIR_SESSION_TOKEN: 'secret', RECORD: record, ...env } });
+  const child = spawn(process.execPath, [...(preload ? ['--require', preload] : []), proxy, '--probe-ms', String(probeMs), '--ready-file', readyFile, '--list-cache', list, '--name', 'example', '--hold-ms', '100', '--poll-ms', '10', '--init-ms', '200', '--stop-ms', '20,30,20', '--', command, ...(args || (command === process.execPath ? [server] : []))], { env: { ...process.env, WHEELCHAIR_SESSION_TOKEN: 'secret', RECORD: record, ...env } });
   let text = '', stderr = ''; const lines = [];
   child.stdout.on('data', b => { text += b; let n; while ((n = text.indexOf('\n')) >= 0) { lines.push(JSON.parse(text.slice(0, n))); text = text.slice(n + 1); } });
   if (pause) child.stdout.pause();
@@ -138,4 +138,85 @@ test('handoff with empty list forwards held call after readiness', async () => {
   await sleep(30); assert.equal(p.records().filter(x => x.method === 'notifications/initialized').length, 1);
   assert.equal(p.lines.filter(x => x.method === 'notifications/tools/list_changed').length, 1);
   p.child.stdin.end(); await p.exit;
+});
+
+const waitFor = async (predicate, timeout = 3000) => {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) { const value = predicate(); if (value) return value; await sleep(10); }
+  throw new Error('timed out waiting for condition');
+};
+const readRecords = file => { try { return fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse); } catch { return []; } };
+const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { if (e.code === 'ESRCH') return false; throw e; } };
+
+test('idle socket reader closure shuts down within the probe and stop budgets', async () => {
+  const p = launch({ ready: true, probeMs: 200 });
+  try {
+    await waitFor(() => p.records().length);
+    const start = Date.now(); p.child.stdout.destroy();
+    await waitFor(() => p.records().some(x => x.event === 'stdin-end'), 700);
+    assert.ok(Date.now() - start <= 700);
+    const stopped = Date.now(); assert.equal((await p.exit).code, 0); assert.ok(Date.now() - stopped <= 370);
+  } finally { p.child.kill('SIGKILL'); }
+});
+
+function pipeParent(mode) {
+  const dir = makeTempSync('proxy-pipe-'), ready = path.join(dir, 'ready'), record = path.join(dir, 'record');
+  fs.writeFileSync(ready, JSON.stringify({ state: 'ready' }));
+  const child = spawn('python3', [path.join(__dirname, 'fixtures/win-tool/pipe-parent.py'), mode, process.execPath, proxy, server, ready, path.join(dir, 'cache'), record]);
+  let buf = '', stderr = ''; const lines = [];
+  child.stdout.on('data', b => { buf += b; let n; while ((n = buf.indexOf('\n')) >= 0) { lines.push(JSON.parse(buf.slice(0, n))); buf = buf.slice(n + 1); } });
+  child.stderr.on('data', b => { stderr += b; });
+  return { child, lines, record, stderr: () => stderr };
+}
+function killPid(pid) { if (pid) try { process.kill(pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; } }
+
+test('OS pipe reader closure is detected and the tool stops within its budget', async () => {
+  const p = pipeParent('pipe'); let ids;
+  try {
+    ids = await waitFor(() => p.lines[0]); await waitFor(() => readRecords(p.record).length);
+    const start = Date.now(); p.child.stdin.write('\n');
+    await waitFor(() => readRecords(p.record).some(x => x.event === 'stdin-end'), 700);
+    assert.ok(Date.now() - start <= 700);
+    const stopped = Date.now(); await waitFor(() => p.lines.find(x => x.exit !== undefined), 600);
+    assert.ok(Date.now() - stopped <= 600); assert.equal(p.lines.find(x => x.exit !== undefined).exit, 0);
+  } finally { killPid(ids?.proxy); p.child.kill('SIGKILL'); }
+});
+
+test('pipe reader check stays disabled if parent has no reader initially', async () => {
+  const p = pipeParent('off'); let ids;
+  try {
+    ids = await waitFor(() => p.lines[0]); await waitFor(() => readRecords(p.record).length);
+    await sleep(900); assert.ok(alive(ids.proxy)); assert.ok(!readRecords(p.record).some(x => x.event === 'stdin-end'));
+    p.child.stdin.write('\n'); await waitFor(() => !alive(ids.proxy));
+  } finally { killPid(ids?.holder); killPid(ids?.proxy); p.child.kill('SIGKILL'); }
+});
+
+test('parent loss ends proxy with held pipes, pending output, and a writing tool', async () => {
+  for (const mode of ['gone', 'pending', 'writing']) {
+    const p = pipeParent(mode); let ids;
+    try {
+      ids = await waitFor(() => p.lines[0]); await waitFor(() => readRecords(p.record).length);
+      if (mode === 'pending') await waitFor(() => readRecords(p.record).some(x => x.method === 'large'));
+      await new Promise(resolve => p.child.once('exit', resolve));
+      await waitFor(() => readRecords(p.record).some(x => x.event === 'stdin-end'), 700);
+      await waitFor(() => !alive(ids.proxy), 1500);
+    } finally { killPid(ids?.holder); killPid(ids?.proxy); p.child.kill('SIGKILL'); }
+  }
+});
+
+test('socket probe skips pending stdout writes', async () => {
+  const dir = makeTempSync('proxy-probe-'), log = path.join(dir, 'probe');
+  const p = launch({ ready: true, probeMs: 200, pause: true, preload: path.join(__dirname, 'fixtures/win-tool/probe-preload.js'), env: { PROBE_LOG: log, KEEP_LARGE: '1' } });
+  try {
+    await waitFor(() => fs.existsSync(log)); p.send('large', 1);
+    await waitFor(() => p.records().some(x => x.method === 'large')); await sleep(650);
+    assert.ok(fs.readFileSync(log, 'utf8').trim().split('\n').every(x => Number(x) === 0));
+    const before = fs.readFileSync(log, 'utf8'); await sleep(450); assert.equal(fs.readFileSync(log, 'utf8'), before);
+    p.child.stdout.resume(); await p.wait(x => x.id === 1);
+    await waitFor(() => fs.readFileSync(log, 'utf8') !== before); p.child.stdin.end(); await p.exit;
+  } finally { p.child.kill('SIGKILL'); }
+});
+
+test('probe interval must be a positive integer', async () => {
+  for (const probeMs of ['0', '01', '-1', 'abc']) { const p = launch({ probeMs }); const result = await p.exit; assert.equal(result.code, 2); assert.match(result.stderr, /Invalid proxy arguments/); }
 });

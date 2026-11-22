@@ -5,7 +5,7 @@ const record = process.env.RECORD;
 function log(value) { if (record) fs.appendFileSync(record, JSON.stringify(value) + '\n'); }
 log({ env: { token: process.env.WHEELCHAIR_SESSION_TOKEN, copy: process.env.WHEELCHAIR_WINDOWS_PROJECT, wslenv: process.env.WSLENV } });
 if (process.env.IGNORE_TERM) process.on('SIGTERM', () => log({ signal: 'SIGTERM' }));
-process.stdin.on('end', () => { log({ event: 'stdin-end' }); if (process.env.IGNORE_END) setInterval(() => {}, 1000); });
+process.stdin.on('end', () => { log({ event: 'stdin-end' }); if (process.env.WRITE_ON_END) setInterval(() => send({ event: 'still-writing' }), 5); else if (process.env.IGNORE_END) setInterval(() => {}, 1000); });
 function send(value) { process.stdout.write(JSON.stringify(value) + '\n'); }
 readline.createInterface({ input: process.stdin }).on('line', line => {
   let msg; try { msg = JSON.parse(line); } catch { process.stdout.write(line + '\n'); return; }
@@ -24,6 +24,6 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   }
   if (msg.method === 'tools/call' || msg.method === 'ping' || msg.method === 'large' || msg.method === 'exit') {
     send({ jsonrpc: '2.0', id: msg.id, result: msg.method === 'large' ? 'x'.repeat(1024 * 1024) : { ok: true } });
-    if (msg.method === 'exit' || msg.method === 'large') process.exitCode = 7, process.stdin.destroy();
+    if (msg.method === 'exit' || (msg.method === 'large' && !process.env.KEEP_LARGE)) process.exitCode = 7, process.stdin.destroy();
   }
 });
