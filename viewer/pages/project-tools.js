@@ -9,6 +9,15 @@
   const LOST = 'Save may still be finishing; reload in a minute and check Waiting to merge before saving again.';
   const HEADER_NOTE = "Codex takes a header only when it is plain text, ${NAME} or Bearer ${NAME}. Claude may read some credential-like names as empty in headers, so check the tool signs in.";
   const RESERVED_MSG = "can't be set here: it would change how the agent itself runs";
+  // The shared "Marked tool" rule (machine/lib/win-mark.js WINDOWS_URL carries the same pattern).
+  const WINDOWS_URL = /^http:\/\/(localhost|127\.0\.0\.1)(:(\d{1,5}))?(?=[\/?#]|$)/i;
+  function windowsEligible(type, url) {
+    if (type !== 'http' || typeof url !== 'string') return false;
+    const m = WINDOWS_URL.exec(url);
+    if (!m) return false;
+    const port = m[3] === undefined ? 80 : Number(m[3]);
+    return port >= 1 && port <= 65535;
+  }
   const KNOWN_OUTCOMES = ['saved', 'opened', 'pr_failed', 'failed', 'refused', 'removed'];
   let reservedLists = { exact: [], prefixes: [] };
   function isReservedName(name) {
@@ -116,7 +125,7 @@
   function render(container) {
     const state = {
       picker: null, machine: '', path: '',
-      read: null, token: null, keys: [], tools: {}, sourceTools: {},
+      read: null, token: null, keys: [], tools: {}, sourceTools: {}, windows: new Set(), sourceWindows: [],
       baseName: nullObj(),    // draft tool name -> the baseline tool name it came from
       pending: nullObj(),     // key values typed in the tool form, by name
       busy: false, loading: false, loads: 0, readSeq: 0, pickSeq: 0, gen: 0,
@@ -126,6 +135,7 @@
     let unityMessage = '';
     let unityPollTimer = null;
     let unitySeq = 0;
+    const wsl = () => state.read?.wsl === true;
 
     const status = h('div', { class: 'pt-status', role: 'status' });
     const view = h('div', { class: 'pt-view' });
@@ -262,6 +272,9 @@
       state.keys = [...(body.keys || [])];
       state.sourceTools = isPlain(body.source?.document?.mcpServers) ? body.source.document.mcpServers : {};
       state.tools = structuredClone(state.sourceTools);
+      state.sourceWindows = (Array.isArray(body.windows) ? body.windows : []).filter((n) => typeof n === 'string' && Object.hasOwn(state.sourceTools, n));
+      state.windows = new Set(state.sourceWindows);
+      resetStore();
       state.baseName = nullObj();
       for (const n of Object.keys(state.sourceTools)) setOwn(state.baseName, n, n);
       state.pending = nullObj();
@@ -407,6 +420,139 @@
       return Object.keys(state.tools).filter((n) => n !== except && (checksFor(n).keys || []).includes(key));
     }
 
+    // ---- Runs on Windows: the status store ---------------------------------------------
+    // Results live here, keyed by the page guard plus the entry's current type and url, so every
+    // render reads the same answer. A reply is stored only if the guard and epoch still hold and
+    // its request is still the pending one for its key.
+    const store = { guard: '', epoch: 0, results: new Map(), pending: new Map(), due: new Set(), timer: null };
+    const lines = new Set();
+    const guardId = () => JSON.stringify([state.machine, state.path, state.gen]);
+    function resetStore() {
+      store.epoch++;
+      store.results.clear(); store.pending.clear(); store.due.clear();
+      clearTimeout(store.timer); store.timer = null;
+      store.guard = guardId();
+    }
+    function checkGuard() { if (store.guard !== guardId()) resetStore(); }
+    const storeKey = (type, url) => JSON.stringify([type, url]);
+    const parseKey = (key) => JSON.parse(key);
+
+    // Values of every entry (and the open form) that currently shows a line.
+    function neededKeys() {
+      const out = new Map();
+      if (!wsl() || !state.read) return out;
+      for (const [name, raw] of Object.entries(state.tools)) {
+        if (isPlain(raw) && state.windows.has(name) && windowsEligible(raw.type, raw.url)) out.set(storeKey(raw.type, raw.url), name);
+      }
+      for (const ln of lines) {
+        if (!ln.el.isConnected) continue;
+        const v = ln.vals();
+        if (v) out.set(storeKey(v.type, v.url), v.name);
+      }
+      return out;
+    }
+    function scheduleCheck(key, now) {
+      store.due.add(key);
+      clearTimeout(store.timer);
+      store.timer = null;
+      if (now) flushChecks(); else store.timer = setTimeout(flushChecks, 500);
+    }
+    async function flushChecks() {
+      store.timer = null;
+      checkGuard();
+      const needed = neededKeys();
+      const keys = [...store.due].filter((k) => needed.has(k) && !store.results.has(k) && !store.pending.has(k));
+      store.due.clear();
+      if (!keys.length || !state.token) { repaintLines(); return; }
+      const t = tag();
+      const epoch = store.epoch;
+      const req = {};
+      const ids = new Map();
+      for (const k of keys) store.pending.set(k, req);
+      const tools = keys.map((k, i) => {
+        const [type, url] = parseKey(k);
+        ids.set(String(i), k);
+        return { id: String(i), name: needed.get(k), type, url };
+      });
+      const { status: code, body } = await post('/project-tools/windows-status', { machine: t.machine, path: t.path, token: state.token, tools });
+      if (!fresh(t) || store.epoch !== epoch) return;
+      const bad = !body || code >= 400 || !isPlain(body.status);
+      const why = bad ? (body && (body.reason || body.error)) || (code ? 'http ' + code : 'the hub could not be reached') : '';
+      const at = Date.now();
+      for (const [id, k] of ids) {
+        if (store.pending.get(k) !== req) continue;
+        store.pending.delete(k);
+        const r = bad ? null : own(body.status, id);
+        if (isPlain(r) && ['reachable', 'unreachable', 'unavailable'].includes(r.state)) store.results.set(k, { ...r, at });
+        else store.results.set(k, { state: 'error', error: bad ? why : 'no answer for this tool', at });
+      }
+      repaintLines();
+    }
+    function ago(ms) {
+      const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+      if (s < 60) return 'just now';
+      const m = Math.round(s / 60);
+      if (m < 60) return m + ' min ago';
+      const hr = Math.round(m / 60);
+      return hr < 48 ? hr + ' h ago' : Math.round(hr / 24) + ' days ago';
+    }
+    function lineKids(type, url, name) {
+      checkGuard();
+      const key = storeKey(type, url);
+      const res = store.results.get(key);
+      if (!res) {
+        if (!store.pending.has(key) && !store.due.has(key)) scheduleCheck(key, false);
+        return [h('p', { class: 'hint', text: 'Checking…' })];
+      }
+      const text = res.state === 'reachable' ? 'Reachable on Windows'
+        : res.state === 'unreachable' ? 'Not reachable: ' + (res.reason || 'unknown reason')
+          : res.state === 'unavailable' ? 'Not available: ' + (res.reason || 'unknown reason')
+            : "Couldn't check: " + res.error;
+      const kids = [h('p', { class: res.state === 'reachable' ? 'hint' : 'pt-warn', text })];
+      if (res.note) kids.push(h('p', { class: 'hint', text: res.note }));
+      if (isPlain(res.last) && res.last.reason) {
+        const when = new Date(res.last.at).getTime();
+        kids.push(h('p', { class: 'hint', text: 'Last connection refused: ' + res.last.reason + (Number.isFinite(when) ? ', ' + ago(when) : '') }));
+      }
+      kids.push(h('p', { class: 'hint' }, 'checked ' + ago(res.at) + ' ',
+        button('Check again', () => {
+          checkGuard();
+          store.results.delete(key); store.pending.delete(key);
+          repaintLines();
+          scheduleCheck(key, true);
+        }, { class: 'small', 'aria-label': 'Check ' + name + ' again' })));
+      return kids;
+    }
+    function repaintLines() {
+      for (const ln of [...lines]) {
+        if (!ln.el.isConnected) { lines.delete(ln); continue; }
+        ln.paint();
+      }
+    }
+
+    // The switch and its status line. `vals()` gives the current {name,type,url} (possibly unsaved).
+    function winControl(vals, isOn, setOn) {
+      const el = h('div', { class: 'pt-win' });
+      const ln = { el, vals: () => null, paint: () => {} };
+      const box = h('input', { type: 'checkbox', 'aria-label': 'Runs on Windows' });
+      const statusEl = h('div', { class: 'pt-win-status', role: 'status' });
+      ln.paint = () => {
+        const v = vals();
+        const shown = wsl() && windowsEligible(v.type, v.url);
+        el.hidden = !shown;
+        box.checked = isOn();
+        const on = shown && box.checked;
+        ln.vals = () => (on ? v : null);
+        statusEl.replaceChildren(...(on ? lineKids(v.type, v.url, v.name) : []));
+      };
+      box.addEventListener('change', () => { setOn(box.checked); ln.paint(); });
+      el.append(h('label', { class: 'check', style: 'display:flex;flex-direction:row;align-items:center;gap:8px;font-size:13px;color:inherit' }, box, h('span', { text: 'Runs on Windows' })),
+        h('p', { class: 'hint', text: "Turn on if this tool's server runs on Windows. Agents here reach it through wheelchair." }), statusEl);
+      lines.add(ln);
+      ln.paint();
+      return { el, paint: ln.paint };
+    }
+
     function toolCard(name) {
       const r = state.read;
       const raw = state.tools[name];
@@ -437,6 +583,11 @@
         for (const key of myKeys) card.append(h('p', {}, keyChip(key)));
         card.append(h('p', { class: 'hint', text: "The form can't edit this tool. Edit in the file." }));
       }
+      if (isPlain(raw)) {
+        card.append(winControl(() => ({ name, type: raw.type, url: raw.url }),
+          () => state.windows.has(name),
+          (on) => { if (on) state.windows.add(name); else state.windows.delete(name); paintSave(); }).el);
+      }
       for (const s of checks.skip || []) card.append(h('p', { class: 'pt-warn', text: s }));
       // The machine's own key warnings, except "needs" ones, which follow the key status here.
       for (const w of Array.isArray(checks.key_warnings) ? checks.key_warnings : []) {
@@ -457,7 +608,7 @@
         confirmHost.replaceChildren(
           h('p', { text: 'Remove ' + name + '? It goes away when you Save.' }),
           h('div', { class: 'actions' },
-            button('Yes, remove ' + name, () => { if (state.loading) return; delete state.tools[name]; delete state.baseName[name]; if (formState && formState.origName === name) { formState = null; els.form.replaceChildren(); } paintTools(); paintSave(); }, { class: 'danger' }),
+            button('Yes, remove ' + name, () => { if (state.loading) return; delete state.tools[name]; delete state.baseName[name]; state.windows.delete(name); if (formState && formState.origName === name) { formState = null; els.form.replaceChildren(); } paintTools(); paintSave(); }, { class: 'danger' }),
             button('Cancel', () => { confirmHost.hidden = true; remove.hidden = false; })));
       }, { 'aria-label': 'Remove ' + name });
       actions.append(remove);
@@ -486,6 +637,7 @@
         command: p?.command || '', url: p?.url || '', argsText: (p?.args || []).join('\n'), argsRO: !!p?.argsRO,
         commandRO: !!p?.commandRO, urlRO: !!p?.urlRO,
         envRows: p ? p.envRows : [], hdrRows: p ? p.hdrRows : [],
+        winOn: origName !== null && state.windows.has(origName),
       };
       const err = h('p', { class: 'inline-err', role: 'alert' });
       const showErr = (m) => { err.textContent = m || ''; };
@@ -569,7 +721,10 @@
           ? h('div', {}, h('span', { class: 'hint', text: 'URL' }), h('p', { class: 'mono pt-ro', text: showText(f.p.url) }), h('p', { class: 'hint', text: 'edit in the file (kept as is)' }))
           : h('label', {}, h('span', { text: 'URL' }), urlIn),
         h('div', {}, h('span', { class: 'hint', text: 'Headers' }), hdrHost, headerNote));
-      const syncKind = () => { commandBox.hidden = f.kind !== 'command'; httpBox.hidden = f.kind !== 'http'; headerNote.hidden = !(f.kind === 'http' && f.hdrRows.length > 0); };
+      const formVals = () => ({ name: origName !== null && !f.touched.name ? origName : f.name, type: f.kind === 'http' ? 'http' : 'stdio', url: f.kind === 'http' ? (f.urlRO ? f.p.url : f.url) : '' });
+      const win = winControl(formVals, () => f.winOn, (on) => { f.winOn = on; });
+      const syncKind = () => { commandBox.hidden = f.kind !== 'command'; httpBox.hidden = f.kind !== 'http'; headerNote.hidden = !(f.kind === 'http' && f.hdrRows.length > 0); win.paint(); };
+      urlIn.addEventListener('input', () => win.paint());
       kindSel.addEventListener('change', () => {
         const hasRo = !!p && (p.envRows.some((x) => x.ro) || p.hdrRows.some((x) => x.ro) || p.argsRO || p.commandRO || p.urlRO || p.extras.length > 0);
         if (p && hasRo && kindSel.value !== p.kind) {
@@ -625,6 +780,11 @@
           if (k && secret && !state.keys.includes(k)) setOwn(pending, k, secret);
         }
         state.pending = pending;
+        // The mark follows a rename; it changes only where the switch is shown.
+        const hadMark = origName !== null && state.windows.has(origName);
+        if (origName !== null) state.windows.delete(origName);
+        const markNow = wsl() && windowsEligible(entry.type, entry.url) ? f.winOn : hadMark;
+        if (markNow) state.windows.add(name); else state.windows.delete(name);
         if (origName !== null && origName !== name) {
           const next = nullObj();
           const nextBase = nullObj();
@@ -646,7 +806,7 @@
         h('h3', { text: origName === null ? 'Add a tool' : 'Edit ' + origName }),
         h('label', {}, h('span', { text: 'Name' }), nameIn),
         h('label', {}, h('span', { text: 'Kind' }), kindSel),
-        commandBox, httpBox, extrasBox, err,
+        commandBox, httpBox, win.el, extrasBox, err,
         h('div', { class: 'actions' },
           h('button', { type: 'submit', class: 'primary', text: origName === null ? 'Add to the list' : 'Keep changes' }),
           button('Cancel', () => { formState = null; els.form.replaceChildren(); }))));
@@ -710,7 +870,9 @@
 
     // ---- saving ------------------------------------------------------------------------
 
-    const isDirty = () => !deepEqual(state.tools, state.sourceTools);
+    const marksOf = () => Object.keys(state.tools).filter((n) => state.windows.has(n));
+    const isDirty = () => !deepEqual(state.tools, state.sourceTools) ||
+      !deepEqual([...marksOf()].sort(), [...state.sourceWindows].sort());
 
     function paintSave() {
       if (!els.save) return;
@@ -747,11 +909,11 @@
       const keys = nullObj();
       for (const [k, v] of Object.entries(state.pending)) if (v && refs.has(k)) setOwn(keys, k, v);
       if (!dirty && !Object.keys(keys).length) { setStatus('Nothing to save.'); return; }
-      await send({ tools: dirty ? state.tools : null, keys });
+      await send(dirty ? { tools: state.tools, windows: marksOf(), keys } : { tools: null, keys });
     }
     async function startOver() {
       if (state.busy || state.loading) return;
-      await send({ tools: {}, keys: {}, start_over: true });
+      await send({ tools: {}, windows: [], keys: {}, start_over: true });
     }
     async function setKey(name, value) {
       if (state.busy || state.loading) return false;
@@ -901,5 +1063,5 @@
     loadPicker('hub');
   }
 
-  window.ProjectTools = { render };
+  window.ProjectTools = { render, windowsEligible, WINDOWS_URL };
 })();
