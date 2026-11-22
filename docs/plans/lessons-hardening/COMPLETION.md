@@ -169,3 +169,15 @@ Verification attempt 6 (9a595e40): claude-opus-5-5 PASS, gpt-6.2-sol FAIL with 3
 
 All in `viewer/test/app-lessons-history.test.js`. Validation, from `viewer/`: focused 30/30; `npm test` 857/858 (lifecycle.test.js, untouched, passes alone 31/31); browser specs 80/80.
 
+### Remediation 7 — 2026-11-22
+
+Verification attempt 7 (f08d2017): claude-opus-5-5 PASS, gpt-6.2-sol FAIL with 2 S9 test gaps (code correct); see `REMEDIATION-7.md`.
+
+| Gap | Test fails when |
+|-----|-----------------|
+| 1 restore must archive the current lesson, not the chosen version | restore records the chosen version (re-checked by the sub-lead) |
+| 2 the real handoff download carries exactly the thread's saved lessons | the export caller passes no lessons (re-checked) |
+| sweep | 13 deliberate breaks across the handoff export filter, validation and import; all caught (`reports/R7-TESTS.md`) |
+
+Validation, from `viewer/`: lessons + handoff node tests 123/123; `npm test` 859/859.
+
