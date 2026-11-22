@@ -170,7 +170,8 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine job: Cancel (SIGTERM leader), 15-min limit, process-group stop, result reason, explanations; DELETE route; API.md; machine tests. tricky | machine/lib/harness-install.js, machine/service.js (install route), machine/API.md, machine/test/harness-install.test.js | standard / gpt-6.1-terra | wc-c3b2aec47d12-worker | node --test machine/test/harness-install.test.js; bash machine/test/run.sh | done |
-| T2 | Hub DELETE passthrough, POST refused while off, switch-off DELETE fan-out; Settings Cancel, cancelled state, explanation line; hub + browser tests | viewer/app/routes.js, viewer/pages/settings.js, .h-explain CSS, viewer/test/app-harnesses.test.js, viewer/test/app-harnesses.spec.js | standard / claude-sonnet-5-5 | wc-c3b2aec47d12-worker-2 | node --test viewer/test/app-harnesses.test.js; npm --prefix viewer run test:browser | in progress |
+| T2 | Hub DELETE passthrough, POST refused while off, switch-off DELETE fan-out; Settings Cancel, cancelled state, explanation line; hub + browser tests | viewer/app/routes.js, viewer/pages/settings.js, .h-explain CSS, viewer/test/app-harnesses.test.js, viewer/test/app-harnesses.spec.js | standard / claude-sonnet-5-5 | wc-c3b2aec47d12-worker-2 | node --test viewer/test/app-harnesses.test.js; npm --prefix viewer run test:browser | done |
+| T3 | Fix: a Cancel failing after a poll tick leaves the row stuck on "Cancelling…" (cancelInstall compares job object identity); add browser test. | viewer/pages/settings.js (cancelInstall only), viewer/test/app-harnesses.spec.js | light / claude | wc-c3b2aec47d12-worker-3 | npm --prefix viewer run test:browser -- app-harnesses.spec.js | in progress |
 
 ## Log
 - 2026-11-21 — T1 and T2 dispatched in parallel (disjoint ownership).
@@ -179,3 +180,13 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 - 2026-11-21 — Choice: T1, stop tests: one fixture (outer sh waiting on a TERM-ignoring child) covers Cancel, cancel-after-restart and timeout; no separate plain-sleep fixture.
 - 2026-11-21 — Choice: T1, harness-install.js: a stop arriving before or between steps throws inside the job so no further step starts; the error is not logged.
 - 2026-11-21 — worker reported its choices as none; I listed 3 from the diff.
+- 2026-11-21 — T2 accepted (band: bigger-scout): hub tests 20/20 and app-harnesses.spec.js 112/112 re-run by me. Scout found that cancelInstall drops a failed DELETE that returns after a poll tick replaced the job record, leaving "Cancelling…" stuck with no Cancel button; that goes to follow-up task T3 rather than back to T2, as the rest of T2 matches the Spec.
+- 2026-11-21 — Choice: T2, settings.js cancelInstall: a non-409 4xx to Cancel restores the Cancel button beside the error line.
+- 2026-11-21 — Choice: T2, settings.js: pressing Cancel or Install clears that provider's row error first.
+- 2026-11-21 — Choice: T2, settings.js: after a 202 or 409 to DELETE, "Cancelling…" stays until the poll reports the outcome.
+- 2026-11-21 — Choice: T2, routes.js: the "switched off" 409 names the provider with DISPLAY_NAMES; the off state is read as settings.load(hub).harnesses[p] === false.
+- 2026-11-21 — Choice: T2, settings.js: a POST 409 with another error drops the optimistic job record; the fallback text is "Couldn't start the install.".
+- 2026-11-21 — Choice: T2, settings.js harnessRow: the cancelled row shows Install whenever !st.installed, regardless of st.recipe.
+- 2026-11-21 — Choice: T2, settings.js: the job record gains confirmed and cancelling flags; the DELETE uses the poll's 8 s abort timeout.
+- 2026-11-21 — Choice: T2, viewer/pages/settings.css: .h-explain is a 13px dim line with no margin.
+- 2026-11-21 — Choice: T2, app-harnesses.spec.js: the stale-page "switched off" error and the later "Install cancelled" are checked in separate tests rather than one sequence.
