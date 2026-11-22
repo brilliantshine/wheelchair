@@ -739,9 +739,10 @@ check `ok` in every `wc.js git` JSON result: git failures still exit 0.
 
 ## Other leads on this machine
 
-`node <root>/viewer/app/wc.js session leads [--all-projects]` prints one JSON line `{ "leads": [...] }`: the other threads in your project on this machine, and linked threads in other projects, most recently updated first. Each entry has `thread`, `lead` (null when no live lead), `project`, `linked`, `title`, `stage`, `idea`, `progress`, `branch` and `pr_url`. `--all-projects` also lists every other thread on this machine, each with only `thread`, `lead`, `project`, `title` and `linked`.
+`node <root>/viewer/app/wc.js session leads [--all-projects]` prints one JSON line `{ "leads": [...] }`: the other threads in your project on this machine, and linked threads in other projects, most recently updated first. Each entry has `thread`, `lead` (null when no live lead), `project`, `linked`, `title`, `stage`, `idea`, `progress`, `branch` and `pr_url`. Candidate stubs in your project also have `stub: true`, `summary`, `takes_additions` and `waits_on_parent`; unopened stubs appear with `lead: null`. `--all-projects` also lists every other thread on this machine, each with only `thread`, `lead`, `project`, `title` and `linked`.
 
 - **When to look:** (a) right after PLAN.md is created (step 4 creates it only after the mapper's `result` and the confirmed IDEA.md, so MAP.md exists by then); (b) when Open Questions and the Watch List are empty, before you first set `status: ready-for-review` from `planning`, whatever turn that is (not when an approved plan returns to review; (c) still applies then). What a new overlap found in (b) becomes is in "Overlap questions" below; (c) whenever the user asks. For a small fix, look once before making the edits. Every look for a feature, (c) and the restart look included, waits for PLAN.md: before it exists you may say what you find, but you ask and record nothing. A restarted lead whose IDEA.md is confirmed but has no PLAN.md creates it first (step 4), then looks. An overlap you learned before PLAN.md existed (from a peer's message, your user's words or an earlier look) is part of that first look, even if `session leads` does not show it. If `session leads` fails, follow the "hub unavailable" rule (`cards.md`) and decide nothing from it until it answers; the step that needed it waits. Show the user nothing unless something overlaps; a new overlap inside the card window becomes an overlap card, outside it a late overlap (both in "Overlap questions").
+- Entries with `takes_additions: true` are not overlaps; use them only by the stub rule. Opened stubs stay in overlap checks as today.
 - **Overlap:** when a listed thread's title, idea or stage suggests it touches the same files or behaviour, it has a `lead`, and you have not already raised this overlap with that lead, message that lead with `asks: true`: what you are building, the areas you will touch, and what it is doing there. If that lead has already asked you about this overlap, answer its question instead of sending your own. A thread with `lead: null` cannot be messaged: a new overlap with it inside the card window becomes an overlap card, outside it a late overlap. That rule is for discovery and overlaps: a lead you are already talking with may still be messaged at its known session name after it stopped. The message is held for that thread's next lead (the receipt shows `"held":true`); never resend it.
 - **Replies:** answer a cross-thread message only when it carries `[question <id>]`, briefly and from what you know. Start the answer with `Re: ` and a few words of the question. A message without a question is complete: read it; never send acknowledgements.
 - **Message limit:** after 20 messages to one thread within an hour, the hub refuses the next with "message limit reached". Stop messaging that thread, and say once, in one line of your next visible reply, that the conversation with it was paused. Until the user writes in this thread, read that thread's messages without replying, and do not repeat the line.
@@ -753,7 +754,7 @@ check `ok` in every `wc.js git` JSON result: git failures still exit 0.
 
 ## Overlap questions
 
-Terms for "Other leads on this machine". The plan's Decision Log and Open Questions hold the state, so a restarted lead finds it.
+Terms for "Other leads on this machine". The plan's Decision Log and Open Questions hold the state, so a restarted lead finds it. Entries with `takes_additions: true` are not overlaps and are used only by the stub rule; opened stubs stay in overlap checks as today.
 
 - **Overlap:** another thread (from `session leads`, a peer lead's message, or your user) whose work touches the same files or behaviour as this one's, whose `stage` is not `done`, and which is not a small fix whose `done` card is posted (`stage` `no plan` with a `pr_url`). A finished thread's overlap is mentioned in one line of your reply, not asked. Its identity is its thread id, never its title.
 - **Any project:** overlap cards and `Overlap with` Open Questions apply to a thread in any project (a peer is matched to the list by its thread id). A listed entry without `stage` counts as not finished. How another project's thread is found stays as in "Another project".
@@ -809,6 +810,17 @@ none of this thread: what was asked, what this thread already knows, links to it
 documents and pull request. Set `depends_on_parent` true when the work needs this
 thread's unmerged work (an after-done fix does); a new idea or a split usually does not.
 No session starts for a stub; it waits until the user opens it.
+
+**Before posting a stub:** at any step, run `session leads` and compare the `summary` of entries with `stub: true`. The wait for PLAN.md in "Other leads on this machine" applies only to overlap looks.
+
+- Skip this comparison for a two-part follow-up stub, a missed-merge stub, or a stub needing `depends_on_parent: true` or `commits`. Post it as its own rules say; its existing duplicate checks still apply.
+- If the same thing has an unopened stub (`takes_additions: true`), post with `adds_to` and `duplicate: true`. Make the summary one line saying where it came up.
+- If a close piece of work would naturally fit an unopened stub with a small addition, post with `adds_to`. Say what to add and what this thread knows in the summary. If `waits_on_parent` is true, add only if this part can also wait until that parent merges; otherwise post your own stub.
+- If both an unopened and an opened stub match, use the unopened rule and name the opened thread in the summary.
+- If the same or close work has an opened stub (`takes_additions: false`), post your own stub and name that thread as related in the summary. An opened stub never stops a new stub.
+- Otherwise post a new stub, naming any related stub in the summary.
+
+If a duplicate note or addition is refused for any reason, post a new stub naming the related one.
 
 If you are the lead of a stub, your first message is `[wc:context stub]` with that
 summary. Treat it as your starting context; your reply to it is shown to the user, so start

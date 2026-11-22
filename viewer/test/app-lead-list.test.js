@@ -30,3 +30,19 @@ test('lead listing respects machine, project, reachability, links and summaries'
   await assert.rejects(hub.sessionRequest({ action: 'leads', calling_session: 'worker' }), e => e.status === 403 && e.message === 'only a lead may list other leads');
   assert.deepEqual(await hub.sessionRequest({ action: 'leads', calling_session: 'caller', all_projects: true }), all);
 });
+
+test('discovers only candidate stubs with addition and dependency details', async () => {
+  const dir = await makeDir('stub-list-');
+  const hub = new Hub({ stateDir: dir }); await hub.state.init();
+  await fs.writeFile(path.join(dir, 'machine.json'), JSON.stringify({ host: 'local', port: 7374 }));
+  const make = (id, extra = {}) => ({ id: id.repeat(12), machine: 'hub', project: '/one', title: id, stub: true, context: 'Existing context', sessions: [], cards: [], pinned: {}, ...extra });
+  const caller = make('a', { stub: false, sessions: [{ role: 'lead' }] });
+  const records = [caller, make('b', { depends_on_parent: true }), make('c', { sessions: [{ role: 'lead', name: 'lead', live: true }], depends_on_parent: true, ready: true }), make('d', { archived: true }), make('e', { handed_off: {} }), make('f', { cards: [{ kind: 'done' }] }), make('1', { cards: [{ kind: 'merged' }] }), make('2', { project: '/two' }), make('3', { stub: false, sessions: [{ role: 'lead' }] }), make('4', { stub: true, cards: [{ kind: 'done' }], sessions: [{ role: 'lead' }] })];
+  for (const record of records) await hub.state.save(record);
+  const entries = (await listLeads(hub, caller, { allProjects: true })).leads;
+  const get = id => entries.find(entry => entry.thread === id.repeat(12));
+  assert.deepEqual([get('b').lead, get('b').stub, get('b').summary, get('b').takes_additions, get('b').waits_on_parent], [null, true, 'Existing context', true, true]);
+  assert.equal(get('c').takes_additions, false); assert.equal(get('c').waits_on_parent, false);
+  for (const id of ['d', 'e', 'f', '1', '2']) assert.equal(get(id), undefined);
+  assert.equal(Object.hasOwn(get('3'), 'stub'), false); assert.equal(Object.hasOwn(get('4'), 'stub'), false);
+});

@@ -123,22 +123,24 @@ async function runOperation(hub, id, { reimport = false } = {}) {
 }
 // The import route holds withThread across its decision and these helpers. The caller
 // starts the lead after releasing that lock once the returned operation completed.
-async function createLocked(hub, { file, machine, project }) {
+async function createLocked(hub, { file, machine, project, lessons }) {
   const id = file.thread.id, now = new Date().toISOString();
   const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, project_tools: require('./threads.js').defaultProjectTools(), created_at: now, updated_at: now };
   await firstPreclaim(hub, thread, file.head);
+  if (lessons) await require('./settings.js').mergeIncoming(hub, lessons, { source: 'handoff', targetProject: project });
   thread.handoff_op = operation('create', file.head, file);
   await hub.save(thread);
   return runLocked(hub, thread, false, true);
 }
-async function advanceLocked(hub, thread, file) {
+async function advanceLocked(hub, thread, file, { lessons, targetProject } = {}) {
   await firstPreclaim(hub, thread, file.head);
+  if (lessons) await require('./settings.js').mergeIncoming(hub, lessons, { source: 'handoff', targetProject });
   thread.handoff_op = operation('advance', file.head, file);
   await hub.save(thread);
   return runLocked(hub, thread, false, true);
 }
 async function startCreate(hub, input) {
-  const result = await hub.withThread(input.file.thread.id, () => createLocked(hub, input));
+  const result = await hub.withThread(input.file.thread.id, () => createLocked(hub, { file: input.file, machine: input.machine, project: input.project }));
   await hub.restartLead(result.id).catch(() => {}); return result;
 }
 async function startAdvance(hub, thread, file) {

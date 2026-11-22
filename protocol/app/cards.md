@@ -23,7 +23,7 @@ Rules for every card:
 - The file holds one JSON object. `kind` must equal the kind on the command line.
 - Fields marked required must be present and non-empty. A field not listed for the kind
   is refused.
-- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient; `reach` carries the other thread's id, and `question.about_thread` the other thread's id for an overlap card: the only exceptions.) The app learns who you
+- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient; `reach` carries the other thread's id, `question.about_thread` the other thread's id for an overlap card, and `stub.adds_to` the target thread's id: the only exceptions.) The app learns who you
   are from your session token and which thread you belong to from its own record, and it
   assigns every card its `id`.
 - A card is accepted only for the thread your session belongs to.

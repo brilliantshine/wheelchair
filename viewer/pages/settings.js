@@ -630,7 +630,7 @@
     selected = id;
     confirming = false;
     fullPrompt = null;
-    if (isLessons(id)) { lessonEdit = { role: id.slice(8), texts: {}, removals: new Set(), confirming: null }; draft = null; loadLessonThreads(); return; }
+    if (isLessons(id)) { lessonEdit = { role: id.slice(8), texts: {}, removals: new Set(), confirming: null, history: new Set() }; draft = null; loadLessonThreads(); return; }
     const found = data.templates.find((t) => t.id === id);
     draft = found ? structuredClone(found) : blankDraft();
     if (found && !draft.switches) draft.switches = {};
@@ -873,7 +873,7 @@
     try {
       await api('/settings/lessons/' + encodeURIComponent(role), { method: 'PUT', body: { edits, removals } });
       await reload(false);
-      lessonEdit = { role, texts: {}, removals: new Set(), confirming: null };
+      lessonEdit = { role, texts: {}, removals: new Set(), confirming: null, history: lessonEdit.history };
       setNote(SAVED, false);
       renderPanel();
     } catch (e) {
@@ -889,18 +889,199 @@
       const row = n.closest('.lesson-row');
       n.disabled = busy || (n.matches('.lesson-text') && !!row && lessonEdit.removals.has(row.dataset.id));
     });
+    // Idle again: the buttons the renderer disables by a rule get that rule back.
+    if (!busy) { refreshRestore(); refreshAdd(); }
+  }
+
+  const STALE_MS = 90 * 24 * 3600 * 1000;
+  const lessonStaleSince = (item) => Math.max(Date.parse(item.saved_at) || 0, Date.parse(item.kept_at) || 0);
+  const lessonStale = (item) => Date.now() - lessonStaleSince(item) >= STALE_MS;
+  const shortDate = (iso) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : ''; };
+  const lessonHistory = (role) => Object.entries(data.lesson_history || {}).filter(([, e]) => e.role === role);
+  const lessonRemoved = (role) => lessonHistory(role).filter(([, e]) => e.removed && e.versions.length).sort((a, b) => Date.parse(b[1].removed.at) - Date.parse(a[1].removed.at));
+  const lessonWaiting = (role) => (data.lesson_waiting || []).filter((w) => w.role === role);
+  const lessonFull = (role) => lessonList(role).length >= 12;
+  const lessonDirty = () => !!lessonEdit && (lessonEdit.removals.size > 0 || lessonList(lessonEdit.role).some((item) => lessonEdit.texts[item.id] !== undefined && lessonEdit.texts[item.id] !== item.text));
+
+  // Every lessons route answers { lessons, history, waiting } for the role; take them in as they are.
+  function applyLessonReply(role, res) {
+    data.lessons = { ...(data.lessons || {}), [role]: res.lessons || [] };
+    data.lesson_history = Object.fromEntries([...Object.entries(data.lesson_history || {}).filter(([, e]) => e.role !== role), ...Object.entries(res.history || {})]);
+    data.lesson_waiting = [...(data.lesson_waiting || []).filter((w) => w.role !== role), ...(res.waiting || [])];
+  }
+
+  async function lessonAction(route, body, errHost) {
+    const role = lessonEdit.role;
+    inlineErr(errHost, '');
+    const before = Object.fromEntries(lessonList(role).map((i) => [i.id, i.text]));
+    try {
+      const res = await api('/settings/lessons/' + encodeURIComponent(role) + '/' + route, { method: 'POST', body });
+      applyLessonReply(role, res);
+      const lost = keepLessonEdits(before);
+      if (lost.length) {
+        setNote('', false);
+        renderPanel();
+        showLessonLost(lost);
+        return;
+      }
+      setNote(res.result === 'already' ? 'Already in your lessons' : SAVED, false);
+      renderPanel();
+    } catch (e) {
+      if (e.status === 409) {
+        await reload(false);
+        const lost = keepLessonEdits(before);
+        renderPanel();
+        if (showLessonLost(lost, [e.message])) return;
+      }
+      inlineErr(errHost, e.message);
+    }
+  }
+
+  // After a server reply, keep unsaved text (differing from what was shown before) and pending removals for lessons that still exist.
+  // Returns the typed texts dropped because their lesson is gone.
+  const lostSentences = (lost) => lost.map((t) => `An agent removed a lesson you were editing. Your unsaved text was: \u201c${t}\u201d`).join('\n');
+  // Show dropped drafts (and any extra lines) in the re-rendered editor's error host; false when nothing was shown.
+  function showLessonLost(lost, extra = []) {
+    const host = document.querySelector('.lessons-edit .lesson-err');
+    if (!host || (!lost.length && !extra.length)) return false;
+    inlineErr(host, [...lostSentences(lost).split('\n').filter(Boolean), ...extra].join('\n'));
+    host.querySelector('.inline-err').style.whiteSpace = 'pre-line';
+    return true;
+  }
+  const shownLessonTexts = () => lessonEdit ? Object.fromEntries(lessonList(lessonEdit.role).map((i) => [i.id, i.text])) : null;
+  function keepLessonEdits(before) {
+    const ids = new Set(lessonList(lessonEdit.role).map((i) => i.id));
+    const lost = Object.entries(lessonEdit.texts).filter(([id, t]) => !ids.has(id) && t !== before[id] && typeof t === 'string' && t !== '').map(([, t]) => t);
+    lessonEdit.texts = Object.fromEntries(Object.entries(lessonEdit.texts).filter(([id, t]) => ids.has(id) && t !== before[id]));
+    lessonEdit.removals = new Set([...lessonEdit.removals].filter((id) => ids.has(id)));
+    return lost;
+  }
+
+  // Restore waits for the editor to be saved or undone; typing must not re-render, so toggle in place.
+  function refreshRestore() {
+    const dirty = lessonDirty();
+    document.querySelectorAll('.lessons-edit .restore-lesson').forEach((b) => { b.disabled = dirty || !!lessonEdit.saving; });
+    const hint = document.getElementById('restore-hint');
+    if (hint) hint.hidden = !(dirty && document.querySelector('.lessons-edit .restore-lesson'));
+  }
+
+  // Add waits for room in a full role; same rule the waiting section renders with.
+  function refreshAdd() {
+    const full = lessonFull(lessonEdit.role);
+    document.querySelectorAll('.lessons-edit .add-waiting').forEach((b) => { b.disabled = full || !!lessonEdit.saving; b.title = full ? 'Remove one first' : ''; });
+  }
+
+  function versionRows(id, entry, errHost, dirty) {
+    const open = lessonEdit.history && lessonEdit.history.has(id);
+    if (!open) return null;
+    return h('ul', { class: 'lesson-versions' }, [...entry.versions].reverse().map((v) => h('li', { class: 'lesson-version', 'data-vid': v.vid },
+      h('p', { class: 'lesson-version-text', text: v.text }),
+      h('div', { class: 'lesson-foot' },
+        h('span', { class: 'lesson-marks' },
+          lessonMarkers({ ...v, saved_by: 'agent' }).map((m) => h('span', { class: 'lesson-mark', text: m })),
+          h('span', { class: 'lesson-mark', text: `replaced by ${v.changed_by === 'user' ? 'you' : 'an agent'} ${shortDate(v.changed_at)}` })),
+        h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: v.vid }, errHost) })))));
+  }
+
+  function historyToggle(id, n) {
+    if (!n) return null;
+    const open = lessonEdit.history && lessonEdit.history.has(id);
+    return h('button', { type: 'button', class: 'history-toggle', 'aria-expanded': String(!!open), text: `History (${n})`, onclick: () => {
+      lessonEdit.history = lessonEdit.history || new Set();
+      if (open) lessonEdit.history.delete(id); else lessonEdit.history.add(id);
+      renderPanel();
+    } });
+  }
+
+  function renderRemoved(role, errHost, dirty) {
+    const removed = lessonRemoved(role);
+    if (!removed.length) return null;
+    return h('section', { class: 'lesson-removed' },
+      h('h3', { text: 'Removed' }),
+      h('ul', { class: 'lesson-rows' }, removed.map(([id, entry]) => {
+        const last = entry.versions[entry.versions.length - 1];
+        return h('li', { class: 'lesson-row removed-row', 'data-id': id },
+          h('p', { class: 'lesson-version-text', text: last.text }),
+          h('div', { class: 'lesson-foot' },
+            h('span', { class: 'lesson-marks' },
+              lessonMarkers({ ...last, saved_by: 'agent' }).map((m) => h('span', { class: 'lesson-mark', text: m })),
+              h('span', { class: 'lesson-mark', text: `removed by ${entry.removed.by === 'user' ? 'you' : 'an agent'} ${shortDate(entry.removed.at)}` })),
+            h('span', { class: 'lesson-buttons' },
+              historyToggle(id, entry.versions.length),
+              h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: last.vid }, errHost) }))),
+          versionRows(id, entry, errHost, dirty));
+      })));
+  }
+
+  function renderWaiting(role, errHost) {
+    const waiting = lessonWaiting(role);
+    if (!waiting.length) return null;
+    const full = lessonFull(role);
+    return h('section', { class: 'lesson-waiting' },
+      h('h3', { text: 'Waiting to add' }),
+      full ? h('p', { class: 'hint', text: 'Remove one first' }) : null,
+      h('ul', { class: 'lesson-rows' }, waiting.map((w) => h('li', { class: 'lesson-row waiting-row', 'data-wid': w.wid },
+        h('p', { class: 'lesson-version-text', text: w.text }),
+        h('div', { class: 'lesson-foot' },
+          h('span', { class: 'lesson-marks' },
+            lessonMarkers({ ...w, saved_by: 'agent' }).map((m) => h('span', { class: 'lesson-mark', text: m })),
+            h('span', { class: 'lesson-mark', text: w.source === 'handoff' ? 'from a handoff' : 'from a file' })),
+          h('span', { class: 'lesson-buttons' },
+            h('button', { type: 'button', class: 'add-waiting', text: 'Add', title: full ? 'Remove one first' : '', disabled: full || !!lessonEdit.saving, onclick: () => lessonAction('waiting', { wid: w.wid, action: 'add' }, errHost) }),
+            h('button', { type: 'button', class: 'discard-waiting', text: 'Discard', disabled: !!lessonEdit.saving, onclick: () => lessonAction('waiting', { wid: w.wid, action: 'discard' }, errHost) })))))));
+  }
+
+  async function exportLessons() {
+    try {
+      const res = await fetch(API + '/settings/lessons/export');
+      if (!res.ok) throw new Error('Could not export the lessons.');
+      const url = URL.createObjectURL(await res.blob());
+      const a = h('a', { href: url, download: 'wheelchair-lessons.json' });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setNote(e.message, true); }
+  }
+
+  async function importLessons(file) {
+    let lost = [];
+    try {
+      let res;
+      try { res = await fetch(API + '/settings/lessons/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: await file.arrayBuffer() }); } catch { throw new Error('Could not reach the hub.'); }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || body.error || body.message || ('http ' + res.status));
+      let text = `Added ${body.added}, skipped ${body.skipped} already here or removed or changed here, ${body.waiting} waiting for room`;
+      if (body.invalid > 0) text += `, ${body.invalid} unreadable`;
+      if (body.unknown_project > 0) text += `, ${body.unknown_project} for projects not on this machine (add the project, then import the file again)`;
+      const before = shownLessonTexts();
+      await reload(false);
+      setNote(text, false);
+      lost = before ? keepLessonEdits(before) : [];
+    } catch (e) { setNote(e.message, true); }
+    renderPanel();
+    showLessonLost(lost);
+  }
+
+  function lessonsTools() {
+    const input = h('input', { type: 'file', id: 'import-lessons-file', accept: '.json,application/json', hidden: true });
+    input.addEventListener('change', () => { const f = input.files && input.files[0]; input.value = ''; if (f) importLessons(f); });
+    return h('div', { class: 'lessons-tools' },
+      h('button', { type: 'button', id: 'export-lessons', text: 'Export lessons', onclick: exportLessons }),
+      h('button', { type: 'button', id: 'import-lessons', text: 'Import lessons', onclick: () => input.click() }),
+      input);
   }
 
   function renderLessonEditor() {
     const role = lessonEdit.role;
     const plural = LESSON_PLURAL[role] || role + 's';
     const list = lessonList(role);
-    const errHost = h('div', {});
+    const errHost = h('div', { class: 'lesson-err' });
+    const dirty = lessonDirty();
     const rows = list.map((item) => {
+      const entry = (data.lesson_history || {})[item.id];
       const removed = lessonEdit.removals.has(item.id);
       const value = lessonEdit.texts[item.id] !== undefined ? lessonEdit.texts[item.id] : item.text;
       const field = h('textarea', { class: 'lesson-text', rows: 2, maxLength: 300, value, disabled: removed || !!lessonEdit.saving, 'aria-label': 'Lesson text' });
-      field.addEventListener('input', () => { lessonEdit.texts[item.id] = field.value; });
+      field.addEventListener('input', () => { lessonEdit.texts[item.id] = field.value; refreshRestore(); });
       const marks = lessonMarkers(item);
       const title = item.thread && lessonThreads && lessonThreads[item.thread];
       let remove;
@@ -914,7 +1095,11 @@
             marks.map((m) => h('span', { class: 'lesson-mark', text: m })),
             title ? h('a', { class: 'lesson-from', href: '/wheelchair/app/thread?id=' + encodeURIComponent(item.thread), text: 'saved from ' + title }) : null,
             removed ? h('span', { class: 'lesson-mark', text: 'will be removed when you save' }) : null),
-          remove));
+          h('span', { class: 'lesson-buttons' }, entry ? historyToggle(item.id, entry.versions.length) : null, remove)),
+        lessonStale(item) ? h('div', { class: 'lesson-stale' },
+          h('span', { class: 'lesson-mark', text: 'Possibly out of date: not changed or kept since ' + shortDate(new Date(lessonStaleSince(item)).toISOString()) }),
+          h('button', { type: 'button', class: 'keep-lesson', text: 'Keep', disabled: !!lessonEdit.saving, onclick: () => lessonAction('keep', { id: item.id }, errHost) })) : null,
+        entry ? versionRows(item.id, entry, errHost, dirty) : null);
     });
     return h('div', { class: 'tpl-edit lessons-edit' },
       noteEl(),
@@ -924,6 +1109,9 @@
       list.length ? h('div', { class: 'actions' },
         h('button', { type: 'button', class: 'primary', id: 'save-lessons', text: 'Save', disabled: !!lessonEdit.saving, onclick: () => saveLessons(errHost) }),
         h('span', { class: 'grow', id: 'using', text: `Changes apply to ${plural} started after you save.` })) : h('p', { class: 'hint', id: 'using', text: `Changes apply to ${plural} started after you save.` }),
+      h('p', { class: 'hint', id: 'restore-hint', hidden: !(dirty && (list.some((i) => (data.lesson_history || {})[i.id]) || lessonRemoved(role).length)), text: 'Save or undo your changes first' }),
+      renderRemoved(role, errHost, dirty),
+      renderWaiting(role, errHost),
       errHost);
   }
 
@@ -932,18 +1120,21 @@
     const list = h('nav', { class: 'tpl-list', 'aria-label': 'Templates' },
       h('h1', { text: 'Behavior templates' }),
       h('p', { class: 'hint', text: "How each kind of agent works, on top of wheelchair's own rules." }),
-      h('button', { type: 'button', class: 'new', id: 'new-template', text: '+ New template', onclick: () => { select('new'); renderPanel(); } }));
+      h('button', { type: 'button', class: 'new', id: 'new-template', text: '+ New template', onclick: () => { select('new'); renderPanel(); } }),
+      lessonsTools());
     for (const [role, label] of ROLES) {
       const items = data.templates.filter((t) => t.role === role);
       const lessons = lessonList(role);
-      if (!items.length && !lessons.length) continue;
+      const waitingN = lessonWaiting(role).length;
+      if (!items.length && !lessons.length && !lessonRemoved(role).length && !waitingN) continue;
       list.append(h('span', { class: 'group-label', text: label }));
-      if (lessons.length) {
+      if (lessons.length || lessonRemoved(role).length || waitingN) {
+        const staleN = lessons.filter(lessonStale).length;
         const id = 'lessons:' + role;
         list.append(h('button', {
           type: 'button', class: 'tpl-item tpl-lessons', 'data-lessons': role, 'aria-current': String(selected === id),
           onclick: () => { select(id); renderPanel(); },
-        }, h('span', { class: 'nm', text: 'Lessons learned' }), h('span', { class: 'tag agent-tag', text: 'Written by agents · ' + lessons.length })));
+        }, h('span', { class: 'nm', text: 'Lessons learned' }), h('span', { class: 'tag agent-tag', text: 'Written by agents · ' + lessons.length + (staleN ? ` · ${staleN} may be out of date` : '') + (waitingN ? ` · ${waitingN} waiting to add` : '') })));
       }
       for (const t of items) {
         const tags = [];
@@ -1688,16 +1879,41 @@
       }
       if (res.status === 404 && method === 'POST') { finish(); delete hz.jobs[key]; loadHarnesses(true); return; }
       if (res.status === 404) { finish(); delete hz.jobs[key]; paintHarnesses(); return; }
-      if (res.status === 409 && method === 'POST') return step('GET');
+      if (res.status === 409 && method === 'POST') {
+        if (body.error === 'already installing') return step('GET');
+        finish(); delete hz.jobs[key]; hz.rowErr[provider] = body.error || 'Couldn\'t start the install.'; paintHarnesses(); return;
+      }
       if (!res.ok) { hz.jobs[key] = { state: 'failed', tail: body.error || ('http ' + res.status) }; finish(); paintHarnesses(); return; }
       const tail = body.output_tail || '';
-      if (body.state === 'running') { hz.jobs[key] = { state: 'running', tail }; paintHarnesses(); return again(); }
+      if (body.state === 'running') {
+        const before = hz.jobs[key];
+        hz.jobs[key] = { state: 'running', tail, confirmed: true, cancelling: !!(before && before.cancelling), cancelErr: before && before.cancelErr };
+        paintHarnesses(); return again();
+      }
       finish();
-      if (body.state === 'failed') { hz.jobs[key] = { state: 'failed', tail }; paintHarnesses(); return; }
+      if (body.state === 'failed') { hz.jobs[key] = { state: 'failed', tail, explanation: body.explanation || null }; paintHarnesses(); return; }
+      if (body.state === 'cancelled') { hz.jobs[key] = { state: 'cancelled', tail, explanation: null }; paintHarnesses(); return; }
       delete hz.jobs[key];
       if (body.state === 'succeeded') refreshAfterInstall(machine, provider); else paintHarnesses();
     }
     step(firstMethod);
+  }
+
+  // Cancel a running install: DELETE through the hub; the poll already running reports the outcome.
+  async function cancelInstall(machine, provider) {
+    const key = machine + '/' + provider;
+    const job = hz.jobs[key];
+    if (!job || job.cancelling) return;
+    job.cancelErr = undefined;
+    job.cancelling = true; paintHarnesses();
+    let res = null;
+    try { res = await fetch(API + `/machines/${encodeURIComponent(machine)}/harnesses/${encodeURIComponent(provider)}/install`, { method: 'DELETE', signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }); } catch { res = null; }
+    const now = hz.jobs[key];
+    if (!now || now.state !== 'running') return;
+    if (res && (res.status === 202 || res.status === 409)) return;
+    now.cancelling = false;
+    now.cancelErr = (!res || res.status >= 500) ? `Couldn't cancel: ${machine} isn't reachable.` : `Couldn't cancel: update wheelchair on ${machine}.`;
+    paintHarnesses();
   }
 
   // A just-installed CLI's version is read in the background on the machine, so the first
@@ -1750,6 +1966,7 @@
     const install = (label) => h('button', { type: 'button', class: 'small primary', text: label, 'aria-label': `${label} ${name}`, onclick: () => {
       const target = hz.machine; // always the machine the picker shows
       if (!target || hz.pending) return;
+      delete hz.rowErr[provider];
       hz.jobs[target + '/' + provider] = { state: 'running', tail: '' };
       pollInstall(target, provider, 'POST'); paintHarnesses();
     } });
@@ -1757,10 +1974,18 @@
       if (job && job.state === 'running') {
         actions.append(h('span', { class: 'hint waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }),
           document.createTextNode(job.offline ? `Can't reach ${machine.name}, retrying…` : 'Installing…')));
+        if (job.confirmed && !job.offline) {
+          if (job.cancelling) actions.append(h('span', { class: 'hint', text: 'Cancelling…' }));
+          else actions.append(h('button', { type: 'button', class: 'small', text: 'Cancel', 'aria-label': `Cancel installing ${name}`, onclick: () => cancelInstall(machine.name, provider) }));
+        }
         if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
       } else if (job && job.state === 'failed' && st.recipe !== false) {
         actions.append(h('span', { class: 'inline-err', role: 'alert', text: 'Install failed' }));
         if (st.recipe !== null) actions.append(install('Try again'));
+        if (job.explanation) extra.push(h('p', { class: 'h-explain', text: job.explanation }));
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (job && job.state === 'cancelled' && !st.installed) {
+        actions.append(h('span', { class: 'hint', text: 'Install cancelled' }), install('Install'));
         if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
       } else if (!st.installed) {
         if (st.recipe === false) actions.append(h('a', { class: 'btn-link', href: docs, target: '_blank', rel: 'noopener', text: `Install from ${vendor}'s site` }));
@@ -1790,7 +2015,7 @@
         h('span', { text: `${count} ${count === 1 ? 'thread uses' : 'threads use'} ${name}. Their running agents keep going, but no new agent starts on it. Leave it out?` }),
         h('button', { type: 'button', class: 'danger small', text: 'Leave it out', onclick: () => setHarness(provider, false) }),
         h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { hz.confirmOff = null; paintHarnesses(); } })),
-      hz.rowErr[provider] && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] }),
+      (hz.rowErr[provider] || (job && job.state === 'running' && job.cancelErr)) && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] || job.cancelErr }),
       extra,
       h('div', { class: 'h-signin', 'data-signin-host': provider }, signCard && signCard.harness === provider && signCard.machine === machine.name ? signCard.el : null));
     return row;

@@ -60,11 +60,11 @@ async function importHandoff(hub, bytes, machine, project) {
       }
       if (thread) {
         if (quietReason(hub, thread)) throw appError(409, 'The thread here is busy');
-        const advanced = await ops.advanceLocked(hub, thread, file);
+        const advanced = await ops.advanceLocked(hub, thread, file, { lessons: file.lessons?.map((item) => item && typeof item === 'object' && !Array.isArray(item) ? { ...item, thread: id } : item), targetProject });
         if (prefix) advanced.note = prefix;
         return advanced;
       }
-      const created = await ops.createLocked(hub, { file, machine, project });
+      const created = await ops.createLocked(hub, { file, machine, project, lessons: file.lessons?.map((item) => item && typeof item === 'object' && !Array.isArray(item) ? { ...item, thread: id } : item) });
       await hub.state.addProject(project);
       return created;
     });

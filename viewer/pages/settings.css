@@ -274,13 +274,16 @@ button.danger { color: var(--bad-text); }
 .h-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .h-actions:empty { display: none; }
 .h-confirm { font-size: 13px; }
+.h-explain { margin: 0; font-size: 13px; color: var(--dim); overflow-wrap: anywhere; }
 .h-tail { margin: 0; max-height: 140px; overflow: auto; padding: 8px 10px; border-radius: 6px; background: var(--term-bg); font-family: var(--mono); font-size: 11px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .h-signin:empty { display: none; }
 .h-offline { font-size: 13px; }
 /* Lessons learned: written by agents, so tinted and labelled apart from Collin's templates. */
 .tpl-item.tpl-lessons { background: var(--accent-soft); border: 1px solid var(--accent-line); }
 .tpl-item.tpl-lessons[aria-current="true"] { background: var(--accent-chip); }
-.tpl-item .tag.agent-tag { color: var(--accent-text); white-space: normal; text-align: right; }
+.tpl-item.tpl-lessons { flex-wrap: wrap; }
+.tpl-item.tpl-lessons .nm { flex-shrink: 0; white-space: nowrap; overflow-wrap: normal; }
+.tpl-item .tag.agent-tag { color: var(--accent-text); white-space: normal; text-align: right; flex: 1 1 auto; min-width: 0; }
 .lessons-edit h2 { font-size: 16px; margin: 0; }
 .lesson-warning { margin: 0; }
 .lesson-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -290,3 +293,10 @@ button.danger { color: var(--bad-text); }
 .lesson-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
 .lesson-marks { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--dim); min-width: 0; overflow-wrap: anywhere; }
 .lesson-from { color: var(--accent-text); }
+.lesson-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.lesson-stale { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; font-size: 12px; color: var(--dim); }
+.lesson-versions { list-style: none; margin: 0; padding: 0 0 0 10px; display: flex; flex-direction: column; gap: 8px; border-left: 2px solid var(--line); }
+.lesson-version-text { margin: 0; overflow-wrap: anywhere; }
+.lesson-removed h3, .lesson-waiting h3 { font-size: 14px; margin: 8px 0; }
+.lessons-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.lessons-tools button { flex: 1 1 auto; }

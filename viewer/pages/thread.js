@@ -526,7 +526,9 @@
     if (!unopened) return;
     stubEl.textContent = '';
     stubEl.appendChild(el('h3', '', 'This thread has not started'));
-    stubEl.appendChild(el('p', '', t.context || ''));
+    const ctxP = el('p', '', t.context || '');
+    ctxP.style.whiteSpace = 'pre-line';
+    stubEl.appendChild(ctxP);
     const parent = t.parent_title || t.parent;
     if (parent) {
       // What this stub builds on: the parent thread and, when it has one, its pull request.
@@ -1226,7 +1228,9 @@
         break;
       }
       case 'stub': {
-        head(box, 'Another thread', '', card.title);
+        if (card.adds_to) {
+          head(box, card.duplicate ? 'Already a thread for this' : 'Added to another thread', '', card.target_title);
+        } else head(box, 'Another thread', '', card.title);
         box.appendChild(prose('', card.summary));
         const a = el('div', 'actions');
         const link = el('a', 'btn primary', 'Go to it');

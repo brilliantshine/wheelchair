@@ -5,7 +5,8 @@ const { TryService } = require('./lib/try');
 const { providers, loadRecipes } = require('./lib/harness-recipes');
 const harnessInstall = require('./lib/harness-install');
 const { createProjectTools } = require('./lib/project-tools');
-const { TOOL_ROLES, readProjectMcp, hasWindowsProgram } = require('./lib/project-mcp');
+const { TOOL_ROLES, readProjectMcp, hasWindowsProgram, serverLabel } = require('./lib/project-mcp');
+const { windowsTarget, rewriteUrl } = require('./lib/win-mark');
 const { missingPrograms } = require('./lib/project-programs');
 const { projectIdentity, readKeyStore, launchKeys, keyReferences } = require('./lib/project-keys');
 
@@ -270,7 +271,7 @@ class MachineService {
   constructor(options) {
     this.stateDir = path.resolve(options.stateDir || DEFAULT_STATE);
     this.tryService = new TryService({ stateDir: this.stateDir, root: ROOT, projects: params => this.projects(params) });
-    this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir });
+    this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir, wsl: () => !!this.win?.detected?.kernel });
     this.projectToolsLocks = new Map();
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
@@ -835,7 +836,7 @@ class MachineService {
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); session.pi_version = status.version || null; }
     const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
-    const read = await readProjectMcp(worktree, { wsl, mount });
+    const read = await readProjectMcp(worktree, { wsl, mount, kernel: !!this.win?.detected?.kernel });
     const { mcp, warnings } = read;
     const tools = TOOL_ROLES.has(input.role);
     const thread = tools && this.threadWorktree(input, worktree);
@@ -848,6 +849,27 @@ class MachineService {
       context.replaceEntries = wrapEntries({ servers: mcp.servers, wsl, mount,
         readyFile: path.join(this.stateDir, 'win-ready', name),
         cacheFile: (n, e) => path.join(this.stateDir, 'win-tool-lists', `${cacheKey(commonDir, n, e)}.json`) });
+    }
+    if (this.win?.detected?.kernel && tools && ['claude', 'codex', 'agy'].includes(input.cli) && mcp) {
+      const names = (mcp.windows || []).filter(name => Object.hasOwn(mcp.servers, name));
+      if (names.length) {
+        // Marked HTTP tools; wrapEntries above only replaces stdio entries, so names never collide.
+        context.replaceEntries ||= Object.create(null);
+        await Promise.all(names.map(async name => {
+          const entry = mcp.servers[name];
+          try {
+            const target = windowsTarget(entry);
+            if (!target) throw new Error('invalid Windows tool address');
+            const port = await this.win.forwards.get(target.port);
+            const url = rewriteUrl(entry.url, port);
+            if (url === null) throw new Error('invalid Windows tool address');
+            Object.defineProperty(context.replaceEntries, name, { value: { ...entry, url }, enumerable: true, writable: true, configurable: true });
+          } catch (error) {
+            Object.defineProperty(context.replaceEntries, name, { value: null, enumerable: true, writable: true, configurable: true });
+            console.error(`${session.name}: project tools: ${serverLabel(name)}: couldn't reach Windows (${error.message || String(error)}); left out of this session`);
+          }
+        }));
+      }
     }
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
     const loaded = built.loaded || [];
@@ -1224,6 +1246,7 @@ class MachineService {
       const removed = command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
       if (removed.ok) this.win.onWorktreeRemoved(session, { kind: 'verifier' }).catch(error => this.log(error));
     }
+    await fsp.rm(path.join(this.stateDir, 'settings', `${name}.mcp.json`), { force: true });
     this.sweepAgyTools();
   }
   gitPath(worktree, name) {
@@ -2100,11 +2123,12 @@ class MachineService {
           return result.ok ? send(response, 200, { level: input.level, text: result.stdout }) : send(response, 422, failure(result));
         } finally { this.sensitivityWriting = false; }
       }
-      if (pathBits[0] === 'v1' && pathBits[1] === 'harnesses' && pathBits[3] === 'install' && pathBits.length === 4 && ['GET', 'POST'].includes(request.method)) {
+      if (pathBits[0] === 'v1' && pathBits[1] === 'harnesses' && pathBits[3] === 'install' && pathBits.length === 4 && ['GET', 'POST', 'DELETE'].includes(request.method)) {
         await this.authorize(request, 'hub');
         const provider = pathBits[2];
         if (!providers.includes(provider)) return send(response, 404, { error: 'unknown provider' });
         if (request.method === 'GET') return send(response, 200, harnessInstall.state(provider));
+        if (request.method === 'DELETE') return harnessInstall.stopJob(provider) ? send(response, 202, { state: 'cancelling' }) : send(response, 409, { error: 'not installing' });
         if (!loadRecipes()[provider]) return send(response, 404, { error: 'no recipe' });
         if (!harnessInstall.start(provider)) return send(response, 409, { error: 'already installing' });
         return send(response, 202, { state: 'running' });
@@ -2115,6 +2139,30 @@ class MachineService {
         const input = await bodyOf(request);
         this.unityPrep ||= require('./lib/unity-prep').createUnityPrep({ detected: this.win.detected, winEnv: this.win.winEnv });
         return send(response, 200, await this.unityPrep(input));
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/project-tools/windows-status') {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        if (!input || typeof input !== 'object' || !Array.isArray(input.tools) || input.tools.length > 100) throw Object.assign(new Error('tools must be an array of at most 100 items'), { status: 400 });
+        const status = Object.create(null);
+        if (!this.win?.detected?.kernel) return send(response, 200, { wsl: false, status });
+        await Promise.all(input.tools.map(async tool => {
+          if (!tool || typeof tool !== 'object' || typeof tool.id !== 'string') return;
+          const target = windowsTarget(tool);
+          if (!target) return;
+          let result;
+          if (!this.win.forwardReady()) result = { state: 'unavailable', reason: 'Windows bridge not available' };
+          else {
+            let timer;
+            try {
+              const checked = await Promise.race([this.win.forwards.check(target.port), new Promise(resolve => { timer = setTimeout(() => resolve({ ok: false, reason: `couldn't check Windows for port ${target.port}` }), 10000); })]);
+              result = checked.ok ? { state: 'reachable' } : { state: 'unreachable', reason: checked.reason };
+            } catch { result = { state: 'unreachable', reason: `couldn't check Windows for port ${target.port}` }; }
+            finally { clearTimeout(timer); }
+          }
+          status[tool.id] = { ...result, ...this.win.forwards.status(target.port) };
+        }));
+        return send(response, 200, { wsl: true, status });
       }
       if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
         await this.authorize(request, 'hub');
@@ -2253,7 +2301,7 @@ class MachineService {
             if (missing.length) warnings.push(`Screens won't work on ${os.hostname()}: missing ${missing.join(', ')}. Builds that don't use a screen are unaffected.`);
             if (this.win.detected.kernel && agent.worktree) {
               const { mount } = this.win.detected;
-              const { mcp } = await readProjectMcp(agent.worktree, { wsl: true, mount });
+              const { mcp } = await readProjectMcp(agent.worktree, { wsl: true, mount, kernel: !!this.win?.detected?.kernel });
               if (hasWindowsProgram(mcp, { mount })) {
                 let health = this.win.bridgeHealth();
                 if (health.ok === null) health = await this.win.bridgeHealthWait(15000);

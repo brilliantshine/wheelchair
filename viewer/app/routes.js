@@ -8,11 +8,12 @@ const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
 const { discoverSlug, findSlug } = require('./views.js');
 const settings = require('./settings.js');
+const cards = require('./cards.js');
 const diagramSensitivity = require('./diagram-sensitivity.js');
 const usage = require('./usage.js');
 const balancer = require('./balancer.js');
 const harnesses = require('./harnesses.js');
-const { PROVIDERS, cliOf } = require('./providers.js');
+const { PROVIDERS, DISPLAY_NAMES, cliOf } = require('./providers.js');
 const threadsModule = require('./threads.js');
 const UPLOAD_LIMIT = 25 * 1024 * 1024;
 const HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox";
@@ -63,10 +64,19 @@ async function handle(hub, request, response, url, machineAuthenticated) {
     });
     return send(response, 200, await hub.importHandoff(bytes, url.searchParams.get('machine') || 'hub', url.searchParams.get('project')));
   }
+  if (request.method === 'POST' && bits.join('/') === 'settings/lessons/import') {
+    const limit = 1024 * 1024, chunks = []; let size = 0, tooBig = false;
+    for await (const chunk of request) { size += chunk.length; if (size > limit) tooBig = true; else chunks.push(chunk); }
+    if (tooBig) throw appError(413, 'This file is too big for a lessons file');
+    let file; try { file = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw appError(400, "This isn't a wheelchair lessons file"); }
+    if (!file || file.format !== 'wheelchair-lessons' || file.version !== 1 || !file.lessons || typeof file.lessons !== 'object' || Array.isArray(file.lessons) || Object.values(file.lessons).some((v) => !Array.isArray(v))) throw appError(400, "This isn't a wheelchair lessons file");
+    const incoming = Object.entries(file.lessons).flatMap(([role, list]) => list.map((item) => item && typeof item === 'object' && !Array.isArray(item) ? { ...item, role } : null));
+    return send(response, 200, await settings.mergeIncoming(hub, incoming, { source: 'file' }));
+  }
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'project-tools' &&
-      ['read', 'save', 'remove-key', 'unity-prep'].includes(bits[1])) {
+      ['read', 'save', 'remove-key', 'unity-prep', 'windows-status'].includes(bits[1])) {
     if (!body || typeof body.path !== 'string') return send(response, 400, { error: 'path is required' });
     const { machine, ...input } = body;
     const name = typeof machine === 'string' && machine ? machine : 'hub';
@@ -94,10 +104,11 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   }
   if (bits[0] === 'harnesses' && bits.length === 1 && request.method === 'GET') return send(response, 200, await harnesses.describe(hub, url.searchParams.get('fresh') === '1'));
   if (bits[0] === 'onboarding' && bits.length === 1 && request.method === 'GET') return send(response, 200, await harnesses.onboarding(hub));
-  if (bits[0] === 'machines' && bits.length === 5 && bits[2] === 'harnesses' && bits[4] === 'install' && ['GET', 'POST'].includes(request.method)) {
+  if (bits[0] === 'machines' && bits.length === 5 && bits[2] === 'harnesses' && bits[4] === 'install' && ['GET', 'POST', 'DELETE'].includes(request.method)) {
     const name = bits[1], provider = bits[3];
     if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
     if (!(await hub.state.resolveMachine(await hub.machines(), name))) throw appError(404, 'machine not found');
+    if (request.method === 'POST' && (await settings.load(hub)).harnesses[provider] === false) return send(response, 409, { error: `${DISPLAY_NAMES[provider]} is switched off` });
     try { const result = await hub.client.passThrough(name, `/v1/harnesses/${provider}/install`, request.method, body); return send(response, result.status, result.body); }
     catch { return send(response, 502, { error: `${name} isn't reachable.` }); }
   }
@@ -219,7 +230,22 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
     if (typeof body.enabled !== 'boolean') throw appError(400, 'enabled must be a boolean');
     await settings.update(hub, (value) => { value.harnesses[provider] = body.enabled; if (!body.enabled && !harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
+    if (!body.enabled) {
+      // Stop any install of this harness on every known machine; the answers are ignored.
+      hub.machines().then((all) => { for (const name of Object.keys(all || {})) Promise.resolve().then(() => hub.client.passThrough(name, `/v1/harnesses/${provider}/install`, 'DELETE', {})).catch(() => {}); }).catch(() => {});
+    }
     return send(response, 200, await settings.describe(hub));
+  }
+  if (bits[1] === 'lessons' && bits[2] === 'export' && bits.length === 3 && request.method === 'GET') {
+    response.setHeader('Content-Disposition', 'attachment; filename="wheelchair-lessons.json"');
+    return send(response, 200, settings.exportLessons(await settings.load(hub)));
+  }
+  const lessonResponse = (value, role, extra = {}) => ({ lessons: value.lessons[role], history: Object.fromEntries(Object.entries(value.lesson_history).filter(([, entry]) => entry.role === role)), waiting: value.lesson_waiting.filter((item) => item.role === role), ...extra });
+  if (bits[1] === 'lessons' && bits.length === 4 && request.method === 'POST' && settings.ROLES.has(bits[2])) {
+    const role = bits[2];
+    if (bits[3] === 'restore') return send(response, 200, lessonResponse(await settings.restoreLesson(hub, role, body.id, body.vid), role));
+    if (bits[3] === 'keep') return send(response, 200, lessonResponse(await settings.keepLesson(hub, role, body.id), role));
+    if (bits[3] === 'waiting') { const { value, result } = await settings.waitingAction(hub, role, body.wid, body.action); return send(response, 200, lessonResponse(value, role, { result })); }
   }
   if (bits[1] === 'lessons' && bits.length === 3 && request.method === 'PUT') {
     const role = bits[2];
@@ -227,10 +253,11 @@ async function handleSettings(hub, request, response, url, bits, body) {
     const value = await settings.update(hub, (current) => {
       const list = current.lessons[role];
       if (body.edits.some((edit) => !list.some((item) => item.id === edit.id))) throw appError(409, 'an agent removed a lesson you edited; reload to see the current list');
-      for (const edit of body.edits) { const item = list.find((entry) => entry.id === edit.id); item.text = edit.text; item.saved_by = 'user'; item.saved_at = new Date().toISOString(); }
+      for (const edit of body.edits) { const item = list.find((entry) => entry.id === edit.id); if (item.text !== edit.text) { settings.recordHistory(current, role, item, 'user'); item.text = edit.text; item.saved_by = 'user'; item.saved_at = new Date().toISOString(); } }
+      for (const item of list) if (body.removals.includes(item.id)) settings.recordHistory(current, role, item, 'user', true);
       current.lessons[role] = list.filter((item) => !body.removals.includes(item.id));
     });
-    return send(response, 200, { lessons: value.lessons[role] });
+    return send(response, 200, lessonResponse(value, role));
   }
   if (bits[1] === 'accounts') {
     if (bits.length === 2 && request.method === 'POST') {
@@ -458,7 +485,7 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
   if (!authenticated) throw appError(401, 'machine secret required');
   if (bits[1] === 'cards' && request.method === 'POST') {
     const result = await hub.acceptCard(body);
-    return send(response, result.duplicate ? 200 : 202, result);
+    return send(response, result[cards.REPLAY] ? 200 : 202, result);
   }
   if (bits[1] === 'events' && request.method === 'POST') {
     const result = await hub.event(body);

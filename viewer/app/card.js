@@ -172,6 +172,8 @@ const fields = {
     summary: text,
     depends_on_parent: (value) => typeof value === 'boolean',
     commits: (value) => value === undefined || array(value, text),
+    adds_to: (value) => value === undefined || (typeof value === 'string' && /^[0-9a-f]{12}$/.test(value)),
+    duplicate: (value) => value === undefined || typeof value === 'boolean',
   },
   sudo: sudoFields,
   title: { title: text },
@@ -211,6 +213,8 @@ function validate(kind, card, role, options = {}) {
   for (const [key, check] of Object.entries(spec)) {
     if (!check(card[key])) return { ok: false, reason: `invalid or missing field: ${key}` };
   }
+  if (kind === 'stub' && card.duplicate !== undefined && card.adds_to === undefined) return { ok: false, reason: 'duplicate requires adds_to' };
+  if (kind === 'stub' && card.adds_to !== undefined && (card.depends_on_parent || card.commits !== undefined)) return { ok: false, reason: "an addition can't depend on this thread's unmerged work; post your own stub" };
   if (kind === 'lesson' && ((card.action !== 'remove' && card.text === undefined) || (card.action !== 'add' && card.lesson === undefined) || (card.action === 'add' && card.lesson !== undefined) || (card.action === 'remove' && (card.text !== undefined || card.only_ai !== undefined || card.only_project !== undefined)))) return { ok: false, reason: 'invalid fields for lesson action' };
   if (kind === 'question' && !card.options.some((option) => option.id === card.leaning)) {
     return { ok: false, reason: 'leaning must name an option' };

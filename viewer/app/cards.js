@@ -6,6 +6,7 @@ const path = require('node:path');
 const { appError } = require('./state.js');
 const { resolvable, retractable, truncateTitle, validate } = require('./card.js');
 
+const REPLAY = Symbol('replay');
 const SINGLETONS = new Set(['offer', 'idea', 'deferred', 'progress']);
 
 function addCard(thread, card, meta = {}) {
@@ -60,7 +61,7 @@ async function acceptCard(hub, payload) {
     if (thread.archived) throw appError(409, 'thread is archived');
     thread.delivered_ids ||= [];
     if (payload.delivery_id && (thread.delivered_ids.includes(payload.delivery_id) || thread.cards.some((card) => card.id === payload.delivery_id))) {
-      return { ok: true, duplicate: true, id: payload.delivery_id };
+      return { replay: { ok: true, duplicate: true, id: payload.delivery_id } };
     }
     const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
     if (payload.kind === 'lesson' && typeof input.for === 'string' && !['lead', 'sub-lead', 'worker', 'mapper'].includes(session.role)) {
@@ -177,6 +178,22 @@ async function acceptCard(hub, payload) {
       checked.peerTitle = peers.threadName(target);
     }
 
+    if (checked.card.kind === 'stub' && checked.card.adds_to !== undefined) {
+      const peers = require('./peers.js');
+      await hub.withThread(checked.card.adds_to, async () => {
+        let target;
+        try { target = await hub.thread(checked.card.adds_to); }
+        catch (error) { if (error.status === 404) throw appError(422, 'no such stub'); throw error; }
+        if (!target.stub || target.project !== thread.project || !(await peers.sameMachine(hub, await hub.machines(), thread.machine, target.machine))) throw appError(422, 'no such stub');
+        if (!peers.candidateStub(hub, target)) throw appError(422, 'that stub is archived, handed off or finished');
+        if ((target.sessions || []).length) throw appError(422, 'that stub has started; post your own stub');
+        const label = checked.card.duplicate ? 'Also came up in' : 'Added from';
+        target.context += `\n\n${label} "${peers.threadName(thread)}" (${new Date().toISOString().slice(0, 10)}): ${checked.card.summary}`;
+        await hub.save(target);
+        Object.assign(checked.card, { thread_id: target.id, target_title: peers.threadName(target) });
+      });
+    }
+
     const stored = ['image', 'file'].includes(checked.card.kind) ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
     const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name, deliveryId: payload.delivery_id });
     if (crossThread) require('./peer-log.js').append(thread, { at: card.at, thread: crossThread, title: checked.peerTitle, session: card.to, direction: 'sent', text: card.text, ...(card.asks === true ? { question: card.id } : {}) });
@@ -202,7 +219,7 @@ async function acceptCard(hub, payload) {
         thread.queues[target.name] = target.queue;
       }
     }
-    if (card.kind === 'stub') {
+    if (card.kind === 'stub' && !card.adds_to) {
       const child = await hub.createStub(thread, card);
       card.thread_id = child.id;
     }
@@ -217,7 +234,7 @@ async function acceptCard(hub, payload) {
     return { card, targetName, ...(crossThread ? { targetThread: crossThread, senderTitle: require('./peers.js').threadName(thread) } : {}) };
   });
   if (result.refusal) throw appError(422, result.refusal);
-  if (result.duplicate) return result;
+  if (result.replay) return Object.defineProperty(result.replay, REPLAY, { value: true });
   if (result.card?.kind === 'check') require('./auto-merge.js').afterCheck(hub, payload.thread_id, result.card.id);
   if (result.targetName) {
     const thread = await hub.thread(payload.thread_id);
@@ -289,4 +306,4 @@ async function sudoOutcome(hub, body) {
   });
 }
 
-module.exports = { currentDone, SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, retractCard, sudoOutcome, validSudoStatus };
+module.exports = { REPLAY, currentDone, SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, retractCard, sudoOutcome, validSudoStatus };
