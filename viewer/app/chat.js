@@ -382,6 +382,43 @@ function shownPins(thread) {
   });
 }
 
+// Lead-to-lead traffic as "Talked with" lines (no message text). Entries before an import cutoff
+// drop first (the page's rule), then sent/received entries to one thread fold while each is within
+// 30 minutes of the previous one for that thread; each limit entry is its own item.
+const PEER_FOLD_MS = 30 * 60 * 1000;
+function peerItems(thread) {
+  const cutoff = thread.imported ? Date.parse(thread.imported.at) : NaN;
+  const log = (Array.isArray(thread.peer_log) ? thread.peer_log : []).filter((entry) => {
+    if (!entry || typeof entry.at !== 'string' || typeof entry.thread !== 'string') return false;
+    const when = Date.parse(entry.at);
+    return !Number.isFinite(when) || !Number.isFinite(cutoff) || when >= cutoff;
+  });
+  const out = [], open = new Map();
+  for (const entry of log) {
+    if (entry.direction === 'limit') { out.push({ type: 'peer', at: entry.at, thread: entry.thread, title: entry.title, limit: true }); continue; }
+    if (entry.direction !== 'sent' && entry.direction !== 'received') continue;
+    const last = open.get(entry.thread);
+    const when = Date.parse(entry.at);
+    if (last && Number.isFinite(when) && when - last.lastAt <= PEER_FOLD_MS) {
+      last.item.count++; last.item.title = entry.title; last.lastAt = when;
+    } else {
+      const item = { type: 'peer', at: entry.at, thread: entry.thread, title: entry.title, count: 1 };
+      out.push(item);
+      open.set(entry.thread, { item, lastAt: when });
+    }
+  }
+  return out;
+}
+function withPeerItems(items, thread) {
+  const result = items.slice();
+  for (const peer of peerItems(thread)) {
+    const when = Date.parse(peer.at);
+    const at = result.findIndex((item) => Date.parse(item.at) > when);
+    if (at < 0) result.push(peer); else result.splice(at, 0, peer);
+  }
+  return result;
+}
+
 async function chat(hub, id) {
   let thread = await hub.readSnapshot(id);
   const views = require('./views.js');
@@ -404,7 +441,7 @@ async function chat(hub, id) {
   }
   // Settings "Tool steps: Hide" drops the lead's tool calls (commands, file reads) entirely.
   const { tool_steps: toolSteps } = await require('./settings.js').load(hub);
-  const shown = toolSteps === 'hide' ? items.filter((item) => item.type !== 'tool') : items;
+  const shown = withPeerItems(toolSteps === 'hide' ? items.filter((item) => item.type !== 'tool') : items, thread);
   // The pull request each thread produced, from its latest done card, so the page can link it
   // and a stub can link the one it waits on.
   const prOf = (item) => item ? require('./handoff.js').donePr(item, { includeReplaced: true }) : null;
@@ -425,7 +462,7 @@ async function chat(hub, id) {
     items: shown,
     cards: cards.filter((card) => !card.replaced),
     pinned: shownPins(thread),
-    queued: Object.values(thread.queues).flat().length,
+    queued: Object.entries(thread.queues || {}).flatMap(([name, queue]) => { const session = (thread.sessions || []).find((item) => item.name === name); return session ? queue.filter((entry) => !require('./peer-log.js').heldEntry(session, entry)) : queue; }).length,
   };
 }
 

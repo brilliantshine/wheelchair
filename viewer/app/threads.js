@@ -145,6 +145,8 @@ async function restartLead(hub, id) {
       .filter((message) => message.source === 'user' || message.source === 'card')
       .slice(-20),
   };
+  const peerMessages = (thread.peer_log || []).filter(item => ['sent', 'received'].includes(item.direction) && (!thread.imported || Date.parse(item.at) > Date.parse(thread.imported.at))).slice(-20);
+  if (peerMessages.length) state.cross_thread_messages = peerMessages;
   if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50) };
   const firstImport = thread.imported && !thread.sessions.some((session) => session.role === 'lead' && Object.hasOwn(session, 'first_message') && Date.parse(session.created_at) > Date.parse(thread.imported.at));
   const context = `[wc:context ${firstImport ? 'import' : 'restart'}] Thread state:\n${JSON.stringify(state)}`;
@@ -247,6 +249,7 @@ async function archive(hub, id) {
     if (card.kind === 'merged' && !card.answered) require('./cards.js').resolveCard(card, 'user', 'Archived');
   }
   for (const session of thread.sessions) { session.live = false; session.ended_at ||= new Date().toISOString(); }
+  require('./peer-log.js').dropHeld(thread);
   await hub.save(thread);
   return result;
 }

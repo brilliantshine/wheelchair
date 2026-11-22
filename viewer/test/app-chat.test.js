@@ -421,3 +421,57 @@ test('idle transcript pruning protects queued and active chat operations', async
   release(); await lock; await pending;
   hub.pruneTranscripts(); assert.equal(hub.transcripts.size, 0);
 });
+
+// "Talked with" lines: peer_log folds into `peer` items, the import cutoff applies before folding.
+test('peer_log becomes folded peer items interleaved by time, without message text', async () => {
+  const chat = require('../app/chat.js');
+  const raw = lines([
+    { type: 'user', origin: { kind: 'human' }, timestamp: '2026-03-01T09:10:00Z', message: { content: 'early' } },
+    { type: 'user', origin: { kind: 'human' }, timestamp: '2026-03-01T12:00:00Z', message: { content: '[wc:from wc-x-lead] hidden peer text' } },
+    { type: 'user', origin: { kind: 'human' }, timestamp: '2026-03-01T14:00:00Z', message: { content: 'late' } },
+  ]);
+  const e = (at, thread, direction, extra = {}) => ({ at, thread, title: `T-${thread}`, session: 's', direction, text: direction === 'limit' ? '' : 'SECRET TEXT', ...extra });
+  const thread = {
+    id: 't', machine: 'm', sessions: [{ name: 'lead', role: 'lead', cli: 'claude' }], cards: [], pinned: {}, queues: {},
+    imported: { at: '2026-03-01T09:00:00Z' },
+    peer_log: [
+      e('2026-03-01T08:59:00Z', 'a', 'sent'), // before the cutoff and within 30 minutes of the next: dropped before folding, so it neither joins nor starts the item
+      e('2026-03-01T09:20:00Z', 'a', 'sent'),
+      e('2026-03-01T09:45:00Z', 'a', 'received', { title: 'A renamed' }),
+      e('2026-03-01T10:10:00Z', 'a', 'sent', { title: 'A latest' }), // 25 minutes after the previous entry: same item; its title is the item's title
+      e('2026-03-01T11:00:00Z', 'a', 'sent'), // 50 minutes gap: a new item
+      e('2026-03-01T10:20:00Z', 'b', 'received'),
+      e('2026-03-01T13:00:00Z', 'a', 'limit'),
+    ],
+  };
+  const hub = { readSnapshot: async () => thread, state: { settings: async () => null }, call: async () => ({ data: raw, gen: 'g', end: 1 }) };
+  const { items } = await chat.chat(hub, 't');
+  assert.deepEqual(items.map((item) => item.type === 'peer' ? ['peer', item.thread, item.count ?? null, item.limit ?? null] : [item.type, item.text]), [
+    ['human', 'early'], ['peer', 'a', 3, null], ['peer', 'b', 1, null], ['peer', 'a', 1, null], ['peer', 'a', null, true], ['human', 'late'],
+  ]);
+  assert.deepEqual(items[1], { type: 'peer', at: '2026-03-01T09:20:00Z', thread: 'a', title: 'A latest', count: 3 });
+  assert.equal(items[1].title, 'A latest');
+  assert.doesNotMatch(JSON.stringify(items), /SECRET TEXT|hidden peer text/);
+  // A thread with no peer_log yields no peer items.
+  delete thread.peer_log;
+  assert.equal((await chat.chat(hub, 't')).items.some((item) => item.type === 'peer'), false);
+});
+
+// "queued" counts only messages a live or pending lead will still take; held cross-thread messages for a stopped lead are not counted.
+test('queued leaves out held peer messages for a stopped lead', async () => {
+  const chat = require('../app/chat.js');
+  const raw = lines([{ type: 'user', origin: { kind: 'human' }, timestamp: '2026-03-01T09:10:00Z', message: { content: 'hi' } }]);
+  const thread = {
+    id: 't', machine: 'm', cards: [], pinned: {},
+    sessions: [
+      { name: 'lead-old', role: 'lead', cli: 'claude', live: false, status: 'ended' },
+      { name: 'lead-new', role: 'lead', cli: 'claude', live: true, status: 'running' },
+    ],
+    queues: {
+      'lead-old': [{ text: 'x', source: 'session', peer: { thread: 'o', title: 'O', session: 's' } }, { text: 'y', source: 'user' }],
+      'lead-new': [{ text: 'z', source: 'session', peer: { thread: 'o', title: 'O', session: 's' } }],
+    },
+  };
+  const hub = { readSnapshot: async () => thread, state: { settings: async () => null }, call: async () => ({ data: raw, gen: 'g', end: 1 }) };
+  assert.equal((await chat.chat(hub, 't')).queued, 2);
+});

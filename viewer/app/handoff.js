@@ -97,7 +97,7 @@ function quietReason(hub, thread) {
   const sessions = thread.sessions || [];
   if (sessions.some((s) => s.role !== 'lead' && s.live) || (thread.asides || []).some((aside) => aside.status === 'open' || aside.turn)) return 'Agents are still working';
   if (sessions.some((s) => (s.role === 'lead' && s.live && s.turn_ended !== true)
-    || ((s.live || s.status === 'pending' || s.role === 'lead') && (s.queue || thread.queues?.[s.name] || []).length))) return 'The lead is busy';
+    || ((s.live || s.status === 'pending' || s.role === 'lead') && (s.queue || thread.queues?.[s.name] || []).some(entry => !require('./peer-log.js').heldEntry(s, entry))))) return 'The lead is busy';
   if ((thread.cards || []).some((card) => card.kind === 'sudo' && ['waiting', 'running'].includes(card.state))) return 'A root command is waiting';
   if ((thread.cards || []).some((card) => card.kind === 'reach' && !card.answered && !card.retracted_at)) return 'A request to talk to another project is waiting';
   if ((hub.uploadsInFlight?.get(thread.id) || 0) > 0) return 'A file is still uploading';
@@ -166,6 +166,7 @@ async function exportThread(hub, id) {
     try {
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
       await fs.writeFile(next, bytes, { mode: 0o600 });
+      require('./peer-log.js').dropHeld(thread);
       thread.handed_off = { at: file.exported_at, head: file.head, stage: file.stage };
       for (const aside of thread.asides || []) {
         if (aside.status === 'open') require('./asides.js').close(aside);

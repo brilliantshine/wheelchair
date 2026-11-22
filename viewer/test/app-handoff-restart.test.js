@@ -234,3 +234,46 @@ test('ordinary chat and merge watcher retain their different done-card rules', a
   process.env.PATH = `${dir}:${oldPath}`; t.after(() => { process.env.PATH = oldPath; });
   await hub.pollMerged(); assert.equal(await fs.readFile(log, 'utf8'), older);
 });
+
+test('held peer messages follow context in normal and imported restart', async t => {
+  const { setup, close, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js');
+  for (const imported of [false, true]) {
+    const c = await setup(); t.after(() => close(c)); const made = await makeThread(c); const hub = new Hub({ stateDir: c.state }); await hub.state.init();
+    const thread = await hub.thread(made.id); const old = thread.sessions[0]; old.live = false; old.queue = [{ text: 'held', source: 'session', peer: { thread: 'other', title: 'Other', session: 'peer' } }]; thread.queues[old.name] = old.queue;
+    if (imported) thread.imported = { at: '2026-01-01', history: [] }; await hub.save(thread); c.machine.handoffReplies.running = { names: [] };
+    const lead = await hub.restartLead(made.id); assert.match(lead.queue[0].text, /^\[wc:context/); assert.equal(lead.queue[1].text, 'held'); assert.equal(lead.queue[1].peer.thread, 'other');
+  }
+});
+
+test('held peer queues do not make export busy and archive drops them', async t => {
+  const { setup, close, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js'); const { quietReason } = require('../app/handoff.js');
+  const c = await setup(); t.after(() => close(c)); const made = await makeThread(c); const hub = new Hub({ stateDir: c.state }); await hub.state.init();
+  const thread = await hub.thread(made.id); const old = thread.sessions[0]; old.live = false; old.status = 'ended'; old.queue = [{ text: 'held', peer: { thread: 'other' } }]; thread.queues[old.name] = old.queue; await hub.save(thread);
+  assert.equal(quietReason(hub, thread), null);
+  c.machine.handoffReplies.status = { dirty: false, branch: `wc/${made.id}`, head: 'a'.repeat(40), repository: 'github.com/owner/repo', plan_status: 'approved' };
+  old.status = 'pending'; old.queue = [{ text: 'ordinary', source: 'user' }]; thread.queues[old.name] = old.queue; await hub.save(thread);
+  await assert.rejects(hub.exportThread(made.id), /The lead is busy/);
+  old.status = 'ended'; old.queue = [{ text: 'held', peer: { thread: 'other' } }]; thread.queues[old.name] = old.queue;
+  thread.slug = 'plan'; await hub.save(thread);
+  c.machine.handoffReplies.status = { dirty: false, branch: `wc/${made.id}`, head: 'a'.repeat(40), repository: 'github.com/owner/repo', plan_status: 'approved' };
+  c.machine.handoffReplies.push = { head: 'a'.repeat(40), repository: 'github.com/owner/repo' };
+  await hub.exportThread(made.id);
+  let exported = await hub.thread(made.id); assert.deepEqual(exported.sessions[0].queue, []); assert.deepEqual(exported.queues[old.name], []);
+  exported.handed_off = null; exported.sessions[0].queue = [{ text: 'held', peer: { thread: 'other' } }]; exported.queues[old.name] = exported.sessions[0].queue; await hub.save(exported);
+  await hub.archive(made.id);
+  const saved = await hub.thread(made.id); assert.equal(saved.archived, true); assert.deepEqual(saved.sessions[0].queue, []); assert.deepEqual(saved.queues[old.name], []);
+});
+
+test('archive drops held peer entries from a live lead but keeps ordinary entries', async t => {
+  const { setup, close, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js');
+  const c = await setup(); t.after(() => close(c)); const made = await makeThread(c); const hub = new Hub({ stateDir: c.state }); await hub.state.init();
+  const thread = await hub.thread(made.id); const lead = thread.sessions[0]; lead.live = true; lead.status = 'ready';
+  const peer = { text: 'held peer', peer: { thread: 'other' } }; const ordinary = { text: 'keep me', source: 'user' };
+  lead.queue = [peer, ordinary]; thread.queues[lead.name] = [peer, ordinary]; thread.slug = 'plan'; await hub.save(thread);
+  c.machine.handoffReplies.archive = { kept: [], kept_uploads: [], uploads_removed: true };
+  await hub.archive(made.id);
+  const saved = await hub.thread(made.id); const session = saved.sessions[0];
+  assert.equal(saved.archived, true);
+  assert.equal(session.queue.some((entry) => entry.peer), false); assert.equal(saved.queues[lead.name].some((entry) => entry.peer), false);
+  assert.deepEqual(session.queue, [ordinary]); assert.deepEqual(saved.queues[lead.name], [ordinary]);
+});
