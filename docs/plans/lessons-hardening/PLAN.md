@@ -200,6 +200,20 @@ Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
+### Round 2 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 1:**
+- S7: a handoff carries only the thread's own lessons (Decision 11); the merge runs once in `importHandoff` before the operation starts, never on Retry.
+- S5: match key is role + text + provider + project, against current lessons, every history version and waiting; counts `invalid` and `not_kept`; `kept_at` set on add; waiting entries never evicted.
+- S6: file import skips project paths not on this hub (Decision 12); its own raw upload route.
+- S1–S3: versions carry `vid` and `thread`; restore by `vid` with a 409 when gone; History shows scope markers; `changed_by: import` removed (Decision 13).
+- S9: handoff tests may change version-dependent fixtures; new cases listed.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
