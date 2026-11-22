@@ -1,6 +1,6 @@
 ---
 slug: win-tools-solid
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-22
 ---
 
@@ -28,8 +28,8 @@ promoted to a Constraint or Accepted Risk, or waved off by the user.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| W1 | Idle read-end closure (IDEA item 4) | Which mechanism Node on Linux can use to see a closed reader on an idle stdout pipe | no | Settled by the lead: D4 |
-| W2 | Crashed or handoff-killed sessions (IDEA item 2) | Whether their go-betweens and tools actually exit when the CLI dies (stdin end) or are orphaned | no | Settled by the lead: D6 |
+| W1 | Idle read-end closure | Which mechanism Node on Linux can use to see a closed reader on an idle stdout pipe | no | Settled by the lead: D4 |
+| W2 | Crashed or handoff-killed sessions | Whether their go-betweens and tools actually exit when the CLI dies (stdin end) or are orphaned | no | Settled by the lead: D6; split off with D14 |
 
 ## Decision Log
 
@@ -79,11 +79,25 @@ go-between runs the checks below; any failing calls `stdoutLost()`, which shuts 
   (stdout's reader is some other process) or `/proc/<ppid>` is unreadable, this check is
   turned off for the go-between's life.
 - **Parent gone**: `process.ppid` differs from the value read at start (the CLI died while
-  something else keeps the pipes open). Also `stdoutLost()`, so the exit never waits on
+  something else keeps the pipes open). Kept because it covers what the other two miss:
+  a pipe check turned off at start, and a socket whose other end another process holds.
+  Also `stdoutLost()`, so the exit never waits on
   stdout writes nobody will read.
 
 The pipe reader and parent checks only read `/proc`, so they run whether or not a write
 is in flight. All checks stop once shutdown has begun.
+
+```mermaid
+flowchart TD
+  T[Every 2 s, until shutdown] --> K{stdout is}
+  K -->|socket| S{write in flight?}
+  S -->|no| P[zero-length write]
+  P -->|EPIPE / error| L[stdoutLost: shut tool down, never wait on stdout]
+  K -->|pipe, parent held reader at start| R[parent still holds a read end in /proc?]
+  R -->|no| L
+  T --> G[ppid changed?]
+  G -->|yes| L
+```
 
 ### 2. Non-goals
 
@@ -272,6 +286,10 @@ Validation and C2 removed; Non-goals rewritten; IDEA.md narrowed to match.
 | mechanics | blocking | Parent check skipped while a write is pending | downgraded to minor: needs a CLI crash plus another process holding the read end without draining | Only the socket probe is guarded; `/proc` checks always run |
 | mechanics | major | Parent loss via `shutdown()` can wait on undrainable writes | downgraded to minor: same rare combination; fix is one call | Parent gone calls `stdoutLost()` |
 | mechanics | minor | Separate detection and tool-exit deadlines in tests | upheld | Validation |
+| intent | minor | Parent gone needs a reason sentence | upheld | Sentence added |
+| intent | minor | Rare path: parent gone via `shutdown()` can linger on a full pipe | upheld | Already fixed this round: parent gone calls `stdoutLost()` |
+| intent | minor | Remember the parent's read-end fd instead of scanning | declined: the scan survives the parent duplicating the fd; a few readlinks every 2 s cost nothing | — |
+| intent | minor | Watch List rows point at old IDEA numbering and split-off work | upheld | Rows updated |
 
 ## Prior Work
 
