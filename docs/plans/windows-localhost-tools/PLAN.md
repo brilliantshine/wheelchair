@@ -164,7 +164,7 @@ add whatever part below is missing (for example `null`):
 
 Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
 
-- **Table:** tool port → the **current** forward `{private_port, state, listener, sockets,
+- **Table:** tool port → the **current** forward `{private_port, state, listener,
   connections, last_refusal}` (`connections`: each open socket with its relay process), `state` `ok` or `unrecorded`. Separately, a list of
   **stale** forwards: restored ones whose private port could not be bound (section 5), each
   `{tool_port, private_port, reason: "port in use on Linux"}`, kept until the service stops.
@@ -183,11 +183,10 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   listeners for one tool port). So a private port is never handed to a CLI before it is in the
   record.
 - **Lifetime:** a forward, once created, stays open until the machine service stops. It is not
-  tied to sessions. On a clean stop (the service's existing shutdown path), listeners close,
-  open sockets are destroyed and relay processes killed. The installed unit stops only the
-  main process (`KillMode=process`), so relays also end themselves: a relay exits as soon as
-  its stdin ends (the machine service closed its end or died), and a `check` relay ends within
-  8 s on its own. No extra stop handler is needed.
+  tied to sessions. No stop handler is added: when the service process ends, the kernel
+  closes its listeners, sockets and the relays' pipes. The installed unit stops only the main
+  process (`KillMode=process`), so relays end themselves: a relay exits as soon as its stdin
+  ends, and a `check` relay ends within 8 s on its own.
 - **Connections (D19, D21):** a plain byte pipe; nothing in requests or replies is read or
   changed. The tool therefore sees `Host: 127.0.0.1:<private port>`, so any absolute URL it
   builds from `Host` (redirects, links) points back through the forward. The host is always
@@ -216,6 +215,11 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
     the connection close without a reply.
   - No header within 12 s (relay start, 5 s connect, 3 s lookup, with margin): kill the relay,
     destroy the socket, `last_refusal` = `Windows didn't answer in time`.
+  - **One outcome per connection.** A connection settles once, on the first of: `OK`,
+    `REFUSED`, the 12 s timeout, the client closing or erroring before `OK`, or the helper
+    failing (below). Only that first event sets or clears `last_refusal`; everything after it
+    (for example the child `close` that follows a kill) only cleans up. A client that leaves
+    before `OK` records nothing.
   - **The outcome is judged from stdout, not from process exit.** A relay may write its header
     and exit at once, and Node can report `exit` before stdout is drained. So the machine acts
     on the child's `close` event (all stdio closed), never on `exit`: if no complete header was
@@ -229,8 +233,6 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
     blocks on it.
   - Closing: when the socket closes or errors, kill the relay. When the relay's stdout ends,
     `pipe` ends the socket after the last bytes are written.
-  - Sockets with their relay processes, and running status-check relays (below), are tracked
-    so a clean service stop destroys and kills them.
 - **Relay:** the script `machine/lib/win-relay.ps1`, shipped in the repo, read from disk and
   run with `spawnPs` (`machine/lib/win-env.js:57-61`, `-EncodedCommand`, so stdin and stdout
   are free for data), with `$Mode` (`connect` or `check`) and `$ToolPort` set by lines the
@@ -406,7 +408,8 @@ header line and dialling a local test server (these cover the Linux side only):
   client that stops reading a large streamed response leaves the Linux side's buffered bytes
   bounded (the stand-in's writes stall) while a second connection on the same forward keeps
   working; a server that sends its last bytes and closes delivers them all before the client
-  sees the close; a clean stop kills open connection and status-check relays; a
+  sees the close; a client that leaves before `OK`, and a timeout, each leave `last_refusal`
+  as that event set it (not a start failure from the later child `close`); a
   stand-in whose stdin is closed exits; the status reply carries `last` after a refusal and
   drops it after the next `OK`.
 - Role gate: a reviewer or mapper session, and Kimi and Pi sessions, get no forward and no
@@ -430,8 +433,7 @@ listening`; and a Linux listener reached through WSL localhostForwarding (a Node
 tool port in WSL, no Windows listener) is refused as `leads back to Linux` (skip that case when
 localhostForwarding is off). It also checks, in `connect` mode: 16 MiB each way arrives intact;
 when the Linux side stops reading stdout, the Windows listener's sends stall after a bounded
-amount instead of the relay growing; closing stdin shuts down the send side while the reply
-still arrives; the listener's last bytes before it closes all arrive; `check` mode prints one
+amount instead of the relay growing; the listener's last bytes before it closes all arrive; `check` mode prints one
 header line and exits; closing stdin makes a `connect` relay exit. It prints how long a new connection takes to get `OK` (C4, C5). Run it on this WSL machine before verification:
 `node --test machine/test/win-relay-live.test.js`.
 
@@ -747,7 +749,7 @@ C4, C5 rewritten.
 | mechanics | blocking | Relay stdin `EPIPE` unhandled crashes the service | upheld | §4 error handlers on every stream, per-connection teardown, test |
 | mechanics | blocking | Fully paused socket hides client FIN before `OK` | downgraded to major (worker would ask; nothing wrong gets built) | §4 bounded 64 KiB pre-`OK` buffer, FIN/reset tests |
 | mechanics | blocking | `exit` before stdout drained discards a valid header | upheld | §4 judge on `close` and stdout, test |
-| mechanics | major | No stop path under `KillMode=process`; check relays untracked | upheld | Relay exits on stdin end; check relays tracked; no new stop handler |
+| mechanics | major | No stop path under `KillMode=process`; check relays untracked | upheld | Relay exits on stdin end; no new stop handler |
 
 ### Round 15 — 2026-11-21
 
@@ -757,6 +759,23 @@ C4, C5 rewritten.
 teardown; relay exits when its stdin ends (no half-close), check relays tracked, clean-stop
 wording; §6 reply gains `last` (last refusal); D15 relay idle rule marked superseded;
 Validation cases for these.
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | Live test expects a reply after stdin closes; relay exits on stdin end | downgraded to major (worker would ask) | Half-close expectation removed from the live test |
+| intent | major | Same contradiction in the live test | upheld | As above |
+| mechanics | major | Clean-stop test needs a stop entry point the service lacks | upheld | Clean-stop tracking and test removed; kernel closes everything, relays exit on stdin end |
+| mechanics | major | Cleanup `close` after a client leave or timeout overwrites `last_refusal` | upheld | §4 one outcome per connection, first event wins; test |
+| intent | minor | Leftover `sockets` field in the table | upheld | Removed |
+
+### Round 16 — 2026-11-21
+
+**Changed since Round 15:** §4 one outcome per connection (first event sets `last_refusal`,
+cleanup after it records nothing, a client leaving before `OK` records nothing); clean-stop
+tracking dropped, Lifetime says no stop handler is added; `sockets` field removed; live test
+no longer expects a reply after stdin closes; Validation updated.
 
 ## Implementation Tasks
 
