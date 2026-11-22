@@ -809,7 +809,7 @@ Clean round.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Shared eligibility rule (`win-mark.js`), `readProjectMcp` marks and warnings (§1), Project tools read `wsl`/`windows` and save `windows` (§7 machine side) | `machine/lib/win-mark.js`, `machine/lib/project-mcp.js`, `machine/lib/project-tools.js`, their tests | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker | `node --test machine/test/*.test.js` | done |
-| T2 | `context.replaceEntries` in Claude, Codex, Antigravity adapters (§3, D5, D17) | `machine/adapters/{claude,codex,agy,common}.js`, `machine/test/replace-entries.test.js` and adapter tests | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker-2 | `node --test machine/test/*.test.js` | in progress |
+| T2 | `context.replaceEntries` in Claude, Codex, Antigravity adapters (§3, D5, D17) | `machine/adapters/{claude,codex,agy,common}.js`, `machine/test/replace-entries.test.js` and adapter tests | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker-2 | `node --test machine/test/*.test.js` | done |
 | T3 | tricky: forwards module, relay script, record/restore, unit and live tests (§4, §5) | `machine/lib/win-forward.js`, `machine/lib/win-relay.ps1`, `machine/test/win-forward.test.js`, `machine/test/win-relay-live.test.js`, fixtures | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker-3 | `node --test machine/test/win-forward.test.js machine/test/win-relay-live.test.js` | in progress |
 | T4 | Service integration: `startIn` forwarding and `replaceEntries` (§2), Claude `--mcp-config` file write/remove/sweep (§3), `WinBridge` restore (§5), `windows-status` route and read `wsl` (§6, §7) | `machine/service.js`, `machine/lib/win.js`, service tests | standard | — | full machine suite | not started (after T1-T3) |
 | T5 | Project tools page switch, status store and line, viewer route (§6, §7 page) | `viewer/pages/project-tools.js`, `viewer/app/routes.js`, viewer project-tools tests | standard / claude-sonnet-5-5 | wc-a1a1b7d6016d-worker-4 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | in progress |
@@ -824,3 +824,10 @@ Clean round.
 - 2026-11-21 — Choice: T1, project-mcp.js: a marked entry that fails entry validation gets the "only applies to an http://localhost…" warning as well as its usual "skipped" warning.
 - 2026-11-21 — Choice: T1, project-tools.js: keys-only and unreachable read replies carry `windows: []` (no source document).
 - 2026-11-21 — T1 accepted (band: scout): focused tests 48/48; full machine suite 568/572, the same 4 failures as the feature branch without T1 (Pi aside, Kimi not installed, port 7374 in use by the live machine service).
+- 2026-11-21 — Choice: T2, codex.js: `replaceEntries` reaches `codexOverrides` as an optional options field; existing callers unchanged.
+- 2026-11-21 — Choice: T2, codex.js: the Windows env passthrough is decided from the original entry and applies only when the original is stdio (an http replacement over a Windows stdio original gets none).
+- 2026-11-21 — Choice: T2, codex.js/agy.js: a `null` name is skipped before name and reason checks, so it never produces a warning.
+- 2026-11-21 — Choice: T2, claude.js: `disabledMcpjsonServers` lists rejected names first, then replaced names, deduplicated; replacement entries go into the `--mcp-config` file as given (no translation).
+- 2026-11-21 — Choice: T2, common.js: one `replacement(map, name)` accessor for null-prototype objects and Maps.
+- 2026-11-21 — worker didn't report all its choices; I listed 4 more from the scout's read.
+- 2026-11-21 — T2 accepted (band: scout): targeted tests 34/34; full suite has only the 4 failures the feature branch already has. Test gaps noted (no `constructor` name or Map+`__proto__` case); behaviour matches §3.
