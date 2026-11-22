@@ -33,7 +33,8 @@ function checksFor(servers, store) {
   }
   return { checks, references, file_warnings: codexOverrides({ servers: valid }).tooLarge ? [tooLarge] : [] };
 }
-function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBytes(6).toString('hex') }) {
+const marks = document => object(document?.wheelchair) && Array.isArray(document.wheelchair.windows) && document.wheelchair.windows.every(x => typeof x === 'string') ? document.wheelchair.windows : [];
+function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = () => crypto.randomBytes(6).toString('hex') }) {
   const run = (program, args, options = {}) => commandAsync(program, args, { ...options, timeout: 60000, env: { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0' } });
   const git = (dir, ...args) => run('git', ['-C', dir, ...args]);
   const identity = dir => projectIdentity(dir, (p, a) => run(p, a));
@@ -72,13 +73,13 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
     let store, notice = null;
     try { store = await readKeyStore(stateDir, projectId); } catch (e) { store = { revision: 0, keys: Object.create(null) }; notice = "the key store on this machine can't be read"; }
-    const base = { mode: 'keys-only', notice: "Tools can't be shown or edited here: pull requests need a GitHub origin", repo: null, default_branch: null, token: { project: projectId, baseline: null, key_revision: store.revision }, source: null, checks: Object.create(null), file_warnings: [], keys: keys(store), references: Object.create(null), reserved: reservedNames(), waiting: [], waiting_error: null };
+    const base = { wsl: !!wsl(), windows: [], mode: 'keys-only', notice: "Tools can't be shown or edited here: pull requests need a GitHub origin", repo: null, default_branch: null, token: { project: projectId, baseline: null, key_revision: store.revision }, source: null, checks: Object.create(null), file_warnings: [], keys: keys(store), references: Object.create(null), reserved: reservedNames(), waiting: [], waiting_error: null };
     const destination = await remote(input.path);
     if (!destination) { if (notice) base.notice += `; ${notice}`; return { status: 200, body: base }; }
     try {
       return await fetched(input.path, destination, async ({ branch, source }) => {
         const result = { ...base, mode: 'tools', notice, repo: destination.repo, default_branch: branch, source: { state: source.state, reason: source.reason, document: source.document }, token: { ...base.token, baseline: { repo: destination.repo, source_state: source.state, branch, mode: source.mode, oid: source.oid } } };
-        if (source.document) Object.assign(result, checksFor(source.document.mcpServers, store));
+        if (source.document) { result.windows = marks(source.document); Object.assign(result, checksFor(source.document.mcpServers, store)); }
         const listed = await run('gh', ['pr', 'list', '--repo', destination.repo, '--base', branch, '--state', 'open', '--limit', '1000', '--json', 'number,url,title,headRefName,isCrossRepository']);
         if (!listed.ok) result.waiting_error = reason(listed);
         else try { result.waiting = JSON.parse(listed.stdout).filter(p => !p.isCrossRepository && p.headRefName.startsWith('wc-tools/')).map(p => ({ number: p.number, url: p.url, title: p.title, branch: p.headRefName })); } catch { result.waiting_error = 'invalid pull request response'; }
@@ -93,14 +94,14 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
     const failed = error => ({ status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: error.message || String(error) } });
     if (input.token?.project !== projectId || input.token?.key_revision !== store.revision) return changed();
     if (input.start_over && (!object(input.tools) || Object.getPrototypeOf(input.tools) !== Object.prototype || Reflect.ownKeys(input.tools).length !== 0)) return refused('start over replaces the file with an empty tool list');
-    if (!object(input.keys) || !(input.tools === null || object(input.tools))) return refused('invalid save request');
+    if ((Object.hasOwn(input, 'windows') && (!Array.isArray(input.windows) || !input.windows.every(x => typeof x === 'string'))) || !object(input.keys) || !(input.tools === null || object(input.tools))) return refused('invalid save request');
     for (const [name, value] of Object.entries(input.keys)) { const error = validateName(name); if (error) return refused(error); if (typeof value !== 'string') return refused('invalid key value'); }
     const baseline = input.token.baseline;
     let toolsChanged = input.tools !== null;
     if (toolsChanged && baseline?.source_state === 'ok' && baseline.oid && /^[a-f0-9]+$/.test(baseline.oid)) {
       const blob = await git(input.path, 'cat-file', 'blob', baseline.oid);
-      if (blob.ok) { const checked = checkDocumentText(blob.stdout); if (checked.ok && isDeepStrictEqual(input.tools, checked.data.mcpServers)) toolsChanged = false; }
-    } else if (toolsChanged && baseline?.source_state === 'missing' && isDeepStrictEqual(input.tools, {})) toolsChanged = false;
+      if (blob.ok) { const checked = checkDocumentText(blob.stdout); if (checked.ok && isDeepStrictEqual(input.tools, checked.data.mcpServers) && (!Object.hasOwn(input, 'windows') || isDeepStrictEqual(input.windows, marks(checked.data)))) toolsChanged = false; }
+    } else if (toolsChanged && baseline?.source_state === 'missing' && isDeepStrictEqual(input.tools, {}) && (!Object.hasOwn(input, 'windows') || input.windows.length === 0)) toolsChanged = false;
     if (input.start_over && (!toolsChanged || baseline?.source_state !== 'unreadable')) return refused('start over is only allowed for an unreadable file');
     if (!toolsChanged && !Object.keys(input.keys).length) return refused('nothing to save');
     const storeKeys = async () => { if (Object.keys(input.keys).length) store = await writeKeyStore(stateDir, projectId, { set: input.keys }); };
@@ -112,7 +113,13 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
       return await fetched(input.path, destination, async ({ branch, ref, source }) => {
         if (branch !== baseline.branch || source.state !== baseline.source_state || source.mode !== baseline.mode || source.oid !== baseline.oid) return changed();
         if (input.start_over && source.state !== 'unreadable') return refused('start over is only allowed for an unreadable file');
-        const candidate = { ...(source.document || {}), mcpServers: input.tools }, text = `${JSON.stringify(candidate, null, 2)}\n`, checked = checkDocumentText(text);
+        const candidate = { ...(source.document || {}), mcpServers: input.tools };
+        if (Object.hasOwn(input, 'windows')) {
+          const wheelchair = object(candidate.wheelchair) ? { ...candidate.wheelchair } : {};
+          if (input.windows.length) wheelchair.windows = input.windows; else delete wheelchair.windows;
+          if (Object.keys(wheelchair).length) candidate.wheelchair = wheelchair; else delete candidate.wheelchair;
+        }
+        const text = `${JSON.stringify(candidate, null, 2)}\n`, checked = checkDocumentText(text);
         if (!checked.ok) return refused(checked.reason);
         const refs = keyReferences(input.tools), old = source.document?.mcpServers || {}, oldRefs = keyReferences(old);
         for (const [name, users] of Object.entries(refs.references)) for (const held of refs.heldBack[name] || []) {

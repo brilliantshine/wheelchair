@@ -17,6 +17,8 @@ exports.status = (cli, args, env, parse) => { const r = spawnSync(cli, args, { e
 exports.home = (env, fallback) => process.env[env] || path.join(os.homedir(), fallback);
 
 exports.loadedTools = (names, mcp, mount, replaceEntries = {}) => names.map(name => {
-  const entry = mcp.servers[name];
-  return { name, windows: (entry.type === undefined || entry.type === 'stdio') && require('../lib/project-programs').isWindowsProgram(entry.command, mount || '/mnt'), wrapped: Object.hasOwn(replaceEntries, name) && replaceEntries[name] != null };
+  const entry = mcp.servers[name], stdio = entry.type === undefined || entry.type === 'stdio';
+  // `wrapped` means a stdio go-between; a replaced HTTP entry (a Windows forward) is not one.
+  return { name, windows: stdio && require('../lib/project-programs').isWindowsProgram(entry.command, mount || '/mnt'), wrapped: stdio && Object.hasOwn(replaceEntries || {}, name) && replaceEntries[name] != null };
 });
+

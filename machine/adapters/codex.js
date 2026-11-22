@@ -80,7 +80,7 @@ function codexOverrides(mcp, { wsl = false, mount = '/mnt', replaceEntries = {} 
         if (value === `\${${key}}` && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) passthrough.push(tomlString(key));
         else literal.push(`${tomlString(key)}=${tomlString(value)}`);
       }
-      if (wsl && isWindowsProgram(original.command, mount)) {
+      if (wsl && (original.type === undefined || original.type === 'stdio') && isWindowsProgram(original.command, mount)) {
         for (const name of ['WHEELCHAIR_WINDOWS_PROJECT', 'WSLENV']) {
           const quoted = tomlString(name);
           if (!passthrough.includes(quoted)) passthrough.push(quoted);

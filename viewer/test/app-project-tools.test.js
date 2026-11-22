@@ -100,3 +100,17 @@ test('machine replies keep multi-byte characters split across chunks', async (t)
   const { body } = await requestJson(`http://127.0.0.1:${server.address().port}/x`, 'POST', {}, {}, 5000, true);
   assert.equal(body.GREETING, 'Olá');
 });
+
+test('project tools forwards windows-status like the other routes', async () => {
+  let args;
+  const hub = { client: { passThrough: async (...value) => { args = value; return { status: 200, body: { wsl: true, status: {} } }; } } };
+  const payload = { path: '/project', machine: 'hub', token: { key_revision: 1 }, tools: [{ id: '0', name: 'a', type: 'http', url: 'http://localhost:80' }] };
+  const request = Readable.from([Buffer.from(JSON.stringify(payload))]);
+  request.method = 'POST';
+  let sent;
+  const response = { writeHead(status) { sent = status; }, end() {} };
+  await handle(hub, request, response, new URL('http://localhost/wheelchair/api/project-tools/windows-status'), false);
+  const { machine, ...forwarded } = payload;
+  assert.equal(sent, 200);
+  assert.deepEqual(args, ['hub', '/v1/project-tools/windows-status', 'POST', forwarded, 120_000]);
+});
