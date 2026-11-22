@@ -88,3 +88,21 @@ The failing test is in a file this build did not touch. Re-running it alone (`np
 - The real 15-minute default is not exercised by a test; only the env override at 500 ms and 15000 ms is.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-21
+
+Verification 1 at d6d1d01e: Claude verifier PASS; GPT verifier FAIL with 6 gaps (verbatim in REMEDIATION-1.md). Gaps 2, 4 and 5 were judged rare paths and added to PLAN.md Accepted Risks (round verification-1). Gaps 1, 3 and 6 were fixed:
+
+| Gap | Fix | Task / lane | Validated by |
+|-----|-----|-------------|--------------|
+| 1: Kimi/Pi CLI check blocked the leader (spawnSync in adapters) | Async `command -v` through the job's `run()`, keeping the adapters' semantics; `adapters` require removed — machine/lib/harness-install.js:115-123 | R1-1, light / gpt-6-luna | harness-install.test.js "slow Kimi CLI lookup is stopped by the install limit" (fails before the fix: reason undefined) |
+| 6: a step that failed to start reported a negative errno as exit code | `run()` resolves `status: null` on spawn error, so `?? 1` gives 1 as before — machine/lib/harness-install.js:83 | R1-1 | harness-install.test.js "missing step program reports exit code 1" (fails before the fix: -2 !== 1) |
+| 3: Cancel error was keyed by provider, so it showed on other machines' rows and stayed after cancellation | Error kept on the job record as `cancelErr`, carried across running polls, dropped on terminal states, rendered only on a running row — viewer/pages/settings.js:1699, 1716, 1724, 1827 | R1-3, light / claude-haiku-5-5 | app-harnesses.spec.js: the alert clears once the install reports cancelled; the alert shows only on the failing machine's row (both fail before the fix) |
+
+Validation after the merge (feature branch):
+```
+node --test machine/test/harness-install.test.js   → # tests 9 / # pass 9 / # fail 0
+node --test viewer/test/app-harnesses.test.js       → # tests 20 / # pass 20 / # fail 0
+bash machine/test/run.sh                             → # tests 578 / # pass 562 / # fail 16 (the same win.test.js failures as before)
+npm --prefix viewer run test:browser -- app-harnesses.spec.js → 124 passed
+```
