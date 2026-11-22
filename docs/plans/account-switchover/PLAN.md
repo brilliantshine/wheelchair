@@ -157,6 +157,15 @@ resets; other providers; changing how accounts are signed in.
 
 ## Review Rounds
 
+### Round 1 — 2026-11-21
+
+**Lanes:** intent lens and mechanics lens, families recorded on triage.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
