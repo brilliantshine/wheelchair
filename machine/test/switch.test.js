@@ -66,7 +66,7 @@ test('both providers copy the conversation and respawn the existing pane', async
     await fs.mkdir(path.join(state, 'prompts'), { recursive: true }); await fs.writeFile(path.join(state, 'prompts', 'wc-test.md'), 'original prompt');
     const machine = Object.create(MachineService.prototype); machine.stateDir = state; machine.persistSessions = async () => {}; machine.emitEvent = async () => {};
     machine.copyTranscript = async s => { s.transcript_source = { path: source, ino: 1, offset: 7 }; };
-    machine.prepareLaunch = async (input, session, adapter, worktree, promptPath, rolePrompt, resume) => { assert.equal(resume, true); assert.equal(rolePrompt, 'original prompt'); assert.equal(input.model, 'new-model'); assert.equal(input.project, 'project'); assert.equal(input.role, 'reviewer'); return { commandText: 'resume-command' }; };
+    machine.prepareLaunch = async (input, session, adapter, worktree, promptPath, rolePrompt, resume) => { assert.equal(resume, true); assert.equal(rolePrompt, 'original prompt'); assert.equal(input.model, 'new-model'); assert.equal(input.project, 'project'); assert.equal(input.project_dir, root); assert.equal(input.role, 'reviewer'); return { commandText: 'resume-command' }; };
     const session = { name: 'wc-test', cli, cli_session_id: id, codex_thread_id: id, role: 'reviewer', thread_id: 't', account_dir: null, account: `default-${cli === 'codex' ? 'gpt' : 'claude'}`, status: 'switching', worktree: root, last_reading: { used: 1 }, switches: { a: { state: 'running' } } };
     const snapshot = JSON.parse(JSON.stringify({ ...session, status: 'ready' }));
     await machine.runSwitch(session, snapshot, { switch_id: 'a', account: { id: 'other' }, model: 'new-model', project: 'project', project_dir: root }, to);
