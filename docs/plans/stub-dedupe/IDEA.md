@@ -26,7 +26,7 @@ make their own stub, and Collin ends up with several threads for the same work.
   thread says it already exists and points to it.
 - When the work is close to an existing stub, that stub's description gains the new part,
   visibly, and no second stub appears.
-- If the stub was already opened, its agent is told about the added part.
+- If the stub was already opened, nothing is added to it: a duplicate gets pointed to it, and close work gets its own stub that names it.
 - Genuinely different work still gets its own stub, as today.
 
 ## Not doing

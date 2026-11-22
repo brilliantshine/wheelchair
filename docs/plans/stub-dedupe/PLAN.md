@@ -33,12 +33,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | An addition (not a duplicate note) to an opened stub whose lead is not live is refused; the agent makes its own stub. Holding it for the next lead is deferred | Thread f4c68e8cbb15 is building held delivery for cross-thread messages; the follow-up can reuse it | defaulted |
 | 11 | Additions and duplicate notes go only to unopened stubs. Supersedes 6, 8, 9 and 10. An exact duplicate of an opened, unfinished stub posts nothing and the lead names that thread in its reply; close work gets its own stub naming the related one | Collin picked "Only unopened stubs" after review round 1 showed the opened-stub path needs live status reads, a pending state and restart recovery | user |
 | 12 | Only candidates get the new discovery fields; finished stubs are listed as today with no `stub` field. Any refused addition falls back to the lead's own stub naming the related one. No `stub_additions` record and no message to any lead | Fixes the round-1 finding on finished stubs; the rest is cut by 11 | review-round-1 |
+| 13 | IDEA.md "What good looks like": an opened stub is no longer told about additions; a duplicate is pointed to it and close work gets its own stub naming it | Follows Collin's "Only unopened stubs" press on the review-round-1 question, which removed this promise | idea-change |
+| 14 | Candidates also exclude stub threads with a `merged` card (`viewer/app/threads.js:483`); supersedes the merged-PR part of Decision 2 with a test the hub can read | A merged stub can't take the work | review-round-2 |
+| 15 | Unopened stub entries (`stub: true`, `lead: null`) are used only by the stub rule, never by the overlap checks in lead.md | They have no lead and no plan; overlap cards for them would ask Collin about work nobody has started | review-round-2 |
 
 ## Spec
 
 ### Terms
 - **Stub thread**: a thread whose record has `stub: true` (created by `createStub`, `viewer/app/threads.js:92`). Its `context` is the summary its first lead receives when the user opens it (`openStub`, `viewer/app/threads.js:109`).
-- **Candidate**: a stub thread in the caller's project, on the same resolved machine, not archived, not frozen (handed off), with no current `done` card (`currentDone`, `viewer/app/cards.js:51`).
+- **Candidate**: a stub thread in the caller's project, on the same resolved machine, not archived, not frozen (handed off), with no current `done` card (`currentDone`, `viewer/app/cards.js:51`) and no `merged` card (`viewer/app/threads.js:483`).
 - **Unopened**: a candidate with no sessions (`sessions.length === 0`). Only unopened candidates take additions.
 
 ### 1. Discovery: `wc.js session leads`
@@ -46,6 +49,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - `stub: true`
 - `summary`: the thread's current `context`
 - `takes_additions`: true when unopened, else false.
+- `depends_on_parent`: the stub's own flag (true means it will not start until its parent thread merges).
 Other entries are unchanged, including stub threads that are no longer candidates (they get no new fields). Cross-project entries (linked or `--all-projects`) are unchanged and no unopened stubs are added for them.
 
 ### 2. Adding: the `stub` card's `adds_to`
@@ -65,19 +69,21 @@ On success it appends to the target's `context` `\n\nAdded from "<parent title>"
 - Target thread: its unopened page already renders `context` and re-renders when it changes (`viewer/pages/thread.js:529`, `:1434`), so additions appear there; its first lead receives them in `[wc:context stub]`.
 
 ### 4. Protocol text
-`protocol/app/lead.md`, Stubs section, gains a "Before posting a stub" rule: run `session leads` and read entries with `stub: true`, comparing by `summary`.
+`protocol/app/lead.md`, Stubs section, gains a "Before posting a stub" rule: run `session leads` and read entries with `stub: true`, comparing by `summary`. "Name it in your reply" below means the next visible reply (a reply to a `[wc:from ...]` message is hidden).
 - Same thing, unopened (`takes_additions: true`): post the stub card with `adds_to` and `duplicate: true`, summary one line on where it came up.
-- Same thing, opened: post nothing; say in the reply which thread already covers it.
-- Close (the stub's work would naturally cover it with a small addition) and unopened: post with `adds_to`, summary saying what to add and what this thread knows.
-- Otherwise, or on any refusal of an addition: post a new stub as today, naming any related stub in the summary.
-- Exempt (always a new stub): the two-part follow-up stub, a missed-merge stub, and any stub needing `depends_on_parent: true` or `commits`.
+- Same thing, opened: post nothing; name that thread in your reply.
+- Close (the stub's work would naturally cover it with a small addition) and unopened: post with `adds_to`, summary saying what to add and what this thread knows. If the entry's `depends_on_parent` is true, add only if your part can also wait until that parent merges; otherwise post your own stub.
+- Otherwise: post a new stub as today, naming any related stub in the summary.
+- On a refusal: for a duplicate note refused with `that stub has started`, post nothing and name that thread in your reply; any other refused duplicate note or addition, post a new stub naming the related one.
+- These stubs skip this comparison and are always posted as their own rules say (their existing duplicate checks still apply): the two-part follow-up stub, a missed-merge stub, and any stub needing `depends_on_parent: true` or `commits`.
+- "Other leads on this machine" and "Overlap questions" gain one line: entries with `stub: true` and `lead: null` are not overlaps and are used only by this rule.
 `protocol/app/cards-lead.md` `stub` section documents `adds_to`, `duplicate`, the refusals and the parent card's look, and drops the "same CLI" claim (MAP.md shows creation does not copy `cli`). `protocol/app/cards.md` adds `stub.adds_to` to the list of fields that may carry another thread's id.
 
 ### Non-goals
 Merging existing duplicates; threads Collin starts directly; other projects or machines; adding to stubs that have been opened; editing or removing an addition after it is posted.
 
 ### Validation
-- `cd viewer && npm test` passes, with new tests in `viewer/test/app-lead-list.test.js` (unopened candidate listed with `lead: null`, `stub: true`, `summary`, `takes_additions: true`; opened candidate has `takes_additions: false`; archived, frozen, done and other-project stubs get no new fields or are absent; non-stub entries unchanged) and `viewer/test/app-hub.test.js` (addition and duplicate note to an unopened stub append the exact paragraph to `context` and create no thread; each of the three refusals; `adds_to` with `depends_on_parent: true` or `commits`, or `duplicate` without `adds_to`, refused by `card.js` validation).
+- `cd viewer && npm test` passes, with new tests in `viewer/test/app-lead-list.test.js` (unopened candidate listed with `lead: null`, `stub: true`, `summary`, `takes_additions: true`; opened candidate has `takes_additions: false`; archived, frozen, done, merged and other-project stubs get no new fields or are absent; `depends_on_parent` reflects the stub; non-stub entries unchanged) and `viewer/test/app-hub.test.js` (addition and duplicate note to an unopened stub append the exact paragraph to `context` and create no thread; each of the three refusals; `adds_to` with `depends_on_parent: true` or `commits`, or `duplicate` without `adds_to`, refused by `card.js` validation).
 - `cd viewer && npm run test:browser` passes, with a case in `viewer/test/app-threads.spec.js` showing the parent card heading, target title and "Go to it" link for an addition.
 
 ## Deferred
@@ -90,6 +96,8 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | An addition queued on the machine while the hub is down can be refused later with no fallback stub | Rare path: hub outage at post time plus the target changing state before delivery | review-round-1 |
+| A stub whose PR merged before its lead posted `done` (and so has no `merged` card yet) still counts as a candidate | Rare path: needs that gap plus another thread hitting the same work inside it; the lead's reply names the thread, so Collin sees it | review-round-2 |
+| A stub's own lead posting `adds_to` with its own thread id could wait on a lock it holds | Rare path: discovery never lists the caller's own thread, so only malformed input reaches it | review-round-2 |
 | A hub restart between saving the target and the parent card can double-append an addition on replay | Rare path: crash inside the write plus replay | review-round-1 |
 
 ## Review Rounds
@@ -119,6 +127,24 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 **Lanes:** intent: claude; mechanics: other family; cross-family: yes.
 
 **Changed since Round 1:** Decision 11 (additions and duplicate notes only to unopened stubs; no messages to leads, no `stub_additions`); Decision 12 (discovery fields only on candidates; refusal fallback); Spec rewritten to match; `cards.md` id-field exception added; Deferred row 1 removed as moot.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | IDEA.md still promises an opened stub's agent is told about additions | upheld | Fixed: IDEA.md edited, Decision 13 |
+| intent | minor | Candidate term dropped Decision 2's merged-PR test | upheld | Fixed: Decision 14, Spec Terms |
+| intent | minor | Additions to a stub waiting on its parent wait too | upheld | Fixed: `depends_on_parent` in discovery, Spec 4 rule |
+| mechanics | major | Duplicate note refused because the stub opened in between leads the lead to make a second stub | downgraded (minor): needs the stub opened in the minutes between listing and posting; outcome is one extra stub | Fixed: Spec 4 refusal rule |
+| mechanics | major | Merged-before-done stubs still count as candidates | upheld | Fixed: Decision 14; residual gap is an Accepted Risk |
+| mechanics | major | Self-target `adds_to` can wait on its own lock | accepted-risk | Rare path: discovery never lists the caller's own thread |
+| mechanics | minor | "Name it in the reply" may be a hidden reply | upheld | Fixed: Spec 4 says next visible reply |
+| mechanics | minor | Unopened stubs could trigger overlap cards | upheld | Fixed: Decision 15, Spec 4 |
+| mechanics | minor | Exemption wording could override existing follow-up and missed-merge checks | upheld | Fixed: Spec 4 wording |
+
+### Round 3 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 2:** IDEA.md "What good looks like" bullet on opened stubs (Decision 13); candidates exclude merged stubs (Decision 14); discovery adds `depends_on_parent`; Spec 4 rewritten (visible-reply wording, waiting-parent rule, refusal handling split, exemption wording, unopened stubs excluded from overlap checks per Decision 15); two new Accepted Risks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
