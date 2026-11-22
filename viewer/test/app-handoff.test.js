@@ -386,11 +386,13 @@ test('handoff versions translate v1 and enforce their history labels', () => {
   file.history = [{ at, who: 'user', kind: 'message', text: 'hello' }];
   assert.equal(file.version, 3);
   assert.equal(validateHandoffFile(JSON.stringify(file)).file.history[0].who, 'user');
-  const { lessons: ignored, ...old } = structuredClone(file); old.version = 1; old.history[0].who = 'collin';
+  const old = { format: 'wheelchair-handoff', version: 1, exported_at: at, thread: { id, title: 'Title', slug: 'plan' }, repository: 'github.com/owner/repo', branch: `wc/${id}`, head: 'a'.repeat(40), stage: 'approved', history: [{ at, who: 'collin', kind: 'message', text: 'hello' }] };
+  const v2 = { format: 'wheelchair-handoff', version: 2, exported_at: at, thread: { id, title: 'Title', slug: 'plan' }, repository: 'github.com/owner/repo', branch: `wc/${id}`, head: 'a'.repeat(40), stage: 'approved', history: [{ at, who: 'user', kind: 'message', text: 'hello' }] };
+  assert.equal(validateHandoffFile(JSON.stringify(v2)).ok, true);
   const translated = validateHandoffFile(JSON.stringify(old));
   assert.equal(translated.file.history[0].who, 'user');
   for (const [version, who, what] of [[1, 'user', 'invalid history'], [2, 'collin', 'invalid history'], [4, 'user', 'unknown format or version']]) {
-    const { lessons: ignored, ...bad } = structuredClone(file); bad.version = version; bad.history[0].who = who;
+    const bad = structuredClone(version === 1 ? old : v2); bad.version = version; bad.history[0].who = who;
     assert.equal(validateHandoffFile(JSON.stringify(bad)).what, what);
   }
   const reexport = buildHandoffFile({ id, title: 'Title', slug: 'plan', imported: { at, history: translated.file.history }, sent: [], cards: [] }, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/owner/repo' });

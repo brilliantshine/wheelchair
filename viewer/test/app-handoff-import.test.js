@@ -331,10 +331,15 @@ test('v3 imports valid lessons into target scope and ignores malformed entries; 
   const settings = require('../app/settings.js');
   const lesson = { role: 'worker', text: 'Carry this', project: true, saved_by: 'agent', saved_at: '2026-01-01T00:00:00Z' };
   const f = await operationFixture();
-  const input = { ...file, version: 3, lessons: [null, { bad: true }, lesson] };
+  const incoming = [null, 42, { ...lesson, text: '' }, lesson];
+  const input = { ...file, version: 3, lessons: incoming };
   assert.equal((await importHandoff(f.hub, Buffer.from(JSON.stringify(input)), 'hub', '/project')).outcome, 'created');
   const saved = await settings.load(f.hub);
-  assert.equal(saved.lessons.worker.length, 1);
+  assert.deepEqual(Object.values(saved.lessons).flat().map((item) => item.text), ['Carry this']);
+  assert.deepEqual(saved.lesson_history, {}); assert.deepEqual(saved.lesson_waiting, []);
+  const direct = await operationFixture();
+  const counts = await settings.mergeIncoming(direct.hub, incoming, { source: 'handoff', targetProject: '/project' });
+  assert.equal(counts.invalid, 3); assert.equal(counts.added, 1);
   assert.equal(saved.lessons.worker[0].project, '/project');
   assert.equal(saved.lessons.worker[0].thread, file.thread.id);
   const old = await operationFixture();
@@ -350,17 +355,62 @@ test('opened and pending operation imports do not merge uploaded lessons', async
     const thread = { id: file.thread.id, machine: 'hub', project: '/project', slug: 'title', sessions: [], cards: [], pinned: {} };
     if (pending) { thread.handoff_op = ops.operation('create', file.head, file); thread.handoff_op.claim_landed = true; thread.handoff_op.claim_sha = f.sha; }
     await f.hub.save(thread);
+    const before = await settings.load(f.hub);
     const result = await importHandoff(f.hub, Buffer.from(JSON.stringify(input)), 'hub', '/project');
     assert.equal(result.outcome, pending ? 'created' : 'opened');
-    assert.equal((await settings.load(f.hub)).lessons.worker.length, 0);
+    const after = await settings.load(f.hub);
+    assert.deepEqual(after.lessons, before.lessons); assert.deepEqual(after.lesson_waiting, before.lesson_waiting);
   }
 });
 
 test('Retry of a pending operation does not merge lessons', async () => {
   const settings = require('../app/settings.js'), ops = require('../app/handoff-ops.js');
   const f = await operationFixture();
-  const op = ops.operation('create', file.head, file); op.claim_landed = true; op.claim_sha = f.sha;
+  const input = { ...file, version: 3, lessons: [{ role: 'worker', text: 'Retry must not merge', saved_by: 'agent', saved_at: file.exported_at }] };
+  const op = ops.operation('create', file.head, input); op.claim_landed = true; op.claim_sha = f.sha;
   await f.hub.save({ id: file.thread.id, machine: 'hub', project: '/project', slug: 'title', sessions: [], cards: [], pinned: {}, handoff_op: op });
+  const before = await settings.load(f.hub);
   await ops.runOperation(f.hub, file.thread.id);
-  assert.equal((await settings.load(f.hub)).lessons.worker.length, 0);
+  const after = await settings.load(f.hub);
+  assert.deepEqual(after.lessons, before.lessons); assert.deepEqual(after.lesson_waiting, before.lesson_waiting);
+});
+
+
+test('Advance merges lessons into the existing thread project', async () => {
+  const settings = require('../app/settings.js');
+  const inspect = { repository: file.repository, remote_has_branch: true, remote_contains_head: true, remote_tip: file.head, plan_status: 'approved', relation: 'ahead', worktree_exists: false };
+  const f = await operationFixture({ inspect });
+  await f.hub.save({ id: file.thread.id, machine: 'hub', project: '/existing', slug: 'title', sessions: [], cards: [], pinned: {} });
+  const input = { ...file, version: 3, lessons: [{ role: 'worker', text: 'Advance lesson', project: true, saved_by: 'agent', saved_at: file.exported_at }] };
+  assert.equal((await importHandoff(f.hub, Buffer.from(JSON.stringify(input)), 'hub', '/picker')).outcome, 'advanced');
+  const lesson = (await settings.load(f.hub)).lessons.worker[0];
+  assert.equal(lesson.text, 'Advance lesson'); assert.equal(lesson.project, '/existing'); assert.equal(lesson.thread, file.thread.id);
+});
+
+test('exported project lessons are scoped to the destination project', async () => {
+  const { buildHandoffFile } = require('../app/handoff.js');
+  const settings = require('../app/settings.js');
+  const lesson = { text: 'Source lesson', project: '/source/project', thread: file.thread.id, saved_by: 'agent', saved_at: file.exported_at };
+  const input = buildHandoffFile({ ...file.thread, project: '/source/project' }, { head: file.head, stage: file.stage, repository: file.repository, lessons: { worker: [lesson, { ...lesson, text: 'Other project', project: '/other/project' }] } });
+  assert.deepEqual(input.lessons.map((item) => [item.text, item.project]), [['Source lesson', true]]);
+  const f = await operationFixture();
+  f.hub.call = async () => ({ checked: { ok: true, path: '/dest/project' } });
+  assert.equal((await importHandoff(f.hub, Buffer.from(JSON.stringify(input)), 'hub', '/dest/project')).outcome, 'created');
+  const saved = (await settings.load(f.hub)).lessons.worker;
+  assert.equal(saved.length, 1); assert.equal(saved[0].project, '/dest/project'); assert.equal(saved[0].thread, file.thread.id);
+});
+
+test('startCreate and startAdvance do not merge file lessons', async () => {
+  const settings = require('../app/settings.js'), ops = require('../app/handoff-ops.js');
+  const input = { ...file, version: 3, lessons: [{ role: 'worker', text: 'Do not merge', saved_by: 'agent', saved_at: file.exported_at }] };
+  for (const kind of ['create', 'advance']) {
+    const f = await operationFixture();
+    const thread = { id: file.thread.id, machine: 'hub', project: '/project', slug: 'title', sessions: [], cards: [], pinned: {} };
+    if (kind === 'advance') await f.hub.save(thread);
+    const before = await settings.load(f.hub);
+    if (kind === 'create') await ops.startCreate(f.hub, { file: input, machine: 'hub', project: '/project' });
+    else await ops.startAdvance(f.hub, thread, input);
+    const after = await settings.load(f.hub);
+    assert.deepEqual(after.lessons, before.lessons); assert.deepEqual(after.lesson_waiting, before.lesson_waiting);
+  }
 });
