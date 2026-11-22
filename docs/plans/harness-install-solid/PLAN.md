@@ -29,39 +29,41 @@ None.
 | 5 | Cancel and the time limit stop the whole install process group (SIGTERM, then SIGKILL after 5 s) | Script installers start curl/bash/npm children; killing only the leader would leave them running | defaulted |
 | 6 | Switching a harness's Use off also cancels its install, on every reachable machine | Off means "I don't want this"; a hidden install nobody can see or cancel is surprising | user |
 | 7 | The cancel on switch-off is done by the hub's settings route, not the page | The switch is hub-wide and an install may run on a machine the picker isn't showing | defaulted |
+| 8 | The job leader owns stopping: steps run in their own process group, the leader signals and escalates, and writes the result only once the group is empty (replaces the stop-file design) | A leader that kills its own group can't escalate to SIGKILL, and a retry could overlap a dying install | review-round-1 |
 
 ## Spec
 
 ### Machine: install job (`machine/lib/harness-install.js`)
 
-- The job runs its steps (node check, recipe, cleanup, sensitivity, CLI check) with async `spawn` awaited in order, not `spawnSync`, so its event loop stays free for the timer. Output still goes to the log exactly as today. Behaviour and exit codes of each step are unchanged.
-- **Stop file.** `~/.wheelchair/installs/<p>.stop`, JSON `{reason: "cancelled" | "timeout", at: <ISO time>}`, mode 0600. Written before any kill. `start()` deletes any old stop file along with the old result.
-- **Stopping** (shared helper `stopJob(p, reason)`): if `state(p).state !== 'running'` return false. Write the stop file, send SIGTERM to the process group `-pid`, then SIGKILL to `-pid` 5 s later if any member is still alive. Return true.
-- **Time limit.** The job sets a timer for `WHEELCHAIR_INSTALL_LIMIT_MS` (default 900000 = 15 min) from its own start; on firing it writes the stop file with `timeout` and kills its group as above. Nothing is appended to the log; the explanation field carries the reason. The timer is cleared when the job finishes normally.
-- **Result after a stop.** The job installs no signal handlers: SIGTERM ends it without a result file. `state(p)`, when the PID is not live and a stop file exists:
-  - If a result file exists whose `finished_at` is earlier than the stop file's `at`, the result wins (the job finished just before the cancel).
-  - Otherwise, stop file `cancelled` → `{state: "cancelled", exit_code: null, explanation: null, started_at, finished_at: <stop at>}`; stop file `timeout` → `{state: "failed", exit_code: null, explanation: "The install took too long (over 15 minutes) and was stopped. Try again; if it keeps happening, check this machine's network.", started_at, finished_at: <stop at>}`.
-  - With no stop file, behaviour is as today (result file, else "The install stopped before finishing.").
-- **Explanations (D3).** For `state: "failed"` from a result file or the dead-PID case, `explanation` is derived from the full log, first match wins:
-  1. Disk full — `ENOSPC` or `No space left on device`: "The disk on this machine is full. Free up some space, then try again."
-  2. npm folder not writable — `EACCES` or `EPERM` together with `npm` in the log: "npm isn't allowed to write to one of its folders on this machine (often ~/.npm or ~/.local, left owned by root by an earlier sudo npm). Fix that folder's owner, then try again."
-  3. No network — any of `Could not resolve host`, `curl: (6)`, `curl: (7)`, `curl: (28)`, `ENOTFOUND`, `EAI_AGAIN`, `ECONNREFUSED`, `ETIMEDOUT`, `ECONNRESET`, `Network is unreachable`: "This machine couldn't reach the internet to download it. Check its network, then try again."
-  - No match → `explanation: null`. Every GET response carries `explanation` (null when not failed).
+The job leader (the detached Node process `start()` spawns, whose PID is in `<p>.pid`) owns every stop. It outlives machine-service restarts, as today, so Cancel and the time limit do too.
+
+- **Steps.** The job runs its steps (node check, recipe, cleanup, sensitivity, CLI check) with async `spawn` awaited in order, not `spawnSync`, so its event loop stays free. Each step is spawned with `detached: true`, so the step and everything it starts form their own process group (group id = the step's PID). Output still goes to the log as today; behaviour and exit codes of each step are unchanged.
+- **Stop request.** The leader handles two causes: SIGTERM sent to the leader's PID (Cancel) → reason `cancelled`; its own timer of `WHEELCHAIR_INSTALL_LIMIT_MS` (default 900000 = 15 min) from job start → reason `timeout`. The timer is cleared when the job ends. A second stop request while one is in progress is ignored.
+- **Stopping.** On a stop request the leader starts no further step. If a step is running: send SIGTERM to its group (`process.kill(-g, 'SIGTERM')`), check every 200 ms whether the group still has members (`process.kill(-g, 0)` not throwing ESRCH); after 5 s send SIGKILL to the group and keep checking until it is empty. Only then write the result and remove the PID file, as today. So GET says `running`, and POST is refused with 409, until the whole group is gone.
+- **Result.** `cancelled` → `{state: "cancelled", exit_code: null, reason: "cancelled", started_at, finished_at}`; `timeout` → `{state: "failed", exit_code: null, reason: "timeout", started_at, finished_at}`. Nothing is appended to the log. If writing the result fails (e.g. disk full), the kill has already happened and GET falls back to today's dead-PID answer ("The install stopped before finishing.").
+- **`stopJob(p)`** (used by the route): if `state(p).state !== 'running'` return false; else `process.kill(pid, 'SIGTERM')` on the leader and return true.
+- **Explanations (D3).** `state(p)` adds `explanation` to every response (null unless `state` is `failed`). For `failed`, first match wins:
+  1. Result `reason: "timeout"`: "The install took too long (over 15 minutes) and was stopped. Try again; if it keeps happening, check this machine's network."
+  2. Disk full — the full log contains `ENOSPC` or `No space left on device`: "The disk on this machine is full. Free up some space, then try again."
+  3. npm not allowed to write — the log contains `EACCES` or `EPERM` and a line matching `npm (ERR!|error) path <path>`: "npm isn't allowed to write to <path> on this machine (it may be owned by root from an earlier sudo npm). Fix that folder's owner, then try again." With `EACCES`/`EPERM` and `npm` but no such path line: the same sentence with "one of its folders" in place of `<path>`.
+  4. No network — any of `Could not resolve host`, `curl: (6)`, `curl: (7)`, `curl: (28)`, `ENOTFOUND`, `EAI_AGAIN`, `ECONNREFUSED`, `ETIMEDOUT`, `ECONNRESET`, `Network is unreachable`: "This machine couldn't reach the internet to download it. Check its network, then try again."
+  - No match → `null`.
 
 ### Machine: route (`machine/service.js`, `machine/API.md`)
 
-- `DELETE /v1/harnesses/<p>/install` (hub auth): unknown provider 404; not running 409 `{error: "not installing"}`; else `stopJob(p, 'cancelled')` and 202 `{state: "cancelling"}`.
-- API.md row updated: DELETE, the `cancelled` state, the `explanation` field.
+- `DELETE /v1/harnesses/<p>/install` (hub auth): unknown provider 404; not running 409 `{error: "not installing"}`; else `stopJob(p)` and 202 `{state: "cancelling"}`.
+- API.md row updated: DELETE, the `cancelled` state, `reason`, the `explanation` field.
 
 ### Hub (`viewer/app/routes.js`)
 
 - The `/machines/<m>/harnesses/<p>/install` passthrough accepts DELETE as well as GET and POST, same validation and 502 on unreachable.
+- POST through it is refused with 409 `{error: "<name> is switched off"}` when the provider's Use switch is off in settings; the page shows that as the row error.
 
 - `PUT /settings/harnesses/<p>` with `enabled: false`: after saving, send `DELETE /v1/harnesses/<p>/install` to every machine the hub knows, in parallel, without checking reachability first. The PUT responds without waiting for them; their responses (202, 409, 404) and errors are ignored. The PUT with `enabled: true` sends nothing.
 
 ### Settings (`viewer/pages/settings.js`)
 
-- Running row (not offline): a `Cancel` button (`aria-label "Cancel installing <name>"`) after "Installing…". Pressing it sends DELETE, then shows "Cancelling…" in place of the button; the existing GET poll carries on. A 409 just continues polling. A network error or 5xx shows the row error line "Couldn't cancel: <machine> isn't reachable." and keeps the Cancel button.
+- Running row (not offline), once a POST 202 or a GET `running` has arrived for this install (not on the optimistic row painted before the POST answers): a `Cancel` button (`aria-label "Cancel installing <name>"`) after "Installing…". Pressing it sends DELETE, then shows "Cancelling…" in place of the button; the existing GET poll carries on. A 409 just continues polling. A network error or 5xx shows the row error line "Couldn't cancel: <machine> isn't reachable." and keeps the Cancel button. Any other status (e.g. 404 from a machine on an older version) shows "Couldn't cancel: update wheelchair on <machine>." and keeps the poll going.
 - Hidden while the row shows "Can't reach <machine>, retrying…".
 - `cancelled` state: hint "Install cancelled" (not `role=alert`), the raw tail if any, and the `Install` button.
 - `failed` state: when `explanation` is set, show it as a plain line (`class="h-explain"`) between "Install failed" and the raw tail.
@@ -74,8 +76,8 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 
 ### Validation
 
-- `node --test machine/test/harness-install.test.js`: new cases with fake recipes — cancel a sleeping recipe (DELETE 202, then `cancelled`, the recipe's child `sleep` gone from the process table, Install works again); DELETE when idle → 409; `WHEELCHAIR_INSTALL_LIMIT_MS=500` with a sleeping recipe → `failed` with the timeout explanation and children gone; logs containing each pattern → matching explanation; unmatched failure → null.
-- `node --test viewer/test/app-harnesses.test.js`: DELETE passthrough status/body and outage 502; PUT `enabled:false` sends DELETE to each known machine and still returns 200 promptly when a machine is unreachable or answers 409; PUT `enabled:true` sends none.
+- `node --test machine/test/harness-install.test.js`: new cases with fake recipes — cancel a sleeping recipe (DELETE 202, GET stays `running` and POST 409 until the group is gone, then `cancelled`, the recipe's child `sleep` gone from the process table, Install works again); a recipe whose child traps and ignores SIGTERM (`sh -c 'trap "" TERM; sleep 60'`) is gone within ~6 s via SIGKILL, for both Cancel and the time limit; cancel survives a machine-service restart between start and DELETE; DELETE when idle → 409; `WHEELCHAIR_INSTALL_LIMIT_MS=500` with a sleeping recipe → `failed` with the timeout explanation and children gone; logs containing each pattern → matching explanation, including an npm `path` line naming the path; unmatched failure → null.
+- `node --test viewer/test/app-harnesses.test.js`: DELETE passthrough status/body and outage 502; POST refused 409 while the provider is off; PUT `enabled:false` sends DELETE to each known machine and still returns 200 promptly when a machine is unreachable or answers 409; PUT `enabled:true` sends none.
 - `npm --prefix viewer run test:browser -- app-harnesses.spec.js`: Cancel button shows while running, sends DELETE, then "Install cancelled" with Install; explanation line shown above tail on failure; no Cancel while offline; phone and desktop sizes.
 - Full: `bash machine/test/run.sh` and `npm --prefix viewer run test:browser`.
 
@@ -84,6 +86,7 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A vendor installer that starts children in their own process group (setsid) survives Cancel/timeout | Not done by the current recipes' normal paths; rare per realism.md | planning |
+| PID reuse: a stale `<p>.pid` whose PID now belongs to an unrelated process could receive Cancel's SIGTERM | The PID file is removed whenever the job ends normally or is stopped; a stale one needs the leader killed outside the app plus PID reuse; rare per realism.md | review-round-1 |
 | Cancel landing after the recipe succeeded (during cleanup or the version check) shows "Install cancelled" though the program is installed | Needs a cancel inside a seconds-long window; Install again fixes it; rare per realism.md | review-round-1 |
 
 ## Check Once Built
@@ -106,6 +109,30 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 | intent | minor | Timeout reason shown twice (log line + explanation) | upheld | Log append removed |
 | intent | minor | Switch-off DELETE: reachability check needless; PUT may wait on it | upheld | Send to all known machines, PUT does not wait |
 | intent | minor | Rare path: cancel after recipe success shows "cancelled" | accepted-risk | Accepted Risks row |
+| mechanics | blocking | Timeout self-kill can't deliver the later SIGKILL | upheld | Leader no longer kills itself: steps run in their own group; leader escalates and survives service restarts |
+| mechanics | blocking | Stop terminal while descendants still run; retry overlaps | upheld | Leader writes result only after the group is empty; GET running / POST 409 until then |
+| mechanics | blocking | Rare path: PID reuse signals an unrelated process | accepted-risk | Rare (needs external kill + reuse); Accepted Risks row |
+| mechanics | major | Full disk blocks stop-file write before kill | upheld | Stop file removed; kill precedes result write; failed write falls back to dead-PID answer |
+| mechanics | major | Stale tab POSTs install after switch-off | downgraded (minor) | Worst case an install for a switched-off agent; hub now refuses POST while off |
+| mechanics | major | Cached reachability skips recovered machine | upheld | Already fixed: DELETE goes to every known machine, no reachability check |
+| mechanics | major | Cancel before POST acknowledged gets 409 | downgraded (minor) | Worst case a second Cancel press; Cancel shown only after 202/GET running |
+| mechanics | major | npm sentence names a folder without evidence | downgraded (minor) | Wording; now names the path from npm's `path` line, else "one of its folders" |
+| mechanics | minor | Older machine answers 404 to DELETE | upheld | Row shows "update wheelchair on <machine>" |
+
+### Round 2 — 2026-11-21
+
+**Lanes:** claude (intent); not-claude (mechanics); cross-family: yes.
+
+**Changed since Round 1:**
+- Stopping redesigned: no stop file; the job leader runs each step in its own process group, handles Cancel (SIGTERM to the leader) and the 15-minute timer, escalates to SIGKILL after 5 s, and writes the result only once the group is empty (Decision 8).
+- Result carries `reason`; timeout explanation comes from it; nothing appended to the log.
+- npm explanation names the path from npm's `path` line when present.
+- Hub refuses install POST while the provider is switched off; switch-off DELETEs every known machine without waiting.
+- Settings: Cancel appears only after the start is confirmed; non-409/non-5xx DELETE replies show "update wheelchair on <machine>".
+- Validation adds a SIGTERM-ignoring child and a service restart between start and Cancel.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
