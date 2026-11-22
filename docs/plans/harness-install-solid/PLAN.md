@@ -1,6 +1,6 @@
 ---
 slug: harness-install-solid
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -33,13 +33,31 @@ None.
 
 ## Spec
 
+```mermaid
+sequenceDiagram
+  participant P as Settings page
+  participant H as Hub
+  participant M as Machine service
+  participant L as Install job leader
+  participant S as Step (own process group)
+  P->>H: DELETE install (Cancel) / PUT Use off
+  H->>M: DELETE /v1/harnesses/p/install
+  M->>L: SIGTERM (leader pid)
+  Note over L: or its own 15-minute timer fires
+  L->>S: SIGTERM to group, wait ≤5 s for step exit
+  L->>S: SIGKILL to group
+  L->>L: write result (cancelled / failed+timeout), remove pid
+  P->>H: GET install (poll)
+  H->>M: GET → running until result, then cancelled / failed + explanation
+```
+
 ### Machine: install job (`machine/lib/harness-install.js`)
 
 The job leader (the detached Node process `start()` spawns, whose PID is in `<p>.pid`) owns every stop. It outlives machine-service restarts, as today, so Cancel and the time limit do too.
 
 - **Steps.** The job runs its steps (node check, recipe, cleanup, sensitivity, CLI check) with async `spawn` awaited in order, not `spawnSync`, so its event loop stays free. Each step is spawned with `detached: true`, so the step and everything it starts form their own process group (group id = the step's PID). Output still goes to the log as today; behaviour and exit codes of each step are unchanged.
 - **Stop request.** The leader handles two causes: SIGTERM sent to the leader's PID (Cancel) → reason `cancelled`; its own timer of `WHEELCHAIR_INSTALL_LIMIT_MS` (default 900000 = 15 min) from job start → reason `timeout`. The timer is cleared when the job ends. A second stop request while one is in progress is ignored.
-- **Stopping.** On a stop request the leader starts no further step. If a step is running: send SIGTERM to its group (`process.kill(-g, 'SIGTERM')`), check every 200 ms whether the group still has members (`process.kill(-g, 0)` not throwing ESRCH); after 5 s send SIGKILL to the group and keep checking until it is empty. Only then write the result and remove the PID file, as today. So GET says `running`, and POST is refused with 409, until the whole group is gone.
+- **Stopping.** The leader registers its SIGTERM handler as its first act, before waiting for its PID file. On a stop request it starts no further step. If a step is running: send SIGTERM to its group (`process.kill(-g, 'SIGTERM')`), wait up to 5 s for the step process itself to exit, then send SIGKILL to the group unconditionally (ignore ESRCH), so any member that ignored SIGTERM is killed. Only then write the result and remove the PID file, as today. So GET says `running`, and POST is refused with 409, until the stop has finished. (Completion is judged by the step's exit plus the SIGKILL, never by polling the group, which zombies can keep non-empty.)
 - **Result.** `cancelled` → `{state: "cancelled", exit_code: null, reason: "cancelled", started_at, finished_at}`; `timeout` → `{state: "failed", exit_code: null, reason: "timeout", started_at, finished_at}`. A job that ends without a stop writes `reason: "recipe"` when the recipe step itself exited non-zero (or failed to start), else no `reason`. Nothing is appended to the log. If writing the result fails (e.g. disk full), the kill has already happened and GET falls back to today's dead-PID answer ("The install stopped before finishing.").
 - **`stopJob(p)`** (used by the route): if `state(p).state !== 'running'` return false; else `process.kill(pid, 'SIGTERM')` on the leader and return true.
 - **Explanations (D3).** `state(p)` adds `explanation` to every response (null unless `state` is `failed`). For `failed`, first match wins:
@@ -77,9 +95,9 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 
 ### Validation
 
-- `node --test machine/test/harness-install.test.js`: new cases with fake recipes — cancel a sleeping recipe (DELETE 202, GET stays `running` and POST 409 until the group is gone, then `cancelled`, the recipe's child `sleep` gone from the process table, Install works again); a recipe whose child traps and ignores SIGTERM (`sh -c 'trap "" TERM; sleep 60'`) is gone within ~6 s via SIGKILL, for both Cancel and the time limit; cancel survives a machine-service restart between start and DELETE; DELETE when idle → 409; `WHEELCHAIR_INSTALL_LIMIT_MS=500` with a sleeping recipe → `failed` with the timeout explanation and children gone; logs containing each pattern → matching explanation, including an npm `path` line naming the path; unmatched failure → null.
+- `node --test machine/test/harness-install.test.js`: new cases with fake recipes — cancel a sleeping recipe (DELETE 202, GET stays `running` and POST 409 until the group is gone, then `cancelled`, the recipe's child `sleep` gone from the process table, Install works again); a recipe whose child traps and ignores SIGTERM (`sh -c 'trap "" TERM; sleep 60'`) is gone within ~6 s via SIGKILL, for both Cancel and the time limit (fixtures write a marker file once their child and trap are running, and tests wait for it before cancelling); cancel survives a machine-service restart between start and DELETE; DELETE when idle → 409; `WHEELCHAIR_INSTALL_LIMIT_MS=500` with a sleeping recipe → `failed` with the timeout explanation and children gone; logs containing each pattern → matching explanation, including an npm `path` line naming the path; unmatched failure → null.
 - `node --test viewer/test/app-harnesses.test.js`: DELETE passthrough status/body and outage 502; POST refused 409 while the provider is off; PUT `enabled:false` sends DELETE to each known machine and still returns 200 promptly when a machine is unreachable or answers 409; PUT `enabled:true` sends none.
-- `npm --prefix viewer run test:browser -- app-harnesses.spec.js`: Cancel button shows while running, sends DELETE, then "Install cancelled" with Install; explanation line shown above tail on failure; no Cancel while offline; phone and desktop sizes.
+- `npm --prefix viewer run test:browser -- app-harnesses.spec.js`: Cancel button shows while running, sends DELETE, a stale page's Install gets the "switched off" row error, then "Install cancelled" with Install; explanation line shown above tail on failure; no Cancel while offline; phone and desktop sizes.
 - Full: `bash machine/test/run.sh` and `npm --prefix viewer run test:browser`.
 
 ## Accepted Risks
@@ -88,6 +106,9 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 |------|--------------|-------|
 | A vendor installer that starts children in their own process group (setsid) survives Cancel/timeout | Not done by the current recipes' normal paths; rare per realism.md | planning |
 | PID reuse: a stale `<p>.pid` whose PID now belongs to an unrelated process could receive Cancel's SIGTERM | The PID file is removed whenever the job ends normally or is stopped; a stale one needs the leader killed outside the app plus PID reuse; rare per realism.md | review-round-1 |
+| An install started before a wheelchair update and cancelled after it may leave its recipe running (old leader has no handler) | Needs an install running across an update plus a cancel; rare per realism.md | review-round-2 |
+| A stale tab's Cancel (or a delayed switch-off DELETE after switching back on) can stop a newer install of the same agent | Needs two actors inside a 2–5 s window; Install again recovers; rare per realism.md | review-round-2 |
+| Cancel within milliseconds of the 202, before the leader's handler exists, shows "stopped before finishing" instead of "cancelled" | Sub-second window; no step has started yet; rare per realism.md | review-round-2 |
 | Cancel landing after the recipe succeeded (during cleanup or the version check) shows "Install cancelled" though the program is installed | Needs a cancel inside a seconds-long window; Install again fixes it; rare per realism.md | review-round-1 |
 
 ## Check Once Built
@@ -137,6 +158,12 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 | intent | minor | Page can't tell "switched off" 409 from "already installing" 409 | upheld | Distinguished by `body.error` |
 | intent | minor | `cancelled` branch placement; stale "Install cancelled" on an installed agent | upheld | Branch before `!st.installed`, only when not installed |
 | intent | minor | Network patterns anywhere in log mislabel later-step failures | upheld | Rules 2–4 only when `reason: "recipe"` |
+| mechanics | blocking | Zombies can keep `kill(-g,0)` succeeding, so a stop never finishes | downgraded (minor) | Only where orphans go unreaped (no init/subreaper); worst case a stuck row. Cut the group polling: wait for the step's exit, then SIGKILL the group unconditionally |
+| mechanics | blocking | Rare path: job started before the update has the old protocol | accepted-risk | Needs an install across an update plus a cancel; Accepted Risks row |
+| mechanics | major | Rare path: stale tab Cancel stops a newer install | accepted-risk | Two actors in a 2 s window; Accepted Risks row |
+| mechanics | major | Rare path: delayed switch-off DELETE after switching back on | accepted-risk | Same row as above |
+| mechanics | minor | Rare path: Cancel before SIGTERM handler registered | accepted-risk | Handler now registered first; Accepted Risks row |
+| mechanics | minor | Page must tell the two POST 409s apart | upheld | Already fixed this round; browser test added |
 
 ## Implementation Tasks
 
