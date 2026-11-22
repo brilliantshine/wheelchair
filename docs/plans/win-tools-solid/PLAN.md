@@ -70,20 +70,29 @@ last design is Spec 2-5 of this plan at commit `65bdcd4f`.
    persists after tmux starts (`machine/service.js:926-942`); no new write, no change to
    when the record is saved (D10).
 2. **On service start**, `WinBridge.startup` (`machine/lib/win.js:397-417`) keeps today's
-   loop for live tool-role sessions. A session counts as having Windows tools when
-   `windows_tools` is true, or, for a record without the flag (saved before this change),
-   when its copy exists (today's rule). Such a session is added to `toolSessions` and its
-   copy registered and marked as today; with `windows_tools` true this happens **even if the
-   copy does not exist yet**. A session counts as wrapped when `wrapped_tools` is true, or,
-   without the flag, when `<stateDir>/win-ready/<name>` exists.
+   loop for live tool-role sessions. A session counts as **wrapped** when `wrapped_tools`
+   is true, or, for a record without the flag (saved before this change), when
+   `<stateDir>/win-ready/<name>` exists. It counts as having **Windows tools** when
+   `windows_tools` is true, when it is wrapped, or, without the flag, when its copy exists
+   (today's rule). Such a session is added to `toolSessions` and its copy registered and
+   marked as today, **even if the copy does not exist yet**.
 3. For each wrapped one whose ready file
    (`<stateDir>/win-ready/<name>`) is absent or not `{"state":"ready"}`: run the same
    readying a launch does (`beginReady` for a fresh token, then `prepareLaunch` with that
    token), in the background, not awaited by startup. Its outcome publishes `ready` or
    `failed` exactly as at launch. A `ready` file is left alone (its go-between has already
    started the tool).
-4. These recovery tasks are in `readying` like launch ones, so stop, sweep and archive
-   wait on them as today.
+4. These recovery tasks are in `readying` like launch ones, so stop and archive wait on
+   them as today. `sweep()` (`win.js:361-370`) also skips, for this round, a copy whose key
+   has a `readying` task (today it checks only `running`), so a final reconcile never runs
+   while a copy is still being created.
+5. **Every session sharing a readying task gets its outcome.** Several sessions on one copy
+   join the same `readying` task (`win.js:225-249`), and `publishReady` writes only tokens
+   already attached when it runs (`win.js:149-153`). So in `prepareLaunch`, after the
+   shared task settles, each caller writes its own session's ready file with its own token
+   from the task's outcome: `ready` with `copy: ctx.copy.windows` on success, `failed` with
+   the reason on failure (`writeReady` drops it if the token is no longer current). This
+   applies to launch and recovery alike; a second write of the same state is harmless.
 
 ### 2. Idle reader closed (IDEA item 4, D4 superseded by D9)
 
@@ -106,21 +115,25 @@ The probe never runs while a write is pending, so it cannot interleave with outp
 
 No change to the handshake, held calls, list cache, `list_changed`, which entries are
 wrapped, how the go-between starts or stops its tool, app tracking (`AppTracker`), or
-when a copy is synced or removed.
+when a copy is synced or removed, beyond the sweep skipping a copy being readied (1.4).
 
 ### Validation
 
 Tests use fake Windows and fake ready files, as the existing win tests do:
 - restart: a live wrapped session with a `waiting` ready file is readied after `startup`;
-  a `ready` file is untouched; a record with `windows_tools` true and no copy yet is
+  a `ready` file is untouched; a record with `windows_tools` true, `wrapped_tools` true and no copy yet is
   tracked and its copy readied; a record without flags, with an existing copy and a
   `waiting` ready file, is tracked and readied; one without flags, copy or ready file is
-  not tracked.
-- go-between: idle reader closed is noticed within two probe intervals and the tool is
-  stopped, both with stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the
+  not tracked; one without flags, with a `waiting` ready file and no copy, is tracked and
+  readied; two sessions on one copy whose second token attaches after the shared task has
+  published both end with the task's outcome in their ready files; a sweep during a
+  recovery `readying` task skips that copy.
+- go-between: with stdin kept open and the parent alive, idle reader closed is noticed
+  within two probe intervals and the tool is stopped, both with stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the
   proxy with stdout from `os.pipe()`, e.g. through `python3 -c`, then close the read end);
   a parent that holds no read end at start turns the pipe check off; parent gone is
-  noticed; the probe does not run while a write is pending.
+  noticed while an independent process keeps both pipe ends open (so stdin never ends);
+  the probe does not run while a write is pending.
 
 ```bash
 bash machine/test/run.sh
@@ -238,6 +251,10 @@ narrowed to match.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Pre-upgrade session with a `waiting` ready file but no copy is not recovered | upheld (as major: wording gap) | Spec 1.2: wrapped implies Windows tools |
+| mechanics | blocking | Session joining a shared readying task after publish never gets its outcome | upheld | Spec 1.5: each caller writes its own outcome |
+| mechanics | major | Sweep does not wait for `readying` as Spec 1.4 claimed | upheld (`win.js:361-370` checks only `running`) | Sweep skips copies being readied |
+| mechanics | minor | Idle tests could pass through stdin EOF | upheld | Validation: stdin held open, independent holder |
 
 ## Prior Work
 
