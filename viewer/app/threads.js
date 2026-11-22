@@ -479,6 +479,7 @@ async function pollMerged(hub) {
           if (current.archived || mergedPr(current) !== url || current.merge_noticed_url === url) return;
           current.merge_noticed_url = url;
           current.merge_noticed_at = new Date().toISOString();
+          for (const card of current.cards) if (card.kind === 'needs' && card.auto_merge === true && !card.answered) require('./cards.js').resolveCard(card, 'app', 'Merged');
           require('./cards.js').addCard(current, { kind: 'merged', title: 'Pull request merged', pr_url: url }, { system: true });
           await hub.save(current);
         });

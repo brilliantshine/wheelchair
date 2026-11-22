@@ -150,6 +150,7 @@ const fields = {
     pr_url: text,
     head: (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value),
     note: (value) => value === undefined || text(value),
+    verified: (value) => value === undefined || typeof value === 'boolean',
   },
   check: {
     head: (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value),
@@ -258,7 +259,7 @@ function resolvable(thread, cardId, mode) {
   if (target.kind !== 'needs' && !(mode === 'lead' && target.kind === 'question')) {
     return { ok: false, reason: mode === 'lead' ? 'only a needs or question card can be resolved' : 'only a needs card can be resolved' };
   }
-  if (target.kind === 'needs' && target.system) return { ok: false, reason: 'a system needs card closes itself' };
+  if (target.kind === 'needs' && target.system && !(target.auto_merge === true && mode !== 'lead')) return { ok: false, reason: 'a system needs card closes itself' };
   if (target.answered) return { ok: false, reason: 'card is already answered' };
   return { ok: true, card: target };
 }

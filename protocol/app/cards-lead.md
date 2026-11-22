@@ -133,6 +133,7 @@ the same treatment: say what you will do now instead of going quiet.
 | `pr_url` | string | yes | The pull request, for the Review pull request link |
 | `head` | string | yes | The full 40-character lowercase hex commit id pushed by the lead: the remote branch tip read after the push |
 | `note` | string | no | Anything they must know, such as "this fix failed its check and was pushed at your request" |
+| `verified` | boolean | no | `true` only when the lead holds a passing check of this exact change (lead.md, Making the pull request mergeable); omitted otherwise. The app auto-merges only when every done card in the thread has it |
 
 The app accepts the card only when GitHub says this thread's pull request, at `head`, is merged or ready to merge; otherwise `card.js` fails with the reason. A `done` card is never queued, so "the app is unreachable" means try again.
 
