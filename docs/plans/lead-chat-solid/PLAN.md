@@ -315,3 +315,4 @@ whose lead is down; a user-facing card for the pause.
 - 2026-11-21 — Choice: T2, chat.js:399: a `limit` entry does not break a fold chain (not reported by the worker).
 - 2026-11-21 — Choice: T2, thread.js:663: thread id URL-encoded in the link (not reported by the worker).
 - 2026-11-21 — Choice: T2, thread.js:662: a span.peer-line wrapper keeps the flex `ctx` line one centred item.
+- 2026-11-21 — Machine suite: run whole, `bash machine/test/run.sh` hangs after 553 passing tests (twice, also on the unchanged feature branch). Run file by file (`node --test` per file, 150 s cap) nothing hangs; 46 of 48 files pass and only win.test.js (16 fail) and win-tool-ready.test.js (2 fail) fail, on `spawnSync wslpath ENOENT`. The same two files fail identically on main 7204dd2a (canonical clone), and this build changes no machine/ file: pre-existing, environment-only.
