@@ -22,11 +22,12 @@ make their own stub, and Collin ends up with several threads for the same work.
 
 ## What good looks like
 
-- When a thread would make a stub that matches an existing one, no new stub appears; the
+- When a thread would make a stub that matches an unopened one, no new stub appears; the
   thread says it already exists and points to it.
-- When the work is close to an existing stub, that stub's description gains the new part,
+- When the work is close to an unopened stub, that stub's description gains the new part,
   visibly, and no second stub appears.
-- If the stub was already opened, nothing is added to it: a duplicate gets pointed to it, and close work gets its own stub that names it.
+- If the stub was already opened, it is left alone: the new work gets its own stub that names
+  the opened one as related.
 - Genuinely different work still gets its own stub, as today.
 
 ## Not doing

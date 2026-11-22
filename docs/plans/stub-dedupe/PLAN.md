@@ -37,6 +37,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | Candidates also exclude stub threads with a `merged` card (`viewer/app/threads.js:483`); supersedes the merged-PR part of Decision 2 with a test the hub can read | A merged stub can't take the work | review-round-2 |
 | 15 | Unopened stub entries (`takes_additions: true`) are used only by the stub rule, never by the overlap checks in lead.md | They have no lead and no plan; overlap cards for them would ask Collin about work nobody has started | review-round-2 |
 | 16 | An exact match to an opened stub suppresses a new stub only when that stub's `idea` bullets (current scope) cover the work; its startup `summary` is not enough | Collin may have narrowed the opened stub's plan since it started | review-round-3 |
+| 17 | An opened stub never stops a new stub: same or close work gets its own stub naming it. Supersedes 16 and the opened-stub part of 11 | Collin picked "Never; just name it" after rounds 2-4 kept finding no reliable record of an opened stub's current scope | user |
+| 18 | IDEA.md "What good looks like" narrowed: matching and adding apply to unopened stubs; an opened stub is left alone and the new stub names it | Follows Collin's pick in Decision 17 | idea-change |
 
 ## Spec
 
@@ -70,12 +72,12 @@ On success it appends to the target's `context` `\n\nAdded from "<parent title>"
 - Target thread: its unopened page already renders `context` and re-renders when it changes (`viewer/pages/thread.js:529`, `:1434`), so additions appear there; its first lead receives them in `[wc:context stub]`.
 
 ### 4. Protocol text
-`protocol/app/lead.md`, Stubs section, gains a "Before posting a stub" rule: run `session leads` and read entries with `stub: true`, comparing by `summary`. "Name it in your reply" below means the next visible reply (a reply to a `[wc:from ...]` message is hidden).
+`protocol/app/lead.md`, Stubs section, gains a "Before posting a stub" rule: run `session leads` and read entries with `stub: true`, comparing by `summary`.
 - Same thing, unopened (`takes_additions: true`): post the stub card with `adds_to` and `duplicate: true`, summary one line on where it came up.
-- Same thing, opened: its `summary` is only its starting ask, so judge by its `idea` bullets (its current scope). Post nothing and name that thread in your reply only when those bullets clearly cover the work; otherwise post your own stub naming it.
+- Same thing or close, opened (`takes_additions: false`): post your own stub as today, naming that thread as related in the summary. An opened stub never stops a new stub.
 - Close (the stub's work would naturally cover it with a small addition) and unopened: post with `adds_to`, summary saying what to add and what this thread knows. If the entry's `waits_on_parent` is true, add only if your part can also wait until that parent merges; otherwise post your own stub.
 - Otherwise: post a new stub as today, naming any related stub in the summary.
-- On a refusal: for a duplicate note refused with `that stub has started`, post nothing and name that thread in your reply; any other refused duplicate note or addition, post a new stub naming the related one.
+- On any refusal of a duplicate note or addition: post a new stub naming the related one.
 - These stubs skip this comparison and are always posted as their own rules say (their existing duplicate checks still apply): the two-part follow-up stub, a missed-merge stub, and any stub needing `depends_on_parent: true` or `commits`.
 - "Other leads on this machine" lists the new entry fields (`stub`, `summary`, `takes_additions`, `waits_on_parent`) and says unopened stubs now appear with `lead: null`. It and "Overlap questions" gain one line: entries with `takes_additions: true` (unopened stubs) are not overlaps and are used only by this rule; opened stubs stay in the overlap checks as today.
 `protocol/app/cards-lead.md` `stub` section documents `adds_to`, `duplicate`, the refusals and the parent card's look, and drops the "same CLI" claim (MAP.md shows creation does not copy `cli`). `protocol/app/cards.md` adds `stub.adds_to` to the list of fields that may carry another thread's id.
@@ -163,9 +165,18 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | minor | `session leads` returns only six idea bullets, so an opened stub's scope can be partly hidden | upheld | Pending: budget reached, asking Collin |
-| mechanics | major | Pinned idea bullets can outlive scope cuts and are cleared at build, so they are not a reliable current scope | upheld | Pending: budget reached, asking Collin |
-| mechanics | major | The `that stub has started` refusal suppresses a stub on the startup summary, bypassing the current-scope check | upheld | Pending: budget reached, asking Collin |
+| intent | minor | `session leads` returns only six idea bullets, so an opened stub's scope can be partly hidden | upheld | Moot: Decision 17 removes the opened-stub check |
+| mechanics | major | Pinned idea bullets can outlive scope cuts and are cleared at build, so they are not a reliable current scope | upheld | Moot: Decision 17 removes the opened-stub check |
+| mechanics | major | The `that stub has started` refusal suppresses a stub on the startup summary, bypassing the current-scope check | upheld | Moot: Decision 17 removes the opened-stub check |
+
+### Round 5 — 2026-11-21
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 4:** Decision 17 (opened stubs never stop a new stub; refusals always fall back to a new stub naming the related one); Decision 18 (IDEA.md "What good looks like" narrowed to match); Spec 4 opened-stub and refusal bullets rewritten.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
