@@ -1,6 +1,6 @@
 ---
 slug: overlap-questions-solid
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -14,10 +14,7 @@ Deferred table. Map: `MAP.md`.
 
 ## Open Questions
 
-### Q1: When does later news re-ask an answered overlap? (D5)
-- **Context:** Today "Re-asks are not done" (`protocol/app/lead.md:762`). The earlier plan spent Rounds 22–27 on what "changes what the answer would do" means; a loose trigger keeps drawing findings.
-- **Options:** (a) narrow: only when the other thread's lead or `session leads` shows that thread now does (or no longer does) the shared work the answer was about; (b) the lead's judgment of any material change; (c) drop the re-ask and keep the one-line mention.
-- **Recommendation:** (a).
+None.
 
 ## Watch List
 
@@ -38,10 +35,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | D3: on restart, an open overlap card with a later user chat message in `recent_messages` that answers it is resolved with a note of that answer and acted on by "Settling an answer" | Same handling as a live chat answer | defaulted |
 | 7 | D4: before posting a waiting overlap card, run `session leads`; if the thread is listed and finished (per "Overlap"), do not post: remove its Open Question with a `defaulted` overlap Decision (moot) and give a one-line mention. A thread not listed, or with no stage, gets its card. A follow-up card for a vague answer is always posted | Skips only provable cases; an extra card is minor | defaulted |
 | 8 | Messages older than the restart context's last 20 are not recovered (D2, D3) | Needs a restart plus 20 later messages | defaulted |
+| 9 | D5: re-ask an answered overlap only when that thread now takes on, or drops, the shared work the answer was about; other news gets a one-line mention | Picked on the re-ask question | user |
 
 ## Spec
 
-Draft; final pass once Q1 is settled. All changes are to `protocol/app/lead.md`, sections
+All changes are to `protocol/app/lead.md`, sections
 "Other leads on this machine" (line ~740), "Overlap questions" (~753) and "Restarting what
 died" (~816), plus protocol tests in `viewer/test/protocol-rules.test.js`. No app code
 changes: the hub already stores `about_thread` for any 12-hex thread id without a project
@@ -66,10 +64,22 @@ check (`viewer/app/cards.js:69`, `:168`).
    the thread was found that way). Listed and finished per "Overlap": post nothing; log a
    `defaulted` overlap Decision ("moot: finished") in the commit that removes its Open
    Question, and mention it in one line of the next visible reply. Otherwise post it.
-5. **Re-ask (D5).** Pending Q1.
-6. **Tests.** Extend `viewer/test/protocol-rules.test.js` with checks that "Overlap
-   questions" no longer contains "This project only" and names each new rule by a stable
-   phrase. Validation: `node --test viewer/test/protocol-rules.test.js` and
+5. **Re-ask (D5).** Replace "Re-asks are not done" with: a thread that already has an
+   overlap Decision (with or without a card suffix) is asked again only when news (a peer
+   lead's message, or its `session leads` title or idea) shows that thread now takes on,
+   or no longer does, the shared work that Decision was about. Inside the card window
+   (feature only, status `planning`) this re-opens an `Overlap with` Open Question and posts
+   a new overlap card with the same `about_thread`, waiting its turn like any overlap card;
+   its answer is a new overlap Decision with its own Done marker, and the latest Decision
+   wins. Outside the window it is a late-overlap line. Never re-ask from news while an
+   overlap card for that thread is open ("New information while a card is open" stands),
+   never on a small fix, and never for other news (one-line mention, as today).
+6. **Non-goals.** No change to how overlaps are first found, how leads message each
+   other, or any app screen or code. Existing overlap Decisions, Done markers and cards
+   keep their meaning.
+7. **Tests.** Extend `viewer/test/protocol-rules.test.js` with checks that "Overlap
+   questions" no longer contains "This project only" and contains a stable phrase for each
+   of items 1–5 (chosen by the implementer and asserted by the test). Validation: `node --test viewer/test/protocol-rules.test.js` and
    `npm test` from `viewer/` pass.
 
 ## Accepted Risks
@@ -79,6 +89,15 @@ check (`viewer/app/cards.js:69`, `:168`).
 | A pre-PLAN chat decision or unrecorded chat answer older than the restart context's last 20 messages is lost; the user is asked again | Needs a restart plus 20 later messages; worst case one extra card | planning |
 
 ## Review Rounds
+
+### Round 1 — 2026-11-21
+
+**Lanes:** pending.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
