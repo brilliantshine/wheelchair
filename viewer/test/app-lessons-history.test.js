@@ -88,7 +88,10 @@ test('user edits and removals, capacity, and history matching', async () => {
     let r = await api(app, '/settings/lessons/worker', { method: 'PUT', body: { edits: [{ id: x.id, text: 'Changed' }], removals: [] } });
     assert.equal(r.body.history[x.id].versions.at(-1).changed_by, 'user'); assert.equal(r.body.history[x.id].versions.at(-1).text, 'First');
     const c = await s.mergeIncoming(h, [item('First')], { source: 'file', known: [] }); assert.equal(c.skipped, 1);
-    r = await api(app, '/settings/lessons/worker', { method: 'PUT', body: { edits: [], removals: [x.id] } }); assert.equal(r.body.history[x.id].versions.at(-1).changed_by, 'user'); assert.equal(r.body.history[x.id].removed.by, 'user');
+    const beforeRemoval = await s.load(h); const versionCount = beforeRemoval.lesson_history[x.id].versions.length; const removedText = beforeRemoval.lessons.worker.find((lesson) => lesson.id === x.id).text;
+    assert.notEqual(removedText, beforeRemoval.lesson_history[x.id].versions.at(-1).text);
+    r = await api(app, '/settings/lessons/worker', { method: 'PUT', body: { edits: [], removals: [x.id] } });
+    assert.equal(r.body.history[x.id].versions.length, versionCount + 1); assert.equal(r.body.history[x.id].versions.at(-1).text, removedText); assert.equal(r.body.history[x.id].versions.at(-1).changed_by, 'user'); assert.equal(r.body.history[x.id].removed.by, 'user');
     await s.update(h, (v) => { for (let i=0;i<12;i++) v.lessons.worker.push({ id: `L${i.toString(16).padStart(6,'0')}`, text: `x${i}`, saved_by: 'agent', saved_at: date }); });
     r = await api(app, '/settings/lessons/worker/restore', { method: 'POST', body: { id: x.id } }); assert.equal(r.status, 422);
     await s.update(h, (v) => { v.lesson_history = {}; v.lesson_waiting = []; });
@@ -99,6 +102,19 @@ test('user edits and removals, capacity, and history matching', async () => {
     await s.update(h, (v) => { v.lessons.worker.pop(); });
     r = await api(app, '/settings/lessons/worker/waiting', { method: 'POST', body: { wid: 'w', action: 'add' } }); assert.equal(r.body.result, 'added');
   } finally { await close(app); }
+});
+test('merge skips older versions of current and removed lessons', async () => {
+  const h = await hub();
+  for (const prefix of ['Current', 'Removed']) {
+    const lesson = await s.applyLesson(h, card('add', { text: `${prefix} v1` }), 'worker', '/p', 't');
+    for (const version of ['v2', 'v3', 'current']) await s.applyLesson(h, card('replace', { lesson: lesson.id, text: `${prefix} ${version}` }), 'worker', '/p', 't');
+    if (prefix === 'Removed') await s.applyLesson(h, card('remove', { lesson: lesson.id }), 'worker', '/p', 't');
+  }
+  const before = await s.load(h);
+  const counts = await s.mergeIncoming(h, [item('Current v1'), item('Current v2'), item('Removed v1')], { source: 'file', known: [] });
+  assert.deepEqual(counts, { added: 0, skipped: 3, invalid: 0, unknown_project: 0, waiting: 0 });
+  const after = await s.load(h);
+  assert.deepEqual(after.lessons, before.lessons); assert.deepEqual(after.lesson_waiting, before.lesson_waiting);
 });
 test('file limits, known directories, waiting recheck and normalization', async () => {
   const app = await setup(); try {
