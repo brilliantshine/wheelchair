@@ -38,14 +38,17 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | D1 | Mode is thorough | User's choice; this thread is the follow-up for win-tool-gobetween's Deferred items | user |
-| D2 | Restart recovery follows the parent design: a durable per-session launch record (wrapped, copy key) in `win-sessions.json` written before tmux starts; on service start, every live wrapped session whose ready file is not `ready` gets a fresh attempt token and readying | Already reviewed in windows-bridge-solid (`5950541c^:docs/plans/windows-bridge-solid/PLAN.md:194-211`); no user-visible choice in it | defaulted |
+| D2 | (launch-record timing superseded by D10) Restart recovery follows the parent design: a durable per-session launch record (wrapped, copy key) in `win-sessions.json` written before tmux starts; on service start, every live wrapped session whose ready file is not `ready` gets a fresh attempt token and readying | Already reviewed in windows-bridge-solid (`5950541c^:docs/plans/windows-bridge-solid/PLAN.md:194-211`); no user-visible choice in it | defaulted |
+| D3 | (superseded by D11) Every new wait is bounded: a stop, sweep or archive waits at most 15 s for Windows tools, then logs and goes ahead | IDEA constraint; matches the last reviewed design's 15 s `onStop` wait | defaulted |
 | D4 | The go-between notices a closed reader by a zero-length `fs.writeSync(1, Buffer.alloc(0))` probe every 2 s while idle; `EPIPE` starts its normal shutdown | Lead's local check on Node 26/Linux: the probe throws `EPIPE` within one interval after the reader closes, while stdout itself emits nothing; a zero-length write adds no bytes to the stream | defaulted |
 | D5 | A stop ends every Windows program a tool started: the go-between starts the tool through a launcher that puts it in a named Windows Job Object (option A) | User's choice over "wait for quiet" and "tool only" | user |
 | D6 | The copy-wide gate waits for go-betweens of sessions that ended without a normal stop, and ends the job of any whose go-between died | A dying CLI closes the go-between's stdin and tmux kill sends SIGHUP, both of which start its shutdown (`machine/lib/win-tool-proxy.js:63-66`); only a go-between killed outright (SIGKILL, OOM) leaves its job behind, and its registry file names that job | defaulted |
 | D7 | When a wait runs out, remaining jobs are ended (`terminateScript`) before the reconcile goes ahead | IDEA constraint "every wait is bounded"; ending them is the only way the reconcile is not racing a writer | defaulted |
 | D8 | Launch flags are kept on the session record in `sessions.json` (`windows_tools`, `wrapped_tools`), not a new `win-sessions.json` | The service already persists every session there before and after launch (`machine/service.js:567`); one file, one source of truth | defaulted |
 | D9 | Idle reader detection uses a zero-length write probe on sockets, a check of the parent's read end in `/proc` on OS pipes, and a parent-gone check; supersedes D4 | Round 1: a zero-length `write()` on a Linux pipe never raises `EPIPE` (reviewer's and lead's checks), and Codex gives tools OS pipes. Lead's check: a Node child with stdout on an `os.pipe()` sees its parent drop the read end within one 300 ms poll | review-round-1 |
-| D3 | Every new wait is bounded: a stop, sweep or archive waits at most 15 s for Windows tools, then logs and goes ahead | IDEA constraint; matches the last reviewed design's 15 s `onStop` wait | defaulted |
+| D10 | Launch flags ride on the session record saved after tmux starts, as today; no pre-tmux write | Round 1: a pre-tmux insert needs rollback and save ordering; a restart between tmux start and that save is a sub-second window (rare path) | review-round-1 |
+| D11 | The gate has one 20 s deadline covering polling and termination; termination must be confirmed, otherwise the copy is not synced or removed (kept, retried by the next sweep or kept by archive) | Round 1: PowerShell calls could exceed the 15 s bound, and an unconfirmed termination would let the reconcile race a writer | review-round-1 |
+| D12 | The gate runs inside `sync` and `remove`, not at each caller | Round 1: launch readying, `wc.js win` and `onWorktreeRemoved` also reconcile or delete copies | review-round-1 |
 
 ## Spec
 
@@ -56,13 +59,18 @@ entries, or for `mcp-for-unity`. Background maps: `docs/maps/windows-stdio-gobet
 
 ### 1. Restart recovery (IDEA item 1)
 
-1. **Launch flags.** `startIn` (`machine/service.js:830-860`) stores `windows_tools` and
-   `wrapped_tools` (booleans from `loaded`) on the session record before tmux starts, so
-   they are in `sessions.json` (D8). Older records without them are treated as `false`.
-2. **On service start**, `WinBridge.startup` (`machine/lib/win.js:397-417`), for every
-   live tool-role session (same filter as today) with `windows_tools` true: add it to
-   `toolSessions` and register/mark its copy as today, **even if the copy does not exist yet**.
-3. For each of those with `wrapped_tools` true whose ready file
+1. **Launch flags.** `startIn` (`machine/service.js:830-860`) puts `windows_tools` and
+   `wrapped_tools` (booleans from `loaded`) on the session record it already inserts and
+   persists after tmux starts (`machine/service.js:926-942`); no new write, no change to
+   when the record is saved (D10).
+2. **On service start**, `WinBridge.startup` (`machine/lib/win.js:397-417`) keeps today's
+   loop for live tool-role sessions. A session counts as having Windows tools when
+   `windows_tools` is true, or, for a record without the flag (saved before this change),
+   when its copy exists (today's rule). Such a session is added to `toolSessions` and its
+   copy registered and marked as today; with `windows_tools` true this happens **even if the
+   copy does not exist yet**. A session counts as wrapped when `wrapped_tools` is true, or,
+   without the flag, when `<stateDir>/win-ready/<name>` exists.
+3. For each wrapped one whose ready file
    (`<stateDir>/win-ready/<name>`) is absent or not `{"state":"ready"}`: run the same
    readying a launch does (`beginReady` for a fresh token, then `prepareLaunch` with that
    token), in the background, not awaited by startup. Its outcome publishes `ready` or
@@ -98,18 +106,22 @@ these differences from `wrapperScript`:
 
 ### 3. Stopping a tool (go-between)
 
-`stopTool` gets one total budget of 12 s from the moment stopping starts:
-1. Close the launcher's stdin.
-2. If the acknowledgment has not arrived, wait for it or for the launcher to exit; if the
-   launcher exits first, done.
-3. Wait up to 2 s for the launcher to exit by itself.
-4. Run `terminateScript(id)` through `winEnv.ps` with `timeoutMs` = what is left minus 2 s.
-5. Wait for the launcher to exit, within what is left. If the budget runs out, write that
-   to stderr and exit anyway.
+`stopTool` gets one total budget of 12 s (`--stop-budget-ms`, default 12000, replacing
+`--stop-ms`) from the moment stopping starts, with the last 4 s always kept for forced
+termination:
+1. Close the launcher's stdin. If the launcher has exited, done.
+2. Until 8 s into the budget: wait for the launcher to exit by itself (if the
+   acknowledgment has arrived, at most 2 s of this; if it has not, until it arrives, then
+   up to 2 s more, never past 8 s).
+3. If still running: run `terminateScript(id)` through `winEnv.ps` with `timeoutMs` =
+   what is left minus 1 s (this also covers a launcher that never acknowledged: a job that
+   does not exist yet is simply not found).
+4. Wait for the launcher to exit within what is left. If the budget runs out, write that to
+   stderr and exit **without** removing the registry file, so the gate treats the entry as
+   orphaned and ends the job (Spec 4).
 
-`--stop-ms` is replaced by `--stop-budget-ms` (default 12000) for tests. Every path that
-ends the go-between (stdin end, stdout lost, signals, `failure`, handoff failure) goes
-through `stopTool`.
+Every path that ends the go-between (stdin end, stdout lost, signals, `failure`, handoff
+failure) goes through `stopTool`.
 
 ### 4. Tool registry
 
@@ -123,34 +135,63 @@ name and worktree key from new options `--tools-dir` and `--copy-key`, added by
 
 An entry is **live** when `/proc/<pid>/stat` exists with the same start field; otherwise
 it is **orphaned**. `WinBridge` gets `toolsFor(key)` (entries across all session
-directories whose `key` matches) and `endOrphan(entry)` (`terminateScript(entry.job)`,
-then remove the file).
+directories whose `key` matches) and `endJob(entry, timeoutMs)`.
+
+**Confirmed termination.** `terminateScript` (`win-apps.js:94-106`) is changed to print
+`gone` when `OpenJobObject` fails with error 2 (no such job: with kill-on-close, a job
+whose last handle closed has already ended every process in it) and `ended` after a
+successful `TerminateJobObject`; any other failure throws (non-zero exit). `AppTracker`
+ignores the new output. `endJob` runs it with the given timeout and removes the registry
+file only on exit code 0 with `gone` or `ended`. Anything else (non-zero exit, timeout,
+PowerShell not starting) is **unconfirmed**: the file stays.
 
 ### 5. The copy-wide gate (IDEA items 2 and 3)
 
-`WinBridge.gate(key, { session })`, awaited before any reconcile or removal of a copy:
+`WinBridge.gate(key, { session })` returns `{ ok: true }` or `{ ok: false, reason }`.
 - Entries considered: those of `session` (when given) and of every **ended** session on the
   copy: one whose tmux session is not live, or whose status is `stopped`, or that is not in
   `service.sessions` at all. Entries of live sibling sessions are never touched. If
   `liveTmux()` returns `null`, the gate considers only `session`'s entries.
-- Orphaned entries: `endOrphan` straight away.
-- Live entries: poll every 250 ms until they are gone, up to **15 s** (longer than the
-  go-between's 12 s budget, D3). On timeout, log it and `endOrphan` every remaining entry
-  (D7), then return.
+- **One deadline of 20 s** for the whole gate (D3 superseded by D11). Orphaned entries:
+  `endJob` straight away. Live entries: poll every 250 ms until gone, until 15 s. Then
+  `endJob` every remaining entry with `timeoutMs` = what is left of the 20 s minus 1 s.
+  At the deadline the gate returns regardless of anything still running.
+- `ok: true` when no considered entry remains; otherwise `ok: false` with a reason naming
+  the count ("a Windows tool from an ended session could not be stopped").
 - Empty session directories are removed afterwards.
+- Concurrent calls for the same key share one in-flight gate task (`this.gates`, a Map
+  from key to task, deleted when it settles); a call with a `session` not covered by the
+  running task waits for it and then runs its own.
 
-Used by:
-- **`onStop`** (`win.js:279-294`): after `killSession` and the readying wait, before the
-  verifier removal or the lead/sub-lead final sync. The role rules are unchanged.
-- **`sweep`** (`win.js:361-370`): a copy with an `onStop` task in progress for a session on
-  it is skipped this round. Otherwise, before its final sync, and also for any copy whose
-  `toolsFor` has entries from ended sessions even when it needs no sync, it runs `gate`
-  (without a session). One copy's gate does not block the sweep of others beyond its own wait.
-- **`archiveCheck`** (`win.js:319-334`): a copy with entries from ended sessions is
-  `pending` and its gate is started (once per copy per archive, like `archiveAttempted`);
-  the final sync starts after the gate. `archiveFinish` runs `gate` again before `remove`.
-- **Handoff kill** (`machine/service.js:2020-2033`) is unchanged: its leftovers are caught by
-  the sweep or archive through the gate.
+**Where it runs.** Inside the two choke points every copy write and delete already goes
+through, so no caller can skip it:
+- `WinBridge.sync(ctx, { session })` (`win.js:155-178`) awaits `gate(ctx.key, { session })`
+  inside its per-copy queue, before `reconcile`. On `ok: false` it throws with the reason
+  and does not reconcile; the caller's existing error handling applies (launch readying
+  publishes `failed` with that reason; `wc.js win sync` returns the error; the sweep logs
+  it and retries next round).
+- `WinBridge.remove(ctx, save, { session })` (`win.js:257-271`) awaits the gate first. On
+  `ok: false` it logs `keeping Windows copy <path>: <reason>` and does not delete.
+- `onStop` passes its own `session` to `sync`/`remove`, so its own entries are waited for
+  even when its status is not yet `stopped` (fatal stop). Every other caller (launch
+  readying, `wc.js win` operations, sweep, `onWorktreeRemoved`, archive) passes none.
+
+**Sweep** (`win.js:361-370`): a copy with an `onStop` task in progress for a session on it
+is skipped this round. A copy whose `toolsFor` has entries from ended sessions gets
+`gate(key)` even when it needs no sync, so leftovers of handoff kills and crashes are
+ended within one sweep. Copies are gated one after another; the next sweep starts only
+after this one ends (`machine/service.js:450-453` already serializes).
+
+**Archive.** `archiveCheck` (`win.js:319-334`) treats a copy with entries from ended
+sessions, or a running `this.gates` task for its key, as `pending`, and starts
+`gate(key)` if none is running. While pending it is re-checked like the existing stop,
+readying and sync tasks. When the gate settles `ok: false`, the copy is recorded in
+`this.gateFailed` (a Set of keys) and is no longer pending; `archiveFinish` keeps a copy
+in `gateFailed` (logged, like a failed reconcile) instead of removing it, and clears the
+mark. Its final sync is not started for such a copy.
+
+**Handoff kill** (`machine/service.js:2020-2033`) is unchanged: its leftovers are caught by
+the sweep, by `onWorktreeRemoved`, or by archive, all through the gate.
 
 ### 6. Idle reader closed (IDEA item 4, D4 superseded by D9)
 
@@ -185,8 +226,14 @@ tests do:
   reader closed is noticed within two probe intervals and the tool is stopped, both with
   stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the proxy with stdout from
   `os.pipe()`, e.g. through `python3 -c`, then close the read end); parent gone is noticed.
-- gate: onStop waits for its own entries; an ended sibling's live entry delays sweep and
-  archive; an orphan's job is ended; a timeout ends remaining jobs; a live sibling is untouched.
+- gate: onStop waits for its own entries; an ended sibling's live entry delays sweep,
+  archive, launch readying and `onWorktreeRemoved`; an orphan's job is ended; a timeout ends
+  remaining jobs; an unconfirmed `terminateScript` (non-zero exit, timeout) keeps the entry,
+  skips the reconcile or removal and the whole gate returns by 20 s; archive keeps such a
+  copy; a live sibling is untouched.
+- stop budget: a launcher that never acknowledges, and one that acknowledges at 7 s, are
+  both terminated and the go-between exits within 12 s.
+- restart: a record without flags whose copy exists is tracked as today.
 - launcher script: the generated PowerShell contains the
   `wheelchair-tool-` job name and `wc-tool-started`.
 
@@ -233,6 +280,16 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Zero-length write probe never sees a closed reader on an OS pipe (Codex) | upheld (lead reproduced with a shell pipe) | Spec 6 rewritten: socket probe + parent read-end check in /proc + parent gone; OS-pipe test (D9) |
+| intent | minor | Cached DLL is new state the idea does not need | upheld | Spec 2: compile each start; DLL cache only as C1's fix |
+| mechanics | blocking | `endOrphan` removes the entry without confirming the job ended | upheld | Spec 4 confirmed termination; unconfirmed keeps entry (D11) |
+| mechanics | blocking | 15 s covers polling only; PowerShell can take 60 s | upheld | Spec 5: one 20 s deadline (D11) |
+| mechanics | blocking | Launch readying, `wc.js win`, `onWorktreeRemoved` reconcile/remove outside the gate | upheld | Gate inside `sync` and `remove` (D12) |
+| mechanics | blocking | Idle probe misses OS pipes | upheld (same as intent finding) | Spec 6 (D9) |
+| mechanics | major | Pre-tmux persistence needs rollback and save ordering | upheld | Flags on the after-tmux record (D10) |
+| mechanics | major | Missing flags drop today's restart tracking | upheld | Spec 1.2 fallback to today's rule |
+| mechanics | major | Stop budget leaves no time for forced termination | upheld | Spec 3: last 4 s reserved; never-acknowledged path |
+| mechanics | major | Archive needs an in-flight gate task per copy | upheld | Spec 5: `gates` map, `gateFailed` |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
