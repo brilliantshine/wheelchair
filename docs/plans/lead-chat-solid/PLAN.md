@@ -279,11 +279,12 @@ whose lead is down; a user-facing card for the pause.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S1-S4 backend: hold, pause, peer_log, restart context, card.js held receipt, hand-off/archive cleanup | viewer/app/{cards,hub,sessions,threads,handoff,handoff-ops,card}.js; viewer/test/app-lead-messages, app-hub, app-handoff-restart tests (not peers.js listLeads) | standard | - | Spec Validation 1,2 | not started |
-| T2 | S5 Talked-with lines (after T1 lands peer_log) | viewer/app/chat.js, viewer/pages/thread.js, app-chat test, browser spec | standard, claude | - | Spec Validation 1,3 | not started |
-| T3 | S6 protocol text (exact wording in brief) | protocol/app/cards.md, protocol/app/lead.md | light / claude-haiku-5-5 | - | protocol-rules test, S6 grep | dispatched |
+| T1 | S1-S4 backend: hold, pause, peer_log, restart context, card.js held receipt, hand-off/archive cleanup | viewer/app/{cards,hub,sessions,threads,handoff,handoff-ops,card}.js; viewer/test/app-lead-messages, app-hub, app-handoff-restart tests (not peers.js listLeads) | standard / gpt-6.1-terra | wc-f4c68e8cbb15-worker-3 (branch -w3) | Spec Validation 1,2; tests 1-6, 9 | dispatched |
+| T2 | S5 Talked-with lines (after T1 lands peer_log) | viewer/app/chat.js, viewer/pages/thread.js, app-chat test, browser spec | standard / claude-sonnet-5-5 | wc-f4c68e8cbb15-worker-4 (branch -w4) | Spec Validation 1,3; tests 7, 8 | dispatched |
+| T3 | S6 protocol text (exact wording in brief) | protocol/app/cards.md, protocol/app/lead.md | light / gpt-6-luna; rung 2: light, effort xhigh (attempt 1 claimed all five edits but left out the Restarting-what-died paragraph) | wc-f4c68e8cbb15-worker-2 (branch -w1, replaces -worker) | protocol-rules test, S6 grep | dispatched (attempt 2) |
 
 ## Log
 
 - 2026-11-21: lead of thread 2c25927136e1 (Avoid duplicate stubs) asked about clashes; it changes `listLeads` output and adds an app message to stub leads. Not an overlap: this plan does not touch `listLeads`; answered the peer.
 - 2026-11-21 — Sub-lead: decomposed into T1-T3; T3 dispatched. Usage limit reached before briefing T1/T2; a resumed sub-lead writes those briefs (T1 brief notes: busy check viewer/app/handoff.js:98, delivery step viewer/app/hub.js:200-213, user_at threads.js:345-455, card.js receipt :328).
+- 2026-11-21 — Sub-lead restarted (sub-lead-2). T3 attempt 1 (gpt-6-luna) report claimed every edit with choices 'none', but the diff lacks brief edit 5 (lead.md Restarting what died paragraph); edits 1-4 match the brief. Stopped it; attempt 2 on the same branch (rewritten brief: only edit 5, stronger checks; effort raised to xhigh). No maintained copies of cards.md/lead.md exist elsewhere (grep). T1 and T2 dispatched in parallel (disjoint files; T2 reads peer_log as S3 defines it and seeds it in tests).
