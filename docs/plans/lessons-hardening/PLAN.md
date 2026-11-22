@@ -299,6 +299,7 @@ Filled by Stage 3. One row per worker brief.
 | R4-AUDIT | Pin exact outcomes for the remaining S9 node items R4-TESTS listed as weak | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
 | R5-TESTS | Remediation 5: agent removal appends a version; Waiting entry skipped on re-merge; Add `already` removes entry, no copy; trimmed-text match | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
 | R6-TESTS | Remediation 6: restore keeps version scope; import/waiting ids avoid history ids; export shape exact; mutation sweep of every lessons function | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
+| R7-TESTS | Remediation 7: restore archives the current lesson; real handoff download carries saved lessons; deliberate-break sweep of the handoff lessons code | `viewer/test/app-lessons-history.test.js`, `viewer/test/app-handoff.test.js`, `viewer/test/app-handoff-import.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js test/app-handoff*.test.js`; `npm test` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -360,4 +361,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-22 — Verification 6 (9a595e40): claude PASS, gpt FAIL with 3 new S9 test-strength gaps (code correct); REMEDIATION-6.md adds a mutation sweep over every lessons function to end the one-gap-per-round pattern.
 - 2026-11-22 — Choice: R6-TESTS, app-lessons-history.test.js: fixed epoch timestamps and made-up ids for repeatable fixtures; a separate scope case after an agent replace beside direct restore fixtures; collision paths split into separately named tests.
 - 2026-11-22 — R6-TESTS accepted (band: scout): focused 30/30; I re-applied the three gap mutations (restore takes the current project, `newLessonId` ignores history, export adds history/waiting) and each failed its test, then restored. Part B recorded all 22 listed breaks, and every one that survived at first got an assertion that now catches it. The worker's `npm test` hit port clashes in untouched files. My own run: 857/858, the one failure (lifecycle.test.js, untouched) passes alone (31/31). Lessons + handoff browser specs 80/80.
-
+- 2026-11-22 — Verification 7 (f08d2017): claude PASS, gpt FAIL with 2 new S9 test-strength gaps (code correct); REMEDIATION-7.md adds a handoff sweep.
