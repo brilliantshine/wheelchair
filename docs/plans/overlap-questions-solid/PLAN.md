@@ -1,6 +1,6 @@
 ---
 slug: overlap-questions-solid
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -39,6 +39,21 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ## Spec
 
+```mermaid
+flowchart TD
+  A[Lead finds another thread doing the same work] --> B{Already decided for that thread?}
+  B -- no --> C{Did Collin already say what to do in chat?}
+  C -- yes --> D[Record it as their decision, ask nothing]
+  C -- no --> E{Is the other thread already finished?}
+  E -- yes --> F[Skip the card, one-line mention]
+  E -- no --> G[Ask with a card, any project]
+  B -- yes --> H{Did that thread take on or drop the shared work in a way that flips the answer?}
+  H -- yes --> G
+  H -- no --> I[One-line mention only]
+  G --> J{Lead restarted before recording a chat answer?}
+  J -- yes --> K[New lead reads the latest chat answer and records it]
+```
+
 All changes are to `protocol/app/lead.md`, sections
 "Other leads on this machine" (line ~740), "Overlap questions" (~753) and "Restarting what
 died" (~816), plus protocol tests in `viewer/test/protocol-rules.test.js`. No app code
@@ -51,8 +66,8 @@ check (`viewer/app/cards.js:69`, `:168`).
    project's lead needs a `reach` card first) are unchanged. A listed entry without
    `stage` counts as not finished. Also change "Leads inform; your user decides" so only a
    late overlap is decided in chat, not another project's thread.
-2. **Earlier chat decision (D2).** Whenever a look after PLAN.md exists identifies an
-   overlap thread, if an earlier user message (before or after PLAN.md was created) clearly
+2. **Earlier chat decision (D2).** Whenever a look inside the card window (status
+   `planning`) identifies a new overlap (no overlap Decision yet for that thread), if an earlier user message (before or after PLAN.md was created) clearly
    settles it (by "Settling
    an answer"), log it as that thread's overlap Decision, no card suffix, and ask nothing.
    It is then handled like a card answer: the same Spec change in the same commit, source
@@ -63,25 +78,31 @@ check (`viewer/app/cards.js:69`, `:168`).
    answer it, is resolved from the latest such message with a one-line note of that answer, then handled by "Settling
    an answer" (Done marker etc.).
 4. **Finished before posting (D4).** In "One question at a time": before posting a waiting
-   overlap card (original, not a follow-up), run `session leads --all-projects`. Listed and finished per "Overlap": post nothing; log a
+   overlap card (original, not a follow-up), run `session leads --all-projects`, using its output only for this finished check
+   (never to find new overlaps). Listed and finished per "Overlap": post nothing; log a
    `defaulted` overlap Decision ("moot: finished") in the commit that removes its Open
    Question, and mention it in one line of the next visible reply. Otherwise post it. On a small fix, skip the card and mention it; nothing is recorded.
    Change "New information about the other thread never cancels a question" to allow this
    one exception.
 5. **Re-ask (D5).** Replace "Re-asks are not done" with this rule. An overlap Decision that
    records the user's answer (from a card or chat; not a cancel, not a `defaulted` moot
-   one) names the shared work it was about. At every look, and on news from a peer lead,
-   check each thread whose latest overlap Decision is such an answer, whether or not that
-   thread still counts as an overlap: if it now takes on, or no longer does, the shared
-   work that Decision names, ask again. Other news gets a one-line mention, as today.
+   one) names the shared work it was about; an older Decision that names none is not
+   checked. At every look, and on news from a peer lead, check each thread whose latest
+   overlap Decision is such an answer, whether or not that thread still counts as an
+   overlap, and ask again only in these two cases: the answer left the shared work to that
+   thread and it no longer does it; or the answer kept the shared work in this plan and
+   that thread has newly taken it on. Other news gets a one-line mention, as today.
    Inside the card window (feature only, status `planning`) this re-opens an `Overlap with`
    Open Question and posts a new overlap card with the same `about_thread`, waiting its
    turn like any overlap card; its answer is a new overlap Decision with its own Done
    marker, and the latest Decision wins. On restart, an `Overlap with` Open Question counts
    as not yet asked when no overlap card for that thread was posted after the thread's
-   latest overlap Decision. Outside the window it is a late-overlap line. Never re-ask
+   latest overlap Decision. Outside the window it is a late-overlap line, so IDEA.md's "one new card" holds inside
+   the card window only. Never re-ask
    while an overlap card for that thread is open ("New information while a card is open"
    stands), and never on a small fix.
+   When a peer lead's overlap question carries such news, check this before the "already
+   settled" path, and still answer the peer at once.
 6. **Non-goals.** No change to how overlaps are first found, how leads message each
    other, or any app screen or code. Existing overlap Decisions, Done markers and cards
    keep their meaning.
@@ -123,12 +144,19 @@ check (`viewer/app/cards.js:69`, `:168`).
 
 ### Round 2 — 2026-11-21
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes. Clean.
 
 **Changed since Round 1:** item 1 (the "Leads inform" line); item 2 (any look; handled like a card answer); item 3 (latest message wins); item 4 (always `--all-projects`; small-fix path; names the exception); item 5 rewritten (answer Decisions only; checked whether or not still an overlap; restart "not yet asked"); item 7 (D3 phrase checked in "Restarting what died").
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | IDEA's "one new card" vs late-overlap line after the window | upheld (minor) | Item 5 says the card holds inside the window |
+| intent | minor | Any take-on/drop re-asks even when the answer's effect is unchanged | upheld (minor) | Item 5 names the two cases that change an answer |
+| intent | minor | PR #148 Decisions do not name the shared work | upheld (minor) | Those are not checked |
+| intent | minor | `--all-projects` recheck could widen discovery | upheld (minor) | Output used only for the finished check |
+| mechanics | major | D2 could commit during implementation | downgraded (minor): D2 replaces a card, and cards exist only in the card window | Item 2 limited to the card window |
+| mechanics | major | An old chat answer could override a later card answer | downgraded (minor): D2 replaces asking a new overlap; a settled thread is not asked | Item 2 limited to new overlaps |
+| mechanics | minor | Peer question path skips the D5 check | upheld (minor) | Item 5 checks first |
 
 ## Implementation Tasks
 
