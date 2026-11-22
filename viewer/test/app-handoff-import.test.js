@@ -347,6 +347,13 @@ test('v3 imports valid lessons into target scope and ignores malformed entries; 
   assert.equal((await settings.load(old.hub)).lessons.worker.length, 0);
 });
 
+async function withoutLessonMerge(settings, action) {
+  const names = ['mergeIncoming', 'mergeLessons']; const originals = names.map((name) => settings[name]); let calls = 0;
+  for (const [i, name] of names.entries()) settings[name] = (...args) => { calls++; return originals[i](...args); };
+  try { const result = await action(); assert.equal(calls, 0, 'no lesson merge calls'); return result; }
+  finally { for (const [i, name] of names.entries()) settings[name] = originals[i]; }
+}
+
 test('opened and pending operation imports do not merge uploaded lessons', async () => {
   const settings = require('../app/settings.js'), ops = require('../app/handoff-ops.js');
   const input = { ...file, version: 3, lessons: [{ role: 'worker', text: 'Do not merge', saved_by: 'agent', saved_at: '2026-01-01T00:00:00Z' }] };
@@ -356,7 +363,7 @@ test('opened and pending operation imports do not merge uploaded lessons', async
     if (pending) { thread.handoff_op = ops.operation('create', file.head, file); thread.handoff_op.claim_landed = true; thread.handoff_op.claim_sha = f.sha; }
     await f.hub.save(thread);
     const before = await settings.load(f.hub);
-    const result = await importHandoff(f.hub, Buffer.from(JSON.stringify(input)), 'hub', '/project');
+    const result = await withoutLessonMerge(settings, () => importHandoff(f.hub, Buffer.from(JSON.stringify(input)), 'hub', '/project'));
     assert.equal(result.outcome, pending ? 'created' : 'opened');
     const after = await settings.load(f.hub);
     assert.deepEqual(after.lessons, before.lessons); assert.deepEqual(after.lesson_waiting, before.lesson_waiting);
@@ -370,7 +377,7 @@ test('Retry of a pending operation does not merge lessons', async () => {
   const op = ops.operation('create', file.head, input); op.claim_landed = true; op.claim_sha = f.sha;
   await f.hub.save({ id: file.thread.id, machine: 'hub', project: '/project', slug: 'title', sessions: [], cards: [], pinned: {}, handoff_op: op });
   const before = await settings.load(f.hub);
-  await ops.runOperation(f.hub, file.thread.id);
+  await withoutLessonMerge(settings, () => ops.runOperation(f.hub, file.thread.id));
   const after = await settings.load(f.hub);
   assert.deepEqual(after.lessons, before.lessons); assert.deepEqual(after.lesson_waiting, before.lesson_waiting);
 });
