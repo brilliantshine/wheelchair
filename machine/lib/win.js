@@ -180,7 +180,9 @@ class WinBridge {
   async beforeLaunch(session, options = {}) {
     let timer;
     let token;
-    if (this.detected.wsl && TOOL_ROLES.has(session.role) && options.wrappedTools) token = await this.beginReady(session);
+    if (this.detected.wsl && TOOL_ROLES.has(session.role) && options.wrappedTools) {
+      try { token = await this.beginReady(session); } catch (err) { this.service.log(err); }
+    }
     try {
       await Promise.race([this.prepareLaunch(session, { ...options, token }), new Promise(resolve => {
         timer = setTimeout(() => {
@@ -202,7 +204,9 @@ class WinBridge {
   async prepareLaunch(session, { windowsTools, wrappedTools, token } = {}) {
     try {
       if (!this.detected.wsl || !TOOL_ROLES.has(session.role)) return;
-      if (wrappedTools && !token) token = await this.beginReady(session);
+      if (wrappedTools && !token) {
+        try { token = await this.beginReady(session); } catch (err) { this.service.log(err); }
+      }
       const ctx = await this.context(session);
       if (token && this.readyTokens.get(session.name)?.token === token) this.readyTokens.get(session.name).key = ctx.key;
       if (!windowsTools && !this.exists(ctx) && !this.readying.has(ctx.key)) return;

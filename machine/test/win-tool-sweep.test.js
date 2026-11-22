@@ -18,3 +18,10 @@ test('sweep removes dead files and keeps starting and live files in each directo
 test('only ordinary settings files do not call tmux or remove anything', () => {
   const f = fixture(), p = file(f.state, 'settings/wc-old.json'); f.machine.sweepAgyTools(); assert.equal(f.calls(), 0); assert.ok(fs.existsSync(p));
 });
+test('sweep keeps dead session ready and MCP files younger than 60 seconds', () => {
+  const f = fixture(), files = [file(f.state, 'win-ready/wc-recent'), file(f.state, 'settings/wc-recent.mcp.json')];
+  for (const p of files) fs.utimesSync(p, new Date(), new Date());
+  f.machine.sweepAgyTools();
+  assert.equal(f.calls(), 1);
+  for (const p of files) assert.ok(fs.existsSync(p), p);
+});
