@@ -45,6 +45,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | Handoffs from an install without lessons support still import; an install without support importing a newer handoff is out of scope (it refuses version 3 with its existing message) | IDEA.md Constraints name only the first direction | defaulted |
 | 9 | Incoming lessons are added automatically: matched by agent type + exact text (trimmed); a match is skipped; a new one is added with a new local id, saved_by and only_ai kept; nothing existing is overwritten; lessons that would take a type past 12 wait in a "Waiting to add" list in Settings where Collin adds (after removing one) or discards each | Q3 answered "Add automatically" | user |
 | 10 | A lesson is marked possibly stale after 90 days since it was last saved, edited, restored or kept; a Keep button in Settings clears the mark; agents are unchanged | Q2 answered "Age only" | user |
+| 11 | A handoff carries only the lessons whose `thread` is the handed-off thread, not the whole store; full transfer is the lessons file's job | IDEA.md says a handed-off thread should bring "the lessons its agents learned"; carrying everything would approach the live-sync non-goal | review-round-1 |
+| 12 | Supersedes Decision 7 for files: a project-only lesson in a file import is kept only if its path is a project this hub lists; otherwise skipped and counted | A path from another install usually doesn't exist here, so the lesson would reach no agent yet take one of the 12 places | review-round-1 |
+| 13 | Supersedes Decision 2's list: import never changes an existing lesson, so it records no history | Decision 9: nothing existing is overwritten | review-round-1 |
 |   |          |           | user / defaulted / adopted / idea-change / review-round-N |
 
 ## Spec
@@ -63,9 +66,9 @@ Terms. A **lesson** is an entry in `settings.lessons[<role>]` (`viewer/app/setti
 All new data lives in the hub's `settings.json` beside `lessons`, read and written through the existing serialized `update` (`viewer/app/settings.js`), and `normalize` (`:265`) must keep it (dropping only invalid entries, as it does for lessons):
 
 - `lessons[role][i].kept_at` (optional ISO time): set by Keep (S4).
-- `lesson_history`: object keyed by lesson id. Each value is `{ role, versions: [...], removed?: { at, by } }`. A version is a copy of the lesson's fields as they were before a change (`text, provider?, project?, saved_by, saved_at, kept_at?`) plus `changed_at` (ISO time of the change that replaced it) and `changed_by`: `agent` | `user` | `import`. Newest last. At most 20 versions per id; the oldest is dropped first. `removed` is present when the lesson is not in `lessons` any more.
+- `lesson_history`: object keyed by lesson id. Each value is `{ role, versions: [...], removed?: { at, by } }`. A version is a copy of the lesson's fields as they were before a change (`text, provider?, project?, saved_by, saved_at, kept_at?`) plus `changed_at` (ISO time of the change that replaced it) and `changed_by`: `agent` | `user`. Newest last. At most 20 versions per id; the oldest is dropped first. `removed` is present when the lesson is not in `lessons` any more.
 - At most 50 ids may have `removed`; when a removal would make 51, the entry with the oldest `removed.at` is deleted from `lesson_history` entirely. An id with no `removed` whose lesson no longer exists in `lessons` is dropped by `normalize`.
-- `lesson_waiting`: array of `{ role, text, provider?, project?, saved_by, saved_at, kept_at?, source: 'file'|'handoff', received_at }`, at most 50 (oldest `received_at` dropped first), no two with the same role and text.
+- `lesson_waiting`: array of `{ role, text, provider?, project?, saved_by, saved_at, kept_at?, thread?, source: 'file'|'handoff', received_at }`, at most 50, no two with the same role and text. When it is full, further incoming lessons are not kept and are counted (S5).
 - New lesson ids are never ids already present in `lessons` or `lesson_history` (extend the uniqueness loop at `:212`).
 
 ### S2 Recording history
@@ -86,7 +89,7 @@ No-op changes (identical retry, unchanged text) record nothing. An agent `add` c
 
 In each role's editor:
 
-- Each lesson row has a "History (N)" toggle when it has versions. Expanded, it lists versions newest first: the text, "by an agent" / "by you" / "imported", and the date it was replaced (`changed_at`). Each version has **Restore**.
+- Each lesson row has a "History (N)" toggle when it has versions. Expanded, it lists versions newest first: the text, "by an agent" / "by you", and the date it was replaced (`changed_at`). Each version has **Restore**.
 - Below the current lessons, a **Removed** section lists that role's removed lessons (newest removal first): last text, who removed it and when, its History toggle, and **Restore**.
 - Restore sets the lesson's fields to that version's `text`, `provider`, `project`, with `saved_by: 'user'` and `saved_at` now (Decision 4); it keeps the same id. Restoring a removed lesson puts it back at the end of `lessons[role]` and deletes `removed`.
 - Restoring a removed lesson when the role already has 12 is refused (422) with "<Role> lessons are full (12): remove one before restoring"; Settings shows that sentence.
@@ -102,12 +105,13 @@ In each role's editor:
 
 ### S5 Merging incoming lessons
 
-One function merges a list of incoming lessons (from S6 or S7) in a single `update`, and returns `{added, skipped, waiting}` counts. For each incoming lesson, in order:
+One function merges a list of incoming lessons (from S6 or S7) in a single `update`, and returns `{added, skipped, waiting, not_kept}` counts. For each incoming lesson, in order:
 
 1. Validate it like `normalize` does (role in `ROLES`, `validLessonText`, known provider, `saved_by` agent|user, valid `saved_at`); invalid ones are skipped and counted in `skipped`.
-2. **Match** on role + exact text (both trimmed). If a current lesson matches, or a removed lesson's last version matches, or a waiting entry matches, skip it.
-3. Otherwise, if the role has fewer than 12 current lessons, add it with a new local id, keeping `text, provider, project, saved_by, saved_at, kept_at`; drop `thread`. Record no history.
-4. Otherwise put it in `lesson_waiting` with its `source` and `received_at` now.
+2. **Match** on role + exact text (both trimmed). If a current lesson of that role matches, or any version in the `lesson_history` of an id with that role (current or removed) matches, or a waiting entry matches, skip it. So a lesson edited, replaced or removed here is not brought back in its old wording.
+3. Otherwise, if the role has fewer than 12 current lessons, add it with a new local id, keeping `text, provider, project, saved_by, saved_at`, with `kept_at` set to now (so it is not shown as out of date on arrival); `thread` is kept for a handoff and dropped for a file. Record no history.
+4. Otherwise, if `lesson_waiting` has fewer than 50 entries, put it there with its `source` and `received_at` now.
+5. Otherwise count it in `not_kept`.
 
 Nothing existing is overwritten. Running the same merge twice changes nothing the second time (step 2), so a retried handoff import is safe.
 
@@ -117,11 +121,11 @@ In each role's editor, a **Waiting to add** section lists that role's waiting le
 
 - The Templates section of Settings gets **Export lessons** and **Import lessons** buttons.
 - Export downloads `wheelchair-lessons.json`: `{ format: 'wheelchair-lessons', version: 1, exported_at, lessons: { <role>: [ {text, provider?, project?, saved_by, saved_at, kept_at?} ] } }` with every current lesson of every role. No ids, threads, history or waiting entries.
-- Import takes such a file (≤ 1 MB). A file whose `format`/`version` doesn't match, that isn't JSON, or whose `lessons` isn't an object of arrays is refused whole with a plain message ("This isn't a wheelchair lessons file"). Otherwise S5 runs with `source: 'file'`; project paths are kept as they are (Decision 7). Settings then shows "Added A, skipped S already here, W waiting for room" and refreshes.
+- Import takes such a file (≤ 1 MB). A file whose `format`/`version` doesn't match, that isn't JSON, or whose `lessons` isn't an object of arrays is refused whole with a plain message ("This isn't a wheelchair lessons file"). Otherwise S5 runs with `source: 'file'`. A project-only lesson keeps its path only if that path is a project this hub lists (`hub.projects()`, `viewer/app/state.js:228`); otherwise it is skipped and counted as "for projects not on this machine" (Decision 12). Settings then shows "Added A, skipped S already here, W waiting for room", plus "P for projects not on this machine" and "N not kept: waiting list full" when non-zero, and refreshes.
 
 ### S7 Handoffs carry lessons
 
-- `buildHandoffFile` (`viewer/app/handoff.js:58`) writes `version: 3` and a top-level `lessons` array: every current lesson of every role as `{role, text, provider?, project?, saved_by, saved_at, kept_at?}`, except a project-only lesson whose `project` is not the thread's project, which is left out. A project-only lesson for the thread's project is written with `project: true` (meaning "the thread's project").
+- `buildHandoffFile` (`viewer/app/handoff.js:58`) writes `version: 3` and a top-level `lessons` array: the current lessons, of any role, whose `thread` is the handed-off thread's id (the lessons this thread's agents learned; Decision 11), as `{role, text, provider?, project?, saved_by, saved_at, kept_at?}`. A project-only lesson is written with `project: true` (meaning "the thread's project") when its path is the thread's project, and left out otherwise. A thread id stays the same across a handoff (`viewer/app/handoff-import.js:15`), so merged lessons keep `thread` and travel on if the thread is handed off again.
 - `validateHandoffFile` (`:12`) accepts versions 1, 2 and 3; `lessons` is allowed (optional) only for version 3 and must be an array of objects; a malformed entry is dropped, not a reason to refuse the file. Version 3 history is treated like version 2 (`:29`, `:31`).
 - On import, once the thread is applied (`viewer/app/handoff-ops.js` `runLocked`, `:73`), S5 runs on the file's lessons with `source: 'handoff'`, turning `project: true` into the destination project path (`targetProject` in `handoff-import.js`). This happens on every path that applies a handoff (create and advance). It is idempotent by S5 step 2, so a retried or resumed operation may run it again.
 - A version 1 or 2 file imports exactly as today (IDEA.md Constraints). An older install refusing a version 3 file is accepted (Decision 8).
@@ -135,7 +139,7 @@ In each role's editor, a **Waiting to add** section lists that role's waiting le
 
 From `viewer/`:
 
-- `npm test` passes, including new node tests in `test/app-lessons.test.js` (or a new `test/app-lessons-history.test.js`) covering: each S2 row records history with the right `changed_by`; 20-version and 50-removed caps; normalize keeps `kept_at`, `lesson_history`, `lesson_waiting` and drops invalid entries; restore of a version and of a removed lesson, refusal at 12, `saved_by: 'user'` after restore; new ids avoid history ids; stale at 90 days and Keep clearing it; S5 match/skip/add/waiting and running it twice; file export/import round-trip and refusal of a non-lessons file; handoff v3 export with the project filter and `project: true`, import into another project path, v2 file import unchanged, a retried import adding nothing new; `lessonBlocks` output unchanged by history, waiting and `kept_at`.
+- `npm test` passes, including new node tests in `test/app-lessons.test.js` (or a new `test/app-lessons-history.test.js`) covering: each S2 row records history with the right `changed_by`; 20-version and 50-removed caps; normalize keeps `kept_at`, `lesson_history`, `lesson_waiting` and drops invalid entries; restore of a version and of a removed lesson, refusal at 12, `saved_by: 'user'` after restore; new ids avoid history ids; stale at 90 days and Keep clearing it; S5 match/skip/add/waiting/not_kept and running it twice, skip of a lesson matching an older history version, `kept_at` set on add; file export/import round-trip and refusal of a non-lessons file; handoff v3 export carrying only this thread's lessons, with the project filter and `project: true`, file import skipping unknown project paths, import into another project path, v2 file import unchanged, a retried import adding nothing new; `lessonBlocks` output unchanged by history, waiting and `kept_at`.
 - Existing handoff tests (`test/app-handoff*.test.js`) pass, updated only where they assert `version: 2` on export.
 - `npx playwright test test/app-lessons.spec.js test/app-handoff.spec.js` passes, with new browser cases: History toggle and Restore; Removed section and Restore; stale mark and Keep; Waiting to add Add/Discard; Export then Import showing the counts.
 
@@ -174,6 +178,12 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | S7 handed off every lesson in the hub, not the thread's own | upheld (major) | S7 carries lessons whose `thread` is the thread; Decision 11 |
+| intent | major | S5 match ignored older wording, so an edited lesson's old text came back on re-import | upheld (major) | S5 step 2 matches any history version |
+| intent | minor | File import kept project paths that don't exist here | upheld (minor) | S6 skips unknown project paths; Decision 12 |
+| intent | minor | `changed_by: import` never written | upheld (minor) | removed; Decision 13 |
+| intent | minor | Imported old lessons shown as out of date on arrival | upheld (minor) | S5 sets `kept_at` on add |
+| intent | minor | Waiting list overflow dropped lessons silently | upheld (minor) | S5 step 5 counts `not_kept`; shown on file import |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
