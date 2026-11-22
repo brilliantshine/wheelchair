@@ -1,6 +1,6 @@
 ---
 slug: stub-dedupe
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -227,3 +227,4 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 - 2026-11-22 — Choice: T2, viewer/pages/thread.js: `white-space: pre-line` is set inline in JS on the unopened page's context paragraph, not in thread.css.
 - 2026-11-22 — Choice: T2, viewer/pages/thread.js: the addition heading uses the card's existing `head()` eyebrow with `target_title` as its title (scout-listed).
 - 2026-11-22 — T2 accepted (band: scout): Spec 3 covered; app-threads.spec.js re-run, 170 pass. Its full-suite failures (accounts, graph arrows, a port conflict) are outside its files; checked in the full run.
+- 2026-11-22 — Build complete; planning graph rewritten with layout (browser.spec.js:2157 failed on it). Verification attempt 1 started.
