@@ -463,7 +463,8 @@
       const needed = neededKeys();
       const keys = [...store.due].filter((k) => needed.has(k) && !store.results.has(k) && !store.pending.has(k));
       store.due.clear();
-      if (!keys.length || !state.token) { repaintLines(); return; }
+      if (!keys.length) { repaintLines(); return; }
+      if (!state.token) return;   // leave the keys unscheduled: a repaint would schedule them again, forever
       const t = tag();
       const epoch = store.epoch;
       const req = {};
