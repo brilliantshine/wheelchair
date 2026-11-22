@@ -37,7 +37,7 @@ const readBody = (over = {}) => ({
 
 // Stubs the picker and /project-tools/*; `replies` queues [status, body] for save/remove-key.
 async function stub(page, { read = readBody(), replies = [], gate = null, unity = [], unityGate = null, winStatus = null } = {}) {
-  const calls = { read: [], save: [], remove: [], unity: [], status: [] };
+  const calls = { read: [], save: [], remove: [], unity: [], status: [], statusAt: [] };
   await page.route('**/wheelchair/api/new-thread*', (route) => route.fulfill({ json: {
     machine: 'hub', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'alpha', path: '/tmp/proj-alpha' }, { name: 'beta', path: '/tmp/proj-beta' }], found: [], previous: [] } }));
   await page.route('**/wheelchair/api/project-tools/*', async (route) => {
@@ -49,7 +49,7 @@ async function stub(page, { read = readBody(), replies = [], gate = null, unity 
       return Array.isArray(out) ? route.fulfill({ status: out[0], json: out[1] }) : route.fulfill({ json: out });
     }
     if (kind === 'windows-status') {
-      calls.status.push(body);
+      calls.status.push(body); calls.statusAt.push(Date.now());
       const out = winStatus ? await winStatus(calls.status.length, body) : null;
       const status = {};
       for (const t of body.tools) status[t.id] = { state: 'reachable' };
@@ -1289,4 +1289,165 @@ test('a stale reply for an old URL is not applied', async ({ page }) => {
   await expect(page.locator('form.pt-form .pt-win-status')).not.toContainText('stale-reply');
   await page.getByLabel('URL', { exact: true }).fill('http://localhost:8080/mcp');
   await expect(page.locator('form.pt-form .pt-win-status')).toContainText('Not reachable: stale-reply');
+});
+
+// ---- status timing: each test acts while a check is pending or inside the debounce ----------
+const deferred = () => { let release; const promise = new Promise((r) => { release = r; }); return { promise, release }; };
+const reply = (body, state, extra = {}) => ({ wsl: true, status: Object.fromEntries(body.tools.map((t) => [t.id, { state, ...extra }])) });
+const formLine = (page) => page.locator('form.pt-form .pt-win-status');
+const openEdit = async (page, name) => { await tool(page, name).getByRole('button', { name: `Edit ${name}` }).click(); };
+
+test('timing: URL A to B to A inside the debounce shows A\'s stored result and sends no request for B', async ({ page }) => {
+  const calls = await open(page, { read: winRead({ windows: ['loc'] }), winStatus: (n, body) => reply(body, 'reachable', { note: 'from-A' }) });
+  await expect(line(page, 'loc')).toContainText('from-A');
+  await openEdit(page, 'loc');
+  const url = page.getByLabel('URL', { exact: true });
+  await url.fill('http://localhost:8081/mcp');
+  await url.fill('http://localhost:8080/mcp');
+  await expect(formLine(page)).toContainText('from-A');
+  await page.waitForTimeout(800);
+  expect(calls.status).toHaveLength(1);
+  expect(calls.status.flatMap((c) => c.tools.map((t) => t.url)).some((u) => u.includes('8081'))).toBe(false);
+});
+
+test('timing: Keep changes before the debounce fires still ends on a result', async ({ page }) => {
+  const calls = await open(page, { read: winRead(), winStatus: (n, body) => reply(body, 'reachable', { note: 'kept' }) });
+  await openEdit(page, 'loc');
+  await page.locator('form.pt-form').getByLabel('Runs on Windows').check();
+  const t0 = Date.now();
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  expect(calls.status).toHaveLength(0);
+  await expect(line(page, 'loc')).toContainText('kept');
+  expect(calls.status).toHaveLength(1);
+  expect(calls.statusAt[0] - t0).toBeGreaterThanOrEqual(300);
+  await expect(line(page, 'loc')).not.toContainText('Checking');
+});
+
+test('timing: renaming during a check keeps the pending request and shows its result', async ({ page }) => {
+  const gate = deferred();
+  const calls = await open(page, { read: winRead({ windows: ['loc'] }), winStatus: async (n, body) => { await gate.promise; return reply(body, 'reachable', { note: 'held-reply' }); } });
+  await expect.poll(() => calls.status.length).toBe(1);
+  await openEdit(page, 'loc');
+  await page.getByLabel('Name', { exact: true }).fill('renamed');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await expect(line(page, 'renamed')).toContainText('Checking');
+  gate.release();
+  await expect(line(page, 'renamed')).toContainText('held-reply');
+  await page.waitForTimeout(800);
+  expect(calls.status).toHaveLength(1);
+});
+
+test('timing: changing kind away and back during a check never leaves the line on Checking', async ({ page }) => {
+  const gate = deferred();
+  const calls = await open(page, { read: winRead({ windows: ['loc'] }), winStatus: async (n, body) => { if (n === 1) await gate.promise; return reply(body, 'reachable', { note: 'n' + n }); } });
+  await expect.poll(() => calls.status.length).toBe(1);
+  await openEdit(page, 'loc');
+  await page.getByLabel('Kind', { exact: true }).selectOption('command');
+  await expect(page.locator('form.pt-form .pt-win')).toBeHidden();
+  await page.getByLabel('Kind', { exact: true }).selectOption('http');
+  await expect(formLine(page)).toContainText('Checking');
+  gate.release();
+  await expect(formLine(page)).toContainText('Reachable on Windows');
+  await page.waitForTimeout(800);
+  await expect(formLine(page)).not.toContainText('Checking');
+  expect(calls.status.length).toBeLessThanOrEqual(2);
+});
+
+test('timing: a Unity re-render while a check is pending still ends on the result', async ({ page }) => {
+  const gate = deferred();
+  const calls = await open(page, { read: winRead({ windows: ['loc'] }), unity: [{ command: 'uvx', fetch: { state: 'ready' } }],
+    winStatus: async (n, body) => { await gate.promise; return reply(body, 'reachable', { note: 'after-rerender' }); } });
+  await expect.poll(() => calls.status.length).toBe(1);
+  const before = await page.evaluate(() => document.querySelector('.pt-tool[data-tool="loc"]'));
+  await page.getByRole('button', { name: 'Add MCP for Unity' }).click();
+  await expect(page.getByText('Ready')).toBeVisible();
+  await expect(line(page, 'loc')).toContainText('Checking');
+  gate.release();
+  await expect(line(page, 'loc')).toContainText('after-rerender');
+  expect(calls.status).toHaveLength(1);
+  void before;
+});
+
+test('timing: a same-project reload while a check is pending drops the old reply and ends on a result', async ({ page }) => {
+  const gate = deferred();
+  const calls = await open(page, { read: winRead({ windows: ['loc'] }),
+    replies: [[409, { outcome: 'refused', reason: 'changed since you opened it' }]],
+    winStatus: async (n, body) => { if (n === 1) { await gate.promise; return reply(body, 'unreachable', { reason: 'old-reply' }); } return reply(body, 'reachable', { note: 'fresh' }); } });
+  await expect.poll(() => calls.status.length).toBe(1);
+  await tool(page, 'db').getByRole('button', { name: 'Remove db' }).click();
+  await page.getByRole('button', { name: 'Yes, remove db' }).click();
+  await page.locator('#pt-save').click();
+  await expect.poll(() => calls.read.length).toBe(2);
+  await expect(line(page, 'loc')).toContainText('fresh');
+  gate.release();
+  await page.waitForTimeout(400);
+  await expect(line(page, 'loc')).not.toContainText('old-reply');
+  await expect(line(page, 'loc')).toContainText('fresh');
+  expect(calls.status).toHaveLength(2);
+});
+
+test('timing: a save clears the store and a reply to a request made before it is not stored', async ({ page }) => {
+  const gate = deferred();
+  // Only an opened pull request rereads the project (a plain save keeps the loaded state), so use it.
+  const calls = await open(page, { read: winRead({ windows: ['loc'] }),
+    replies: [[200, { outcome: 'opened', key_revision: 1, keys: ['API_KEY'], pr_url: 'https://github.com/o/n/pull/5', warnings: [] }]],
+    winStatus: async (n, body) => { if (n === 1) { await gate.promise; return reply(body, 'unreachable', { reason: 'pre-save' }); } return reply(body, 'reachable', { note: 'post-save' }); } });
+  await expect.poll(() => calls.status.length).toBe(1);
+  await tool(page, 'db').getByRole('button', { name: 'Remove db' }).click();
+  await page.getByRole('button', { name: 'Yes, remove db' }).click();
+  await page.locator('#pt-save').click();
+  await expect(page.locator('.pt-status a')).toBeVisible();
+  expect(calls.read).toHaveLength(2);
+  await expect(line(page, 'loc')).toContainText('post-save');
+  gate.release();
+  await page.waitForTimeout(400);
+  await expect(line(page, 'loc')).not.toContainText('pre-save');
+  await expect(line(page, 'loc')).toContainText('post-save');
+});
+
+test('timing: two rows with the same name and different URLs go in one request with distinct ids', async ({ page }) => {
+  const calls = await open(page, { read: winRead({ windows: ['a', 'b'] }, { a: { type: 'http', url: 'http://localhost:1/x' }, b: { type: 'http', url: 'http://localhost:2/x' } }),
+    winStatus: (n, body) => ({ wsl: true, status: Object.fromEntries(body.tools.map((t) => [t.id, t.url.includes(':1/') ? { state: 'reachable' } : { state: 'unreachable', reason: 'closed' }])) }) });
+  await expect(line(page, 'a')).toContainText('Reachable on Windows');
+  await expect(line(page, 'b')).toContainText('Not reachable: closed');
+  // Both rows were due together, so one request carries both, with distinct ids and each own URL.
+  expect(calls.status).toHaveLength(1);
+  const sent = calls.status[0].tools;
+  expect(sent).toHaveLength(2);
+  expect(new Set(sent.map((t) => t.id)).size).toBe(2);
+  expect(sent.map((t) => t.url).sort()).toEqual(['http://localhost:1/x', 'http://localhost:2/x']);
+});
+
+test('timing: same-name rows with different URLs each show their own result (the form copy and the card)', async ({ page }) => {
+  const calls = await open(page, { read: winRead({ windows: ['a'] }, { a: { type: 'http', url: 'http://localhost:1/x' } }),
+    winStatus: (n, body) => ({ wsl: true, status: Object.fromEntries(body.tools.map((t) => [t.id, t.url.includes(':1/') ? { state: 'reachable' } : { state: 'unreachable', reason: 'closed' }])) }) });
+  await expect(line(page, 'a')).toContainText('Reachable on Windows');
+  await page.getByRole('button', { name: 'Add a tool' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('a');
+  await page.getByLabel('Kind', { exact: true }).selectOption('http');
+  await page.getByLabel('URL', { exact: true }).fill('http://localhost:2/x');
+  await page.locator('form.pt-form').getByLabel('Runs on Windows').check();
+  await expect(formLine(page)).toContainText('Not reachable: closed');
+  await expect(line(page, 'a')).toContainText('Reachable on Windows');
+  expect(calls.status).toHaveLength(2);
+});
+
+test('timing: two due checks go out in one request, not before the debounce', async ({ page }) => {
+  const calls = await open(page, { read: winRead(), winStatus: (n, body) => reply(body, 'reachable') });
+  await sw(page, 'loc').check();
+  const t0 = Date.now();
+  await openEdit(page, 'loc');
+  await page.getByLabel('URL', { exact: true }).fill('http://localhost:9001/mcp');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await tool(page, 'loc').getByRole('button', { name: 'Edit loc' }).click();
+  await page.getByRole('button', { name: 'Cancel' }).first().click();
+  await expect(line(page, 'loc')).toContainText('Reachable on Windows');
+  expect(calls.status).toHaveLength(1);
+  expect(calls.statusAt[0] - t0).toBeGreaterThanOrEqual(400);
+});
+
+test('timing: a network abort says Couldn\'t check', async ({ page }) => {
+  await open(page, { read: winRead({ windows: ['loc'] }), winStatus: () => [0, null] });
+  await expect(line(page, 'loc')).toContainText("Couldn't check: ");
+  await expect(line(page, 'loc')).not.toContainText('Checking');
 });
