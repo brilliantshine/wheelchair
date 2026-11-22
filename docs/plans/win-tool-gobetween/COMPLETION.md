@@ -2,7 +2,10 @@
 slug: win-tool-gobetween
 date: 2026-11-21
 implemented-by: "standard (gpt-6.1-terra) T1, T1b, T2, T3 (attempt 2 at effort xhigh); light (gpt-6-luna) T3b; sub-lead claude-opus-5-5 (router)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: verifier claude-opus-5-5
+    checks: "standard gpt-6.1-terra; light gpt-6-luna"
 ---
 
 # Completion Report — Windows tools that start before their copy is ready
