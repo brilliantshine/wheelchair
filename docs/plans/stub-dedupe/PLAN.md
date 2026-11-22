@@ -163,6 +163,9 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `session leads` returns only six idea bullets, so an opened stub's scope can be partly hidden | upheld | Pending: budget reached, asking Collin |
+| mechanics | major | Pinned idea bullets can outlive scope cuts and are cleared at build, so they are not a reliable current scope | upheld | Pending: budget reached, asking Collin |
+| mechanics | major | The `that stub has started` refusal suppresses a stub on the startup summary, bypassing the current-scope check | upheld | Pending: budget reached, asking Collin |
 
 ## Implementation Tasks
 
@@ -173,3 +176,4 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 
 - 2026-11-21: Overlap check with f4c68e8cbb15 (Make lead-to-lead chat solid): its lead says it does not change listLeads or its output; it changes cross-thread delivery. No clash; not an overlap for this plan.
 - 2026-11-21: Deferred row 1 (hold additions for a stopped lead) removed: moot once additions go only to unopened stubs.
+- 2026-11-21: Review budget reached (rounds 2-4 not clean since Collin's last decision). Recurring objection: deciding an opened stub already covers work. Proposed cut: opened stubs never suppress a stub; the new stub names the related one.
