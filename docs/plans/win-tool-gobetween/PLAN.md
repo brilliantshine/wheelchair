@@ -111,7 +111,9 @@ tools from WSL" thread merged first), reuse it and only add entries; otherwise a
   name is not a valid session name (`safeName`, starting `wc-`) is ignored, not removed. It
   reads each directory first and filters it to these eligible entries, skips a directory with
   none without returning, and calls `liveTmux()` once, only if some directory has eligible
-  entries (so a machine with none of these files still never asks tmux, keeping
+  entries. The existing selection (group by tmux name, protect the chosen entry of a live
+  session) is applied **per directory**, so a live session keeps its entry in each directory
+  (its ready file and its Claude config both survive) (so a machine with none of these files still never asks tmux, keeping
   `machine/test/kimi-turns.test.js:94` valid). Same live-tmux and `startingNames` rules. It
   removes
   `<stateDir>/settings/<name>.mcp.json` and `<stateDir>/win-ready/<name>` for sessions not
@@ -230,9 +232,14 @@ the next session. The service computes the path; the go-between only reads and w
    starting the tool; during the handoff or afterwards, stop the tool (item 1), then exit. The signal handlers stay installed until then, so a second
    signal does not cut the stop short.
 
+   **Spawn failure in steps 1 and 3a:** if spawning the real tool fails (the child's `error`
+   event, e.g. a missing executable), the go-between writes the reason to stderr and finishes
+   with status 1; the client sees the server end at once.
 6. **Finishing.** At start-up, before anything is written, the go-between installs `error`
    and `close` handlers on its stdout for its whole life: a stdout error (e.g. `EPIPE`) is
-   never thrown; after one, further writes are skipped. Every exit (step 5, a 3b handoff
+   never thrown; after one, further writes are skipped, and a stdout `error` or `close` at
+   any time is treated exactly like the client closing stdin (step 5: stop the tool if it
+   runs, then finish with status 0). Every exit (step 5, a 3b handoff
    failure after its error replies, stdin close, signals) goes through one finish routine:
    wait until stdout has flushed everything already written (the last write's callback), or
    stdout has errored or closed, whichever comes first; then call `process.exit(status)`. It
@@ -300,6 +307,9 @@ New tests in `machine/test/` must cover:
   closes its read end while the tool is still running, and one that closes it during a large
   final response, both end with the intended status and no crash; a command-only entry (no
   `args`) is wrapped and launched.
+- Sweep: a live wrapped Claude session with both a ready file and a Claude config file keeps
+  both after 60 s; a missing executable in steps 1 and 3a ends the go-between with status 1
+  and a stderr reason.
 - Sweep: a machine with only ordinary `settings/<name>.json` files makes no tmux call and
   removes nothing there.
 
@@ -494,6 +504,9 @@ Deferred 1 note; Validation additions.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Client closing its read end while the tool runs starts no shutdown | upheld | Spec 4 step 6: stdout `error`/`close` acts as stdin close |
+| mechanics | major | Pooled sweep could delete a live session's ready file or Claude config | upheld | Spec 2: selection per directory; test with both files |
+| mechanics | major | Spawn failure undefined in steps 1 and 3a | upheld | Spec 4: stderr reason, finish with 1 |
 
 ## Implementation Tasks
 
