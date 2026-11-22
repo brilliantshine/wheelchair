@@ -546,9 +546,9 @@ D11.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | tricky: go-between `win-tool-proxy.js` (Spec 1 start/stop, 4) and its tests | `machine/lib/win-tool-proxy.js`, `machine/test/win-tool-proxy.test.js`, `machine/test/fixtures/win-tool/` | standard (gpt-6.1-terra) | wc-135e4c312559-worker | `node --test machine/test/win-tool-proxy.test.js`; `bash machine/test/run.sh` | partial: code merged, tests incomplete → T1b |
+| T1 | tricky: go-between `win-tool-proxy.js` (Spec 1 start/stop, 4) and its tests | `machine/lib/win-tool-proxy.js`, `machine/test/win-tool-proxy.test.js`, `machine/test/fixtures/win-tool/` | standard (gpt-6.1-terra) | wc-135e4c312559-worker | `node --test machine/test/win-tool-proxy.test.js`; `bash machine/test/run.sh` | partial: code merged, tests incomplete → T1b (done) |
 | T2 | Shared replacement map in Claude/Codex/Antigravity adapters, `loaded.wrapped`, pure `win-tool-wrap.js` builder (Spec 1 wrapping, 2 adapters) | `machine/lib/win-tool-wrap.js`, `machine/adapters/{common,claude,codex,agy}.js`, `machine/test/win-tool-wrap.test.js`, `machine/test/adapters-loaded.test.js` | standard (gpt-6.1-terra) | wc-135e4c312559-worker-2 | adapter tests; `bash machine/test/run.sh`; viewer tests | done |
-| T1b | tricky: go-between fixes (cancel not forwarded, one `initialized` after 3b, no "undefined" copy env) and the missing go-between Validation tests | same as T1 | standard (gpt-6.1-terra) | wc-135e4c312559-worker-3 | `node --test machine/test/win-tool-proxy.test.js`; `bash machine/test/run.sh` | running |
+| T1b | tricky: go-between fixes (cancel not forwarded, one `initialized` after 3b, no "undefined" copy env) and the missing go-between Validation tests | same as T1 | standard (gpt-6.1-terra) | wc-135e4c312559-worker-3 | `node --test machine/test/win-tool-proxy.test.js`; `bash machine/test/run.sh` | done |
 | T3 | Service wiring: fill `replaceEntries`, write/remove Claude `--mcp-config` file, ready file in WinBridge (Spec 3), sweep generalization (Spec 2), failed-start cleanup | `machine/service.js`, `machine/lib/win.js`, new `machine/test/win-tool-*.test.js` (not proxy/wrap) | standard (gpt-6.1-terra) | wc-135e4c312559-worker-4 | `bash machine/test/run.sh`; viewer tests | running |
 
 ## Log
@@ -561,3 +561,5 @@ D11.
 - 2026-11-21 — T1 partial (band: self): go-between code read and merged; tests covered about half the Validation list and the worker stopped on the pre-existing failures (brief did not name them). Brief rewritten as T1b (known failures named, three fixes, missing tests); not an escalation.
 - 2026-11-21 — Choice: T1, `win-tool-proxy.js`: a malformed or missing cache is treated as an empty list; a cache write error goes to stderr and does not stop the tool.
 - 2026-11-21 — Choice: T1, `win-tool-proxy.js`: test-only options `--hold-ms`, `--poll-ms`, `--init-ms`, `--stop-ms` (set by the T1 brief); bad options exit 2.
+- 2026-11-21 — T1b accepted (band: self): three go-between fixes; 21 go-between tests, every go-between Validation bullet mapped in reports/T1b.md; machine suite only the four known failures.
+- 2026-11-21 — Choice: T1b, `machine/test/fixtures/win-tool/server.js`: the fake tool ignores stdin end with a keep-alive timer and ignores SIGTERM with a handler (env `IGNORE_END`, `IGNORE_TERM`), and exits 9 on method `die`.
