@@ -435,10 +435,10 @@ test('peer_log becomes folded peer items interleaved by time, without message te
     id: 't', machine: 'm', sessions: [{ name: 'lead', role: 'lead', cli: 'claude' }], cards: [], pinned: {}, queues: {},
     imported: { at: '2026-03-01T09:00:00Z' },
     peer_log: [
-      e('2026-03-01T08:00:00Z', 'a', 'sent'), // before the cutoff: dropped before folding
-      e('2026-03-01T09:30:00Z', 'a', 'sent'),
-      e('2026-03-01T09:50:00Z', 'a', 'received', { title: 'A renamed' }),
-      e('2026-03-01T10:15:00Z', 'a', 'sent'), // 25 minutes after the previous entry: same item
+      e('2026-03-01T08:59:00Z', 'a', 'sent'), // before the cutoff and within 30 minutes of the next: dropped before folding, so it neither joins nor starts the item
+      e('2026-03-01T09:20:00Z', 'a', 'sent'),
+      e('2026-03-01T09:45:00Z', 'a', 'received', { title: 'A renamed' }),
+      e('2026-03-01T10:10:00Z', 'a', 'sent', { title: 'A latest' }), // 25 minutes after the previous entry: same item; its title is the item's title
       e('2026-03-01T11:00:00Z', 'a', 'sent'), // 45 minutes gap: a new item
       e('2026-03-01T10:20:00Z', 'b', 'received'),
       e('2026-03-01T13:00:00Z', 'a', 'limit'),
@@ -449,8 +449,8 @@ test('peer_log becomes folded peer items interleaved by time, without message te
   assert.deepEqual(items.map((item) => item.type === 'peer' ? ['peer', item.thread, item.count ?? null, item.limit ?? null] : [item.type, item.text]), [
     ['human', 'early'], ['peer', 'a', 3, null], ['peer', 'b', 1, null], ['peer', 'a', 1, null], ['peer', 'a', null, true], ['human', 'late'],
   ]);
-  assert.deepEqual(items[1], { type: 'peer', at: '2026-03-01T09:30:00Z', thread: 'a', title: 'T-a', count: 3 });
-  assert.equal(items[1].title, 'T-a');
+  assert.deepEqual(items[1], { type: 'peer', at: '2026-03-01T09:20:00Z', thread: 'a', title: 'A latest', count: 3 });
+  assert.equal(items[1].title, 'A latest');
   assert.doesNotMatch(JSON.stringify(items), /SECRET TEXT|hidden peer text/);
   // A thread with no peer_log yields no peer items.
   delete thread.peer_log;
