@@ -169,5 +169,8 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Machine job: Cancel (SIGTERM leader), 15-min limit, process-group stop, result reason, explanations; DELETE route; API.md; machine tests. tricky | machine/lib/harness-install.js, machine/service.js (install route), machine/API.md, machine/test/harness-install.test.js | standard / gpt-6.1-terra | wc-c3b2aec47d12-worker | node --test machine/test/harness-install.test.js; bash machine/test/run.sh | in progress |
+| T2 | Hub DELETE passthrough, POST refused while off, switch-off DELETE fan-out; Settings Cancel, cancelled state, explanation line; hub + browser tests | viewer/app/routes.js, viewer/pages/settings.js, .h-explain CSS, viewer/test/app-harnesses.test.js, viewer/test/app-harnesses.spec.js | standard / claude-sonnet-5-5 | wc-c3b2aec47d12-worker-2 | node --test viewer/test/app-harnesses.test.js; npm --prefix viewer run test:browser | in progress |
 
 ## Log
+- 2026-11-21 — T1 and T2 dispatched in parallel (disjoint ownership).
