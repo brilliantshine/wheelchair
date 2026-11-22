@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q3: How are incoming lessons (file import or handoff) added?
-- **Context:** Ids don't match across installs, so incoming lessons are matched by agent type + text. The cap of 12 per type stays. Handoff import may complete later and retry (`viewer/app/handoff-import.js:26`), so adding must be safe to repeat.
-- **Options:** (a) added automatically: identical ones skipped, new ones added, overflow past 12 held for you to pick; (b) all held in Settings for you to accept or reject each; (c) automatic, incoming replaces a similar existing one.
-- **Recommendation:** (a).
-
 ### Q2: What marks a lesson as possibly stale?
 - **Context:** Nothing records reconfirmation; `saved_at` changes on every edit (`viewer/app/settings.js:213`). Lessons don't reference rules.
 - **Options:** (a) age only: not saved or kept for N days; (b) age plus agents reconfirming lessons that helped; (c) also rule-file changes since the lesson was saved.
@@ -51,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Lessons travel two ways: Export/Import of a lessons file in Settings, and handoffs carry lessons automatically; both use the same merge rule | Q1 answered "File and handoffs" | user |
 | 7 | A project-only lesson in a handoff is re-scoped to the project path the thread is imported into; in a file import it keeps its path | The exact path differs between installs (`viewer/app/settings.js:183`); a handoff knows the destination, a file does not | defaulted |
 | 8 | Handoffs from an install without lessons support still import; an install without support importing a newer handoff is out of scope | IDEA.md Constraints name only the first direction | defaulted |
+| 9 | Incoming lessons are added automatically: matched by agent type + exact text (trimmed); a match is skipped; a new one is added with a new local id, saved_by and only_ai kept; nothing existing is overwritten; lessons that would take a type past 12 wait in a "Waiting to add" list in Settings where Collin adds (after removing one) or discards each | Q3 answered "Add automatically" | user |
 |   |          |           | user / defaulted / adopted / idea-change / review-round-N |
 
 ## Spec
@@ -66,7 +62,7 @@ Spec is still churning. See `protocol/diagrams.md`.
 Decisions 2–5.
 
 ### S2 Carrying lessons (draft)
-Decisions 6–8. Merge rule: Q3.
+Decisions 6–9.
 
 ## Deferred
 
