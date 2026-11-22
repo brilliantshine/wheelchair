@@ -20,6 +20,7 @@ const ROLE_CARD_FILES = {
   verifier: [],
 };
 const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
+const STALE_DAYS = 90, HISTORY_MAX = 20, REMOVED_MAX = 50;
 const MODEL_MAX = 64;
 const WORK_TIERS = ['light', 'standard', 'heavy', 'critical'];
 const TIER_ALIASES = { luna: 'light', terra: 'standard', sol: 'heavy', astra: 'critical' };
@@ -50,7 +51,7 @@ function reportedPlan(account, planType) {
 }
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
 function defaults() {
-  return { harnesses: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, true])), onboarding_done: false, lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini', 'kimi'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', auto_merge: 'off', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
+  return { harnesses: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, true])), onboarding_done: false, lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini', 'kimi'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', auto_merge: 'off', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lesson_history: {}, lesson_waiting: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -201,7 +202,7 @@ async function applyLesson(hub, card, saver, project, thread) {
       result = { id: card.lesson, changed: false }; return;
     }
     if (existing?.saved_by === 'user') throw appError(422, 'the user edited this lesson; agents leave it as it is');
-    if (card.action === 'remove') { list.splice(list.indexOf(existing), 1); result = { id: existing.id, changed: true, snapshot: snapshot(existing) }; return; }
+    if (card.action === 'remove') { recordHistory(value, card.for, existing, 'agent', true); list.splice(list.indexOf(existing), 1); result = { id: existing.id, changed: true, snapshot: snapshot(existing) }; return; }
     const provider = card.only_ai === undefined ? existing?.provider : card.only_ai === 'any' ? undefined : card.only_ai;
     const scope = card.only_project === undefined ? existing?.project : card.only_project ? project : undefined;
     const duplicate = card.action === 'add' && list.find((item) => item.text === card.text && item.provider === provider && item.project === scope);
@@ -209,9 +210,9 @@ async function applyLesson(hub, card, saver, project, thread) {
     if (existing && existing.text === card.text && existing.provider === provider && existing.project === scope) { result = { id: existing.id, changed: false }; return; }
     if (!existing && list.length >= 12) throw appError(422, `lessons for ${card.for}s are full (12): replace or remove one instead\n${list.map((item) => lessonLine({ ...item, text: item.text.slice(0, 80) }).slice(2)).join('\n')}`);
     let id = existing?.id;
-    if (!id) { do { id = `L${crypto.randomBytes(3).toString('hex')}`; } while ([...ROLES].some((role) => value.lessons[role].some((item) => item.id === id))); }
+    if (!id) { do { id = `L${crypto.randomBytes(3).toString('hex')}`; } while (value.lesson_history[id] || [...ROLES].some((role) => value.lessons[role].some((item) => item.id === id))); }
     const item = { id, text: card.text, ...(provider ? { provider } : {}), ...(scope ? { project: scope } : {}), saved_by: 'agent', thread, saved_at: new Date().toISOString() };
-    if (existing) list[list.indexOf(existing)] = item; else list.push(item);
+    if (existing) { recordHistory(value, card.for, existing, 'agent'); list[list.indexOf(existing)] = item; } else list.push(item);
     result = { id, changed: true, snapshot: snapshot(item) };
   });
   return result;
@@ -285,12 +286,30 @@ function normalize(saved) {
     if (!item || typeof item.id !== 'string' || !/^L[0-9a-f]{6}$/.test(item.id) || ids.has(item.id) || !validLessonText(item.text) || !['agent', 'user'].includes(item.saved_by) || typeof item.saved_at !== 'string' || !Number.isFinite(Date.parse(item.saved_at)) || (item.provider !== undefined && (typeof item.provider !== 'string' || !Object.hasOwn(PROVIDERS, item.provider))) || (item.project !== undefined && (typeof item.project !== 'string' || !item.project)) || (item.thread !== undefined && (typeof item.thread !== 'string' || !item.thread))) continue;
     if (lessons[role].length >= 12) break;
     ids.add(item.id);
-    lessons[role].push({ id: item.id, text: item.text, ...(item.provider !== undefined ? { provider: item.provider } : {}), ...(item.project !== undefined ? { project: item.project } : {}), saved_by: item.saved_by, ...(item.thread !== undefined ? { thread: item.thread } : {}), saved_at: item.saved_at });
+    lessons[role].push({ id: item.id, text: item.text, ...(item.provider !== undefined ? { provider: item.provider } : {}), ...(item.project !== undefined ? { project: item.project } : {}), saved_by: item.saved_by, ...(item.thread !== undefined ? { thread: item.thread } : {}), saved_at: item.saved_at, ...(validTime(item.kept_at) ? { kept_at: item.kept_at } : {}) });
+  }
+  const lesson_history = {};
+  for (const [id, entry] of Object.entries(saved.lesson_history || {})) {
+    if (!/^L[0-9a-f]{6}$/.test(id) || !entry || !ROLES.has(entry.role) || !Array.isArray(entry.versions)) continue;
+    const current = lessons[entry.role].some((item) => item.id === id);
+    const removed = entry.removed && validTime(entry.removed.at) && ['agent', 'user'].includes(entry.removed.by) && !current ? { at: entry.removed.at, by: entry.removed.by } : undefined;
+    if (!current && !removed) continue;
+    const vids = new Set();
+    const versions = entry.versions.filter((v) => validFields(v) && typeof v.vid === 'string' && v.vid && !vids.has(v.vid) && validTime(v.changed_at) && ['agent', 'user'].includes(v.changed_by) && vids.add(v.vid)).slice(-HISTORY_MAX).map((v) => ({ ...fields(v), vid: v.vid, changed_at: v.changed_at, changed_by: v.changed_by }));
+    if (versions.length) lesson_history[id] = { role: entry.role, versions, ...(removed ? { removed } : {}) };
+  }
+  trimRemoved(lesson_history);
+  const lesson_waiting = [];
+  const waitingKeys = new Set(), wids = new Set();
+  for (const item of Array.isArray(saved.lesson_waiting) ? saved.lesson_waiting : []) {
+    if (!item || !ROLES.has(item.role) || !validFields(item) || !['file', 'handoff'].includes(item.source) || !validTime(item.received_at) || typeof item.wid !== 'string' || !item.wid || wids.has(item.wid) || waitingKeys.has(matchKey(item.role, item))) continue;
+    wids.add(item.wid); waitingKeys.add(matchKey(item.role, item));
+    lesson_waiting.push({ role: item.role, ...fields(item), source: item.source, received_at: item.received_at, wid: item.wid });
   }
   return {
     harnesses: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, typeof saved.harnesses?.[p] === 'boolean' ? saved.harnesses[p] : true])),
     onboarding_done: typeof saved.onboarding_done === 'boolean' ? saved.onboarding_done : true,
-    lessons,
+    lessons, lesson_history, lesson_waiting,
     lead_names: Array.isArray(saved.lead_names) ? saved.lead_names : [],
     lead_name_list: LIST_KEYS.includes(saved.lead_name_list) ? saved.lead_name_list : (Array.isArray(saved.lead_names) && saved.lead_names.length ? 'custom' : 'greek'),
     worker_order_seen: Object.keys(PROVIDERS),
@@ -311,6 +330,59 @@ function normalize(saved) {
     saved_dirs: Array.isArray(saved.saved_dirs) ? saved.saved_dirs : [],
   };
 }
+
+
+function isLessonStale(item, now = Date.now()) { return now - Math.max(Date.parse(item.saved_at), validTime(item.kept_at) ? Date.parse(item.kept_at) : -Infinity) >= STALE_DAYS * 86400000; }
+const validTime = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
+function validFields(v) {
+  return v && validLessonText(v.text) && ['agent', 'user'].includes(v.saved_by) && validTime(v.saved_at) && (v.provider === undefined || typeof v.provider === 'string' && Object.hasOwn(PROVIDERS, v.provider)) && (v.project === undefined || typeof v.project === 'string' && !!v.project) && (v.thread === undefined || typeof v.thread === 'string' && !!v.thread);
+}
+function fields(v) { return { text: v.text, ...(v.provider !== undefined ? { provider: v.provider } : {}), ...(v.project !== undefined ? { project: v.project } : {}), saved_by: v.saved_by, ...(v.thread !== undefined ? { thread: v.thread } : {}), saved_at: v.saved_at, ...(validTime(v.kept_at) ? { kept_at: v.kept_at } : {}) }; }
+function randomId() { return crypto.randomBytes(16).toString('hex'); }
+function newLessonId(value) { let id; do { id = `L${crypto.randomBytes(3).toString('hex')}`; } while (value.lesson_history[id] || [...ROLES].some((r) => value.lessons[r].some((l) => l.id === id))); return id; }
+function trimRemoved(history) { const removed = Object.entries(history).filter(([, e]) => e.removed).sort((a, b) => Date.parse(a[1].removed.at) - Date.parse(b[1].removed.at)); while (removed.length > REMOVED_MAX) delete history[removed.shift()[0]]; }
+function recordHistory(value, role, item, by, remove = false) {
+  const entry = value.lesson_history[item.id] ||= { role, versions: [] };
+  let vid; do { vid = randomId(); } while (entry.versions.some((v) => v.vid === vid));
+  const now = new Date().toISOString(); entry.versions.push({ ...fields(item), vid, changed_at: now, changed_by: by });
+  entry.versions = entry.versions.slice(-HISTORY_MAX);
+  if (remove) { entry.removed = { at: now, by }; trimRemoved(value.lesson_history); }
+}
+function matchKey(role, item) { return JSON.stringify([role, item.text.trim(), item.provider || null, item.project || null]); }
+function matchesCurrent(value, role, item) { const key = matchKey(role, item); return value.lessons[role].some((l) => matchKey(role, l) === key); }
+function addIncoming(value, role, item) { const { thread, ...rest } = fields(item); value.lessons[role].push({ id: newLessonId(value), ...rest, ...(thread ? { thread } : {}), kept_at: new Date().toISOString() }); }
+function mergeLessons(value, incoming, opts) {
+  const counts = { added: 0, skipped: 0, invalid: 0, unknown_project: 0, waiting: 0 };
+  for (const raw of incoming) {
+    if (!raw || !ROLES.has(raw.role) || (opts.source === 'handoff' && raw.project !== undefined && raw.project !== true)) { counts.invalid++; continue; }
+    const item = { ...raw, ...(raw.project === true && opts.source === 'handoff' ? { project: opts.targetProject } : {}) };
+    if (!validFields(item) || (raw.project === true && !opts.targetProject)) { counts.invalid++; continue; }
+    if (opts.source === 'file' && item.project && !(opts.known || []).includes(item.project)) { counts.unknown_project++; continue; }
+    if (opts.source === 'file') delete item.thread;
+    const key = matchKey(item.role, item);
+    if (matchesCurrent(value, item.role, item) || Object.values(value.lesson_history).some((e) => e.role === item.role && e.versions.some((v) => matchKey(item.role, v) === key)) || value.lesson_waiting.some((v) => matchKey(v.role, v) === key)) { counts.skipped++; continue; }
+    if (value.lessons[item.role].length < 12) { addIncoming(value, item.role, item); counts.added++; }
+    else { let wid; do { wid = randomId(); } while (value.lesson_waiting.some((v) => v.wid === wid)); value.lesson_waiting.push({ role: item.role, ...fields(item), source: opts.source, received_at: new Date().toISOString(), wid }); counts.waiting++; }
+  }
+  return counts;
+}
+async function mergeIncoming(hub, incoming, opts) { const projects = opts.source === 'file' && !opts.known ? await hub.projects() : null; let result; await update(hub, (value) => { result = mergeLessons(value, incoming, { ...opts, known: opts.known || (projects && knownProjects(projects, value)) }); }); return result; }
+function exportLessons(value) { return { format: 'wheelchair-lessons', version: 1, exported_at: new Date().toISOString(), lessons: Object.fromEntries([...ROLES].map((role) => [role, value.lessons[role].map((item) => { const { thread, ...rest } = fields(item); return rest; })])) }; }
+async function restoreLesson(hub, role, id, vid) {
+  return update(hub, (value) => {
+    const entry = value.lesson_history[id], list = value.lessons[role], current = list?.find((l) => l.id === id);
+    const version = entry?.role === role ? (vid === undefined && entry.removed ? entry.versions.at(-1) : entry.versions.find((v) => v.vid === vid)) : null;
+    if (!version || (!current && !entry.removed)) throw appError(409, 'This lesson changed; reload to see its history');
+    if (!current && list.length >= 12) throw appError(422, `${role[0].toUpperCase() + role.slice(1)} lessons are full (12): remove one before restoring`);
+    if (current && current.saved_by === 'user' && ['text', 'provider', 'project', 'thread'].every((k) => current[k] === version[k])) return;
+    if (current) recordHistory(value, role, current, 'user');
+    const item = { id, text: version.text, ...(version.provider ? { provider: version.provider } : {}), ...(version.project ? { project: version.project } : {}), ...(version.thread ? { thread: version.thread } : {}), saved_by: 'user', saved_at: new Date().toISOString() };
+    if (current) list[list.indexOf(current)] = item; else list.push(item);
+    delete entry.removed;
+  });
+}
+async function keepLesson(hub, role, id) { return update(hub, (value) => { const item = value.lessons[role]?.find((l) => l.id === id); if (!item) throw appError(409, 'This lesson changed; reload to see its history'); item.kept_at = new Date().toISOString(); }); }
+async function waitingAction(hub, role, wid, action) { let result; const value = await update(hub, (s) => { const index = s.lesson_waiting.findIndex((v) => v.role === role && v.wid === wid); if (index < 0) throw appError(409, 'This lesson changed; reload to see its history'); const item = s.lesson_waiting[index]; if (action === 'discard') result = 'discarded'; else if (action !== 'add') throw appError(400, 'invalid waiting action'); else if (matchesCurrent(s, role, item)) result = 'already'; else { if (s.lessons[role].length >= 12) throw appError(422, 'Remove one first'); addIncoming(s, role, item); result = 'added'; } s.lesson_waiting.splice(index, 1); }); return { value, result }; }
 
 function validBalancing(key, value) {
   if (key === 'lead_order' || key === 'worker_order') return Array.isArray(value) && value.length > 0 && new Set(value).size === value.length && value.every((v, i) => Object.hasOwn(PROVIDERS, v) || (key === 'lead_order' && v === 'any' && i === value.length - 1));
@@ -376,7 +448,7 @@ async function describe(hub) {
   const known = knownProjects(projects, settings);
   const projectSet = new Set(known);
   const templates = settings.templates.map((template) => ({ ...template, live_sessions: templateCounts.get(template.id) || 0, scope_missing: template.scope !== 'all' && !projectSet.has(template.scope) }));
-  return { harnesses: settings.harnesses, lead_name_list: settings.lead_name_list, lead_names: settings.lead_names, accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, aside_access: settings.aside_access, auto_merge: settings.auto_merge, tool_steps: settings.tool_steps, review_families: settings.review_families, other_agents: settings.other_agents, escalation: settings.escalation, escalation_text: escalationSentences(settings.escalation).join('\n'), templates, lessons: settings.lessons, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, user_name: settings.user_name, saved_dirs: settings.saved_dirs };
+  return { harnesses: settings.harnesses, lead_name_list: settings.lead_name_list, lead_names: settings.lead_names, accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, aside_access: settings.aside_access, auto_merge: settings.auto_merge, tool_steps: settings.tool_steps, review_families: settings.review_families, other_agents: settings.other_agents, escalation: settings.escalation, escalation_text: escalationSentences(settings.escalation).join('\n'), templates, lessons: settings.lessons, lesson_history: settings.lesson_history, lesson_waiting: settings.lesson_waiting, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, user_name: settings.user_name, saved_dirs: settings.saved_dirs };
 }
 
 async function preview(hub, style) {
@@ -391,4 +463,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { applyLesson, validLessonText, MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, reportedPlan, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };
+module.exports = { isLessonStale, STALE_DAYS, HISTORY_MAX, REMOVED_MAX, recordHistory, mergeLessons, mergeIncoming, exportLessons, restoreLesson, keepLesson, waitingAction, applyLesson, validLessonText, MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, reportedPlan, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };
