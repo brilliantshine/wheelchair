@@ -34,7 +34,7 @@ Rules for every card:
   the hub found the same lesson already saved and recorded no new notice.
   Either gains `"queued":true` when the machine's response body has `spooled: true` (the app was
   unreachable and the card waits on the machine; a delivered post can also return HTTP 202, which
-  adds nothing). It never prints any other card field. Keep the id: a queued card's printed id is
+  adds nothing). A cross-thread `message` receipt also gains `"held":true` when the other thread has no live lead and the message waits for its next lead. It never prints any other card field. Keep the id: a queued card's printed id is
   the id it gets, so `retract` and `resolve` can name it.
 - Text fields are plain sentences for a person, not codenames. A card the user sees is read
   on a phone, so write the short version.
@@ -157,7 +157,8 @@ To another session in the same thread, or, from a lead only, to another thread's
 
 The app types it into that session when its turn ends, as one message starting
 `[wc:from <your session name>]`. The thread hides it and the receiver's whole reply.
-A message to another thread's lead goes to that thread's latest live lead and carries `[thread <id>: <title>]` (the sender's thread) after the `[wc:from <session>]` marker.
+A message to another thread's lead goes to that thread's latest live lead and carries `[thread <id>: <title>]` (the sender's thread) after the `[wc:from <session>]` marker. It may name any lead session of that thread you already know, live or ended; when none is live it is held for that thread's next lead and the receipt shows `"held":true`.
+A lead that sends 20 messages to one thread within an hour is paused with that thread until the user writes in the sending thread; the refusal says so.
 A worker's question to the lead, a sub-lead's report of a surviving gap and the app's
 "your session died" notices all travel this way.
 
