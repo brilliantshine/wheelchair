@@ -98,3 +98,23 @@ The same two files fail the same way on main 7204dd2a (the canonical clone), and
 - Earlier in the build the browser suite showed 8 failures in app-accounts.spec.js "lead waiting line" (a time-of-day date format) on the branch before T2; the final run above passed them all. They are time-dependent and unrelated.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1, at d8b87e12)
+
+Verification 1: Claude verifier (claude-opus-5-5) PASS; GPT verifier (gpt-6.2-sol) FAIL with three gaps (REMEDIATION-1.md). One was a rare path (a flood of other entries evicting counted sends from the 200-entry peer_log) and is in PLAN.md Accepted Risks, round verification-1. Two were fixed:
+
+| Gap | Fix (file:line) | Lane | Validated by |
+|-----|-----------------|------|--------------|
+| A held message survived archive on a lead that was live until the archive | viewer/app/threads.js:252 (dropHeld now runs after the success path marks sessions ended) | light / gpt-6-luna | viewer/test/app-handoff-restart.test.js:267-279 |
+| A held message counted toward the "N queued: waiting for the lead to finish its turn" note | viewer/app/chat.js:465 (held entries excluded from `queued`) | light / claude-haiku-5-5 | viewer/test/app-chat.test.js:459-477 |
+
+Validation after remediation:
+
+```text
+focused (same six files as above): # tests 211 # pass 211 # fail 0  exit 0
+node --test viewer/test/*.test.js: # tests 846 # pass 846 # fail 0  exit 0
+npm --prefix viewer run test:browser:  34 skipped  1278 passed (17.5m)  exit 0
+grep -rn "no live lead right now" viewer machine protocol --exclude-dir=test: no output, exit 1
+```
+
+machine/ is unchanged by the remediation; the machine evidence above stands.
