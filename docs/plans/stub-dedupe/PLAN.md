@@ -204,7 +204,7 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | tricky: Spec 1-2: listLeads candidate fields and unopened stubs; stub `adds_to`/`duplicate` validation; acceptCard addition under target lock; tests | viewer/app/peers.js, card.js, cards.js, (threads.js export only), viewer/test/app-lead-list.test.js, app-hub.test.js | standard, gpt-6.1-terra | wc-2c25927136e1-worker | `npm test` | done |
-| T2 | Spec 3: parent stub card for additions; unopened context `pre-line`; browser test | viewer/pages/thread.js, viewer/test/app-threads.spec.js | standard, claude-sonnet-5-5 | wc-2c25927136e1-worker-2 | `npm run test:browser`, `npm test` | in progress |
+| T2 | Spec 3: parent stub card for additions; unopened context `pre-line`; browser test | viewer/pages/thread.js, viewer/test/app-threads.spec.js | standard, claude-sonnet-5-5 | wc-2c25927136e1-worker-2 | `npm run test:browser`, `npm test` | done |
 | T3 | Spec 4: lead.md Stubs / Other leads / Overlap questions; cards-lead.md stub; cards.md id exception | protocol/app/lead.md, cards-lead.md, cards.md | standard, gpt-6.1-terra | wc-2c25927136e1-worker-3 | `npm test` incl. protocol-rules | done |
 
 ## Log
@@ -223,3 +223,7 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 - 2026-11-21 — Choice: T3, protocol/app/cards-lead.md stub: "same CLI" sentence replaced by "Without `adds_to`, the app adds a stub thread ... same project and machine".
 - 2026-11-21 — Choice: T3, protocol/app/lead.md Stubs: rule laid out as a bold "Before posting a stub:" lead-in with bullets.
 - 2026-11-21 — T3 accepted (band: scout): every Spec 4 bullet covered; protocol-rules and app-settings pass; its one full-suite failure (app-quiet "message clears debt") passes when re-run alone, load flake unrelated to the docs-only diff.
+- 2026-11-22 — Choice: T2, viewer/test/app-threads.spec.js: addition cards are seeded straight into the thread file with `ctx.patch`, not posted through the hub.
+- 2026-11-22 — Choice: T2, viewer/pages/thread.js: `white-space: pre-line` is set inline in JS on the unopened page's context paragraph, not in thread.css.
+- 2026-11-22 — Choice: T2, viewer/pages/thread.js: the addition heading uses the card's existing `head()` eyebrow with `target_title` as its title (scout-listed).
+- 2026-11-22 — T2 accepted (band: scout): Spec 3 covered; app-threads.spec.js re-run, 170 pass. Its full-suite failures (accounts, graph arrows, a port conflict) are outside its files; checked in the full run.
