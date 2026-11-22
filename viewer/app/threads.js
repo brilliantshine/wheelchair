@@ -243,13 +243,13 @@ async function archive(hub, id) {
     await hub.save(thread);
     return result;
   }
-  require('./peer-log.js').dropHeld(thread);
   thread.archived = true;
   thread.kept_files = Array.isArray(result.kept_uploads) ? result.kept_uploads.filter((name) => typeof name === 'string') : [];
   for (const card of thread.cards) {
     if (card.kind === 'merged' && !card.answered) require('./cards.js').resolveCard(card, 'user', 'Archived');
   }
   for (const session of thread.sessions) { session.live = false; session.ended_at ||= new Date().toISOString(); }
+  require('./peer-log.js').dropHeld(thread);
   await hub.save(thread);
   return result;
 }
