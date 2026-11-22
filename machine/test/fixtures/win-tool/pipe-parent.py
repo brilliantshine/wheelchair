@@ -3,12 +3,12 @@ mode, node, proxy, server, ready, cache, record = sys.argv[1:]
 r, w = os.pipe()
 ir, iw = os.pipe()
 env = dict(os.environ, RECORD=record, KEEP_LARGE='1', WRITE_ON_END='1')
-p = subprocess.Popen([node, proxy, '--ready-file', ready, '--list-cache', cache, '--name', 'test', '--poll-ms', '10', '--probe-ms', '200', '--stop-ms', '100,100,100', '--', node, server], stdin=ir, stdout=w, env=env)
-os.close(ir); os.close(w)
 holder = None
 if mode in ('off', 'gone', 'pending', 'writing'):
     holder = subprocess.Popen(['sleep', '30'], pass_fds=(r, iw), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-if mode == 'off': os.close(r)
+    os.close(r)
+p = subprocess.Popen([node, proxy, '--ready-file', ready, '--list-cache', cache, '--name', 'test', '--poll-ms', '10', '--probe-ms', '200', '--stop-ms', '100,100,100', '--', node, server], stdin=ir, stdout=w, env=env)
+os.close(ir); os.close(w)
 print(json.dumps({'proxy': p.pid, 'holder': holder.pid if holder else None}), flush=True)
 if mode in ('gone', 'pending', 'writing'):
     if mode == 'pending': os.write(iw, b'{"method":"large","id":1}\n')
