@@ -10,6 +10,11 @@ created: 2026-11-21
 
 ## Open Questions
 
+### Q3: Drop additions to stubs that have started planning?
+- **Context:** Review round 1 found that supporting opened, still-planning stubs needs the hub to read each stub's live plan status (the stored copy lags), a pending state that keeps the stub in planning, restart recovery, and keeping declined additions out of its summary.
+- **Options:** (A) add only to unopened stubs; an opened one gets its own related stub, as today. (B) keep planning stubs and build that machinery.
+- **Recommendation:** A.
+
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -89,6 +94,8 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| An addition queued on the machine while the hub is down can be refused later with no fallback stub | Rare path: hub outage at post time plus the target changing state before delivery | review-round-1 |
+| A hub restart between saving the target and the parent card can double-append an addition on replay | Rare path: crash inside the write plus replay | review-round-1 |
 
 ## Review Rounds
 
@@ -100,6 +107,17 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Addition text goes into an opened stub's `context` before its user answers; "Drop it" never removes it and restarts read it | upheld | Pending Q3 |
+| intent | minor | Duplicate note interrupts a live (possibly building) lead with a message it must ignore | upheld | Pending Q3 |
+| intent | minor | Duplicate note adds noise to an opened (maybe built) stub's `context` | upheld | Pending Q3 |
+| mechanics | blocking | Gate uses `last_status`, which lags PLAN.md (views.js:116, remote-plan.js:24); addition can land after planning closed | user-decision | Q3 |
+| mechanics | major | Finished stubs with a lead listed as `stub: true`, so a lead may post a duplicate note the hub refuses, with no fallback | upheld | Pending fix |
+| mechanics | major | Dropped additions stay in `context` and mislead later comparisons | upheld | Pending Q3 |
+| mechanics | major | Queued `card.js` receipt can hide a later refusal; fallback never runs | accepted-risk | Rare path: needs hub down at post time and the target changing state before the spool drains |
+| mechanics | major | Two-thread write has no replay rule; a hub restart mid-write can double-append on replay | accepted-risk | Rare path: hub crash between two saves plus replay |
+| mechanics | major | Addition to an opened planning stub has no durable pending state; can arrive after review starts; restart strands it | upheld | Pending Q3 |
+| mechanics | minor | Opened page's chat signature omits `context`, so a shown addition can go stale | upheld | Pending Q3 |
+| mechanics | minor | `cards.md` lists the only fields that may carry another thread's id; `adds_to` must be added there | upheld | Pending fix |
 
 ## Implementation Tasks
 
