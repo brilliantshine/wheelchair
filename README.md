@@ -17,34 +17,26 @@ draw a picture when the answer has a shape, as readily as you set in Settings.
 
 ### First time
 
-1. On the machine that will run the agents (Linux with systemd or macOS with launchd; on Windows, see "On Windows"), run
-   `./install.sh --serve` (see "Install"). Serving is what starts the app and the service
-   that runs agent sessions. Without `--serve`, a headless machine asks; a machine with a
-   display declines without asking.
-2. The installer then offers one or two `tailscale serve ...` commands (`sudo tailscale` on Linux) that publish the
-   app on your tailnet. Accept them, or run the ones it prints later; until they run, other
-   devices can't reach the app.
-3. Run `node viewer/server.js --url` and open the address it prints on each device. It
-   carries a token that signs the browser in; after that,
+1. Install the [basic tools](#dependencies) on the machine that will run the agents
+   (Linux with systemd or macOS with launchd; on Windows, see "On Windows"). Sign in to
+   GitHub CLI and Tailscale.
+2. Run `./install.sh --serve` (see "Install"). Serving is what starts the app and the
+   service that runs agent sessions. Accept the offered `tailscale serve ...` commands
+   (`sudo tailscale` on Linux) to publish the app on your tailnet, or run the ones it
+   prints later; until they run, other devices can't reach the app.
+3. Open the link printed by the installer on each device (`node viewer/server.js --url`
+   prints it again). It carries a token that signs the browser in; after that,
    `https://<machine>.<tailnet>.ts.net/wheelchair/app/` works on its own.
    `node viewer/server.js --rotate-token` signs every device out.
-4. In **Settings**:
-   - **Accounts**: press **Sign in** for each Claude or GPT account. Open the link it
-     shows and sign in there. GPT shows a code to enter on that page; Claude may give you
-     a code to paste back into Settings.
-   - **Models and preferences**: the model for the lead and for the other agents;
-     **Reviewers and checkers** (both families, Claude only or GPT only); and
-     **Diagrams** (ask, default or high: how readily agents draw a picture).
-   - **Writing style**: how leads write to you.
-   - **Default project folder** (optional): a folder holding your repos, so New thread can
-     list them.
+4. Follow the home page checklist to install and sign in to an agent from Settings.
+   Settings also holds your models, diagram preference, writing style and project folder.
 
 ### On macOS
 
 1. Install the Xcode command line tools for git and python3: open Terminal and run
    `xcode-select --install`. Install [Homebrew](https://brew.sh/), then run
-   `brew install node tmux`. Install the [Tailscale Mac app](https://tailscale.com/download/mac)
-   and sign in. Install Claude Code and/or Codex, and the GitHub CLI `gh` for pull requests.
+   `brew install node tmux gh`. Install the [Tailscale Mac app](https://tailscale.com/download/mac)
+   and sign in to it and `gh`.
 2. Clone this repository, open its folder in Terminal, and run `./install.sh --serve`.
    A Mac does not serve by default without the flag. The installer finds the Tailscale CLI
    inside `/Applications/Tailscale.app` if it is not on PATH. Accept its offered Tailscale
@@ -73,8 +65,7 @@ the sudo helper is meant to act on your machine, not on a container.
    [boot]
    systemd=true
    ```
-3. Inside WSL, install the [dependencies](#dependencies) and sign in to `gh` and `claude` or
-   `codex`, `agy`, `kimi`, or `pi`. Install Tailscale inside WSL, since the installer runs `tailscale serve` there,
+3. Inside WSL, install the [dependencies](#dependencies) and sign in to `gh`. Install Tailscale inside WSL, since the installer runs `tailscale serve` there,
    and quit it on Windows: Tailscale traffic breaks when both run at once.
 4. Clone wheelchair and your projects under the Linux home folder (`~/...`), never under
    `/mnt/c`. Windows drives are slow from WSL, and git and file permissions misbehave there.
@@ -266,11 +257,12 @@ next. Start at the root one. `CONTRIBUTING.md` has the conventions and validatio
 
 ## Dependencies
 
-- `claude`, `codex` (v0.146+), `agy`, `kimi` (Kimi Code), or `pi` (OpenRouter). One alone works; multiple CLIs let reviews and checks use
-  another family. Codex sessions run through the app like any other.
+- Claude Code, Codex, Antigravity, Kimi Code and Pi (OpenRouter) are optional harnesses,
+  installable from Settings → Harnesses. Multiple harnesses let reviews and checks use another family.
 - `tmux`, which runs every agent session.
 - `git` and the GitHub CLI `gh`, signed in, so threads can push branches and open pull
   requests.
 - Tailscale, to reach the app from other devices.
-- Node and npm, for the viewer.
+- Node 20 or newer and npm, for the viewer.
+- Python 3 and curl, for installation.
 - Playwright, pinned in `viewer/package.json` and installed by `install.sh`, for the browser tests.
