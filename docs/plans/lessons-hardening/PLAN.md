@@ -293,6 +293,8 @@ Filled by Stage 3. One row per worker brief.
 | R1-TESTS | Remediation 1 gaps 4-6: waiting entries survive overflow, non-empty export/import round-trip, `changed_by` asserts | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
 | R2-UI | Remediation 2 gap 1: Import keeps or shows unsaved drafts | `viewer/pages/settings.js` (lessons editor, import/export), `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | done |
 | R2-TESTS | Remediation 2 gaps 2-6: tests that can fail (removal `changed_by`, restore thread, prompt without history, Keep on stale, Retry merge spy) | `viewer/test/app-lessons-history.test.js`, `viewer/test/app-handoff-import.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js test/app-handoff-import.test.js`; `npm test` | done |
+| R3-UI | Remediation 3 gap 1: refused Save keeps Restore-while-dirty and Add-while-full guards | `viewer/pages/settings.js` (lessons editor), `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | not started |
+| R3-TESTS | Remediation 3 gaps 2-3: removal appends a version; skip matches older history versions | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -338,4 +340,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — Choice: R2-TESTS, app-lessons-history.test.js / app-handoff-import.test.js: separate marker texts for current and removed history; a fixed id `L0f0f0f` with relative timestamps for the stale lesson; one spy helper over `mergeIncoming` and `mergeLessons`, also applied to the opened-outcome import.
 - 2026-11-21 — R2-UI accepted (band: scout): lessons spec 44/44 and `npm test` 844/844 re-run by me; report lists every other reload place in the lessons editor (Save, Export, thread loading, toggles), none dropping drafts.
 - 2026-11-21 — R2-TESTS accepted (band: scout): lessons + handoff-import node tests 52/52 re-run by me; report pastes each new test failing under the verifier's mutation and passing once restored.
-
+- 2026-11-22 — Verification 3 (81b9ddbd): claude PASS, gpt FAIL with 3 new gaps, none rare, none a repeat; all go to REMEDIATION-3.md.
