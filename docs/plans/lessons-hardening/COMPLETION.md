@@ -39,7 +39,7 @@ verified-by: []
 ## Deviations from plan
 
 - PUT `/settings/lessons/:role` with an edit whose text is unchanged is now a full no-op: it records no history (S2) and also no longer sets `saved_by: 'user'` / `saved_at` as before (`viewer/app/routes.js:250`).
-- A Settings version row's "by an agent / by you" shows the version's own `saved_by` (who wrote that wording), not `changed_by` (`viewer/pages/settings.js:947`).
+- (Superseded by Remediation 1: History now shows `changed_by`.)
 - Other worker choices are logged in PLAN.md's Log.
 
 ## Routers
@@ -74,3 +74,24 @@ Screenshots: `docs/plans/lessons-hardening/reports/T2-lessons-history.png` (edit
 - Accepted Risks in PLAN.md stand.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-21
+
+Verification attempt 1 (63510ee6, claude-opus-5-5 and gpt-6.2-sol) failed with 6 gaps, none rare; see `REMEDIATION-1.md`.
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| 1 Keep/Add/Discard after an agent removed the lesson being edited dropped the draft and said "Saved" | the dropped draft is shown back: "An agent removed a lesson you were editing. Your unsaved text was: “…”" | `viewer/pages/settings.js` `lessonAction`, `keepLessonEdits` (~910-952) | `viewer/test/app-lessons.spec.js` (R1-UI test a) |
+| 2 Removed Restore sent only `id` | sends the newest version's `vid` shown in the row | `viewer/pages/settings.js` Removed row (~999) | `viewer/test/app-lessons.spec.js` (R1-UI test b) |
+| 3 History showed `saved_by` | shows "replaced by you/an agent <date>" from `changed_by` | `viewer/pages/settings.js` `versionRows` (~970) | `viewer/test/app-lessons.spec.js` (R1-UI test c) |
+| 4 72-lesson overflow test had an empty Waiting list | two waiting entries kept unchanged, 74 total | `viewer/test/app-lessons-history.test.js` | itself |
+| 5 export/import round-trip on an empty store | three lessons round-trip with fields preserved; re-import skips 3 | `viewer/test/app-lessons-history.test.js` | itself |
+| 6 `changed_by` unasserted for agent remove / restore | asserted | `viewer/test/app-lessons-history.test.js` | itself |
+
+Validation after remediation, from `viewer/`:
+
+```
+npm test: # tests 844  # pass 844  # fail 0
+npx playwright test test/app-lessons.spec.js test/app-handoff.spec.js: 76 passed (37.9s)
+```
+
