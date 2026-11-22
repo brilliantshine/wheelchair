@@ -14,12 +14,12 @@ Written for a hostile reviewer: every claim checkable, no claim without evidence
 | Spec item | Origin | Implemented at (file:line) | Validated by |
 |-----------|--------|----------------------------|--------------|
 | Job leader registers SIGTERM handler as first act, before waiting for PID file | this run | machine/lib/harness-install.js:55 | harness-install.test.js:86 (cancel modes) |
-| Steps run via awaited async spawn, each `detached: true` (own group); output to log as before | this run | machine/lib/harness-install.js:74-89, 96-120 | harness-install.test.js:13 (existing restart/validate test), :45 (Node checks), :86 |
-| Stop causes: SIGTERM → cancelled; `WHEELCHAIR_INSTALL_LIMIT_MS` timer (default 900000) → timeout; timer cleared on end; second request ignored | this run | machine/lib/harness-install.js:55-60, 122 | harness-install.test.js:86 (timeout mode with 500 ms) |
-| Stopping: no further step; SIGTERM to group, wait ≤5 s for step exit, then SIGKILL group unconditionally (ESRCH ignored); result then PID removal | this run | machine/lib/harness-install.js:58-71, 74-75, 89, 121-126 | harness-install.test.js:86 (TERM-ignoring child gone in all three modes) |
-| Results: cancelled / failed+timeout with `exit_code: null`, `reason`; `reason: "recipe"` when recipe exits non-zero; no log append | this run | machine/lib/harness-install.js:98, 124 | harness-install.test.js:86 (reason checks incl. `exit 17` → recipe) |
+| Steps run via awaited async spawn, each `detached: true` (own group); output to log as before | this run | machine/lib/harness-install.js:73-88, 95-118 | harness-install.test.js:13 (existing restart/validate test), :45 (Node checks), :86 |
+| Stop causes: SIGTERM → cancelled; `WHEELCHAIR_INSTALL_LIMIT_MS` timer (default 900000) → timeout; timer cleared on end; second request ignored | this run | machine/lib/harness-install.js:55-60, 123 | harness-install.test.js:86 (timeout mode with 500 ms) |
+| Stopping: no further step; SIGTERM to group, wait ≤5 s for step exit, then SIGKILL group unconditionally (ESRCH ignored); result then PID removal | this run | machine/lib/harness-install.js:58-72, 74, 86, 122-126 | harness-install.test.js:86 (TERM-ignoring child gone in all three modes) |
+| Results: cancelled / failed+timeout with `exit_code: null`, `reason`; `reason: "recipe"` when recipe exits non-zero; no log append | this run | machine/lib/harness-install.js:102, 124 | harness-install.test.js:86 (reason checks incl. `exit 17` → recipe) |
 | `stopJob(p)` | this run | machine/lib/harness-install.js:35-39 | harness-install.test.js:86 |
-| Explanations rules 1–4, rules 2–4 only for `reason: "recipe"`, null otherwise, full log | this run | machine/lib/harness-install.js:17-34 | harness-install.test.js:64 |
+| Explanations rules 1–4, rules 2–4 only for `reason: "recipe"`, null otherwise, full log | this run | machine/lib/harness-install.js:17-34 (state 15-23, explain 24-34) | harness-install.test.js:64 |
 | Machine DELETE route: 404 / 409 `not installing` / 202 `cancelling` | this run | machine/service.js:2066, 2071 | harness-install.test.js:86 (409 idle, 404 unknown, 202) |
 | API.md row: DELETE, cancelled, reason, explanation | this run | machine/API.md:31 | read |
 | Hub passthrough accepts DELETE, same validation and 502 | this run | viewer/app/routes.js:97-103 | app-harnesses.test.js:280 |
