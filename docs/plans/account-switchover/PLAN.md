@@ -45,6 +45,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | The carry-on message is the same for both providers, and no report is delivered from the limited turn (as today). | Review round 2: a Codex limit usually cuts the turn short too; a "nothing was cut off" message would leave the agent idle. | review-round-2 |
 | 18 | Confirms 15: a failed carry-over is treated like a crash (usual restart; a lead shows its Restart button). | Picked on the fallback card. | user |
 | 19 | Launch identity is removed. Events from the old CLI arriving after a switch are an accepted rare path; the machine drops hook events for a session while its status is `switching`, and after the respawn the old CLI no longer exists. | Review round 4: launch numbering drew findings every round, and it only guards against an event spooled during a limit hit and replayed after the switch, which needs the machine's own hook post to fail at that moment. | review-round-4 |
+| 20 | Keep the current design with Claude and Codex together and keep reviewing (budget reset). | Picked after review round 5. | user |
 
 ## Spec
 
@@ -374,6 +375,19 @@ resets; other providers; changing how accounts are signed in.
 | mechanics | major | First message re-sent on resume | upheld | Same fix as intent major |
 | mechanics | major | An explicit refusal (404 from an older machine) has no outcome | upheld | §3 hub step 3: refusal restores the hold |
 | mechanics | minor | Quiet reminders can fire during a switch | upheld | §3 hub step 5: no quiet while `switching` |
+
+### Round 6 — 2026-11-21
+
+**Lanes:** intent / claude; mechanics / gpt; cross-family: yes.
+
+**Changed since Round 5:**
+- §2: no model-slot check; the session keeps its saved model and effort.
+- §3 hub: `switching` holds the `switch_id`; launch values (`model`, `effort`, `permission_mode`, `codex_mode`) come from the hub session record, which now saves the permission modes at start; sessions without them are not switched; a refused request restores the hold; only switch callbacks need a matching id; no quiet reminders while switching.
+- §3 machine: `switch_id` and outcome kept outside the snapshot; step 4 lists what the relaunch reuses from `startIn`, its inputs, and what it skips (worktree creation, reservation, first message, ledger line, `new-session`).
+- Validation updated to match.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
