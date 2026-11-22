@@ -183,13 +183,15 @@ test('a marked tool named __proto__ next to a wrapped Windows program is rewritt
   const dir = f.work(1234, { ['__proto__']: { type: 'http', url: 'http://localhost:1235/mcp', headers: { Secret: 'sensitive' } } });
   const file = path.join(dir, '.mcp.json'), cfg = JSON.parse(fs.readFileSync(file));
   cfg.mcpServers.wintool = { command: '/mnt/c/tools/wintool.exe', args: [] }; fs.writeFileSync(file, JSON.stringify(cfg));
-  for (const cli of ['claude', 'codex']) {
+  const own = (name, cli) => cli === 'claude' ? fs.readFileSync(path.join(f.state, 'settings', `${name}.mcp.json`), 'utf8')
+    : cli === 'codex' ? fs.readFileSync(path.join(f.state, `argv-${name}`), 'utf8') : filesUnder(path.join(f.state, 'agy-tools'));
+  for (const cli of ['claude', 'codex', 'agy']) {
     const name = `wc-proto-${cli}`; await f.start(name, cli, 'worker', 1234, dir);
-    const payload = fs.readFileSync(path.join(f.state, `argv-${name}`), 'utf8') + filesUnder(path.join(f.state, 'settings'));
+    const payload = own(name, cli);
     assert(!payload.includes('localhost:1235'), `${cli} kept the Linux URL`); assert(payload.includes('127.0.0.1:21235'), `${cli} missing the private URL`);
   }
   f.ready(false); const name = 'wc-proto-off'; await f.start(name, 'codex', 'worker', 1234, dir);
-  assert(!fs.readFileSync(path.join(f.state, `argv-${name}`), 'utf8').includes('localhost:1235'));
+  const off = own(name, 'codex'); assert(!off.includes('localhost:1235')); assert(!off.includes('127.0.0.1:21235'));
 });
 
 test('windows status validates input, reports unavailable, thrown and timed-out checks and off WSL', async t => {
