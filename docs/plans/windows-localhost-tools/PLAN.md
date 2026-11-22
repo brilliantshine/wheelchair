@@ -808,6 +808,11 @@ Clean round.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Shared eligibility rule (`win-mark.js`), `readProjectMcp` marks and warnings (§1), Project tools read `wsl`/`windows` and save `windows` (§7 machine side) | `machine/lib/win-mark.js`, `machine/lib/project-mcp.js`, `machine/lib/project-tools.js`, their tests | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker | `node --test machine/test/*.test.js` | in progress |
+| T2 | `context.replaceEntries` in Claude, Codex, Antigravity adapters (§3, D5, D17) | `machine/adapters/{claude,codex,agy,common}.js`, `machine/test/replace-entries.test.js` and adapter tests | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker-2 | `node --test machine/test/*.test.js` | in progress |
+| T3 | tricky: forwards module, relay script, record/restore, unit and live tests (§4, §5) | `machine/lib/win-forward.js`, `machine/lib/win-relay.ps1`, `machine/test/win-forward.test.js`, `machine/test/win-relay-live.test.js`, fixtures | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker-3 | `node --test machine/test/win-forward.test.js machine/test/win-relay-live.test.js` | in progress |
+| T4 | Service integration: `startIn` forwarding and `replaceEntries` (§2), Claude `--mcp-config` file write/remove/sweep (§3), `WinBridge` restore (§5), `windows-status` route and read `wsl` (§6, §7) | `machine/service.js`, `machine/lib/win.js`, service tests | standard | — | full machine suite | not started (after T1-T3) |
+| T5 | Project tools page switch, status store and line, viewer route (§6, §7 page) | `viewer/pages/project-tools.js`, `viewer/app/routes.js`, viewer project-tools tests | standard / claude-sonnet-5-5 | wc-a1a1b7d6016d-worker-4 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | in progress |
 
 ## Log
 
