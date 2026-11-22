@@ -1,6 +1,6 @@
 ---
 slug: lessons-hardening
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -59,6 +59,19 @@ non-goals, and concrete validation commands.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
+
+```mermaid
+flowchart TD
+  A[An agent or you change or remove a lesson] --> H[The old version goes into its history]
+  H --> R[In Settings: restore any version, or a removed lesson]
+  F[A lessons file is imported in Settings] --> M{Same lesson, same AI and project already here, or in its history?}
+  T[A handed-off thread is picked up] --> M
+  M -- yes --> S[Skipped]
+  M -- no --> C{Room under 12 for that agent type?}
+  C -- yes --> N[Added, marked as just kept]
+  C -- no --> W[Waiting to add: you add or discard it]
+  N --> O[After 90 days unchanged or unkept: marked possibly out of date; Keep clears it]
+```
 
 Terms. A **lesson** is an entry in `settings.lessons[<role>]` (`viewer/app/settings.js:282-288`): `{id, text, provider?, project?, saved_by: 'agent'|'user', thread?, saved_at}`. **Role** is one of the agent types in `ROLES`. "Settings" is the "Lessons learned · <role>" editor reached from the Templates section (`viewer/pages/settings.js:894`, list item `:936-958`).
 
