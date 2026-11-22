@@ -2,7 +2,25 @@
 slug: windows-localhost-tools
 date: 2026-11-21
 implemented-by: "standard workers — gpt-6.1-terra (T1, T2, T3a, T3b, T4; T3a/T3b/T4-attempt-2 at effort xhigh), claude-sonnet-5-5 (T5, T6, T7); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra and claude-sonnet-5-5 workers
+  - round: 1
+    lane: gpt-6.2-sol
+    checks: gpt-6.1-terra and claude-sonnet-5-5 workers
+  - round: 2
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra and claude-sonnet-5-5 workers
+  - round: 2
+    lane: gpt-6.2-sol
+    checks: gpt-6.1-terra and claude-sonnet-5-5 workers
+  - round: 3
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra and claude-sonnet-5-5 workers
+  - round: 3
+    lane: gpt-6.2-sol
+    checks: gpt-6.1-terra and claude-sonnet-5-5 workers
 ---
 
 # Completion Report — Windows localhost tools from WSL
@@ -223,3 +241,7 @@ the Windows server started again, the same private port worked and `last` was cl
 - **Gap fixed (R2-1):** an open Edit form wrote back the switch value captured when it opened, undoing a card-switch change. Fix in `viewer/pages/project-tools.js` (T8): the form follows the tool's live mark until its own switch is touched (`formWinOn()`, `winTouched`), and Keep changes writes that. New browser tests in `viewer/test/app-project-tools.spec.js`: card off then Keep (sends `windows: []`), card on then Keep (sends `["loc"]`), touching the form switch after a card change wins, Cancel keeps the card's value.
 - **Rare path recorded in Accepted Risks (verification-2):** duplicate names in `wheelchair.windows` enable Save before any edit.
 - **Validation after the fix:** `npm --prefix viewer run test:browser -- app-project-tools` → `200 passed (1.5m)`; `node --test viewer/test/app-project-tools.test.js viewer/test/win-mark-parity.test.js` → all pass. Only the page and its spec changed; the machine, live relay and C1/C2 evidence above stands (re-confirmed by both attempt-2 verifiers, and the claude verifier also ran C1/C2 through the service's real start path).
+
+### Verification 3 (on `8734b7be`)
+
+claude-opus-5-5 PASS; gpt-6.2-sol reported one rare path only (a malformed-header marked entry gets a misleading warning), recorded in PLAN.md Accepted Risks (verification-3). Both re-ran the suites (only the six pre-existing Node failures; full browser 1220 passed in the claude run, 1219 + one pre-existing Chromium composer timeout in the gpt run), the live relay test (12/12), and C1/C2 live with Claude and Codex.

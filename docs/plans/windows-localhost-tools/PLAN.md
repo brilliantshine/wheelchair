@@ -474,6 +474,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 | A project with more than 100 marked web-address tools gets no Project tools status at all, because the machine refuses a status request over 100 tools with 400 | Rare path: needs over 100 marked localhost tools in one project; tools still work in sessions, only the page status is missing | verification-1 |
 | If the kernel picks a private port equal to the Windows tool port and the Windows server is down, a connection dials back into its own Linux listener once (two relays) before the `wslrelay` refusal | Rare path: needs the kernel to pick exactly the tool's port number and the Windows server to be down; it ends in a refusal with no bytes sent to Linux | verification-1 |
 | Duplicate names in `wheelchair.windows` (e.g. `["loc", "loc"]`) make the Project tools page show Save enabled before any edit, because the draft de-duplicates and the baseline does not | Rare path: the page and machine never write duplicates; needs a hand-edited `.mcp.json` | verification-2 |
+| A marked tool with an eligible localhost URL but malformed headers is left out of `mcp.windows` and gets the "only applies to an http://localhost…" warning besides its usual "skipped" warning | Rare path: needs a hand-broken entry the page never writes; the entry is already skipped as invalid, so only the warning wording is off | verification-3 |
 
 ## Check Once Built
 
@@ -880,3 +881,4 @@ Clean round.
 - 2026-11-21 — Choice: T8, app-project-tools.spec.js: the tests wait for the intercepted save request before reading its body; the Cancel test passes without the fix too (Cancel already behaved correctly) and stays as a guard.
 - 2026-11-21 — worker didn't report all its choices; I listed 2 more from the scout's read.
 - 2026-11-21 — T8 accepted (band: scout): meets all required behaviours; app-project-tools browser 200/200 (sub-lead re-run); the worker's pre-fix run failed both save directions and the sync check in both browsers.
+- 2026-11-21 — Verification 3 on 8734b7be: claude-opus-5-5 PASS; gpt-6.2-sol FAIL with one rare path only (malformed-header marked entry gets a misleading warning), recorded in Accepted Risks. Merged list empty after rare-path judgment: verification passed. Rare paths accepted across verification: 5.
