@@ -117,6 +117,7 @@ check (`viewer/app/cards.js:69`, `:168`).
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A pre-PLAN chat decision or unrecorded chat answer older than the restart context's last 20 messages is lost; the user is asked again | Needs a restart plus 20 later messages; worst case one extra card | planning |
+| A peer paused when the user left the shared work to it, then resumed and dropped it, all inside the card window: its state matches the recorded one, so no re-ask (the drop still gets a one-line mention) | Rare path: needs a pause at answer time, a resume and a later drop before planning ends | verification-2 |
 
 ## Review Rounds
 
@@ -173,3 +174,4 @@ check (`viewer/app/cards.js:69`, `:168`).
 - 2026-11-21 — Verification 1 (gpt-6.2-sol): FAIL, 1 gap (Spec 5 re-ask repeats on news the answer already knew); judged normal use, sent to REMEDIATION-1.md.
 - 2026-11-21 — Choice: R1-1, test: new phrase appended last in the phrase list (scout-noted; report said none).
 - 2026-11-21 — R1-1 accepted (band: scout): both replacements match the brief exactly; protocol-rules 38/38 and npm test 833/833 re-run by the sub-lead on the worker branch.
+- 2026-11-21 — Verification 2 (gpt-6.2-sol): 1 gap (pause, resume, then drop missed by the re-ask), judged a rare path and recorded in Accepted Risks; merged list empty, PASS at c6d454dd.
