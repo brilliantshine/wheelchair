@@ -43,6 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | Supersedes 12: there is no special fresh-restart fallback. A resume that fails ends the session like any session that dies, and today's dead-session handling restarts it (its starter restarts it; a lead gets the Restart button). Placement then skips the limited account on its own. | Review round 2: the in-place fresh relaunch kept drawing blocking findings (role prompt, thread binding, pane lifetime, lost first prompt). Once the build's first task proves resume works, a failed resume is not normal use, and the existing death path already restarts. | review-round-2 |
 | 16 | If the first build task shows a CLI cannot resume a conversation under another account, the build stops for that CLI and Collin is asked how to proceed, rather than every switch for that CLI ending in a restart. | Follows from 15: that case would make every switch a restart, which is not what Collin picked. | review-round-2 |
 | 17 | The carry-on message is the same for both providers, and no report is delivered from the limited turn (as today). | Review round 2: a Codex limit usually cuts the turn short too; a "nothing was cut off" message would leave the agent idle. | review-round-2 |
+| 18 | Confirms 15: a failed carry-over is treated like a crash (usual restart; a lead shows its Restart button). | Picked on the fallback card. | user |
 
 ## Spec
 
@@ -276,6 +277,19 @@ resets; other providers; changing how accounts are signed in.
 | mechanics | major | Relaunch from stored arguments loses project tools and keys | upheld (`machine/adapters/codex.js:138`, `machine/lib/env-launch.js:9`) | §3 machine step 4: same launch preparation |
 | mechanics | major | Selector skips the lead reserve and live-session tie-break | upheld (`viewer/app/balancer.js:78`) | §2 shared per-provider rules |
 | mechanics | minor | Resetting Codex parser offsets replays old usage | upheld | §3 machine step 3: offsets carry over |
+
+### Round 3 — 2026-11-21
+
+**Lanes:** intent / claude; mechanics / gpt; cross-family: yes.
+
+**Changed since Round 2:**
+- §1: launch identity (`launch` number on hook events); old-launch events only record their account's cooldown. Codex limit treated as cut-short; no report from the limited turn (Decision 17).
+- §2: selector shares `choose()`'s lead reserve gate and live-session counts.
+- §3: `switching` hold; async machine accept with `switch_id` retry and restore-on-failure; final transcript flush; offsets carry over; relaunch through normal launch preparation with `respawn-pane -k`; one carry-on text.
+- §4: no special fallback; failed resume ends the session like a crash (Decisions 15, 16, 18).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
