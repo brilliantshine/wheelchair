@@ -657,6 +657,15 @@
         const d = el('details', 'tool'); d.appendChild(el('summary', '', it.text));
         d.appendChild(el('pre', 'tool-detail', it.detail || 'No details recorded.'));
         chatEl.appendChild(d);
+      } else if (it.type === 'peer') {
+        const c = el('div', 'ctx');
+        const line = el('span', 'peer-line');
+        const link = el('a', '', it.title || 'another thread');
+        link.href = '/wheelchair/app/thread?id=' + encodeURIComponent(it.thread);
+        line.append(it.limit ? 'Message limit reached with ' : 'Talked with ', link);
+        if (!it.limit) line.append(' · ' + it.count + (it.count === 1 ? ' message' : ' messages'));
+        c.appendChild(line);
+        chatEl.appendChild(c);
       } else if (it.type === 'context') {
         const c = el('div', 'ctx');
         if (it.context === 'stub') {
