@@ -40,6 +40,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Supersedes 7: when resume fails, the session is relaunched fresh *in place* (same tmux session, name, role, starter, worktree, queue) on the new account without resume, and told where the old transcript is. Today's per-role restart paths are not used. | Review round 1: the per-role restart paths rerun placement, lose queues and children's routes, change a verifier's commit and show "Lead restarted". Relaunching in place keeps all of that. | review-round-1 |
 | 13 | The switch is one machine operation (stop, copy, relaunch with resume, readiness wait, in-place fresh fallback) started by the hub after it has acknowledged the limit event, not inside the event handler. | Review round 1: the readiness event arrives through the same serial spool and thread lock. | review-round-1 |
 | 14 | A new marker `[wc:context switch]` carries the carry-on message: the message is hidden with no placeholder line, and the session's reply is shown as usual. | Review round 1: `[wc:from app]` would hide a lead's continued answer to Collin; Decision 9 rules out a visible line. | review-round-1 |
+| 15 | Supersedes 12: there is no special fresh-restart fallback. A resume that fails ends the session like any session that dies, and today's dead-session handling restarts it (its starter restarts it; a lead gets the Restart button). Placement then skips the limited account on its own. | Review round 2: the in-place fresh relaunch kept drawing blocking findings (role prompt, thread binding, pane lifetime, lost first prompt). Once the build's first task proves resume works, a failed resume is not normal use, and the existing death path already restarts. | review-round-2 |
+| 16 | If the first build task shows a CLI cannot resume a conversation under another account, the build stops for that CLI and Collin is asked how to proceed, rather than every switch for that CLI ending in a restart. | Follows from 15: that case would make every switch a restart, which is not what Collin picked. | review-round-2 |
+| 17 | The carry-on message is the same for both providers, and no report is delivered from the limited turn (as today). | Review round 2: a Codex limit usually cuts the turn short too; a "nothing was cut off" message would leave the agent idle. | review-round-2 |
 
 ## Spec
 
@@ -60,15 +63,26 @@ The hub's existing limit condition (`viewer/app/sessions.js:593-595`) is the tri
 both of its forms:
 
 - Claude: a `limit-hit` event (StopFailure `rate_limit`, `machine/adapters/claude.js:94-96`)
-  with `limited_until` in the future. The turn was cut off mid-way.
+  with `limited_until` in the future.
 - Codex: a `turn-ended` event whose `reading.limited_until` is in the future
-  (`machine/service.js:1519-1533`). The turn finished; the limit was read from its usage.
+  (`machine/service.js:1519-1533`). This usually means the turn was cut short.
 
-The machine stamps every `limit-hit` and `turn-ended` event with the `account` the session
-was on when the CLI produced it. The hub records a limit against that event's `account`,
-never against `target.account` (today `viewer/app/sessions.js:597-598`). A limit event whose
-`account` is not the session's current account records that account's cooldown and does
-not trigger a switch or a hold.
+In both, the limited turn's report is not delivered, as today
+(`viewer/app/sessions.js:632`).
+
+**Launch identity.** Every CLI launch of a session (the first start and each switch) gets
+a `launch` number on the machine session record, starting at 1. The machine passes it to the
+CLI's hooks in the launch environment (`WHEELCHAIR_LAUNCH`), and `machine/lib/hook-post.js`
+puts it, with the session's account, on every event it posts or spools. Codex notify events
+get the same fields from the machine when it builds them. The machine and the hub both
+check it before changing session state:
+
+- An event whose `launch` is older than the session's current launch only records its
+  account's usage reading and any `limited_until` against *that event's account*. It does
+  not touch turn state, transcript binding, holds, delivery or reports, and never triggers
+  a switch.
+- The hub records limits against the event's `account`, never `target.account` (today
+  `viewer/app/sessions.js:597-598`).
 
 ### 2. Choosing the new account
 
@@ -77,11 +91,14 @@ switch selector (new, in `viewer/app/balancer.js`), not the public `choose()`, w
 constraint rules refuse a pinned provider for leads, sub-leads and mappers and drop it for
 reviewers and verifiers (`viewer/app/balancer.js:45-80`). The switch selector:
 
-- considers only the session's provider and the thread's machine;
+- considers only the session's provider and the thread's machine, and the session's model
+  slot;
 - removes the limited account, and any account whose reading has `limited_until` in the
   future, *before* ranking;
-- then ranks the rest with the existing `usage.rank()` (sign-in, readings, reserves,
-  weights), using the session's model slot;
+- applies the same per-provider rules `choose()` applies for that role: the lead reserve
+  gate (`margin`/`held_back`, `viewer/app/balancer.js:78`) and live-session counts for the
+  tie-break. Factor those out of `choose()` so both use one copy;
+- ranks the rest with the existing `usage.rank()`;
 - for `gpt`, runs `codex/preflight.sh` on the winner as in `viewer/app/sessions.js:292-314`
   (a failure marks it unavailable and picks once more).
 
@@ -89,24 +106,31 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
 
 ### 3. Switching
 
-Order in the hub, once an account is chosen:
+**Hub**, once an account is chosen, in this order:
 
-1. Acknowledge the limit event as today (the old account's reading gets its
-   `limited_until`). For Codex, the finished turn's report is delivered as a normal turn
-   end (the turn completed); for Claude there is no report, as today.
-2. Clear the session's own hold: delete `target.limited_until` and cancel its pending
-   reset `Continue.` (`viewer/app/sessions.js:886-893`). The old account's reading keeps its
-   `limited_until`, so no other session is placed on it.
-3. Set `target.account` to the new account, append `{from, to, at}` to `target.switches`,
-   and `recordChosen` the new account. Save.
-4. Ask the machine to switch the session to the new account (one new machine endpoint;
-   the hub does not wait inside the event handler). It is idempotent: if the machine's
-   session is already on that account, it does nothing and reports success.
+1. Record the limit as today (the old account's reading gets `limited_until`).
+2. Set `target.switching = {to, at}`. While it is set, nothing is delivered to the session
+   (add it to `held()`, `viewer/app/sessions.js:505-511`). Only then delete
+   `target.limited_until` and cancel its pending reset `Continue.`
+   (`viewer/app/sessions.js:886-893`). The old account's reading keeps its `limited_until`.
+3. Send the machine the switch request (new endpoint) with the new account and a
+   `switch_id`. The machine answers at once that it has accepted it and does the work in
+   the background, so the client's short timeout (`viewer/app/machine-client.js:66`) is
+   not a problem. On a network error the hub retries the same request (same `switch_id`;
+   the machine treats a repeat as the same switch). If it still cannot reach the machine,
+   it gives up the switch: clears `switching`, and restores today's hold-until-reset and
+   `Continue.`
+4. On acceptance: set `target.account` to the new account, append `{from, to, at}` to
+   `target.switches`, `recordChosen` the new account. Save.
+5. When the session's `ready` event for the new launch arrives: queue the carry-on
+   message first, ahead of anything held, then clear `switching` so delivery resumes.
+   If instead the session ends, clear `switching`; today's dead-session handling takes over
+   (Decision 15).
 
-The machine, for that session:
+**Machine**, for that session, in the background:
 
-1. Stops the CLI process in the session's tmux session (tmux session, worktree, session
-   token, name stay).
+1. Copies the old source transcript into the machine's own copy one last time
+   (`copyTranscript`), so the copy holds the interrupted turn.
 2. Copies the CLI's conversation file from the old account directory into the new one at
    the path that CLI expects (copy, never move):
    - Claude: `<config dir>/projects/<project key>/<session-id>.jsonl`
@@ -115,28 +139,27 @@ The machine, for that session:
      (`machine/adapters/codex.js:114-125`, `:149`).
    Default accounts use the CLI's own default directory (`~/.claude`, `~/.codex`); others
    `~/.wheelchair/accounts/<id>`.
-3. Updates the session record: `account`, `account_dir`, clears `source_transcript` and
-   the turn-parsing offsets tied to it, so the next lookup finds the file in the new
-   directory (`machine/service.js:1078-1080`, `:1450`, `:1514`). The machine's own copy of
-   the transcript (`transcript_path`) keeps its offset: the copied file starts with the same
-   content.
-4. Relaunches the CLI in the same tmux session with the new account's environment
-   (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`, none for a default account), the same launch
-   arguments as the original start (model, effort, permissions, role instructions), plus
-   resume: Claude `--resume <session-id>`, Codex `resume <thread-id>`.
-5. Gives the relaunch its own readiness window: resets the session's `ready` state and
-   measures the 30-second check (`machine/service.js:1117-1152`) from the relaunch, not the
-   original start. A relaunch that exits or misses that window does not emit `stuck`; it
-   goes to section 4.
-6. Once ready, emits `ready` as usual.
+3. Updates the session record: `account`, `account_dir`, `launch + 1`, `ready = false`, and
+   `source_transcript` pointing at the copied file. Parser and copy offsets carry over
+   unchanged, since the copied file is identical; they reset only if the CLI turns out to
+   write a new file on resume (the first build task finds out; then they start at 0 of that
+   new file).
+4. Builds the relaunch command with the same launch-preparation code a normal start uses
+   (`machine/service.js:804-945`: project tools, project keys, MCP config, role
+   instructions, model, effort, permissions), with the new account's environment
+   (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`, none for a default account), the new
+   `WHEELCHAIR_LAUNCH`, and resume: Claude `--resume <session-id>`, Codex
+   `resume <thread-id>`. Nothing is rebuilt from stored, redacted arguments.
+5. Replaces the CLI process with `tmux respawn-pane -k` on the session's pane, so the tmux
+   session itself never goes away.
+6. Gives the relaunch its own readiness window: the 30-second check
+   (`machine/service.js:1117-1152`) is measured from the relaunch. Ready: emits `ready` as
+   usual. Exits or misses the window: the session ends as a dead session today does (no
+   `stuck` card; Decision 15).
 
-When the hub sees `ready` after a switch, it puts this first in the session's queue,
-ahead of anything held:
+The carry-on message, for both providers:
 `[wc:context switch] Your account hit its usage limit, so this conversation was moved to
-another account. Carry on from where you stopped.` For a Codex switch, where the turn had
-finished, the text instead ends `Nothing was cut off; wait for your next message.` and is
-skipped entirely if other messages are queued (they go first and the session carries on
-with them).
+another account. Carry on from where you stopped.`
 
 `[wc:context switch]` is a new marker (`viewer/app/chat.js:125-144`, `protocol/app/cards.md`
 markers table): the message itself is hidden with no placeholder line, and the reply is
@@ -145,16 +168,10 @@ not shown in the thread anyway).
 
 ### 4. When resume fails
 
-If the resumed CLI exits or misses its readiness window, the machine relaunches the CLI
-again in the same tmux session on the new account, with the same launch arguments but no
-resume. The session keeps its name, role, starter, worktree, queue and children, so
-nothing is re-routed and no placement runs. This relaunch uses the normal startup checks
-(its own 30-second window; a miss emits `stuck` as today). Once ready, the hub types first:
-`[wc:context switch] Your account hit its usage limit and this conversation could not be
-moved, so you are starting fresh on another account. Your earlier conversation is at
-<machine transcript_path>; read it to see what was done, then carry on with your task.`
-followed by the session's original brief for roles that have one (the brief the hub
-already stores, `/api/sessions/<name>/brief`).
+There is no special fallback (Decision 15). A resume that exits or misses its readiness
+window ends the session; its starter gets today's dead-session notice and restarts it by
+its role's usual rule, and a dead lead gets the Restart button. Normal placement skips the
+limited account because its reading has a future `limited_until`.
 
 ### 5. What Collin sees
 
@@ -180,13 +197,16 @@ resets; other providers; changing how accounts are signed in.
   report is delivered. For the `claude` case: (session's
   `account` changes, `switches` has one entry, the carry-on message is queued, held
   messages are delivered after it); with no second account, today's hold and `Continue.`
-  happen; a `gemini` session never switches; a failed resume relaunches in place without
-  resume and the session name, queue and starter are unchanged.
+  happen; a `gemini` session never switches; a held message is not delivered while
+  `switching` is set and the carry-on message is delivered first after `ready`; an
+  unreachable machine restores today's hold; the switch selector honours the lead reserve
+  for a worker; an event from an older `launch` changes no turn state and sets no hold.
 - New machine tests (fake CLIs): the switch copies the Claude and Codex conversation files
   into the new account directory and relaunches with the resume arguments and the new
-  environment; the old file is left in place; a resume that misses readiness relaunches
-  without resume and emits no `stuck`; a repeated switch request to the same account does
-  nothing.
+  environment; the old file is left in place; the relaunch uses `respawn-pane -k` and the
+  same launch preparation as a start (project tools present); a resume that exits, and one
+  that misses readiness, each end the session without a `stuck` event; a repeated
+  `switch_id` does not switch twice; hook events carry `launch` and account.
 - `npm --prefix viewer run test:browser` passes, with a check that the Agents details show
   the account name, "moved from", and the removed-account label. A chat test shows a
   `[wc:context switch]` message hidden with its reply shown.
@@ -194,8 +214,8 @@ resets; other providers; changing how accounts are signed in.
   that a conversation copied into the other account's directory resumes (Claude and
   Codex), and record the result in the plan's Log. Also record whether the resumed CLI
   appends to the copied file or starts a new one; if a new one, the machine's transcript
-  copy must follow it, and the Log says how. If one CLI cannot resume across accounts, that
-  CLI always uses section 4 and the Log says so.
+  copy must follow it, and the Log says how. If one CLI cannot resume across accounts, stop
+  and report it (Decision 16).
 
 ## Deferred
 
@@ -234,7 +254,7 @@ resets; other providers; changing how accounts are signed in.
 
 ### Round 2 — 2026-11-21
 
-**Lanes:** intent / claude; mechanics / other family; cross-family: yes.
+**Lanes:** intent / claude; mechanics / gpt; cross-family: yes.
 
 **Changed since Round 1:**
 - §1: both trigger forms named (Claude `limit-hit`, Codex `turn-ended` with a future reading); events stamped with their account.
@@ -245,6 +265,17 @@ resets; other providers; changing how accounts are signed in.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Codex "nothing was cut off" carry-on text leaves a cut-short Codex agent idle | upheld | Decision 17: one carry-on text; no report from the limited turn |
+| intent | minor | Partial Codex report then a second one | upheld | Same fix |
+| mechanics | blocking | Fresh Codex relaunch lacks `[wc:role]` first input and keeps the old thread id | upheld | Cut: Decision 15 removes the fresh fallback |
+| mechanics | blocking | Pane can disappear when the resume process exits | upheld | §3 machine step 5 `respawn-pane -k`; a failed resume ends the session (Decision 15) |
+| mechanics | major | Clearing the hold before the switch lets a held message reach the old CLI | upheld | §3 hub step 2 `switching` hold |
+| mechanics | major | Network drop or short client timeout leaves hub and machine disagreeing | upheld | §3 hub steps 3-4: async accept, `switch_id` retry, restore hold on failure |
+| mechanics | major | Delayed old-launch events rebind the transcript or close the new turn | upheld | §1 launch identity |
+| mechanics | major | Interrupted turn not flushed; lead with no brief has nothing to recover from | upheld | §3 machine step 1 flush; fresh fallback cut |
+| mechanics | major | Relaunch from stored arguments loses project tools and keys | upheld (`machine/adapters/codex.js:138`, `machine/lib/env-launch.js:9`) | §3 machine step 4: same launch preparation |
+| mechanics | major | Selector skips the lead reserve and live-session tie-break | upheld (`viewer/app/balancer.js:78`) | §2 shared per-provider rules |
+| mechanics | minor | Resetting Codex parser offsets replays old usage | upheld | §3 machine step 3: offsets carry over |
 
 ## Implementation Tasks
 
