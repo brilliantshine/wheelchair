@@ -4,7 +4,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { providers, loadRecipes } = require('./harness-recipes');
-const adapters = require('../adapters');
 const root = path.resolve(__dirname, '../..');
 const names = { claude: 'claude', gpt: 'codex', gemini: 'agy', kimi: 'kimi', openrouter: 'pi' };
 const labels = { claude: 'Claude Code', gpt: 'Codex', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'Pi (OpenRouter)' };
@@ -81,7 +80,7 @@ async function job(p, started_at) {
       current = { child, exited };
       child.on('error', e => { error = e; if (!quietError && !reason) console.error(e.message); });
       child.on('exit', () => done());
-      child.on('close', status => { current = null; done(); resolve({ status, stdout, stderr, error }); });
+      child.on('close', status => { current = null; done(); resolve({ status: error ? null : status, stdout, stderr, error }); });
     });
     if (reason) throw new Error('stopped');
     return result;
@@ -113,7 +112,15 @@ async function job(p, started_at) {
         }
       }
       if (code === 0) {
-        const resolved = cli === 'pi' || cli === 'kimi' ? adapters[cli].resolveCli() : (await run('sh', ['-c', `command -v ${cli}`], process.env, true)).status === 0 && cli;
+        let resolved;
+        if (cli === 'pi' || cli === 'kimi') {
+          const found = await run('sh', ['-c', `command -v ${cli}`], process.env, true);
+          if (cli === 'pi') resolved = found.status === 0 ? (found.stdout.trim() || null) : null;
+          else {
+            const candidate = found.status === 0 ? found.stdout.trim() : path.join(os.homedir(), '.kimi-code/bin/kimi');
+            try { fs.accessSync(candidate, fs.constants.X_OK); resolved = path.resolve(candidate); } catch { resolved = null; }
+          }
+        } else resolved = (await run('sh', ['-c', `command -v ${cli}`], process.env, true)).status === 0 && cli;
         if (!resolved) { console.error(`Installed, but wheelchair can't find ${cli} on its path. Re-run ./install.sh from the wheelchair folder once.`); code = 1; }
         else if (cli !== 'pi') code = (await run(resolved, ['--version'])).status ?? 1;
       }

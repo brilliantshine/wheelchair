@@ -41,6 +41,41 @@ test('detached install routes persist through service restart and validate', asy
 });
 test('full node version comparison', () => { assert.equal(newer('22.18.9', '22.19.0'), false); assert.equal(newer('22.19.0', '22.19.0'), true); assert.equal(newer('23.0.0', '22.19.0'), true); });
 
+test('slow Kimi CLI lookup is stopped by the install limit', async () => {
+  const root = await makeTemp('harness-kimi-slow-'), home = path.join(root, 'home'), bin = path.join(root, 'bin');
+  fs.mkdirSync(home); fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'sh'), '#!/bin/bash\nsleep 3\nexec /bin/sh "$@"\n', { mode: 0o755 });
+  const recipes = path.join(root, 'recipes.json'); fs.writeFileSync(recipes, JSON.stringify({ kimi: 'true' }));
+  const env = { ...process.env, HOME: home, PATH: `${bin}:/usr/local/bin:/usr/bin:/bin`, WHEELCHAIR_HARNESS_RECIPES: recipes, WHEELCHAIR_INSTALL_LIMIT_MS: '500' };
+  const start = spawn(process.execPath, ['-e', `require(${JSON.stringify(path.resolve(__dirname, '../lib/harness-install'))}).start('kimi')`], { env, stdio: 'ignore' });
+  await new Promise((resolve, reject) => { start.once('error', reject); start.once('exit', code => code === 0 ? resolve() : reject(new Error(`start subprocess exited ${code}`))); });
+  const resultFile = path.join(home, '.wheelchair/installs/kimi.result');
+  let result; const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(resultFile)) { result = JSON.parse(fs.readFileSync(resultFile, 'utf8')); break; }
+    await delay(1000);
+  }
+  assert.ok(result, 'install did not finish within 8 seconds');
+  assert.equal(result.state, 'failed'); assert.equal(result.reason, 'timeout');
+});
+
+test('missing step program reports exit code 1', async () => {
+  const root = await makeTemp('harness-no-python-'), home = path.join(root, 'home'), bin = path.join(root, 'bin');
+  fs.mkdirSync(home); fs.mkdirSync(bin);
+  const recipes = path.join(root, 'recipes.json'); fs.writeFileSync(recipes, JSON.stringify({ claude: 'true' }));
+  const env = { ...process.env, HOME: home, PATH: bin, WHEELCHAIR_HARNESS_RECIPES: recipes };
+  const start = spawn(process.execPath, ['-e', `require(${JSON.stringify(path.resolve(__dirname, '../lib/harness-install'))}).start('claude')`], { env, stdio: 'ignore' });
+  await new Promise((resolve, reject) => { start.once('error', reject); start.once('exit', code => code === 0 ? resolve() : reject(new Error(`start subprocess exited ${code}`))); });
+  const resultFile = path.join(home, '.wheelchair/installs/claude.result');
+  let result; const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(resultFile)) { result = JSON.parse(fs.readFileSync(resultFile, 'utf8')); break; }
+    await delay(1000);
+  }
+  assert.ok(result, 'install did not finish within 8 seconds');
+  assert.equal(result.state, 'failed'); assert.equal(result.exit_code, 1);
+});
+
 for (const [version, expected] of [['20.19.0', 'failed'], ['22.19.0', 'succeeded'], ['invalid', 'failed']]) {
   test(`npm recipe checks PATH Node ${version}`, async () => {
     const root = await makeTemp('harness-path-node-');
