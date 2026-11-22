@@ -78,6 +78,8 @@ entries, or for `mcp-for-unity`. Background maps: `docs/maps/windows-stdio-gobet
    started the tool).
 4. These recovery tasks are in `readying` like launch ones, so stop, sweep and archive
    wait on them as today.
+5. `startup` starts its `sweep()` without awaiting it (today it awaits, `win.js:416`), so a
+   sweep gating copies never holds the service's start; errors are logged.
 
 ### 2. Launching a tool in a Windows job (D5)
 
@@ -115,10 +117,9 @@ these differences from `wrapperScript`:
 `--stop-ms`) from the moment stopping starts, with the last 4 s always kept for forced
 termination:
 1. Close the launcher's stdin. If the launcher has exited, done.
-2. Until 8 s into the budget: wait for the launcher to exit by itself (if the
-   acknowledgment has arrived, at most 2 s of this; if it has not, until it arrives, then
-   up to 2 s more, never past 8 s).
-3. If still running: run `terminateScript(id)` through `winEnv.ps` with `timeoutMs` =
+2. Until 8 s into the budget: wait for the launcher to exit by itself (the tool and
+   everything it started get this time to finish writing after their stdin closes).
+3. If still running: run `toolTerminateScript(id)` through `winEnv.ps` with `timeoutMs` =
    what is left minus 1 s (this also covers a launcher that never acknowledged: a job that
    does not exist yet is simply not found).
 4. Wait for the launcher to exit within what is left. If the budget runs out, write that to
@@ -147,11 +148,12 @@ An entry is **live** when `/proc/<pid>/stat` exists with the same start field; o
 it is **orphaned**. `WinBridge` gets `toolsFor(key)` (entries across all session
 directories whose `key` matches) and `endJob(entry, timeoutMs)`.
 
-**Confirmed termination.** `terminateScript` (`win-apps.js:94-106`) is changed to print
-`gone` when `OpenJobObject` fails with error 2 (no such job: with kill-on-close, a job
-whose last handle closed has already ended every process in it) and `ended` after a
-successful `TerminateJobObject`; any other failure throws (non-zero exit). `AppTracker`
-ignores the new output. `endJob` runs it with the given timeout and removes the registry
+**Confirmed termination.** A new `toolTerminateScript(id)` in `win-apps.js`, beside
+`terminateScript` (`win-apps.js:94-106`, unchanged, so `AppTracker` is untouched), opens
+the same `wheelchair-<id>` job and prints `gone` when `OpenJobObject` fails with error 2
+(no such job: with kill-on-close, a job whose last handle closed has already ended every
+process in it) and `ended` after a successful `TerminateJobObject`; any other failure
+throws (non-zero exit). The go-between's stop (Spec 3) and `endJob` both use it. `endJob` runs it with the given timeout and removes the registry
 file only on exit code 0 with `ended`, or with `gone` when the entry's `notAfter` has
 passed (before that, `gone` may mean the launcher has not created the job yet: the entry
 stays and the gate keeps polling). Anything else (non-zero exit, timeout,
@@ -242,13 +244,13 @@ tests do:
   `waiting` ready file, is tracked and readied; one without flags, copy or ready file is
   not tracked.
 - go-between: registry file written before launch and removed after exit; acknowledgment
-  line stripped; stop sends `terminateScript` with the right id within the budget; idle
+  line stripped; stop sends `toolTerminateScript` with the right id within the budget; idle
   reader closed is noticed within two probe intervals and the tool is stopped, both with
   stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the proxy with stdout from
   `os.pipe()`, e.g. through `python3 -c`, then close the read end); parent gone is noticed.
 - gate: onStop waits for its own entries; an ended sibling's live entry delays sweep,
   archive, launch readying and `onWorktreeRemoved`; an orphan's job is ended; a timeout ends
-  remaining jobs; an unconfirmed `terminateScript` (non-zero exit, timeout) keeps the entry,
+  remaining jobs; an unconfirmed `toolTerminateScript` (non-zero exit, timeout) keeps the entry,
   skips the reconcile or removal and the whole gate returns by 20 s; archive keeps such a
   copy; a live sibling is untouched.
 - stop budget: a launcher that never acknowledges, and one that acknowledges at 7 s, are
@@ -259,7 +261,7 @@ tests do:
 - sweep: a second call while one runs returns the same promise; `liveTmux()` `null` with
   another session's entry gives `ok: false`; archive with a gate failure keeps the copy
   through `onWorktreeRemoved` and `archiveFinish`.
-- restart: a record without flags whose copy exists is tracked as today.
+- restart: `startup` resolves while its sweep is still gating a copy.
 - launcher script: the generated PowerShell contains the
   `wheelchair-tool-` job name and `wc-tool-started`.
 
@@ -278,6 +280,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A service restart between tmux starting a session and its record being saved loses the session's launch flags; it then falls back to today's restart rule | Sub-second window together with a restart: rare path (D10) | review-round-1 |
 
 ## Check Once Built
 
@@ -341,6 +344,25 @@ Spec 6 rewritten (socket probe, parent read-end check, parent gone); Validation;
 | mechanics | major | Sweeps can overlap | upheld (`setInterval` at `machine/service.js:452`) | `sweep()` in-flight promise |
 | mechanics | major | Exit can wait forever on a pending stdout write | downgraded to minor: needs a reader holding the fd without reading | `finish` waits at most 1 s; test with backpressure |
 | mechanics | minor | Restart fixture wording contradicts the fallback | upheld | Validation reworded |
+| intent | major | Validation still says a record without flags is ignored | upheld | Fixed with the mechanics minor above; duplicate bullet replaced |
+| intent | minor | 2 s grace after acknowledgment cuts off programs still writing | upheld | Spec 3 step 2: full 8 s |
+| intent | minor | Changing shared `terminateScript` changes app stop behaviour | upheld | New `toolTerminateScript`; apps untouched |
+| intent | minor | Startup awaits a sweep that may gate copies, holding the service offline | upheld | Spec 1.5: startup's sweep not awaited |
+| intent | minor | D10's rare path missing from Accepted Risks | upheld | Row added |
+
+
+### Round 3 — 2026-11-22
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 2:** Spec 1.5 (startup sweep not awaited); Spec 2 Start deadline
+(`notAfter`); Spec 3 (full 8 s grace, `toolTerminateScript`, 1 s stdout drain cap,
+sessions started before the change); Spec 4 (`toolTerminateScript`, `gone` only after
+`notAfter`); Spec 5 (unknown tmux gives `ok: false`, `remove` honours `gateFailed`,
+single in-flight sweep); Validation; Accepted Risks row.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
