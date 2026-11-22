@@ -910,16 +910,30 @@
   async function lessonAction(route, body, errHost) {
     const role = lessonEdit.role;
     inlineErr(errHost, '');
+    const before = Object.fromEntries(lessonList(role).map((i) => [i.id, i.text]));
     try {
       const res = await api('/settings/lessons/' + encodeURIComponent(role) + '/' + route, { method: 'POST', body });
       applyLessonReply(role, res);
-      lessonEdit.texts = {};
+      keepLessonEdits(before);
       setNote(res.result === 'already' ? 'Already in your lessons' : SAVED, false);
       renderPanel();
     } catch (e) {
-      if (e.status === 409) { await reload(false); renderPanel(); }
+      if (e.status === 409) {
+        await reload(false);
+        keepLessonEdits(before);
+        renderPanel();
+        const fresh = document.querySelector('.lessons-edit .lesson-err');
+        if (fresh) { inlineErr(fresh, e.message); return; }
+      }
       inlineErr(errHost, e.message);
     }
+  }
+
+  // After a server reply, keep unsaved text (differing from what was shown before) and pending removals for lessons that still exist.
+  function keepLessonEdits(before) {
+    const ids = new Set(lessonList(lessonEdit.role).map((i) => i.id));
+    lessonEdit.texts = Object.fromEntries(Object.entries(lessonEdit.texts).filter(([id, t]) => ids.has(id) && t !== before[id]));
+    lessonEdit.removals = new Set([...lessonEdit.removals].filter((id) => ids.has(id)));
   }
 
   // Restore waits for the editor to be saved or undone; typing must not re-render, so toggle in place.
@@ -1030,7 +1044,7 @@
     const role = lessonEdit.role;
     const plural = LESSON_PLURAL[role] || role + 's';
     const list = lessonList(role);
-    const errHost = h('div', {});
+    const errHost = h('div', { class: 'lesson-err' });
     const dirty = lessonDirty();
     const rows = list.map((item) => {
       const entry = (data.lesson_history || {})[item.id];
@@ -1055,8 +1069,7 @@
         lessonStale(item) ? h('div', { class: 'lesson-stale' },
           h('span', { class: 'lesson-mark', text: 'Possibly out of date: not changed or kept since ' + shortDate(new Date(lessonStaleSince(item)).toISOString()) }),
           h('button', { type: 'button', class: 'keep-lesson', text: 'Keep', disabled: !!lessonEdit.saving, onclick: () => lessonAction('keep', { id: item.id }, errHost) })) : null,
-        entry ? versionRows(item.id, entry, errHost, dirty) : null,
-        null);
+        entry ? versionRows(item.id, entry, errHost, dirty) : null);
     });
     return h('div', { class: 'tpl-edit lessons-edit' },
       noteEl(),
