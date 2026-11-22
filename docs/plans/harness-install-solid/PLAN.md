@@ -110,6 +110,9 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 | A stale tab's Cancel (or a delayed switch-off DELETE after switching back on) can stop a newer install of the same agent | Needs two actors inside a 2–5 s window; Install again recovers; rare per realism.md | review-round-2 |
 | Cancel within milliseconds of the 202, before the leader's handler exists, shows "stopped before finishing" instead of "cancelled" | Sub-second window; no step has started yet; rare per realism.md | review-round-2 |
 | Cancel landing after the recipe succeeded (during cleanup or the version check) shows "Install cancelled" though the program is installed | Needs a cancel inside a seconds-long window; Install again fixes it; rare per realism.md | review-round-1 |
+| A Settings Install POST still in flight when Use is switched off can reach the machine after the switch-off DELETE found it idle, leaving an install running while off | Needs a POST and a switch-off inside the same sub-second window; the install is harmless and visible on switching back on | verification-1 |
+| A GET landing between the job writing its result and removing its PID can read "stopped before finishing"; a DELETE in the same window can answer 500 | Sub-millisecond window at job end; Try again recovers | verification-1 |
+| If the job's PID file cannot be written at start (disk full at that instant), the detached leader waits forever | Needs the disk to fill exactly between log open and PID write; a state-file failure per realism.md | verification-1 |
 
 ## Check Once Built
 
@@ -172,6 +175,8 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 | T1 | Machine job: Cancel (SIGTERM leader), 15-min limit, process-group stop, result reason, explanations; DELETE route; API.md; machine tests. tricky | machine/lib/harness-install.js, machine/service.js (install route), machine/API.md, machine/test/harness-install.test.js | standard / gpt-6.1-terra | wc-c3b2aec47d12-worker | node --test machine/test/harness-install.test.js; bash machine/test/run.sh | done |
 | T2 | Hub DELETE passthrough, POST refused while off, switch-off DELETE fan-out; Settings Cancel, cancelled state, explanation line; hub + browser tests | viewer/app/routes.js, viewer/pages/settings.js, .h-explain CSS, viewer/test/app-harnesses.test.js, viewer/test/app-harnesses.spec.js | standard / claude-sonnet-5-5 | wc-c3b2aec47d12-worker-2 | node --test viewer/test/app-harnesses.test.js; npm --prefix viewer run test:browser | done |
 | T3 | Fix: a Cancel failing after a poll tick leaves the row stuck on "Cancelling…" (cancelInstall compares job object identity); add browser test. | viewer/pages/settings.js (cancelInstall only), viewer/test/app-harnesses.spec.js | light / claude-haiku-5-5 | wc-c3b2aec47d12-worker-3 | npm --prefix viewer run test:browser -- app-harnesses.spec.js | done |
+| R1-1 | Remediation 1, gaps 1 and 6: async Kimi/Pi CLI check; spawn-error status null | machine/lib/harness-install.js, machine/test/harness-install.test.js | light / gpt | wc-c3b2aec47d12-worker-4 | node --test machine/test/harness-install.test.js | in progress |
+| R1-3 | Remediation 1, gap 3: Cancel error kept on the job record, not per provider | viewer/pages/settings.js, viewer/test/app-harnesses.spec.js | light / claude | wc-c3b2aec47d12-worker-5 | npm --prefix viewer run test:browser -- app-harnesses.spec.js | in progress |
 
 ## Log
 - 2026-11-21 — T1 and T2 dispatched in parallel (disjoint ownership).
@@ -192,3 +197,4 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 - 2026-11-21 — Choice: T2, app-harnesses.spec.js: the stale-page "switched off" error and the later "Install cancelled" are checked in separate tests rather than one sequence.
 - 2026-11-21 — T3 accepted (band: scout): 27-line diff matches the change dictated in the brief word for word; I read it directly instead of sending it to the scout. app-harnesses.spec.js 116/116 re-run by me; the worker reports the new test failed before the fix.
 - 2026-11-21 — Choice: T3, app-harnesses.spec.js: the new test also asserts "Cancelling…" before the failure; its DELETE handler is async to await the 3 s delay.
+- 2026-11-21 — Verification 1 at d6d1d01e: Claude verifier PASS; GPT verifier FAIL with 6 gaps. 3 judged rare (Accepted Risks, verification-1); 3 sent to REMEDIATION-1.md.
