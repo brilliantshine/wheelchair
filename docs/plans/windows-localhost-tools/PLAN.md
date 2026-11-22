@@ -44,12 +44,12 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D12 | Windows warnings are stored per session apart from the per-CLI lines and shown on the thread's project tools card as start-time snapshots | Per-CLI lines are recomputed by other starts and would erase them | review-round-2 |
 | D13 | The relay connects first and then identifies the owner of that exact accepted connection; no owner cache | Names the listener the dial really reached (dual-stack `::` servers included), no stale-cache window | review-round-3 |
 | D14 | Windows warnings are pruned at the next start in the thread for sessions no longer live, independent of forwards; release never updates the hub | The thread card only updates from starts; keeps all-withheld sessions covered | review-round-3 |
-| D15 | Forwards are not tied to sessions: once created, a forward stays open until the machine service stops (its relay ends after 5 idle minutes and restarts on demand); the user sees each Windows tool's live status on the Project tools page instead of thread warnings. Supersedes D7's release rule, D11, D12 and D14 | User chose to simplify after three unclean review rounds; idle private ports cost nothing | user |
+| D15 | Forwards are not tied to sessions: once created, a forward stays open until the machine service stops (its relay ends after 5 idle minutes and restarts on demand; the relay part is superseded by D21); the user sees each Windows tool's live status on the Project tools page instead of thread warnings. Supersedes D7's release rule, D11, D12 and D14 | User chose to simplify after three unclean review rounds; idle private ports cost nothing | user |
 | D16 | Each session's config is built once; status checks never create forwards (a one-off relay checks ports without one); `win info` and the session record are not extended | Under D15 the double build and per-session fields serve nothing; typed-but-unsaved ports must not leave forwards behind | review-round-4 |
 | D17 | Share one per-session entry-replacement mechanism with thread 135e4c312559 (Windows stdio go-between): `context.replaceEntries = {<name>: <entry>}` applied by all three adapters, Claude via `disabledMcpjsonServers` plus one per-session `--mcp-config` file; whichever thread builds first adds it, the other reuses it | Same need in both threads; avoids two clashing mechanisms; the other thread's user agreed too | user |
 | D18 | The Linux side of a forward is an HTTP proxy that sets `Host` to `localhost:<tool port>` (revised in round 9 from "original authority") and rewrites loopback origins at the tool port in `Location`, `Content-Location` and `WWW-Authenticate` to the private origin, one relay connection per request; refusals become `502` with the reason | Servers that check `Host` (DNS-rebinding protection) would reject the private authority; the 502 text tells the agent why | review-round-8 |
 | D19 | The forward is a plain byte pipe again: no `Host` or response rewriting; supersedes D18 | User's choice: all round 9 holes came from rewriting; tools built on the official MCP libraries accept localhost on any port, and `Host`-built redirects stay on the private port | user |
-| D21 | One relay process per connection, replacing the multiplexed relay: a header line (`OK` / `REFUSED <reason>`) then raw bytes over its stdin/stdout; status checks are one relay each in `check` mode | User's choice after round 13: the shared channel's traffic rules kept failing review; per-connection pipes get backpressure and closing from the OS, at the cost of a Windows process start per new connection | user |
+| D21 | One relay process per connection, replacing the multiplexed relay (and D15's relay idle rule): a header line (`OK` / `REFUSED <reason>`) then raw bytes over its stdin/stdout; status checks are one relay each in `check` mode | User's choice after round 13: the shared channel's traffic rules kept failing review; per-connection pipes get backpressure and closing from the OS, at the cost of a Windows process start per new connection | user |
 | D20 | Accept that a Windows tool redirecting to an absolute address hardcoded at its own port (not built from `Host`) sends the CLI to Linux `localhost:<tool port>`, where a Linux program on that port could receive custom headers | User's choice after D19: needs a hardcoded redirect, a secret custom header and a Linux listener on the same port together | user |
 | D10 | The Windows relay refuses a connection when no Windows process accepted it or the accepting process is `wslrelay` (mechanism superseded by D13) | Stops a Linux program on the same port receiving the headers through WSL localhostForwarding (parent C3) | defaulted |
 
@@ -183,7 +183,11 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   listeners for one tool port). So a private port is never handed to a CLI before it is in the
   record.
 - **Lifetime:** a forward, once created, stays open until the machine service stops. It is not
-  tied to sessions. On service stop, listeners close, open sockets are destroyed and their relay processes killed.
+  tied to sessions. On a clean stop (the service's existing shutdown path), listeners close,
+  open sockets are destroyed and relay processes killed. The installed unit stops only the
+  main process (`KillMode=process`), so relays also end themselves: a relay exits as soon as
+  its stdin ends (the machine service closed its end or died), and a `check` relay ends within
+  8 s on its own. No extra stop handler is needed.
 - **Connections (D19, D21):** a plain byte pipe; nothing in requests or replies is read or
   changed. The tool therefore sees `Host: 127.0.0.1:<private port>`, so any absolute URL it
   builds from `Host` (redirects, links) points back through the forward. The host is always
@@ -192,30 +196,41 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   reached at is not supported (Not doing). The listener only accepts on `127.0.0.1`
   (`net.createServer` defaults, so `allowHalfOpen` is false).
 - **One relay process per connection (D21).** Each accepted socket starts its own relay
-  (below) in `connect` mode for the tool port and is paused at once: nothing is read from the
-  client until the relay says `OK`, so early client bytes wait in the kernel's socket buffer
-  and no Linux queue exists.
+  (below) in `connect` mode for the tool port. There is no cap on connections; each open one
+  costs one Windows process.
+  - **Before `OK`:** the socket is read normally. Bytes the client sends go into a buffer for
+    that connection; once it holds more than 64 KiB the socket is paused until `OK` (only then
+    may a graceful client close go unnoticed until the 12 s limit below). A client `end` or
+    `close` before `OK` kills the relay and destroys the socket.
   - The relay's stdout starts with one ASCII header line ending `\n`: `OK` or
-    `REFUSED <reason>`. The machine reads stdout chunks until the first `\n` (more than 512
-    bytes without one, or stdout ending first, counts as the relay failing). Bytes after the
-    `\n` in the same chunk are the first bytes from the tool.
-  - On `OK`: write those leftover bytes to the socket, then `socket.pipe(relay.stdin)` and
-    `relay.stdout.pipe(socket)` and resume the socket. Node's `pipe` pauses a source while its
-    destination is full, and the relay's blocking writes do the same on Windows, so a slow
-    reader on either side slows the sender instead of growing memory. No other flow control
-    exists. `OK` clears the forward's `last_refusal`.
+    `REFUSED <reason>`. The machine reads stdout chunks until the first `\n`; more than 512
+    bytes without one is a failure. Bytes after the `\n` in the same chunk are the first bytes
+    from the tool.
+  - On `OK`: write the leftover tool bytes to the socket and the buffered client bytes to the
+    relay's stdin, then `socket.pipe(relay.stdin)` and `relay.stdout.pipe(socket)` and resume
+    the socket. Node's `pipe` pauses a source while its destination is full, and the relay's
+    blocking writes do the same on Windows, so a slow reader on either side slows the sender
+    instead of growing memory. No other flow control exists. `OK` clears the forward's
+    `last_refusal`.
   - On `REFUSED`: destroy the socket; set `last_refusal` to `{reason, at}`. The client sees
     the connection close without a reply.
   - No header within 12 s (relay start, 5 s connect, 3 s lookup, with margin): kill the relay,
     destroy the socket, `last_refusal` = `Windows didn't answer in time`.
-  - Closing: when the socket closes or errors (including before `OK`), end the relay's stdin
-    and kill the relay. When the relay's stdout ends, `pipe` ends the socket after the last
-    bytes are written. When the relay exits, or fails to start (`error` event), before `OK`,
-    destroy the socket and set `last_refusal` to `couldn't start the Windows helper: <error>`
-    (or the exit code).
-  - At most 32 open connections per forward; a further connection is destroyed at once and
-    logged. Sockets and their relay processes are tracked per forward so service stop can
-    destroy and kill them.
+  - **The outcome is judged from stdout, not from process exit.** A relay may write its header
+    and exit at once, and Node can report `exit` before stdout is drained. So the machine acts
+    on the child's `close` event (all stdio closed), never on `exit`: if no complete header was
+    read by then, or the child emitted `error` (failed to start), destroy the socket and set
+    `last_refusal` to `couldn't start the Windows helper: <error or exit code>`.
+  - **Errors stay with their connection.** `error` handlers are attached to the socket, the
+    child, and the child's `stdin`, `stdout` and `stderr` streams before any write. Any of them
+    (for example `EPIPE` when the relay exits while client bytes are being written to it)
+    tears down only that connection: destroy the socket, destroy the three child streams, kill
+    the relay. stderr is always read (kept, last 4 KiB, for the log) so a chatty relay never
+    blocks on it.
+  - Closing: when the socket closes or errors, kill the relay. When the relay's stdout ends,
+    `pipe` ends the socket after the last bytes are written.
+  - Sockets with their relay processes, and running status-check relays (below), are tracked
+    so a clean service stop destroys and kills them.
 - **Relay:** the script `machine/lib/win-relay.ps1`, shipped in the repo, read from disk and
   run with `spawnPs` (`machine/lib/win-env.js:57-61`, `-EncodedCommand`, so stdin and stdout
   are free for data), with `$Mode` (`connect` or `check`) and `$ToolPort` set by lines the
@@ -236,9 +251,10 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
     the owner is accepted.
   - **`connect` mode**, once accepted: write `OK\n` and flush, then copy both ways at once
     with two .NET copies on the raw streams (`[Console]::OpenStandardInput()` → the TCP
-    stream, the TCP stream → stdout, flushing stdout after each read). When stdin ends, shut
-    down the TCP socket's send side and keep copying the other way. When the Windows side ends
-    (read returns 0) or errors, flush stdout and exit. Writes block while the reader is slow;
+    stream, the TCP stream → stdout, flushing stdout after each read). When stdin ends, close
+    the TCP connection and exit (the machine never half-closes: `allowHalfOpen` is false, so
+    stdin ending means the client or the service is gone). When the Windows side ends (read
+    returns 0), flush stdout and exit; on any read or write error, exit. Writes block while the reader is slow;
     that is the backpressure.
   - **`check` mode:** run the same steps, close the TCP connection without sending data, write
     `OK\n` or the `REFUSED` line, and exit.
@@ -277,18 +293,20 @@ Kept in a new module `machine/lib/win-forward.js`, owned by `WinBridge`.
   that is eligible by the shared rule in Terms (applied by the machine to `type` and `url`;
   ineligible tools are left out of the reply), all in parallel, each capped at 10 s: if the relay cannot
   run → `unavailable`, `Windows bridge not available`; otherwise run one status check (section 4). It never creates or replaces a
-  forward. Reply `{wsl, status: {<id>: {state, reason?, note?}}}` (keyed by `id`, so two
+  forward. Reply `{wsl, status: {<id>: {state, reason?, note?, last?}}}` (keyed by `id`, so two
   rows with the same name and different URLs each get their own result) with `state` `reachable` or
   `unreachable` (reason from the `REFUSED` line, or `couldn't check Windows for port <n>` on
   timeout), or `unavailable` (reason `Windows bridge not available`). `reachable` means a TCP connection reached a Windows process on the port, not
   that the tool accepts MCP requests. `note` is set when a stale forward exists for that tool port: `after the machine
   service restarted, port <private port> couldn't be reopened; sessions started before that
-  restart can't use this tool (new sessions can)`. Off WSL:
+  restart can't use this tool (new sessions can)`. `last` is set when the current forward for
+  that tool port has a `last_refusal`: `{reason, at}`, shown as "Last connection refused:
+  <reason>, <time>" (cleared by the next connection that gets `OK`). Off WSL:
   `{wsl: false, status: {}}`.
 - In `viewer/pages/project-tools.js`, each entry whose **Runs on Windows** switch is on and
   whose current values are eligible shows a status line under the switch: "Checking…",
   "Reachable on Windows", "Not reachable: <reason>", "Not available: <reason>" or "Couldn't
-  check: <error>", plus the note if any, and a **Check again** button.
+  check: <error>", plus the note and the last refusal if any, and a **Check again** button.
 - **Status lives in page state, not in the rendered cards.** The page keeps a status store
   keyed by the page guard (`tag()`/`fresh()`, `viewer/pages/project-tools.js:228-229`:
   machine, path, generation) plus the tool's current `type` and `url`. Every render of the
@@ -380,11 +398,17 @@ header line and dialling a local test server (these cover the Linux side only):
   `REFUSED` closes the socket without a reply and sets `last_refusal`, `OK` clears it; a
   client that disconnects before `OK` gets its relay killed; no header in 12 s kills the relay
   and closes the socket; a relay that fails to start closes the socket; header bytes and
-  tool bytes in one chunk are split correctly; the 33rd concurrent connection is closed; a
+  tool bytes in one chunk are split correctly; a stand-in that writes `OK` or `REFUSED` and
+  exits at once is judged by its header, not as a start failure; a client FIN before `OK`
+  and a client reset before `OK` each kill the relay without waiting 12 s; a stand-in that
+  exits during a large upload tears down only that connection and the service keeps running
+  (a second connection still works); a
   client that stops reading a large streamed response leaves the Linux side's buffered bytes
   bounded (the stand-in's writes stall) while a second connection on the same forward keeps
   working; a server that sends its last bytes and closes delivers them all before the client
-  sees the close; service stop kills open relays.
+  sees the close; a clean stop kills open connection and status-check relays; a
+  stand-in whose stdin is closed exits; the status reply carries `last` after a refusal and
+  drops it after the next `OK`.
 - Role gate: a reviewer or mapper session, and Kimi and Pi sessions, get no forward and no
   `--mcp-config`.
 - Restart with no live wheelchair tmux session empties the record and restores nothing.
@@ -408,7 +432,7 @@ localhostForwarding is off). It also checks, in `connect` mode: 16 MiB each way 
 when the Linux side stops reading stdout, the Windows listener's sends stall after a bounded
 amount instead of the relay growing; closing stdin shuts down the send side while the reply
 still arrives; the listener's last bytes before it closes all arrive; `check` mode prints one
-header line and exits. It prints how long a new connection takes to get `OK` (C4, C5). Run it on this WSL machine before verification:
+header line and exits; closing stdin makes a `connect` relay exit. It prints how long a new connection takes to get `OK` (C4, C5). Run it on this WSL machine before verification:
 `node --test machine/test/win-relay-live.test.js`.
 
 Live (Check Once Built): on this WSL machine in default networking, a Windows HTTP MCP server
@@ -712,6 +736,18 @@ clears the store; Validation regrouped.
 limit; 32-connection cap; closing rules); status checks are one `check`-mode relay each;
 §6 wording; Validation (relay-per-connection tests, live backpressure and close tests);
 C4, C5 rewritten.
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Long-lived connections each pin a relay; 32 cap overflows silently | upheld | Cap removed; last refusal shown on Project tools (§6 `last`) |
+| intent | minor | `last_refusal` written but never read | upheld | §6 reply carries `last` |
+| intent | minor | D15 idle rule not marked superseded | upheld | D15, D21 notes |
+| mechanics | blocking | Relay stdin `EPIPE` unhandled crashes the service | upheld | §4 error handlers on every stream, per-connection teardown, test |
+| mechanics | blocking | Fully paused socket hides client FIN before `OK` | downgraded to major (worker would ask; nothing wrong gets built) | §4 bounded 64 KiB pre-`OK` buffer, FIN/reset tests |
+| mechanics | blocking | `exit` before stdout drained discards a valid header | upheld | §4 judge on `close` and stdout, test |
+| mechanics | major | No stop path under `KillMode=process`; check relays untracked | upheld | Relay exits on stdin end; check relays tracked; no new stop handler |
 
 ## Implementation Tasks
 
