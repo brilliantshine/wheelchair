@@ -1432,6 +1432,7 @@
     placeIds();
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
+    syncJump();
     const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
     queuedNote.hidden = queuedTotal === 0;
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
@@ -1531,6 +1532,16 @@
     } catch (e) { showError(e.message.startsWith('Upload failed:') ? e.message : 'Message not sent: ' + e.message); }
     finally { uploading = false; renderAttachments(); render(); }
   });
+
+  // A small button back to the latest message, once scrolled up more than about two screens.
+  function syncJump() {
+    const jumpEl = $('jump-bottom');
+    const fromBottom = document.body.scrollHeight - (window.innerHeight + window.scrollY);
+    jumpEl.hidden = fromBottom < window.innerHeight * 2;
+  }
+  $('jump-bottom').addEventListener('click', () => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); });
+  window.addEventListener('scroll', syncJump, { passive: true });
+  window.addEventListener('resize', syncJump);
 
   poll();
   loadAccountNames();
