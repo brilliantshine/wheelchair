@@ -98,3 +98,20 @@ Live probe through the machine (T4; details in PLAN.md Log): Claude default -> p
 - `protocol/app/lead.md` lists the other `[wc:context ...]` markers but not the switch one (outside this plan's ownership).
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-22
+
+Verification attempt 1 (commit 38075fee): Claude verifier PASS; GPT verifier FAIL with 4 gaps (verbatim in `REMEDIATION-1.md`). Two were judged rare paths and added to Accepted Risks with round `verification-1`: a stop mid-switch followed by a late `ready` (sub-lead's call), and a switch the machine accepts while the hub loses every reply (lead's call). Two were fixed:
+
+| Gap | Fix | Lane | Evidence |
+|-----|-----|------|----------|
+| A Claude first-run prompt that keeps showing bypasses the relaunch's 30 s window | `machine/service.js:1193`: once a relaunch's window has run out, `checkReady` ends the session (`failedResume` -> `stopFatal`) before answering any prompt; plain starts unchanged | R1, light / gpt-6-luna | `machine/test/switch-http.test.js:205-234` (expired ends with no keys sent and no stuck/ready; recent and plain start still answer); mutation failed the expired case |
+| Validation tests did not guard report suppression with a starter, gemini with a second account, or the real quiet sweep | `viewer/test/app-switch.test.js`: gpt reviewer case (no report reaches its starter), worker cases with a live starter, gemini with a second signed-in account, the real `quiet.checkQuiet` sweep with a positive control | R2, standard / gpt-6.1-terra | mutations: removing `limitEnded` fails the reviewer case; allowing gemini to switch fails the gemini case; removing the `switching` checks in `quiet.js` fails the quiet case |
+
+Validation on the remediated tip:
+
+`node --test machine/test/switch.test.js machine/test/switch-http.test.js`: `# tests 9 # pass 9 # fail 0`.
+`node --test viewer/test/app-switch.test.js`: `# tests 12 # pass 12 # fail 0`.
+`bash machine/test/run.sh`: `# tests 623 # pass 605 # fail 18`. All 18 are the same Windows bridge tests as before (16 `win.test.js`, 2 `win-tool-ready.test.js`; no `wslpath` here). `win-tool-proxy.test.js` did not hang this time.
+`node --test viewer/test/*.test.js`: `# tests 849 # pass 848 # fail 1`. The one failure, `viewer/test/server.test.js:579` "the global write lock serializes concurrent writes and retry retains both changes", is in a file this build never touched, and passed alone twice (`# pass 50 # fail 0`).
+The browser suite was not re-run: no page, page script or browser-served file changed in remediation (only `machine/service.js` and a node test).
