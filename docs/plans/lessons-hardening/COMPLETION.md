@@ -143,3 +143,16 @@ npm test: # tests 846  # pass 846  # fail 0
 npx playwright test test/app-lessons.spec.js test/app-handoff.spec.js: 80 passed (46.3s)
 ```
 
+### Remediation 5 — 2026-11-22
+
+Verification attempt 5 (db8a21d7): both verifiers FAIL on S9 test strength only (code correct per both); see `REMEDIATION-5.md`.
+
+| Gap | Fix | Test fails when |
+|-----|-----|-----------------|
+| 1 agent removal accepted a missing history snapshot | count +1, version text is the pre-removal wording, `changed_by`/`removed.by` agent | removal sets only the marker (re-checked by the sub-lead) |
+| 2 no merge retry once lessons are in Waiting | second merge into a full role: exact counts `skipped: 1`, Waiting unchanged | the Waiting clause is dropped from the skip check (re-checked) |
+| 3 Add `already` checked only by result string | entry gone and no copy added | `already` keeps the entry (re-checked) or adds a copy |
+| extra | trimmed text matches | `.trim()` dropped from the match key (re-checked) |
+
+All in `viewer/test/app-lessons-history.test.js`. Validation, from `viewer/`: focused 21/21; `npm test` 847/849 with two failures in untouched files (app-quiet, server) that pass alone (74/74).
+
