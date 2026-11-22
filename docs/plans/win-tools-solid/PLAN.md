@@ -75,22 +75,41 @@ and Job Object material describes that work, not this plan.
 2. **On service start**, `WinBridge.startup` (`machine/lib/win.js:397-417`) keeps today's
    loop unchanged, and additionally, for each live tool-role session (same filter) with
    such a ready file: adds it to `toolSessions` and registers and marks its copy **even if
-   the copy does not exist yet**. Sessions without a ready file are handled exactly as today.
+   the copy does not exist yet** (the copy key and paths come from `context(session)`). Sessions without a ready file are handled exactly as today.
 3. For each of those: run the same readying a launch does (`beginReady` for a fresh token,
    then `prepareLaunch(session, { windowsTools: true, wrappedTools: true, token })`), in the background, not awaited by startup. Its
    outcome publishes `ready` or `failed` exactly as at launch. A `ready` file is left alone
    (its go-between has already started the tool).
-4. These recovery tasks are in `readying` like launch ones, so stop and archive wait on
-   them as today. `sweep()` (`win.js:361-370`) also skips, for this round, a copy whose key
-   has a `readying` task (today it checks only `running`), so a final reconcile never runs
+4. **Recovery is visible at once.** For each such session, `startup`, before its first
+   `await` for that session, computes `key = worktreeKey(session.worktree)` (synchronous)
+   and puts the whole recovery sequence's promise (`beginReady` through `prepareLaunch`
+   settling) into a new `this.recovering` Map under `key` (chained after any recovery
+   already there for that key), deleted when it settles. A helper `pendingReady(key)`
+   returns a promise for both `recovering.get(key)` and `readying.get(key)` settling;
+   every place that waits on or checks `readying` today (`win.js:200,288,301,323,435,462`)
+   uses it instead, so stop, `onWorktreeRemoved`, archive, `info` and `wc.js win` calls
+   wait for a recovery from the moment startup begins it. `prepareLaunch` itself keeps
+   joining `readying` only (no self-wait). `sweep()` (`win.js:361-370`) also skips, for this round, a copy whose key
+   has a pending readying or recovery (today it checks only `running`), so a final reconcile never runs
    while a copy is still being created.
 5. **Every session sharing a readying task gets its outcome.** Several sessions on one copy
    join the same `readying` task (`win.js:225-249`), and `publishReady` writes only tokens
-   already attached when it runs (`win.js:149-153`). So in `prepareLaunch`, after the
-   shared task settles, each caller writes its own session's ready file with its own token
-   from the task's outcome: `ready` with `copy: ctx.copy.windows` on success, `failed` with
-   the reason on failure (`writeReady` drops it if the token is no longer current). This
-   applies to launch and recovery alike; a second write of the same state is harmless.
+   already attached when it runs (`win.js:149-153`). So the shared task resolves to an
+   outcome, `{ ok: true, copy: ctx.copy.windows }` or `{ ok: false, reason }` (it still
+   never rejects), and every `prepareLaunch` caller that has a token attaches, right after
+   getting or creating the task and before its own 45 s race, a handler on the task that
+   writes its own session's ready file with its own token from that outcome (`ready` with
+   `copy`, or `failed` with `reason`). The handler runs when the task settles, whether or
+   not the caller's wait already timed out; `writeReady` drops it if the token is no longer
+   current, and a second write of the same state is harmless. This applies to launch and
+   recovery alike.
+6. **A copy left half-created by a restart.** `ensureCopy` (`machine/lib/win-sync.js:71-120`)
+   treats an existing `.git` as a finished copy, so a restart during creation (after `git
+   init`, before config or seeding finish) would leave a partial copy marked ready. Change:
+   `ensureCopy` writes the file `.git/wheelchair-copy-complete` as its last step. A copy
+   whose `.git` exists but has no marker counts as finished only if the copy's state has
+   `last_ok` (a copy made before this change; the marker is then written); otherwise the
+   copy folder is deleted and created from scratch.
 
 ### 2. Idle reader closed (IDEA item 4, D4 superseded by D9)
 
@@ -122,8 +141,13 @@ Tests use fake Windows and fake ready files, as the existing win tests do:
   readied after `startup`, with and without an existing copy; a `ready` file is untouched;
   a live session with a copy and no ready file is tracked exactly as today; one with
   neither is not tracked; two sessions on one copy whose second token attaches after the shared task has
-  published both end with the task's outcome in their ready files; a sweep during a
-  recovery `readying` task skips that copy.
+  published both end with the task's outcome in their ready files, also when that second
+  caller's 45 s wait expired first (short `readyTimeoutMs`) and for both `ready` and
+  `failed` outcomes; a sweep during a recovery skips that copy; a stop called while
+  startup's recovery for that session is still in `beginReady` waits for the recovery
+  before its final step; a copy with `.git` but no completion marker and no `last_ok` is
+  recreated, one with `last_ok` and no marker is kept and marked, one with the marker is
+  kept.
 - go-between: with stdin kept open and the parent alive, idle reader closed is noticed
   within two probe intervals and the tool is stopped, both with stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the
   proxy with stdout from `os.pipe()`, e.g. through `python3 -c`, then close the read end);
@@ -265,6 +289,9 @@ caller writes its own outcome; Validation; Accepted Risks row removed; scope not
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | A caller whose 45 s wait expired before the shared task settles is still left at `waiting` | upheld | Spec 1.5: outcome handler on the task, independent of the caller's wait |
+| mechanics | major | Gap between startup returning and recovery appearing in `readying` | upheld | Spec 1.4: `recovering` map set synchronously, `pendingReady` helper |
+| mechanics | major | Restart mid copy creation leaves a partial copy that recovery marks ready | upheld (`win-sync.js:73` treats `.git` as done) | Spec 1.6: completion marker |
 
 ## Prior Work
 
