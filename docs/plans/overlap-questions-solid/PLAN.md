@@ -162,5 +162,6 @@ check (`viewer/app/cards.js:69`, `:168`).
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | tricky: Spec items 1-7, lead.md overlap wording and protocol tests | protocol/app/lead.md (3 sections), viewer/test/protocol-rules.test.js, reports/T1.md | standard / claude-sonnet-5-5 | wc-213e51e374d6-worker | node --test viewer/test/protocol-rules.test.js; npm test in viewer/ | in progress |
 
 ## Log
