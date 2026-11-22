@@ -149,8 +149,51 @@ test.describe('Settings', () => {
     expect(saved).toMatchObject({ id: 'L0000b1', text: 'Oldest wording.', saved_by: 'user', provider: 'gpt' });
   });
 
+  test('Keep and Discard keep unsaved typed text; a Restore that answers 409 reloads and shows the sentence', async ({ page }) => {
+    const waiting = { role: 'worker', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wk' };
+    await seed({ worker: [lesson('L0000f1', 'Fresh.'), lesson('L0000f2', 'Stale.', { saved_at: ago(120) })] }, { lesson_waiting: [waiting] });
+    await openSettings(page, '/app/settings#templates/lessons/worker');
+    const fresh = page.locator('.lesson-row[data-id="L0000f1"] textarea');
+    await fresh.fill('Typed, not saved.');
+    await page.locator('.lesson-row[data-id="L0000f2"]').getByRole('button', { name: 'Keep' }).click();
+    await expect(page.locator('.lesson-row[data-id="L0000f2"] .keep-lesson')).toHaveCount(0);
+    await expect(fresh).toHaveValue('Typed, not saved.');
+    await page.locator('.lesson-waiting .lesson-row').getByRole('button', { name: 'Discard' }).click();
+    await expect(page.locator('.lesson-waiting')).toHaveCount(0);
+    await expect(fresh).toHaveValue('Typed, not saved.');
+    await page.locator('#save-lessons').click();
+    await expect.poll(async () => (await api(page, '/settings')).lessons.worker[0].text).toBe('Typed, not saved.');
+  });
+
+  test('a Restore that answers 409 reloads the editor and shows the sentence', async ({ page }) => {
+    await seed({ worker: [lesson('L0000f3', 'Newest.')] }, { lesson_history: { L0000f3: { role: 'worker', versions: [version('gone', 'Older wording.')] } } });
+    await openSettings(page, '/app/settings#templates/lessons/worker');
+    const row = page.locator('.lesson-row[data-id="L0000f3"]');
+    await row.getByRole('button', { name: 'History (1)' }).click();
+    await seed({ worker: [lesson('L0000f3', 'Newest.')] });
+    await row.locator('.lesson-version').getByRole('button', { name: 'Restore' }).click();
+    await expect(page.locator('.lessons-edit .inline-err')).toBeVisible();
+    await expect(page.locator('.lessons-edit .inline-err')).not.toBeEmpty();
+    await expect(page.locator('.lesson-version')).toHaveCount(0);
+  });
+
+  test('the Templates lessons name stays on one line, desktop and phone', async ({ page }) => {
+    await seed({ worker: [lesson('L0000g1', 'Old one.', { saved_at: ago(120) })] }, { lesson_waiting: [{ role: 'worker', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wg' }] });
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await openSettings(page, '/app/settings#templates');
+      const nm = page.locator('.tpl-lessons .nm');
+      await expect(nm).toHaveText('Lessons learned');
+      const box = await nm.boundingBox();
+      const line = await nm.evaluate((n) => parseFloat(getComputedStyle(n).lineHeight) || n.getBoundingClientRect().height);
+      expect(box.height).toBeLessThanOrEqual(line + 2);
+      await noSideScroll(page);
+      if (process.env.LESSON_SHOTS) await page.screenshot({ path: path.join(process.env.LESSON_SHOTS, `templates-list-${width}.png`) });
+    }
+  });
+
   test('Removed section lists removed lessons and Restore puts one back', async ({ page }) => {
-    await seed({ worker: [lesson('L0000d0', 'Still here.')] }, { lesson_history: { L0000d0: { role: 'worker', versions: [version('a', 'Older.')].slice(0, 0).concat([]) }, L0000d1: { role: 'worker', versions: [version('b', 'Gone early.')], removed: { at: '2026-11-02T10:00:00.000Z', by: 'agent' } }, L0000d2: { role: 'worker', versions: [version('c', 'Gone late.')], removed: { at: '2026-11-10T10:00:00.000Z', by: 'user' } } } });
+    await seed({ worker: [lesson('L0000d0', 'Still here.')] }, { lesson_history: { L0000d0: { role: 'worker', versions: [] }, L0000d1: { role: 'worker', versions: [version('b', 'Gone early.')], removed: { at: '2026-11-02T10:00:00.000Z', by: 'agent' } }, L0000d2: { role: 'worker', versions: [version('c', 'Gone late.')], removed: { at: '2026-11-10T10:00:00.000Z', by: 'user' } } } });
     await openSettings(page, '/app/settings#templates/lessons/worker');
     const removed = page.locator('.lesson-removed .lesson-row');
     await expect(removed).toHaveCount(2);
