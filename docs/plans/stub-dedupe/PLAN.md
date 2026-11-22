@@ -228,3 +228,4 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 - 2026-11-22 — Choice: T2, viewer/pages/thread.js: the addition heading uses the card's existing `head()` eyebrow with `target_title` as its title (scout-listed).
 - 2026-11-22 — T2 accepted (band: scout): Spec 3 covered; app-threads.spec.js re-run, 170 pass. Its full-suite failures (accounts, graph arrows, a port conflict) are outside its files; checked in the full run.
 - 2026-11-22 — Build complete; planning graph rewritten with layout (browser.spec.js:2157 failed on it). Verification attempt 1 started.
+- 2026-11-22 — Verification attempt 1 (a808c9af): Claude verifier PASS; GPT verifier FAIL with 1 gap (duplicate note returns 200, API.md:40 says 202). Judged normal use, hardening; per-gap answer asked of the lead.
