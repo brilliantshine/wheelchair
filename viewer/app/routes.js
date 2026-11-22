@@ -63,6 +63,15 @@ async function handle(hub, request, response, url, machineAuthenticated) {
     });
     return send(response, 200, await hub.importHandoff(bytes, url.searchParams.get('machine') || 'hub', url.searchParams.get('project')));
   }
+  if (request.method === 'POST' && bits.join('/') === 'settings/lessons/import') {
+    const limit = 1024 * 1024, chunks = []; let size = 0, tooBig = false;
+    for await (const chunk of request) { size += chunk.length; if (size > limit) tooBig = true; else chunks.push(chunk); }
+    if (tooBig) throw appError(413, 'This file is too big for a lessons file');
+    let file; try { file = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw appError(400, "This isn't a wheelchair lessons file"); }
+    if (!file || file.format !== 'wheelchair-lessons' || file.version !== 1 || !file.lessons || typeof file.lessons !== 'object' || Array.isArray(file.lessons) || Object.values(file.lessons).some((v) => !Array.isArray(v))) throw appError(400, "This isn't a wheelchair lessons file");
+    const incoming = Object.entries(file.lessons).flatMap(([role, list]) => list.map((item) => item && typeof item === 'object' && !Array.isArray(item) ? { ...item, role } : null));
+    return send(response, 200, await settings.mergeIncoming(hub, incoming, { source: 'file' }));
+  }
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'project-tools' &&
@@ -221,16 +230,28 @@ async function handleSettings(hub, request, response, url, bits, body) {
     await settings.update(hub, (value) => { value.harnesses[provider] = body.enabled; if (!body.enabled && !harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
     return send(response, 200, await settings.describe(hub));
   }
+  if (bits[1] === 'lessons' && bits[2] === 'export' && bits.length === 3 && request.method === 'GET') {
+    response.setHeader('Content-Disposition', 'attachment; filename="wheelchair-lessons.json"');
+    return send(response, 200, settings.exportLessons(await settings.load(hub)));
+  }
+  const lessonResponse = (value, role, extra = {}) => ({ lessons: value.lessons[role], history: Object.fromEntries(Object.entries(value.lesson_history).filter(([, entry]) => entry.role === role)), waiting: value.lesson_waiting.filter((item) => item.role === role), ...extra });
+  if (bits[1] === 'lessons' && bits.length === 4 && request.method === 'POST' && settings.ROLES.has(bits[2])) {
+    const role = bits[2];
+    if (bits[3] === 'restore') return send(response, 200, lessonResponse(await settings.restoreLesson(hub, role, body.id, body.vid), role));
+    if (bits[3] === 'keep') return send(response, 200, lessonResponse(await settings.keepLesson(hub, role, body.id), role));
+    if (bits[3] === 'waiting') { const { value, result } = await settings.waitingAction(hub, role, body.wid, body.action); return send(response, 200, lessonResponse(value, role, { result })); }
+  }
   if (bits[1] === 'lessons' && bits.length === 3 && request.method === 'PUT') {
     const role = bits[2];
     if (!settings.ROLES.has(role) || !body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !['edits', 'removals'].includes(key)) || !Array.isArray(body.edits) || !Array.isArray(body.removals) || body.edits.some((edit) => !edit || typeof edit !== 'object' || Array.isArray(edit) || Object.keys(edit).some((key) => !['id', 'text'].includes(key)) || typeof edit.id !== 'string' || !settings.validLessonText(edit.text)) || body.removals.some((id) => typeof id !== 'string')) throw appError(400, 'invalid lesson edits');
     const value = await settings.update(hub, (current) => {
       const list = current.lessons[role];
       if (body.edits.some((edit) => !list.some((item) => item.id === edit.id))) throw appError(409, 'an agent removed a lesson you edited; reload to see the current list');
-      for (const edit of body.edits) { const item = list.find((entry) => entry.id === edit.id); item.text = edit.text; item.saved_by = 'user'; item.saved_at = new Date().toISOString(); }
+      for (const edit of body.edits) { const item = list.find((entry) => entry.id === edit.id); if (item.text !== edit.text) { settings.recordHistory(current, role, item, 'user'); item.text = edit.text; item.saved_by = 'user'; item.saved_at = new Date().toISOString(); } }
+      for (const item of list) if (body.removals.includes(item.id)) settings.recordHistory(current, role, item, 'user', true);
       current.lessons[role] = list.filter((item) => !body.removals.includes(item.id));
     });
-    return send(response, 200, { lessons: value.lessons[role] });
+    return send(response, 200, lessonResponse(value, role));
   }
   if (bits[1] === 'accounts') {
     if (bits.length === 2 && request.method === 'POST') {
