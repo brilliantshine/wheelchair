@@ -38,17 +38,18 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | D1 | Mode is thorough | User's choice; this thread is the follow-up for win-tool-gobetween's Deferred items | user |
-| D2 | (launch-record timing superseded by D10) Restart recovery follows the parent design: a durable per-session launch record (wrapped, copy key) in `win-sessions.json` written before tmux starts; on service start, every live wrapped session whose ready file is not `ready` gets a fresh attempt token and readying | Already reviewed in windows-bridge-solid (`5950541c^:docs/plans/windows-bridge-solid/PLAN.md:194-211`); no user-visible choice in it | defaulted |
+| D2 | (`win-sessions.json` superseded by D8; launch-record timing by D10) Restart recovery follows the parent design: a durable per-session launch record (wrapped, copy key) in `win-sessions.json` written before tmux starts; on service start, every live wrapped session whose ready file is not `ready` gets a fresh attempt token and readying | Already reviewed in windows-bridge-solid (`5950541c^:docs/plans/windows-bridge-solid/PLAN.md:194-211`); no user-visible choice in it | defaulted |
 | D3 | (superseded by D11) Every new wait is bounded: a stop, sweep or archive waits at most 15 s for Windows tools, then logs and goes ahead | IDEA constraint; matches the last reviewed design's 15 s `onStop` wait | defaulted |
 | D4 | The go-between notices a closed reader by a zero-length `fs.writeSync(1, Buffer.alloc(0))` probe every 2 s while idle; `EPIPE` starts its normal shutdown | Lead's local check on Node 26/Linux: the probe throws `EPIPE` within one interval after the reader closes, while stdout itself emits nothing; a zero-length write adds no bytes to the stream | defaulted |
 | D5 | A stop ends every Windows program a tool started: the go-between starts the tool through a launcher that puts it in a named Windows Job Object (option A) | User's choice over "wait for quiet" and "tool only" | user |
 | D6 | The copy-wide gate waits for go-betweens of sessions that ended without a normal stop, and ends the job of any whose go-between died | A dying CLI closes the go-between's stdin and tmux kill sends SIGHUP, both of which start its shutdown (`machine/lib/win-tool-proxy.js:63-66`); only a go-between killed outright (SIGKILL, OOM) leaves its job behind, and its registry file names that job | defaulted |
-| D7 | When a wait runs out, remaining jobs are ended (`terminateScript`) before the reconcile goes ahead | IDEA constraint "every wait is bounded"; ending them is the only way the reconcile is not racing a writer | defaulted |
+| D7 | (`terminateScript` superseded by Spec 4's `toolTerminateScript`; timing by D11) When a wait runs out, remaining jobs are ended (`terminateScript`) before the reconcile goes ahead | IDEA constraint "every wait is bounded"; ending them is the only way the reconcile is not racing a writer | defaulted |
 | D8 | Launch flags are kept on the session record in `sessions.json` (`windows_tools`, `wrapped_tools`), not a new `win-sessions.json` | The service already persists every session there before and after launch (`machine/service.js:567`); one file, one source of truth | defaulted |
 | D9 | Idle reader detection uses a zero-length write probe on sockets, a check of the parent's read end in `/proc` on OS pipes, and a parent-gone check; supersedes D4 | Round 1: a zero-length `write()` on a Linux pipe never raises `EPIPE` (reviewer's and lead's checks), and Codex gives tools OS pipes. Lead's check: a Node child with stdout on an `os.pipe()` sees its parent drop the read end within one 300 ms poll | review-round-1 |
 | D10 | Launch flags ride on the session record saved after tmux starts, as today; no pre-tmux write | Round 1: a pre-tmux insert needs rollback and save ordering; a restart between tmux start and that save is a sub-second window (rare path) | review-round-1 |
 | D11 | The gate has one 20 s deadline covering polling and termination; termination must be confirmed, otherwise the copy is not synced or removed (kept, retried by the next sweep or kept by archive) | Round 1: PowerShell calls could exceed the 15 s bound, and an unconfirmed termination would let the reconcile race a writer | review-round-1 |
 | D12 | The gate runs inside `sync` and `remove`, not at each caller | Round 1: launch readying, `wc.js win` and `onWorktreeRemoved` also reconcile or delete copies | review-round-1 |
+| D13 | The launcher start deadline is the go-between's existing start allowance (`--init-ms`, 60 s), not 10 s; a stop during a slower start leaves the entry for the gate. The start acknowledgment line is dropped | Round 3: a fixed 10 s would kill slow cold starts with no stop happening; the acknowledgment no longer controlled anything | review-round-3 |
 
 ## Spec
 
@@ -96,11 +97,10 @@ these differences from `wrapperScript`:
 - **Environment.** The variables interop would pass today: the go-between's `WSLENV`
   list, with `WHEELCHAIR_WINDOWS_PROJECT` added and `WHEELCHAIR_SESSION_TOKEN` never passed.
 - **Stdio.** The tool's stdin/stdout/stderr are the launcher's own (no log file). The
-  launcher writes nothing to stdout itself. Once the job exists and the tool has started it
-  writes the line `wc-tool-started` to stderr; the go-between removes that line from the
-  stderr it passes on and treats it as the start acknowledgment.
-- **Start deadline.** The go-between passes `notAfter` (Unix ms, its spawn time + 10 s;
-  WSL and Windows share the clock) and writes it into the registry entry. The launcher
+  launcher writes nothing to stdout or stderr itself.
+- **Start deadline.** The go-between passes `notAfter` (Unix ms, its spawn time plus
+  `--init-ms`, default 60 s, the start allowance the go-between already gives a tool; WSL
+  and Windows share the clock) and writes it into the registry entry. The launcher
   checks it after creating the job and immediately before starting the tool; if past, it
   exits with code 125 without starting the tool. So once `notAfter` has passed, a launcher
   that has not started the tool never will.
@@ -121,10 +121,10 @@ termination:
    everything it started get this time to finish writing after their stdin closes).
 3. If still running: run `toolTerminateScript(id)` through `winEnv.ps` with `timeoutMs` =
    what is left minus 1 s. If it prints `gone` while `notAfter` has not passed (the
-   launcher may still create its job), wait until 250 ms after `notAfter` or the launcher's
-   exit, whichever comes first, and run it once more if the launcher is still running.
-   Stopping starts after the go-between spawned the launcher, so `notAfter` (spawn + 10 s)
-   always falls inside the 12 s budget.
+   launcher may still create its job) and `notAfter` + 250 ms falls inside the budget,
+   wait until then or the launcher's exit, whichever comes first, and run it once more if
+   the launcher is still running. If `notAfter` falls past the budget, go to step 4 (the
+   entry stays and the gate handles it: Spec 4).
 4. Wait for the launcher to exit within what is left. If the budget runs out, write that to
    stderr and exit **without** removing the registry file, so the gate treats the entry as
    orphaned and ends the job (Spec 4).
@@ -256,8 +256,7 @@ tests do:
   a `ready` file is untouched; a record without flags, with an existing copy and a
   `waiting` ready file, is tracked and readied; one without flags, copy or ready file is
   not tracked.
-- go-between: registry file written before launch and removed after exit; acknowledgment
-  line stripped; stop sends `toolTerminateScript` with the right id within the budget; idle
+- go-between: registry file written before launch and removed after exit; stop sends `toolTerminateScript` with the right id within the budget; idle
   reader closed is noticed within two probe intervals and the tool is stopped, both with
   stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the proxy with stdout from
   `os.pipe()`, e.g. through `python3 -c`, then close the read end); parent gone is noticed.
@@ -266,11 +265,11 @@ tests do:
   remaining jobs; an unconfirmed `toolTerminateScript` (non-zero exit, timeout) keeps the entry,
   skips the reconcile or removal and the whole gate returns by 20 s; archive keeps such a
   copy; a live sibling is untouched.
-- stop budget: a launcher that never acknowledges, and one that acknowledges at 7 s, are
-  both terminated and the go-between exits within 13 s, also with stdout backpressured
-  (the reader holds the fd but stops reading); a fake launcher that would create its job
-  after the stop's first termination attempt (between 8 s and `notAfter`) is ended by the
-  second attempt, or exits 125 past `notAfter`; a job whose process count stays above 0 is
+- stop budget: a launcher that ignores stdin close is terminated and the go-between exits
+  within 13 s, also with stdout backpressured (the reader holds the fd but stops reading);
+  with a short `--init-ms`, a fake launcher that would create its job after the stop's
+  first termination attempt is ended by the second attempt, or exits 125 past `notAfter`;
+  with `notAfter` past the budget, the go-between exits keeping its registry file; a job whose process count stays above 0 is
   not reported `ended`; the gate keeps an entry whose `gone` comes
   before `notAfter` and clears it after.
 - sweep: a second call while one runs returns the same promise; `liveTmux()` `null` with
@@ -278,7 +277,7 @@ tests do:
   through `onWorktreeRemoved` and `archiveFinish`.
 - restart: `startup` resolves while its sweep is still gating a copy.
 - launcher script: the generated PowerShell contains the
-  `wheelchair-tool-` job name and `wc-tool-started`.
+  `wheelchair-tool-` job name and the `notAfter` check before starting the tool.
 
 ```bash
 bash machine/test/run.sh
@@ -305,7 +304,7 @@ stays as review history.
 
 | # | What to check | Round |
 |---|---------------|-------|
-| C1 | On this WSL machine, a wrapped tool launched through the job launcher starts well inside its 10 s `notAfter` and answers the CLI's `initialize` within Codex's ~10 s start deadline (carried from win-tool-gobetween C3) | planning |
+| C1 | On this WSL machine, a wrapped tool launched through the job launcher starts well inside `notAfter` and answers the CLI's `initialize` within Codex's ~10 s start deadline (carried from win-tool-gobetween C3) | planning |
 | C2 | Antigravity re-lists tools on `notifications/tools/list_changed` (carried from win-tool-gobetween C1) | planning |
 
 ## Review Rounds
@@ -382,6 +381,9 @@ single in-flight sweep); Validation; Accepted Risks row.
 | mechanics | blocking | `TerminateJobObject` returning is not proof processes exited | upheld (Microsoft docs: termination is asynchronous) | Spec 4: `ended` only after the job's process count reaches 0 |
 | mechanics | blocking | A gate refusal inside archive's own final sync leaves `archiveAttempted` set and the copy removable | upheld | Spec 5: refusal during an archive adds to `gateFailed` |
 | mechanics | major | 12 s exit assertion vs 1 s drain after the budget | downgraded to minor: a number mismatch, not a design gap | Spec 3 and Validation: 13 s |
+| intent | major | Fixed 10 s `notAfter` kills slow cold starts with no stop happening | upheld | `notAfter` = spawn + `--init-ms` (D13) |
+| intent | minor | `wc-tool-started` acknowledgment no longer controls anything | upheld | Dropped (D13) |
+| intent | minor | D7 and D2 not marked superseded | upheld | Marked |
 
 ## Prior Work
 
