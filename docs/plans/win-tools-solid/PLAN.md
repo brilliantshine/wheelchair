@@ -52,79 +52,22 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D13 | The launcher start deadline is the go-between's existing start allowance (`--init-ms`, 60 s), not 10 s; a stop during a slower start leaves the entry for the gate. The start acknowledgment line is dropped | Round 3: a fixed 10 s would kill slow cold starts with no stop happening; the acknowledgment no longer controlled anything | review-round-3 |
 | D14 | Split off: stop, sweep and archive waiting for Windows tools and the programs they start (D5-D7, D11-D13, Spec 2-5 at `65bdcd4f`) move to their own thread; IDEA's two matching "What good looks like" bullets move to Not doing. D5-D7 and D11-D13 no longer apply here | User's choice after three review rounds in which that part drew blocking or major findings each round and the rest settled | idea-change |
 | D15 | Stranded sessions are found by their ready file, not by new `windows_tools`/`wrapped_tools` fields on the session record; supersedes D8 and D10, and the Accepted Risk about the record-save window is gone with them | Round 4: the ready file is written before tmux and removed on stop, so it already marks exactly the sessions to recover; flags added nothing for recovery and touched unwrapped sessions | review-round-4 |
+| D16 | Split off: restart recovery (D2, D15 and Spec 1 at `59b09dba`) moves to its own thread; IDEA's restart bullet moves to Not doing. This thread keeps only noticing a closed reader | User's choice after rounds 4-6 each drew blocking or major findings on restart recovery while the idle reader part settled | idea-change |
 
 ## Spec
 
 Scope: WSL machines with wrapped Windows stdio tools (`win-tool-gobetween`'s go-between,
 `machine/lib/win-tool-proxy.js`). Nothing changes on other machines, for unwrapped
-entries, or for `mcp-for-unity`. Background maps: `docs/maps/windows-stdio-gobetween.md`,
-`docs/maps/windows-bridge-runtime.md`.
+entries, or for `mcp-for-unity`. Background map: `docs/maps/windows-stdio-gobetween.md`.
 
-Split off (D14): making stop, sweep and archive wait for Windows tools and what they start
-(the job launcher, stop budget, tool registry and copy-wide gate) is its own thread; its
-last design is Spec 2-5 of this plan at commit `65bdcd4f`. MAP.md's writer gate, registry
-and Job Object material describes that work, not this plan.
+Split off into their own threads: making stop, sweep and archive wait for Windows tools
+(D14; last design Spec 2-5 at commit `65bdcd4f`), and restart recovery (D16; last design
+Spec 1 at commit `59b09dba`). MAP.md's material on both describes that work, not this plan.
 
-### 1. Restart recovery (IDEA item 1)
+### 1. Idle reader closed (D4 superseded by D9)
 
-1. **Which sessions are stranded.** Every wrapped session gets its ready file
-   (`<stateDir>/win-ready/<name>`) before tmux starts (`beginReady` in `beforeLaunch`,
-   `machine/lib/win.js:183-185`), and stop removes it (`win.js:280`). So on service start a
-   live tool-role session whose ready file exists and is not `{"state":"ready"}` is a
-   wrapped session whose tools are still waiting. No new session-record fields (D15).
-2. **On service start**, `WinBridge.startup` (`machine/lib/win.js:397-417`) keeps today's
-   loop unchanged and, for each live tool-role session (same filter) with such a ready
-   file, starts 1.4's recovery. That recovery adds the session to `toolSessions`
-   (`win.js:213`) and registers and marks the copy when it creates it (`win.js:100-104`);
-   an existing copy is already registered by today's loop. Sessions without a ready file
-   are handled exactly as today.
-3. **Readying task, shared with launch.** The task-building body of `prepareLaunch`
-   (`win.js:225-242`: `create`, `sync`, `readyErrors`, `publishReady('failed')` on error,
-   delete from `readying` when settled) is factored into `readyTask(session, key)`, which
-   also resolves to the 1.5 outcome and carries `task.threadId = session.thread_id`.
-   `prepareLaunch` uses it unchanged in behaviour.
-4. **Recovery goes straight into `readying`.** For each stranded session, `startup`,
-   synchronously (before any `await` for that session), computes
-   `key = worktreeKey(session.worktree)` and, unless `readying` already has `key`, puts
-   `readyTask(session, key)` into `this.readying` under it; the task resolves `context`
-   itself. Then, in the background (not awaited by startup), per session: recheck that it
-   is still in `service.sessions`, not `stopped`, live in tmux, and its ready file still
-   exists and is not `ready` (otherwise stop here); `beginReady` for a fresh token; attach
-   `key` to the token (as `prepareLaunch` does); add the session to `toolSessions`; and
-   attach its 1.5 outcome handler to `readying.get(key)` (or, if the task already settled,
-   write the outcome it resolved to). A second stranded session on the same copy simply
-   attaches to the same task. Because the task is in `readying` from the start, every
-   existing waiter and check (stop `win.js:288`, `onWorktreeRemoved` `:301`, archive `:323`,
-   `info` `:435`, `wc.js win` `:462`, a launch's `prepareLaunch` `:212,217,226`) covers
-   recovery unchanged. Two additions: `archiveCheck` also reports `pending` for any
-   `readying` task whose `threadId` is the archived thread, even when its copy is not in
-   the registry yet; and `sweep()` (`win.js:361-370`) skips, for this round, a copy whose key
-   is in `readying` (today it checks only `running`).
-5. **Every session sharing a readying task gets its outcome.** Several sessions on one copy
-   join the same `readying` task (`win.js:225-249`), and `publishReady` writes only tokens
-   already attached when it runs (`win.js:149-153`). So the shared task resolves to an
-   outcome, `{ ok: true, copy: ctx.copy.windows }` or `{ ok: false, reason }` (it still
-   never rejects), and every `prepareLaunch` caller that has a token attaches, right after
-   getting or creating the task and before its own 45 s race, a handler on the task that
-   writes its own session's ready file with its own token from that outcome (`ready` with
-   `copy`, or `failed` with `reason`). The handler runs when the task settles, whether or
-   not the caller's wait already timed out; `writeReady` drops it if the token is no longer
-   current, and a second write of the same state is harmless. This applies to launch and
-   recovery (1.4) alike.
-6. **A copy left half-created by a restart.** `ensureCopy` (`machine/lib/win-sync.js:71-120`)
-   treats an existing `.git` as a finished copy, so a restart during creation (after `git
-   init`, before config or seeding finish) would leave a partial copy marked ready. Change:
-   `ensureCopy` writes the file `.git/wheelchair-copy-complete` as its last step. A copy
-   whose `.git` exists but has no marker counts as finished only if the copy's state has
-   `last_ok` (a copy made before this change; the marker is then written); otherwise the
-   copy folder is deleted and created from scratch. `WinBridge.create` runs `ensureCopy`
-   (marker check, deletion and creation) inside the copy's per-key `running` queue, the
-   one `sync` uses (`win.js:155-158`), so two callers never create or delete the same copy
-   at once; the second sees the finished copy and its marker.
-
-### 2. Idle reader closed (IDEA item 4, D4 superseded by D9)
-
-Every 2 s (`--probe-ms`, default 2000, for tests), while stdout has no write in flight, the
+Every 2 s (`--probe-ms`, default 2000, added to the option list at
+`machine/lib/win-tool-proxy.js:10-14` for tests; `wrapEntries` does not pass it), while stdout has no write in flight, the
 go-between runs both checks; either failing calls `stdoutLost()`, which shuts the tool down as today (`machine/lib/win-tool-proxy.js:40,63`):
 - **Socket probe** (stdout is a socket, `/proc/self/fd/1` reads `socket:[...]`, as when a
   Node CLI spawns it): `fs.writeSync(1, Buffer.alloc(0))`; `EPIPE` or any error fails.
@@ -137,34 +80,17 @@ go-between runs both checks; either failing calls `stdoutLost()`, which shuts th
 - **Parent gone**: `process.ppid` differs from the value read at start (the CLI died while
   something else keeps the pipes open). This calls `shutdown()`.
 
-The probe never runs while a write is pending, so it cannot interleave with output.
+The probe never runs while a write is pending, so it cannot interleave with output, and
+stops once shutdown has begun.
 
-### 3. Non-goals
+### 2. Non-goals
 
 No change to the handshake, held calls, list cache, `list_changed`, which entries are
-wrapped, how the go-between starts or stops its tool, app tracking (`AppTracker`), or
-when a copy is synced or removed, beyond: the sweep skipping a copy being readied, and
-archive waiting for a recovery (1.4); and a copy without a completion marker or `last_ok`
-being recreated (1.6).
+wrapped, how the go-between starts or stops its tool, app tracking, copies, or the
+machine service.
 
 ### Validation
 
-Tests use fake Windows and fake ready files, as the existing win tests do:
-- restart: a live session with a `waiting` (or `failed`) ready file is tracked and
-  readied after `startup`, with and without an existing copy; a `ready` file is untouched;
-  a live session with a copy and no ready file is tracked exactly as today; one with
-  neither is not tracked; two sessions on one copy whose second token attaches after the shared task has
-  published both end with the task's outcome in their ready files, also when that second
-  caller's 45 s wait expired first (short `readyTimeoutMs`) and for both `ready` and
-  `failed` outcomes; a sweep during a recovery skips that copy; a stop called while
-  startup's recovery for that session is still in `beginReady` waits for the readying
-  task; `archiveCheck` during a recovery of an unregistered copy reports it pending and,
-  once the task settles, no longer does; `info` during a recovery reports not ready and,
-  after it, ready; a `wc.js win sync` during a recovery waits for it; a session stopped while
-  its recovery is queued behind another gets no new ready file; two concurrent
-  `wc.js win sync` calls on a missing copy create it once; a copy with `.git` but no completion marker and no `last_ok` is
-  recreated, one with `last_ok` and no marker is kept and marked, one with the marker is
-  kept.
 - go-between: with stdin kept open and the parent alive, idle reader closed is noticed
   within two probe intervals and the tool is stopped, both with stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the
   proxy with stdout from `os.pipe()`, e.g. through `python3 -c`, then close the read end);
@@ -174,7 +100,6 @@ Tests use fake Windows and fake ready files, as the existing win tests do:
 
 ```bash
 bash machine/test/run.sh
-node --test viewer/test/*.test.js
 ```
 
 ## Accepted Risks
@@ -195,7 +120,6 @@ stays as review history.
 
 | # | What to check | Round |
 |---|---------------|-------|
-| C2 | Antigravity re-lists tools on `notifications/tools/list_changed` (carried from win-tool-gobetween C1) | planning |
 
 ## Review Rounds
 
@@ -329,6 +253,18 @@ Spec 1.6 (copy completion marker); Validation.
 | intent | major | `recovering` map and `pendingReady` heavier than needed and unusable at `archiveCheck`/`info` | upheld (`win.js:323,435` test truthiness and `has`) | Spec 1.3-1.4: recovery task goes straight into `readying`; `recovering`/`pendingReady` dropped |
 | intent | minor | Non-goals do not list 1.4/1.6 exceptions | upheld | Spec 3 updated |
 | intent | minor | No archive or `info` test during recovery | upheld | Validation |
+
+
+### Round 7 — 2026-11-22
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 6:** the split (D16): Spec now holds only the idle reader check
+(1), with `--probe-ms` wiring and stop-on-shutdown added; restart recovery, its
+Validation and C2 removed; Non-goals rewritten; IDEA.md narrowed to match.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
