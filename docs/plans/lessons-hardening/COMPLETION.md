@@ -156,3 +156,16 @@ Verification attempt 5 (db8a21d7): both verifiers FAIL on S9 test strength only 
 
 All in `viewer/test/app-lessons-history.test.js`. Validation, from `viewer/`: focused 21/21; `npm test` 847/849 with two failures in untouched files (app-quiet, server) that pass alone (74/74).
 
+### Remediation 6 — 2026-11-22
+
+Verification attempt 6 (9a595e40): claude-opus-5-5 PASS, gpt-6.2-sol FAIL with 3 S9 test gaps (code correct); see `REMEDIATION-6.md`.
+
+| Gap | Test fails when |
+|-----|-----------------|
+| 1 restore must keep the version's project/provider (and a global version stays global) | restore takes scope from the current lesson (re-checked by the sub-lead) |
+| 2 import and Waiting Add ids avoid history ids | `newLessonId` ignores `lesson_history` (re-checked) |
+| 3 export has exactly the specified fields | history or waiting are added to the export (re-checked) |
+| sweep | 22 deliberate breaks across `recordHistory`, `mergeLessons`, `restoreLesson`, `keepLesson`, `waitingAction`, `normalize` and the import route; each break that went unnoticed now has a test that fails on it (`reports/R6-TESTS.md`) |
+
+All in `viewer/test/app-lessons-history.test.js`. Validation, from `viewer/`: focused 30/30; `npm test` 857/858 (lifecycle.test.js, untouched, passes alone 31/31); browser specs 80/80.
+
