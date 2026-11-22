@@ -1,6 +1,6 @@
 ---
 slug: overlap-questions-solid
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -162,6 +162,10 @@ check (`viewer/app/cards.js:69`, `:168`).
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | tricky: Spec items 1-7, lead.md overlap wording and protocol tests | protocol/app/lead.md (3 sections), viewer/test/protocol-rules.test.js, reports/T1.md | standard / claude-sonnet-5-5 | wc-213e51e374d6-worker | node --test viewer/test/protocol-rules.test.js; npm test in viewer/ | in progress |
+| T1 | tricky: Spec items 1-7, lead.md overlap wording and protocol tests | protocol/app/lead.md (3 sections), viewer/test/protocol-rules.test.js, reports/T1.md | standard / claude-sonnet-5-5 | wc-213e51e374d6-worker | node --test viewer/test/protocol-rules.test.js; npm test in viewer/ | done |
 
 ## Log
+- 2026-11-21 — Choice: T1, Spec item 2: placed as the last sentence of the "Feature, while planning" bullet rather than a new bullet.
+- 2026-11-21 — Choice: T1, Spec item 5 peer path: written as a lead-in sentence of "Passing a peer's overlap question on", not a new path.
+- 2026-11-21 — Choice: T1, tests: stable phrases "apply to a thread in any project", "earlier user message (before or after PLAN.md was created)", "using its output only for this finished check", "whether or not it still counts as an overlap", "resolved from the latest such message".
+- 2026-11-21 — T1 accepted (band: self): diff read in full against Spec 1-7; sub-lead added "(answer the peer at once either way)" to the peer lead-in so the re-ask path keeps Spec item 5's "still answer the peer at once".
