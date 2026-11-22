@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const fsc = require('node:fs').constants;
+const { windowsTarget } = require('./win-mark');
 
 const DUPLICATE_HEADERS = Symbol('duplicate headers');
 const TOOL_ROLES = new Set(['lead', 'sub-lead', 'worker', 'verifier']);
@@ -82,7 +83,7 @@ function hasWindowsProgram(mcp, { mount = '/mnt' } = {}) {
   return !!mcp && Object.values(mcp.servers).some(entry =>
     (entry.type === undefined || entry.type === 'stdio') && isWindowsProgram(entry.command, mount));
 }
-async function readProjectMcp(worktree, { wsl = true, mount = '/mnt' } = {}) {
+async function readProjectMcp(worktree, { wsl = true, mount = '/mnt', kernel = false } = {}) {
   try {
     const file = path.join(worktree, '.mcp.json');
     let info;
@@ -117,12 +118,28 @@ async function readProjectMcp(worktree, { wsl = true, mount = '/mnt' } = {}) {
       if (!reason) Object.defineProperty(servers, name, { value: entry, enumerable: true, writable: true, configurable: true });
       else warnings.push({ names: [name], text: `${serverLabel(name)}: skipped: ${reason}` });
     }
+    const windows = [];
+    if (Object.hasOwn(data, 'wheelchair')) {
+      const mark = data.wheelchair;
+      if (!object(mark) || (Object.hasOwn(mark, 'windows') && (!Array.isArray(mark.windows) || !mark.windows.every(name => typeof name === 'string')))) {
+        if (kernel) warnings.push({ names: [], text: '"wheelchair" in .mcp.json is not in the expected form; ignored' });
+      } else if (Object.hasOwn(mark, 'windows')) {
+        for (const name of new Set(mark.windows)) {
+          if (!Object.hasOwn(data.mcpServers, name)) continue;
+          const entry = data.mcpServers[name];
+          if (!entryReason(name, entry) && windowsTarget(entry)) windows.push(name);
+          else if (kernel) warnings.push({ names: [name], text: entry?.type === 'sse'
+            ? `${serverLabel(name)}: "Runs on Windows" doesn't apply to SSE tools; it loads as usual`
+            : `${serverLabel(name)}: "Runs on Windows" only applies to an http://localhost or http://127.0.0.1 address` });
+        }
+      }
+    }
     const duplicates = duplicateHeaderServers(text);
     for (const name of Object.keys(servers)) {
       const entry = servers[name];
       if ((entry.type === 'http' || entry.type === 'sse') && duplicates.has(name)) entry[DUPLICATE_HEADERS] = true;
     }
-    return { mcp: { names, servers, rawServers }, warnings, hash, dropped };
+    return { mcp: { names, servers, rawServers, windows }, warnings, hash, dropped };
   } catch { return failure('read failed'); }
 }
 module.exports = { DUPLICATE_HEADERS, TOOL_ROLES, readProjectMcp, serverLabel, entryReason, checkDocumentText, hasWindowsProgram };
