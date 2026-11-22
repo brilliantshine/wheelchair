@@ -808,7 +808,7 @@ Clean round.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Shared eligibility rule (`win-mark.js`), `readProjectMcp` marks and warnings (§1), Project tools read `wsl`/`windows` and save `windows` (§7 machine side) | `machine/lib/win-mark.js`, `machine/lib/project-mcp.js`, `machine/lib/project-tools.js`, their tests | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker | `node --test machine/test/*.test.js` | in progress |
+| T1 | Shared eligibility rule (`win-mark.js`), `readProjectMcp` marks and warnings (§1), Project tools read `wsl`/`windows` and save `windows` (§7 machine side) | `machine/lib/win-mark.js`, `machine/lib/project-mcp.js`, `machine/lib/project-tools.js`, their tests | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker | `node --test machine/test/*.test.js` | done |
 | T2 | `context.replaceEntries` in Claude, Codex, Antigravity adapters (§3, D5, D17) | `machine/adapters/{claude,codex,agy,common}.js`, `machine/test/replace-entries.test.js` and adapter tests | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker-2 | `node --test machine/test/*.test.js` | in progress |
 | T3 | tricky: forwards module, relay script, record/restore, unit and live tests (§4, §5) | `machine/lib/win-forward.js`, `machine/lib/win-relay.ps1`, `machine/test/win-forward.test.js`, `machine/test/win-relay-live.test.js`, fixtures | standard / gpt-6.1-terra | wc-a1a1b7d6016d-worker-3 | `node --test machine/test/win-forward.test.js machine/test/win-relay-live.test.js` | in progress |
 | T4 | Service integration: `startIn` forwarding and `replaceEntries` (§2), Claude `--mcp-config` file write/remove/sweep (§3), `WinBridge` restore (§5), `windows-status` route and read `wsl` (§6, §7) | `machine/service.js`, `machine/lib/win.js`, service tests | standard | — | full machine suite | not started (after T1-T3) |
@@ -817,3 +817,10 @@ Clean round.
 ## Log
 
 - 2026-11-21: D17 logged during round 6; folded into Spec §2-§3 after round 6 triage (listed in Round 7 changes).
+- 2026-11-21 — Choice: T1, project-tools.js: malformed existing marks count as an empty list in the unchanged comparison.
+- 2026-11-21 — Choice: T1, project-tools.js: a save that sends `windows` replaces a non-object `wheelchair` value (which the reader ignores as malformed) and drops it when empty.
+- 2026-11-21 — Choice: T1, project-tools.js: `windows` is written as sent (no dedupe); order counts in the unchanged comparison.
+- 2026-11-21 — Choice: T1, project-tools.js: `windows` with `tools: null` is ignored (the page always sends `tools` with `windows`).
+- 2026-11-21 — Choice: T1, project-mcp.js: a marked entry that fails entry validation gets the "only applies to an http://localhost…" warning as well as its usual "skipped" warning.
+- 2026-11-21 — Choice: T1, project-tools.js: keys-only and unreachable read replies carry `windows: []` (no source document).
+- 2026-11-21 — T1 accepted (band: scout): focused tests 48/48; full machine suite 568/572, the same 4 failures as the feature branch without T1 (Pi aside, Kimi not installed, port 7374 in use by the live machine service).
