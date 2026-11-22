@@ -291,6 +291,8 @@ Filled by Stage 3. One row per worker brief.
 | T5 | Fix T2 defects: Keep/Add/Discard must not wipe unsaved edits; 409 message lost on reload; Templates "Lessons learned" label wrapping; 409 browser test | `viewer/pages/settings.js` (lessons parts), `viewer/pages/settings.css`, `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | done |
 | R1-UI | Remediation 1 gaps 1-3: vanished-lesson draft shown not dropped; Removed Restore sends newest `vid`; History shows `changed_by` | `viewer/pages/settings.js` (lessons editor), `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | done |
 | R1-TESTS | Remediation 1 gaps 4-6: waiting entries survive overflow, non-empty export/import round-trip, `changed_by` asserts | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
+| R2-UI | Remediation 2 gap 1: Import keeps or shows unsaved drafts | `viewer/pages/settings.js` (lessons editor, import/export), `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | not started |
+| R2-TESTS | Remediation 2 gaps 2-6: tests that can fail (removal `changed_by`, restore thread, prompt without history, Keep on stale, Retry merge spy) | `viewer/test/app-lessons-history.test.js`, `viewer/test/app-handoff-import.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js test/app-handoff-import.test.js`; `npm test` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -331,4 +333,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — Choice: R1-UI, settings.js: on a 409 the lost-draft sentences come first, then the server sentence, in one block with `white-space: pre-line`; an empty draft is not reported; a version with no `changed_by` reads "replaced by an agent". (last seen by scout)
 - 2026-11-21 — Choice: R1-UI, app-lessons.spec.js: test ids `L0000a5`-`L0000a8`; the Removed-Restore test deletes the shown version on the server to force the 409.
 - 2026-11-21 — R1-UI accepted (band: scout): lessons spec 42/42, handoff spec 34/34, `npm test` 844/844 re-run by me. Gaps 1, 2, 3 fixed; each new test fails if its fix is reverted (scout read). Minor: test (b) checks that a message shows, not its exact wording.
-
+- 2026-11-21 — Verification 2 (685f3967): claude PASS, gpt FAIL with 6 gaps, none judged rare; all go to REMEDIATION-2.md. Gap 1 is the Import path of attempt 1's draft-loss class, first fix on this path. R2-TESTS must show each new test failing under the verifier's mutation.
