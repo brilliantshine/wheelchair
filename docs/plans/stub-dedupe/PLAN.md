@@ -203,7 +203,7 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | tricky: Spec 1-2: listLeads candidate fields and unopened stubs; stub `adds_to`/`duplicate` validation; acceptCard addition under target lock; tests | viewer/app/peers.js, card.js, cards.js, (threads.js export only), viewer/test/app-lead-list.test.js, app-hub.test.js | standard, gpt-6.1-terra | wc-2c25927136e1-worker | `npm test` | in progress |
+| T1 | tricky: Spec 1-2: listLeads candidate fields and unopened stubs; stub `adds_to`/`duplicate` validation; acceptCard addition under target lock; tests | viewer/app/peers.js, card.js, cards.js, (threads.js export only), viewer/test/app-lead-list.test.js, app-hub.test.js | standard, gpt-6.1-terra | wc-2c25927136e1-worker | `npm test` | done |
 | T2 | Spec 3: parent stub card for additions; unopened context `pre-line`; browser test | viewer/pages/thread.js, viewer/test/app-threads.spec.js | standard, claude-sonnet-5-5 | wc-2c25927136e1-worker-2 | `npm run test:browser`, `npm test` | in progress |
 | T3 | Spec 4: lead.md Stubs / Other leads / Overlap questions; cards-lead.md stub; cards.md id exception | protocol/app/lead.md, cards-lead.md, cards.md | standard, gpt-6.1-terra | wc-2c25927136e1-worker-3 | `npm test` incl. protocol-rules | in progress |
 
@@ -214,3 +214,7 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 - 2026-11-21: Review budget reached (rounds 2-4 not clean since Collin's last decision). Recurring objection: deciding an opened stub already covers work. Proposed cut: opened stubs never suppress a stub; the new stub names the related one.
 - 2026-11-21: Round 5 clean (four minor findings fixed). Ready check: hub and machine service answer (`session list`), claude and codex CLIs installed, Codex preflight passes (token fresh). Ready.
 - Build accepted: approval 6c27d049-c465-477d-aefd-f736fd3482cc
+- 2026-11-21 — Choice: T1, viewer/test/app-hub.test.js: a successful duplicate note returns HTTP 200 (not 202) because routes.js picks the replay status from the returned card's `duplicate` field; the test accepts it.
+- 2026-11-21 — Choice: T1, viewer/app/peers.js: candidate test is a new exported `candidateStub(hub, thread)` reused by cards.js; a `merged` card anywhere in the thread's cards excludes it.
+- 2026-11-21 — Choice: T1, viewer/app/card.js: `duplicate` without `adds_to` is refused with reason `duplicate requires adds_to`.
+- 2026-11-21 — T1 accepted (band: self, tricky): diff matches Spec 1-2; app-lead-list and app-hub tests re-run, 119 pass.
