@@ -13,18 +13,11 @@ the north star this plan serves. Goal and Constraints live there, not here.
 
 ## Open Questions
 
-### Q1: How does a switched agent carry on its work?
-- **Context:** Today a limited session stays on its account and gets `Continue.` after
-  reset (`viewer/app/sessions.js:593-608`, `:886-893`). CLI conversation state lives in the
-  account directory (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`); the machine keeps its own copy of
-  transcripts (`machine/service.js:1376-1423`). Nobody has checked whether a conversation
-  from one account can be resumed under another.
-- **Options:** (a) Resume the same conversation on the new account (copy the CLI's
-  conversation file into the new account directory and relaunch with resume), falling back
-  to (b) when resume fails; (b) always start a fresh session on the new account, briefed
-  with the original brief plus where the old transcript is.
-- **Recommendation:** (a) with (b) as fallback; the build's first task proves resume works
-  per CLI.
+### Q2: Should Collin see when a switch happens?
+- **Context:** IDEA.md asks for no action from Collin; it does not say whether a switch is shown.
+- **Options:** (a) shown only on the agent's box on the Agents screen (which account it is on now);
+  (b) also a one-line note in the thread; (c) not shown at all.
+- **Recommendation:** (a).
 
 ## Watch List
 
@@ -42,10 +35,27 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | Switching applies to every role the hub starts (lead, sub-lead, worker, reviewer, verifier, mapper). | IDEA.md "What good looks like". | defaulted |
 | 4 | With no other account of that provider having room, today's hold-until-reset then `Continue.` is kept unchanged. | IDEA.md fallback. | defaulted |
 | 5 | The switched session keeps its session name and role, so cards, messages and the starter relationship carry on. | Other sessions address it by name; renaming would break messages in flight. | defaulted |
+| 6 | A switched agent resumes its same conversation on the new account; if resume fails for that CLI, it restarts fresh with its original brief and a pointer to the old transcript. | Picked on Q1: resuming keeps the agent's working memory. | user |
+| 7 | The fresh-restart fallback reuses today's restart paths: a lead gets the `[wc:context restart]` context, a worker `--replaces`, a sub-lead resumes from PLAN.md and `reports/`, reviewers, verifiers and mappers start fresh with their original brief. | These paths already exist and are tested. | defaulted |
+| 8 | A switch happens only when a limit is actually hit, never ahead of it. | IDEA.md Not doing: no spreading work ahead of time. | defaulted |
 
 ## Spec
 
 (Grows as decisions land.)
+
+### Switching on a limit
+
+1. When the machine reports a limit hit for a live session (Claude: StopFailure
+   `rate_limit`, `machine/adapters/claude.js:94-96`; Codex: reached limit read from
+   transcript usage at turn end, `machine/adapters/codex.js:149-151`), the hub looks for
+   another signed-in account of the same provider with room (Decision 2).
+2. None found: today's hold-until-reset and `Continue.` (Decision 4).
+3. Found: the hub stops the CLI, copies the CLI's conversation file into the new account's
+   directory, and relaunches the session under the new account with resume, keeping the
+   session name and role (Decisions 5, 6). The relaunched session is told the conversation
+   was moved and to carry on.
+4. Resume fails (the CLI refuses or the session does not become ready): fresh restart per
+   Decision 7.
 
 ## Deferred
 
