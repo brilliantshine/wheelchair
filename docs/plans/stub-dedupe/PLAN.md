@@ -205,7 +205,7 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | tricky: Spec 1-2: listLeads candidate fields and unopened stubs; stub `adds_to`/`duplicate` validation; acceptCard addition under target lock; tests | viewer/app/peers.js, card.js, cards.js, (threads.js export only), viewer/test/app-lead-list.test.js, app-hub.test.js | standard, gpt-6.1-terra | wc-2c25927136e1-worker | `npm test` | done |
 | T2 | Spec 3: parent stub card for additions; unopened context `pre-line`; browser test | viewer/pages/thread.js, viewer/test/app-threads.spec.js | standard, claude-sonnet-5-5 | wc-2c25927136e1-worker-2 | `npm run test:browser`, `npm test` | in progress |
-| T3 | Spec 4: lead.md Stubs / Other leads / Overlap questions; cards-lead.md stub; cards.md id exception | protocol/app/lead.md, cards-lead.md, cards.md | standard, gpt-6.1-terra | wc-2c25927136e1-worker-3 | `npm test` incl. protocol-rules | in progress |
+| T3 | Spec 4: lead.md Stubs / Other leads / Overlap questions; cards-lead.md stub; cards.md id exception | protocol/app/lead.md, cards-lead.md, cards.md | standard, gpt-6.1-terra | wc-2c25927136e1-worker-3 | `npm test` incl. protocol-rules | done |
 
 ## Log
 
@@ -218,3 +218,8 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 - 2026-11-21 — Choice: T1, viewer/app/peers.js: candidate test is a new exported `candidateStub(hub, thread)` reused by cards.js; a `merged` card anywhere in the thread's cards excludes it.
 - 2026-11-21 — Choice: T1, viewer/app/card.js: `duplicate` without `adds_to` is refused with reason `duplicate requires adds_to`.
 - 2026-11-21 — T1 accepted (band: self, tricky): diff matches Spec 1-2; app-lead-list and app-hub tests re-run, 119 pass.
+- 2026-11-21 — Choice: T3, protocol/app/lead.md Overlap questions: the takes_additions note is appended to an existing sentence rather than a new line (worker reported none; scout listed 4).
+- 2026-11-21 — Choice: T3, protocol/app/lead.md Other leads: worded as "Candidate stubs in your project also have ...".
+- 2026-11-21 — Choice: T3, protocol/app/cards-lead.md stub: "same CLI" sentence replaced by "Without `adds_to`, the app adds a stub thread ... same project and machine".
+- 2026-11-21 — Choice: T3, protocol/app/lead.md Stubs: rule laid out as a bold "Before posting a stub:" lead-in with bullets.
+- 2026-11-21 — T3 accepted (band: scout): every Spec 4 bullet covered; protocol-rules and app-settings pass; its one full-suite failure (app-quiet "message clears debt") passes when re-run alone, load flake unrelated to the docs-only diff.
