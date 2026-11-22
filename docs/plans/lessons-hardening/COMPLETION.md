@@ -71,6 +71,7 @@ Screenshots: `docs/plans/lessons-hardening/reports/T2-lessons-history.png` (edit
 - The Retry test (`viewer/test/app-handoff-import.test.js:366`) cannot detect a merge, because a saved handoff operation carries no lessons at all (`viewer/app/handoff-ops.js` `operation()`); Retry has no lesson source by construction. The pending-upload test (`:350`) does guard the reachable path.
 - The 409 browser test (`viewer/test/app-lessons.spec.js:168`) asserts that a message is shown, not its exact wording.
 - After a 409 reload, unsaved typed text for a lesson still present is kept and Save writes it, even if the server text changed meanwhile (the existing Save has no per-lesson conflict check).
+- After a Save refused with 409, the editor keeps its last-loaded list (unchanged pre-existing behaviour), so if an agent filled the role meanwhile, Add to it shows enabled; pressing it gets the server's "Remove one first" (422).
 - Accepted Risks in PLAN.md stand.
 
 ## Remediation rounds
@@ -114,4 +115,14 @@ Validation after remediation, from `viewer/`:
 npm test: # tests 845  # pass 844  # fail 1  (lifecycle.test.js "--service gives up after three takeovers", untouched file; alone: # pass 31 # fail 0)
 npx playwright test test/app-lessons.spec.js test/app-handoff.spec.js: 78 passed (48.1s)
 ```
+
+### Remediation 3 — 2026-11-22
+
+Verification attempt 3 (81b9ddbd): claude-opus-5-5 PASS, gpt-6.2-sol FAIL with 3 gaps, none rare; see `REMEDIATION-3.md`.
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| 1 a refused Save re-enabled Restore while edits were unsaved (and Add while full) | `setLessonsBusy(false)` re-applies `refreshRestore()` and `refreshAdd()` (shared `lessonFull`); Add after a refused Save with a stale list is refused by the server (see residual risks) | `viewer/pages/settings.js` `setLessonsBusy`, `refreshAdd`, `lessonFull` | `viewer/test/app-lessons.spec.js` (refused Save keeps guards; fails on revert for Restore) |
+| 2 Settings removal test passed without a removal version | count grows by one, version text is the pre-removal wording, `changed_by`/`removed.by` user | `viewer/test/app-lessons-history.test.js` | fails when removal sets only the marker |
+| 3 merge test had a one-version history | three versions; oldest and middle (and a removed lesson's oldest) skipped, nothing added | `viewer/test/app-lessons-history.test.js` | fails when only the newest version is matched (re-checked by the sub-lead) |
 
