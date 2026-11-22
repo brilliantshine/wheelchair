@@ -84,13 +84,20 @@ and Job Object material describes that work, not this plan.
    (its go-between has already started the tool).
 4. **Recovery is visible at once.** For each such session, `startup`, before its first
    `await` for that session, computes `key = worktreeKey(session.worktree)` (synchronous)
-   and puts the whole recovery sequence's promise (`beginReady` through `prepareLaunch`
-   settling) into a new `this.recovering` Map under `key` (chained after any recovery
-   already there for that key), deleted when it settles. A helper `pendingReady(key)`
-   returns a promise for both `recovering.get(key)` and `readying.get(key)` settling;
+   and puts the whole recovery sequence's promise into a new `this.recovering` Map under
+   `key` as `{ task, threadId: session.thread_id }` (chained after any recovery already
+   there for that key), deleted when it settles. The sequence is: recheck eligibility (the
+   session is still in `service.sessions`, not `stopped`, live in tmux, and its ready file
+   still exists and is not `ready`; otherwise do nothing), `beginReady`, `prepareLaunch`,
+   then await `readying.get(key)` if still present (so the recovery settles only when the
+   readying itself has, not when `prepareLaunch`'s 45 s wait gives up). A helper
+   `pendingReady(key)` waits in a loop until neither `recovering` nor `readying` has `key`
+   (re-checking after each settles);
    every place that waits on or checks `readying` today (`win.js:200,288,301,323,435,462`)
    uses it instead, so stop, `onWorktreeRemoved`, archive, `info` and `wc.js win` calls
-   wait for a recovery from the moment startup begins it. `prepareLaunch` itself keeps
+   wait for a recovery from the moment startup begins it. `archiveCheck` also reports as
+   `pending` every `recovering` entry whose `threadId` is the archived thread, even when
+   its copy is not in the registry yet. `prepareLaunch` itself keeps
    joining `readying` only (no self-wait). `sweep()` (`win.js:361-370`) also skips, for this round, a copy whose key
    has a pending readying or recovery (today it checks only `running`), so a final reconcile never runs
    while a copy is still being created.
@@ -111,7 +118,10 @@ and Job Object material describes that work, not this plan.
    `ensureCopy` writes the file `.git/wheelchair-copy-complete` as its last step. A copy
    whose `.git` exists but has no marker counts as finished only if the copy's state has
    `last_ok` (a copy made before this change; the marker is then written); otherwise the
-   copy folder is deleted and created from scratch.
+   copy folder is deleted and created from scratch. `WinBridge.create` runs `ensureCopy`
+   (marker check, deletion and creation) inside the copy's per-key `running` queue, the
+   one `sync` uses (`win.js:155-158`), so two callers never create or delete the same copy
+   at once; the second sees the finished copy and its marker.
 
 ### 2. Idle reader closed (IDEA item 4, D4 superseded by D9)
 
@@ -147,7 +157,10 @@ Tests use fake Windows and fake ready files, as the existing win tests do:
   caller's 45 s wait expired first (short `readyTimeoutMs`) and for both `ready` and
   `failed` outcomes; a sweep during a recovery skips that copy; a stop called while
   startup's recovery for that session is still in `beginReady` waits for the recovery
-  before its final step; a copy with `.git` but no completion marker and no `last_ok` is
+  and for its readying even when that outlives a short `readyTimeoutMs`; archive started
+  during a recovery of an unregistered copy reports it pending; a session stopped while
+  its recovery is queued behind another gets no new ready file; two concurrent
+  `wc.js win sync` calls on a missing copy create it once; a copy with `.git` but no completion marker and no `last_ok` is
   recreated, one with `last_ok` and no marker is kept and marked, one with the marker is
   kept.
 - go-between: with stdin kept open and the parent alive, idle reader closed is noticed
@@ -307,6 +320,10 @@ Spec 1.6 (copy completion marker); Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Marker rule can delete a copy another caller is creating | upheld | Spec 1.6: `create` inside the per-copy queue |
+| mechanics | blocking | `pendingReady` can release while readying outlives `prepareLaunch`'s timeout | upheld | Spec 1.4: recovery awaits readying; `pendingReady` loops |
+| mechanics | blocking | Archive misses a recovery for an unregistered copy | upheld | Spec 1.4: `archiveCheck` includes `recovering` by thread |
+| mechanics | major | Queued recovery recreates a stopped session's ready file | upheld | Spec 1.4: eligibility recheck at start |
 
 ## Prior Work
 
