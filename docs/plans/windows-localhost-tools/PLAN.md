@@ -473,6 +473,7 @@ on `127.0.0.1:<port>`, marked, used from Claude, Codex and Antigravity sessions.
 | A connection carrying more than about 1 MB in both directions at the same time stalls in the relay (both verifiers reproduced it; sequential 16 MiB each way works) | Rare path: MCP over HTTP sends the whole request before reading the reply, so the CLIs don't produce simultaneous bulk traffic on one connection | verification-1 |
 | A project with more than 100 marked web-address tools gets no Project tools status at all, because the machine refuses a status request over 100 tools with 400 | Rare path: needs over 100 marked localhost tools in one project; tools still work in sessions, only the page status is missing | verification-1 |
 | If the kernel picks a private port equal to the Windows tool port and the Windows server is down, a connection dials back into its own Linux listener once (two relays) before the `wslrelay` refusal | Rare path: needs the kernel to pick exactly the tool's port number and the Windows server to be down; it ends in a refusal with no bytes sent to Linux | verification-1 |
+| Duplicate names in `wheelchair.windows` (e.g. `["loc", "loc"]`) make the Project tools page show Save enabled before any edit, because the draft de-duplicates and the baseline does not | Rare path: the page and machine never write duplicates; needs a hand-edited `.mcp.json` | verification-2 |
 
 ## Check Once Built
 
@@ -873,3 +874,4 @@ Clean round.
 - 2026-11-21 — T7 accepted (band: scout): all three tests now do what the Spec names; worker's temporary page mutations (debounce 50 ms, ids forced equal, poll off) each made a test fail.
 - 2026-11-21 — All tasks done; full validation at 2281d593 (only the 6 failures that also fail on 5619e1fd); live relay test 12/12; C1 passed live for Claude and Codex (Antigravity not installed), C2 passed live; COMPLETION.md written; status verifying.
 - 2026-11-21 — Verification 1 (claude-opus-5-5, gpt-6.2-sol) on f3136ca1: FAIL. Merged gaps: COMPLETION.md and the viewer router row were not in the commit (sub-lead's `--paths` used spaces; fixed at 05f14a7a); 3 rare paths recorded in Accepted Risks (simultaneous bulk stall, >100 status tools, private port equal to tool port). REMEDIATION-1.md written.
+- 2026-11-21 — Verification 2 on af3e6d5c: claude-opus-5-5 PASS; gpt-6.2-sol FAIL with 2 gaps. Merged: an open Edit form writes back the switch value captured when it opened, undoing a card-switch change (normal use, remediation 2); duplicate marks enable Save (rare path, Accepted Risks).
