@@ -16,7 +16,7 @@ async function fixture(provider = 'claude', extra = true) {
   hub.machines = async () => ({ hub: { name: 'hub' } });
   hub.call = async (machine, path, method, body) => {
     calls.push({ path, body });
-    if (path === '/v1/status') return { claude: { installed: true }, codex: { installed: true }, agy: { installed: true }, accounts: [{ id: `default-${provider}`, cli: provider === 'gpt' ? 'codex' : provider === 'gemini' ? 'agy' : 'claude', logged_in: true }, ...(extra ? [{ id: 'second', cli: provider === 'gpt' ? 'codex' : 'claude', logged_in: true }] : [])] };
+    if (path === '/v1/status') return { claude: { installed: true }, codex: { installed: true }, agy: { installed: true }, accounts: [{ id: `default-${provider}`, cli: provider === 'gpt' ? 'codex' : provider === 'gemini' ? 'agy' : 'claude', logged_in: true }, ...(extra ? [{ id: 'second', cli: provider === 'gpt' ? 'codex' : provider === 'gemini' ? 'agy' : 'claude', logged_in: true }] : [])] };
     if (path.endsWith('/submit')) { submits.push(body.text); return {}; }
     return { accepted: true };
   };
@@ -53,6 +53,46 @@ test('no alternate and other providers retain the limit hold', async () => {
     thread.sessions[0].limited_until = new Date(Date.now() - 1000).toISOString(); await c.hub.save(thread); await sessions.releaseLimits(c.hub);
     assert.deepEqual(c.submits, ['Continue.']); assert.equal(c.calls.some(x => x.path.endsWith('/switch')), false);
   }
+});
+
+// Claude limit-hit never reaches report delivery; its worker case covers the switch.
+// The GPT reviewer case exercises report suppression on a limited turn-ended.
+for (const [provider, role] of [['gpt', 'worker'], ['claude', 'worker'], ['gpt', 'reviewer']]) test(`${provider} ${role} does not report a limited turn to its starter`, async () => {
+  const c = await fixture(provider), limit = future();
+  const thread = await c.hub.thread(c.thread.id);
+  Object.assign(thread.sessions[0], { role, started_by: 'starter', owes_reply: true });
+  thread.sessions.push({ name: 'starter', role: 'sub-lead', live: true, ready: true, turn_ended: true, queue: [] });
+  await c.hub.save(thread);
+  await sessions.event(c.hub, { thread_id: c.thread.id, session: 'agent', type: provider === 'gpt' ? 'turn-ended' : 'limit-hit', 'last-assistant-message': 'A completed report', ...(provider === 'gpt' ? { reading: { account: 'default-gpt', at: new Date().toISOString(), limited_until: limit } } : { limited_until: limit }) });
+  await waitFor(async () => (await current(c)).account === 'second');
+  const after = await c.hub.thread(c.thread.id);
+  assert.ok(after.sessions[0].switching);
+  assert.deepEqual(after.sessions[1].queue, []);
+  assert.deepEqual(c.submits, []);
+  assert.equal(after.cards.some(card => card.kind === 'result'), false);
+});
+test('gemini holds even with another signed-in account', async () => {
+  const c = await fixture('gemini'), limit = future();
+  await sessions.event(c.hub, { thread_id: c.thread.id, session: 'agent', type: 'limit-hit', limited_until: limit });
+  const target = await current(c);
+  assert.equal(target.limited_until, limit);
+  assert.equal(target.switching, undefined);
+  assert.equal(c.calls.some(x => x.path.endsWith('/switch')), false);
+});
+test('quiet sweep holds reminders during a switch and sends them afterward', async () => {
+  const c = await fixture();
+  let thread = await c.hub.thread(c.thread.id);
+  Object.assign(thread.sessions[0], { role: 'worker', started_by: 'starter', owes_reply: true, turn_ended: true, quiet_check_at: new Date(Date.now() - 1000).toISOString(), switching: { id: 'switch', to: 'second' } });
+  thread.sessions.push({ name: 'starter', role: 'sub-lead', live: true, ready: true, turn_ended: true, queue: [] });
+  await c.hub.save(thread);
+  await quiet.checkQuiet(c.hub);
+  thread = await c.hub.thread(c.thread.id);
+  assert.deepEqual(thread.sessions.map(s => s.queue), [[], []]);
+  assert.deepEqual(c.submits, []);
+  assert.equal(thread.sessions[0].quiet_stage || 0, 0);
+  delete thread.sessions[0].switching; await c.hub.save(thread);
+  await quiet.checkQuiet(c.hub);
+  assert.match(c.submits.join(' '), /Your turn ended without a result or message card/);
 });
 test('matching failures restore hold and unrelated callbacks are ignored', async () => {
   const c = await fixture(); const limit = future();
