@@ -1,6 +1,6 @@
 ---
 slug: win-tool-gobetween
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -47,6 +47,20 @@ Background: `docs/maps/windows-stdio-gobetween.md` (how adapters build MCP confi
 readying runs, how stop/sweep/archive work). "WSL machine" means `detectWsl()` reports WSL.
 Nothing here changes behaviour off WSL or for non-tool roles: every new path returns early
 there, and existing non-WSL tests pass unchanged.
+
+```mermaid
+flowchart TD
+  A[Agent starts and launches its Windows tool through the go-between] --> B{Copy ready?}
+  B -- yes --> C[Start the real tool and pass messages straight through]
+  B -- no --> D[Answer the agent's handshake itself; list remembered tools, or none]
+  D --> E[Hold tool calls up to 50 s]
+  D --> F{Copy becomes ready}
+  F --> G[Start the real tool, replay the handshake, send held calls]
+  G --> H[Tell the agent the tool list changed]
+  C --> I[Ask the real tool for its tool list and remember it for next time]
+  G --> I
+  E -- copy failed or 50 s passed --> J[Answer the call with an error]
+```
 
 ### 1. Which tools are wrapped
 
@@ -233,6 +247,9 @@ the next session. The service computes the path; the go-between only reads and w
    starting the tool; during the handoff or afterwards, stop the tool (item 1), then exit. The signal handlers stay installed until then, so a second
    signal does not cut the stop short.
 
+   **Writes to the real tool's stdin:** an `error` on the child's stdin (e.g. `EPIPE` because
+   the tool exited) is never thrown; the child's `close` handler decides what happens (step 5,
+   or the 3b failure rule before the handshake succeeds).
    **Spawn failure in steps 1 and 3a:** if spawning the real tool fails (the child's `error`
    event, e.g. a missing executable), the go-between writes the reason to stderr and finishes
    with status 1; the client sees the server end at once.
@@ -305,8 +322,10 @@ New tests in `machine/test/` must cover:
 - A `tools/call` arriving while the ready file says `failed` is answered at once.
 - Finishing (client stdin kept open in every case): after the tool exits, the go-between exits
   with its status; after a 3b failure, it delivers the replies and exits 1; a client that
-  closes its read end while the tool is still running, and one that closes it during a large
-  final response, both end with the intended status and no crash; a command-only entry (no
+  closes its read end while the tool is still running (followed by a write from the tool), and
+  one that closes it during a large final response, both end with the intended status and no
+  crash; a tool that exits while the go-between is writing to its stdin ends through the
+  child-exit (or 3b failure) path, not a crash; a command-only entry (no
   `args`) is wrapped and launched.
 - Sweep: a live wrapped Claude session with both a ready file and a Claude config file keeps
   both after 60 s; a missing executable in steps 1 and 3a ends the go-between with status 1
@@ -330,6 +349,7 @@ As IDEA.md. Also the two items in Deferred.
 |---|------|-----------------|--------|-------------------------|
 | 1 | After a machine service restart, keep tracking sessions with Windows tools and re-ready wrapped sessions whose ready file is not `ready` (parent's `win-sessions.json` launch record). Without it, a go-between whose ready file says `waiting` when the service restarts keeps waiting: the readying task and attempt token are in memory only (review round 8) | Needs a service restart during a live session; today's restart recovery already reconstructs from live sessions and copies (`machine/lib/win.js:339-358`) | planning | Parent Spec item 3 "Launch record" and "Recovery after a service restart" |
 | 3 | A normal stop, the sweep and archive wait until a session's Windows tools (and every Windows process they started) have finished writing before the final sync | Today's agents don't have this wait either; it is not needed for tools to appear. Moved here by the user after three review rounds (D9) | review-round-3 | Last full design: Spec 5 "Process tree" and Spec 6 "Normal stop waits" of this plan at commit `9d5a5511` (named Job Object launcher, `wc-tool-started` acknowledgment, `terminateScript("tool-<uuid>")`, 12 s stop budget, `win-tools/<session>/<pid>` files, 15 s `onStop` wait, sweep skips copies with a stop in progress) and the Round 1-3 findings against them |
+| 4 | Notice a client that closes only its read end while staying idle (stdin open, no output from the tool): today the go-between notices only at its next write | Real CLIs close both ends when they exit; a closed read end is still noticed on the next write | review-round-10 | Node's stdout emits neither `error` nor `close` on an idle pipe whose reader closed (reviewer's local check); would need polling or a zero-length write probe |
 | 2 | Stop, the periodic sweep and archive wait for every session sharing a copy, including sessions that ended without a normal stop (CLI crash, handoff kill) | Needs a sibling or crashed session; with Deferred 3, the rest needs a sibling or crashed session with a tool still writing | planning | Parent Spec item 3 "Stop waits for wrapped tools" (copy-wide gate, sweep, `archiveCheck` pending) |
 
 ## Accepted Risks
@@ -519,6 +539,8 @@ D11.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Idle client closing only its read end is not detected; the test can hang | upheld | Hardening per D11: detection moved to Deferred 4; test scoped to a close followed by a write |
+| mechanics | major | `EPIPE` writing to an exiting tool's stdin can crash the go-between | downgraded (minor) | A worker adds a stdin error handler without needing to ask; one-line rule added to Spec 4 and a test |
 
 ## Implementation Tasks
 
