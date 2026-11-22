@@ -95,3 +95,23 @@ npm test: # tests 844  # pass 844  # fail 0
 npx playwright test test/app-lessons.spec.js test/app-handoff.spec.js: 76 passed (37.9s)
 ```
 
+### Remediation 2 — 2026-11-21
+
+Verification attempt 2 (685f3967): claude-opus-5-5 PASS, gpt-6.2-sol FAIL with 6 gaps, none rare; see `REMEDIATION-2.md`.
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| 1 Import dropped an unsaved draft for a lesson an agent removed | `importLessons` reconciles drafts like `lessonAction`: surviving drafts stay, dropped ones are shown with the import counts; shared helper `showLessonLost` | `viewer/pages/settings.js` `importLessons`, `showLessonLost`, `keepLessonEdits` | `viewer/test/app-lessons.spec.js` (draft survives import / dropped draft shown) |
+| 2 Settings removal `changed_by` unasserted | edit and removal versions asserted `changed_by: 'user'` with old wording | `viewer/test/app-lessons-history.test.js` | fails under routes recording `'agent'` |
+| 3 Restore thread test could not tell threads apart | `thread-old` / `thread-new` | `viewer/test/app-lessons-history.test.js` | fails when restore keeps the current thread |
+| 4 prompt test could not see history | baseline without history; markers in history, removed and waiting; prompt equal and marker-free | `viewer/test/app-lessons-history.test.js` | fails when `lessonBlocks` appends history (re-checked by the sub-lead) |
+| 5 Keep test never started stale | lesson saved 100 days ago; stale before Keep, fresh after; `kept_at` 10 days ago not stale | `viewer/test/app-lessons-history.test.js` | fails when `isLessonStale` ignores `kept_at` |
+| 6 Retry test checked only lists | spy on `mergeIncoming` asserts zero calls in Retry, pending and opened imports | `viewer/test/app-handoff-import.test.js` | fails when `runLocked` calls `mergeIncoming(hub, [])` |
+
+Validation after remediation, from `viewer/`:
+
+```
+npm test: # tests 845  # pass 844  # fail 1  (lifecycle.test.js "--service gives up after three takeovers", untouched file; alone: # pass 31 # fail 0)
+npx playwright test test/app-lessons.spec.js test/app-handoff.spec.js: 78 passed (48.1s)
+```
+
