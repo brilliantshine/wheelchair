@@ -86,12 +86,13 @@ reviewers and verifiers (`viewer/app/balancer.js:45-80`). The switch selector:
 
 - considers only the session's provider and the thread's machine (the session keeps its
   saved model and effort, so no model slot or `codex/model.sh` check is involved);
-- removes the limited account, and any account whose reading has `limited_until` in the
-  future, *before* ranking;
-- applies the same per-provider rules `choose()` applies for that role: the lead reserve
-  gate (`margin`/`held_back`, `viewer/app/balancer.js:78`) and live-session counts for the
+- applies the same per-provider rules `choose()` applies for that role, computed over the
+  provider's full account list exactly as `choose()` does: the lead reserve gate
+  (`margin`/`held_back`, `viewer/app/balancer.js:78`) and live-session counts for the
   tie-break. Factor those out of `choose()` so both use one copy;
-- ranks the rest with the existing `usage.rank()`;
+- ranks with the existing `usage.rank()`, then removes the limited account and any account
+  whose reading has `limited_until` in the future from the ranked list before taking the
+  first;
 - for `gpt`, runs `codex/preflight.sh` on the winner as in `viewer/app/sessions.js:292-314`
   (a failure marks it unavailable and picks once more).
 
@@ -107,8 +108,9 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
    `target.limited_until` and cancel its pending reset `Continue.`
    (`viewer/app/sessions.js:886-893`). The old account's reading keeps its `limited_until`.
 3. Send the machine the switch request (new endpoint) with the `switch_id`, the new
-   account (id and directory), and the session's `model` from the hub's session record
-   (`viewer/app/sessions.js:353`), never from current Settings. Every other launch value
+   account (id and directory), the session's `model` from the hub's session record
+   (`viewer/app/sessions.js:353`), never from current Settings, and the thread's `project`
+   and `project_dir` (as a start sends them, `viewer/app/sessions.js:369`). Every other launch value
    comes from the machine's own session record (machine step 4). The machine answers at once that it has accepted it and does the work in
    the background, so the client's short timeout (`viewer/app/machine-client.js:66`) is
    not a problem. On a network error the hub retries the same request (same `switch_id`;
@@ -145,7 +147,8 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
 3. Updates the session record: `account`, `account_dir`,
    `status = 'switching'` and `ready = false` (the readiness poller,
    `machine/service.js:1117-1165`, ignores a `switching` session), `source_transcript`
-   pointing at the copied file, and clears `last_reading` and the statusline throttle
+   pointing at the copied file and `transcript_source` rebound to the copied file's path and
+   inode with its offset kept (`machine/service.js:1375`, `:1421`), and clears `last_reading` and the statusline throttle
    (`machine/lib/statusline.js:19-28`) so a limit on the new account is never computed
    from the old account's reset windows (with no reading, `machine/lib/limits.js` uses its
    one-hour default). Parser and copy offsets carry over
@@ -155,12 +158,14 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
 4. Builds the relaunch command. Factor the command-building slice out of `startIn`
    (`machine/service.js:800-950`) so a start and a switch share it:
    - **Reused:** the adapter's launch command and environment, project tools, project keys
-     and MCP config, role instructions.
+     and MCP config.
    - **Inputs:** every value the original start used, taken from the machine session
      record as saved at start (`machine/service.js:832`): `role` (the Codex adapter uses it
      for the reviewer's read-only sandbox, `machine/adapters/codex.js:136`), `thread_id`,
-     project identity, `worktree`, `branch`, `default_branch`, session name and token,
-     `cli`, `effort`, `permission_mode`, `codex_mode`; `model` from the switch request; the new account's environment (`CLAUDE_CONFIG_DIR` /
+     `worktree`, `branch`, `default_branch`, session name and token,
+     `cli`, `effort`, `permission_mode`, `codex_mode`; `model`, `project` and `project_dir` from the switch request;
+     the role prompt is the session's existing saved prompt file (`prompts/<name>.md`,
+     `machine/service.js:196`, `:817`), reused as is, never rebuilt; the new account's environment (`CLAUDE_CONFIG_DIR` /
      `CODEX_HOME`, none for a default account); resume: Claude `--resume <session-id>`,
      Codex `resume <thread-id>`.
    - **Skipped:** worktree creation and the worker worktree reservation
@@ -247,8 +252,8 @@ resets; other providers; changing how accounts are signed in.
 - First build task: on this machine, with two signed-in accounts per CLI, prove by hand
   that a conversation copied into the other account's directory resumes (Claude and
   Codex), and record the result in the plan's Log. The probe goes through the machine, not just the CLI:
-  the resumed session must reach `ready`, take one carry-on turn, and produce a turn-end
-  event the hub sees. Also record whether the resumed CLI
+  the resumed session must reach `ready`, take one carry-on turn whose reply uses a fact
+  given only before the switch, and produce a turn-end event the hub sees. Also record whether the resumed CLI
   appends to the copied file or starts a new one; if a new one, the machine's transcript
   copy must follow it, and the Log says how. If one CLI cannot resume across accounts, stop
   and report it (Decision 16).
@@ -266,6 +271,12 @@ resets; other providers; changing how accounts are signed in.
 | A machine-service restart during a switch's background work leaves the session held. | Rare path: needs a service restart inside the few seconds of a switch. | review-round-4 |
 | After a `switch-failed`, the Agents details may show a "moved from" for a switch that did not happen. | Rare path: `switch-failed` needs a copy or tmux failure on a healthy machine; display only. | review-round-4 |
 | The hub restarting in the seconds between asking the machine to switch and hearing back may leave the hub unsure of the outcome. | Rare path: needs a limit hit and a hub restart within the same short window. The switch request is idempotent, which covers a plain retry. | review-round-1 |
+
+## Check Once Built
+
+| # | What to check | Round |
+|---|---------------|-------|
+| 1 | Whether Claude's relaunch keeps or drops `--session-id <id>` (`machine/adapters/claude.js:73`) beside `--resume <id>`; the first build task's probe settles it. | review-round-7 |
 
 ## Review Rounds
 
@@ -404,6 +415,26 @@ resets; other providers; changing how accounts are signed in.
 - §3 hub step 3: the switch request carries only `switch_id`, new account and `model`; the new hub permission fields and the pre-change exclusion are gone.
 - §3 machine step 4: every other launch input comes from the machine session record as saved at start (`role`, `thread_id`, project identity, worktree, branch, cli, effort, permission modes).
 - Validation: the first build task's probe goes through the machine (ready, one carry-on turn, a turn-end the hub sees).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Machine record lacks project identity and role layers | upheld | §3: project from the switch request; saved prompt file reused |
+| intent | note | Claude `--session-id` beside `--resume` | check-once-built | Check Once Built row 1 |
+| mechanics | blocking | No source of project identity for sessions started before the update | upheld (`machine/service.js:832`) | §3 hub step 3 sends `project`, `project_dir` |
+| mechanics | major | No source for the original role prompt | upheld | §3 machine step 4 reuses `prompts/<name>.md` |
+| mechanics | major | Excluding accounts before the reserve forecast lets workers take lead capacity | upheld (`viewer/app/balancer.js:78`) | §2: forecast over the full list; exclusions after ranking |
+| mechanics | minor | Copier offset resets unless `transcript_source` path and inode are rebound | upheld | §3 machine step 3 |
+| mechanics | minor | Probe should prove the conversation actually carried over | upheld | Validation probe uses a pre-switch fact |
+
+### Round 8 — 2026-11-21
+
+**Lanes:** intent / claude; mechanics / gpt; cross-family: yes.
+
+**Changed since Round 7:**
+- §2: reserve gate computed over the full account list; limited accounts removed after ranking.
+- §3 hub step 3: request also carries `project` and `project_dir`.
+- §3 machine: role prompt reused from the saved prompt file; `transcript_source` path and inode rebound, offset kept.
+- Validation probe uses a fact given only before the switch. One Check Once Built row.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
