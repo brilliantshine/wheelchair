@@ -749,6 +749,15 @@ C4, C5 rewritten.
 | mechanics | blocking | `exit` before stdout drained discards a valid header | upheld | §4 judge on `close` and stdout, test |
 | mechanics | major | No stop path under `KillMode=process`; check relays untracked | upheld | Relay exits on stdin end; check relays tracked; no new stop handler |
 
+### Round 15 — 2026-11-21
+
+**Changed since Round 14:** §4 connection cap removed; pre-`OK` client bytes buffered up to
+64 KiB (then paused), client close before `OK` kills the relay; outcome judged on the child's
+`close` and the header, not `exit`; error handlers on every stream with per-connection
+teardown; relay exits when its stdin ends (no half-close), check relays tracked, clean-stop
+wording; §6 reply gains `last` (last refusal); D15 relay idle rule marked superseded;
+Validation cases for these.
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
