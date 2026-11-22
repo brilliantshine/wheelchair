@@ -119,20 +119,60 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
     });
 
     test('install succeeded with the version not read yet: the row fills it in without reopening', async ({ page }) => {
-      let fresh = 0;
+      // Only re-fetches after the install reports success count; the version appears on the
+      // second of them, so a single success refresh (the old behaviour) never shows it.
+      let succeeded = false, after = 0;
       const s = status();
       const world = {
         harnesses: (r) => {
-          if (r.request().url().includes('fresh=1')) { fresh += 1; s.machines[0].harnesses.openrouter = h({ installed: true, version: fresh >= 2 ? '1.5.2' : null }); }
+          if (succeeded && r.request().url().includes('fresh=1')) { after += 1; s.machines[0].harnesses.openrouter = h({ installed: true, version: after >= 2 ? '1.5.2' : null }); }
           return json(r, s);
         },
-        install: (r) => json(r, r.request().url().includes('/openrouter/') ? { state: 'succeeded', output_tail: 'ok' } : { state: 'idle' }),
+        install: (r) => {
+          if (!r.request().url().includes('/openrouter/')) return json(r, { state: 'idle' });
+          if (r.request().method() === 'POST') return json(r, { state: 'running' }, 202);
+          if (!succeeded && world.posted) { succeeded = true; return json(r, { state: 'succeeded', output_tail: 'ok' }); }
+          return json(r, { state: world.posted ? 'succeeded' : 'idle' });
+        },
         put: (r) => json(r, {}),
       };
       await stub(page, world);
       await openPage(page, context, '/app/settings#harnesses');
-      await expect(row(page, 'openrouter')).toContainText('Installed 1.5.2', { timeout: 8000 });
-      expect(fresh).toBeGreaterThanOrEqual(2);
+      await row(page, 'openrouter').getByRole('button', { name: 'Install' }).click();
+      world.posted = true;
+      await expect(row(page, 'openrouter')).toContainText('Installed 1.5.2', { timeout: 10000 });
+      expect(after).toBeGreaterThanOrEqual(2);
+    });
+
+    test('a sign-in card opened right after an install stops the version re-fetches', async ({ page }) => {
+      let succeeded = false, after = 0;
+      const s = status();
+      const world = {
+        harnesses: (r) => {
+          if (succeeded && r.request().url().includes('fresh=1')) { after += 1; s.machines[0].harnesses.gemini = h({ installed: true, version: after >= 3 ? '1.5.2' : null }); }
+          return json(r, s);
+        },
+        install: (r) => {
+          if (!r.request().url().includes('/gemini/')) return json(r, { state: 'idle' });
+          if (r.request().method() === 'POST') return json(r, { state: 'running' }, 202);
+          if (!succeeded && world.posted) { succeeded = true; return json(r, { state: 'succeeded', output_tail: 'ok' }); }
+          return json(r, { state: world.posted ? 'succeeded' : 'idle' });
+        },
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await page.route('**/api/accounts/default-gemini/signin', (r) => json(r, {}));
+      await page.route('**/api/accounts/default-gemini/signin/hub', (r) => json(r, { state: 'waiting', url: 'https://example.test/login' }));
+      await openPage(page, context, '/app/settings#harnesses');
+      await row(page, 'gemini').getByRole('button', { name: 'Install' }).click();
+      world.posted = true;
+      await row(page, 'gemini').getByRole('button', { name: 'Sign in Antigravity' }).click();
+      await expect(row(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+      // Once a sign-in card is open, no more version re-fetches repaint the rows under it.
+      const seen = after;
+      await page.waitForTimeout(5000);
+      expect(after).toBe(seen);
+      await expect(row(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
     });
 
     test('install failed shows the tail and Try again, which POSTs and polls', async ({ page }) => {

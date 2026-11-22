@@ -1698,13 +1698,15 @@
 
   // A just-installed CLI's version is read in the background on the machine, so the first
   // fresh status can say "installed" with no version yet. Re-fetch a few times, 2 s apart,
-  // until the version shows, so the row fills in without reopening the section.
-  async function refreshAfterInstall(machine, provider, tries = 4) {
+  // until the version shows, so the row fills in without reopening the section. A sign-in
+  // card opened meanwhile stops the retries: a repaint would take focus from its fields.
+  async function refreshAfterInstall(machine, provider, tries = 4, first = true) {
+    if (!first && signCard) return;
     await loadHarnesses(true);
-    if (!hz.active || machine !== hz.machine || tries <= 1) return;
+    if (!hz.active || machine !== hz.machine || tries <= 1 || signCard) return;
     const m = ((hz.data && hz.data.machines) || []).find((entry) => entry.name === machine);
     const st = m && m.harnesses && m.harnesses[provider];
-    if (st && st.installed && !st.version) setTimeout(() => refreshAfterInstall(machine, provider, tries - 1), 2000);
+    if (st && st.installed && !st.version) setTimeout(() => refreshAfterInstall(machine, provider, tries - 1, false), 2000);
   }
 
   async function setHarness(provider, enabled) {
