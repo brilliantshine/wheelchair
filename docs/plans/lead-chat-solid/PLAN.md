@@ -279,7 +279,11 @@ whose lead is down; a user-facing card for the pause.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | S1-S4 backend: hold, pause, peer_log, restart context, card.js held receipt, hand-off/archive cleanup | viewer/app/{cards,hub,sessions,threads,handoff,handoff-ops,card}.js; viewer/test/app-lead-messages, app-hub, app-handoff-restart tests (not peers.js listLeads) | standard | - | Spec Validation 1,2 | not started |
+| T2 | S5 Talked-with lines (after T1 lands peer_log) | viewer/app/chat.js, viewer/pages/thread.js, app-chat test, browser spec | standard, claude | - | Spec Validation 1,3 | not started |
+| T3 | S6 protocol text (exact wording in brief) | protocol/app/cards.md, protocol/app/lead.md | light / claude-haiku-5-5 | - | protocol-rules test, S6 grep | dispatched |
 
 ## Log
 
 - 2026-11-21: lead of thread 2c25927136e1 (Avoid duplicate stubs) asked about clashes; it changes `listLeads` output and adds an app message to stub leads. Not an overlap: this plan does not touch `listLeads`; answered the peer.
+- 2026-11-21 — Sub-lead: decomposed into T1-T3; T3 dispatched. Usage limit reached before briefing T1/T2; a resumed sub-lead writes those briefs (T1 brief notes: busy check viewer/app/handoff.js:98, delivery step viewer/app/hub.js:200-213, user_at threads.js:345-455, card.js receipt :328).
