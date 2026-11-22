@@ -1,6 +1,6 @@
 ---
 slug: account-switchover
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -514,3 +514,4 @@ Build accepted: approval 39d1c3f3-466b-4117-b562-8674b0120f7e
 - 2026-11-22 — T4, Codex: lead started on `work1` (fact "PLOVER-3391"; `turn-ended` reading `work1`, week 90%), switched to `work2`: 202, `ready` with `switch_id: probe-x4`; command ends `-m gpt-6-luna resume <thread-id>`; `source_transcript` is the copied rollout under `work2`. The carry-on turn answered "PLOVER-3391"; its `turn-ended` reached the hub with `reading.account: work2`, week 79% (work2's reset 2026-11-24T21:33), stamped 12:14:50, the carry-on turn's own time, so a fresh row, not a replay. PASS.
 - 2026-11-22 — T4, copied-file question settled through the machine too: both CLIs kept writing the copied file (Codex `usage_offset` advanced on it; Claude's `turn-ended` named the copied path). No transcript-follow logic is needed.
 - 2026-11-22 — T4 note: a first Claude run reused one session token across two probe starts, so hooks were routed to the earlier stopped record (the machine finds a session by token). That was a probe artifact (the hub mints a fresh token per session) and the run was repeated with a fresh token (above).
+- 2026-11-22 — Full validation on the merged tip passed (machine: only Windows-bridge failures that cannot run here; viewer 844/844; browser 1310 passed). COMPLETION.md written; status verifying.
