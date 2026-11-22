@@ -73,9 +73,13 @@ In both, the limited turn's report is not delivered, as today
 
 **Launch identity.** Every CLI launch of a session (the first start and each switch) gets
 a `launch` number on the machine session record, starting at 1. The machine passes it to the
-CLI's hooks in the launch environment (`WHEELCHAIR_LAUNCH`), and `machine/lib/hook-post.js`
-puts it, with the session's account, on every event it posts or spools. Codex notify events
-get the same fields from the machine when it builds them. The machine and the hub both
+CLI in the launch environment (`WHEELCHAIR_LAUNCH`, `WHEELCHAIR_ACCOUNT`), and
+`machine/lib/hook-post.js` copies both from its own environment onto every event it posts
+or spools; this covers Claude hooks and Codex notify, which both run through it
+(`machine/hook.sh:20-36`). Events the machine makes itself (Codex step events,
+`machine/service.js:1102-1106`) are stamped with the launch and account current when they
+are produced, never at replay. An event with no `launch` (from a CLI started before this
+change) counts as launch 1. The machine and the hub both
 check it before changing session state:
 
 - An event whose `launch` is older than the session's current launch only records its
@@ -140,8 +144,13 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
      (`machine/adapters/codex.js:114-125`, `:149`).
    Default accounts use the CLI's own default directory (`~/.claude`, `~/.codex`); others
    `~/.wheelchair/accounts/<id>`.
-3. Updates the session record: `account`, `account_dir`, `launch + 1`, `ready = false`, and
-   `source_transcript` pointing at the copied file. Parser and copy offsets carry over
+3. Updates the session record: `account`, `account_dir`, `launch + 1`,
+   `status = 'switching'` and `ready = false` (the readiness poller,
+   `machine/service.js:1117-1165`, ignores a `switching` session), `source_transcript`
+   pointing at the copied file, and clears `last_reading` and the statusline throttle
+   (`machine/lib/statusline.js:19-28`) so a limit on the new account is never computed
+   from the old account's reset windows (with no reading, `machine/lib/limits.js` uses its
+   one-hour default). Parser and copy offsets carry over
    unchanged, since the copied file is identical; they reset only if the CLI turns out to
    write a new file on resume (the first build task finds out; then they start at 0 of that
    new file).
@@ -152,7 +161,14 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
    `WHEELCHAIR_LAUNCH`, and resume: Claude `--resume <session-id>`, Codex
    `resume <thread-id>`. Nothing is rebuilt from stored, redacted arguments.
 5. Replaces the CLI process with `tmux respawn-pane -k` on the session's pane, so the tmux
-   session itself never goes away.
+   session itself never goes away, then sets `status = 'starting'` so the readiness poller
+   watches the new process.
+
+   If anything in steps 1-4 fails (no transcript found, copy or launch preparation fails),
+   the machine leaves the old CLI running, restores the session record's old `account`,
+   `account_dir`, `launch` and `status`, and emits `switch-failed`. The hub then clears
+   `switching`, sets `target.account` back, and restores today's hold-until-reset and
+   `Continue.` on the old account.
 6. Gives the relaunch its own readiness window: the 30-second check
    (`machine/service.js:1117-1152`) is measured from the relaunch. Ready: emits `ready` as
    usual. Exits or misses the window: the session ends as a dead session today does (no
@@ -190,24 +206,30 @@ resets; other providers; changing how accounts are signed in.
 ### Validation
 
 - `bash machine/test/run.sh` and `node --test viewer/test/*.test.js` pass.
-- New viewer tests (fake machine, as in `viewer/test/app-balancer.test.js`): a `limit-hit`
-  for a `claude` session, and a `turn-ended` with a future `reading.limited_until` for a
-  `gpt` session, each with a second signed-in account of that provider, switch it; the
-  switch selector finds an alternate for a lead, a mapper and a reviewer; a stale event
-  stamped with the old account sets no hold on the switched session; the Codex turn's
-  report is delivered. For the `claude` case: (session's
-  `account` changes, `switches` has one entry, the carry-on message is queued, held
-  messages are delivered after it); with no second account, today's hold and `Continue.`
-  happen; a `gemini` session never switches; a held message is not delivered while
-  `switching` is set and the carry-on message is delivered first after `ready`; an
-  unreachable machine restores today's hold; the switch selector honours the lead reserve
-  for a worker; an event from an older `launch` changes no turn state and sets no hold.
+- New viewer tests (fake machine, as in `viewer/test/app-balancer.test.js`):
+  - a `limit-hit` for a `claude` session, and a `turn-ended` with a future
+    `reading.limited_until` for a `gpt` session, each with a second signed-in account of
+    that provider, switch it: `account` changes, `switches` has one entry, no report is
+    delivered from the limited turn, and after `ready` the carry-on message is delivered
+    first, then held messages;
+  - a held message is not delivered while `switching` is set;
+  - with no second account, today's hold and `Continue.` happen; a `gemini` session never
+    switches;
+  - the switch selector finds an alternate for a lead, a mapper and a reviewer, and
+    honours the lead reserve for a worker;
+  - an unreachable machine, and a `switch-failed` event, each restore today's hold on the
+    old account;
+  - an event from an older `launch` (or untagged, after a switch) changes no turn state and
+    sets no hold on the switched session.
 - New machine tests (fake CLIs): the switch copies the Claude and Codex conversation files
   into the new account directory and relaunches with the resume arguments and the new
   environment; the old file is left in place; the relaunch uses `respawn-pane -k` and the
   same launch preparation as a start (project tools present); a resume that exits, and one
   that misses readiness, each end the session without a `stuck` event; a repeated
-  `switch_id` does not switch twice; hook events carry `launch` and account.
+  `switch_id` does not switch twice; hook events (Claude hooks and Codex notify) and machine-made step
+  events carry `launch` and account from the launch, not from the current record; a copy
+  or launch-preparation failure emits `switch-failed` and leaves the old CLI running;
+  after a switch `last_reading` is empty until the new account reports one.
 - `npm --prefix viewer run test:browser` passes, with a check that the Agents details show
   the account name, "moved from", and the removed-account label. A chat test shows a
   `[wc:context switch]` message hidden with its reply shown.
@@ -287,6 +309,26 @@ resets; other providers; changing how accounts are signed in.
 - §2: selector shares `choose()`'s lead reserve gate and live-session counts.
 - §3: `switching` hold; async machine accept with `switch_id` retry and restore-on-failure; final transcript flush; offsets carry over; relaunch through normal launch preparation with `respawn-pane -k`; one carry-on text.
 - §4: no special fallback; failed resume ends the session like a crash (Decisions 15, 16, 18).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Validation still says the Codex limited turn's report is delivered, contradicting §1 and Decision 17 | upheld | Validation rewritten: no report from the limited turn |
+| intent | minor | Viewer-test list garbled and duplicates the stale-event check | upheld | Validation bullet rewritten as a list |
+| mechanics | blocking | Same Codex report contradiction | upheld | Same fix |
+| mechanics | blocking | `ready = false` alone leaves `status` ready, so the poller skips the relaunch; `starting` too early sees the old pane | upheld (`machine/service.js:1117-1138`) | §3 machine steps 3 and 5: `switching`, then `starting` after respawn |
+| mechanics | major | Codex notify and machine-made step events need launch identity at production, not replay | upheld | §1: identity from launch environment via `hook-post.js`; step events stamped when produced |
+| mechanics | major | Untagged events from CLIs started before the update | upheld | §1: untagged counts as launch 1 |
+| mechanics | major | No terminal outcome if lookup, copy or preparation fails before respawn | upheld | §3: `switch-failed` restores old account and hold |
+| mechanics | major | Cached Claude reading and statusline throttle belong to the old account | upheld (`machine/service.js:1536-1543`) | §3 machine step 3 clears both |
+
+### Round 4 — 2026-11-21
+
+**Lanes:** intent / claude; mechanics / gpt; cross-family: yes.
+
+**Changed since Round 3:**
+- §1: launch identity comes from the launch environment through `hook-post.js` (Claude hooks and Codex notify); machine-made step events stamped when produced; untagged events count as launch 1.
+- §3 machine: `status = 'switching'` then `starting` after `respawn-pane`; clears `last_reading` and statusline throttle; new `switch-failed` outcome restores the old account and hold.
+- Validation: viewer-test list rewritten; no report from the limited turn.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
