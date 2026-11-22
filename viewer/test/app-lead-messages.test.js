@@ -27,7 +27,6 @@ test('cross-thread refusals are ordered and store nothing', async () => {
     ['lead-b', { archived: true, handed_off: {}, project: '/two', sessions: [{ name: 'lead-b', role: 'lead', live: false }] }, 'that thread is archived'],
     ['lead-b', { handed_off: {}, project: '/two', sessions: [{ name: 'lead-b', role: 'lead', live: false }] }, 'that thread was handed off'],
     ['lead-b', { project: '/two', sessions: [{ name: 'lead-b', role: 'lead', live: false }] }, 'that lead is in another project; ask the user with a reach card first'],
-    ['lead-b', { sessions: [{ name: 'lead-b', role: 'lead', live: false }] }, 'that thread has no live lead right now'],
     ['lead-b', { sessions: [{ name: 'lead-b', role: 'worker', live: true }] }, 'no lead by that name'],
   ];
   for (const [to, change, reason] of cases) {
@@ -92,4 +91,51 @@ test('a link on either side permits messages in both directions', async () => {
     assert.equal((await hub.state.thread(a.id)).sessions[0].queue.length, 1);
     assert.equal((await hub.state.thread(b.id)).sessions[0].queue.length, 1);
   }
+});
+
+test('ended lead holds a peer message and logs only the send', async () => {
+  const { hub, a, b, send } = await fixture(); b.sessions[0].live = false; await hub.state.save(b);
+  const card = await send(a, 'lead-b', { asks: true });
+  assert.equal(card.held, true);
+  const sender = await hub.state.thread(a.id), target = await hub.state.thread(b.id);
+  assert.deepEqual(target.sessions[0].queue[0].peer, { thread: a.id, title: 'a', session: 'lead-a', question: card.id });
+  assert.equal(target.peer_log, undefined);
+  assert.deepEqual(sender.peer_log[0], { at: card.at, thread: b.id, title: 'b', session: 'lead-b', direction: 'sent', text: 'hello', question: card.id });
+});
+
+test('lead ending between acceptance and delivery holds the message', async () => {
+  const { hub, a, b, send } = await fixture(); const original = hub.withThread.bind(hub);
+  hub.withThread = async (id, fn) => { if (id === b.id) { const target = await hub.state.thread(id); target.sessions[0].live = false; await hub.state.save(target); } return original(id, fn); };
+  assert.equal((await send(a, 'lead-b')).held, true);
+  assert.equal((await hub.state.thread(b.id)).sessions[0].queue.length, 1);
+});
+
+test('pause persists outside capped log until user activity and counts only recent sends', async () => {
+  const { hub, a, b, send } = await fixture(); const now = Date.now();
+  const entry = { at: new Date(now - 1000).toISOString(), thread: b.id, title: 'b', session: 'lead-b', direction: 'sent', text: 'old' };
+  a.peer_log = Array.from({ length: 20 }, () => ({ ...entry })); await hub.state.save(a);
+  const reason = 'message limit reached with b: 20 messages within an hour; messaging that thread is paused until the user writes in this thread';
+  await assert.rejects(send(a, 'lead-b'), e => e.status === 422 && e.message === reason);
+  let stored = await hub.state.thread(a.id); assert.equal(stored.cards.length, 0); assert.ok(stored.peer_pauses[b.id]); assert.equal(stored.peer_log.at(-1).direction, 'limit');
+  await assert.rejects(send(a, 'lead-b'), /message limit reached/); stored = await hub.state.thread(a.id); assert.equal(stored.peer_log.filter(x => x.direction === 'limit').length, 1);
+  stored.peer_log = Array.from({ length: 200 }, () => ({ ...entry, thread: 'other' })); await hub.state.save(stored);
+  await assert.rejects(send(a, 'lead-b'), /message limit reached/);
+  const other = { ...b, id: 'c'.repeat(12), title: 'c', sessions: [{ name: 'lead-c', role: 'lead', live: true, queue: [] }], queues: {} }; await hub.state.save(other); await send(a, 'lead-c');
+  stored = await hub.state.thread(a.id); stored.user_at = new Date(Date.now() + 1000).toISOString(); await hub.state.save(stored);
+  await send(a, 'lead-b');
+  stored = await hub.state.thread(a.id); stored.user_at = null; stored.peer_log = Array.from({ length: 20 }, () => ({ ...entry, at: new Date(now - 3600001).toISOString() })); delete stored.peer_pauses; await hub.state.save(stored);
+  await send(a, 'lead-b');
+});
+
+test('successful submit records received and caps the peer log', async () => {
+  const { hub, a, b, send } = await fixture();
+  b.sessions[0].ready = true; b.sessions[0].turn_ended = true; b.peer_log = Array.from({ length: 200 }, (_, i) => ({ direction: 'sent', text: String(i) })); await hub.state.save(b);
+  await send(a, 'lead-b', { asks: true });
+  const target = await hub.state.thread(b.id); assert.equal(target.peer_log.length, 200);
+  hub.call = async () => { throw new Error('offline'); };
+  await require('../app/sessions.js').deliver(hub, target, target.sessions[0]);
+  assert.equal((await hub.state.thread(b.id)).peer_log.length, 200); assert.equal(target.sessions[0].queue.length, 1);
+  hub.call = async () => ({});
+  await require('../app/sessions.js').deliver(hub, target, target.sessions[0]);
+  const saved = await hub.state.thread(b.id); assert.equal(saved.peer_log.length, 200); assert.equal(saved.peer_log[0].text, '1'); assert.equal(saved.peer_log.at(-1).text, 'hello'); assert.equal(saved.peer_log.at(-1).direction, 'received'); assert.ok(saved.peer_log.at(-1).question);
 });

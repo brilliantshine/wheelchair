@@ -14,6 +14,7 @@ test('card CLI prints only a receipt for delivered and spooled cards and instruc
   try {
     const dir = await makeTemp('card-receipt-');
     const cases = [
+      [{ kind: 'message', to: 'lead', text: 'secret text' }, 200, { id: 'held', held: true }, { id: 'held', kind: 'message', held: true }],
       [{ kind: 'message', to: 'lead', text: 'secret text' }, 200, { id: 'delivered', text: 'secret text' }, { id: 'delivered', kind: 'message' }],
       [{ kind: 'message', to: 'lead', text: 'secret text' }, 202, { ok: true, spooled: true, id: 'queued' }, { id: 'queued', kind: 'message', queued: true }],
       [{ kind: 'message', to: 'lead', text: 'secret text' }, 202, { id: 'delivered-202', kind: 'message', text: 'secret text', answered: false }, { id: 'delivered-202', kind: 'message' }],

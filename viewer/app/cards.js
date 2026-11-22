@@ -161,12 +161,25 @@ async function acceptCard(hub, payload) {
       if (target.archived) throw appError(422, 'that thread is archived');
       if (require('./handoff.js').frozen(hub, target)) throw appError(422, 'that thread was handed off');
       if (target.project !== thread.project && !peers.linked(thread, target)) throw appError(422, 'that lead is in another project; ask the user with a reach card first');
-      if (!peers.latestLiveLead(target)) throw appError(422, 'that thread has no live lead right now');
+      const { PAIR_LIMIT, PAIR_WINDOW_MS, append } = require('./peer-log.js');
+      const now = new Date().toISOString(), since = Date.parse(thread.user_at) || 0;
+      const paused = Date.parse(thread.peer_pauses?.[target.id]) > since;
+      const count = (thread.peer_log || []).filter(item => item.direction === 'sent' && item.thread === target.id && Date.parse(item.at) > since && Date.parse(item.at) > Date.now() - PAIR_WINDOW_MS).length;
+      if (paused || count >= PAIR_LIMIT) {
+        const title = peers.threadName(target);
+        if (!paused) {
+          thread.peer_pauses ||= {}; thread.peer_pauses[target.id] = now;
+          append(thread, { at: now, thread: target.id, title, session: checked.card.to, direction: 'limit', text: '' });
+        }
+        return { refusal: `message limit reached with ${title}: 20 messages within an hour; messaging that thread is paused until the user writes in this thread` };
+      }
       crossThread = target.id;
+      checked.peerTitle = peers.threadName(target);
     }
 
     const stored = ['image', 'file'].includes(checked.card.kind) ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
     const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name, deliveryId: payload.delivery_id });
+    if (crossThread) require('./peer-log.js').append(thread, { at: card.at, thread: crossThread, title: checked.peerTitle, session: card.to, direction: 'sent', text: card.text, ...(card.asks === true ? { question: card.id } : {}) });
     if (card.kind === 'done') {
       for (const needs of thread.cards) if (needs.kind === 'needs' && needs.auto_merge === true && !needs.answered && needs.auto_merge_head !== card.head) resolveCard(needs, 'app', 'Replaced by a newer version');
     }
@@ -203,6 +216,7 @@ async function acceptCard(hub, payload) {
     // a dead target must not turn a valid card into a rejected one.
     return { card, targetName, ...(crossThread ? { targetThread: crossThread, senderTitle: require('./peers.js').threadName(thread) } : {}) };
   });
+  if (result.refusal) throw appError(422, result.refusal);
   if (result.duplicate) return result;
   if (result.card?.kind === 'check') require('./auto-merge.js').afterCheck(hub, payload.thread_id, result.card.id);
   if (result.targetName) {

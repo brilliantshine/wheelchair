@@ -101,6 +101,7 @@ async function runLocked(hub, thread, reimport = false, prechecked = false) {
       await checked(hub, thread, 'reopen');
       if (op.carried) thread.imported = { at: op.started_at, ...op.carried };
       if (op.kind === 'advance') {
+        require('./peer-log.js').dropHeld(thread);
         for (const card of thread.cards || []) require('./cards.js').retractCard(card, 'import', 'Replaced by an import');
         thread.pinned = {};
       }

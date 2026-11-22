@@ -37,7 +37,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `GET /sessions/:name/pane?history=<n>` | Optional integer history, 0–2000 | `{pane}` |
 | `GET /sessions/:name/brief` | — | `{brief}`; 404 if missing |
 | `POST /sessions/:name/keys` | `{keys}` | `{ok:true}` |
-| `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |
+| `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202`; cross-thread messages held for an ended lead include `held: true` |
 | `POST /machine/sudo-outcome` | `{request_id,state,exit_code?,output?,truncated?,reason?,delivery_id}`; `state` is `running`, `ran` (needs an integer `exit_code`), `declined`, `expired` or `failed` | `200 {ok:true,changed}`. Finds the thread by `request_id` (its `sudo_index`) and calls `applySudoState`; a repeat, an older or equal state changes nothing and is still `200`. `409` for an unknown `request_id` (the machine retries later), `400` for a bad body, `401` without the machine secret |
 | `POST /machine/events` | `{thread_id,session,type,...}` | `{ok:true}`, `202` |
 | `POST /machine/session` | `{calling_session,action,...}` | the hub-authorized session result |
