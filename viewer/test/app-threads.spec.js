@@ -611,6 +611,30 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('#pinned .card-idea .bullet')).toHaveCount(3);
     });
 
+    test('stub: an addition card names the target thread; the unopened page keeps context line breaks', async ({ page }) => {
+      const parent = await ctx.make({ cli: 'claude' });
+      await ctx.post(parent.id, { kind: 'stub', title: 'Fix it', summary: 'First part.\n\nSecond part.', depends_on_parent: false });
+      const threads = (await (await fetch(`${ctx.server.url}/api/threads?token=${ctx.server.token}`)).json()).threads;
+      const stub = threads.find((x) => x.stub);
+      // Seed addition cards directly: the card is what the page renders, whatever built it.
+      await ctx.patch(parent.id, (t) => {
+        const base = { kind: 'stub', summary: 'Also do this.', depends_on_parent: false, adds_to: stub.id, thread_id: stub.id, target_title: 'Target thread', created_at: new Date().toISOString() };
+        t.cards.push({ ...base, id: 'addcard00001', title: 'Add one' });
+        t.cards.push({ ...base, id: 'addcard00002', title: 'Add two', duplicate: true });
+      });
+      await open(page, parent.id);
+      const added = page.locator('#card-addcard00001');
+      await expect(added).toContainText('Added to another thread');
+      await expect(added).toContainText('Target thread');
+      await expect(added).toContainText('Also do this.');
+      await expect(added.locator('a', { hasText: 'Go to it' })).toHaveAttribute('href', `/wheelchair/app/thread?id=${stub.id}`);
+      const dup = page.locator('#card-addcard00002');
+      await expect(dup).toContainText('Already a thread for this');
+      await expect(dup).not.toContainText('Added to another thread');
+      await open(page, stub.id);
+      await expect(page.locator('#stub-open p').first()).toHaveCSS('white-space', 'pre-line');
+    });
+
     test('stub: a dependent stub waits by itself; start now anyway opens the lead', async ({ page }) => {
       const parent = await ctx.make({ cli: 'claude' });
       await ctx.patch(parent.id, (x) => { x.title = 'Parent'; });

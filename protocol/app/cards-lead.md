@@ -245,9 +245,15 @@ New work that belongs in its own thread.
 | `summary` | string | yes | Context for the next lead: what was asked, what this thread already knows, links to its plan documents and pull request. Written so a lead that has seen none of this thread can start |
 | `depends_on_parent` | boolean | yes | True when the work builds on this thread's unmerged work (an after-done fix always does) |
 | `commits` | array of strings | no | For a fix that missed the merge: the fix's own commit ids, not merge commits, for the stub's lead to cherry-pick |
+| `adds_to` | string | no | Target stub thread id, 12 lowercase hex characters |
+| `duplicate` | boolean | no | Marks a duplicate note; allowed only with `adds_to` |
 
-The app adds a stub thread to the list (same project, CLI and machine) and shows the card
+Without `adds_to`, the app adds a stub thread to the list (same project and machine) and shows the card
 in this thread with a "Go to it" button. No session starts until the user opens it.
+
+With `adds_to`, `depends_on_parent` must be false and `commits` absent. Otherwise `card.js` refuses: `an addition can't depend on this thread's unmerged work; post your own stub`. The hub checks the target in this order and refuses with `no such stub`, `that stub is archived, handed off or finished`, or `that stub has started; post your own stub`.
+
+On success the target's context gains its own paragraph: `Added from "<parent title>" (<YYYY-MM-DD>): <summary>`, or for a duplicate, `Also came up in "<parent title>" (<YYYY-MM-DD>): <summary>`. The parent card shows "Added to another thread" (or "Already a thread for this" for a duplicate), the target title, the summary and "Go to it".
 
 ### `sudo`
 
