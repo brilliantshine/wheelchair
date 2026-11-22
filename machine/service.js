@@ -476,6 +476,7 @@ class MachineService {
     return null;
   }
   sweepMcpConfigs() {
+    if (!this.stateDir) return;
     const dir = path.join(this.stateDir, 'settings');
     let entries;
     try { entries = fs.readdirSync(dir).filter(name => name.endsWith('.mcp.json')); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return; }
@@ -2122,7 +2123,7 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/project-tools/windows-status') {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
-        if (!Array.isArray(input.tools) || input.tools.length > 100) throw Object.assign(new Error('tools must be an array of at most 100 items'), { status: 400 });
+        if (!input || typeof input !== 'object' || !Array.isArray(input.tools) || input.tools.length > 100) throw Object.assign(new Error('tools must be an array of at most 100 items'), { status: 400 });
         const status = Object.create(null);
         if (!this.win?.detected?.kernel) return send(response, 200, { wsl: false, status });
         await Promise.all(input.tools.map(async tool => {
@@ -2134,9 +2135,9 @@ class MachineService {
           else {
             let timer;
             try {
-              const checked = await Promise.race([this.win.forwards.check(target.port), new Promise(resolve => { timer = setTimeout(() => resolve({ ok: false, reason: 'Windows check timed out' }), 10000); })]);
+              const checked = await Promise.race([this.win.forwards.check(target.port), new Promise(resolve => { timer = setTimeout(() => resolve({ ok: false, reason: `couldn't check Windows for port ${target.port}` }), 10000); })]);
               result = checked.ok ? { state: 'reachable' } : { state: 'unreachable', reason: checked.reason };
-            } catch (error) { result = { state: 'unreachable', reason: error.message || String(error) }; }
+            } catch { result = { state: 'unreachable', reason: `couldn't check Windows for port ${target.port}` }; }
             finally { clearTimeout(timer); }
           }
           status[tool.id] = { ...result, ...this.win.forwards.status(target.port) };

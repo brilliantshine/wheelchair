@@ -8,13 +8,13 @@ function call(cli, servers, replaceEntries, tools = true, extra = {}) {
     stateDir: '/state', promptPath: '/prompt', tools, mcp: { names: Object.keys(servers), servers }, replaceEntries, ...extra,
   });
 }
-for (const cli of Object.keys(adapters)) for (const [replaced, withheld] of [['replace', 'withhold'], ['__proto__', 'withhold'], ['replace', '__proto__']]) {
-  test(`${cli} replaces ${replaced} and withholds ${withheld}`, () => {
+for (const cli of Object.keys(adapters)) for (const [replaced, withheld, map] of [['replace', 'withhold'], ['__proto__', 'withhold'], ['replace', '__proto__'], ['constructor', 'withhold'], ['replace', 'constructor'], ['__proto__', 'withhold', true], ['replace', '__proto__', true]]) {
+  test(`${cli} replaces ${replaced} and withholds ${withheld}${map ? ' using Map' : ''}`, () => {
     const servers = Object.create(null);
     servers[replaced] = http('http://original.test'); servers[withheld] = http('http://withheld.test'); servers.untouched = http('http://untouched.test');
     const replacements = Object.create(null);
     replacements[replaced] = http('http://replacement.test'); replacements[withheld] = null; replacements.extra = http('http://extra.test');
-    const result = call(cli, servers, replacements);
+    const result = call(cli, servers, map ? new Map(Object.entries(replacements)) : replacements);
     assert.deepEqual(result.loaded.map(x => x.name), [replaced, 'untouched']);
     const output = JSON.stringify({ argv: result.argv, config: result.mcpConfig, files: result.toolFiles });
     assert.ok(output.includes('http://replacement.test'));

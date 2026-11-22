@@ -341,7 +341,7 @@ class WinBridge {
 
   async startup() {
     if (this.detected.kernel) {
-      await this.forwards.restore(this.service.liveTmux());
+      await this.forwards.restore(this.service.liveTmux?.() ?? null);
       this.runBridgeProbe();
       this.healthTimer = setInterval(() => this.runBridgeProbe(), this.healthIntervalMs);
       this.healthTimer.unref();
