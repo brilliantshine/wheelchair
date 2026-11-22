@@ -38,6 +38,7 @@ never built (MAP.md).
 | D7 | Keep the 45 s pre-launch wait for sessions whose Windows tools are all wrapped | It still supplies the copy path and prompt lines, and IDEA asks only for today's speed | review-round-1 |
 | D8 | Wrapped tools keep interop's working directory rather than switching to the copy | Same behaviour as an unwrapped tool today; tools find the copy through `WHEELCHAIR_WINDOWS_PROJECT` | review-round-2 |
 | D9 | Making a normal stop (and the sweep and archive) wait for a session's Windows tools to finish writing moves to the two-part follow-up (Deferred 3). The go-between starts the real tool directly through interop, as the CLI does today; no Windows launcher or Job Object. IDEA.md's "Stopping the agent normally brings back everything its Windows tools wrote" moves to Not doing | User's choice after three review rounds, most findings being in that part; agents do not have this wait today | idea-change |
+| D10 | Run another review round after round 6 (budget reset) | User's choice; remaining findings small and shrinking | user |
 
 ## Spec
 
@@ -429,6 +430,17 @@ queue for ready-file writes; IDEA.md Not doing (first-ever Codex use); new Accep
 | mechanics | major | Go-between can exit with its own stdout unflushed | upheld | Spec 4 step 5: wait for own stdout to flush; 1 MiB test |
 | mechanics | major | Stale-file sweep skipped when there are no Antigravity files | upheld | Spec 2: own scan, not below `sweepAgyTools`' early returns; test |
 | mechanics | minor | New `tools/call` while `failed` waits 50 s | upheld | Spec 4: answered at once |
+
+### Round 7 — 2026-11-21
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 6:** Spec 4 step 5 waits for its own stdout to flush; Spec 4 a
+`tools/call` while `failed` is answered at once; Spec 2 stale-file sweep scans on its own, not
+below `sweepAgyTools`' early returns; Validation additions; D10.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
