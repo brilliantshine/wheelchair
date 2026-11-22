@@ -2,7 +2,13 @@
 slug: win-tools-solid
 date: 2026-11-22
 implemented-by: "standard (gpt-6.1-terra); sub-lead: claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra (standard)
+  - round: 2
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra (standard), gpt-6-luna (light, remediation 1)
 ---
 
 # Completion Report — Make Windows tools solid (idle reader closed)
