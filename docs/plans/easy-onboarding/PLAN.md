@@ -444,6 +444,7 @@ npm --prefix viewer run test:browser
 | The connection drops after an install poll has received its headers but before its small body arrives: polling stops and Install shows while the job still runs | Needs a drop inside the few-millisecond gap between a tiny response's headers and body, a sub-second race; an outage between polls already shows the retry notice, and pressing Install again gets 409 and resumes polling the running job; rare path | verification-4 |
 | A thread whose lead has ended but still has one unplaced queued worker counts toward the thread's harness in `threads_using`, so switching that harness off asks one extra confirmation | Needs an ended lead and a still-queued worker together; the only effect is an extra "threads use it" confirmation, and nothing is blocked or lost; rare path | verification-4 |
 | The only signed-in harness has its Lead model set to None, so the checklist completes but no lead starts | Every provider ships default models (`codex/model.sh:33-38`); needs a deliberate None on the only harness; rare path | review-round-5 |
+| A version re-fetch already in flight when Sign in is opened right after an install can take focus from the sign-in field once (typed text is kept) | Needs Sign in tapped inside the one re-fetch's round trip on a slow machine; later re-fetches stop once the card is open; rare path | lead-check |
 
 ## Review Rounds
 
