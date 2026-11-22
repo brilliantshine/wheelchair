@@ -15,6 +15,7 @@
 <header id="app-nav" data-current="threads"></header>
 <div class="shell on-thread">
   <nav class="col-list" aria-label="Threads">
+    <button type="button" id="list-collapse" class="col-toggle" aria-controls="list" aria-expanded="true" aria-label="Hide the thread list" title="Hide the thread list">&laquo;</button>
     <a id="new-toggle" href="/wheelchair/app/new">+ New thread</a>
     <div id="list-error" class="error-banner" hidden></div>
     <label class="list-opts"><input type="checkbox" id="show-archived"> Show archived</label>
@@ -58,6 +59,7 @@
     </form>
   </main>
   <aside class="col-side" aria-label="Files">
+    <button type="button" id="side-collapse" class="col-toggle" aria-controls="files" aria-expanded="true" aria-label="Hide the files panel" title="Hide the files panel">&raquo;</button>
     <section id="aside-panel" hidden></section>
     <section id="files" aria-label="Files" hidden></section>
   </aside>

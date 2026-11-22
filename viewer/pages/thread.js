@@ -30,6 +30,27 @@
   const PINS_KEY = 'wheelchair.pinsFolded';
   let pinsFolded = false;
   try { pinsFolded = localStorage.getItem(PINS_KEY) === '1'; } catch (e) { /* stays open */ }
+  // The thread list (left) and files panel (right) fold to a thin rail on wide screens. Like the
+  // pinned strip, a per-viewer convenience kept in this browser only.
+  const shellEl = document.querySelector('.shell');
+  for (const [btnId, cls, key, label, openGlyph, shutGlyph] of [
+    ['list-collapse', 'list-collapsed', 'wheelchair.listCollapsed', 'the thread list', '\u00ab', '\u00bb'],
+    ['side-collapse', 'side-collapsed', 'wheelchair.sideCollapsed', 'the files panel', '\u00bb', '\u00ab'],
+  ]) {
+    const btn = $(btnId);
+    const apply = (shut) => {
+      shellEl.classList.toggle(cls, shut);
+      btn.setAttribute('aria-expanded', String(!shut));
+      btn.textContent = shut ? shutGlyph : openGlyph;
+      btn.title = (shut ? 'Show ' : 'Hide ') + label; btn.setAttribute('aria-label', btn.title);
+    };
+    let shut = false; try { shut = localStorage.getItem(key) === '1'; } catch (e) { /* stays open */ }
+    apply(shut);
+    btn.addEventListener('click', () => {
+      const next = !shellEl.classList.contains(cls); apply(next);
+      try { localStorage.setItem(key, next ? '1' : '0'); } catch (e) { /* this page only */ }
+    });
+  }
   let archiveAsk = false;
   let exportAsk = false;
   let handoffState = null;
