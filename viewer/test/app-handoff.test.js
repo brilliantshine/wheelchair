@@ -11,7 +11,7 @@ test('handoff validator checks schema, limits and unknown fields', () => {
   assert.equal(valid(file), true);
   assert.equal(validateHandoffFile('{').ok, false);
   for (const edit of [
-    (f) => { f.thread.id = 'bad'; }, (f) => { f.version = 3; }, (f) => { f.extra = 1; },
+    (f) => { f.thread.id = 'bad'; }, (f) => { f.version = 4; }, (f) => { f.extra = 1; },
     (f) => { f.thread.extra = 1; }, (f) => { f.history = [{ at, who: 'lead', kind: 'question', text: 'x', extra: 1 }]; },
     (f) => { f.history = [{ at, who: 'nobody', kind: 'question', text: 'x' }]; },
     (f) => { f.branch = 'wc/other'; }, (f) => { f.pr_url = 'url'; }, (f) => { f.stage = 'done'; },
@@ -384,15 +384,29 @@ test('chat holds the thread lock through assembly while status refresh remains o
 test('handoff versions translate v1 and enforce their history labels', () => {
   const file = sample();
   file.history = [{ at, who: 'user', kind: 'message', text: 'hello' }];
-  assert.equal(file.version, 2);
+  assert.equal(file.version, 3);
   assert.equal(validateHandoffFile(JSON.stringify(file)).file.history[0].who, 'user');
-  const old = structuredClone(file); old.version = 1; old.history[0].who = 'collin';
+  const { lessons: ignored, ...old } = structuredClone(file); old.version = 1; old.history[0].who = 'collin';
   const translated = validateHandoffFile(JSON.stringify(old));
   assert.equal(translated.file.history[0].who, 'user');
-  for (const [version, who, what] of [[1, 'user', 'invalid history'], [2, 'collin', 'invalid history'], [3, 'user', 'unknown format or version']]) {
-    const bad = structuredClone(file); bad.version = version; bad.history[0].who = who;
+  for (const [version, who, what] of [[1, 'user', 'invalid history'], [2, 'collin', 'invalid history'], [4, 'user', 'unknown format or version']]) {
+    const { lessons: ignored, ...bad } = structuredClone(file); bad.version = version; bad.history[0].who = who;
     assert.equal(validateHandoffFile(JSON.stringify(bad)).what, what);
   }
   const reexport = buildHandoffFile({ id, title: 'Title', slug: 'plan', imported: { at, history: translated.file.history }, sent: [], cards: [] }, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/owner/repo' });
-  assert.equal(reexport.version, 2); assert.equal(reexport.history[0].who, 'user');
+  assert.equal(reexport.version, 3); assert.equal(reexport.history[0].who, 'user');
+});
+
+test('v3 exports only this thread’s lessons in transferable scope', () => {
+  const lesson = { text: 'Remember', saved_by: 'agent', saved_at: '2026-01-01T00:00:00Z', thread: id };
+  const thread = { id, title: 'Title', slug: 'plan', project: '/source' };
+  const result = buildHandoffFile(thread, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/owner/repo', lessons: {
+    worker: [lesson, { ...lesson, text: 'Scoped', project: '/source', provider: 'gpt' }, { ...lesson, project: '/else' }, { ...lesson, thread: 'other' }],
+  } });
+  assert.deepEqual(result.lessons, [
+    { role: 'worker', text: 'Remember', saved_by: 'agent', saved_at: lesson.saved_at },
+    { role: 'worker', text: 'Scoped', provider: 'gpt', project: true, saved_by: 'agent', saved_at: lesson.saved_at },
+  ]);
+  assert.equal(validateHandoffFile(JSON.stringify({ ...result, lessons: null })).what, 'invalid lessons');
+  assert.equal(validateHandoffFile(JSON.stringify({ ...result, lessons: [null] })).ok, true);
 });

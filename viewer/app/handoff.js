@@ -15,8 +15,9 @@ function validateHandoffFile(bytesOrString) {
   let file;
   try { file = JSON.parse(bytes.toString('utf8')); } catch { return { ok: false, what: 'invalid JSON' }; }
   const fail = (what) => ({ ok: false, what });
-  if (!keys(file, ['format', 'version', 'exported_at', 'thread', 'repository', 'branch', 'head', 'stage', 'history'], ['pr_url'])) return fail('invalid fields');
-  if (file.format !== 'wheelchair-handoff' || ![1, 2].includes(file.version)) return fail('unknown format or version');
+  if (!keys(file, ['format', 'version', 'exported_at', 'thread', 'repository', 'branch', 'head', 'stage', 'history'], ['pr_url', ...(file?.version === 3 ? ['lessons'] : [])])) return fail('invalid fields');
+  if (file.format !== 'wheelchair-handoff' || ![1, 2, 3].includes(file.version)) return fail('unknown format or version');
+  if (Object.hasOwn(file, 'lessons') && !Array.isArray(file.lessons)) return fail('invalid lessons');
   if (!iso(file.exported_at)) return fail('invalid export time');
   if (!keys(file.thread, ['id', 'title', 'slug']) || typeof file.thread.id !== 'string' || !/^[0-9a-f]{12}$/.test(file.thread.id)
     || typeof file.thread.title !== 'string' || file.thread.title.length > 120 || typeof file.thread.slug !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(file.thread.slug)) return fail('invalid thread');
@@ -55,7 +56,7 @@ function handoffFileName(title) {
   return `${stem || 'thread'}.wheelchair.json`;
 }
 
-function buildHandoffFile(thread, { head, stage, repository, pr_url }) {
+function buildHandoffFile(thread, { head, stage, repository, pr_url, lessons = {} }) {
   const since = thread.imported?.at;
   const newer = (at) => !since || at > since;
   const history = (thread.imported?.history || []).map((entry) => ({ ...entry }));
@@ -70,7 +71,8 @@ function buildHandoffFile(thread, { head, stage, repository, pr_url }) {
   }
   history.sort((a, b) => String(a.at).localeCompare(String(b.at)));
   for (const entry of history) if (typeof entry.text === 'string' && entry.text.length > 20000) entry.text = `${entry.text.slice(0, 19990)}… (cut)`;
-  const file = { format: 'wheelchair-handoff', version: 2, exported_at: new Date().toISOString(), thread: { id: thread.id, title: thread.title || '', slug: thread.slug }, repository, branch: `wc/${thread.id}`, head, stage, ...(stage === 'done' ? { pr_url } : {}), history };
+  const carried = Object.entries(lessons).flatMap(([role, items]) => items.filter((item) => item.thread === thread.id && (!item.project || item.project === thread.project)).map((item) => ({ role, text: item.text, ...(item.provider !== undefined ? { provider: item.provider } : {}), ...(item.project ? { project: true } : {}), saved_by: item.saved_by, saved_at: item.saved_at, ...(item.kept_at !== undefined ? { kept_at: item.kept_at } : {}) })));
+  const file = { format: 'wheelchair-handoff', version: 3, exported_at: new Date().toISOString(), thread: { id: thread.id, title: thread.title || '', slug: thread.slug }, repository, branch: `wc/${thread.id}`, head, stage, ...(stage === 'done' ? { pr_url } : {}), history, lessons: carried };
   let dropped = 0;
   let size = Buffer.byteLength(JSON.stringify(file));
   const omission = () => ({ at: history[0].at, who: 'app', kind: 'message', text: `${dropped} earlier entries were left out` });
@@ -150,7 +152,8 @@ async function exportThread(hub, id) {
     if (reason) throw appError(409, reason);
     const stage = stageFor(thread, status);
     const pr_url = donePr(thread);
-    const file = buildHandoffFile(thread, { head: status.head, stage, repository: status.repository, pr_url });
+    const settings = await require('./settings.js').load(hub);
+    const file = buildHandoffFile(thread, { head: status.head, stage, repository: status.repository, pr_url, lessons: settings.lessons });
     const bytes = Buffer.from(JSON.stringify(file));
     const checked = validateHandoffFile(bytes);
     if (!checked.ok) throw appError(500, `Could not build the handoff file: ${checked.what}`);
