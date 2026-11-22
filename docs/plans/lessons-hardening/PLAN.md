@@ -15,10 +15,7 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: What marks a lesson as possibly stale?
-- **Context:** Nothing records reconfirmation; `saved_at` changes on every edit (`viewer/app/settings.js:213`). Lessons don't reference rules.
-- **Options:** (a) age only: not saved or kept for N days; (b) age plus agents reconfirming lessons that helped; (c) also rule-file changes since the lesson was saved.
-- **Recommendation:** (a), 90 days, with a Keep button that resets it.
+_None._
 
 ## Watch List
 
@@ -47,6 +44,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | A project-only lesson in a handoff is re-scoped to the project path the thread is imported into; in a file import it keeps its path | The exact path differs between installs (`viewer/app/settings.js:183`); a handoff knows the destination, a file does not | defaulted |
 | 8 | Handoffs from an install without lessons support still import; an install without support importing a newer handoff is out of scope | IDEA.md Constraints name only the first direction | defaulted |
 | 9 | Incoming lessons are added automatically: matched by agent type + exact text (trimmed); a match is skipped; a new one is added with a new local id, saved_by and only_ai kept; nothing existing is overwritten; lessons that would take a type past 12 wait in a "Waiting to add" list in Settings where Collin adds (after removing one) or discards each | Q3 answered "Add automatically" | user |
+| 10 | A lesson is marked possibly stale after 90 days since it was last saved, edited, restored or kept; a Keep button in Settings clears the mark; agents are unchanged | Q2 answered "Age only" | user |
 |   |          |           | user / defaulted / adopted / idea-change / review-round-N |
 
 ## Spec
