@@ -12,7 +12,7 @@ const diagramSensitivity = require('./diagram-sensitivity.js');
 const usage = require('./usage.js');
 const balancer = require('./balancer.js');
 const harnesses = require('./harnesses.js');
-const { PROVIDERS, cliOf } = require('./providers.js');
+const { PROVIDERS, DISPLAY_NAMES, cliOf } = require('./providers.js');
 const threadsModule = require('./threads.js');
 const UPLOAD_LIMIT = 25 * 1024 * 1024;
 const HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox";
@@ -94,10 +94,11 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   }
   if (bits[0] === 'harnesses' && bits.length === 1 && request.method === 'GET') return send(response, 200, await harnesses.describe(hub, url.searchParams.get('fresh') === '1'));
   if (bits[0] === 'onboarding' && bits.length === 1 && request.method === 'GET') return send(response, 200, await harnesses.onboarding(hub));
-  if (bits[0] === 'machines' && bits.length === 5 && bits[2] === 'harnesses' && bits[4] === 'install' && ['GET', 'POST'].includes(request.method)) {
+  if (bits[0] === 'machines' && bits.length === 5 && bits[2] === 'harnesses' && bits[4] === 'install' && ['GET', 'POST', 'DELETE'].includes(request.method)) {
     const name = bits[1], provider = bits[3];
     if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
     if (!(await hub.state.resolveMachine(await hub.machines(), name))) throw appError(404, 'machine not found');
+    if (request.method === 'POST' && (await settings.load(hub)).harnesses[provider] === false) return send(response, 409, { error: `${DISPLAY_NAMES[provider]} is switched off` });
     try { const result = await hub.client.passThrough(name, `/v1/harnesses/${provider}/install`, request.method, body); return send(response, result.status, result.body); }
     catch { return send(response, 502, { error: `${name} isn't reachable.` }); }
   }
@@ -219,6 +220,10 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
     if (typeof body.enabled !== 'boolean') throw appError(400, 'enabled must be a boolean');
     await settings.update(hub, (value) => { value.harnesses[provider] = body.enabled; if (!body.enabled && !harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
+    if (!body.enabled) {
+      // Stop any install of this harness on every known machine; the answers are ignored.
+      hub.machines().then((all) => { for (const name of Object.keys(all || {})) Promise.resolve().then(() => hub.client.passThrough(name, `/v1/harnesses/${provider}/install`, 'DELETE', {})).catch(() => {}); }).catch(() => {});
+    }
     return send(response, 200, await settings.describe(hub));
   }
   if (bits[1] === 'lessons' && bits.length === 3 && request.method === 'PUT') {
