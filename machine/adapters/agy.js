@@ -32,7 +32,10 @@ module.exports = {
     const settingsPath = path.join(context.stateDir, 'settings', `${session.name}.json`);
     const servers = {}, warnings = [];
     if (context.tools && context.mcp) {
-      for (const [name, entry] of Object.entries(context.mcp.servers)) {
+      for (const [name, original] of Object.entries(context.mcp.servers)) {
+        const replacement = c.replacement(context.replaceEntries, name);
+        if (replacement.has && replacement.entry === null) continue;
+        const entry = replacement.has ? replacement.entry : original;
         let reason, translated;
         if (!/^[A-Za-z0-9_-]+$/.test(name)) reason = 'its name must use only letters, digits, _ and -';
         else if (entry.type === 'sse') reason = 'uses sse, which Antigravity does not support here';
