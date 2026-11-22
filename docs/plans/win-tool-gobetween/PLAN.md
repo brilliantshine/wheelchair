@@ -104,10 +104,14 @@ tools from WSL" thread merged first), reuse it and only add entries; otherwise a
   `<stateDir>/settings/<session name>.mcp.json` (mode 0600, atomic) and passed with
   `--mcp-config <path>`. No `--strict-mcp-config`. The file is removed when the session stops.
 - **Stale files:** generalize the existing `sweepAgyTools` (`machine/service.js:477`) to take a
-  list of (directory, entry-to-session-name) pairs: `agy-tools` as today, plus `settings`
-  (only `<name>.mcp.json` entries) and `win-ready`. It reads each directory first and skips a
-  missing or empty one without returning, and calls `liveTmux()` once, only if some directory
-  has entries (so a machine with none of these files still never asks tmux, keeping
+  list of (directory, entry-to-session-name) pairs: `agy-tools` as today
+  (`decodeURIComponent(entry)`, unchanged); `settings`, only entries ending `.mcp.json`, name =
+  the entry minus that suffix (every other file there, such as `<name>.json`, is ignored and
+  never removed); `win-ready`, name = the entry as is. In the new directories an entry whose
+  name is not a valid session name (`safeName`, starting `wc-`) is ignored, not removed. It
+  reads each directory first and filters it to these eligible entries, skips a directory with
+  none without returning, and calls `liveTmux()` once, only if some directory has eligible
+  entries (so a machine with none of these files still never asks tmux, keeping
   `machine/test/kimi-turns.test.js:94` valid). Same live-tmux and `startingNames` rules. It
   removes
   `<stateDir>/settings/<name>.mcp.json` and `<stateDir>/win-ready/<name>` for sessions not
@@ -226,12 +230,14 @@ the next session. The service computes the path; the go-between only reads and w
    starting the tool; during the handoff or afterwards, stop the tool (item 1), then exit. The signal handlers stay installed until then, so a second
    signal does not cut the stop short.
 
-6. **Finishing.** Every exit of the go-between (step 5, a 3b handoff failure after its error
-   replies, stdin close, signals) goes through one finish routine: wait until its own stdout
-   has flushed everything already written (the last write's callback), then set
-   `process.exitCode` to the chosen status and end normally (never a bare `process.exit()`
-   with output pending). If stdout emits `error` (e.g. `EPIPE`) or `close` before that, stop
-   waiting and finish at once with the same status; such errors are never thrown.
+6. **Finishing.** At start-up, before anything is written, the go-between installs `error`
+   and `close` handlers on its stdout for its whole life: a stdout error (e.g. `EPIPE`) is
+   never thrown; after one, further writes are skipped. Every exit (step 5, a 3b handoff
+   failure after its error replies, stdin close, signals) goes through one finish routine:
+   wait until stdout has flushed everything already written (the last write's callback), or
+   stdout has errored or closed, whichever comes first; then call `process.exit(status)`. It
+   exits explicitly, so an open client stdin, the ready-file poll timer or any other handle
+   cannot keep it alive.
 
 ### 5. Marking the copy used
 
@@ -289,9 +295,13 @@ New tests in `machine/test/` must cover:
 - Large final response: a tool that writes a 1 MiB response and exits has it all delivered to
   a slow-reading client before the go-between exits.
 - A `tools/call` arriving while the ready file says `failed` is answered at once.
-- Finishing: a client that closes its read end during a large final response makes the
-  go-between finish with the intended status (no hang, no crash); 3b failure replies are
-  delivered before exit 1; a command-only entry (no `args`) is wrapped and launched.
+- Finishing (client stdin kept open in every case): after the tool exits, the go-between exits
+  with its status; after a 3b failure, it delivers the replies and exits 1; a client that
+  closes its read end while the tool is still running, and one that closes it during a large
+  final response, both end with the intended status and no crash; a command-only entry (no
+  `args`) is wrapped and launched.
+- Sweep: a machine with only ordinary `settings/<name>.json` files makes no tmux call and
+  removes nothing there.
 
 Live check once built (needs a WSL machine with a Windows stdio MCP server and a fresh copy),
 in three separate runs: (1) cold cache: a Codex agent started before ready lists no tools, and
@@ -307,7 +317,7 @@ As IDEA.md. Also the two items in Deferred.
 
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
-| 1 | After a machine service restart, keep tracking sessions with Windows tools and re-ready wrapped sessions whose ready file is not `ready` (parent's `win-sessions.json` launch record) | Needs a service restart during a live session; today's restart recovery already reconstructs from live sessions and copies (`machine/lib/win.js:339-358`) | planning | Parent Spec item 3 "Launch record" and "Recovery after a service restart" |
+| 1 | After a machine service restart, keep tracking sessions with Windows tools and re-ready wrapped sessions whose ready file is not `ready` (parent's `win-sessions.json` launch record). Without it, a go-between whose ready file says `waiting` when the service restarts keeps waiting: the readying task and attempt token are in memory only (review round 8) | Needs a service restart during a live session; today's restart recovery already reconstructs from live sessions and copies (`machine/lib/win.js:339-358`) | planning | Parent Spec item 3 "Launch record" and "Recovery after a service restart" |
 | 3 | A normal stop, the sweep and archive wait until a session's Windows tools (and every Windows process they started) have finished writing before the final sync | Today's agents don't have this wait either; it is not needed for tools to appear. Moved here by the user after three review rounds (D9) | review-round-3 | Last full design: Spec 5 "Process tree" and Spec 6 "Normal stop waits" of this plan at commit `9d5a5511` (named Job Object launcher, `wc-tool-started` acknowledgment, `terminateScript("tool-<uuid>")`, 12 s stop budget, `win-tools/<session>/<pid>` files, 15 s `onStop` wait, sweep skips copies with a stop in progress) and the Round 1-3 findings against them |
 | 2 | Stop, the periodic sweep and archive wait for every session sharing a copy, including sessions that ended without a normal stop (CLI crash, handoff kill) | Needs a sibling or crashed session; with Deferred 3, the rest needs a sibling or crashed session with a tool still writing | planning | Parent Spec item 3 "Stop waits for wrapped tools" (copy-wide gate, sweep, `archiveCheck` pending) |
 
@@ -464,6 +474,23 @@ below `sweepAgyTools`' early returns; Validation additions; D10.
 **Changed since Round 7:** Spec 4 new step 6 (one finish routine for every exit, stdout
 errors); step 5 points to it; Spec 2 stale-file sweep generalizes `sweepAgyTools`; Spec 1
 missing `args`; Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | "End normally" never exits with client stdin or the poll timer open | upheld | Spec 4 step 6: explicit `process.exit(status)` after flush |
+| intent | minor | Sweep's name mapping per directory not stated | upheld | Spec 2: mapping per directory |
+| mechanics | blocking | Same as the first row: the go-between can stay alive after finishing | upheld | Same fix; tests keep client stdin open |
+| mechanics | major | stdout `EPIPE` before finish can crash | upheld | Spec 4 step 6: lifetime stdout handlers |
+| mechanics | major | Service restart leaves a waiting go-between waiting | declined | Already Deferred 1 (service restart mid-session), settled for this mode; note added to the row |
+| mechanics | minor | Sweep should filter eligible entries before asking tmux | upheld | Spec 2: filter first, ignore other files; test |
+
+### Round 9 — 2026-11-21
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 8:** Spec 4 step 6 (lifetime stdout handlers, explicit
+`process.exit(status)` after flush); Spec 2 sweep mapping and filtering per directory;
+Deferred 1 note; Validation additions.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
