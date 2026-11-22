@@ -51,6 +51,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D12 | The gate runs inside `sync` and `remove`, not at each caller | Round 1: launch readying, `wc.js win` and `onWorktreeRemoved` also reconcile or delete copies | review-round-1 |
 | D13 | The launcher start deadline is the go-between's existing start allowance (`--init-ms`, 60 s), not 10 s; a stop during a slower start leaves the entry for the gate. The start acknowledgment line is dropped | Round 3: a fixed 10 s would kill slow cold starts with no stop happening; the acknowledgment no longer controlled anything | review-round-3 |
 | D14 | Split off: stop, sweep and archive waiting for Windows tools and the programs they start (D5-D7, D11-D13, Spec 2-5 at `65bdcd4f`) move to their own thread; IDEA's two matching "What good looks like" bullets move to Not doing. D5-D7 and D11-D13 no longer apply here | User's choice after three review rounds in which that part drew blocking or major findings each round and the rest settled | idea-change |
+| D15 | Stranded sessions are found by their ready file, not by new `windows_tools`/`wrapped_tools` fields on the session record; supersedes D8 and D10, and the Accepted Risk about the record-save window is gone with them | Round 4: the ready file is written before tmux and removed on stop, so it already marks exactly the sessions to recover; flags added nothing for recovery and touched unwrapped sessions | review-round-4 |
 
 ## Spec
 
@@ -61,27 +62,24 @@ entries, or for `mcp-for-unity`. Background maps: `docs/maps/windows-stdio-gobet
 
 Split off (D14): making stop, sweep and archive wait for Windows tools and what they start
 (the job launcher, stop budget, tool registry and copy-wide gate) is its own thread; its
-last design is Spec 2-5 of this plan at commit `65bdcd4f`.
+last design is Spec 2-5 of this plan at commit `65bdcd4f`. MAP.md's writer gate, registry
+and Job Object material describes that work, not this plan.
 
 ### 1. Restart recovery (IDEA item 1)
 
-1. **Launch flags.** `startIn` (`machine/service.js:830-860`) puts `windows_tools` and
-   `wrapped_tools` (booleans from `loaded`) on the session record it already inserts and
-   persists after tmux starts (`machine/service.js:926-942`); no new write, no change to
-   when the record is saved (D10).
+1. **Which sessions are stranded.** Every wrapped session gets its ready file
+   (`<stateDir>/win-ready/<name>`) before tmux starts (`beginReady` in `beforeLaunch`,
+   `machine/lib/win.js:183-185`), and stop removes it (`win.js:280`). So on service start a
+   live tool-role session whose ready file exists and is not `{"state":"ready"}` is a
+   wrapped session whose tools are still waiting. No new session-record fields (D15).
 2. **On service start**, `WinBridge.startup` (`machine/lib/win.js:397-417`) keeps today's
-   loop for live tool-role sessions. A session counts as **wrapped** when `wrapped_tools`
-   is true, or, for a record without the flag (saved before this change), when
-   `<stateDir>/win-ready/<name>` exists. It counts as having **Windows tools** when
-   `windows_tools` is true, when it is wrapped, or, without the flag, when its copy exists
-   (today's rule). Such a session is added to `toolSessions` and its copy registered and
-   marked as today, **even if the copy does not exist yet**.
-3. For each wrapped one whose ready file
-   (`<stateDir>/win-ready/<name>`) is absent or not `{"state":"ready"}`: run the same
-   readying a launch does (`beginReady` for a fresh token, then `prepareLaunch` with that
-   token), in the background, not awaited by startup. Its outcome publishes `ready` or
-   `failed` exactly as at launch. A `ready` file is left alone (its go-between has already
-   started the tool).
+   loop unchanged, and additionally, for each live tool-role session (same filter) with
+   such a ready file: adds it to `toolSessions` and registers and marks its copy **even if
+   the copy does not exist yet**. Sessions without a ready file are handled exactly as today.
+3. For each of those: run the same readying a launch does (`beginReady` for a fresh token,
+   then `prepareLaunch(session, { windowsTools: true, wrappedTools: true, token })`), in the background, not awaited by startup. Its
+   outcome publishes `ready` or `failed` exactly as at launch. A `ready` file is left alone
+   (its go-between has already started the tool).
 4. These recovery tasks are in `readying` like launch ones, so stop and archive wait on
    them as today. `sweep()` (`win.js:361-370`) also skips, for this round, a copy whose key
    has a `readying` task (today it checks only `running`), so a final reconcile never runs
@@ -120,12 +118,10 @@ when a copy is synced or removed, beyond the sweep skipping a copy being readied
 ### Validation
 
 Tests use fake Windows and fake ready files, as the existing win tests do:
-- restart: a live wrapped session with a `waiting` ready file is readied after `startup`;
-  a `ready` file is untouched; a record with `windows_tools` true, `wrapped_tools` true and no copy yet is
-  tracked and its copy readied; a record without flags, with an existing copy and a
-  `waiting` ready file, is tracked and readied; one without flags, copy or ready file is
-  not tracked; one without flags, with a `waiting` ready file and no copy, is tracked and
-  readied; two sessions on one copy whose second token attaches after the shared task has
+- restart: a live session with a `waiting` (or `failed`) ready file is tracked and
+  readied after `startup`, with and without an existing copy; a `ready` file is untouched;
+  a live session with a copy and no ready file is tracked exactly as today; one with
+  neither is not tracked; two sessions on one copy whose second token attaches after the shared task has
   published both end with the task's outcome in their ready files; a sweep during a
   recovery `readying` task skips that copy.
 - go-between: with stdin kept open and the parent alive, idle reader closed is noticed
@@ -149,7 +145,6 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| A service restart between tmux starting a session and its record being saved loses the session's launch flags; it then falls back to today's restart rule | Sub-second window together with a restart: rare path (D10) | review-round-1 |
 
 ## Check Once Built
 
@@ -255,6 +250,21 @@ narrowed to match.
 | mechanics | blocking | Session joining a shared readying task after publish never gets its outcome | upheld | Spec 1.5: each caller writes its own outcome |
 | mechanics | major | Sweep does not wait for `readying` as Spec 1.4 claimed | upheld (`win.js:361-370` checks only `running`) | Sweep skips copies being readied |
 | mechanics | minor | Idle tests could pass through stdin EOF | upheld | Validation: stdin held open, independent holder |
+| intent | minor | Ready file already marks stranded sessions; launch flags unneeded | upheld | Spec 1.1-1.2 rewritten (D15) |
+| intent | minor | Flags changed behaviour for unwrapped sessions with no copy | upheld | Gone with D15 |
+| intent | minor | MAP.md still describes split-off work | upheld | Spec scope note says so (MAP.md is the mapper's file) |
+
+
+### Round 5 — 2026-11-22
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 4:** Spec 1.1-1.3 rewritten (stranded sessions found by ready file;
+no session-record flags, D15); Spec 1.4 sweep skips copies being readied; Spec 1.5 each
+caller writes its own outcome; Validation; Accepted Risks row removed; scope note on MAP.md.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
