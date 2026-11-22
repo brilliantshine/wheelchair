@@ -176,7 +176,7 @@
     try {
       const [features, threads, projects, machines] = await Promise.all([
         json('/features'),
-        json('/threads').catch(() => ({})),
+        json('/threads?view=list').catch(() => ({})),
         json('/projects').catch(() => ({})),
         json('/sessions').catch(() => []),
       ]);
