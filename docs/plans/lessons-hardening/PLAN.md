@@ -289,6 +289,8 @@ Filled by Stage 3. One row per worker brief.
 | T3 | Handoff v3: S7 export/validate/import of the thread's lessons (after T1) | `viewer/app/handoff.js`, `viewer/app/handoff-import.js`, `viewer/app/handoff-ops.js`, `viewer/test/app-handoff*.test.js`, `viewer/test/app-handoff.spec.js` | Standard, gpt-6.1-terra | | `node --test test/app-handoff*.test.js`; `npm test`; `npx playwright test test/app-handoff.spec.js` | done |
 | T4 | Strengthen handoff lesson tests left thin by T3: advance-path merge, null element counted invalid, Retry with lessons present, rescoping to a different project path, explicit v1/v2 fixtures | `viewer/test/app-handoff*.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-handoff*.test.js`; `npm test` | done |
 | T5 | Fix T2 defects: Keep/Add/Discard must not wipe unsaved edits; 409 message lost on reload; Templates "Lessons learned" label wrapping; 409 browser test | `viewer/pages/settings.js` (lessons parts), `viewer/pages/settings.css`, `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | done |
+| R1-UI | Remediation 1 gaps 1-3: vanished-lesson draft shown not dropped; Removed Restore sends newest `vid`; History shows `changed_by` | `viewer/pages/settings.js` (lessons editor), `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | not started |
+| R1-TESTS | Remediation 1 gaps 4-6: waiting entries survive overflow, non-empty export/import round-trip, `changed_by` asserts | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -323,4 +325,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — Choice: T5, settings.css: the lessons name is `nowrap; flex-shrink: 0` and the tag wraps right-aligned beneath; `flex: 1 1 auto; min-width: 0` was added on the shared `.tpl-item .tag.agent-tag` selector (only the lessons item uses that class). (seen by scout)
 - 2026-11-21 — Choice: T5, settings.js: after a 409 reload, unsaved typed text for a lesson still present is kept even if the server text changed, and Save writes it (as the brief asked). (seen by scout)
 - 2026-11-21 — T5 accepted (band: scout): lessons spec 36/36, handoff spec 34/34, lessons+handoff node tests 105/105 and `npm test` 841/841, all re-run by me. Worker reported 2 choices; scout listed 2 more. The 409 test checks that a message is shown, not the exact sentence (minor).
-
+- 2026-11-21 — Verification 1 (63510ee6): FAIL from both verifiers; 6 distinct gaps, none judged rare; all go to REMEDIATION-1.md. Gap 3 reverses T2's choice to show `saved_by` in History.
