@@ -271,6 +271,48 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await expect(cancel).toBeVisible();
     });
 
+    test('a Cancel failure clears once the install reports cancelled', async ({ page }) => {
+      let state = 'running';
+      const s = status();
+      const world = {
+        harnesses: (r) => json(r, s),
+        install: (r) => {
+          if (!r.request().url().includes('/kimi/')) return json(r, { state: 'idle' });
+          if (r.request().method() === 'DELETE') return json(r, { error: 'nope' }, 500);
+          return json(r, state === 'running' ? { state: 'running', output_tail: 'working' } : { state: 'cancelled', output_tail: 'stopped' });
+        },
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      await row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' }).click();
+      await expect(row(page, 'kimi').getByRole('alert')).toHaveText("Couldn't cancel: hub isn't reachable.", { timeout: 4000 });
+      state = 'cancelled';
+      await expect(row(page, 'kimi')).toContainText('Install cancelled', { timeout: 8000 });
+      await expect(row(page, 'kimi').getByRole('alert')).toHaveCount(0);
+    });
+
+    test('a Cancel failure shows only on the row of the machine it failed on', async ({ page }) => {
+      const s = status();
+      s.machines.push({ name: 'node-2', reachable: true, harnesses: Object.fromEntries(NAMES.map((n) => [n, h()])) });
+      const world = {
+        harnesses: (r) => json(r, s),
+        install: (r) => {
+          if (!r.request().url().includes('/machines/hub/') || !r.request().url().includes('/kimi/')) return json(r, { state: 'idle' });
+          if (r.request().method() === 'DELETE') return json(r, { error: 'nope' }, 500);
+          return json(r, { state: 'running', output_tail: 'working' });
+        },
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      await row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' }).click();
+      await expect(row(page, 'kimi').getByRole('alert')).toHaveText("Couldn't cancel: hub isn't reachable.", { timeout: 4000 });
+      await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
+      await expect(row(page, 'kimi')).toContainText('Not installed', { timeout: 4000 });
+      await expect(row(page, 'kimi').getByRole('alert')).toHaveCount(0);
+    });
+
     test('no Cancel while the row says it cannot reach the machine', async ({ page }) => {
       let n = 0;
       const s = status();

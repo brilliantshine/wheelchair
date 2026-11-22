@@ -1696,7 +1696,7 @@
       const tail = body.output_tail || '';
       if (body.state === 'running') {
         const before = hz.jobs[key];
-        hz.jobs[key] = { state: 'running', tail, confirmed: true, cancelling: !!(before && before.cancelling) };
+        hz.jobs[key] = { state: 'running', tail, confirmed: true, cancelling: !!(before && before.cancelling), cancelErr: before && before.cancelErr };
         paintHarnesses(); return again();
       }
       finish();
@@ -1713,7 +1713,7 @@
     const key = machine + '/' + provider;
     const job = hz.jobs[key];
     if (!job || job.cancelling) return;
-    delete hz.rowErr[provider];
+    job.cancelErr = undefined;
     job.cancelling = true; paintHarnesses();
     let res = null;
     try { res = await fetch(API + `/machines/${encodeURIComponent(machine)}/harnesses/${encodeURIComponent(provider)}/install`, { method: 'DELETE', signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }); } catch { res = null; }
@@ -1721,7 +1721,7 @@
     if (!now || now.state !== 'running') return;
     if (res && (res.status === 202 || res.status === 409)) return;
     now.cancelling = false;
-    hz.rowErr[provider] = (!res || res.status >= 500) ? `Couldn't cancel: ${machine} isn't reachable.` : `Couldn't cancel: update wheelchair on ${machine}.`;
+    now.cancelErr = (!res || res.status >= 500) ? `Couldn't cancel: ${machine} isn't reachable.` : `Couldn't cancel: update wheelchair on ${machine}.`;
     paintHarnesses();
   }
 
@@ -1824,7 +1824,7 @@
         h('span', { text: `${count} ${count === 1 ? 'thread uses' : 'threads use'} ${name}. Their running agents keep going, but no new agent starts on it. Leave it out?` }),
         h('button', { type: 'button', class: 'danger small', text: 'Leave it out', onclick: () => setHarness(provider, false) }),
         h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { hz.confirmOff = null; paintHarnesses(); } })),
-      hz.rowErr[provider] && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] }),
+      (hz.rowErr[provider] || (job && job.state === 'running' && job.cancelErr)) && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] || job.cancelErr }),
       extra,
       h('div', { class: 'h-signin', 'data-signin-host': provider }, signCard && signCard.harness === provider && signCard.machine === machine.name ? signCard.el : null));
     return row;
