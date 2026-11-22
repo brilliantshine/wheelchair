@@ -87,6 +87,8 @@ first; if it changed, the card updates and nothing starts. When it holds, it com
 
 Something only the user can fix or decide, where a question card does not fit.
 
+The user can dismiss any system needs card except a "Permission needed" or "Session stuck at startup" card while its live session is still held, and the quiet card also closes when its agent’s starter messages it or the agent starts another agent.
+
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `title` | string | yes | One line |
@@ -322,7 +324,7 @@ The hub checks these refusals in order (422):
 
 1. `no such card in this thread`: missing, in another thread, or replaced.
 2. `only a question, offer, approval, needs, sudo, deferred or reach card can be retracted`.
-3. `a system needs card closes itself`.
+3. `a system needs card closes itself` (the user can dismiss it unless its live session is still held).
 4. `card is already answered`: including a previous retraction, resolution or press; sudo
    cards are checked by state instead.
 
