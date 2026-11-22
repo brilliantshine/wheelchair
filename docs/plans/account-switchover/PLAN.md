@@ -44,6 +44,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | If the first build task shows a CLI cannot resume a conversation under another account, the build stops for that CLI and Collin is asked how to proceed, rather than every switch for that CLI ending in a restart. | Follows from 15: that case would make every switch a restart, which is not what Collin picked. | review-round-2 |
 | 17 | The carry-on message is the same for both providers, and no report is delivered from the limited turn (as today). | Review round 2: a Codex limit usually cuts the turn short too; a "nothing was cut off" message would leave the agent idle. | review-round-2 |
 | 18 | Confirms 15: a failed carry-over is treated like a crash (usual restart; a lead shows its Restart button). | Picked on the fallback card. | user |
+| 19 | Launch identity is removed. Events from the old CLI arriving after a switch are an accepted rare path; the machine drops hook events for a session while its status is `switching`, and after the respawn the old CLI no longer exists. | Review round 4: launch numbering drew findings every round, and it only guards against an event spooled during a limit hit and replayed after the switch, which needs the machine's own hook post to fail at that moment. | review-round-4 |
 
 ## Spec
 
@@ -71,23 +72,9 @@ both of its forms:
 In both, the limited turn's report is not delivered, as today
 (`viewer/app/sessions.js:632`).
 
-**Launch identity.** Every CLI launch of a session (the first start and each switch) gets
-a `launch` number on the machine session record, starting at 1. The machine passes it to the
-CLI in the launch environment (`WHEELCHAIR_LAUNCH`, `WHEELCHAIR_ACCOUNT`), and
-`machine/lib/hook-post.js` copies both from its own environment onto every event it posts
-or spools; this covers Claude hooks and Codex notify, which both run through it
-(`machine/hook.sh:20-36`). Events the machine makes itself (Codex step events,
-`machine/service.js:1102-1106`) are stamped with the launch and account current when they
-are produced, never at replay. An event with no `launch` (from a CLI started before this
-change) counts as launch 1. The machine and the hub both
-check it before changing session state:
-
-- An event whose `launch` is older than the session's current launch only records its
-  account's usage reading and any `limited_until` against *that event's account*. It does
-  not touch turn state, transcript binding, holds, delivery or reports, and never triggers
-  a switch.
-- The hub records limits against the event's `account`, never `target.account` (today
-  `viewer/app/sessions.js:597-598`).
+The hub records the limit against `target.account` before it changes the account (§3 hub
+step 1 comes before step 4). While a session's machine status is `switching` (§3), the
+machine drops hook events for it.
 
 ### 2. Choosing the new account
 
@@ -118,8 +105,11 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
    (add it to `held()`, `viewer/app/sessions.js:505-511`). Only then delete
    `target.limited_until` and cancel its pending reset `Continue.`
    (`viewer/app/sessions.js:886-893`). The old account's reading keeps its `limited_until`.
-3. Send the machine the switch request (new endpoint) with the new account and a
-   `switch_id`. The machine answers at once that it has accepted it and does the work in
+3. Send the machine the switch request (new endpoint) with a `switch_id` and the full
+   launch payload the hub would send to start this session (built by the same code as a
+   start, `viewer/app/sessions.js:353-379`: model, effort, CLI, role, permissions, project
+   tools), with the new account in place of the old. This works the same for sessions that
+   were already running before this change. The machine answers at once that it has accepted it and does the work in
    the background, so the client's short timeout (`viewer/app/machine-client.js:66`) is
    not a problem. On a network error the hub retries the same request (same `switch_id`;
    the machine treats a repeat as the same switch). If it still cannot reach the machine,
@@ -127,7 +117,9 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
    `Continue.`
 4. On acceptance: set `target.account` to the new account, append `{from, to, at}` to
    `target.switches`, `recordChosen` the new account. Save.
-5. When the session's `ready` event for the new launch arrives: queue the carry-on
+5. When a `ready` event carrying this `switch_id` arrives (the machine adds the session's
+   current `switch_id` to `ready` and `switch-failed`; the hub ignores either if the id is
+   not `target.switching`'s): queue the carry-on
    message first, ahead of anything held, then clear `switching` so delivery resumes.
    If instead the session ends, clear `switching`; today's dead-session handling takes over
    (Decision 15).
@@ -144,7 +136,8 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
      (`machine/adapters/codex.js:114-125`, `:149`).
    Default accounts use the CLI's own default directory (`~/.claude`, `~/.codex`); others
    `~/.wheelchair/accounts/<id>`.
-3. Updates the session record: `account`, `account_dir`, `launch + 1`,
+   Before step 1 it keeps a snapshot of the session record.
+3. Updates the session record: `account`, `account_dir`, `switch_id`,
    `status = 'switching'` and `ready = false` (the readiness poller,
    `machine/service.js:1117-1165`, ignores a `switching` session), `source_transcript`
    pointing at the copied file, and clears `last_reading` and the statusline throttle
@@ -154,19 +147,20 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
    unchanged, since the copied file is identical; they reset only if the CLI turns out to
    write a new file on resume (the first build task finds out; then they start at 0 of that
    new file).
-4. Builds the relaunch command with the same launch-preparation code a normal start uses
-   (`machine/service.js:804-945`: project tools, project keys, MCP config, role
-   instructions, model, effort, permissions), with the new account's environment
-   (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`, none for a default account), the new
-   `WHEELCHAIR_LAUNCH`, and resume: Claude `--resume <session-id>`, Codex
+4. Builds the relaunch command from the hub's launch payload with the same
+   launch-preparation code a normal start uses (`machine/service.js:804-945`: project
+   tools, project keys, MCP config, role instructions, model, effort, permissions), with the
+   new account's environment (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`, none for a default
+   account), and resume: Claude `--resume <session-id>`, Codex
    `resume <thread-id>`. Nothing is rebuilt from stored, redacted arguments.
 5. Replaces the CLI process with `tmux respawn-pane -k` on the session's pane, so the tmux
    session itself never goes away, then sets `status = 'starting'` so the readiness poller
    watches the new process.
 
-   If anything in steps 1-4 fails (no transcript found, copy or launch preparation fails),
-   the machine leaves the old CLI running, restores the session record's old `account`,
-   `account_dir`, `launch` and `status`, and emits `switch-failed`. The hub then clears
+   If anything in steps 1-5 fails (no transcript found, copy, launch preparation or
+   `respawn-pane` fails), the old CLI is still running; the machine restores the snapshot
+   (account, directory, status, transcript binding, reading, everything) and emits
+   `switch-failed`. The hub then clears
    `switching`, sets `target.account` back, and restores today's hold-until-reset and
    `Continue.` on the old account.
 6. Gives the relaunch its own readiness window: the 30-second check
@@ -219,16 +213,16 @@ resets; other providers; changing how accounts are signed in.
     honours the lead reserve for a worker;
   - an unreachable machine, and a `switch-failed` event, each restore today's hold on the
     old account;
-  - an event from an older `launch` (or untagged, after a switch) changes no turn state and
-    sets no hold on the switched session.
+  - a `ready` or `switch-failed` with another `switch_id` is ignored.
 - New machine tests (fake CLIs): the switch copies the Claude and Codex conversation files
   into the new account directory and relaunches with the resume arguments and the new
   environment; the old file is left in place; the relaunch uses `respawn-pane -k` and the
   same launch preparation as a start (project tools present); a resume that exits, and one
   that misses readiness, each end the session without a `stuck` event; a repeated
-  `switch_id` does not switch twice; hook events (Claude hooks and Codex notify) and machine-made step
-  events carry `launch` and account from the launch, not from the current record; a copy
-  or launch-preparation failure emits `switch-failed` and leaves the old CLI running;
+  `switch_id` does not switch twice; the relaunch uses the payload's model, not the
+  account's default; hook events for a `switching` session are dropped; a copy,
+  launch-preparation or `respawn-pane` failure emits `switch-failed`, leaves the old CLI
+  running and restores the whole session record;
   after a switch `last_reading` is empty until the new account reports one.
 - `npm --prefix viewer run test:browser` passes, with a check that the Agents details show
   the account name, "moved from", and the removed-account label. A chat test shows a
@@ -249,6 +243,9 @@ resets; other providers; changing how accounts are signed in.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| An event from the old CLI that was spooled and replays after the switch is applied to the switched session. | Rare path: needs the hook's own post to the machine to fail at the moment of the limit hit. | review-round-4 |
+| A machine-service restart during a switch's background work leaves the session held. | Rare path: needs a service restart inside the few seconds of a switch. | review-round-4 |
+| After a `switch-failed`, the Agents details may show a "moved from" for a switch that did not happen. | Rare path: `switch-failed` needs a copy or tmux failure on a healthy machine; display only. | review-round-4 |
 | The hub restarting in the seconds between asking the machine to switch and hearing back may leave the hub unsure of the outcome. | Rare path: needs a limit hit and a hub restart within the same short window. The switch request is idempotent, which covers a plain retry. | review-round-1 |
 
 ## Review Rounds
@@ -329,6 +326,26 @@ resets; other providers; changing how accounts are signed in.
 - §1: launch identity comes from the launch environment through `hook-post.js` (Claude hooks and Codex notify); machine-made step events stamped when produced; untagged events count as launch 1.
 - §3 machine: `status = 'switching'` then `starting` after `respawn-pane`; clears `last_reading` and statusline throttle; new `switch-failed` outcome restores the old account and hold.
 - Validation: viewer-test list rewritten; no report from the limited turn.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | `switches` entry left after `switch-failed` | accepted-risk (rare path) | Accepted Risks |
+| mechanics | blocking | Hub cannot tell which launch a `ready` or `switch-failed` belongs to | upheld | §3: both carry `switch_id`; launch numbers removed (Decision 19) |
+| mechanics | blocking | Relaunch lacks original launch inputs such as the model | upheld (`viewer/app/sessions.js:353-379`) | §3 hub step 3 sends the full launch payload |
+| mechanics | major | Untagged launch-1 events lack account attribution | upheld | Cut: Decision 19 removes launch identity; limit recorded before the account changes |
+| mechanics | major | Rollback leaves the transcript binding and reading on the new copy | upheld | §3: snapshot restored whole |
+| mechanics | major | A rejected `respawn-pane` has no outcome | upheld | §3: failure scope covers step 5 |
+| mechanics | major | Rare path: machine restart mid-switch leaves the session held | accepted-risk (rare path) | Accepted Risks |
+| mechanics | minor | False "moved from" after a failed switch | accepted-risk (rare path) | Same as intent's |
+
+### Round 5 — 2026-11-21
+
+**Lanes:** intent / claude; mechanics / gpt; cross-family: yes.
+
+**Changed since Round 4:**
+- §1: launch identity removed (Decision 19); machine drops hook events while `switching`; limit recorded before the account changes.
+- §3: switch request carries the full start payload; `ready` and `switch-failed` carry `switch_id`; snapshot restored whole on failure, including a failed `respawn-pane`.
+- Three rare paths added to Accepted Risks. Validation updated to match.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
