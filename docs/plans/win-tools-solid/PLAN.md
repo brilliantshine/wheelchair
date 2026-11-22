@@ -318,6 +318,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Spec 1 idle reader closed: `--probe-ms`, socket probe, parent pipe read-end check, parent gone; tests incl. OS-pipe via python3 | `machine/lib/win-tool-proxy.js`, `machine/test/win-tool-proxy.test.js`, `machine/test/fixtures/win-tool/` (new helpers only) | standard / gpt-6.1-terra | wc-608d17e6da4d-worker | `node --test machine/test/win-tool-proxy.test.js`; `bash machine/test/run.sh` | done |
+| R1-T1 | Remediation 1: parent-loss test must depend on the parent-gone check (holder before proxy, parent closes read end) | `machine/test/fixtures/win-tool/pipe-parent.py` | light / gpt-6-luna | wc-608d17e6da4d-worker-2 | proxy suite x3; two mutation checks; `bash machine/test/run.sh` | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -331,3 +332,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-22 — Choice: T1, `machine/lib/win-tool-proxy.js`: shutdown guard is checked at the top of each probe tick (clears the interval there) rather than in each shutdown path; the socket probe's in-flight gate is the existing `writes` counter.
 - 2026-11-22 — Choice: T1, `machine/test/win-tool-proxy.test.js`: `launch()` always passes `--probe-ms` (default 2000); thresholds 700 ms detection (2×200+300) and 370/600 ms stop; OS-pipe detection is timed from the request to python, before the close (conservative).
 - 2026-11-22 — T1 accepted (band: scout): production code matches Spec 1 item by item; focused suite 27/27 three times on my rerun; `bash machine/test/run.sh` 615 pass / 5 fail, the same 5 failures (Pi asides, harness install, Kimi login, two plan-files EADDRINUSE on 7374) occur on the unchanged feature branch (609 pass / 5 fail), so they are pre-existing and environmental. Scout notes accepted as minor: a test failure could orphan the fixture tool; pipe-off test relies on python closing its read end before the proxy boots (a lost race fails the test, never passes it falsely).
+- 2026-11-22 — Verification attempt 1 (claude-opus-5-5, commit `f4c67000`): FAIL, 1 gap (parent-gone check untested), judged normal use (a Spec validation item); 0 rare paths. Verifier confirmed the 5 `run.sh` failures also fail on `5a042f03`. Remediation 1 written.
