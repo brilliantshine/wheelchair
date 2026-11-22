@@ -226,6 +226,19 @@ single in-flight sweep); Validation; Accepted Risks row.
 | intent | minor | `wc-tool-started` acknowledgment no longer controls anything | upheld | Dropped (D13) |
 | intent | minor | D7 and D2 not marked superseded | upheld | Marked |
 
+
+### Round 4 — 2026-11-22
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 3:** the split (D14): Spec now holds only restart recovery (1) and
+idle reader (2); old Spec 2-5, Spec 1.5, C1 and their Validation removed; Non-goals and
+Validation rewritten; IDEA.md What, Why, What good looks like, Not doing and Constraints
+narrowed to match.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
