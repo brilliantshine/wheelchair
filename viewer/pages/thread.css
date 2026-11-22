@@ -414,3 +414,27 @@ a.sent-file:hover { border-color: var(--accent-line); }
 .card-lesson .lesson-why, .card-lesson .lesson-mark { color: var(--dim); }
 .card-lesson .lesson-mark { font-style: italic; }
 .card-lesson .lesson-link { color: var(--accent-text); }
+
+/* ---- the thread list and the files panel fold to a thin rail (wide screens only) ---- */
+.col-toggle { display: none; }
+@media (min-width: 900px) {
+  .col-toggle { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; width: 28px; padding: 0;
+    font-size: 16px; line-height: 1; border-radius: 6px; background: transparent; color: var(--dim); flex: none; }
+  .col-list #list-collapse { align-self: flex-end; margin-bottom: 4px; }
+  .col-side #side-collapse { align-self: flex-start; margin: -8px 0 -14px -8px; }
+  body.aside-open #side-collapse { display: none; }
+  .shell.on-thread.list-collapsed { grid-template-columns: 44px minmax(0, 1fr) minmax(250px, 320px); }
+  body:not(.aside-open) .shell.on-thread.side-collapsed { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) 44px; }
+  body:not(.aside-open) .shell.on-thread.list-collapsed.side-collapsed { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+  .shell.on-thread.list-collapsed .col-list { padding: 12px 8px; align-items: center; }
+  .shell.on-thread.list-collapsed .col-list > :not(#list-collapse) { display: none; }
+  .shell.on-thread.list-collapsed #list-collapse { align-self: center; }
+  body:not(.aside-open) .shell.on-thread.side-collapsed .col-side { padding: 12px 8px; align-items: center; }
+  body:not(.aside-open) .shell.on-thread.side-collapsed .col-side > :not(#side-collapse) { display: none; }
+  body:not(.aside-open) .shell.on-thread.side-collapsed #side-collapse { margin: 0; align-self: center; }
+}
+@media (min-width: 900px) and (max-width: 1099px) {
+  .shell.on-thread.list-collapsed { grid-template-columns: 44px minmax(0, 1fr) 250px; }
+  body:not(.aside-open) .shell.on-thread.side-collapsed { grid-template-columns: 220px minmax(0, 1fr) 44px; }
+  body:not(.aside-open) .shell.on-thread.list-collapsed.side-collapsed { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+}
