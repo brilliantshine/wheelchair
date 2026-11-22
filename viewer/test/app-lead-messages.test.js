@@ -106,8 +106,12 @@ test('ended lead holds a peer message and logs only the send', async () => {
 test('lead ending between acceptance and delivery holds the message', async () => {
   const { hub, a, b, send } = await fixture(); const original = hub.withThread.bind(hub);
   hub.withThread = async (id, fn) => { if (id === b.id) { const target = await hub.state.thread(id); target.sessions[0].live = false; await hub.state.save(target); } return original(id, fn); };
+  let deliveries = 0; hub.deliver = async () => { deliveries++; };
   assert.equal((await send(a, 'lead-b')).held, true);
-  assert.equal((await hub.state.thread(b.id)).sessions[0].queue.length, 1);
+  const queue = (await hub.state.thread(b.id)).sessions[0].queue;
+  assert.equal(queue.length, 1);
+  assert.deepEqual(queue[0].peer, { thread: a.id, title: 'a', session: 'lead-a' });
+  assert.equal(deliveries, 0);
 });
 
 test('pause persists outside capped log until user activity and counts only recent sends', async () => {
@@ -121,10 +125,52 @@ test('pause persists outside capped log until user activity and counts only rece
   stored.peer_log = Array.from({ length: 200 }, () => ({ ...entry, thread: 'other' })); await hub.state.save(stored);
   await assert.rejects(send(a, 'lead-b'), /message limit reached/);
   const other = { ...b, id: 'c'.repeat(12), title: 'c', sessions: [{ name: 'lead-c', role: 'lead', live: true, queue: [] }], queues: {} }; await hub.state.save(other); await send(a, 'lead-c');
-  stored = await hub.state.thread(a.id); stored.user_at = new Date(Date.now() + 1000).toISOString(); await hub.state.save(stored);
-  await send(a, 'lead-b');
   stored = await hub.state.thread(a.id); stored.user_at = null; stored.peer_log = Array.from({ length: 20 }, () => ({ ...entry, at: new Date(now - 3600001).toISOString() })); delete stored.peer_pauses; await hub.state.save(stored);
   await send(a, 'lead-b');
+});
+
+test('user message and card press each lift a paused pair', async () => {
+  for (const activity of ['message', 'press']) {
+    const { hub, a, b, send } = await fixture();
+    const past = Date.now() - 2000;
+    a.peer_pauses = { [b.id]: new Date(past + 1000).toISOString() };
+    a.peer_log = Array.from({ length: 20 }, () => ({ at: new Date(past).toISOString(), thread: b.id, direction: 'sent' }));
+    a.cards.push({ id: 'merged', kind: 'merged' });
+    await hub.state.save(a);
+    await assert.rejects(send(a, 'lead-b'), /message limit reached/);
+    if (activity === 'message') await hub.enqueue(await hub.thread(a.id), 'lead-a', 'User typed this', 'user');
+    else await hub.press(a.id, 'merged', { action: 'keep' });
+    const acted = await hub.thread(a.id);
+    assert.ok(Date.parse(acted.user_at) > Date.parse(acted.peer_pauses[b.id]), activity);
+    await send(a, 'lead-b');
+  }
+});
+
+test('only sends after user activity count toward the pair limit', async () => {
+  for (const activityAfterEntries of [true, false]) {
+    const { hub, a, b, send } = await fixture(); const now = Date.now();
+    a.peer_log = Array.from({ length: 20 }, () => ({ at: new Date(now - 2000).toISOString(), thread: b.id, direction: 'sent' }));
+    a.user_at = new Date(now - (activityAfterEntries ? 1000 : 3000)).toISOString();
+    await hub.state.save(a);
+    if (activityAfterEntries) await send(a, 'lead-b');
+    else await assert.rejects(send(a, 'lead-b'), /message limit reached/);
+  }
+});
+
+test('accepted held message follows restart context on the new lead', async t => {
+  const { setup, close, thread: makeThread } = require('./helpers/app.js');
+  const c = await setup(); t.after(() => close(c));
+  const sender = await makeThread(c), made = await makeThread(c);
+  const hub = new Hub({ stateDir: c.state }); await hub.state.init();
+  const target = await hub.thread(made.id); target.sessions[0].live = false; await hub.save(target);
+  const senderThread = await hub.thread(sender.id); senderThread.title = 'Sending thread'; await hub.save(senderThread);
+  const receipt = await hub.acceptCard({ thread_id: sender.id, session: sender.sessions[0].name, kind: 'message', to: target.sessions[0].name, text: 'held through restart' });
+  assert.equal(receipt.held, true);
+  const held = (await hub.thread(made.id)).sessions[0].queue[0];
+  assert.deepEqual(held.peer, { thread: sender.id, title: senderThread.title, session: sender.sessions[0].name });
+  const lead = await hub.restartLead(made.id);
+  assert.match(lead.queue[0].text, /^\[wc:context restart\]/);
+  assert.deepEqual(lead.queue[1], held);
 });
 
 test('successful submit records received and caps the peer log', async () => {
