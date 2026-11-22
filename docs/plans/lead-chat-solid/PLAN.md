@@ -282,7 +282,7 @@ whose lead is down; a user-facing card for the pause.
 | T1 | S1-S4 backend: hold, pause, peer_log, restart context, card.js held receipt, hand-off/archive cleanup | viewer/app/{cards,hub,sessions,threads,handoff,handoff-ops,card}.js; viewer/test/app-lead-messages, app-hub, app-handoff-restart tests (not peers.js listLeads) | standard / gpt-6.1-terra | wc-f4c68e8cbb15-worker-3 (branch -w3) | Spec Validation 1,2; tests 1-6, 9 | done (test gaps moved to T4) |
 | T2 | S5 Talked-with lines (after T1 lands peer_log) | viewer/app/chat.js, viewer/pages/thread.js, app-chat test, browser spec | standard / claude-sonnet-5-5 | wc-f4c68e8cbb15-worker-4 (branch -w4) | Spec Validation 1,3; tests 7, 8 | dispatched |
 | T3 | S6 protocol text (exact wording in brief) | protocol/app/cards.md, protocol/app/lead.md | light / gpt-6-luna; rung 2: light, effort xhigh (attempt 1 claimed all five edits but left out the Restarting-what-died paragraph) | wc-f4c68e8cbb15-worker-2 (branch -w1, replaces -worker) | protocol-rules test, S6 grep | done |
-| T4 | Close T1's test gaps: test 3 pause lifted by a real typed message and card press, and the `since` count rule; test 1 end to end; test 2 `peer` and no delivery; test 5 busy negative control | viewer/test/app-lead-messages.test.js, viewer/test/app-handoff-restart.test.js (no app code) | standard / gpt-6.1-terra | wc-f4c68e8cbb15-worker-5 (branch -w5) | Spec Validation 1 | dispatched |
+| T4 | Close T1's test gaps: test 3 pause lifted by a real typed message and card press, and the `since` count rule; test 1 end to end; test 2 `peer` and no delivery; test 5 busy negative control | viewer/test/app-lead-messages.test.js, viewer/test/app-handoff-restart.test.js (no app code) | standard / gpt-6.1-terra | wc-f4c68e8cbb15-worker-5 (branch -w5) | Spec Validation 1 | done |
 
 ## Log
 
@@ -302,3 +302,7 @@ whose lead is down; a user-facing card for the pause.
 - 2026-11-21 — Choice: T1, viewer/app/handoff.js:166: held entries dropped just before the export save.
 - 2026-11-21 — Choice: T1, viewer/app/API.md:40 and viewer/AGENTS.md:15: documented the `held` receipt and the new module.
 - 2026-11-21 — Worker didn't fully report its choices; it listed 2, I listed 8 (scout list).
+- 2026-11-21 — T4 accepted (band: scout): all five test gaps closed through real paths (app-lead-messages.test.js:106,132,149,160; app-handoff-restart.test.js:253-255); no app code touched; 28/28 re-run by the sub-lead. Narrower than asked, accepted: the no-delivery check counts hub.deliver only, and the busy negative control covers a pending lead, not a live one.
+- 2026-11-21 — Choice: T4, app-lead-messages.test.js: a merged-card Keep press and hub.enqueue(..., 'user') drive the two user-activity paths.
+- 2026-11-21 — Choice: T4, app-handoff-restart.test.js: a pending lead carries the non-peer busy entry; the export gate's status reply is scripted.
+- 2026-11-21 — Choice: T4, tests: break checks were run in a scratch copy; the handoff break used was "busy predicate always false".
