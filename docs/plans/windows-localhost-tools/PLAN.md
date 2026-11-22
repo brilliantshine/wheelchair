@@ -1,6 +1,6 @@
 ---
 slug: windows-localhost-tools
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -868,3 +868,4 @@ Clean round.
 - 2026-11-21 — Choice: T7, app-project-tools.spec.js: same-name rows are a card plus an unsaved Edit-form copy of the same entry (entry names are unique); the poll test's Unity stub answers `running` then `ready`; the batching test starts from `windows: []` and turns two entries on itself, with a 400 ms floor measured from before the first click.
 - 2026-11-21 — worker didn't report all its choices; I listed 2 more from the scout's read.
 - 2026-11-21 — T7 accepted (band: scout): all three tests now do what the Spec names; worker's temporary page mutations (debounce 50 ms, ids forced equal, poll off) each made a test fail.
+- 2026-11-21 — All tasks done; full validation at 2281d593 (only the 6 failures that also fail on 5619e1fd); live relay test 12/12; C1 passed live for Claude and Codex (Antigravity not installed), C2 passed live; COMPLETION.md written; status verifying.
