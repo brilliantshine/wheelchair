@@ -74,33 +74,32 @@ and Job Object material describes that work, not this plan.
    wrapped session whose tools are still waiting. No new session-record fields (D15).
 2. **On service start**, `WinBridge.startup` (`machine/lib/win.js:397-417`) keeps today's
    loop unchanged and, for each live tool-role session (same filter) with such a ready
-   file, starts 1.3's readying. That readying itself adds the session to `toolSessions`
+   file, starts 1.4's recovery. That recovery adds the session to `toolSessions`
    (`win.js:213`) and registers and marks the copy when it creates it (`win.js:100-104`);
    an existing copy is already registered by today's loop. Sessions without a ready file
    are handled exactly as today.
-3. For each of those: run the same readying a launch does (`beginReady` for a fresh token,
-   then `prepareLaunch(session, { windowsTools: true, wrappedTools: true, token })`), in the background, not awaited by startup. Its
-   outcome publishes `ready` or `failed` exactly as at launch. A `ready` file is left alone
-   (its go-between has already started the tool).
-4. **Recovery is visible at once.** For each such session, `startup`, before its first
-   `await` for that session, computes `key = worktreeKey(session.worktree)` (synchronous)
-   and puts the whole recovery sequence's promise into a new `this.recovering` Map under
-   `key` as `{ task, threadId: session.thread_id }` (chained after any recovery already
-   there for that key), deleted when it settles. The sequence is: recheck eligibility (the
-   session is still in `service.sessions`, not `stopped`, live in tmux, and its ready file
-   still exists and is not `ready`; otherwise do nothing), `beginReady`, `prepareLaunch`,
-   then await `readying.get(key)` if still present (so the recovery settles only when the
-   readying itself has, not when `prepareLaunch`'s 45 s wait gives up). A helper
-   `pendingReady(key)` waits in a loop until neither `recovering` nor `readying` has `key`
-   (re-checking after each settles);
-   every place that waits on or checks `readying` today (`win.js:200,288,301,323,435,462`)
-   uses it instead, so stop, `onWorktreeRemoved`, archive, `info` and `wc.js win` calls
-   wait for a recovery from the moment startup begins it. `archiveCheck` also reports as
-   `pending` every `recovering` entry whose `threadId` is the archived thread, even when
-   its copy is not in the registry yet. `prepareLaunch` itself keeps
-   joining `readying` only (no self-wait). `sweep()` (`win.js:361-370`) also skips, for this round, a copy whose key
-   has a pending readying or recovery (today it checks only `running`), so a final reconcile never runs
-   while a copy is still being created.
+3. **Readying task, shared with launch.** The task-building body of `prepareLaunch`
+   (`win.js:225-242`: `create`, `sync`, `readyErrors`, `publishReady('failed')` on error,
+   delete from `readying` when settled) is factored into `readyTask(session, key)`, which
+   also resolves to the 1.5 outcome and carries `task.threadId = session.thread_id`.
+   `prepareLaunch` uses it unchanged in behaviour.
+4. **Recovery goes straight into `readying`.** For each stranded session, `startup`,
+   synchronously (before any `await` for that session), computes
+   `key = worktreeKey(session.worktree)` and, unless `readying` already has `key`, puts
+   `readyTask(session, key)` into `this.readying` under it; the task resolves `context`
+   itself. Then, in the background (not awaited by startup), per session: recheck that it
+   is still in `service.sessions`, not `stopped`, live in tmux, and its ready file still
+   exists and is not `ready` (otherwise stop here); `beginReady` for a fresh token; attach
+   `key` to the token (as `prepareLaunch` does); add the session to `toolSessions`; and
+   attach its 1.5 outcome handler to `readying.get(key)` (or, if the task already settled,
+   write the outcome it resolved to). A second stranded session on the same copy simply
+   attaches to the same task. Because the task is in `readying` from the start, every
+   existing waiter and check (stop `win.js:288`, `onWorktreeRemoved` `:301`, archive `:323`,
+   `info` `:435`, `wc.js win` `:462`, a launch's `prepareLaunch` `:212,217,226`) covers
+   recovery unchanged. Two additions: `archiveCheck` also reports `pending` for any
+   `readying` task whose `threadId` is the archived thread, even when its copy is not in
+   the registry yet; and `sweep()` (`win.js:361-370`) skips, for this round, a copy whose key
+   is in `readying` (today it checks only `running`).
 5. **Every session sharing a readying task gets its outcome.** Several sessions on one copy
    join the same `readying` task (`win.js:225-249`), and `publishReady` writes only tokens
    already attached when it runs (`win.js:149-153`). So the shared task resolves to an
@@ -111,7 +110,7 @@ and Job Object material describes that work, not this plan.
    `copy`, or `failed` with `reason`). The handler runs when the task settles, whether or
    not the caller's wait already timed out; `writeReady` drops it if the token is no longer
    current, and a second write of the same state is harmless. This applies to launch and
-   recovery alike.
+   recovery (1.4) alike.
 6. **A copy left half-created by a restart.** `ensureCopy` (`machine/lib/win-sync.js:71-120`)
    treats an existing `.git` as a finished copy, so a restart during creation (after `git
    init`, before config or seeding finish) would leave a partial copy marked ready. Change:
@@ -144,7 +143,9 @@ The probe never runs while a write is pending, so it cannot interleave with outp
 
 No change to the handshake, held calls, list cache, `list_changed`, which entries are
 wrapped, how the go-between starts or stops its tool, app tracking (`AppTracker`), or
-when a copy is synced or removed, beyond the sweep skipping a copy being readied (1.4).
+when a copy is synced or removed, beyond: the sweep skipping a copy being readied, and
+archive waiting for a recovery (1.4); and a copy without a completion marker or `last_ok`
+being recreated (1.6).
 
 ### Validation
 
@@ -156,9 +157,10 @@ Tests use fake Windows and fake ready files, as the existing win tests do:
   published both end with the task's outcome in their ready files, also when that second
   caller's 45 s wait expired first (short `readyTimeoutMs`) and for both `ready` and
   `failed` outcomes; a sweep during a recovery skips that copy; a stop called while
-  startup's recovery for that session is still in `beginReady` waits for the recovery
-  and for its readying even when that outlives a short `readyTimeoutMs`; archive started
-  during a recovery of an unregistered copy reports it pending; a session stopped while
+  startup's recovery for that session is still in `beginReady` waits for the readying
+  task; `archiveCheck` during a recovery of an unregistered copy reports it pending and,
+  once the task settles, no longer does; `info` during a recovery reports not ready and,
+  after it, ready; a `wc.js win sync` during a recovery waits for it; a session stopped while
   its recovery is queued behind another gets no new ready file; two concurrent
   `wc.js win sync` calls on a missing copy create it once; a copy with `.git` but no completion marker and no `last_ok` is
   recreated, one with `last_ok` and no marker is kept and marked, one with the marker is
@@ -324,6 +326,9 @@ Spec 1.6 (copy completion marker); Validation.
 | mechanics | blocking | `pendingReady` can release while readying outlives `prepareLaunch`'s timeout | upheld | Spec 1.4: recovery awaits readying; `pendingReady` loops |
 | mechanics | blocking | Archive misses a recovery for an unregistered copy | upheld | Spec 1.4: `archiveCheck` includes `recovering` by thread |
 | mechanics | major | Queued recovery recreates a stopped session's ready file | upheld | Spec 1.4: eligibility recheck at start |
+| intent | major | `recovering` map and `pendingReady` heavier than needed and unusable at `archiveCheck`/`info` | upheld (`win.js:323,435` test truthiness and `has`) | Spec 1.3-1.4: recovery task goes straight into `readying`; `recovering`/`pendingReady` dropped |
+| intent | minor | Non-goals do not list 1.4/1.6 exceptions | upheld | Spec 3 updated |
+| intent | minor | No archive or `info` test during recovery | upheld | Validation |
 
 ## Prior Work
 
