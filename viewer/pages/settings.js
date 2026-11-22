@@ -918,8 +918,7 @@
       if (lost.length) {
         setNote('', false);
         renderPanel();
-        const host = document.querySelector('.lessons-edit .lesson-err');
-        if (host) { inlineErr(host, lostSentences(lost)); host.querySelector('.inline-err').style.whiteSpace = 'pre-line'; }
+        showLessonLost(lost);
         return;
       }
       setNote(res.result === 'already' ? 'Already in your lessons' : SAVED, false);
@@ -929,12 +928,7 @@
         await reload(false);
         const lost = keepLessonEdits(before);
         renderPanel();
-        const fresh = document.querySelector('.lessons-edit .lesson-err');
-        if (fresh) {
-          inlineErr(fresh, [...lostSentences(lost).split('\n').filter(Boolean), e.message].join('\n'));
-          fresh.querySelector('.inline-err').style.whiteSpace = 'pre-line';
-          return;
-        }
+        if (showLessonLost(lost, [e.message])) return;
       }
       inlineErr(errHost, e.message);
     }
@@ -943,6 +937,15 @@
   // After a server reply, keep unsaved text (differing from what was shown before) and pending removals for lessons that still exist.
   // Returns the typed texts dropped because their lesson is gone.
   const lostSentences = (lost) => lost.map((t) => `An agent removed a lesson you were editing. Your unsaved text was: \u201c${t}\u201d`).join('\n');
+  // Show dropped drafts (and any extra lines) in the re-rendered editor's error host; false when nothing was shown.
+  function showLessonLost(lost, extra = []) {
+    const host = document.querySelector('.lessons-edit .lesson-err');
+    if (!host || (!lost.length && !extra.length)) return false;
+    inlineErr(host, [...lostSentences(lost).split('\n').filter(Boolean), ...extra].join('\n'));
+    host.querySelector('.inline-err').style.whiteSpace = 'pre-line';
+    return true;
+  }
+  const shownLessonTexts = () => lessonEdit ? Object.fromEntries(lessonList(lessonEdit.role).map((i) => [i.id, i.text])) : null;
   function keepLessonEdits(before) {
     const ids = new Set(lessonList(lessonEdit.role).map((i) => i.id));
     const lost = Object.entries(lessonEdit.texts).filter(([id, t]) => !ids.has(id) && t !== before[id] && typeof t === 'string' && t !== '').map(([, t]) => t);
@@ -1031,6 +1034,7 @@
   }
 
   async function importLessons(file) {
+    let lost = [];
     try {
       let res;
       try { res = await fetch(API + '/settings/lessons/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: await file.arrayBuffer() }); } catch { throw new Error('Could not reach the hub.'); }
@@ -1039,10 +1043,13 @@
       let text = `Added ${body.added}, skipped ${body.skipped} already here or removed or changed here, ${body.waiting} waiting for room`;
       if (body.invalid > 0) text += `, ${body.invalid} unreadable`;
       if (body.unknown_project > 0) text += `, ${body.unknown_project} for projects not on this machine (add the project, then import the file again)`;
+      const before = shownLessonTexts();
       await reload(false);
       setNote(text, false);
+      lost = before ? keepLessonEdits(before) : [];
     } catch (e) { setNote(e.message, true); }
     renderPanel();
+    showLessonLost(lost);
   }
 
   function lessonsTools() {

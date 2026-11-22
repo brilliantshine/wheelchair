@@ -307,6 +307,20 @@ test.describe('Settings', () => {
     await expect(page.locator('.note')).toHaveText("This isn't a wheelchair lessons file");
   });
 
+  test('Import keeps a draft for a lesson that remains and shows one whose lesson an agent removed', async ({ page }, info) => {
+    await seed({ worker: [lesson('L0000b1', 'Lesson A.'), lesson('L0000b2', 'Lesson B.')] });
+    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await page.locator('.lesson-row[data-id="L0000b1"] textarea').fill('My draft for A.');
+    await page.locator('.lesson-row[data-id="L0000b2"] textarea').fill('My draft for B.');
+    await seed({ worker: [lesson('L0000b2', 'Lesson B.')] });
+    const file = info.outputPath('import-draft.json');
+    await fs.writeFile(file, JSON.stringify({ format: 'wheelchair-lessons', version: 1, exported_at: new Date().toISOString(), lessons: { reviewer: [{ text: 'New one.', saved_by: 'agent', saved_at: ago(1) }] } }));
+    await page.locator('#import-lessons-file').setInputFiles(file);
+    await expect(page.locator('.note')).toContainText('Added 1');
+    await expect(page.locator('.lessons-edit .lesson-err')).toContainText('An agent removed a lesson you were editing. Your unsaved text was: \u201cMy draft for A.\u201d');
+    await expect(page.locator('.lesson-row[data-id="L0000b2"] textarea')).toHaveValue('My draft for B.');
+  });
+
   test('the history editor, removed, stale and waiting together (screenshot)', async ({ page }) => {
     await seed({ worker: [lesson('L0000a1', 'Run the lint first.', { saved_at: ago(150) }), lesson('L0000a2', 'Keep commits small.')] }, {
       lesson_history: { L0000a1: { role: 'worker', versions: [version('g', 'Lint before pushing.', { provider: 'gpt' })] }, L0000a3: { role: 'worker', versions: [version('h', 'Retired advice.')], removed: { at: ago(3), by: 'agent' } } },
