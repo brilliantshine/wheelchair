@@ -46,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 18 | Confirms 15: a failed carry-over is treated like a crash (usual restart; a lead shows its Restart button). | Picked on the fallback card. | user |
 | 19 | Launch identity is removed. Events from the old CLI arriving after a switch are an accepted rare path; the machine drops hook events for a session while its status is `switching`, and after the respawn the old CLI no longer exists. | Review round 4: launch numbering drew findings every round, and it only guards against an event spooled during a limit hit and replayed after the switch, which needs the machine's own hook post to fail at that moment. | review-round-4 |
 | 20 | Keep the current design with Claude and Codex together and keep reviewing (budget reset). | Picked after review round 5. | user |
+| 21 | Keep going with the same scope (budget reset). | Picked after review round 8. | user |
 
 ## Spec
 
@@ -446,6 +447,17 @@ resets; other providers; changing how accounts are signed in.
 | mechanics | blocking | Same selection problem | upheld | Same fix |
 | mechanics | minor | Test should assert project fields come from the request like a start | upheld | Validation reworded |
 | mechanics | minor | Codex probe should prove the usage reading reaches the hub under the new account | upheld | Validation probe extended |
+
+### Round 9 — 2026-11-21
+
+**Lanes:** intent / claude; mechanics / gpt; cross-family: yes.
+
+**Changed since Round 8:**
+- §2 and §3 hub step 1: the limit is recorded first, then the account is chosen by `usage.rank()` unchanged (its `next`); the "remove after ranking" step is gone.
+- Validation: project fields asserted from the request; Codex probe checks the usage reading arrives under the new account.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
