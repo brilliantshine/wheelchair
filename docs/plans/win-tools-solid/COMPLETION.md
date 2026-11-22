@@ -69,3 +69,14 @@ Baseline: the same command on the feature branch before T1 was merged (commit `d
 - Not checked live on Codex or Windows; tests use fakes as the IDEA's constraint says.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-22
+
+Gap from verification attempt 1: the parent-gone check was untested, because the parent-loss test's parent held the read end at start and the pipe check fired first (see `REMEDIATION-1.md`).
+
+Fix (R1-T1, light / gpt-6-luna, commit `7624763b`): `machine/test/fixtures/win-tool/pipe-parent.py:6-11` now starts the `sleep` holder and closes the parent's read end **before** spawning the proxy in modes `off`, `gone`, `pending` and `writing`. The pipe check is therefore off at start in those modes, and only the parent-gone check (`machine/lib/win-tool-proxy.js:162`) can end the proxy. The same change removes the old start-time race in the `off` test. No production code changed.
+
+Evidence (sub-lead rerun):
+- `node --test machine/test/win-tool-proxy.test.js` on the merged branch: `tests 27, pass 27, fail 0`.
+- Mutant with `process.ppid !== startPpid ||` replaced by `false ||` (scratch copy): `✖ parent loss ends proxy with held pipes, pending output, and a writing tool`, `pass 26, fail 1`.
+- `bash machine/test/run.sh`: `tests 620, pass 615, fail 5`, the same five pre-existing failures as before.
