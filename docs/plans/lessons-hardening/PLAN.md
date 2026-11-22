@@ -295,6 +295,7 @@ Filled by Stage 3. One row per worker brief.
 | R2-TESTS | Remediation 2 gaps 2-6: tests that can fail (removal `changed_by`, restore thread, prompt without history, Keep on stale, Retry merge spy) | `viewer/test/app-lessons-history.test.js`, `viewer/test/app-handoff-import.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js test/app-handoff-import.test.js`; `npm test` | done |
 | R3-UI | Remediation 3 gap 1: refused Save keeps Restore-while-dirty and Add-while-full guards | `viewer/pages/settings.js` (lessons editor), `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | done |
 | R3-TESTS | Remediation 3 gaps 2-3: removal appends a version; skip matches older history versions | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
+| R4-TESTS | Remediation 4: caps drop exactly the oldest records; identical Restore leaves the lesson deep-equal; audit every S9 node item for exact outcomes | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -345,4 +346,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-22 — R3-TESTS accepted (band: scout): focused 18/18 and `npm test` 846/846 re-run by me; I re-applied the newest-version-only mutation and test 6 failed, then restored.
 - 2026-11-22 — Choice: R3-UI, settings.js: `setLessonsBusy(false)` calls `refreshRestore()` and a new `refreshAdd()`; a `lessonFull(role)` helper is shared with the waiting renderer; no re-render after a refused Save, so drafts and open history stay.
 - 2026-11-22 — R3-UI accepted (band: scout): lessons spec 46/46 and `npm test` 845/845 re-run by me. Restore-while-dirty after a refused Save is fixed, and the test fails on revert for it. The Add half of gap 1 is narrower than reported: Add was never inside `.lesson-row` so busy mode never touched it; it shows enabled after a refused Save only because the page keeps its last-loaded list (Save's 409 does not reload, as before this build), and the server then refuses with "Remove one first" (422). Worst outcome is one extra message (minor per realism.md); recorded in COMPLETION.md residual risks.
-
+- 2026-11-22 — Verification 4 (c88a155a): claude PASS, gpt FAIL with 2 new S9 test-strength gaps (code correct per the verifier); both go to REMEDIATION-4.md with a full audit of the S9 node items.
