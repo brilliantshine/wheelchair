@@ -2,7 +2,19 @@
 slug: harness-install-solid
 date: 2026-11-21
 implemented-by: "standard / gpt-6.1-terra (T1); standard / claude-sonnet-5-5 (T2); light / claude-haiku-5-5 (T3); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (PASS)
+    checks: gpt-6.1-terra (T1); claude-sonnet-5-5 (T2); claude-haiku-5-5 (T3)
+  - round: 1
+    lane: gpt-6.2-sol (FAIL, 6 gaps)
+    checks: gpt-6.1-terra (T1); claude-sonnet-5-5 (T2); claude-haiku-5-5 (T3)
+  - round: 2
+    lane: claude-opus-5-5 (PASS)
+    checks: all of round 1 plus gpt-6-luna (R1-1) and claude-haiku-5-5 (R1-3)
+  - round: 2
+    lane: gpt-6.2-sol (PASS)
+    checks: all of round 1 plus gpt-6-luna (R1-1) and claude-haiku-5-5 (R1-3)
 ---
 
 # Completion Report — Make agent installs solid
@@ -106,3 +118,7 @@ node --test viewer/test/app-harnesses.test.js       → # tests 20 / # pass 20 /
 bash machine/test/run.sh                             → # tests 578 / # pass 562 / # fail 16 (the same win.test.js failures as before)
 npm --prefix viewer run test:browser -- app-harnesses.spec.js → 124 passed
 ```
+
+### Verification 2 — 2026-11-21
+
+Both verifiers (claude-opus-5-5, gpt-6.2-sol) passed at 442a9479 with no gaps. The full browser suite passed: Claude's run gave 1304 passed and 34 skipped, with no failures. GPT's run had the app-send-now test time out, and that test passed when re-run alone.

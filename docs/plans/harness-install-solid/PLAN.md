@@ -205,3 +205,4 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 - 2026-11-21 — R1-3 accepted (band: scout): app-harnesses.spec.js 124/124 re-run by me; scout confirmed both new tests fail on the old code and existing tests are untouched.
 - 2026-11-21 — Choice: R1-3, settings.js harnessRow: when both a row error and a Cancel error exist, the row error is shown.
 - 2026-11-21 — Choice: R1-3, app-harnesses.spec.js: the cancelled GET is switched on after the alert is seen; the two-machine test waits for node-2's row to read "Not installed" before asserting no alert.
+- 2026-11-21 — Verification 2 at 442a9479: both verifiers PASS, no gaps. Build done; 3 rare paths accepted across verification (round verification-1).
