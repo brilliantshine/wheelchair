@@ -297,6 +297,7 @@ Filled by Stage 3. One row per worker brief.
 | R3-TESTS | Remediation 3 gaps 2-3: removal appends a version; skip matches older history versions | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
 | R4-TESTS | Remediation 4: caps drop exactly the oldest records; identical Restore leaves the lesson deep-equal; audit every S9 node item for exact outcomes | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done (gaps 1-2; audit part moved to R4-AUDIT) |
 | R4-AUDIT | Pin exact outcomes for the remaining S9 node items R4-TESTS listed as weak | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
+| R5-TESTS | Remediation 5: agent removal appends a version; Waiting entry skipped on re-merge; Add `already` removes entry, no copy; trimmed-text match | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -352,4 +353,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-22 — R4-TESTS accepted for gaps 1-2 (band: scout): focused 18/18 and `npm test` 846/846 re-run by me; I re-applied all three mutations (evict newest removed, drop second-oldest version, no-op restore rewriting `saved_at`) and each failed its test, then restored. The worker stopped with the S9 audit (brief item 3) incomplete and listed the weak items; they go to R4-AUDIT on a narrower brief.
 - 2026-11-22 — Choice: R4-AUDIT, app-lessons-history.test.js: a 5 ms wait before the edit so the later `saved_at` shows; scoped incoming lessons compared in insertion order without generated fields; the normalize waiting fixture now carries `thread`, `provider` and `project`; `structuredClone` snapshots around the 422 refusals. (last two seen by scout)
 - 2026-11-22 — R4-AUDIT accepted (band: scout): focused 18/18, `npm test` 846/846 and the lessons + handoff browser specs 80/80 re-run by me. Five of seven mutations fail their tests. The other two cannot change stored state: normalize clears `removed` for a current lesson, and a refused update is never written. So those tests are right to pass.
-
+- 2026-11-22 — Verification 5 (db8a21d7): both FAIL on S9 test strength only (code correct per both); 3 distinct gaps, none rare, go to REMEDIATION-5.md. Gap 1 is the second fix on agent-removal history coverage (first: R1 gap 6).
