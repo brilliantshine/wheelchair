@@ -40,10 +40,11 @@ The job leader (the detached Node process `start()` spawns, whose PID is in `<p>
 - **Steps.** The job runs its steps (node check, recipe, cleanup, sensitivity, CLI check) with async `spawn` awaited in order, not `spawnSync`, so its event loop stays free. Each step is spawned with `detached: true`, so the step and everything it starts form their own process group (group id = the step's PID). Output still goes to the log as today; behaviour and exit codes of each step are unchanged.
 - **Stop request.** The leader handles two causes: SIGTERM sent to the leader's PID (Cancel) → reason `cancelled`; its own timer of `WHEELCHAIR_INSTALL_LIMIT_MS` (default 900000 = 15 min) from job start → reason `timeout`. The timer is cleared when the job ends. A second stop request while one is in progress is ignored.
 - **Stopping.** On a stop request the leader starts no further step. If a step is running: send SIGTERM to its group (`process.kill(-g, 'SIGTERM')`), check every 200 ms whether the group still has members (`process.kill(-g, 0)` not throwing ESRCH); after 5 s send SIGKILL to the group and keep checking until it is empty. Only then write the result and remove the PID file, as today. So GET says `running`, and POST is refused with 409, until the whole group is gone.
-- **Result.** `cancelled` → `{state: "cancelled", exit_code: null, reason: "cancelled", started_at, finished_at}`; `timeout` → `{state: "failed", exit_code: null, reason: "timeout", started_at, finished_at}`. Nothing is appended to the log. If writing the result fails (e.g. disk full), the kill has already happened and GET falls back to today's dead-PID answer ("The install stopped before finishing.").
+- **Result.** `cancelled` → `{state: "cancelled", exit_code: null, reason: "cancelled", started_at, finished_at}`; `timeout` → `{state: "failed", exit_code: null, reason: "timeout", started_at, finished_at}`. A job that ends without a stop writes `reason: "recipe"` when the recipe step itself exited non-zero (or failed to start), else no `reason`. Nothing is appended to the log. If writing the result fails (e.g. disk full), the kill has already happened and GET falls back to today's dead-PID answer ("The install stopped before finishing.").
 - **`stopJob(p)`** (used by the route): if `state(p).state !== 'running'` return false; else `process.kill(pid, 'SIGTERM')` on the leader and return true.
 - **Explanations (D3).** `state(p)` adds `explanation` to every response (null unless `state` is `failed`). For `failed`, first match wins:
   1. Result `reason: "timeout"`: "The install took too long (over 15 minutes) and was stopped. Try again; if it keeps happening, check this machine's network."
+  Rules 2–4 apply only when the result has `reason: "recipe"`; failures after a successful recipe (cleanup, "can't find <cli>", `--version`) and the dead-PID case get `null`, so retried-network warnings in a log never mislabel them.
   2. Disk full — the full log contains `ENOSPC` or `No space left on device`: "The disk on this machine is full. Free up some space, then try again."
   3. npm not allowed to write — the log contains `EACCES` or `EPERM` and a line matching `npm (ERR!|error) path <path>`: "npm isn't allowed to write to <path> on this machine (it may be owned by root from an earlier sudo npm). Fix that folder's owner, then try again." With `EACCES`/`EPERM` and `npm` but no such path line: the same sentence with "one of its folders" in place of `<path>`.
   4. No network — any of `Could not resolve host`, `curl: (6)`, `curl: (7)`, `curl: (28)`, `ENOTFOUND`, `EAI_AGAIN`, `ECONNREFUSED`, `ETIMEDOUT`, `ECONNRESET`, `Network is unreachable`: "This machine couldn't reach the internet to download it. Check its network, then try again."
@@ -57,7 +58,7 @@ The job leader (the detached Node process `start()` spawns, whose PID is in `<p>
 ### Hub (`viewer/app/routes.js`)
 
 - The `/machines/<m>/harnesses/<p>/install` passthrough accepts DELETE as well as GET and POST, same validation and 502 on unreachable.
-- POST through it is refused with 409 `{error: "<name> is switched off"}` when the provider's Use switch is off in settings; the page shows that as the row error.
+- POST through it is refused with 409 `{error: "<name> is switched off"}` when the provider's Use switch is off in settings; the page shows that as the row error. The page tells the two POST 409s apart by `body.error`: "already installing" keeps today's switch to GET polling; any other 409 error text is shown as the row error and stops the poll.
 
 - `PUT /settings/harnesses/<p>` with `enabled: false`: after saving, send `DELETE /v1/harnesses/<p>/install` to every machine the hub knows, in parallel, without checking reachability first. The PUT responds without waiting for them; their responses (202, 409, 404) and errors are ignored. The PUT with `enabled: true` sends nothing.
 
@@ -65,7 +66,7 @@ The job leader (the detached Node process `start()` spawns, whose PID is in `<p>
 
 - Running row (not offline), once a POST 202 or a GET `running` has arrived for this install (not on the optimistic row painted before the POST answers): a `Cancel` button (`aria-label "Cancel installing <name>"`) after "Installing…". Pressing it sends DELETE, then shows "Cancelling…" in place of the button; the existing GET poll carries on. A 409 just continues polling. A network error or 5xx shows the row error line "Couldn't cancel: <machine> isn't reachable." and keeps the Cancel button. Any other status (e.g. 404 from a machine on an older version) shows "Couldn't cancel: update wheelchair on <machine>." and keeps the poll going.
 - Hidden while the row shows "Can't reach <machine>, retrying…".
-- `cancelled` state: hint "Install cancelled" (not `role=alert`), the raw tail if any, and the `Install` button.
+- `cancelled` state, placed in `harnessRow` right before the `!st.installed` branch and used only when `!st.installed` (an agent installed since shows its normal state): hint "Install cancelled" (not `role=alert`), the raw tail if any, and the `Install` button.
 - `failed` state: when `explanation` is set, show it as a plain line (`class="h-explain"`) between "Install failed" and the raw tail.
 - Job record keeps `explanation` alongside `state` and `tail`.
 - Switching Use off keeps today's behaviour in the page (stop polling, drop the job record); the hub does the cancel. Switching it back on GETs the state as today and so shows "Install cancelled" if the install was stopped.
@@ -133,6 +134,9 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Page can't tell "switched off" 409 from "already installing" 409 | upheld | Distinguished by `body.error` |
+| intent | minor | `cancelled` branch placement; stale "Install cancelled" on an installed agent | upheld | Branch before `!st.installed`, only when not installed |
+| intent | minor | Network patterns anywhere in log mislabel later-step failures | upheld | Rules 2–4 only when `reason: "recipe"` |
 
 ## Implementation Tasks
 
