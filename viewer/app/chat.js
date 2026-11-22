@@ -462,7 +462,7 @@ async function chat(hub, id) {
     items: shown,
     cards: cards.filter((card) => !card.replaced),
     pinned: shownPins(thread),
-    queued: Object.values(thread.queues).flat().length,
+    queued: Object.entries(thread.queues || {}).flatMap(([name, queue]) => { const session = (thread.sessions || []).find((item) => item.name === name); return session ? queue.filter((entry) => !require('./peer-log.js').heldEntry(session, entry)) : queue; }).length,
   };
 }
 

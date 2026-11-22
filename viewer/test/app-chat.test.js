@@ -456,3 +456,22 @@ test('peer_log becomes folded peer items interleaved by time, without message te
   delete thread.peer_log;
   assert.equal((await chat.chat(hub, 't')).items.some((item) => item.type === 'peer'), false);
 });
+
+// "queued" counts only messages a live or pending lead will still take; held cross-thread messages for a stopped lead are not counted.
+test('queued leaves out held peer messages for a stopped lead', async () => {
+  const chat = require('../app/chat.js');
+  const raw = lines([{ type: 'user', origin: { kind: 'human' }, timestamp: '2026-03-01T09:10:00Z', message: { content: 'hi' } }]);
+  const thread = {
+    id: 't', machine: 'm', cards: [], pinned: {},
+    sessions: [
+      { name: 'lead-old', role: 'lead', cli: 'claude', live: false, status: 'ended' },
+      { name: 'lead-new', role: 'lead', cli: 'claude', live: true, status: 'running' },
+    ],
+    queues: {
+      'lead-old': [{ text: 'x', source: 'session', peer: { thread: 'o', title: 'O', session: 's' } }, { text: 'y', source: 'user' }],
+      'lead-new': [{ text: 'z', source: 'session', peer: { thread: 'o', title: 'O', session: 's' } }],
+    },
+  };
+  const hub = { readSnapshot: async () => thread, state: { settings: async () => null }, call: async () => ({ data: raw, gen: 'g', end: 1 }) };
+  assert.equal((await chat.chat(hub, 't')).queued, 2);
+});
