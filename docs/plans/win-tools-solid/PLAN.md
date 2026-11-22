@@ -44,6 +44,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D6 | The copy-wide gate waits for go-betweens of sessions that ended without a normal stop, and ends the job of any whose go-between died | A dying CLI closes the go-between's stdin and tmux kill sends SIGHUP, both of which start its shutdown (`machine/lib/win-tool-proxy.js:63-66`); only a go-between killed outright (SIGKILL, OOM) leaves its job behind, and its registry file names that job | defaulted |
 | D7 | When a wait runs out, remaining jobs are ended (`terminateScript`) before the reconcile goes ahead | IDEA constraint "every wait is bounded"; ending them is the only way the reconcile is not racing a writer | defaulted |
 | D8 | Launch flags are kept on the session record in `sessions.json` (`windows_tools`, `wrapped_tools`), not a new `win-sessions.json` | The service already persists every session there before and after launch (`machine/service.js:567`); one file, one source of truth | defaulted |
+| D9 | Idle reader detection uses a zero-length write probe on sockets, a check of the parent's read end in `/proc` on OS pipes, and a parent-gone check; supersedes D4 | Round 1: a zero-length `write()` on a Linux pipe never raises `EPIPE` (reviewer's and lead's checks), and Codex gives tools OS pipes. Lead's check: a Node child with stdout on an `os.pipe()` sees its parent drop the read end within one 300 ms poll | review-round-1 |
 | D3 | Every new wait is bounded: a stop, sweep or archive waits at most 15 s for Windows tools, then logs and goes ahead | IDEA constraint; matches the last reviewed design's 15 s `onStop` wait | defaulted |
 
 ## Spec
@@ -91,9 +92,9 @@ these differences from `wrapperScript`:
 - **Exit.** The launcher exits when the tool and every process in the job have ended, with
   the tool's exit code as its own. The go-between treats its exit as the tool's exit
   (today's `close` handling).
-- **Start time.** The compiled job helper is cached: the launcher loads a DLL from the
-  Windows run root keyed by a hash of its C# source, compiling it with `Add-Type
-  -OutputAssembly` only when missing. The app wrapper is unchanged.
+- **Start time.** The launcher compiles its helper with `Add-Type` each start, as the app
+  wrapper does. If C1 shows this misses Codex's deadline, the fix is to cache the compiled
+  helper as a DLL under the Windows run root, keyed by a hash of its source.
 
 ### 3. Stopping a tool (go-between)
 
@@ -151,11 +152,22 @@ Used by:
 - **Handoff kill** (`machine/service.js:2020-2033`) is unchanged: its leftovers are caught by
   the sweep or archive through the gate.
 
-### 6. Idle reader closed (IDEA item 4, D4)
+### 6. Idle reader closed (IDEA item 4, D4 superseded by D9)
 
-While stdout has no write in flight, the go-between calls `fs.writeSync(1, Buffer.alloc(0))`
-every 2 s (`--probe-ms`, default 2000, for tests). `EPIPE` (or any error) calls
-`stdoutLost()`. The probe never runs while a write is pending, so it cannot interleave.
+Every 2 s (`--probe-ms`, default 2000, for tests), while stdout has no write in flight, the
+go-between runs both checks; either one failing calls `stdoutLost()`:
+- **Socket probe** (stdout is a socket, `/proc/self/fd/1` reads `socket:[...]`, as when a
+  Node CLI spawns it): `fs.writeSync(1, Buffer.alloc(0))`; `EPIPE` or any error fails.
+- **Pipe reader check** (stdout is a pipe, `pipe:[N]`, as when Codex spawns it): the check
+  fails when the parent (`process.ppid` read at start) no longer has any fd in
+  `/proc/<ppid>/fd` linking to the same `pipe:[N]` whose `/proc/<ppid>/fdinfo/<fd>` flags
+  are not write-only (`(flags & 3) !== 1`). At start, if the parent holds no such read end
+  (stdout's reader is some other process) or `/proc/<ppid>` is unreadable, this check is
+  turned off for the go-between's life.
+- **Parent gone**: `process.ppid` differs from the value read at start (the CLI died while
+  something else keeps the pipes open). This calls `shutdown()`.
+
+The probe never runs while a write is pending, so it cannot interleave with output.
 
 ### 7. Non-goals
 
@@ -170,10 +182,12 @@ tests do:
   a `ready` file is untouched; a record without flags is ignored.
 - go-between: registry file written before launch and removed after exit; acknowledgment
   line stripped; stop sends `terminateScript` with the right id within the budget; idle
-  reader closed is noticed within two probe intervals and the tool is stopped.
+  reader closed is noticed within two probe intervals and the tool is stopped, both with
+  stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the proxy with stdout from
+  `os.pipe()`, e.g. through `python3 -c`, then close the read end); parent gone is noticed.
 - gate: onStop waits for its own entries; an ended sibling's live entry delays sweep and
   archive; an orphan's job is ended; a timeout ends remaining jobs; a live sibling is untouched.
-- launcher script: the generated PowerShell contains the cached-DLL load, the
+- launcher script: the generated PowerShell contains the
   `wheelchair-tool-` job name and `wc-tool-started`.
 
 ```bash
