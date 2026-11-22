@@ -1,0 +1,24 @@
+{
+  "form": "side-by-side",
+  "explanation": "Two ways to carry an agent's connections to a tool running on Windows. Look at what each one has to manage; the rest of the feature (the switch, the status line, the address swap) is the same in both.",
+  "columns": [
+    {
+      "title": "Shared channel (now)",
+      "items": [
+        "One Windows helper carries every connection",
+        "Needs its own rules: whose data goes first, slow readers, clean closing",
+        "Each review finds another hole in those rules",
+        "New connections start instantly"
+      ]
+    },
+    {
+      "title": "One helper per connection",
+      "items": [
+        "Each connection gets its own small Windows helper",
+        "The operating system handles slow readers and closing",
+        "Removes the rules that keep failing review",
+        "Each new connection waits for a helper to start (about half a second), unless the tool keeps connections open"
+      ]
+    }
+  ]
+}
