@@ -19,6 +19,9 @@ agents own neither tmux nor the machine secret.
 | `lib/win-prompt.js` | Pure builder for the bridge-broken and MCP for Unity lines added to a tool-role session's prompt file. |
 | `lib/unity-prep.js` | `POST /v1/project-tools/unity-prep`: finds Windows `uvx.exe` and fetches MCP for Unity once in the background. |
 | `lib/win-sync.js` | Windows worktree copies and Git reconciliation. |
+| `lib/win-mark.js` | The "Runs on Windows" eligibility rule for localhost HTTP tools and the textual URL rewrite to a private port. |
+| `lib/win-forward.js` | Forwards for Windows localhost tools: private Linux ports, `win/forwards.json` record and restore, one relay per connection, status checks. |
+| `lib/win-relay.ps1` | The Windows relay a forward runs per connection (`connect`) or per status check (`check`): dials the tool port, refuses ports that lead back to Linux, then pipes bytes. |
 | `lib/win-args.js` | Windows bridge argument validation. |
 | `lib/win-apps.js` | Windows app tracking for the bridge: PowerShell wrapper in a named Job Object, run/start/status/stop, window listing and screenshots, `apps.json`, restart cleanup and sweep. |
 | `test/windows-live.sh`, `test/windows-live.js` | Live Windows bridge check through the real service on a WSL machine, with an optional Unity part (`WHEELCHAIR_UNITY`, fixture `test/fixtures/unity-min/`) that also checks the MCP for Unity stdio server when Windows has `uvx.exe`; exit 77 when not WSL or Unity is skipped. |
@@ -26,7 +29,7 @@ agents own neither tmux nor the machine secret.
 | `lib/screen-input.js` | X-tool layer for screens: window listing, screenshots, pointer, typing, key deadlines and releases, auto-focus. |
 | `lib/screen-args.js` | Pure validation of `wc.js screen` arguments (fixed key list, limits) and `xwininfo` output parsing. |
 | `lib/usage-probe.js` | Asynchronous, timed CLI usage probe runner. |
-| `lib/project-mcp.js` | Reads project MCP servers and exposes shared document and entry validation. |
+| `lib/project-mcp.js` | Reads project MCP servers (including the `wheelchair.windows` marks) and exposes shared document and entry validation. |
 | `lib/project-tools.js` | Reads and saves project tools and manages stored keys through GitHub PRs. |
 | `lib/project-keys.js` | Shared project key references, identity, storage and launch selection. |
 | `lib/env-launch.js` | Session key launcher: reads and deletes the mode-600 JSON env file, then execs the CLI; never prints values. |
