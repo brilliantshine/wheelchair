@@ -49,7 +49,7 @@ function makeItem(line, msg) {
   if (msg && msg.method === 'tools/call' && Object.hasOwn(msg, 'id')) item.timer = setTimeout(() => { removeItem(item); replyError(msg, 'The Windows project copy is not ready yet; try again shortly.'); }, Number(options['--hold-ms']));
   return item;
 }
-function cancel(id) { for (const item of [...held, ...queue]) if (item.msg && item.msg.id === id && Object.hasOwn(item.msg, 'id')) removeItem(item); }
+function cancel(id) { let found = false; for (const item of [...held, ...queue]) if (item.msg && item.msg.id === id && Object.hasOwn(item.msg, 'id')) { removeItem(item); found = true; } return found; }
 function stopTool() {
   return new Promise(resolve => {
     if (!child || child.exitCode !== null || child.signalCode !== null) return resolve();
@@ -96,7 +96,9 @@ function probeResult(msg) {
 }
 function startTool(handoff) {
   mode = handoff ? 'handoff' : 'pipe';
-  const env = { ...process.env, WHEELCHAIR_WINDOWS_PROJECT: ready.copy };
+  const env = { ...process.env };
+  if (typeof ready.copy === 'string' && ready.copy.length) env.WHEELCHAIR_WINDOWS_PROJECT = ready.copy;
+  else delete env.WHEELCHAIR_WINDOWS_PROJECT;
   delete env.WHEELCHAIR_SESSION_TOKEN;
   const wslenv = (env.WSLENV || '').split(':').filter(Boolean);
   if (!wslenv.some(x => x.split('/')[0] === 'WHEELCHAIR_WINDOWS_PROJECT')) wslenv.push('WHEELCHAIR_WINDOWS_PROJECT');
@@ -142,12 +144,13 @@ poll();
 readline.createInterface({ input: process.stdin }).on('line', line => {
   const msg = parse(line);
   if (mode === 'pipe') {
+    if (initialized && msg && msg.method === 'notifications/initialized') return;
     forward(line);
     if (msg && msg.method === 'notifications/initialized') startProbe();
     return;
   }
   if (!msg || typeof msg !== 'object') { if (mode === 'handoff') queue.push(makeItem(line, null)); return; }
-  if (msg.method === 'notifications/cancelled') { cancel(msg.params && msg.params.requestId); if (mode === 'handoff') queue.push(makeItem(line, msg)); return; }
+  if (msg.method === 'notifications/cancelled') { const removed = cancel(msg.params && msg.params.requestId); if (!removed && mode === 'handoff') queue.push(makeItem(line, msg)); return; }
   if (mode === 'handoff') { queue.push(makeItem(line, msg)); return; }
   if (!Object.hasOwn(msg, 'id')) return;
   if (msg.method === 'initialize') { initialized = true; initParams = msg.params || {}; send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: initParams.protocolVersion, capabilities: { tools: { listChanged: true } }, serverInfo: { name: options['--name'], version: '0' }, instructions: sentence() } }); }
