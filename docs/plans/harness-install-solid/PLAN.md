@@ -171,7 +171,7 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine job: Cancel (SIGTERM leader), 15-min limit, process-group stop, result reason, explanations; DELETE route; API.md; machine tests. tricky | machine/lib/harness-install.js, machine/service.js (install route), machine/API.md, machine/test/harness-install.test.js | standard / gpt-6.1-terra | wc-c3b2aec47d12-worker | node --test machine/test/harness-install.test.js; bash machine/test/run.sh | done |
 | T2 | Hub DELETE passthrough, POST refused while off, switch-off DELETE fan-out; Settings Cancel, cancelled state, explanation line; hub + browser tests | viewer/app/routes.js, viewer/pages/settings.js, .h-explain CSS, viewer/test/app-harnesses.test.js, viewer/test/app-harnesses.spec.js | standard / claude-sonnet-5-5 | wc-c3b2aec47d12-worker-2 | node --test viewer/test/app-harnesses.test.js; npm --prefix viewer run test:browser | done |
-| T3 | Fix: a Cancel failing after a poll tick leaves the row stuck on "Cancelling…" (cancelInstall compares job object identity); add browser test. | viewer/pages/settings.js (cancelInstall only), viewer/test/app-harnesses.spec.js | light / claude | wc-c3b2aec47d12-worker-3 | npm --prefix viewer run test:browser -- app-harnesses.spec.js | in progress |
+| T3 | Fix: a Cancel failing after a poll tick leaves the row stuck on "Cancelling…" (cancelInstall compares job object identity); add browser test. | viewer/pages/settings.js (cancelInstall only), viewer/test/app-harnesses.spec.js | light / claude-haiku-5-5 | wc-c3b2aec47d12-worker-3 | npm --prefix viewer run test:browser -- app-harnesses.spec.js | done |
 
 ## Log
 - 2026-11-21 — T1 and T2 dispatched in parallel (disjoint ownership).
@@ -190,3 +190,5 @@ Removing files a cancelled install wrote; Cancel on the home checklist; explaini
 - 2026-11-21 — Choice: T2, settings.js: the job record gains confirmed and cancelling flags; the DELETE uses the poll's 8 s abort timeout.
 - 2026-11-21 — Choice: T2, viewer/pages/settings.css: .h-explain is a 13px dim line with no margin.
 - 2026-11-21 — Choice: T2, app-harnesses.spec.js: the stale-page "switched off" error and the later "Install cancelled" are checked in separate tests rather than one sequence.
+- 2026-11-21 — T3 accepted (band: scout): 27-line diff matches the change dictated in the brief word for word; I read it directly instead of sending it to the scout. app-harnesses.spec.js 116/116 re-run by me; the worker reports the new test failed before the fix.
+- 2026-11-21 — Choice: T3, app-harnesses.spec.js: the new test also asserts "Cancelling…" before the failure; its DELETE handler is async to await the 3 s delay.
