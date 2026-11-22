@@ -2,6 +2,8 @@
 
 Checked against: `c9c6451819f00556a5d875d42f6a8e462f3eb22a` (origin/main). Files covered: `protocol/app/lead.md`, `protocol/app/cards-lead.md`, `viewer/app/wc.js`, `viewer/app/sessions.js`, `viewer/app/peers.js`, `viewer/app/state.js`, `viewer/app/cards.js`, `viewer/app/card.js`, `viewer/app/threads.js`, `viewer/app/views.js`, `viewer/app/remote-plan.js`, `viewer/test/protocol-rules.test.js`.
 
+> Peer-list behavior and the Other leads section were rechecked for stub discovery against `7204dd2af8986aa1cdbca73f6b98c25d0fc26095`; see [stub lifecycle](stub-lifecycle.md). The later overlap-question changes are outside that recheck.
+
 ```text
 lead lists threads -> discovers overlap -> question or late mention
                          | other project
