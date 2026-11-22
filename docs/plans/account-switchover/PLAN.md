@@ -107,11 +107,9 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
    `target.limited_until` and cancel its pending reset `Continue.`
    (`viewer/app/sessions.js:886-893`). The old account's reading keeps its `limited_until`.
 3. Send the machine the switch request (new endpoint) with the `switch_id`, the new
-   account (id and directory), and the session's own launch values from the hub's session
-   record, never current Settings: `model`, `effort`, `permission_mode`, `codex_mode`. From
-   now on a start saves `permission_mode` and `codex_mode` on the hub session record beside
-   `model` and `effort` (`viewer/app/sessions.js:353`). A session without them (started
-   before this change) is not switched: it keeps today's hold. The machine answers at once that it has accepted it and does the work in
+   account (id and directory), and the session's `model` from the hub's session record
+   (`viewer/app/sessions.js:353`), never from current Settings. Every other launch value
+   comes from the machine's own session record (machine step 4). The machine answers at once that it has accepted it and does the work in
    the background, so the client's short timeout (`viewer/app/machine-client.js:66`) is
    not a problem. On a network error the hub retries the same request (same `switch_id`;
    the machine treats a repeat as the same switch). If it still cannot reach the machine,
@@ -158,9 +156,11 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
    (`machine/service.js:800-950`) so a start and a switch share it:
    - **Reused:** the adapter's launch command and environment, project tools, project keys
      and MCP config, role instructions.
-   - **Inputs:** `worktree`, `branch`, `default_branch`, session name and token, and `cli`
-     from the machine session record; `model`, `effort`, `permission_mode`, `codex_mode`
-     from the switch request; the new account's environment (`CLAUDE_CONFIG_DIR` /
+   - **Inputs:** every value the original start used, taken from the machine session
+     record as saved at start (`machine/service.js:832`): `role` (the Codex adapter uses it
+     for the reviewer's read-only sandbox, `machine/adapters/codex.js:136`), `thread_id`,
+     project identity, `worktree`, `branch`, `default_branch`, session name and token,
+     `cli`, `effort`, `permission_mode`, `codex_mode`; `model` from the switch request; the new account's environment (`CLAUDE_CONFIG_DIR` /
      `CODEX_HOME`, none for a default account); resume: Claude `--resume <session-id>`,
      Codex `resume <thread-id>`.
    - **Skipped:** worktree creation and the worker worktree reservation
@@ -227,16 +227,16 @@ resets; other providers; changing how accounts are signed in.
   - the switch selector finds an alternate for a lead, a mapper and a reviewer, and
     honours the lead reserve for a worker;
   - an unreachable machine, a refused request (404), and a `switch-failed` event, each
-    restore today's hold on the old account; a session without saved permission modes is
-    not switched; no quiet reminder fires while `switching` is set;
+    restore today's hold on the old account; no quiet reminder fires while `switching` is set;
   - a `ready` or `switch-failed` with another `switch_id` is ignored.
 - New machine tests (fake CLIs): the switch copies the Claude and Codex conversation files
   into the new account directory and relaunches with the resume arguments and the new
   environment; the old file is left in place; the relaunch uses `respawn-pane -k` and the
   same launch preparation as a start (project tools present); a resume that exits, and one
   that misses readiness, each end the session without a `stuck` event; a repeated
-  `switch_id` does not switch twice; the relaunch uses the request's model, effort and
-  permission modes, the session's existing worktree and branch, creates no worktree and
+  `switch_id` does not switch twice; the relaunch uses the request's model and the record's
+  role, thread, project, effort and permission modes (a resumed Codex reviewer keeps its
+  read-only sandbox flags; project tools are set up), the session's existing worktree and branch, creates no worktree and
   sends no first message; `switch_id` and outcome survive a snapshot restore; hook events for a `switching` session are dropped; a copy,
   launch-preparation or `respawn-pane` failure emits `switch-failed`, leaves the old CLI
   running and restores the whole session record;
@@ -246,7 +246,9 @@ resets; other providers; changing how accounts are signed in.
   `[wc:context switch]` message hidden with its reply shown.
 - First build task: on this machine, with two signed-in accounts per CLI, prove by hand
   that a conversation copied into the other account's directory resumes (Claude and
-  Codex), and record the result in the plan's Log. Also record whether the resumed CLI
+  Codex), and record the result in the plan's Log. The probe goes through the machine, not just the CLI:
+  the resumed session must reach `ready`, take one carry-on turn, and produce a turn-end
+  event the hub sees. Also record whether the resumed CLI
   appends to the copied file or starts a new one; if a new one, the machine's transcript
   copy must follow it, and the Log says how. If one CLI cannot resume across accounts, stop
   and report it (Decision 16).
@@ -385,6 +387,23 @@ resets; other providers; changing how accounts are signed in.
 - §3 hub: `switching` holds the `switch_id`; launch values (`model`, `effort`, `permission_mode`, `codex_mode`) come from the hub session record, which now saves the permission modes at start; sessions without them are not switched; a refused request restores the hold; only switch callbacks need a matching id; no quiet reminders while switching.
 - §3 machine: `switch_id` and outcome kept outside the snapshot; step 4 lists what the relaunch reuses from `startIn`, its inputs, and what it skips (worktree creation, reservation, first message, ledger line, `new-session`).
 - Validation updated to match.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | New hub permission fields and the pre-change exclusion are unnecessary; the machine record already has them | upheld (`machine/service.js:832`) | §3: launch values from the machine record; exclusion removed |
+| mechanics | blocking | Relaunch inputs omit `role`, so a resumed Codex reviewer loses its read-only sandbox | upheld (`machine/adapters/codex.js:136`) | §3 machine step 4: all start values from the record, `role` named |
+| mechanics | blocking | Relaunch needs `thread_id` and project identity for project tools | upheld (`machine/service.js:734`, `:751`) | Same fix |
+| mechanics | minor | Permission-mode presence check doesn't identify pre-change sessions | upheld | Check removed |
+| mechanics | minor | Build gate should prove readiness and a turn-end through the machine | upheld | Validation: probe goes through the machine |
+
+### Round 7 — 2026-11-21
+
+**Lanes:** intent / claude; mechanics / gpt; cross-family: yes.
+
+**Changed since Round 6:**
+- §3 hub step 3: the switch request carries only `switch_id`, new account and `model`; the new hub permission fields and the pre-change exclusion are gone.
+- §3 machine step 4: every other launch input comes from the machine session record as saved at start (`role`, `thread_id`, project identity, worktree, branch, cli, effort, permission modes).
+- Validation: the first build task's probe goes through the machine (ready, one carry-on turn, a turn-end the hub sees).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
