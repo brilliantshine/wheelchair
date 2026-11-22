@@ -587,7 +587,7 @@
       if (isPlain(raw)) {
         card.append(winControl(() => ({ name, type: raw.type, url: raw.url }),
           () => state.windows.has(name),
-          (on) => { if (on) state.windows.add(name); else state.windows.delete(name); paintSave(); }).el);
+          (on) => { if (on) state.windows.add(name); else state.windows.delete(name); paintSave(); repaintLines(); }).el);
       }
       for (const s of checks.skip || []) card.append(h('p', { class: 'pt-warn', text: s }));
       // The machine's own key warnings, except "needs" ones, which follow the key status here.
@@ -638,7 +638,7 @@
         command: p?.command || '', url: p?.url || '', argsText: (p?.args || []).join('\n'), argsRO: !!p?.argsRO,
         commandRO: !!p?.commandRO, urlRO: !!p?.urlRO,
         envRows: p ? p.envRows : [], hdrRows: p ? p.hdrRows : [],
-        winOn: origName !== null && state.windows.has(origName),
+        winOn: origName !== null && state.windows.has(origName), winTouched: false,
       };
       const err = h('p', { class: 'inline-err', role: 'alert' });
       const showErr = (m) => { err.textContent = m || ''; };
@@ -723,7 +723,8 @@
           : h('label', {}, h('span', { text: 'URL' }), urlIn),
         h('div', {}, h('span', { class: 'hint', text: 'Headers' }), hdrHost, headerNote));
       const formVals = () => ({ name: origName !== null && !f.touched.name ? origName : f.name, type: f.kind === 'http' ? 'http' : 'stdio', url: f.kind === 'http' ? (f.urlRO ? f.p.url : f.url) : '' });
-      const win = winControl(formVals, () => f.winOn, (on) => { f.winOn = on; });
+      const formWinOn = () => f.winTouched ? f.winOn : origName !== null && state.windows.has(origName);
+      const win = winControl(formVals, formWinOn, (on) => { f.winOn = on; f.winTouched = true; });
       const syncKind = () => { commandBox.hidden = f.kind !== 'command'; httpBox.hidden = f.kind !== 'http'; headerNote.hidden = !(f.kind === 'http' && f.hdrRows.length > 0); win.paint(); };
       urlIn.addEventListener('input', () => win.paint());
       kindSel.addEventListener('change', () => {
@@ -783,8 +784,8 @@
         state.pending = pending;
         // The mark follows a rename; it changes only where the switch is shown.
         const hadMark = origName !== null && state.windows.has(origName);
+        const markNow = wsl() && windowsEligible(entry.type, entry.url) ? formWinOn() : hadMark;
         if (origName !== null) state.windows.delete(origName);
-        const markNow = wsl() && windowsEligible(entry.type, entry.url) ? f.winOn : hadMark;
         if (markNow) state.windows.add(name); else state.windows.delete(name);
         if (origName !== null && origName !== name) {
           const next = nullObj();

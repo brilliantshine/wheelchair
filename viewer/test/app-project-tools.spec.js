@@ -1126,6 +1126,47 @@ test('a switch change alone is dirty and saves windows with tools', async ({ pag
   expect(calls.save[0].tools.loc).toEqual(LOCAL());
 });
 
+for (const [initial, cardOn] of [[true, false], [false, true]]) {
+  test(`open editor follows card switch ${initial ? 'off' : 'on'} through save`, async ({ page }) => {
+    const calls = await open(page, { read: winRead({ windows: initial ? ['loc'] : [] }) });
+    await tool(page, 'loc').getByRole('button', { name: 'Edit loc' }).click();
+    const form = page.locator('form.pt-form');
+    await sw(page, 'loc').setChecked(cardOn);
+    await form.getByLabel('URL', { exact: true }).fill('http://localhost:8080/updated');
+    await form.getByRole('button', { name: 'Keep changes' }).click();
+    await page.locator('#pt-save').click();
+    await expect.poll(() => calls.save.length).toBe(1);
+    expect(calls.save[0].windows).toEqual(cardOn ? ['loc'] : []);
+  });
+}
+
+test('the form switch follows the card until touched, then the form choice wins', async ({ page }) => {
+  const calls = await open(page, { read: winRead({ windows: ['loc'] }) });
+  await tool(page, 'loc').getByRole('button', { name: 'Edit loc' }).click();
+  const form = page.locator('form.pt-form');
+  const formSwitch = form.getByLabel('Runs on Windows');
+  await sw(page, 'loc').uncheck();
+  await expect(formSwitch).not.toBeChecked();
+  await formSwitch.check();
+  await form.getByLabel('URL', { exact: true }).fill('http://localhost:8080/updated');
+  await form.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+    await expect.poll(() => calls.save.length).toBe(1);
+  expect(calls.save[0].windows).toEqual(['loc']);
+});
+
+test('cancel discards the form switch choice but keeps the card switch change', async ({ page }) => {
+  const calls = await open(page, { read: winRead({ windows: ['loc'] }) });
+  await tool(page, 'loc').getByRole('button', { name: 'Edit loc' }).click();
+  const form = page.locator('form.pt-form');
+  await sw(page, 'loc').uncheck();
+  await form.getByRole('button', { name: 'Cancel' }).click();
+  await expect(sw(page, 'loc')).not.toBeChecked();
+  await page.locator('#pt-save').click();
+    await expect.poll(() => calls.save.length).toBe(1);
+  expect(calls.save[0].windows).toEqual([]);
+});
+
 test('rename and delete update the saved windows list; marks on hidden entries are kept', async ({ page }) => {
   const calls = await open(page, { read: winRead({ windows: ['loc', 'web', 'gone'] }) });
   await expect(sw(page, 'loc')).toBeChecked();
