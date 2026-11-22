@@ -1688,16 +1688,41 @@
       }
       if (res.status === 404 && method === 'POST') { finish(); delete hz.jobs[key]; loadHarnesses(true); return; }
       if (res.status === 404) { finish(); delete hz.jobs[key]; paintHarnesses(); return; }
-      if (res.status === 409 && method === 'POST') return step('GET');
+      if (res.status === 409 && method === 'POST') {
+        if (body.error === 'already installing') return step('GET');
+        finish(); delete hz.jobs[key]; hz.rowErr[provider] = body.error || 'Couldn\'t start the install.'; paintHarnesses(); return;
+      }
       if (!res.ok) { hz.jobs[key] = { state: 'failed', tail: body.error || ('http ' + res.status) }; finish(); paintHarnesses(); return; }
       const tail = body.output_tail || '';
-      if (body.state === 'running') { hz.jobs[key] = { state: 'running', tail }; paintHarnesses(); return again(); }
+      if (body.state === 'running') {
+        const before = hz.jobs[key];
+        hz.jobs[key] = { state: 'running', tail, confirmed: true, cancelling: !!(before && before.cancelling) };
+        paintHarnesses(); return again();
+      }
       finish();
-      if (body.state === 'failed') { hz.jobs[key] = { state: 'failed', tail }; paintHarnesses(); return; }
+      if (body.state === 'failed') { hz.jobs[key] = { state: 'failed', tail, explanation: body.explanation || null }; paintHarnesses(); return; }
+      if (body.state === 'cancelled') { hz.jobs[key] = { state: 'cancelled', tail, explanation: null }; paintHarnesses(); return; }
       delete hz.jobs[key];
       if (body.state === 'succeeded') refreshAfterInstall(machine, provider); else paintHarnesses();
     }
     step(firstMethod);
+  }
+
+  // Cancel a running install: DELETE through the hub; the poll already running reports the outcome.
+  async function cancelInstall(machine, provider) {
+    const key = machine + '/' + provider;
+    const job = hz.jobs[key];
+    if (!job || job.cancelling) return;
+    delete hz.rowErr[provider];
+    job.cancelling = true; paintHarnesses();
+    let res = null;
+    try { res = await fetch(API + `/machines/${encodeURIComponent(machine)}/harnesses/${encodeURIComponent(provider)}/install`, { method: 'DELETE', signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }); } catch { res = null; }
+    const now = hz.jobs[key];
+    if (!now || now !== job) return;
+    if (res && (res.status === 202 || res.status === 409)) return;
+    job.cancelling = false;
+    hz.rowErr[provider] = (!res || res.status >= 500) ? `Couldn't cancel: ${machine} isn't reachable.` : `Couldn't cancel: update wheelchair on ${machine}.`;
+    paintHarnesses();
   }
 
   // A just-installed CLI's version is read in the background on the machine, so the first
@@ -1750,6 +1775,7 @@
     const install = (label) => h('button', { type: 'button', class: 'small primary', text: label, 'aria-label': `${label} ${name}`, onclick: () => {
       const target = hz.machine; // always the machine the picker shows
       if (!target || hz.pending) return;
+      delete hz.rowErr[provider];
       hz.jobs[target + '/' + provider] = { state: 'running', tail: '' };
       pollInstall(target, provider, 'POST'); paintHarnesses();
     } });
@@ -1757,10 +1783,18 @@
       if (job && job.state === 'running') {
         actions.append(h('span', { class: 'hint waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }),
           document.createTextNode(job.offline ? `Can't reach ${machine.name}, retrying…` : 'Installing…')));
+        if (job.confirmed && !job.offline) {
+          if (job.cancelling) actions.append(h('span', { class: 'hint', text: 'Cancelling…' }));
+          else actions.append(h('button', { type: 'button', class: 'small', text: 'Cancel', 'aria-label': `Cancel installing ${name}`, onclick: () => cancelInstall(machine.name, provider) }));
+        }
         if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
       } else if (job && job.state === 'failed' && st.recipe !== false) {
         actions.append(h('span', { class: 'inline-err', role: 'alert', text: 'Install failed' }));
         if (st.recipe !== null) actions.append(install('Try again'));
+        if (job.explanation) extra.push(h('p', { class: 'h-explain', text: job.explanation }));
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (job && job.state === 'cancelled' && !st.installed) {
+        actions.append(h('span', { class: 'hint', text: 'Install cancelled' }), install('Install'));
         if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
       } else if (!st.installed) {
         if (st.recipe === false) actions.append(h('a', { class: 'btn-link', href: docs, target: '_blank', rel: 'noopener', text: `Install from ${vendor}'s site` }));

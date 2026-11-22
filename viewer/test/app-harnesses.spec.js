@@ -196,6 +196,115 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       expect(world.calls).toContain('POST /wheelchair/api/machines/hub/harnesses/gpt/install');
     });
 
+    test('Cancel shows while running, sends DELETE, then the row says Install cancelled with Install', async ({ page }) => {
+      let cancelled = false;
+      const s = status();
+      const world = {
+        harnesses: (r) => json(r, s),
+        install: (r) => {
+          if (!r.request().url().includes('/kimi/')) return json(r, { state: 'idle' });
+          if (r.request().method() === 'DELETE') { cancelled = true; return json(r, { state: 'cancelling' }, 202); }
+          return cancelled ? json(r, { state: 'cancelled', output_tail: 'stopped here', explanation: null }) : json(r, { state: 'running', output_tail: 'working' });
+        },
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      await expect(row(page, 'kimi')).toContainText('Installing…');
+      const cancel = row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' });
+      await expect(cancel).toHaveText('Cancel');
+      await cancel.click();
+      await expect(row(page, 'kimi')).toContainText('Cancelling…');
+      await expect(cancel).toHaveCount(0);
+      expect(world.calls).toContain('DELETE /wheelchair/api/machines/hub/harnesses/kimi/install');
+      await expect(row(page, 'kimi')).toContainText('Install cancelled', { timeout: 8000 });
+      await expect(row(page, 'kimi').getByRole('alert')).toHaveCount(0);
+      await expect(row(page, 'kimi').locator('.h-tail')).toContainText('stopped here');
+      await expect(row(page, 'kimi').getByRole('button', { name: 'Install Kimi Code' })).toBeVisible();
+    });
+
+    test('a failed Cancel keeps the button and says why', async ({ page }) => {
+      let code = 500;
+      const s = status();
+      const world = {
+        harnesses: (r) => json(r, s),
+        install: (r) => {
+          if (!r.request().url().includes('/kimi/')) return json(r, { state: 'idle' });
+          if (r.request().method() === 'DELETE') return json(r, { error: 'nope' }, code);
+          return json(r, { state: 'running', output_tail: 'working' });
+        },
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      const cancel = row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' });
+      await cancel.click();
+      await expect(row(page, 'kimi').getByRole('alert')).toHaveText("Couldn't cancel: hub isn't reachable.", { timeout: 4000 });
+      await expect(cancel).toBeVisible();
+      code = 404;
+      await cancel.click();
+      await expect(row(page, 'kimi').getByRole('alert')).toHaveText("Couldn't cancel: update wheelchair on hub.", { timeout: 4000 });
+      await expect(cancel).toBeVisible();
+      await expect(row(page, 'kimi')).toContainText('Installing…');
+    });
+
+    test('no Cancel while the row says it cannot reach the machine', async ({ page }) => {
+      let n = 0;
+      const s = status();
+      const world = {
+        harnesses: (r) => json(r, s),
+        install: (r) => {
+          if (!r.request().url().includes('/kimi/')) return json(r, { state: 'idle' });
+          n += 1;
+          return n === 1 ? json(r, { state: 'running', output_tail: 'a' }) : json(r, { error: 'down' }, 502);
+        },
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      await expect(row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' })).toBeVisible();
+      await expect(row(page, 'kimi')).toContainText("Can't reach hub, retrying…", { timeout: 6000 });
+      await expect(row(page, 'kimi').getByRole('button', { name: /Cancel/ })).toHaveCount(0);
+    });
+
+    test('a stale page whose Install is refused as switched off shows that as the row error', async ({ page }) => {
+      const s = status();
+      const world = {
+        harnesses: (r) => json(r, s),
+        install: (r) => (r.request().method() === 'POST' && r.request().url().includes('/gemini/')
+          ? json(r, { error: 'Antigravity is switched off' }, 409) : json(r, { state: 'idle' })),
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      await row(page, 'gemini').getByRole('button', { name: 'Install Antigravity' }).click();
+      await expect(row(page, 'gemini').getByRole('alert')).toHaveText('Antigravity is switched off', { timeout: 4000 });
+      await expect(row(page, 'gemini')).not.toContainText('Installing…');
+      const gets = () => world.calls.filter((c) => c === 'GET /wheelchair/api/machines/hub/harnesses/gemini/install').length;
+      const before = gets();
+      await page.waitForTimeout(2500);
+      expect(gets()).toBe(before);
+    });
+
+    test('a failed install shows the explanation above the raw tail', async ({ page }) => {
+      const s = status();
+      const world = {
+        harnesses: (r) => json(r, s),
+        install: (r) => (r.request().url().includes('/gpt/')
+          ? json(r, { state: 'failed', output_tail: 'ENOSPC: no space', explanation: 'The disk on this machine is full. Free up some space, then try again.' }) : json(r, { state: 'idle' })),
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      await expect(row(page, 'gpt')).toContainText('Install failed');
+      await expect(row(page, 'gpt').locator('.h-explain')).toHaveText('The disk on this machine is full. Free up some space, then try again.');
+      await expect(row(page, 'gpt').locator('.h-explain + .h-tail')).toContainText('ENOSPC');
+      const a = await row(page, 'gpt').locator('.h-explain').boundingBox();
+      const b = await row(page, 'gpt').locator('.h-tail').boundingBox();
+      expect(a.y).toBeLessThan(b.y);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    });
+
     test('a POST answered 404 no recipe falls back to the vendor link', async ({ page }) => {
       let gone = false;
       const s = status();
