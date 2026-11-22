@@ -548,3 +548,5 @@ D11.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-21 Ready check at approval: hub and machine service answer (session list); claude and codex CLIs installed; Codex preflight passes (token fresh).
