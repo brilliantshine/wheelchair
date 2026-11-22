@@ -1,6 +1,6 @@
 ---
 slug: account-switchover
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -49,6 +49,19 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 21 | Keep going with the same scope (budget reset). | Picked after review round 8. | user |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  A[An agent's account hits its usage limit] --> B[Mark that account as used up until its reset]
+  B --> C{Another signed-in account of the same kind has room?}
+  C -- no --> W[Wait for the reset, then continue, as today]
+  C -- yes --> D[Hold the agent's messages]
+  D --> E[Copy its conversation to the new account and restart it there, picking up the conversation]
+  E --> F{Restarted and ready?}
+  F -- yes --> G[Tell it to carry on, then release held messages]
+  F -- "a step failed before restart" --> W
+  F -- "restart did not come up" --> X[Treated like a crash: usual restart on a free account]
+```
 
 ### Scope
 
@@ -258,7 +271,8 @@ resets; other providers; changing how accounts are signed in.
   Codex), and record the result in the plan's Log. The probe goes through the machine, not just the CLI:
   the resumed session must reach `ready`, take one carry-on turn whose reply uses a fact
   given only before the switch, and produce a turn-end event the hub sees; for Codex, that
-  turn's usage reading reaches the hub under the new account. Also record whether the resumed CLI
+  turn's usage reading reaches the hub under the new account and comes from a usage row
+  written during the carry-on turn (not a replayed older row). Also record whether the resumed CLI
   appends to the copied file or starts a new one; if a new one, the machine's transcript
   copy must follow it, and the Log says how. If one CLI cannot resume across accounts, stop
   and report it (Decision 16).
@@ -272,6 +286,8 @@ resets; other providers; changing how accounts are signed in.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| After a `switch-failed` or a refused or unreachable switch request, the restored hold may use the shared account reading's deadline rather than the session's own. | Rare path: needs a switch to fail and another session to update that account's reading in between. | review-round-9 |
+| During a Codex preflight retry, the outgoing account's cooldown could expire and it could be picked again. | Rare path: needs a preflight failure and a reset at the same moment. | review-round-9 |
 | An event from the old CLI that was spooled and replays after the switch is applied to the switched session. | Rare path: needs the hook's own post to the machine to fail at the moment of the limit hit. | review-round-4 |
 | A machine-service restart during a switch's background work leaves the session held. | Rare path: needs a service restart inside the few seconds of a switch. | review-round-4 |
 | After a `switch-failed`, the Agents details may show a "moved from" for a switch that did not happen. | Rare path: `switch-failed` needs a copy or tmux failure on a healthy machine; display only. | review-round-4 |
@@ -458,6 +474,10 @@ resets; other providers; changing how accounts are signed in.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | major | `switch-failed` cannot restore the session's own reset deadline | accepted-risk (rare path) | Accepted Risks |
+| mechanics | minor | Rare path: outgoing account picked again during a preflight retry | accepted-risk (rare path) | Accepted Risks |
+| mechanics | minor | Codex probe could pass on a replayed usage row | upheld | Validation probe requires a row from the carry-on turn |
 
 ## Implementation Tasks
 
