@@ -201,3 +201,36 @@ test('failed relaunches use fatal stop cleanup and plain starts retain readiness
     assert.ok(events(f).some(e => e.type === 'stuck' && !Object.hasOwn(e, 'switch_id')));
   } finally { await f.close(); }
 });
+
+test('relaunch timeout wins over first-run prompts while recent relaunches and plain starts answer them', async () => {
+  const f = await setup();
+  try {
+    await postSwitch(f); await waitFor(() => f.session.active_switch === 'one');
+    const beforeLog = await log(f.env); const priorEvents = events(f).length;
+    await write(f.env.fake.pane, trustDialog);
+    f.session.relaunched_at = new Date(Date.now() - 31_000).toISOString();
+    process.env.FAKE_SESSIONS = '';
+    await f.env.instance.checkReady(f.session);
+    const expiredLog = (await log(f.env)).slice(beforeLog.length);
+    assert.equal(f.session.status, 'stopped'); assert.equal(f.session.end_reason, 'switch-resume-failed'); assert.equal(f.session.switches.one.state, 'failed');
+    assert.match(expiredLog, /kill-session/); assert.doesNotMatch(expiredLog, /send-keys/);
+    assert.equal(events(f).slice(priorEvents).filter(e => e.type === 'stuck' || e.type === 'ready').length, 0);
+  } finally { await f.close(); }
+
+  const recent = await setup();
+  try {
+    await postSwitch(recent); await waitFor(() => recent.session.active_switch === 'one');
+    const beforeLog = await log(recent.env); await write(recent.env.fake.pane, trustDialog);
+    recent.session.relaunched_at = new Date(Date.now() - 5_000).toISOString();
+    await recent.env.instance.checkReady(recent.session);
+    assert.match((await log(recent.env)).slice(beforeLog.length), /send-keys/); assert.notEqual(recent.session.status, 'stopped');
+  } finally { await recent.close(); }
+
+  const plain = await setup();
+  try {
+    const beforeLog = await log(plain.env); await write(plain.env.fake.pane, trustDialog);
+    plain.session.status = 'starting'; plain.session.created_at = new Date(Date.now() - 31_000).toISOString();
+    await plain.env.instance.checkReady(plain.session);
+    assert.match((await log(plain.env)).slice(beforeLog.length), /send-keys/); assert.notEqual(plain.session.status, 'stopped');
+  } finally { await plain.close(); }
+});

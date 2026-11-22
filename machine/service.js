@@ -1190,6 +1190,7 @@ class MachineService {
     if (session.status === 'switching') return false;
     let pane;
     try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (session.active_switch && ((live && !live.has(session.name)) || Date.now() - new Date(session.relaunched_at).getTime() >= 30_000)) await this.failedResume(session); else if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
+    if (session.active_switch && Date.now() - new Date(session.relaunched_at).getTime() >= 30_000) { await this.failedResume(session); return false; }
     const prompt = adapters[session.cli]?.answerPrompts(session, pane);
     if (prompt) {
       for (const key of prompt.keys) this.tmux(['send-keys', '-t', session.name, key]);
