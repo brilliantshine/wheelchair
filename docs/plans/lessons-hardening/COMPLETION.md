@@ -126,3 +126,20 @@ Verification attempt 3 (81b9ddbd): claude-opus-5-5 PASS, gpt-6.2-sol FAIL with 3
 | 2 Settings removal test passed without a removal version | count grows by one, version text is the pre-removal wording, `changed_by`/`removed.by` user | `viewer/test/app-lessons-history.test.js` | fails when removal sets only the marker |
 | 3 merge test had a one-version history | three versions; oldest and middle (and a removed lesson's oldest) skipped, nothing added | `viewer/test/app-lessons-history.test.js` | fails when only the newest version is matched (re-checked by the sub-lead) |
 
+### Remediation 4 — 2026-11-22
+
+Verification attempt 4 (c88a155a): claude-opus-5-5 PASS, gpt-6.2-sol FAIL with 2 S9 test gaps (the code was correct); see `REMEDIATION-4.md`.
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| 1 cap tests accepted eviction of the wrong records | exact surviving version texts (oldest dropped); removals with increasing times, exactly the oldest removed entry deleted | `viewer/test/app-lessons-history.test.js` | fails when the second-oldest version or the newest removed entry is dropped (re-checked by the sub-lead) |
+| 2 identical-Restore retry accepted a changed `saved_at` | whole lesson and history entry deep-equal before and after | `viewer/test/app-lessons-history.test.js` | fails when the no-op restore rewrites `saved_at` (re-checked by the sub-lead) |
+| audit | exact-state asserts for merge adds, scoped records, normalized history/waiting, restored removed lesson, 422 refusals, waiting Add, user edit | `viewer/test/app-lessons-history.test.js` | 5 of 7 mutations caught; the other two cannot change stored state (normalize / rolled-back update) |
+
+Validation after remediation, from `viewer/`:
+
+```
+npm test: # tests 846  # pass 846  # fail 0
+npx playwright test test/app-lessons.spec.js test/app-handoff.spec.js: 80 passed (46.3s)
+```
+
