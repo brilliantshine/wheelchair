@@ -4,12 +4,12 @@ const roles = new Set(['worker', 'mapper', 'sub-lead', 'reviewer', 'verifier']);
 const reportRole = s => ['reviewer', 'verifier'].includes(s.role);
 const watched = s => Boolean(s.live && s.started_by && roles.has(s.role) && !(reportRole(s) && s.finished));
 const waiting = (thread, s) => thread.sessions.some(c => c.started_by === s.name && c.live && (c.owes_reply || c.status === 'waiting' || c.queue?.length));
-const isQuiet = (thread, s) => watched(s) && s.owes_reply && s.turn_ended && !s.queue?.length && !s.permission_open && !s.needs_open && !(Date.parse(s.limited_until) > Date.now()) && !waiting(thread, s);
+const isQuiet = (thread, s) => watched(s) && !s.switching && s.owes_reply && s.turn_ended && !s.queue?.length && !s.permission_open && !s.needs_open && !(Date.parse(s.limited_until) > Date.now()) && !waiting(thread, s);
 const agentText = s => reportRole(s)
   ? '[wc:from app] Your turn ended with no report. If you ended it to wait on your own background work, wait for it in the foreground now. End your next turn with your report as your last message.'
   : '[wc:from app] Your turn ended without a result or message card, and the session that started you is waiting for one. Your own wc.js and card.js commands are always allowed, whatever your brief says about ports or the network. If your task is done, post your result. If you cannot finish, post a result with outcome blocked and the reason. If you need an answer, send a message. If you ended your turn to wait on your own background work, wait for it in the foreground now and report when it is done. If you already posted one, ignore this.';
 const starterText = s => `[wc:from app] your session ${s.name} ended two turns ${reportRole(s) ? 'with no report' : 'without a result or message'}, one of them after a reminder from the app. Check on it: message it, or stop and replace it.`;
-function arm(hub, s) { if (watched(s) && s.owes_reply) s.quiet_check_at = new Date(Date.now() + hub.quietGraceMs).toISOString(); }
+function arm(hub, s) { if (watched(s) && !s.switching && s.owes_reply) s.quiet_check_at = new Date(Date.now() + hub.quietGraceMs).toISOString(); }
 function reset(thread, s, stopped = false) {
   if (!stopped) { s.quiet_stage = 0; delete s.quiet_starter_at; }
   delete s.quiet_check_at;
@@ -37,6 +37,7 @@ async function checkQuiet(hub) {
       const { enqueue, deliver } = require('./sessions.js');
       let changed = false; const targets = new Set();
       for (const s of thread.sessions) {
+        if (s.switching) continue;
         const stage = s.quiet_stage || 0;
         const starter = thread.sessions.find(x => x.name === s.started_by);
         if (s.quiet_check_at && (!watched(s) || !s.owes_reply)) { delete s.quiet_check_at; changed = true; }

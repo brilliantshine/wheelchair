@@ -729,7 +729,7 @@ class MachineService {
   commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context = {}) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries });
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries, resume: context.resume });
   }
 
   threadWorktree(input, worktree) {
@@ -835,6 +835,99 @@ class MachineService {
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); session.pi_version = status.version || null; }
+    let windowsTools;
+    try {
+    const prepared = await this.prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, false);
+    const commandText = prepared.commandText;
+    windowsTools = prepared.windowsTools;
+    const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
+    // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
+    // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
+    if (this.cancelledStarts.has(name)) die('session start was cancelled');
+    const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', `--description=wheelchair ${name}`, 'tmux', ...tmuxArgs]);
+    if (this.cancelledStarts.has(name)) { if (scoped.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
+    const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
+    if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
+    if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
+    this.sessions[name] = session;
+    } catch (error) {
+      try { await this.win?.removeReady(name); } catch (cleanupError) { this.log(cleanupError); }
+      await this.removeMcpConfig(name);
+      throw error;
+    }
+    if (windowsTools) this.win?.afterLaunch(session);
+    await this.persistSessions();
+    try {
+      await fsp.appendFile(path.join(this.stateDir, 'session-ledger.jsonl'), `${json({ at: new Date().toISOString(), name, role: input.role, provider: adapter.provider, model: input.model || null, account_dir: dir, cli_session_id: session.cli_session_id, thread_id: input.thread_id })}\n`);
+    } catch (error) { console.error('session ledger append failed:', error.message); }
+    await this.checkReady(session);
+    return session;
+  }
+  async switchSession(name, input) {
+    const session = this.managed(name), adapter = adapters[session.cli];
+    if (!['claude', 'codex'].includes(session.cli)) die('unsupported cli');
+    if (!input || typeof input.switch_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.switch_id) || !input.account || typeof input.account.id !== 'string' || !Object.hasOwn(input.account, 'dir') || !(input.model === null || typeof input.model === 'string') || typeof input.project !== 'string' || !input.project || path.basename(input.project) !== input.project || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir)) die('invalid switch body');
+    const dir = accountDir(input.account.dir, input.account.id);
+    if (!dir && input.account.id !== `default-${adapter.provider}`) die('invalid default account');
+    session.switches ||= {};
+    const prior = Object.hasOwn(session.switches, input.switch_id) ? session.switches[input.switch_id] : null;
+    if (prior) return { accepted: true, switch_id: input.switch_id, state: prior.state };
+    if (Object.values(session.switches).some(item => item.state === 'running')) throw Object.assign(new Error('switch already running'), { status: 409 });
+    const live = this.liveTmux();
+    if (!live || !live.has(name)) throw Object.assign(new Error('session is not running'), { status: 409 });
+    const snapshot = JSON.parse(json(session));
+    Object.defineProperty(session.switches, input.switch_id, { value: { state: 'running' }, enumerable: true, writable: true, configurable: true });
+    session.status = 'switching';
+    await this.persistSessions();
+    setImmediate(() => this.runSwitch(session, snapshot, input, dir).catch(error => this.log(error)));
+    return { accepted: true, switch_id: input.switch_id, state: 'running' };
+  }
+  async runSwitch(session, snapshot, input, dir) {
+    const adapter = adapters[session.cli], name = session.name, id = input.switch_id;
+    try {
+      if (dir) adapter.seed(dir, input.account.id);
+      await adapter.prepare?.(dir);
+      const source = await adapter.findTranscript(session, snapshot.account_dir);
+      if (!source) throw new Error('conversation transcript not found');
+      await this.copyTranscript(session, source);
+      const oldRoot = snapshot.account_dir || adapter.usual(), newRoot = dir || adapter.usual();
+      const relative = path.relative(oldRoot, source);
+      if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('invalid transcript path');
+      const destination = path.join(newRoot, relative);
+      await mkdir(path.dirname(destination));
+      if (source !== destination) await fsp.copyFile(source, destination);
+      const stat = await fsp.stat(destination);
+      session.account = input.account.id; session.account_dir = dir;
+      session.ready = false; session.source_transcript = destination;
+      session.transcript_source = { ...(session.transcript_source || {}), path: destination, ino: stat.ino };
+      delete session.last_reading;
+      for (const suffix of ['', '.context']) await fsp.unlink(path.join(this.stateDir, 'statusline', name + suffix)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+      await this.persistSessions();
+      const promptPath = path.join(this.stateDir, 'prompts', `${name}.md`);
+      const rolePrompt = await fsp.readFile(promptPath, 'utf8');
+      const launchInput = { ...session, model: input.model, project: input.project, project_dir: input.project_dir };
+      const prepared = await this.prepareLaunch(launchInput, session, adapter, session.worktree, promptPath, rolePrompt, true);
+      const result = await commandAsync('tmux', ['respawn-pane', '-k', '-t', `=${name}:`, prepared.commandText]);
+      if (!result.ok) throw new Error(result.stderr.trim() || 'tmux respawn failed');
+      session.status = 'starting'; session.relaunched_at = new Date().toISOString(); session.active_switch = id;
+      await this.persistSessions();
+    } catch (error) {
+      const switches = session.switches;
+      for (const key of Object.keys(session)) delete session[key];
+      Object.assign(session, snapshot, { switches });
+      switches[id].state = 'failed';
+      await this.persistSessions();
+      await this.emitEvent({ type: 'switch-failed', session: name, thread_id: session.thread_id, switch_id: id, error: String(error.message || error).replace(/[\r\n]+/g, ' ') });
+    }
+  }
+  async failedResume(session) {
+    session.end_reason = 'switch-resume-failed';
+    if (session.switches?.[session.active_switch]) session.switches[session.active_switch].state = 'failed';
+    delete session.active_switch;
+    await this.stopFatal(session);
+  }
+  async prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, resume) {
+    const name = session.name;
     const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
     const read = await readProjectMcp(worktree, { wsl, mount, kernel: !!this.win?.detected?.kernel });
     const { mcp, warnings } = read;
@@ -842,7 +935,7 @@ class MachineService {
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
-    const context = { wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
+    const context = { resume, wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
     if (wsl && tools && mcp && ['claude', 'codex', 'agy'].includes(input.cli)) {
       const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
       const commonDir = common.ok && common.stdout.trim() || worktree;
@@ -878,7 +971,6 @@ class MachineService {
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
     if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
-    try {
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     if (built.mcpConfig) {
       const file = built.mcpConfig.path;
@@ -938,35 +1030,14 @@ class MachineService {
       try { version = (await fsp.readFile(path.join(worktree, 'ProjectSettings', 'ProjectVersion.txt'), 'utf8')).match(/^m_EditorVersion:\s*(\S+)/m)?.[1]; } catch {}
       const unityExists = !!version && fs.existsSync(path.join(mount, 'c/Program Files/Unity/Hub/Editor', version, 'Editor/Unity.exe'));
       const lines = require('./lib/win-prompt').promptLines({ health: this.win?.bridgeHealth(), wsl, loaded, mcp, copy: extra.WHEELCHAIR_WINDOWS_PROJECT, cli: session.cli, codexMode: session.codex_mode, version, unityExists });
-      if (lines.length) await atomicWrite(promptPath, rolePrompt + "\n\n" + lines.join("\n"));
+      if (!resume && lines.length) await atomicWrite(promptPath, rolePrompt + "\n\n" + lines.join("\n"));
     }
     env.splice(adapter.sessionNameEnv ? 3 : 2, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
     const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
     const redactions = new Set(built.redactions || []);
     session.command = built.argv.map((arg, index) => redactions.has(index) ? `${arg.slice(0, arg.indexOf('=') + 1)}<redacted>` : arg);
-    session.pending_initial = adapter.firstMessage(input, promptPath, name);
-    const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
-    // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
-    // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
-    if (this.cancelledStarts.has(name)) die('session start was cancelled');
-    const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', `--description=wheelchair ${name}`, 'tmux', ...tmuxArgs]);
-    if (this.cancelledStarts.has(name)) { if (scoped.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
-    const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
-    if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
-    if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
-    this.sessions[name] = session;
-    } catch (error) {
-      try { await this.win?.removeReady(name); } catch (cleanupError) { this.log(cleanupError); }
-      await this.removeMcpConfig(name);
-      throw error;
-    }
-    if (windowsTools) this.win?.afterLaunch(session);
-    await this.persistSessions();
-    try {
-      await fsp.appendFile(path.join(this.stateDir, 'session-ledger.jsonl'), `${json({ at: new Date().toISOString(), name, role: input.role, provider: adapter.provider, model: input.model || null, account_dir: dir, cli_session_id: session.cli_session_id, thread_id: input.thread_id })}\n`);
-    } catch (error) { console.error('session ledger append failed:', error.message); }
-    await this.checkReady(session);
-    return session;
+    session.pending_initial = resume ? '' : adapter.firstMessage(input, promptPath, name);
+    return { commandText, windowsTools };
   }
   readyText(session, pane) {
     return adapters[session.cli]?.readyText(session, pane) || false;
@@ -1091,7 +1162,7 @@ class MachineService {
   async pollCodexSteps() {
     const live = this.liveTmux();
     if (!live) return;
-    await Promise.all(Object.values(this.sessions).filter(s => s.cli === 'codex' && s.codex_thread_id && live.has(s.name)).map(s => this.readCodexSteps(s)));
+    await Promise.all(Object.values(this.sessions).filter(s => s.cli === 'codex' && s.status !== 'switching' && s.codex_thread_id && live.has(s.name)).map(s => this.readCodexSteps(s)));
   }
   async readCodexSteps(session, { spoolOnly = false, flush = false } = {}) {
     const previous = this.stepReads.get(session.name) || Promise.resolve();
@@ -1138,8 +1209,10 @@ class MachineService {
   }
   async checkReady(session) {
     if (session.status === 'ready') return true;
+    if (session.status === 'switching') return false;
     let pane;
-    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
+    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (session.active_switch && ((live && !live.has(session.name)) || Date.now() - new Date(session.relaunched_at).getTime() >= 30_000)) await this.failedResume(session); else if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
+    if (session.active_switch && Date.now() - new Date(session.relaunched_at).getTime() >= 30_000) { await this.failedResume(session); return false; }
     const prompt = adapters[session.cli]?.answerPrompts(session, pane);
     if (prompt) {
       for (const key of prompt.keys) this.tmux(['send-keys', '-t', session.name, key]);
@@ -1156,10 +1229,12 @@ class MachineService {
         await this.persistSessions();
         await this.submit(session.name, initial);
       }
-      if (changed) await this.emitEvent({ type: 'ready', session: session.name, thread_id: session.thread_id });
+      if (changed) await this.emitEvent({ type: 'ready', session: session.name, thread_id: session.thread_id, ...(session.active_switch ? { switch_id: session.active_switch } : {}) });
+      if (session.active_switch) { session.switches[session.active_switch].state = 'done'; delete session.active_switch; await this.persistSessions(); }
       return true;
     }
-    const age = Date.now() - new Date(session.created_at).getTime();
+    const age = Date.now() - new Date(session.relaunched_at || session.created_at).getTime();
+    if (age >= 30_000 && session.active_switch) { await this.failedResume(session); return false; }
     if (age >= 30_000 && session.status !== 'stuck') {
       session.status = 'stuck'; await this.persistSessions();
       await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id, ...(session.cli === 'pi' && this.piVersionNote(session.pi_version) ? { note: this.piVersionNote(session.pi_version) } : {}) });
@@ -1183,7 +1258,7 @@ class MachineService {
     const now = Date.now();
     await Promise.all(Object.values(this.sessions)
       .filter(session => adapters[session.cli]?.answerPrompts && session.status === 'starting'
-        && now - new Date(session.created_at).getTime() < 30_000)
+        && now - new Date(session.relaunched_at || session.created_at).getTime() < 30_000)
       .map(session => this.checkReady(session)));
   }
   // A permission prompt the service relayed is cleared once the pane shows the input screen again.
@@ -1532,6 +1607,7 @@ class MachineService {
   }
   async hook(session, event, { spooled = false } = {}) {
     const current = this.managed(session);
+    if (current.status === 'switching') return { ignored: true };
     const adapter = adapters[current.cli];
     if (current.cli === 'pi' && ['turn-ended', 'turn-failed'].includes(event.type)) {
       try { current.source_transcript ||= await adapter.findTranscript(current, current.account_dir); if (current.source_transcript) await this.copyTranscript(current, current.source_transcript); } catch (error) { this.log(error); }
@@ -2282,6 +2358,7 @@ class MachineService {
           return send(response, 200, { pane: this.pane(name, true, history) });
         }
         if (request.method === 'GET' && pathBits[3] === 'transcript') return send(response, 200, await this.transcript(name, url.searchParams.get('offset') || 0, url.searchParams.get('known')));
+        if (request.method === 'POST' && pathBits[3] === 'switch' && pathBits.length === 4) return send(response, 202, await this.switchSession(name, await bodyOf(request)));
         if (request.method === 'POST' && pathBits[3] === 'submit') { const input = await bodyOf(request); await this.submit(name, String(input.text || '')); return send(response, 200, { ok: true }); }
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); this.raw(name, String(input.keys || '')); return send(response, 200, { ok: true }); }
       }

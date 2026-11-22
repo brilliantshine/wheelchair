@@ -59,7 +59,14 @@ function questionFor(session, cards, sessions) {
   return { asked_at: asked.at || asked.created_at, to: asked.to, trail, card_id: open?.id || null };
 }
 
-function buildAgents(threads, stages = {}) {
+const REMOVED_ACCOUNT = 'a removed account';
+function accountLabels(session, accounts) {
+  const name = (id) => accounts.find((a) => a.id === id)?.name || REMOVED_ACCOUNT;
+  const last = Array.isArray(session.switches) ? session.switches.at(-1) : null;
+  return { account_name: session.account ? name(session.account) : null, moved_from: last && last.from ? name(last.from) : null };
+}
+
+function buildAgents(threads, stages = {}, accounts = []) {
   return threads.filter((thread) => !thread.archived).sort((a, b) => String(b.user_at || b.created_at || '').localeCompare(String(a.user_at || a.created_at || ''))).flatMap((thread) => {
     const sessions = thread.sessions || [];
     const leads = sessions.filter((s) => s.role === 'lead').sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
@@ -74,13 +81,13 @@ function buildAgents(threads, stages = {}) {
       }
     }
     const needs = []; addNeeds(needs, { ...thread, cards });
-    const nodes = new Map(visible.map((s) => [s.name, { ...publicSession(s), context: s.context || null, activity: activity(s), children: [], has_brief: typeof s.brief === 'string' && !!s.brief }]));
+    const nodes = new Map(visible.map((s) => [s.name, { ...publicSession(s), ...accountLabels(s, accounts), context: s.context || null, activity: activity(s), children: [], has_brief: typeof s.brief === 'string' && !!s.brief }]));
     const root = nodes.get(lead.name);
     const question_paths = cards.filter(c => c.kind === 'question' && c.passes_on && !c.answered && !c.retracted_at).map(c => questionChain(c, cards).map(h => h.session));
     for (const s of visible) {
       const node = nodes.get(s.name);
       node.question = questionFor(s, cards, sessions);
-      delete node.steps; delete node.pending_ends; delete node.turns; delete node.step_counts;
+      delete node.switches; delete node.steps; delete node.pending_ends; delete node.turns; delete node.step_counts;
     }
     for (const s of visible.filter((item) => item !== lead)) {
       let parent = leadNames.has(s.started_by) ? root : nodes.get(s.started_by);
@@ -131,7 +138,7 @@ function buildAgents(threads, stages = {}) {
 async function agents(hub) {
   const threads = await hub.allThreads();
   const stages = Object.fromEntries(await Promise.all(threads.map(async (thread) => [thread.id, !thread.slug ? 'idea' : STATUS_GROUP[thread.worktree ? await readStatus(thread) : thread.last_status] || 'idea'])));
-  const leads = buildAgents(threads, stages);
+  const leads = buildAgents(threads, stages, typeof hub.state?.settings === 'function' ? (await require('./settings.js').load(hub)).accounts || [] : []);
   const registry = await hub.machines();
   const hubEntry = await hub.state.resolveMachine(registry, 'hub');
   const machines = await Promise.all(Object.entries(registry).map(async ([machine, entry]) => {

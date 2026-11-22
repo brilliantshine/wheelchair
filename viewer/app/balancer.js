@@ -42,6 +42,27 @@ async function reviewFamilies(hub, thread) {
   const [settings, machines, machineName] = await Promise.all([settingsStore.load(hub), usage.machineAccounts(hub), machineNameOf(hub, thread)]);
   return effectiveFamilies(settings, machines, machineName);
 }
+function providerAccounts(settings, threads, provider) {
+  return settings.accounts.filter(a => a.provider === provider).map(a => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter(s => s.live && s.account === a.id).length, 0) }));
+}
+function heldBack(settings, reserved, role, provider, accounts, readings, now) {
+  return provider === reserved && !['lead', 'sub-lead'].includes(role) && settings.held_back[role] === true && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
+}
+async function chooseSwitch(hub, thread, target) {
+  const [settings, readings, machines, last, threads, machineName] = await Promise.all([settingsStore.load(hub), usage.readings(hub), usage.machineAccounts(hub), usage.lastChosen(hub), hub.allThreads(), machineNameOf(hub, thread)]);
+  const now = Date.now(), provider = target.provider;
+  const accounts = providerAccounts(settings, threads, provider);
+  if (heldBack(settings, reservedProvider(settings, machines, machineName), target.role, provider, accounts, readings, now)) return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const account = usage.rank(accounts, readings, machines, settings, machineName, now, last).find(a => a.next);
+    if (!account) return null;
+    if (provider !== 'gpt') return { account };
+    const dir = account.id === `default-${provider}` ? null : `~/.wheelchair/accounts/${account.id}`;
+    try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir }); return { account }; }
+    catch { if (machines[machineName]) machines[machineName].accounts[account.id] = false; }
+  }
+  return null;
+}
 async function choose(hub, thread, role, tier, constraints = {}) {
   let { provider, not_provider: excluded } = constraints;
   if ((provider || excluded) && (!['worker', 'reviewer', 'verifier'].includes(role) || (provider && excluded) || (provider && !Object.hasOwn(PROVIDERS, provider)) || (excluded && !Object.hasOwn(PROVIDERS, excluded)))) throw appError(400, 'invalid provider constraint');
@@ -75,8 +96,8 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   const margin = {};
   for (const p of provider === 'openrouter' && !order.includes(provider) ? [...order, provider] : order) {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, slot]); } catch (e) { if (e.code === 3) continue; throw e; }
-    const accounts = settings.accounts.filter((a) => a.provider === p).map((a) => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter((s) => s.live && s.account === a.id).length, 0) }));
-    margin[p] = p === reserved && !['lead', 'sub-lead'].includes(role) && settings.held_back[role] === true && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
+    const accounts = providerAccounts(settings, threads, p);
+    margin[p] = heldBack(settings, reserved, role, p, accounts, readings, now);
     available[p] = usage.rank(accounts, readings, machines, settings, machineName, now, last).find((a) => a.next);
   }
   const normal = (exclude) => {
@@ -117,4 +138,4 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   const waitingProvider = strictReview || (['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? order[0] || null : null);
   return { wait: { provider: waitingProvider, until: resets[0] || new Date(now + 60000).toISOString(), reason: `no ${relevant.length === 1 ? relevant[0] + ' account' : 'account'} has room` } };
 }
-module.exports = { choose, slotFor, reservedProvider, reviewFamilies };
+module.exports = { chooseSwitch, choose, slotFor, reservedProvider, reviewFamilies };

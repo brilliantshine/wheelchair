@@ -102,7 +102,7 @@ function codexOverrides(mcp, { wsl = false, mount = '/mnt', replaceEntries = {} 
   return { args, tooLarge, warnings };
 }
 module.exports = {
-  provider: 'gpt', loginEnv, parseUsage, codexEntryReason, codexOverrides,
+  provider: 'gpt', loginEnv, usual, parseUsage, codexEntryReason, codexOverrides,
   usageProbe(dir, options = {}) { return run('codex', ['app-server'], { ...options, env: { ...process.env, ...loginEnv(dir) }, parse: parseUsage, messages: [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: 'wheelchair', version: '1' } } },
     { jsonrpc: '2.0', method: 'initialized' },
@@ -142,6 +142,7 @@ module.exports = {
     const redactions = [];
     for (let i = projectStart + 1; i < argv.length; i += 2) redactions.push(i);
     const names = context?.tools && !tooLarge ? Object.keys(context.mcp?.servers || {}).filter(name => { const entry = Object.hasOwn(context.replaceEntries || {}, name) ? context.replaceEntries[name] : context.mcp.servers[name]; return entry !== null && !codexEntryReason(name, entry); }) : [];
+    if (context?.resume) argv.push('resume', session.codex_thread_id);
     return { argv, warnings, redactions, loaded: c.loadedTools(names, context?.mcp, context?.mount, context?.replaceEntries) };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },

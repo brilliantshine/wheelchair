@@ -11,7 +11,7 @@ const { appError } = require('./state.js');
 const { outOfDate } = require('./ready.js');
 const settingsStore = require('./settings.js');
 const usage = require('./usage.js');
-const { choose, slotFor, reviewFamilies } = require('./balancer.js');
+const { choose, chooseSwitch, slotFor, reviewFamilies } = require('./balancer.js');
 const { PROVIDERS, cliOf, providerOf } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
@@ -503,7 +503,7 @@ async function enqueue(hub, thread, name, text, source = 'app', first = false, {
 }
 
 function held(target) {
-  return Boolean(target.permission_open || target.needs_open || (target.limited_until && Date.parse(target.limited_until) > Date.now()));
+  return Boolean(target.switching || target.permission_open || target.needs_open || (target.limited_until && Date.parse(target.limited_until) > Date.now()));
 }
 
 // `midTurn` skips only the wait for the turn to end; a held or unready session still waits.
@@ -569,6 +569,29 @@ async function sendNow(hub, thread, at) {
   return deliver(hub, thread, lead, { midTurn: true });
 }
 
+const CARRY_ON = '[wc:context switch] Your account hit its usage limit, so this conversation was moved to another account. Carry on from where you stopped.';
+async function restoreSwitchLimit(hub, target, account) {
+  const reading = (await usage.readings(hub))[account];
+  if (reading?.limited_until) target.limited_until = reading.limited_until;
+}
+async function requestSwitch(hub, threadId, name, switchId, from, account, request) {
+  await hub.withThread(threadId, async () => {
+  let accepted = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { await hub.call(request.machine, `/v1/sessions/${encodeURIComponent(name)}/switch`, 'POST', request.body); accepted = true; break; }
+    catch (error) { if (error.status || attempt === 2) break; await new Promise(resolve => setTimeout(resolve, 2000)); }
+  }
+    const thread = await hub.thread(threadId);
+    const target = thread.sessions.find(s => s.name === name);
+    if (!target || target.switching?.id !== switchId) return;
+    if (accepted) {
+      target.account = account.id;
+      (target.switches ||= []).push({ from, to: account.id, at: target.switching.at });
+      await usage.recordChosen(hub, target.provider, account.id);
+    } else { delete target.switching; await restoreSwitchLimit(hub, target, from); }
+    await hub.save(thread);
+  });
+}
 async function event(hub, payload) {
   const thread = await hub.thread(payload.thread_id);
   thread.delivered_ids ||= [];
@@ -584,6 +607,8 @@ async function event(hub, payload) {
   }
   const deliveryTargets = new Set();
   const type = payload.type;
+  if ((type === 'ready' || type === 'switch-failed') && ((target.switching && payload.switch_id !== target.switching.id) || (!target.switching && type === 'switch-failed'))) return { ok: true };
+  let pendingSwitch;
   if (['turn-ended', 'turn-failed', 'limit-hit'].includes(type) && payload.turn_id != null) {
     if (target.last_turn_id != null && payload.turn_id <= target.last_turn_id) return { ok: true, duplicate: true };
     target.last_turn_id = payload.turn_id;
@@ -599,6 +624,16 @@ async function event(hub, payload) {
     const prior = readings[target.account] || { account: target.account, machine: thread.machine, five_hour: null, week: null };
     await usage.record(hub, { ...prior, at: new Date(Math.max(Date.now(), Date.parse(prior.at) + 1 || 0)).toISOString(), limited_until: limit });
     target.limited_until = limit;
+    if (target.live && !target.switching && ['claude', 'gpt'].includes(target.provider)) {
+      const selection = await chooseSwitch(hub, thread, target);
+      if (selection) {
+        const id = crypto.randomUUID(), from = target.account, account = selection.account;
+        target.switching = { id, to: account.id, at: new Date().toISOString() };
+        delete target.limited_until;
+        delete target.quiet_check_at;
+        pendingSwitch = { id, from, account, request: { machine: thread.machine, body: { switch_id: id, account: { id: account.id, dir: account.id === `default-${target.provider}` ? null : `~/.wheelchair/accounts/${account.id}` }, model: target.model ?? null, project: path.basename(thread.project), project_dir: thread.project } } };
+      }
+    }
     target.turn_ended = true;
     target.turn_ended_at = new Date().toISOString();
   } else if (limitEnded && limit && Date.parse(limit) <= Date.now()) {
@@ -619,7 +654,18 @@ async function event(hub, payload) {
       addCard(thread, { kind: 'needs', title: "The lead's turn failed", body: `${payload.error}. The lead is still running: reply in the thread to have it try again.` }, { system: true, session: target.name });
     }
   }
+  if (type === 'switch-failed') {
+    const last = target.switches?.at(-1);
+    const from = last?.to === target.switching.to ? last.from : target.account;
+    target.account = from;
+    delete target.switching;
+    await restoreSwitchLimit(hub, target, from);
+  }
   if (type === 'ready') {
+    if (target.switching) {
+      await enqueue(hub, thread, target.name, CARRY_ON, 'app', true, { save: false, deliver: false });
+      delete target.switching;
+    }
     target.ready = true;
     target.status = 'ready';
     markIdleIfFresh(target);
@@ -663,6 +709,7 @@ async function event(hub, payload) {
     thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
   }
   await hub.save(thread);
+  if (pendingSwitch) setImmediate(() => requestSwitch(hub, thread.id, target.name, pendingSwitch.id, pendingSwitch.from, pendingSwitch.account, pendingSwitch.request).catch(() => {}));
   deliveryTargets.add(target.name);
   for (const name of deliveryTargets) await deliver(hub, thread, session(thread, name));
   return { ok: true };
@@ -861,6 +908,7 @@ async function pollDead(hub) {
           endTurn(target, target.ended_at);
           target.live = false;
           target.status = 'ended';
+          delete target.switching;
           quiet.reset(thread, target, true);
           changed = true;
           await notifyEnded(hub, thread, target);

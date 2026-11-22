@@ -125,6 +125,7 @@ function codexReply(turns, row, calls) {
 function renderTurn(turn, thread) {
   const humanText = stripStyleTrailer(turn.human);
   if (humanText.startsWith('[wc:role]') || humanText.startsWith('[wc:from ')) return [];
+  if (humanText.startsWith('[wc:context switch]')) return turn.replies;
   if (humanText.startsWith('[wc:context stub]')) {
     return [
       { type: 'context', text: `Started from ${thread.parent_title || 'parent thread'}`, context: 'stub', at: turn.at },
