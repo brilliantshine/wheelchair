@@ -210,3 +210,10 @@ the Windows server started again, the same private port worked and `last` was cl
 - Accepted Risks in `PLAN.md` stand as written.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1 on `f3136ca1`)
+
+- **Gaps fixed:** COMPLETION.md and the `viewer/AGENTS.md` router row were not in the verified commit (multi-path `--paths` written with spaces). Both committed at `05f14a7a`; see `REMEDIATION-1.md`.
+- **Rare paths recorded in PLAN.md Accepted Risks (verification-1):** simultaneous bulk both ways stalls (both verifiers); more than 100 tools in one status request gets a 400; private port equal to the tool port with the Windows server down dials its own listener once before refusing.
+- **Verifier evidence carried forward:** both verifiers re-ran C1 (Claude and Codex) and C2 live with the same results as above, and saw only the six pre-existing Node failures. The gpt verifier's full browser run had one Chromium message-composer failure that passed all three isolated retries; the claude verifier's run was cut off by its time cap with all 1055 finished tests passing.
+- No code changed in this remediation, so the validation evidence above stands.
