@@ -26,6 +26,14 @@ function fixture() {
   return { root, session, bridge, file, read };
 }
 function gate() { let release; const wait = new Promise(r => { release = r; }); return { wait, release }; }
+async function until(check, ms = 5000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    try { if (check()) return; } catch {}
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw Error(`condition not met within ${ms} ms`);
+}
 
 test('existing copy remains waiting until a post-start reconcile completes', async () => {
   const f = fixture(), ctx = await f.bridge.context(f.session);
@@ -40,7 +48,7 @@ test('existing copy remains waiting until a post-start reconcile completes', asy
 test('failed readying becomes ready after a later successful sync', async () => {
   const f = fixture(), original = f.bridge.create.bind(f.bridge); f.bridge.create = async () => { throw Error('copy failed'); };
   await f.bridge.beforeLaunch(f.session, { windowsTools: true, wrappedTools: true });
-  await Promise.all([...f.bridge.readying.values()]);
+  await until(() => f.read().state === 'failed');
   assert.equal(f.read().state, 'failed'); assert.equal(f.read().reason, 'copy failed');
   const ctx = await f.bridge.context(f.session); await original(ctx, f.session); await f.bridge.sync(ctx);
   assert.equal(f.read().state, 'ready'); assert.equal('reason' in f.read(), false);
@@ -52,17 +60,24 @@ test('context errors before a readying task write failed', async () => {
   assert.equal(f.read().state, 'failed'); assert.equal(f.read().reason, 'context failed');
 });
 
+test('beforeLaunch resolves when the ready directory cannot be created', async () => {
+  const f = fixture(); fs.mkdirSync(f.bridge.stateDir, { recursive: true }); fs.writeFileSync(path.join(f.bridge.stateDir, 'win-ready'), 'blocking file');
+  await assert.doesNotReject(f.bridge.beforeLaunch(f.session, { windowsTools: true, wrappedTools: true }));
+});
+
 test('stop removes ready file and a late readying result cannot recreate it', async () => {
   const f = fixture(), g = gate(), original = f.bridge.create.bind(f.bridge); f.bridge.create = async (...args) => { await g.wait; return original(...args); };
   await f.bridge.beforeLaunch(f.session, { windowsTools: true, wrappedTools: true });
-  const task = [...f.bridge.readying.values()][0]; assert.equal(f.bridge.onStop(f.session), undefined); await f.bridge.readyQueues.get(f.session.name);
+  const ctx = await f.bridge.context(f.session); await until(() => f.bridge.readying.has(ctx.key));
+  const task = f.bridge.readying.get(ctx.key); assert.ok(task); assert.equal(f.bridge.onStop(f.session), undefined); await f.bridge.readyQueues.get(f.session.name);
   assert.equal(fs.existsSync(f.file), false); g.release(); await task; await f.bridge.stopTasks.get(f.session.name)?.task;
   assert.equal(fs.existsSync(f.file), false);
 });
 
 test('stop serializes behind an in-progress temporary ready write and removes it', async () => {
   const f = fixture(); await f.bridge.beforeLaunch(f.session, { windowsTools: true, wrappedTools: true });
-  await Promise.all([...f.bridge.readying.values()]);
+  const ctx = await f.bridge.context(f.session); await until(() => f.bridge.readying.has(ctx.key) || f.read().state !== 'waiting');
+  await f.bridge.readying.get(ctx.key); await until(() => !f.bridge.readying.has(ctx.key));
   const token = f.bridge.readyTokens.get(f.session.name).token, g = gate(), entered = gate(), original = fsp.writeFile;
   fsp.writeFile = async (file, ...args) => { const r = await original(file, ...args); if (String(file).includes('/win-ready/.')) { entered.release(); await g.wait; } return r; };
   try {

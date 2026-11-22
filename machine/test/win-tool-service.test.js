@@ -29,7 +29,15 @@ function fixture() {
   return { machine, name, ready, config, log, worktree, release, restore() { for (const key of Object.keys(process.env)) if (!(key in prior)) delete process.env[key]; Object.assign(process.env, prior); } };
 }
 async function start(f) { return f.machine.start({ name: f.name, role: 'worker', cli: 'claude', thread_id: 'test', token: 'token', worktree: f.worktree }); }
-async function finish(f) { f.release(); await Promise.allSettled([...f.machine.win.readying.values(), ...f.machine.win.stopTasks.values()].map(v => v.task || v)); f.restore(); }
+async function until(check, ms = 5000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    try { if (check()) return; } catch {}
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw Error(`condition not met within ${ms} ms`);
+}
+async function finish(f) { await until(() => f.machine.win.readying.size > 0); assert.ok(f.machine.win.readying.size > 0); f.release(); await Promise.allSettled([...f.machine.win.readying.values(), ...f.machine.win.stopTasks.values()].map(v => v.task || v)); f.restore(); }
 test('WSL Claude writes wrapped config and waiting before tmux; stop removes both', async () => {
   const f = fixture(); try {
     const session = await start(f); assert.equal(JSON.parse(fs.readFileSync(f.log)).state, 'waiting');
@@ -44,6 +52,7 @@ for (const mode of ['tmux failure', 'cancelled start']) test(`${mode} removes bo
     if (mode === 'tmux failure') process.env.FAKE_FAIL = '1';
     else { const before = f.machine.win.beforeLaunch.bind(f.machine.win); f.machine.win.beforeLaunch = async (...args) => { await before(...args); f.machine.cancelledStarts.add(f.name); }; }
     await assert.rejects(start(f)); assert.equal(fs.existsSync(f.config), false); assert.equal(fs.existsSync(f.ready), false);
+    await until(() => f.machine.win.readying.size > 0); assert.ok(f.machine.win.readying.size > 0);
   } finally { await finish(f); }
   assert.equal(fs.existsSync(f.ready), false);
 });
