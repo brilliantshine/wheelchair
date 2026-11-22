@@ -2233,3 +2233,37 @@ test('nonblocking system needs dismiss without notifying lead, including stale h
     }
   });
 });
+
+test('stub additions validate and append only to unopened candidates', async () => {
+  const base = { kind: 'stub', title: 'New work', summary: 'More detail', depends_on_parent: false };
+  const targetId = 'a'.repeat(12);
+  for (const value of [{ ...base, adds_to: targetId, depends_on_parent: true }, { ...base, adds_to: targetId, commits: [] }]) assert.equal(validate('stub', value).reason, "an addition can't depend on this thread's unmerged work; post your own stub");
+  for (const value of [{ ...base, duplicate: false }, { ...base, adds_to: 'ABC' }, { ...base, adds_to: targetId, duplicate: 'yes' }]) assert.equal(validate('stub', value).ok, false);
+  await withContext(async context => {
+    const parent = await thread(context);
+    const lead = parent.sessions[0].name;
+    const created = await card(context, parent.id, lead, { ...base, title: 'Target', summary: 'Original context' });
+    const id = created.body.thread_id;
+    const hub = new Hub({ stateDir: context.state });
+    const beforeCount = (await hub.state.allThreads()).length;
+    const parentName = parent.title || parent.slug || parent.project.split('/').filter(Boolean).at(-1) || parent.id;
+    const date = new Date().toISOString().slice(0, 10);
+    for (const duplicate of [false, true]) {
+      const result = await card(context, parent.id, lead, { ...base, adds_to: id, duplicate });
+      assert.equal(result.status, duplicate ? 200 : 202); assert.equal(result.body.thread_id, id); assert.equal(result.body.target_title, 'Target');
+    }
+    assert.equal((await hub.thread(id)).context, `Original context\n\nAdded from "${parentName}" (${date}): More detail\n\nAlso came up in "${parentName}" (${date}): More detail`);
+    assert.equal((await hub.state.allThreads()).length, beforeCount);
+    for (const invalid of [{ ...base, adds_to: id, depends_on_parent: true }, { ...base, adds_to: id, commits: [] }, { ...base, duplicate: true }]) assert.equal((await card(context, parent.id, lead, invalid)).status, 422);
+    const targetFile = path.join(context.state, 'threads', `${id}.json`);
+    for (const [change, reason] of [[{ project: '/elsewhere' }, 'no such stub'], [{ archived: true }, 'that stub is archived, handed off or finished'], [{ sessions: [{ role: 'lead' }] }, 'that stub has started; post your own stub']]) {
+      const target = await hub.thread(id); const original = structuredClone(target);
+      Object.assign(target, change); await fs.writeFile(targetFile, JSON.stringify(target));
+      const count = (await hub.thread(parent.id)).cards.length;
+      const result = await card(context, parent.id, lead, { ...base, adds_to: id });
+      assert.equal(result.status, 422); assert.equal(result.body.detail, reason);
+      assert.equal((await hub.thread(id)).context, original.context); assert.equal((await hub.thread(parent.id)).cards.length, count);
+      await fs.writeFile(targetFile, JSON.stringify(original));
+    }
+  });
+});

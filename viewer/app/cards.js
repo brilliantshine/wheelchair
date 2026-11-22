@@ -165,6 +165,22 @@ async function acceptCard(hub, payload) {
       crossThread = target.id;
     }
 
+    if (checked.card.kind === 'stub' && checked.card.adds_to !== undefined) {
+      const peers = require('./peers.js');
+      await hub.withThread(checked.card.adds_to, async () => {
+        let target;
+        try { target = await hub.thread(checked.card.adds_to); }
+        catch (error) { if (error.status === 404) throw appError(422, 'no such stub'); throw error; }
+        if (!target.stub || target.project !== thread.project || !(await peers.sameMachine(hub, await hub.machines(), thread.machine, target.machine))) throw appError(422, 'no such stub');
+        if (!peers.candidateStub(hub, target)) throw appError(422, 'that stub is archived, handed off or finished');
+        if ((target.sessions || []).length) throw appError(422, 'that stub has started; post your own stub');
+        const label = checked.card.duplicate ? 'Also came up in' : 'Added from';
+        target.context += `\n\n${label} "${peers.threadName(thread)}" (${new Date().toISOString().slice(0, 10)}): ${checked.card.summary}`;
+        await hub.save(target);
+        Object.assign(checked.card, { thread_id: target.id, target_title: peers.threadName(target) });
+      });
+    }
+
     const stored = ['image', 'file'].includes(checked.card.kind) ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
     const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name, deliveryId: payload.delivery_id });
     if (card.kind === 'done') {
@@ -189,7 +205,7 @@ async function acceptCard(hub, payload) {
         thread.queues[target.name] = target.queue;
       }
     }
-    if (card.kind === 'stub') {
+    if (card.kind === 'stub' && !card.adds_to) {
       const child = await hub.createStub(thread, card);
       card.thread_id = child.id;
     }
