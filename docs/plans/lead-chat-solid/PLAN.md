@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Hitting the cap also shows a small line in the sender's thread: "Message limit reached with <title>" | Collin sees a loop was stopped without a card to answer | defaulted |
 | 7 | The restart context gains `cross_thread_messages`: the latest 20 cross-thread messages this thread's leads sent or received, each with time, direction, other thread id and title, and text; `recent_messages` is unchanged | Keeps user messages from being crowded out; outgoing ones were already in cards, incoming ones were missing (`viewer/app/threads.js:144`) | defaulted |
 | 8 | The "Talked with" line links to the other thread | One tap to see what the other thread is doing | defaulted |
+| 9 | Holding (Decision 2) also applies to a stub thread never opened: the message is delivered after its `[wc:context stub]` message | Same rule as a restarting lead; the stub's lead learns of it on first open | defaulted |
 
 ## Spec
 
@@ -60,3 +61,5 @@ _Written once Open Questions are settled._
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-21: lead of thread 2c25927136e1 (Avoid duplicate stubs) asked about clashes; it changes `listLeads` output and adds an app message to stub leads. Not an overlap: this plan does not touch `listLeads`; answered the peer.
