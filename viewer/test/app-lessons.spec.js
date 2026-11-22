@@ -274,6 +274,30 @@ test.describe('Settings', () => {
     expect((await api(page, '/settings')).lessons.reviewer.map((l) => l.text)).toEqual(['Have it.', 'Add me.']);
   });
 
+  test('a refused Save keeps Restore disabled with unsaved edits and Add disabled while the role is full', async ({ page }) => {
+    const id = (i) => 'L0002' + i.toString(16).padStart(2, '0');
+    const twelve = Array.from({ length: 12 }, (_, i) => lesson(id(i), 'Entry ' + i));
+    const history = { [id(0)]: { role: 'worker', versions: [version('v1', 'Older wording.')] } };
+    const waiting = [{ role: 'worker', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wq' }];
+    await seed({ worker: twelve }, { lesson_history: history, lesson_waiting: waiting });
+    await openSettings(page, '/app/settings#templates/lessons/worker');
+    const row = page.locator('.lesson-row[data-id="' + id(0) + '"]');
+    await row.getByRole('button', { name: 'History (1)' }).click();
+    await row.locator('textarea').fill('My draft for the first.');
+    // An agent removes that lesson and the role is full again.
+    await seed({ worker: [...twelve.slice(1), lesson(id(12), 'Entry 12')] }, { lesson_history: history, lesson_waiting: waiting });
+    await page.locator('#save-lessons').click();
+    await expect(page.locator('.inline-err')).toHaveText('an agent removed a lesson you edited; reload to see the current list');
+    const restores = page.locator('.lessons-edit .restore-lesson');
+    await expect(restores).toHaveCount(1);
+    await expect(restores).toBeDisabled();
+    await expect(page.locator('#restore-hint')).toBeVisible();
+    await expect(page.locator('#restore-hint')).toHaveText('Save or undo your changes first');
+    await expect(page.locator('.lesson-waiting .add-waiting')).toBeDisabled();
+    await expect(page.locator('.lesson-waiting .add-waiting')).toHaveAttribute('title', 'Remove one first');
+    await expect(page.locator('#save-lessons')).toBeEnabled();
+  });
+
   test('Add is disabled while the role is full', async ({ page }) => {
     const twelve = Array.from({ length: 12 }, (_, i) => lesson('L0001' + i.toString(16).padStart(2, '0'), 'Full ' + i));
     await seed({ mapper: twelve }, { lesson_waiting: [{ role: 'mapper', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wf' }] });

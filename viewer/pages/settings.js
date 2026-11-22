@@ -889,6 +889,8 @@
       const row = n.closest('.lesson-row');
       n.disabled = busy || (n.matches('.lesson-text') && !!row && lessonEdit.removals.has(row.dataset.id));
     });
+    // Idle again: the buttons the renderer disables by a rule get that rule back.
+    if (!busy) { refreshRestore(); refreshAdd(); }
   }
 
   const STALE_MS = 90 * 24 * 3600 * 1000;
@@ -898,6 +900,7 @@
   const lessonHistory = (role) => Object.entries(data.lesson_history || {}).filter(([, e]) => e.role === role);
   const lessonRemoved = (role) => lessonHistory(role).filter(([, e]) => e.removed && e.versions.length).sort((a, b) => Date.parse(b[1].removed.at) - Date.parse(a[1].removed.at));
   const lessonWaiting = (role) => (data.lesson_waiting || []).filter((w) => w.role === role);
+  const lessonFull = (role) => lessonList(role).length >= 12;
   const lessonDirty = () => !!lessonEdit && (lessonEdit.removals.size > 0 || lessonList(lessonEdit.role).some((item) => lessonEdit.texts[item.id] !== undefined && lessonEdit.texts[item.id] !== item.text));
 
   // Every lessons route answers { lessons, history, waiting } for the role; take them in as they are.
@@ -962,6 +965,12 @@
     if (hint) hint.hidden = !(dirty && document.querySelector('.lessons-edit .restore-lesson'));
   }
 
+  // Add waits for room in a full role; same rule the waiting section renders with.
+  function refreshAdd() {
+    const full = lessonFull(lessonEdit.role);
+    document.querySelectorAll('.lessons-edit .add-waiting').forEach((b) => { b.disabled = full || !!lessonEdit.saving; b.title = full ? 'Remove one first' : ''; });
+  }
+
   function versionRows(id, entry, errHost, dirty) {
     const open = lessonEdit.history && lessonEdit.history.has(id);
     if (!open) return null;
@@ -1007,7 +1016,7 @@
   function renderWaiting(role, errHost) {
     const waiting = lessonWaiting(role);
     if (!waiting.length) return null;
-    const full = lessonList(role).length >= 12;
+    const full = lessonFull(role);
     return h('section', { class: 'lesson-waiting' },
       h('h3', { text: 'Waiting to add' }),
       full ? h('p', { class: 'hint', text: 'Remove one first' }) : null,
