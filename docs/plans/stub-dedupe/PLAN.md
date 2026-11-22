@@ -233,3 +233,4 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 - 2026-11-22 — Choice: R1-1, viewer/app/routes.js: routes.js now requires cards.js at the top, next to its other requires.
 - 2026-11-22 — R1-1 accepted (band: scout): a replay is marked with a non-enumerable `REPLAY` symbol after `updateThread`, and routes.js:462 reads it; bodies unchanged. Focused suites re-run: 178 pass. My full run stalled in app-usage and server tests while other threads' suites loaded the machine; both files pass alone (83/83), and the worker's full retry passed 835/835.
 - 2026-11-22 — Verification attempt 2 started.
+- 2026-11-22 — Verification attempt 2 (e598ebbc): both verifiers (claude-opus-5-5, gpt-6.2-sol) PASS, no gaps, 0 rare paths. Their only failures were load flakes in untouched files, each passing alone.

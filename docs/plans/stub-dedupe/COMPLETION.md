@@ -2,7 +2,19 @@
 slug: stub-dedupe
 date: 2026-11-22
 implemented-by: "T1 standard (gpt-6.1-terra), T2 standard (claude-sonnet-5-5), T3 standard (gpt-6.1-terra); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5
+    checks: "T1, T3 gpt-6.1-terra; T2 claude-sonnet-5-5"
+  - round: 1
+    lane: gpt-6.2-sol
+    checks: "T1, T3 gpt-6.1-terra; T2 claude-sonnet-5-5"
+  - round: 2
+    lane: claude-opus-5-5
+    checks: "T1, T3, R1-1 gpt-6.1-terra; T2 claude-sonnet-5-5"
+  - round: 2
+    lane: gpt-6.2-sol
+    checks: "T1, T3, R1-1 gpt-6.1-terra; T2 claude-sonnet-5-5"
 ---
 
 # Completion Report — No duplicate stubs
