@@ -39,6 +39,29 @@ test('Keep clears staleness without changing the saved lesson or history', async
   assert.ok(v.lessons.worker[0].kept_at); assert.equal(v.lessons.worker[0].saved_by, original.saved_by); assert.equal(v.lessons.worker[0].saved_at, saved_at);
   assert.deepEqual(v.lesson_history, {}); assert.equal(s.isLessonStale(v.lessons.worker[0]), false);
 });
+test('agent removal appends the current text to existing history', async () => {
+  const h = await hub(); const lesson = await s.applyLesson(h, card('add'), 'worker', '/p', 'one');
+  await s.applyLesson(h, card('replace', { lesson: lesson.id, text: 'Changed' }), 'worker', '/p', 'one');
+  const before = await s.load(h); const count = before.lesson_history[lesson.id].versions.length; const text = before.lessons.worker[0].text;
+  assert.notEqual(text, before.lesson_history[lesson.id].versions.at(-1).text);
+  await s.applyLesson(h, card('remove', { lesson: lesson.id }), 'worker', '/p', 'one');
+  const entry = (await s.load(h)).lesson_history[lesson.id];
+  assert.equal(entry.versions.length, count + 1); assert.equal(entry.versions.at(-1).text, text); assert.equal(entry.versions.at(-1).changed_by, 'agent'); assert.equal(entry.removed.by, 'agent');
+});
+test('a second merge skips a lesson already waiting', async () => {
+  const h = await hub();
+  await s.update(h, (v) => { for (let i = 0; i < 12; i++) v.lessons.worker.push({ id: `L${String(i).padStart(6, '0')}`, text: `Fill ${i}`, saved_by: 'agent', saved_at: date }); });
+  const incoming = [item('Waiting lesson')];
+  assert.equal((await s.mergeIncoming(h, incoming, { source: 'file', known: [] })).waiting, 1);
+  const before = (await s.load(h)).lesson_waiting;
+  assert.deepEqual(await s.mergeIncoming(h, incoming, { source: 'file', known: [] }), { added: 0, skipped: 1, invalid: 0, unknown_project: 0, waiting: 0 });
+  assert.deepEqual((await s.load(h)).lesson_waiting, before);
+});
+test('merge matches trimmed text in the same scope', async () => {
+  const h = await hub(); await s.mergeIncoming(h, [item('Run lint')], { source: 'file', known: [] });
+  const counts = await s.mergeIncoming(h, [item('  Run lint  ')], { source: 'file', known: [] });
+  assert.equal(counts.skipped, 1); assert.equal(counts.added, 0);
+});
 test('history caps, removals, merge and waiting', async () => {
   const h = await hub(); const first = await s.applyLesson(h, card('add'), 'worker', '/p', 'one');
   for (let i = 0; i < 23; i++) await s.applyLesson(h, card('replace', { lesson: first.id, text: `Edit ${i}` }), 'worker', '/p', 'one');
@@ -146,7 +169,9 @@ test('file limits, known directories, waiting recheck and normalization', async 
     assert.equal((await s.load(h)).lessons.worker[0].project, '/saved');
     r = await api(app, '/settings/lessons/import', { method: 'POST', body: 'x'.repeat(1024 * 1024) }); assert.equal(r.status, 413);
     await s.update(h, (v) => { v.lesson_waiting.push({ ...item('Known', { project: '/saved' }), source: 'file', received_at: date, wid: 'already' }); });
+    const beforeAlready = (await s.load(h)).lessons.worker;
     assert.equal((await s.waitingAction(h, 'worker', 'already', 'add')).result, 'already');
+    const afterAlready = await s.load(h); assert.equal(afterAlready.lesson_waiting.some((entry) => entry.wid === 'already'), false); assert.deepEqual(afterAlready.lessons.worker, beforeAlready);
     await assert.rejects(s.waitingAction(h, 'worker', 'missing', 'add'), { status: 409 });
     const waitingInput = { ...item('wait', { thread: 'thread-wait', provider: 'gpt', project: '/saved' }), source: 'file', received_at: date, wid: 'one' };
     const n = s.normalize({ lessons: { worker: [{ id: 'L123456', ...item('ok'), kept_at: date }] }, lesson_waiting: [waitingInput, { ...waitingInput, wid: 'two' }] });
