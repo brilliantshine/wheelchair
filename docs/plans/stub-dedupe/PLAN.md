@@ -1,6 +1,6 @@
 ---
 slug: stub-dedupe
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-21
 ---
 
@@ -42,6 +42,21 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ## Spec
 
+### Flow
+
+```mermaid
+flowchart TD
+  A[Lead is about to post a stub] --> X{Exempt: two-part follow-up,<br/>missed merge, needs parent or commits?}
+  X -- yes --> N[Post its own stub as its rules say]
+  X -- no --> B[List stubs in this project<br/>with what each is for]
+  B --> C{Matches an unopened stub?}
+  C -- same --> D[Add a 'came up again' note to it]
+  C -- close, and can wait like it --> E[Add this part to its description]
+  C -- no --> F[Post a new stub,<br/>naming any related opened thread]
+  D -- refused --> F
+  E -- refused --> F
+```
+
 ### Terms
 - **Stub thread**: a thread whose record has `stub: true` (created by `createStub`, `viewer/app/threads.js:92`). Its `context` is the summary its first lead receives when the user opens it (`openStub`, `viewer/app/threads.js:109`).
 - **Candidate**: a stub thread in the caller's project, on the same resolved machine, not archived, not frozen (handed off), with no current `done` card (`currentDone`, `viewer/app/cards.js:51`) and no `merged` card (`viewer/app/threads.js:483`).
@@ -69,14 +84,16 @@ On success it appends to the target's `context` `\n\nAdded from "<parent title>"
 
 ### 3. What the user sees
 - Parent thread: the stub card (`viewer/pages/thread.js:1219`) with `adds_to` shows heading "Added to another thread" (duplicate: "Already a thread for this"), `target_title`, the summary, and "Go to it" to `thread_id`. Without `adds_to`, unchanged.
-- Target thread: its unopened page already renders `context` and re-renders when it changes (`viewer/pages/thread.js:529`, `:1434`), so additions appear there; its first lead receives them in `[wc:context stub]`.
+- Target thread: its unopened page already renders `context` and re-renders when it changes (`viewer/pages/thread.js:529`, `:1434`), so additions appear there; that paragraph keeps line breaks (`white-space: pre-line`) so each addition shows as its own paragraph. Its first lead receives them in `[wc:context stub]`.
 
 ### 4. Protocol text
 `protocol/app/lead.md`, Stubs section, gains a "Before posting a stub" rule: run `session leads` and read entries with `stub: true`, comparing by `summary`.
 - Same thing, unopened (`takes_additions: true`): post the stub card with `adds_to` and `duplicate: true`, summary one line on where it came up.
 - Same thing or close, opened (`takes_additions: false`): post your own stub as today, naming that thread as related in the summary. An opened stub never stops a new stub.
 - Close (the stub's work would naturally cover it with a small addition) and unopened: post with `adds_to`, summary saying what to add and what this thread knows. If the entry's `waits_on_parent` is true, add only if your part can also wait until that parent merges; otherwise post your own stub.
+- When an unopened and an opened stub both match, the unopened rule wins; name the opened one in the summary.
 - Otherwise: post a new stub as today, naming any related stub in the summary.
+- This comparison runs whenever a stub is about to be posted, at any step; the wait for PLAN.md in "Other leads on this machine" applies only to overlap looks.
 - On any refusal of a duplicate note or addition: post a new stub naming the related one.
 - These stubs skip this comparison and are always posted as their own rules say (their existing duplicate checks still apply): the two-part follow-up stub, a missed-merge stub, and any stub needing `depends_on_parent: true` or `commits`.
 - "Other leads on this machine" lists the new entry fields (`stub`, `summary`, `takes_additions`, `waits_on_parent`) and says unopened stubs now appear with `lead: null`. It and "Overlap questions" gain one line: entries with `takes_additions: true` (unopened stubs) are not overlaps and are used only by this rule; opened stubs stay in the overlap checks as today.
@@ -177,6 +194,10 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | No precedence when both an opened and an unopened stub match | upheld | Fixed: Spec 4 precedence bullet |
+| mechanics | minor | Same precedence gap | upheld | Fixed with it |
+| mechanics | minor | PLAN.md wait for overlap looks could be read as delaying the stub comparison | upheld | Fixed: Spec 4 says the comparison runs at any step |
+| mechanics | minor | Unopened page collapses blank lines, so additions run into the summary | upheld | Fixed: Spec 3 `pre-line` |
 
 ## Implementation Tasks
 
@@ -188,3 +209,4 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 - 2026-11-21: Overlap check with f4c68e8cbb15 (Make lead-to-lead chat solid): its lead says it does not change listLeads or its output; it changes cross-thread delivery. No clash; not an overlap for this plan.
 - 2026-11-21: Deferred row 1 (hold additions for a stopped lead) removed: moot once additions go only to unopened stubs.
 - 2026-11-21: Review budget reached (rounds 2-4 not clean since Collin's last decision). Recurring objection: deciding an opened stub already covers work. Proposed cut: opened stubs never suppress a stub; the new stub names the related one.
+- 2026-11-21: Round 5 clean (four minor findings fixed). Ready check: hub and machine service answer (`session list`), claude and codex CLIs installed, Codex preflight passes (token fresh). Ready.
