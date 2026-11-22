@@ -317,6 +317,7 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Spec 1 idle reader closed: `--probe-ms`, socket probe, parent pipe read-end check, parent gone; tests incl. OS-pipe via python3 | `machine/lib/win-tool-proxy.js`, `machine/test/win-tool-proxy.test.js`, `machine/test/fixtures/win-tool/` (new helpers only) | standard / gpt-6.1-terra | wc-608d17e6da4d-worker | `node --test machine/test/win-tool-proxy.test.js`; `bash machine/test/run.sh` | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
