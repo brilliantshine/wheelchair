@@ -248,6 +248,29 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await expect(row(page, 'kimi')).toContainText('Installing…');
     });
 
+    test('a Cancel that fails after a poll tick still says why', async ({ page }) => {
+      const s = status();
+      const world = {
+        harnesses: (r) => json(r, s),
+        install: async (r) => {
+          if (!r.request().url().includes('/kimi/')) return json(r, { state: 'idle' });
+          if (r.request().method() === 'DELETE') {
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            return json(r, { error: 'nope' }, 500);
+          }
+          return json(r, { state: 'running', output_tail: 'working' });
+        },
+        put: (r) => json(r, {}),
+      };
+      await stub(page, world);
+      await openPage(page, context, '/app/settings#harnesses');
+      const cancel = row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' });
+      await cancel.click();
+      await expect(row(page, 'kimi')).toContainText('Cancelling…');
+      await expect(row(page, 'kimi').getByRole('alert')).toHaveText("Couldn't cancel: hub isn't reachable.", { timeout: 8000 });
+      await expect(cancel).toBeVisible();
+    });
+
     test('no Cancel while the row says it cannot reach the machine', async ({ page }) => {
       let n = 0;
       const s = status();

@@ -1718,9 +1718,9 @@
     let res = null;
     try { res = await fetch(API + `/machines/${encodeURIComponent(machine)}/harnesses/${encodeURIComponent(provider)}/install`, { method: 'DELETE', signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }); } catch { res = null; }
     const now = hz.jobs[key];
-    if (!now || now !== job) return;
+    if (!now || now.state !== 'running') return;
     if (res && (res.status === 202 || res.status === 409)) return;
-    job.cancelling = false;
+    now.cancelling = false;
     hz.rowErr[provider] = (!res || res.status >= 500) ? `Couldn't cancel: ${machine} isn't reachable.` : `Couldn't cancel: update wheelchair on ${machine}.`;
     paintHarnesses();
   }
