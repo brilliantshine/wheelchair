@@ -83,8 +83,8 @@ switch selector (new, in `viewer/app/balancer.js`), not the public `choose()`, w
 constraint rules refuse a pinned provider for leads, sub-leads and mappers and drop it for
 reviewers and verifiers (`viewer/app/balancer.js:45-80`). The switch selector:
 
-- considers only the session's provider and the thread's machine, and the session's model
-  slot;
+- considers only the session's provider and the thread's machine (the session keeps its
+  saved model and effort, so no model slot or `codex/model.sh` check is involved);
 - removes the limited account, and any account whose reading has `limited_until` in the
   future, *before* ranking;
 - applies the same per-provider rules `choose()` applies for that role: the lead reserve
@@ -101,25 +101,29 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
 **Hub**, once an account is chosen, in this order:
 
 1. Record the limit as today (the old account's reading gets `limited_until`).
-2. Set `target.switching = {to, at}`. While it is set, nothing is delivered to the session
+2. Set `target.switching = {id, to, at}`, where `id` is a new `switch_id`. While it is set, nothing is delivered to the session
    (add it to `held()`, `viewer/app/sessions.js:505-511`). Only then delete
    `target.limited_until` and cancel its pending reset `Continue.`
    (`viewer/app/sessions.js:886-893`). The old account's reading keeps its `limited_until`.
-3. Send the machine the switch request (new endpoint) with a `switch_id` and the full
-   launch payload the hub would send to start this session (built by the same code as a
-   start, `viewer/app/sessions.js:353-379`: model, effort, CLI, role, permissions, project
-   tools), with the new account in place of the old. This works the same for sessions that
-   were already running before this change. The machine answers at once that it has accepted it and does the work in
+3. Send the machine the switch request (new endpoint) with the `switch_id`, the new
+   account (id and directory), and the session's own launch values from the hub's session
+   record, never current Settings: `model`, `effort`, `permission_mode`, `codex_mode`. From
+   now on a start saves `permission_mode` and `codex_mode` on the hub session record beside
+   `model` and `effort` (`viewer/app/sessions.js:353`). A session without them (started
+   before this change) is not switched: it keeps today's hold. The machine answers at once that it has accepted it and does the work in
    the background, so the client's short timeout (`viewer/app/machine-client.js:66`) is
    not a problem. On a network error the hub retries the same request (same `switch_id`;
    the machine treats a repeat as the same switch). If it still cannot reach the machine,
-   it gives up the switch: clears `switching`, and restores today's hold-until-reset and
+   or the machine refuses the request (any HTTP error, such as a 404 from a machine on an
+   older build), it gives up the switch: clears `switching`, and restores today's hold-until-reset and
    `Continue.`
 4. On acceptance: set `target.account` to the new account, append `{from, to, at}` to
    `target.switches`, `recordChosen` the new account. Save.
-5. When a `ready` event carrying this `switch_id` arrives (the machine adds the session's
-   current `switch_id` to `ready` and `switch-failed`; the hub ignores either if the id is
-   not `target.switching`'s): queue the carry-on
+5. While `switching` is set, only a `ready` or `switch-failed` carrying
+   `target.switching.id` completes it (the machine adds its current `switch_id` to both);
+   others are ignored. With no `switching` set, `ready` works as today. Quiet reminders
+   (`viewer/app/quiet.js`) are not armed or fired for a session while `switching` is set.
+   On the matching `ready`: queue the carry-on
    message first, ahead of anything held, then clear `switching` so delivery resumes.
    If instead the session ends, clear `switching`; today's dead-session handling takes over
    (Decision 15).
@@ -136,8 +140,10 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
      (`machine/adapters/codex.js:114-125`, `:149`).
    Default accounts use the CLI's own default directory (`~/.claude`, `~/.codex`); others
    `~/.wheelchair/accounts/<id>`.
-   Before step 1 it keeps a snapshot of the session record.
-3. Updates the session record: `account`, `account_dir`, `switch_id`,
+   Before step 1 it keeps a snapshot of the session record. The `switch_id` and the
+   switch's outcome are kept outside the snapshot, so a restore never erases them and a
+   repeated request with the same id gets the same outcome.
+3. Updates the session record: `account`, `account_dir`,
    `status = 'switching'` and `ready = false` (the readiness poller,
    `machine/service.js:1117-1165`, ignores a `switching` session), `source_transcript`
    pointing at the copied file, and clears `last_reading` and the statusline throttle
@@ -147,12 +153,20 @@ No account left: today's hold-until-reset and `Continue.`, unchanged.
    unchanged, since the copied file is identical; they reset only if the CLI turns out to
    write a new file on resume (the first build task finds out; then they start at 0 of that
    new file).
-4. Builds the relaunch command from the hub's launch payload with the same
-   launch-preparation code a normal start uses (`machine/service.js:804-945`: project
-   tools, project keys, MCP config, role instructions, model, effort, permissions), with the
-   new account's environment (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`, none for a default
-   account), and resume: Claude `--resume <session-id>`, Codex
-   `resume <thread-id>`. Nothing is rebuilt from stored, redacted arguments.
+4. Builds the relaunch command. Factor the command-building slice out of `startIn`
+   (`machine/service.js:800-950`) so a start and a switch share it:
+   - **Reused:** the adapter's launch command and environment, project tools, project keys
+     and MCP config, role instructions.
+   - **Inputs:** `worktree`, `branch`, `default_branch`, session name and token, and `cli`
+     from the machine session record; `model`, `effort`, `permission_mode`, `codex_mode`
+     from the switch request; the new account's environment (`CLAUDE_CONFIG_DIR` /
+     `CODEX_HOME`, none for a default account); resume: Claude `--resume <session-id>`,
+     Codex `resume <thread-id>`.
+   - **Skipped:** worktree creation and the worker worktree reservation
+     (`machine/service.js:812-825`, `:626-656`), the first message (`pending_initial` stays
+     empty, `:925`, so the carry-on message is the only input), the session-ledger line,
+     and the tmux `new-session` call.
+   Nothing is rebuilt from stored, redacted arguments.
 5. Replaces the CLI process with `tmux respawn-pane -k` on the session's pane, so the tmux
    session itself never goes away, then sets `status = 'starting'` so the readiness poller
    watches the new process.
@@ -211,16 +225,18 @@ resets; other providers; changing how accounts are signed in.
     switches;
   - the switch selector finds an alternate for a lead, a mapper and a reviewer, and
     honours the lead reserve for a worker;
-  - an unreachable machine, and a `switch-failed` event, each restore today's hold on the
-    old account;
+  - an unreachable machine, a refused request (404), and a `switch-failed` event, each
+    restore today's hold on the old account; a session without saved permission modes is
+    not switched; no quiet reminder fires while `switching` is set;
   - a `ready` or `switch-failed` with another `switch_id` is ignored.
 - New machine tests (fake CLIs): the switch copies the Claude and Codex conversation files
   into the new account directory and relaunches with the resume arguments and the new
   environment; the old file is left in place; the relaunch uses `respawn-pane -k` and the
   same launch preparation as a start (project tools present); a resume that exits, and one
   that misses readiness, each end the session without a `stuck` event; a repeated
-  `switch_id` does not switch twice; the relaunch uses the payload's model, not the
-  account's default; hook events for a `switching` session are dropped; a copy,
+  `switch_id` does not switch twice; the relaunch uses the request's model, effort and
+  permission modes, the session's existing worktree and branch, creates no worktree and
+  sends no first message; `switch_id` and outcome survive a snapshot restore; hook events for a `switching` session are dropped; a copy,
   launch-preparation or `respawn-pane` failure emits `switch-failed`, leaves the old CLI
   running and restores the whole session record;
   after a switch `last_reading` is empty until the new account reports one.
@@ -349,6 +365,15 @@ resets; other providers; changing how accounts are signed in.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Reusing the start payload creates a new worktree, losing the agent's work | upheld (`machine/service.js:812`, `:820`) | §3 machine step 4: worktree and branch from the session record; creation skipped |
+| intent | major | Shared preparation re-sends the first message on resume | upheld (`machine/service.js:925`) | §3 machine step 4: `pending_initial` empty |
+| intent | minor | Spec should list what is reused and what is skipped | upheld | §3 machine step 4 lists both |
+| mechanics | blocking | `switch_id` not in the hub hold; snapshot restore erases it; untagged ordinary `ready` must still work | upheld | §3 hub steps 2 and 5; machine keeps id and outcome outside the snapshot |
+| mechanics | blocking | Start path reads current Settings, so a switch could change permission modes | upheld (`viewer/app/sessions.js:319`, `:375`) | §3 hub step 3: values from the session record; pre-change sessions not switched |
+| mechanics | major | Model slot is not saved on the session | upheld | §2: no slot check; session keeps its model |
+| mechanics | major | First message re-sent on resume | upheld | Same fix as intent major |
+| mechanics | major | An explicit refusal (404 from an older machine) has no outcome | upheld | §3 hub step 3: refusal restores the hold |
+| mechanics | minor | Quiet reminders can fire during a switch | upheld | §3 hub step 5: no quiet while `switching` |
 
 ## Implementation Tasks
 
