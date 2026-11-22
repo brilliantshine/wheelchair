@@ -67,10 +67,11 @@ Spec 1 at commit `59b09dba`). MAP.md's material on both describes that work, not
 ### 1. Idle reader closed (D4 superseded by D9)
 
 Every 2 s (`--probe-ms`, default 2000, added to the option list at
-`machine/lib/win-tool-proxy.js:10-14` for tests; `wrapEntries` does not pass it), while stdout has no write in flight, the
-go-between runs both checks; either failing calls `stdoutLost()`, which shuts the tool down as today (`machine/lib/win-tool-proxy.js:40,63`):
+`machine/lib/win-tool-proxy.js:10-14` for tests; `wrapEntries` does not pass it), the
+go-between runs the checks below; any failing calls `stdoutLost()`, which shuts the tool down as today (`machine/lib/win-tool-proxy.js:40,63`):
 - **Socket probe** (stdout is a socket, `/proc/self/fd/1` reads `socket:[...]`, as when a
   Node CLI spawns it): `fs.writeSync(1, Buffer.alloc(0))`; `EPIPE` or any error fails.
+  Skipped while a stdout write is in flight, so it cannot interleave with output.
 - **Pipe reader check** (stdout is a pipe, `pipe:[N]`, as when Codex spawns it): the check
   fails when the parent (`process.ppid` read at start) no longer has any fd in
   `/proc/<ppid>/fd` linking to the same `pipe:[N]` whose `/proc/<ppid>/fdinfo/<fd>` flags
@@ -78,10 +79,11 @@ go-between runs both checks; either failing calls `stdoutLost()`, which shuts th
   (stdout's reader is some other process) or `/proc/<ppid>` is unreadable, this check is
   turned off for the go-between's life.
 - **Parent gone**: `process.ppid` differs from the value read at start (the CLI died while
-  something else keeps the pipes open). This calls `shutdown()`.
+  something else keeps the pipes open). Also `stdoutLost()`, so the exit never waits on
+  stdout writes nobody will read.
 
-The probe never runs while a write is pending, so it cannot interleave with output, and
-stops once shutdown has begun.
+The pipe reader and parent checks only read `/proc`, so they run whether or not a write
+is in flight. All checks stop once shutdown has begun.
 
 ### 2. Non-goals
 
@@ -92,11 +94,13 @@ machine service.
 ### Validation
 
 - go-between: with stdin kept open and the parent alive, idle reader closed is noticed
-  within two probe intervals and the tool is stopped, both with stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the
+  within two probe intervals (detection) and the tool then stops within the existing stop
+  times (`--stop-ms` total), both with stdout as a socketpair (Node `spawn`) and as an OS pipe (spawn the
   proxy with stdout from `os.pipe()`, e.g. through `python3 -c`, then close the read end);
   a parent that holds no read end at start turns the pipe check off; parent gone is
-  noticed while an independent process keeps both pipe ends open (so stdin never ends);
-  the probe does not run while a write is pending.
+  noticed while an independent process keeps both pipe ends open (so stdin never ends),
+  also while a large stdout write is pending and with the tool writing during teardown,
+  and the go-between still exits; the socket probe does not run while a write is pending.
 
 ```bash
 bash machine/test/run.sh
@@ -265,6 +269,9 @@ Validation and C2 removed; Non-goals rewritten; IDEA.md narrowed to match.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Parent check skipped while a write is pending | downgraded to minor: needs a CLI crash plus another process holding the read end without draining | Only the socket probe is guarded; `/proc` checks always run |
+| mechanics | major | Parent loss via `shutdown()` can wait on undrainable writes | downgraded to minor: same rare combination; fix is one call | Parent gone calls `stdoutLost()` |
+| mechanics | minor | Separate detection and tool-exit deadlines in tests | upheld | Validation |
 
 ## Prior Work
 
