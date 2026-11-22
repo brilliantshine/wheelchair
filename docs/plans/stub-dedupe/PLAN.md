@@ -229,3 +229,7 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 - 2026-11-22 — T2 accepted (band: scout): Spec 3 covered; app-threads.spec.js re-run, 170 pass. Its full-suite failures (accounts, graph arrows, a port conflict) are outside its files; checked in the full run.
 - 2026-11-22 — Build complete; planning graph rewritten with layout (browser.spec.js:2157 failed on it). Verification attempt 1 started.
 - 2026-11-22 — Verification attempt 1 (a808c9af): Claude verifier PASS; GPT verifier FAIL with 1 gap (duplicate note returns 200, API.md:40 says 202). Judged normal use, hardening; per-gap answer asked of the lead.
+- 2026-11-22 — Choice: R1-1, viewer/test/app-hub.test.js: the replay check posts with `machinePost` directly, not the `card` helper (worker reported none; scout listed it).
+- 2026-11-22 — Choice: R1-1, viewer/app/routes.js: routes.js now requires cards.js at the top, next to its other requires.
+- 2026-11-22 — R1-1 accepted (band: scout): a replay is marked with a non-enumerable `REPLAY` symbol after `updateThread`, and routes.js:462 reads it; bodies unchanged. Focused suites re-run: 178 pass. My full run stalled in app-usage and server tests while other threads' suites loaded the machine; both files pass alone (83/83), and the worker's full retry passed 835/835.
+- 2026-11-22 — Verification attempt 2 started.

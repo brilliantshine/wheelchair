@@ -88,3 +88,19 @@ Full browser suite on the merged branch (`cd viewer && npm run test:browser`):
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-22
+
+Verification attempt 1 (a808c9af): the Claude verifier passed. The GPT verifier found one gap: a new duplicate note returned HTTP 200, the replay status, instead of 202 (`viewer/app/API.md:40`), because `routes.js` read the card's own `duplicate` field. The lead chose to fix it. See `REMEDIATION-1.md`.
+
+Fix (R1-1, standard, gpt-6.1-terra): `viewer/app/cards.js:9` defines a `REPLAY` symbol, exported at `cards.js:295`. The replay branch at `cards.js:64` returns `{ replay: {...} }`, and `cards.js:223` marks it non-enumerably after `updateThread` returns. `viewer/app/routes.js:462` picks 200 or 202 from that symbol, and response bodies are unchanged. Test: `viewer/test/app-hub.test.js:2253-2262` checks 202 for a new addition and a new duplicate note, then 200 with the exact replay body, with the paragraph appended once. Before the fix it failed with `200 !== 202`.
+
+Evidence:
+
+```
+node --test test/app-hub.test.js test/app-quiet.test.js test/app-questions.test.js test/card-receipt.test.js test/app-project-tools-card.test.js test/app-harnesses.test.js
+# pass 178
+# fail 0
+```
+
+On the worker's branch, the retry of `npm test` gave `# tests 835 / # pass 835 / # fail 0` (`reports/R1-1.md:379-382`). On the merged branch, the sub-lead's full run stalled in `app-usage.test.js` and `server.test.js` while other threads' suites were loading the machine. Run alone, those two files gave `# pass 83 / # fail 0`.
