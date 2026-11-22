@@ -68,7 +68,7 @@ test('install routes preserve machine responses and report unreachable machines'
   const { handle } = require('../app/routes.js');
   const { Readable } = require('node:stream');
   let failure = false;
-  const hub = { machines: async () => ({ hub: { name: 'hub' } }), state: { resolveMachine: async (m, name) => m[name] }, client: { passThrough: async (name, route, method) => { assert.equal(name, 'hub'); assert.equal(route, '/v1/harnesses/gpt/install'); if (failure) throw Error('offline'); return { status: method === 'POST' ? 202 : 409, body: { state: 'running' } }; } } };
+  const hub = { machines: async () => ({ hub: { name: 'hub' } }), state: { resolveMachine: async (m, name) => m[name], settings: async () => null }, client: { passThrough: async (name, route, method) => { assert.equal(name, 'hub'); assert.equal(route, '/v1/harnesses/gpt/install'); if (failure) throw Error('offline'); return { status: method === 'POST' ? 202 : 409, body: { state: 'running' } }; } } };
   async function request(method) {
     const req = Readable.from([]); req.method = method;
     const response = { writeHead(status) { this.status = status; }, end(body) { this.body = JSON.parse(body); } };
@@ -259,7 +259,7 @@ test('wc session start prints the left-out waiting reason', async () => {
 test('install forwarders retain every machine status and response body', async () => {
   const { handle } = require('../app/routes.js'); const { Readable } = require('node:stream');
   let status = 202;
-  const hub = { machines: async () => ({ hub: { name: 'hub' } }), state: { resolveMachine: async m => m.hub }, client: { passThrough: async () => { if (status === 502) throw Error('down'); return { status, body: { message: `response ${status}` } }; } } };
+  const hub = { machines: async () => ({ hub: { name: 'hub' } }), state: { resolveMachine: async m => m.hub, settings: async () => null }, client: { passThrough: async () => { if (status === 502) throw Error('down'); return { status, body: { message: `response ${status}` } }; } } };
   for (const code of [202, 404, 409, 502]) {
     status = code; const req = Readable.from([]); req.method = code === 202 ? 'POST' : 'GET';
     const res = { writeHead(code) { this.status = code; }, end(body) { this.body = JSON.parse(body); } };
@@ -267,4 +267,54 @@ test('install forwarders retain every machine status and response body', async (
     assert.equal(res.status, code);
     if (code === 502) assert.match(res.body.error, /hub/); else assert.deepEqual(res.body, { message: `response ${code}` });
   }
+});
+
+async function routed(hub, method, url) {
+  const { handle } = require('../app/routes.js'); const { Readable } = require('node:stream');
+  const req = Readable.from(method === 'PUT' ? [Buffer.from(JSON.stringify({ enabled: url.enabled }))] : []); req.method = method;
+  const res = { writeHead(code) { this.status = code; }, end(body) { this.body = JSON.parse(body); } };
+  await handle(hub, req, res, new URL(url.path), false);
+  return res;
+}
+
+test('install passthrough accepts DELETE and refuses POST while the harness is switched off', async () => {
+  const { hub } = await harnessFixture({ hub: statusFor('gpt') });
+  const seen = [];
+  let down = false;
+  hub.client = { passThrough: async (name, route, method) => { seen.push(method); if (down) throw Error('offline'); return { status: method === 'DELETE' ? 202 : 200, body: { state: 'cancelling' } }; } };
+  const path = 'http://localhost/wheelchair/api/machines/hub/harnesses/gpt/install';
+  const del = await routed(hub, 'DELETE', { path });
+  assert.equal(del.status, 202); assert.deepEqual(del.body, { state: 'cancelling' });
+  down = true; const out = await routed(hub, 'DELETE', { path }); assert.equal(out.status, 502); assert.match(out.body.error, /hub/);
+  down = false;
+  await settings.update(hub, s => { s.harnesses.gpt = false; });
+  seen.length = 0;
+  const post = await routed(hub, 'POST', { path });
+  assert.equal(post.status, 409); assert.deepEqual(post.body, { error: 'Codex is switched off' }); assert.deepEqual(seen, []);
+  assert.equal((await routed(hub, 'GET', { path })).status, 200);
+  assert.equal((await routed(hub, 'DELETE', { path })).status, 202);
+});
+
+test('switching a harness off cancels its install on every known machine, without waiting', async () => {
+  const { hub } = await harnessFixture({ hub: statusFor('claude', 'gpt'), other: statusFor('claude', 'gpt'), third: statusFor('claude', 'gpt') });
+  const calls = [];
+  hub.client = { passThrough: async (name, route, method) => {
+    calls.push([name, route, method]);
+    if (name === 'other') throw Error('offline');
+    if (name === 'third') return { status: 409, body: { error: 'not installing' } };
+    return new Promise(() => {});
+  } };
+  const path = 'http://localhost/wheelchair/api/settings/harnesses/gpt';
+  const started = Date.now();
+  const off = await routed(hub, 'PUT', { path, enabled: false });
+  assert.equal(off.status, 200); assert.equal(off.body.harnesses.gpt, false);
+  assert.ok(Date.now() - started < 1000);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(calls.map(c => c[0]).sort(), ['hub', 'other', 'third']);
+  assert.ok(calls.every(c => c[1] === '/v1/harnesses/gpt/install' && c[2] === 'DELETE'));
+  calls.length = 0;
+  const on = await routed(hub, 'PUT', { path, enabled: true });
+  assert.equal(on.status, 200); assert.equal(on.body.harnesses.gpt, true);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(calls, []);
 });

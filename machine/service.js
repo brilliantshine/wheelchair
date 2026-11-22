@@ -2100,11 +2100,12 @@ class MachineService {
           return result.ok ? send(response, 200, { level: input.level, text: result.stdout }) : send(response, 422, failure(result));
         } finally { this.sensitivityWriting = false; }
       }
-      if (pathBits[0] === 'v1' && pathBits[1] === 'harnesses' && pathBits[3] === 'install' && pathBits.length === 4 && ['GET', 'POST'].includes(request.method)) {
+      if (pathBits[0] === 'v1' && pathBits[1] === 'harnesses' && pathBits[3] === 'install' && pathBits.length === 4 && ['GET', 'POST', 'DELETE'].includes(request.method)) {
         await this.authorize(request, 'hub');
         const provider = pathBits[2];
         if (!providers.includes(provider)) return send(response, 404, { error: 'unknown provider' });
         if (request.method === 'GET') return send(response, 200, harnessInstall.state(provider));
+        if (request.method === 'DELETE') return harnessInstall.stopJob(provider) ? send(response, 202, { state: 'cancelling' }) : send(response, 409, { error: 'not installing' });
         if (!loadRecipes()[provider]) return send(response, 404, { error: 'no recipe' });
         if (!harnessInstall.start(provider)) return send(response, 409, { error: 'already installing' });
         return send(response, 202, { state: 'running' });

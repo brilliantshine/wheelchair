@@ -274,6 +274,7 @@ button.danger { color: var(--bad-text); }
 .h-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .h-actions:empty { display: none; }
 .h-confirm { font-size: 13px; }
+.h-explain { margin: 0; font-size: 13px; color: var(--dim); overflow-wrap: anywhere; }
 .h-tail { margin: 0; max-height: 140px; overflow: auto; padding: 8px 10px; border-radius: 6px; background: var(--term-bg); font-family: var(--mono); font-size: 11px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .h-signin:empty { display: none; }
 .h-offline { font-size: 13px; }
