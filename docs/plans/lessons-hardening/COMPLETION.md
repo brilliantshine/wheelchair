@@ -2,7 +2,7 @@
 slug: lessons-hardening
 date: 2026-11-21
 implemented-by: "standard: gpt-6.1-terra (T1 server, T3 handoff, T4 handoff tests); standard: claude-sonnet-5-5 (T2 Settings UI, T5 UI fixes); sub-lead: claude-opus-5-5"
-verified-by: []
+verified-by: see the block below
 ---
 
 # Completion Report — Make agent lessons solid
@@ -11,7 +11,31 @@ Written for a hostile reviewer: every claim checkable, no claim without evidence
 All paths are relative to the repository root; line numbers are at the commit this report is committed in.
 
 ```yaml
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (FAIL), gpt-6.2-sol (FAIL)
+    checks: gpt-6.1-terra + claude-sonnet-5-5
+  - round: 2
+    lane: claude-opus-5-5 (PASS), gpt-6.2-sol (FAIL)
+    checks: gpt-6.1-terra + claude-sonnet-5-5
+  - round: 3
+    lane: claude-opus-5-5 (PASS), gpt-6.2-sol (FAIL)
+    checks: gpt-6.1-terra + claude-sonnet-5-5
+  - round: 4
+    lane: claude-opus-5-5 (PASS), gpt-6.2-sol (FAIL)
+    checks: gpt-6.1-terra + claude-sonnet-5-5
+  - round: 5
+    lane: claude-opus-5-5 (FAIL), gpt-6.2-sol (FAIL)
+    checks: gpt-6.1-terra + claude-sonnet-5-5
+  - round: 6
+    lane: claude-opus-5-5 (PASS), gpt-6.2-sol (FAIL)
+    checks: gpt-6.1-terra + claude-sonnet-5-5
+  - round: 7
+    lane: claude-opus-5-5 (PASS), gpt-6.2-sol (FAIL)
+    checks: gpt-6.1-terra + claude-sonnet-5-5
+  - round: 8
+    lane: claude-opus-5-5 (PASS), gpt-6.2-sol (PASS)
+    checks: gpt-6.1-terra + claude-sonnet-5-5
 ```
 
 ## Spec coverage
@@ -180,4 +204,8 @@ Verification attempt 7 (f08d2017): claude-opus-5-5 PASS, gpt-6.2-sol FAIL with 2
 | sweep | 13 deliberate breaks across the handoff export filter, validation and import; all caught (`reports/R7-TESTS.md`) |
 
 Validation, from `viewer/`: lessons + handoff node tests 123/123; `npm test` 859/859.
+
+### Verification 8 — 2026-11-22
+
+Attempt 8 at da4c5163: both verifiers PASS with no gaps. `npm test` 859/859 (claude); 858/859 with the one failure in the untouched app-quiet.test.js passing alone (gpt). Browser specs 80/80 for both. No rare paths were accepted in any attempt.
 

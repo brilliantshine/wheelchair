@@ -364,4 +364,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-22 — Verification 7 (f08d2017): claude PASS, gpt FAIL with 2 new S9 test-strength gaps (code correct); REMEDIATION-7.md adds a handoff sweep.
 - 2026-11-22 — Choice: R7-TESTS, app-handoff.test.js: the download fixture has five lessons, including a project-only lesson for the thread's project that has no `thread`, which is correctly left out (S7 carries only the thread's own lessons); explicit checks that v3 without `lessons` is accepted and v2 with `lessons` is refused.
 - 2026-11-22 — R7-TESTS accepted (band: scout): lessons + handoff node tests 123/123 and `npm test` 859/859 re-run by me; I re-applied both gap breaks (restore archives the chosen version; export passes no lessons) and each failed its test, then restored. The handoff sweep recorded 13 breaks, all caught. The download test reads the saved file (`savedFile`), so comparing the two exports cannot flake.
-
+- 2026-11-22 — Verification 8 (da4c5163): claude PASS, gpt PASS, no gaps. Build verified; no rare paths accepted.
