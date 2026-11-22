@@ -31,7 +31,7 @@ promoted to a Constraint or Accepted Risk, or waved off by the user.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| W1 | Idle read-end closure (IDEA item 4) | Which mechanism Node on Linux can use to see a closed reader on an idle stdout pipe (poll for POLLERR, a probe write, parent-process check); needs a local experiment before it can be specified | no | |
+| W1 | Idle read-end closure (IDEA item 4) | Which mechanism Node on Linux can use to see a closed reader on an idle stdout pipe | no | Settled by the lead: D4 |
 | W2 | Crashed or handoff-killed sessions (IDEA item 2) | Whether their go-betweens and tools actually exit when the CLI dies (stdin end) or are orphaned; decides whether the copy-wide gate also has to end leftovers | no | |
 
 ## Decision Log
@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|----------|-----------|--------|
 | D1 | Mode is thorough | User's choice; this thread is the follow-up for win-tool-gobetween's Deferred items | user |
 | D2 | Restart recovery follows the parent design: a durable per-session launch record (wrapped, copy key) in `win-sessions.json` written before tmux starts; on service start, every live wrapped session whose ready file is not `ready` gets a fresh attempt token and readying | Already reviewed in windows-bridge-solid (`5950541c^:docs/plans/windows-bridge-solid/PLAN.md:194-211`); no user-visible choice in it | defaulted |
+| D4 | The go-between notices a closed reader by a zero-length `fs.writeSync(1, Buffer.alloc(0))` probe every 2 s while idle; `EPIPE` starts its normal shutdown | Lead's local check on Node 26/Linux: the probe throws `EPIPE` within one interval after the reader closes, while stdout itself emits nothing; a zero-length write adds no bytes to the stream | defaulted |
 | D3 | Every new wait is bounded: a stop, sweep or archive waits at most 15 s for Windows tools, then logs and goes ahead | IDEA constraint; matches the last reviewed design's 15 s `onStop` wait | defaulted |
 
 ## Spec
