@@ -294,7 +294,7 @@ Filled by Stage 3. One row per worker brief.
 | R2-UI | Remediation 2 gap 1: Import keeps or shows unsaved drafts | `viewer/pages/settings.js` (lessons editor, import/export), `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | done |
 | R2-TESTS | Remediation 2 gaps 2-6: tests that can fail (removal `changed_by`, restore thread, prompt without history, Keep on stale, Retry merge spy) | `viewer/test/app-lessons-history.test.js`, `viewer/test/app-handoff-import.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js test/app-handoff-import.test.js`; `npm test` | done |
 | R3-UI | Remediation 3 gap 1: refused Save keeps Restore-while-dirty and Add-while-full guards | `viewer/pages/settings.js` (lessons editor), `viewer/test/app-lessons.spec.js` | Standard, claude-sonnet-5-5 | | `npx playwright test test/app-lessons.spec.js`; `npm test` | not started |
-| R3-TESTS | Remediation 3 gaps 2-3: removal appends a version; skip matches older history versions | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | not started |
+| R3-TESTS | Remediation 3 gaps 2-3: removal appends a version; skip matches older history versions | `viewer/test/app-lessons-history.test.js` | Standard, gpt-6.1-terra | | `node --test test/app-lessons-history.test.js test/app-lessons.test.js`; `npm test` | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -341,3 +341,6 @@ anything a future session needs that fits nowhere above.
 - 2026-11-21 — R2-UI accepted (band: scout): lessons spec 44/44 and `npm test` 844/844 re-run by me; report lists every other reload place in the lessons editor (Save, Export, thread loading, toggles), none dropping drafts.
 - 2026-11-21 — R2-TESTS accepted (band: scout): lessons + handoff-import node tests 52/52 re-run by me; report pastes each new test failing under the verifier's mutation and passing once restored.
 - 2026-11-22 — Verification 3 (81b9ddbd): claude PASS, gpt FAIL with 3 new gaps, none rare, none a repeat; all go to REMEDIATION-3.md.
+- 2026-11-22 — Choice: R3-TESTS, app-lessons-history.test.js: three history versions built by agent replaces; the oldest and middle versions of a current lesson and the oldest of a removed lesson merged in one call, checked as `skipped: 3, added: 0` with lessons and waiting unchanged; the removal mutation was a marker-only path. (last three seen by scout)
+- 2026-11-22 — R3-TESTS accepted (band: scout): focused 18/18 and `npm test` 846/846 re-run by me; I re-applied the newest-version-only mutation and test 6 failed, then restored.
+
