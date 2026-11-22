@@ -27,7 +27,7 @@ test('agent changes, restore, keep and normalization retain history', async () =
   await assert.rejects(s.restoreLesson(h, 'worker', added.id, 'missing'), { status: 409 });
   assert.equal(s.STALE_DAYS, 90); assert.equal(s.isLessonStale({ saved_at: date }, 90 * 86400000 - 1), false); assert.equal(s.isLessonStale({ saved_at: date }, 90 * 86400000), true); assert.equal(s.isLessonStale(v.lessons.worker[0]), false);
   const normalized = s.normalize({ ...v, lesson_history: { ...v.lesson_history, Lffffff: { role: 'worker', versions: [] } }, lesson_waiting: [null] });
-  assert.ok(normalized.lesson_history[added.id]); assert.equal(normalized.lesson_history.Lffffff, undefined); assert.deepEqual(normalized.lesson_waiting, []);
+  assert.deepEqual(normalized.lesson_history[added.id], v.lesson_history[added.id]); assert.equal(normalized.lesson_history.Lffffff, undefined); assert.deepEqual(normalized.lesson_waiting, []);
 });
 test('Keep clears staleness without changing the saved lesson or history', async () => {
   const h = await hub(); const saved_at = new Date(Date.now() - 100 * 86400000).toISOString();
@@ -45,14 +45,19 @@ test('history caps, removals, merge and waiting', async () => {
   let v = await s.load(h); assert.deepEqual(v.lesson_history[first.id].versions.map((version) => version.text), Array.from({ length: 20 }, (_, i) => `Edit ${i + 2}`));
   await s.applyLesson(h, card('remove', { lesson: first.id }), 'worker', '/p', 'one');
   v = await s.load(h); assert.equal(v.lesson_history[first.id].versions.at(-1).changed_by, 'agent'); assert.equal(v.lesson_history[first.id].removed.by, 'agent');
-  await s.restoreLesson(h, 'worker', first.id); v = await s.load(h); assert.equal(v.lessons.worker[0].text, 'Edit 22');
+  const restoredVersion = v.lesson_history[first.id].versions.at(-1);
+  await s.restoreLesson(h, 'worker', first.id); v = await s.load(h);
+  const { saved_at: restoredAt, ...restored } = v.lessons.worker[0];
+  assert.deepEqual(restored, { id: first.id, text: restoredVersion.text, thread: restoredVersion.thread, saved_by: 'user' }); assert.equal('removed' in v.lesson_history[first.id], false);
   const removedIds = [];
   for (let i = 0; i < 50; i++) { const x = await s.applyLesson(h, card('add', { text: `Removed ${i}` }), 'worker', '/p', 'one'); await s.applyLesson(h, card('remove', { lesson: x.id }), 'worker', '/p', 'one'); removedIds.push(x.id); await s.update(h, (state) => { state.lesson_history[x.id].removed.at = new Date(i * 1000).toISOString(); }); }
   const newest = await s.applyLesson(h, card('add', { text: 'Removed 50' }), 'worker', '/p', 'one'); await s.applyLesson(h, card('remove', { lesson: newest.id }), 'worker', '/p', 'one');
   v = await s.load(h); assert.deepEqual(Object.keys(v.lesson_history).filter((id) => v.lesson_history[id].removed).sort(), [...removedIds.slice(1), newest.id].sort()); assert.equal(v.lesson_history[removedIds[0]], undefined); assert.equal(v.lesson_history[newest.id].versions.at(-1).text, 'Removed 50');
   const incoming = [item('Fresh'), item('Fresh'), item('Fresh', { provider: 'gpt' }), item('Bad', { provider: 'bad' }), item('Lost', { project: '/missing' })];
+  const mergeTime = Date.now();
   let counts = await s.mergeIncoming(h, incoming, { source: 'file', known: [] }); assert.deepEqual(counts, { added: 2, skipped: 1, invalid: 1, unknown_project: 1, waiting: 0 });
   const afterMerge = await s.load(h);
+  for (const [index, expected] of [incoming[0], incoming[2]].entries()) { const lesson = afterMerge.lessons.worker.filter((entry) => entry.text === expected.text)[index]; const { id, kept_at, ...actual } = lesson; const { role, ...fields } = expected; assert.deepEqual(actual, fields); assert.ok(Number.isFinite(Date.parse(kept_at)) && Date.parse(kept_at) >= mergeTime); }
   counts = await s.mergeIncoming(h, incoming, { source: 'file', known: [] }); assert.deepEqual(counts, { added: 0, skipped: 3, invalid: 1, unknown_project: 1, waiting: 0 });
   assert.deepEqual(await s.load(h), afterMerge);
   await s.update(h, (x) => { for (const role of s.ROLES) while (x.lessons[role].length < 12) x.lessons[role].push({ id: `L${(Math.random()*0xffffff|0).toString(16).padStart(6,'0')}`, text: `Fill ${x.lessons[role].length}`, saved_by: 'agent', saved_at: date }); });
@@ -62,7 +67,8 @@ test('history caps, removals, merge and waiting', async () => {
   counts = await s.mergeIncoming(h, arrivals, { source: 'file', known: [] }); assert.deepEqual(counts, { added: 0, skipped: 0, invalid: 0, unknown_project: 0, waiting: 72 });
   v = await s.load(h); assert.deepEqual(v.lesson_waiting.slice(2).map(({ role, text, saved_by, saved_at, source }) => ({ role, text, saved_by, saved_at, source })), arrivals.map((entry) => ({ ...entry, source: 'file' })));
   for (const original of existing) assert.deepEqual(v.lesson_waiting.find((entry) => entry.wid === original.wid), original);
-  const w = v.lesson_waiting[0]; await assert.rejects(s.waitingAction(h, w.role, w.wid, 'add'), { status: 422 });
+  const w = v.lesson_waiting[0]; const beforeFullAdd = structuredClone({ lessons: v.lessons[w.role], history: v.lesson_history, waiting: v.lesson_waiting }); await assert.rejects(s.waitingAction(h, w.role, w.wid, 'add'), { status: 422 });
+  v = await s.load(h); assert.deepEqual({ lessons: v.lessons[w.role], history: v.lesson_history, waiting: v.lesson_waiting }, beforeFullAdd);
   assert.equal((await s.waitingAction(h, w.role, w.wid, 'discard')).result, 'discarded'); await assert.rejects(s.waitingAction(h, w.role, w.wid, 'discard'), { status: 409 });
 });
 test('handoff projects and file routes', async () => {
@@ -94,7 +100,9 @@ test('user edits and removals, capacity, and history matching', async () => {
   const app = await setup(); try {
     const h = new Hub({ stateDir: app.state, codeVersion: '' }); await h.state.init();
     const x = await s.applyLesson(h, card('add'), 'worker', '/p', 't');
+    const beforeEdit = (await s.load(h)).lessons.worker[0]; await new Promise((resolve) => setTimeout(resolve, 5));
     let r = await api(app, '/settings/lessons/worker', { method: 'PUT', body: { edits: [{ id: x.id, text: 'Changed' }], removals: [] } });
+    const edited = (await s.load(h)).lessons.worker[0]; assert.deepEqual(edited, { ...beforeEdit, text: 'Changed', saved_by: 'user', saved_at: edited.saved_at }); assert.ok(Date.parse(edited.saved_at) > Date.parse(beforeEdit.saved_at));
     assert.equal(r.body.history[x.id].versions.at(-1).changed_by, 'user'); assert.equal(r.body.history[x.id].versions.at(-1).text, 'First');
     const c = await s.mergeIncoming(h, [item('First')], { source: 'file', known: [] }); assert.equal(c.skipped, 1);
     const beforeRemoval = await s.load(h); const versionCount = beforeRemoval.lesson_history[x.id].versions.length; const removedText = beforeRemoval.lessons.worker.find((lesson) => lesson.id === x.id).text;
@@ -102,14 +110,18 @@ test('user edits and removals, capacity, and history matching', async () => {
     r = await api(app, '/settings/lessons/worker', { method: 'PUT', body: { edits: [], removals: [x.id] } });
     assert.equal(r.body.history[x.id].versions.length, versionCount + 1); assert.equal(r.body.history[x.id].versions.at(-1).text, removedText); assert.equal(r.body.history[x.id].versions.at(-1).changed_by, 'user'); assert.equal(r.body.history[x.id].removed.by, 'user');
     await s.update(h, (v) => { for (let i=0;i<12;i++) v.lessons.worker.push({ id: `L${i.toString(16).padStart(6,'0')}`, text: `x${i}`, saved_by: 'agent', saved_at: date }); });
+    const full = await s.load(h); const beforeFullRestore = structuredClone({ lessons: full.lessons.worker, history: full.lesson_history, waiting: full.lesson_waiting });
     r = await api(app, '/settings/lessons/worker/restore', { method: 'POST', body: { id: x.id } }); assert.equal(r.status, 422);
+    const refused = await s.load(h); assert.deepEqual({ lessons: refused.lessons.worker, history: refused.lesson_history, waiting: refused.lesson_waiting }, beforeFullRestore);
     await s.update(h, (v) => { v.lesson_history = {}; v.lesson_waiting = []; });
     const before = s.roleLayers(await s.load(h), 'worker', '/p', null, 'gpt').text;
     await s.update(h, (v) => { v.lessons.worker[0].kept_at = new Date().toISOString(); v.lesson_history[v.lessons.worker[0].id] = { role: 'worker', versions: [{ ...item('HISTORY-MARKER'), vid: 'history', changed_at: date, changed_by: 'user' }] }; v.lesson_history.Labcdef = { role: 'worker', versions: [{ ...item('HISTORY-MARKER removed'), vid: 'removed', changed_at: date, changed_by: 'user' }], removed: { at: date, by: 'user' } }; v.lesson_waiting.push({ ...item('WAITING-MARKER'), source: 'file', received_at: date, wid: 'w' }); });
     const after = s.roleLayers(await s.load(h), 'worker', '/p', null, 'gpt').text;
     assert.equal(after, before); assert.doesNotMatch(after, /HISTORY-MARKER|WAITING-MARKER/);
     await s.update(h, (v) => { v.lessons.worker.pop(); });
+    const waitingBefore = (await s.load(h)).lesson_waiting.find((entry) => entry.wid === 'w');
     r = await api(app, '/settings/lessons/worker/waiting', { method: 'POST', body: { wid: 'w', action: 'add' } }); assert.equal(r.body.result, 'added');
+    const addedState = await s.load(h); const addedLesson = addedState.lessons.worker.find((entry) => entry.text === waitingBefore.text); const { id, kept_at, ...addedFields } = addedLesson; const { role, source, received_at, wid, ...waitingFields } = waitingBefore; assert.deepEqual(addedFields, waitingFields); assert.equal(addedState.lesson_waiting.some((entry) => entry.wid === wid), false);
   } finally { await close(app); }
 });
 test('merge skips older versions of current and removed lessons', async () => {
@@ -136,8 +148,9 @@ test('file limits, known directories, waiting recheck and normalization', async 
     await s.update(h, (v) => { v.lesson_waiting.push({ ...item('Known', { project: '/saved' }), source: 'file', received_at: date, wid: 'already' }); });
     assert.equal((await s.waitingAction(h, 'worker', 'already', 'add')).result, 'already');
     await assert.rejects(s.waitingAction(h, 'worker', 'missing', 'add'), { status: 409 });
-    const n = s.normalize({ lessons: { worker: [{ id: 'L123456', ...item('ok'), kept_at: date }] }, lesson_waiting: [{ ...item('wait'), source: 'file', received_at: date, wid: 'one' }, { ...item('wait'), source: 'file', received_at: date, wid: 'two' }] });
-    assert.equal(n.lessons.worker[0].kept_at, date); assert.equal(n.lesson_waiting.length, 1);
+    const waitingInput = { ...item('wait', { thread: 'thread-wait', provider: 'gpt', project: '/saved' }), source: 'file', received_at: date, wid: 'one' };
+    const n = s.normalize({ lessons: { worker: [{ id: 'L123456', ...item('ok'), kept_at: date }] }, lesson_waiting: [waitingInput, { ...waitingInput, wid: 'two' }] });
+    assert.equal(n.lessons.worker[0].kept_at, date); assert.deepEqual(n.lesson_waiting, [waitingInput]);
   } finally { await close(app); }
 });
 test('new ids avoid removed history and different project scopes remain distinct', async () => {
@@ -146,5 +159,6 @@ test('new ids avoid removed history and different project scopes remain distinct
   const crypto = require('node:crypto'), original = crypto.randomBytes; let calls = 0;
   crypto.randomBytes = (n) => n === 3 ? Buffer.from(++calls === 1 ? '123456' : 'abcdef', 'hex') : original(n);
   try { const x = await s.applyLesson(h, card('add'), 'worker', '/p', 't'); assert.equal(x.id, 'Labcdef'); } finally { crypto.randomBytes = original; }
-  const result = await s.mergeIncoming(h, [item('scoped', { project: '/a' }), item('scoped', { project: '/b' })], { source: 'file', known: ['/a', '/b'] }); assert.equal(result.added, 2);
+  const result = await s.mergeIncoming(h, [item('scoped', { project: '/a' }), item('scoped', { project: '/b' })], { source: 'file', known: ['/a', '/b'] });
+  const scoped = (await s.load(h)).lessons.worker.filter((entry) => entry.text === 'scoped'); assert.deepEqual(scoped.map(({ id, kept_at, ...entry }) => entry), [{ text: 'scoped', project: '/a', saved_by: 'agent', saved_at: date }, { text: 'scoped', project: '/b', saved_by: 'agent', saved_at: date }]); assert.equal(result.added, 2);
 });
