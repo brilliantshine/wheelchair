@@ -279,9 +279,10 @@ whose lead is down; a user-facing card for the pause.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S1-S4 backend: hold, pause, peer_log, restart context, card.js held receipt, hand-off/archive cleanup | viewer/app/{cards,hub,sessions,threads,handoff,handoff-ops,card}.js; viewer/test/app-lead-messages, app-hub, app-handoff-restart tests (not peers.js listLeads) | standard / gpt-6.1-terra | wc-f4c68e8cbb15-worker-3 (branch -w3) | Spec Validation 1,2; tests 1-6, 9 | dispatched |
+| T1 | S1-S4 backend: hold, pause, peer_log, restart context, card.js held receipt, hand-off/archive cleanup | viewer/app/{cards,hub,sessions,threads,handoff,handoff-ops,card}.js; viewer/test/app-lead-messages, app-hub, app-handoff-restart tests (not peers.js listLeads) | standard / gpt-6.1-terra | wc-f4c68e8cbb15-worker-3 (branch -w3) | Spec Validation 1,2; tests 1-6, 9 | done (test gaps moved to T4) |
 | T2 | S5 Talked-with lines (after T1 lands peer_log) | viewer/app/chat.js, viewer/pages/thread.js, app-chat test, browser spec | standard / claude-sonnet-5-5 | wc-f4c68e8cbb15-worker-4 (branch -w4) | Spec Validation 1,3; tests 7, 8 | dispatched |
 | T3 | S6 protocol text (exact wording in brief) | protocol/app/cards.md, protocol/app/lead.md | light / gpt-6-luna; rung 2: light, effort xhigh (attempt 1 claimed all five edits but left out the Restarting-what-died paragraph) | wc-f4c68e8cbb15-worker-2 (branch -w1, replaces -worker) | protocol-rules test, S6 grep | done |
+| T4 | Close T1's test gaps: test 3 pause lifted by a real typed message and card press, and the `since` count rule; test 1 end to end; test 2 `peer` and no delivery; test 5 busy negative control | viewer/test/app-lead-messages.test.js, viewer/test/app-handoff-restart.test.js (no app code) | standard / gpt-6.1-terra | wc-f4c68e8cbb15-worker-5 (branch -w5) | Spec Validation 1 | dispatched |
 
 ## Log
 
@@ -291,3 +292,13 @@ whose lead is down; a user-facing card for the pause.
 - 2026-11-21 — T3 accepted (band: scout): all five S6 edits verbatim (cards.md:37,160-161; lead.md:745,747,895); protocol-rules 38/38 and the S6 protocol grep re-run by the sub-lead. Its diff-stat gate showed PLAN.md only because the brief compared two-dot against a feature branch that had moved; not a worker defect.
 - 2026-11-21 — Choice: T3, cards.md:37: the held sentence joins the existing long source line rather than a new wrapped line.
 - 2026-11-21 — Choice: T3, cards.md:161: the 20-message sentence is a new source line in the same paragraph.
+- 2026-11-21 — T1 accepted (band: scout): S1-S4 code matches the Spec (scout checked each bullet with file:line); the focused tests (143/143) and the S6 viewer/machine grep were re-run by the sub-lead. Missing or weak tests went to T4 rather than a redo, because the code was sound: test 3 lifted the pause with a hand-written user_at and never tested the count-side `since`; test 1 had no end-to-end accept→restart; test 2 did not assert `peer` or that nothing was delivered; test 5 had no negative control. machine/test/run.sh stalls on the unchanged feature branch too (sub-lead baseline: 553 tests passed, then a hang until a 500 s timeout; T1 touches no machine code); it will be re-run when no other suite is running.
+- 2026-11-21 — Choice: T1, viewer/app/sessions.js: the `received` text is the queue text with the generated marker prefix sliced off.
+- 2026-11-21 — Choice: T1, viewer/app/peer-log.js: new module holding the limits, the capped log append and the held-entry helpers.
+- 2026-11-21 — Choice: T1, viewer/app/hub.js:205-206: no live lead → the last lead session in array order (creation order), which can be a `pending` restarting lead; the entry then waits in that pending queue and counts toward "busy" (it is about to be delivered).
+- 2026-11-21 — Choice: T1, viewer/app/hub.js:205: target no longer reachable → nothing queued, receipt not held (covered by Accepted Risks row 1).
+- 2026-11-21 — Choice: T1, viewer/app/hub.js:216: `held` attached in Hub.acceptCard rather than cards.acceptCard.
+- 2026-11-21 — Choice: T1, viewer/app/cards.js:172: a `limit` entry's `session` is the card's `to`, `title` the target's name at that moment.
+- 2026-11-21 — Choice: T1, viewer/app/handoff.js:166: held entries dropped just before the export save.
+- 2026-11-21 — Choice: T1, viewer/app/API.md:40 and viewer/AGENTS.md:15: documented the `held` receipt and the new module.
+- 2026-11-21 — Worker didn't fully report its choices; it listed 2, I listed 8 (scout list).
