@@ -280,9 +280,10 @@ whose lead is down; a user-facing card for the pause.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S1-S4 backend: hold, pause, peer_log, restart context, card.js held receipt, hand-off/archive cleanup | viewer/app/{cards,hub,sessions,threads,handoff,handoff-ops,card}.js; viewer/test/app-lead-messages, app-hub, app-handoff-restart tests (not peers.js listLeads) | standard / gpt-6.1-terra | wc-f4c68e8cbb15-worker-3 (branch -w3) | Spec Validation 1,2; tests 1-6, 9 | done (test gaps moved to T4) |
-| T2 | S5 Talked-with lines (after T1 lands peer_log) | viewer/app/chat.js, viewer/pages/thread.js, app-chat test, browser spec | standard / claude-sonnet-5-5 | wc-f4c68e8cbb15-worker-4 (branch -w4) | Spec Validation 1,3; tests 7, 8 | dispatched |
+| T2 | S5 Talked-with lines (after T1 lands peer_log) | viewer/app/chat.js, viewer/pages/thread.js, app-chat test, browser spec | standard / claude-sonnet-5-5 | wc-f4c68e8cbb15-worker-4 (branch -w4) | Spec Validation 1,3; tests 7, 8 | done (test 7 tightened in T5) |
 | T3 | S6 protocol text (exact wording in brief) | protocol/app/cards.md, protocol/app/lead.md | light / gpt-6-luna; rung 2: light, effort xhigh (attempt 1 claimed all five edits but left out the Restarting-what-died paragraph) | wc-f4c68e8cbb15-worker-2 (branch -w1, replaces -worker) | protocol-rules test, S6 grep | done |
 | T4 | Close T1's test gaps: test 3 pause lifted by a real typed message and card press, and the `since` count rule; test 1 end to end; test 2 `peer` and no delivery; test 5 busy negative control | viewer/test/app-lead-messages.test.js, viewer/test/app-handoff-restart.test.js (no app code) | standard / gpt-6.1-terra | wc-f4c68e8cbb15-worker-5 (branch -w5) | Spec Validation 1 | done |
+| T5 | Make test 7 prove cutoff-before-fold and the latest-title rule (exact fixture edits in brief) | viewer/test/app-chat.test.js | light / gpt-6-luna | wc-f4c68e8cbb15-worker-6 (branch -w6) | node --test viewer/test/app-chat.test.js | dispatched |
 
 ## Log
 
@@ -306,3 +307,11 @@ whose lead is down; a user-facing card for the pause.
 - 2026-11-21 — Choice: T4, app-lead-messages.test.js: a merged-card Keep press and hub.enqueue(..., 'user') drive the two user-activity paths.
 - 2026-11-21 — Choice: T4, app-handoff-restart.test.js: a pending lead carries the non-peer busy entry; the export gate's status reply is scripted.
 - 2026-11-21 — Choice: T4, tests: break checks were run in a scratch copy; the handoff break used was "busy predicate always false".
+- 2026-11-21 — T2 accepted (band: scout): S5 matches (chat.js:387-422 cutoff rule same as thread.js:582-586, fold, item shape, interleave; thread.js:660-668 textContent-only render, fixed href prefix with encoded id). Test 8 passes in both browsers per the report; the 8 app-accounts "lead waiting line" browser failures reproduce on the feature branch before T2 (sub-lead run: 8 failed, 96 passed), so they predate this build. Test 7 did not prove cutoff-before-fold or the latest-title rule; tightened in T5 (Light, exact edits).
+- 2026-11-21 — Choice: T2, viewer/test/app-peer-lines.spec.js: test 8 in a new spec file, since browser.spec.js is the graph-editor suite without the thread-page helper.
+- 2026-11-21 — Choice: T2, thread.js:661: an empty title links as "another thread".
+- 2026-11-21 — Choice: T2, chat.js:418: a peer item goes after items with the same time and before the first later item.
+- 2026-11-21 — Choice: T2, chat.js:387,400: entries with a non-string `at`/`thread` or an unknown direction are skipped.
+- 2026-11-21 — Choice: T2, chat.js:399: a `limit` entry does not break a fold chain (not reported by the worker).
+- 2026-11-21 — Choice: T2, thread.js:663: thread id URL-encoded in the link (not reported by the worker).
+- 2026-11-21 — Choice: T2, thread.js:662: a span.peer-line wrapper keeps the flex `ctx` line one centred item.
