@@ -203,6 +203,9 @@ Merging existing duplicates; threads Collin starts directly; other projects or m
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | tricky: Spec 1-2: listLeads candidate fields and unopened stubs; stub `adds_to`/`duplicate` validation; acceptCard addition under target lock; tests | viewer/app/peers.js, card.js, cards.js, (threads.js export only), viewer/test/app-lead-list.test.js, app-hub.test.js | standard, gpt-6.1-terra | wc-2c25927136e1-worker | `npm test` | in progress |
+| T2 | Spec 3: parent stub card for additions; unopened context `pre-line`; browser test | viewer/pages/thread.js, viewer/test/app-threads.spec.js | standard, claude-sonnet-5-5 | wc-2c25927136e1-worker-2 | `npm run test:browser`, `npm test` | in progress |
+| T3 | Spec 4: lead.md Stubs / Other leads / Overlap questions; cards-lead.md stub; cards.md id exception | protocol/app/lead.md, cards-lead.md, cards.md | standard, gpt-6.1-terra | wc-2c25927136e1-worker-3 | `npm test` incl. protocol-rules | in progress |
 
 ## Log
 
