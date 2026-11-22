@@ -52,7 +52,8 @@ there, and existing non-WSL tests pass unchanged.
 On a WSL machine, for tool roles, every **loaded** stdio entry (no `type` or `type: "stdio"`)
 whose original `.mcp.json` command is `isWindowsProgram` (`machine/lib/project-programs.js:16`)
 is launched through the go-between `machine/lib/win-tool-proxy.js`, except an entry whose
-args include `mcp-for-unity` (D3), which stays as today. HTTP/SSE entries are never wrapped.
+args include `mcp-for-unity` (D3), which stays as today. A missing `args` counts as `[]`
+everywhere (the Unity check and the wrapped argv). HTTP/SSE entries are never wrapped.
 
 The wrapped entry's command is `process.execPath` and its args are
 `[<abs path to win-tool-proxy.js>, '--ready-file', <ready file>,
@@ -102,10 +103,13 @@ tools from WSL" thread merged first), reuse it and only add entries; otherwise a
   `{ "mcpServers": { ... } }` holding every replaced entry, written to
   `<stateDir>/settings/<session name>.mcp.json` (mode 0600, atomic) and passed with
   `--mcp-config <path>`. No `--strict-mcp-config`. The file is removed when the session stops.
-- **Stale files:** a sweep run wherever `sweepAgyTools` (`machine/service.js:477`) runs, with
-  the same live-tmux and `startingNames` rules, but scanning the new directories on its own:
-  it must not sit below `sweepAgyTools`' early returns for a missing or empty `agy-tools`
-  directory. It removes
+- **Stale files:** generalize the existing `sweepAgyTools` (`machine/service.js:477`) to take a
+  list of (directory, entry-to-session-name) pairs: `agy-tools` as today, plus `settings`
+  (only `<name>.mcp.json` entries) and `win-ready`. It reads each directory first and skips a
+  missing or empty one without returning, and calls `liveTmux()` once, only if some directory
+  has entries (so a machine with none of these files still never asks tmux, keeping
+  `machine/test/kimi-turns.test.js:94` valid). Same live-tmux and `startingNames` rules. It
+  removes
   `<stateDir>/settings/<name>.mcp.json` and `<stateDir>/win-ready/<name>` for sessions not
   live and not starting and whose file is older than 60 s (the existing sweep's grace,
   `machine/service.js:528`; the localhost thread's contract uses the same rule).
@@ -214,16 +218,20 @@ the next session. The service computes the path; the go-between only reads and w
    a later `ready` still starts the tool (step 3).
 5. Once the real tool runs and (for 3b) its handshake has succeeded, if it exits on its own the
    go-between first forwards everything left on the tool's stdout (it waits for the child's
-   `close` event, i.e. stdout ended, not just `exit`), then waits until its own stdout has
-   flushed everything to the client (the final write's callback, or `drain`), and only then
-   exits (setting `process.exitCode` and ending normally, never a bare `process.exit()` with
-   output pending) with the tool's exit code,
+   `close` event, i.e. stdout ended, not just `exit`), then finishes (below) with the tool's exit code,
    or `128 + <signal number>` if the tool was ended by a signal. Until the 3b handshake succeeds, the 3b failure rule
    above takes precedence: an exit then is a handoff failure (exit 1).
    If the client closes stdin, **or the go-between receives SIGHUP, SIGTERM or SIGINT** (a
    normal stop kills tmux, which signals it): before the ready point, exit 0 at once without
    starting the tool; during the handoff or afterwards, stop the tool (item 1), then exit. The signal handlers stay installed until then, so a second
    signal does not cut the stop short.
+
+6. **Finishing.** Every exit of the go-between (step 5, a 3b handoff failure after its error
+   replies, stdin close, signals) goes through one finish routine: wait until its own stdout
+   has flushed everything already written (the last write's callback), then set
+   `process.exitCode` to the chosen status and end normally (never a bare `process.exit()`
+   with output pending). If stdout emits `error` (e.g. `EPIPE`) or `close` before that, stop
+   waiting and finish at once with the same status; such errors are never thrown.
 
 ### 5. Marking the copy used
 
@@ -281,6 +289,9 @@ New tests in `machine/test/` must cover:
 - Large final response: a tool that writes a 1 MiB response and exits has it all delivered to
   a slow-reading client before the go-between exits.
 - A `tools/call` arriving while the ready file says `failed` is answered at once.
+- Finishing: a client that closes its read end during a large final response makes the
+  go-between finish with the intended status (no hang, no crash); 3b failure replies are
+  delivered before exit 1; a command-only entry (no `args`) is wrapped and launched.
 
 Live check once built (needs a WSL machine with a Windows stdio MCP server and a fresh copy),
 in three separate runs: (1) cold cache: a Codex agent started before ready lists no tools, and
@@ -438,6 +449,21 @@ queue for ready-file writes; IDEA.md Not doing (first-ever Codex use); new Accep
 **Changed since Round 6:** Spec 4 step 5 waits for its own stdout to flush; Spec 4 a
 `tools/call` while `failed` is answered at once; Spec 2 stale-file sweep scans on its own, not
 below `sweepAgyTools`' early returns; Validation additions; D10.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Separate stale-file scan duplicates `sweepAgyTools` and asks tmux needlessly | upheld | Spec 2: generalize the existing sweep over a list of directories |
+| mechanics | major | Flush waits forever if the client closes during the final response | upheld | Spec 4 step 6: one finish routine, stdout `error`/`close` ends the wait |
+| mechanics | major | 3b failure replies not flushed before exit 1 | upheld | Spec 4 step 6 covers every exit |
+| mechanics | minor | Entries without `args` | upheld | Spec 1: missing `args` is `[]` |
+
+### Round 8 — 2026-11-21
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 7:** Spec 4 new step 6 (one finish routine for every exit, stdout
+errors); step 5 points to it; Spec 2 stale-file sweep generalizes `sweepAgyTools`; Spec 1
+missing `args`; Validation additions.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
