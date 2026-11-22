@@ -111,6 +111,7 @@ test('lead.md Overlap questions covers any project, earlier chat, finished check
     'earlier user message (before or after PLAN.md was created)',
     'using its output only for this finished check',
     'whether or not it still counts as an overlap',
+    'whether that thread was doing it then',
   ]) assert.ok(m[1].includes(phrase), phrase);
 });
 
