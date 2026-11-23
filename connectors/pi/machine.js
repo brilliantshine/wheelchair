@@ -46,7 +46,7 @@ module.exports = {
   recognizePane: text => text.includes('escape interrupt') && text.includes('ctrl+c/ctrl+d clear/exit') || /openrouter\/\S+\s*•\s*\S+/.test(text),
   restartLossReason: () => 'Lost track of this Pi session after a machine restart; restart it',
 
-  asideProblem: check => check(),
+  asideProblem: (problem, cli) => problem(cli),
   asideModel: /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/,
   asideNewId: true,
   asideResult(i, r) {

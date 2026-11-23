@@ -189,6 +189,6 @@ else msg('stop','answer sk-or-secret');
     [,t]=await run({prompt:'ERROR'}); assert.equal(t.error,'[redacted key]'); assert.ok(!JSON.stringify(t).includes('sk-or-'));
     await store.writes;
     const blockedDir = path.join(dir, 'blocked'); await fsp.mkdir(blockedDir);
-    const blocked = new AsideTurns(blockedDir,atomic,x=>x,{piProblem:async()=> 'Pi 1.5.2 or newer is needed (found 1.0.0)'}); i={...base,turn_id:uuid()}; const count=records().length; await blocked.start(i); t=await wait(blocked,i.turn_id); assert.match(t.error,/1.5.2/); assert.equal((await blocked.start(i)).status,200); assert.equal(records().length,count);
+    const blocked = new AsideTurns(blockedDir,atomic,x=>x,{problem:async()=> 'Pi 1.5.2 or newer is needed (found 1.0.0)'}); i={...base,turn_id:uuid()}; const count=records().length; await blocked.start(i); t=await wait(blocked,i.turn_id); assert.match(t.error,/1.5.2/); assert.equal((await blocked.start(i)).status,200); assert.equal(records().length,count);
   } finally { process.env = old; }
 });

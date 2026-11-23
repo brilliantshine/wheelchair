@@ -16,7 +16,7 @@ test('Pi redacts failure messages thrown before launch and returned by the assis
   const base = { provider: 'openrouter', mode: 'fork', from: 'parent', new_id: crypto.randomUUID(), model: 'vendor/model', cwd: dir, prompt: 'hello', account_dir: null };
   try {
     for (const [piProblem, expected] of [[async () => { throw new Error('bad sk-or-secret'); }, 'bad [redacted key]'], [async () => null, 'bad [redacted key]']]) {
-      const store = new AsideTurns(dir, atomic, x => x, { piProblem }); const input = { ...base, turn_id: crypto.randomUUID() };
+      const store = new AsideTurns(dir, atomic, x => x, { problem: piProblem }); const input = { ...base, turn_id: crypto.randomUUID() };
       await store.start(input);
       for (let n = 0; n < 15 && store.get(input.turn_id).state === 'running'; n++) await sleep(1000);
       const result = store.result(store.get(input.turn_id)); assert.equal(result.state, 'failed'); assert.equal(result.error, expected); assert.equal(result.reply, null); assert.equal(result.limit, false); await store.writes;

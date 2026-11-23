@@ -277,7 +277,7 @@ class MachineService {
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
-    this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir, { piProblem: async () => { await this.checkPiVersion(); const status = this.cliStatus('pi'); return status.installed ? status.problem : 'Pi is not installed'; } });
+    this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir, { problem: async cli => { await this.checkVersion(cli); const status = this.cliStatus(cli), manifest = connectors.manifest(cli); return status.installed ? status.problem : `${manifest.shortName || manifest.displayName} is not installed`; } });
     this.sessions = {};
     this.projectToolsBoot = crypto.randomUUID();
     this.projectToolsState = new Map();
