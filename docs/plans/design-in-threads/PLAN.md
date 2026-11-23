@@ -1,6 +1,6 @@
 ---
 slug: design-in-threads
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-22
 ---
 
@@ -45,6 +45,23 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 Bar: a fresh agent with no conversation history can implement from this section alone.
 A Mermaid diagram of the flow is added at approval.
 
+### Flow
+
+```mermaid
+flowchart TD
+  A[Idea confirmed, visible work] --> B[Lead starts designer]
+  B --> C[Designer drafts mockup files]
+  C --> D[Lead posts mockup cards]
+  D --> E{Collin agrees?}
+  E -- asks for changes --> F[Lead passes his words verbatim] --> C
+  E -- yes --> G[Mockups listed in Spec, designer stopped]
+  G --> H[Review, approval, Start building]
+  H --> I[Worker builds its part, screenshots, compares, fixes]
+  I --> J[Sub-lead checks and posts Built beside Mockup]
+  J --> K[Verifier compares whole screens with mockups]
+  H -. design change asked .-> L[Follow-up thread posted at once]
+```
+
 ### Overview
 
 Three pieces:
@@ -70,8 +87,10 @@ Three pieces:
   phone screen, 1440x900 for a desktop web page, the app's window size for a desktop app.
   Several states or sizes are several files.
 - A mockup file is at most 2 MiB (the archived-file read limit, `viewer/app/threads.js:295`).
-  `card.js` checks the file exists under the plan's `graphs/` and refuses a `mockup` card or
-  `image.mockup` whose file is larger, before posting.
+  For a `mockup` diagram card, `card.js` checks the file exists under the named plan's
+  `graphs/` and is at most 2 MiB before posting. For `image.mockup` (which names no plan),
+  the hub makes the same checks against the resolved thread plan, in the update that stores
+  the card, and refuses the card if they fail.
 - A new version of a mockup is written as a new file (`mockup-<name>-v2.html`, ...), never
   over an old one, so older cards in the thread still show what they showed.
 
@@ -186,11 +205,14 @@ Rules, in a new `protocol/app/designer.md`:
   Collin asks for a design change once Start building is accepted (including after `done`),
   the lead posts a `stub` card at once (durable, so a lead restart loses nothing):
   `depends_on_parent: true`, summary quoting his words verbatim, the current mockup file
-  paths (on the parent branch) and a one-line description of the screenshot that prompted
-  it. If Collin attached files with the request, the summary describes each in a line and
+  paths (on the parent branch) and, when a screenshot prompted it, a one-line description of
+  that screenshot. If Collin attached files with the request, the summary describes each in a line and
   says they may be gone once the parent is archived, so the stub's lead asks him to attach
   them again if it needs them. The stub's lead
   plans it from step 1 with its own mockups. Nothing in this thread changes.
+- **Designer dies:** like a dead mapper, it is started fresh (`lead.md`, "Restarting what
+  died", gains `designer` in its list), briefed with the newest mockup files and any of
+  Collin's feedback not yet reflected in a file.
 - **Restart:** a restarted lead stops any live designer (its results would go to the dead
   lead) and, if the "Agree the mockups" question is still open, starts a fresh one briefed
   with the newest mockup files and any of Collin's feedback in the restart context's recent
@@ -253,7 +275,8 @@ npm --prefix viewer run test:browser
 
 New tests at minimum: `card.js` accepts a `mockup` diagram with `width`/`height` and refuses
 them on other formats or out of range; accepts `image.mockup` and an `image` from a sub-lead,
-refuses `image` from a worker; refuses a mockup file over 2 MiB; archiving keeps a
+refuses `image` from a worker; refuses a mockup file over 2 MiB (both paths, including an `image.mockup` posted while
+`thread.slug` is still unset); archiving keeps a
 sub-lead's image upload; a lead may start a `designer`, a sub-lead may not; the designer
 gets `cards.md` and `designer.md` in its prompt and an Other agents tier; a browser test that
 a 390x844 mockup card shows the whole screen without inner scrolling at phone and laptop
@@ -381,6 +404,9 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Designer dying while the lead lives has no restart rule | downgraded (minor) | The hub already tells the lead a session died; adding designer to the restart list is one line |
+| mechanics | minor | `image.mockup` file check has no plan at card.js time | upheld | Hub checks against the resolved plan in the card's update |
+| mechanics | minor | Stub requires a screenshot description even when none exists | upheld | Conditional |
 
 ## Prior Work
 
