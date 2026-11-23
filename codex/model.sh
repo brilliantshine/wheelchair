@@ -270,6 +270,8 @@ def kimi_models():
 
 # model-script: Antigravity model discovery
 AGY_TTL = 3600
+# The tool whose Settings list is "agy_visible", found from the registry rather than named here.
+AGY = next((tool for tool in TOOLS if (tool.get("settings", {}).get("modelOptions") or {}).get("listedKey") == "agy_visible"), None)
 
 
 def agy_parse(text):
@@ -278,7 +280,7 @@ def agy_parse(text):
     for line in text.splitlines():
         model, _, name = line.partition("\t")
         model, name = model.strip(), name.strip()
-        if model == "none" or model in seen or not FORMATS["gemini"].fullmatch(model):
+        if model == "none" or model in seen or not FORMATS[AGY["provider"]].fullmatch(model):
             continue
         seen.add(model)
         listed.append({"value": model, "label": f"{name} · {model}" if name else model})
@@ -293,6 +295,8 @@ def agy_models(pin_path):
     import shutil
     import subprocess
     import time
+    if AGY is None:
+        return []
     path = os.path.join(os.path.dirname(os.path.abspath(pin_path)), "agy-models.json")
     cached = None
     try:
@@ -304,7 +308,8 @@ def agy_models(pin_path):
         pass
     if cached is not None and 0 <= time.time() - cached["at"] < AGY_TTL:
         return agy_valid(cached["models"])
-    binary = os.environ.get("WHEELCHAIR_AGY", shutil.which("agy") or os.path.expanduser("~/.local/bin/agy"))
+    name = AGY["install"]["binary"]
+    binary = os.environ.get("WHEELCHAIR_AGY", shutil.which(name) or os.path.expanduser(f"~/.local/bin/{name}"))
     listed = []
     if binary and os.access(binary, os.X_OK):
         try:
@@ -324,7 +329,7 @@ def agy_models(pin_path):
 
 def agy_valid(models):
     return [o for o in models if isinstance(o, dict) and isinstance(o.get("value"), str) and isinstance(o.get("label"), str)
-            and o["value"] != "none" and FORMATS["gemini"].fullmatch(o["value"])]
+            and o["value"] != "none" and FORMATS[AGY["provider"]].fullmatch(o["value"])]
 
 
 # model-script: GPT heads-up workflow
