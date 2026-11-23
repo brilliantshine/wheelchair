@@ -10,6 +10,7 @@ missing gets optimized away by the next agent that finds it inconvenient.
 | File | Role |
 |---|---|
 | `app/` | The app's role protocol, one file per agent role plus the card formats; [its router](app/AGENTS.md). Every session the app starts reads its role file from here |
+| `app/assistant.md` | The personal assistant's cross-project role and actions |
 | `diagrams.md` | Which diagram a document gets, and what keeps it from lying |
 | `graphs.md` | The graph format: schema, how the viewer starts, the run-picture switch |
 | `sensitivity.md` | The diagram-sensitivity dial: the region rendered into present harnesses' always-on files, and what each level draws |
