@@ -115,7 +115,7 @@ async function resolveModel(hub, cli, role, requestedTier = 'top') {
 }
 
 async function resolveScout(hub, provider, tier) {
-  const args = provider === 'claude' ? ['family', 'claude', tier] : [provider, tier];
+  const args = connectors.byProvider(provider)?.models.familyCommand ? ['family', provider, tier] : [provider, tier];
   try {
     const model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), args)).stdout.trim();
     return model.length > settingsStore.MODEL_MAX ? null : model;

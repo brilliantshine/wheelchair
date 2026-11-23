@@ -84,6 +84,7 @@ module.exports = {
     "accountPolicy": null
   },
   "models": {
+    "familyCommand": true,
     "pins": {
       "light": {
         "model": "claude-haiku-5-5"
