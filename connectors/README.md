@@ -336,3 +336,5 @@ outside `connectors/`: add a capability or optional member, list it in `contract
 document it here.
 
 Connector halves must not require another connector folder. Shared step vocabularies live in `common.js` as `stepVocabularies.claudeStyle` and `stepVocabularies.codexStyle`.
+
+Machine halves must not export `provider`; the manifest is the source of provider identity.

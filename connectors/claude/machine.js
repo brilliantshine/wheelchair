@@ -55,7 +55,7 @@ module.exports = {
         return r.code === 0 && obj.is_error === false ? { state: 'ok', reply: obj.result, conversation_id: i.mode === 'fork' ? i.new_id : i.from, limit } : { state: 'failed', error: obj.result || obj.error?.message || obj.error || lastAside(r.err) || `claude exited ${r.code}`, limit };
   },
   stepVocabulary: c.stepVocabularies.claudeStyle,
-  provider: 'claude', loginEnv, usual, parseUsage,
+  loginEnv, usual, parseUsage,
   usageProbe(dir, options = {}) { return run('claude', ['-p', '/usage', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', '', '--settings', JSON.stringify({ env: { ANTHROPIC_BASE_URL: closedPort } })], { ...options, env: { ...process.env, ...loginEnv(dir), ANTHROPIC_BASE_URL: closedPort }, parse: parseUsage }); },
   asideArgv(input, context) { return ['claude', '-p', '--output-format', 'json', '--model', input.model, ...(input.effort ? ['--effort', input.effort] : []), ...(input.access === 'full' ? ['--permission-mode', 'bypassPermissions'] : ['--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob']), '--strict-mcp-config', '--system-prompt-snapshot', 'off', '--append-system-prompt', context.prompt, '--resume', input.from, ...(input.mode === 'fork' ? ['--fork-session', '--session-id', input.new_id] : [])]; },
   loginCommand() { return ['claude', 'auth', 'login']; },

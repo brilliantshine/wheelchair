@@ -81,7 +81,7 @@ module.exports = {
         return failed ? { state: 'failed', error, limit } : { state: 'ok', reply: redact(reply), conversation_id: expected, limit: false };
   },
   stepVocabulary: c.stepVocabularies.codexStyle,
-  provider: 'openrouter', resolveCli, redact, retryStartupEnter: true,
+  resolveCli, redact, retryStartupEnter: true,
   loginEnv: dir => dir && path.resolve(dir) !== home(null) ? { PI_CODING_AGENT_DIR: dir } : {},
   loginState(record, pane, captured, { kill }) {
     const marker = pane.match(/__wc_login_exit (\d+)/);

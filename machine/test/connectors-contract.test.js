@@ -23,6 +23,7 @@ test('connector files do not require another connector folder', () => {
 });
 test('contract rejects missing and inconsistent members and fields', () => {
   const m = structuredClone(manifests[0]); const mod = { ...connectors.machine(m.cli) };
+  mod.provider = m.provider; assert.throws(() => contract.validate(m, 'machine', mod), /provider/); delete mod.provider;
   delete mod.command; assert.throws(() => contract.validate(m, 'machine', mod), /command/);
   mod.command = connectors.machine(m.cli).command; delete mod.usageProbe; assert.throws(() => contract.validate(m, 'machine', mod), /usageProbe/);
   mod.usageProbe = () => {}; m.capabilities.usageProbe = false; assert.throws(() => contract.validate(m, 'machine', mod), /usageProbe/);

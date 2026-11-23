@@ -291,7 +291,7 @@ module.exports = {
   restartLossReason: () => 'Lost track of this Kimi Code session after a machine restart; restart it',
 
   stepVocabulary: c.stepVocabularies.codexStyle,
-  provider: 'kimi', resolveCli, readConfig, loginStatus, usageProbe,
+  resolveCli, readConfig, loginStatus, usageProbe,
   loginEnv: dir => ({ KIMI_CODE_HOME: home(dir) }),
   seed(dir, id) { c.seed(dir, home(), 'AGENTS.md', 'kimi', id); }, prepare() {},
   loginResult: record => record.result,

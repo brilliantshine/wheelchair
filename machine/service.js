@@ -30,6 +30,7 @@ const { pipeline } = require('node:stream/promises');
 const { promisify } = require('node:util');
 const gitAsync = promisify(execFile);
 const connectors = require('../connectors');
+const defaultAccount = cli => `default-${connectors.manifest(cli).provider}`;
 const { scrubOutput } = require('../connectors/common');
 const listWords = items => items.slice(0, -1).join(', ') + ' or ' + items.at(-1);
 const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
@@ -804,10 +805,10 @@ class MachineService {
     const adapter = adapters[input.cli];
     if (!adapter) die(`cli must be ${listWords(connectors.list().map(m => m.cli))}`);
     await this.versionGate(input.cli);
-    const account = input.account || { id: `default-${adapter.provider}`, dir: null };
+    const account = input.account || { id: defaultAccount(input.cli), dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
     const dir = accountDir(account.dir, account.id);
-    if (!dir && account.id !== `default-${adapter.provider}`) die('invalid default account');
+    if (!dir && account.id !== defaultAccount(input.cli)) die('invalid default account');
     if (dir) adapter.seed(dir, account.id);
     await adapter.prepare?.(dir);
     const options = startOptions(input);
@@ -860,7 +861,7 @@ class MachineService {
     if (windowsTools) this.win?.afterLaunch(session);
     await this.persistSessions();
     try {
-      await fsp.appendFile(path.join(this.stateDir, 'session-ledger.jsonl'), `${json({ at: new Date().toISOString(), name, role: input.role, provider: adapter.provider, model: input.model || null, account_dir: dir, cli_session_id: session.cli_session_id, thread_id: input.thread_id })}\n`);
+      await fsp.appendFile(path.join(this.stateDir, 'session-ledger.jsonl'), `${json({ at: new Date().toISOString(), name, role: input.role, provider: connectors.manifest(input.cli).provider, model: input.model || null, account_dir: dir, cli_session_id: session.cli_session_id, thread_id: input.thread_id })}\n`);
     } catch (error) { console.error('session ledger append failed:', error.message); }
     await this.checkReady(session);
     return session;
@@ -870,7 +871,7 @@ class MachineService {
     if (!connectors.manifest(session.cli)?.capabilities.liveSwitch) die('unsupported cli');
     if (!input || typeof input.switch_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.switch_id) || !input.account || typeof input.account.id !== 'string' || !Object.hasOwn(input.account, 'dir') || !(input.model === null || typeof input.model === 'string') || typeof input.project !== 'string' || !input.project || path.basename(input.project) !== input.project || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir)) die('invalid switch body');
     const dir = accountDir(input.account.dir, input.account.id);
-    if (!dir && input.account.id !== `default-${adapter.provider}`) die('invalid default account');
+    if (!dir && input.account.id !== defaultAccount(session.cli)) die('invalid default account');
     session.switches ||= {};
     const prior = Object.hasOwn(session.switches, input.switch_id) ? session.switches[input.switch_id] : null;
     if (prior) return { accepted: true, switch_id: input.switch_id, state: prior.state };
@@ -1545,7 +1546,7 @@ class MachineService {
       }
       if (result.reading) {
         const { reached, ...reading } = result.reading;
-        reading.account = current.account || `default-${adapter.provider}`;
+        reading.account = current.account || defaultAccount(current.cli);
         if (reached) reading.limited_until = limitedUntil(reading);
         current.last_reading = reading;
         event = { ...event, reading };
@@ -1555,7 +1556,7 @@ class MachineService {
     if (event.type === 'usage-source') {
       const reading = connectors.manifest(current.cli).capabilities.usageEvents ? adapter.usageFrom(event.payload) : null;
       if (!reading) return { ignored: true };
-      reading.account = current.account || `default-${adapter.provider}`;
+      reading.account = current.account || defaultAccount(current.cli);
       current.last_reading = reading; await this.persistSessions();
       event = { type: 'usage', reading };
     }
@@ -1635,7 +1636,7 @@ class MachineService {
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(account)) die('invalid account');
     let record = this.logins[account];
     if (!record && this.liveTmux()?.has(`wc-login-${account}`)) {
-      const defaultEntry = Object.entries(adapters).find(([, adapter]) => account === `default-${adapter.provider}`);
+      const defaultEntry = Object.entries(adapters).find(([cli]) => account === defaultAccount(cli));
       if (defaultEntry) record = { cli: defaultEntry[0], dir: null };
       else {
         const dir = accountDir(`~/.wheelchair/accounts/${account}`, account);
@@ -1650,7 +1651,7 @@ class MachineService {
     const { account, cli } = input, adapter = adapters[cli];
     if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !adapter) die('invalid account or cli');
     const dir = accountDir(input.dir, account);
-    if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
+    if ((!dir && account !== defaultAccount(cli)) || (dir && Object.keys(adapters).some(cli => account === defaultAccount(cli)))) die('invalid default account');
     if (adapter.resolveCli && !adapter.resolveCli()) { const manifest = connectors.manifest(cli); throw Object.assign(new Error(`${manifest.shortName || manifest.displayName} is not installed`), { status: 409 }); }
     if (dir) adapter.seed(dir, account);
     await adapter.prepare?.(dir);
@@ -1706,7 +1707,7 @@ class MachineService {
   status() {
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
     const statuses = Object.fromEntries(connectors.list().map(m => [m.cli, this.cliStatus(m.cli, defaults[m.cli])]));
-    const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
+    const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: defaultAccount(cli), cli, ...defaults[cli] }));
     const root = path.join(os.homedir(), '.wheelchair', 'accounts');
     let folders = []; try { folders = fs.readdirSync(root, { withFileTypes: true }); } catch {}
     for (const folder of folders.filter(e => e.isDirectory())) {
@@ -2125,7 +2126,7 @@ class MachineService {
         const { account, cli } = input;
         if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !connectors.manifest(cli)?.capabilities.usageProbe || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
         const adapter = adapters[cli], dir = accountDir(input.dir, account);
-        if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
+        if ((!dir && account !== defaultAccount(cli)) || (dir && Object.keys(adapters).some(cli => account === defaultAccount(cli)))) die('invalid default account');
         try {
           const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000, ...(this.options[`${cli}UsageUrl`] ? { url: this.options[`${cli}UsageUrl`] } : {}) });
           const { reached, ...windows } = parsed;

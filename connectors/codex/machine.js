@@ -126,7 +126,7 @@ module.exports = {
   projectToolFileWarning(servers) { return codexOverrides({ servers }).tooLarge ? 'project tools skipped on Codex: .mcp.json is too large to pass on the command line' : null; },
   stepVocabulary: c.stepVocabularies.codexStyle,
   preflightCommand(dir) { return { file: path.join(c.root, 'codex', 'preflight.sh'), args: [], env: dir ? { ...process.env, ...loginEnv(dir) } : undefined }; },
-  provider: 'gpt', loginEnv, usual, parseUsage, codexEntryReason, codexOverrides,
+  loginEnv, usual, parseUsage, codexEntryReason, codexOverrides,
   usageProbe(dir, options = {}) { return run('codex', ['app-server'], { ...options, env: { ...process.env, ...loginEnv(dir) }, parse: parseUsage, messages: [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: 'wheelchair', version: '1' } } },
     { jsonrpc: '2.0', method: 'initialized' },
