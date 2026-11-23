@@ -1,6 +1,6 @@
 ---
 slug: custom-backgrounds
-status: verifying
+status: done
 created: 2026-11-19
 adopted-from: user-supplied 1-plan.md and realism review copy
 ---
@@ -264,3 +264,5 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 - 2026-11-23 — Current-main integration: merged0682593b in d83cb509, resolving five paths while retaining incoming Harnesses/OpenRouter/onboarding/lessons/auto-merge/user-name behavior and background readiness/focus. Added ordinary seams for lesson deep-link discard, new signed-in sent-file appearance and Harnesses solid inner surfaces. All eight Accepted Risks unchanged. Focused Node77/77, appearance58/58, current Settings35/35 per browser and representative Harnesses/sent-file20/20 pass. The initial stale phone tab-count expectation was corrected and the full affected file rerun in both browsers. Exact evidence in INTEGRATION.md; status stays verifying for fresh independent integration review.
 
 - 2026-11-23 — Fresh independent current-main integration PASS on174b4607e831df60a0b6d3d00994a90e16fab380 by /root/finish_normal_use/verify_main_integration:2 targeted Node and14 Chromium/Firefox cases pass, no normal-use gap; source/syntax/viewer whitespace checks clean. Incoming Harnesses code and all new main preferences retained. Exact commands/report in INTEGRATION.md. Report-record changes only feature documents; root handles done/push/PR. Status remains verifying.
+
+- 2026-11-23 — Build complete: current-main integration and the two normal-use remediation fixes independently passed. Final source verified at174b4607; result record2ca99628. Rare compound overlap accepted; original seven risks retained. Lead proceeding to branch push and pull request.
