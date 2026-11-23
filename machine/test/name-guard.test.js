@@ -113,7 +113,7 @@ function detect(source, file = 'snippet.js') {
     const isolated = scan.split('');
     for (const other of literals) if (other !== item) for (let i = other.start; i < other.end; i++) if (isolated[i] !== '\n') isolated[i] = ' ';
     const code = isolated.join('');
-    const patterns = file.endsWith('.js') ? js : [...shellLiteral, pythonLiteral];
+    const patterns = file.endsWith('.js') ? js : [...js, ...shellLiteral, pythonLiteral];
     if (patterns.some(re => { const flags = [...new Set(re.flags + 'gm')].join(''); return [...code.matchAll(new RegExp(re.source, flags))].some(m => m.index <= item.start && m.index + m[0].length >= item.end); })) report(item.start);
   }
   // Bare shell words and JS shorthand keys retain their existing checks.
@@ -134,7 +134,7 @@ test('detector recognizes name checks across lines', () => {
   for (const snippet of ["x\n===\n'codex'", "case\n'codex':", "['codex',\n x]", "obj[\n'codex'\n]", "x ||\n'codex'", "'codex'\n&& x", "{\n'codex'\n: x}"]) assert.ok(detect(snippet).length, snippet);
   for (const snippet of ["cli === `kimi`", "`kimi` === cli"]) assert.ok(detect(snippet).length, snippet);
   for (const snippet of ["case \"$cli\" in \"kimi\")", "case $cli in kimi)", "[[ $x == \"codex\" ]]", "[[ $x == 'codex' ]]", "[[ $x == codex ]]", "for t in \"claude\" \"codex\"", "for t in claude codex"]) assert.ok(detect(snippet, 'test.sh').length, snippet);
-  for (const snippet of ["'kimi' in enabled", "'kimi' not in enabled", "enabled in 'kimi'"]) assert.ok(detect(snippet, 'test.py').length, snippet);
+  for (const snippet of ["'kimi' in enabled", "'kimi' not in enabled", "enabled in 'kimi'", "{'kimi': value}", "f('kimi')"]) assert.ok(detect(snippet, 'test.py').length, snippet);
   for (const snippet of ['# for x in codex', "echo 'for x in codex'"]) assert.deepEqual(detect(snippet, 'test.sh'), [], snippet);
   for (const snippet of ['case x in codex)', '[[ $x == codex ]]', 'for x in claude codex', 'case x in\n codex)', '[[ $x ==\n codex ]]', 'for x in other \\\n codex']) assert.ok(detect(snippet, 'test.sh').length, snippet);
   for (const snippet of ["x == 'codex'", "x ==\n 'codex'", "x in ['codex']", "x in [\n 'codex'\n]", "('codex', 'other')", "(\n 'codex',\n 'other')"]) assert.ok(detect(snippet, 'codex/model.sh').length, snippet);
