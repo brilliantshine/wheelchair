@@ -375,7 +375,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 5 — 2026-11-22
 
-**Lanes:** see below.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 4:** follow-up stub no longer posts attachments (describes them; re-attach on request); slug discovery for `image.mockup` happens without a nested save, in the card's own update; screenshot card titles name the task and the parts it built.
 
