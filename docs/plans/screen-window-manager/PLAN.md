@@ -30,6 +30,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | openbox counts as running once `_NET_SUPPORTING_WM_CHECK` is set, within one 5 s deadline from spawning; otherwise it is killed and the screen runs without it | Scope registration doesn't mean openbox manages windows (screens-solid Decisions 16, 19) | adopted |
 | 6 | openbox exiting mid-session (falling back to today's window handling) and an Xvfb liveness re-check after the readiness wait are deferred to the follow-up | Hardening for a crash after a healthy start; normal use works without them | defaulted |
 | 7 | Tests gate openbox with an instance property `allowOpenbox` on `service.screens` (default `true`); the shared fake-tool fixture sets it `false` | So a host with openbox installed never starts it in unrelated tests (screens-solid Decision 20) | adopted |
+| 8 | openbox counts as ready when root `_OB_CONFIG_FILE` names our rc.xml, not on `_NET_SUPPORTING_WM_CHECK`; supersedes Decision 5's readiness property | openbox sets `_NET_SUPPORTING_WM_CHECK` before loading config, and on a failed load runs built-in bindings without setting `_OB_CONFIG_FILE` | review-round-1 |
+| 9 | Focus in openbox mode uses `windowactivate` without `--sync`; supersedes Decision 3's `--sync` | With a modal dialog open, openbox focuses the dialog, so `--sync` waiting on the parent id would time out | review-round-1 |
 
 ## Spec
 
@@ -82,9 +84,13 @@ In `start()` (`machine/lib/screen.js:139-185`), after the second `xauth add` and
   stderr go to `<dir>/wm.log` (opened `0600`, append). Attach `exit` and `error`
   listeners at once that set a local `exited` flag.
 - **Readiness.** Within one 5 s deadline from the spawn, every 100 ms run
-  `xprop -root _NET_SUPPORTING_WM_CHECK` with the screen's `DISPLAY`/`XAUTHORITY` and a
-  probe timeout of `min(1000, time left)`. Ready when its stdout contains a window id
-  (`window id # 0x…`) and `exited` is false.
+  `xprop -root _OB_CONFIG_FILE` with the screen's `DISPLAY`/`XAUTHORITY` and a probe
+  timeout of `min(1000, time left)`. Ready when its stdout is
+  `_OB_CONFIG_FILE(UTF8_STRING) = "<dir>/openbox/rc.xml"` (our exact path) and `exited`
+  is false. openbox sets this property only after it has loaded that file; when the file
+  fails to load it runs with built-in bindings and never sets it, so that case ends in
+  "not ready" and openbox is killed. `_NET_SUPPORTING_WM_CHECK` is not used: openbox sets
+  it before reading its config.
 - **Not ready** (deadline passed, spawn error, or openbox exited first): SIGKILL the
   spawned child if still running, `this.immediate(this.unit(screen, 'wm'))`, log the
   reason with `this.service.log`, and carry on with `window_manager: null`. Never fatal.
@@ -109,8 +115,10 @@ When `screen.state.window_manager === 'openbox'`:
   (`not found`, or no `#`) means no windows. Each id then goes through the existing
   `xwininfo -id` viewable check and parsing unchanged. This covers `listWindows`,
   `windowIds` and `autoFocus`.
-- `focusWindow` runs `xdotool windowactivate --sync -- <id>` (10 s timeout as today).
-  `autoFocus` uses the same command in place of `windowfocus`, keeping its own timeouts.
+- `focusWindow` runs `xdotool windowactivate -- <id>` (10 s timeout as today), without
+  `--sync`, like today's `windowfocus`. `autoFocus` uses the same command in place of
+  `windowfocus`, keeping its own timeouts. Without `--sync`, a window with a modal dialog
+  open does not time out: openbox focuses the dialog instead, and the call still succeeds.
 - Without openbox, every call is exactly as today. Ids reported are app windows in both
   modes, so `shot --window`, `focus` and `windows` keep working on the same ids.
 
@@ -140,7 +148,9 @@ and `xprop`.
 - With fake `openbox` (sets a flag file and sleeps) and fake `xprop` (reports
   `_NET_SUPPORTING_WM_CHECK` and a `_NET_CLIENT_LIST`): a `wm` scope is started; `status`
   shows `window_manager: "openbox"`; `windows` lists the client-list ids;
-  `focus` calls `windowactivate --sync`; a launch's autofocus uses `windowactivate`.
+  `focus` calls `windowactivate` without `--sync`; a launch's autofocus uses
+  `windowactivate`. The fake `xprop` reports `_OB_CONFIG_FILE` as the screen's rc.xml
+  path.
 - openbox invocation: `--sm-disable --config-file <dir>/openbox/rc.xml`, with
   `XDG_CONFIG_HOME`, `XDG_CONFIG_DIRS` and `HOME` equal to the screen directory. The file
   is `0600` in a `0700` directory, has an empty `<keyboard/>`, no `<menu>`, no `Execute`
@@ -149,8 +159,9 @@ and `xprop`.
 - Without openbox on PATH, or with `allowOpenbox = false`: no `wm` scope,
   `window_manager: null`, and the existing `xwininfo -root -children` / `windowfocus`
   calls.
-- A fake `xprop` that never reports `_NET_SUPPORTING_WM_CHECK`: the `wm` scope is
-  stopped, `window_manager` is `null`, and `start` returns within 5.5 s.
+- A fake `xprop` that never reports `_OB_CONFIG_FILE`, and one that reports a different
+  path: the `wm` scope is stopped, `window_manager` is `null`, and `start` returns within
+  7 s of the request (5 s readiness, up to 1 s cleanup, fake setup is instant).
 - A fake openbox that exits at once: `window_manager` is `null`, the screen runs.
 - A session stopped during the readiness wait gets 409 and the screen is not saved as
   running.
@@ -165,7 +176,10 @@ node --test viewer/test/*.test.js
 
 On hearth with real tools, `bash machine/test/screen-live.sh` still passes. When
 `openbox` and `xprop` are installed, it also asserts `status` shows
-`window_manager: "openbox"` and that `windows` lists the launched app's window.
+`window_manager: "openbox"`, that `windows` lists the launched app's window, and that
+after focusing the Chromium window and pressing `F11` (`wc.js screen key F11`) its
+`windows` entry reaches the full screen size within 3 s (full screen needs a window
+manager).
 
 ## Deferred
 
@@ -178,18 +192,39 @@ On hearth with real tools, `bash machine/test/screen-live.sh` still passes. When
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A window an app minimizes itself before the agent records its id is left out of `windows`, so the agent can't switch back to it | Screens have no titlebar or shortcut to minimize, so only an app minimizing itself causes it; rare path | review-round-1 |
 
 ## Review Rounds
 
 ### Round 1 — 2026-11-22
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | Default openbox frames would show inert titlebar buttons and take space | upheld (minor) | S3 config turns decorations off for all windows; Validation checks it |
+| mechanics | blocking | `_NET_SUPPORTING_WM_CHECK` is set before openbox loads its config; a failed load runs built-in bindings | upheld | Readiness now waits for `_OB_CONFIG_FILE` naming our rc.xml (Decision 8) |
+| mechanics | blocking | Default frames and title bars remain | upheld | Same fix as the intent finding: `<decor>no</decor>` for all windows |
+| mechanics | major | `windowactivate --sync` times out when openbox redirects focus to a modal dialog | upheld | Drop `--sync` (Decision 9) |
+| mechanics | major | Minimized windows drop out of `windows` | accepted-risk | Rare path: nothing on a screen can minimize except the app itself |
+| mechanics | blocking | 5.5 s test bound conflicts with setup time plus 1 s cleanup | downgraded (minor) | Validation wording only; bound is now 7 s from the request |
+| mechanics | minor | Live check doesn't exercise what openbox is for | upheld (minor) | Live test asserts F11 full screen fills the screen |
+
+### Round 2 — 2026-11-22
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 1:**
+- S3 fixed config: decorations off for all windows (`<applications>` / `<decor>no</decor>`).
+- S3 readiness: waits for root `_OB_CONFIG_FILE` naming our rc.xml instead of `_NET_SUPPORTING_WM_CHECK` (Decision 8).
+- S4 focus: `windowactivate` without `--sync` (Decision 9).
+- Validation: timeout bound 7 s from the request; fake xprop reports `_OB_CONFIG_FILE`; live test asserts F11 full screen.
+- Accepted Risks: self-minimized windows left out of `windows`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
