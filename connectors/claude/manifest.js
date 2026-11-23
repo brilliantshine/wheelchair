@@ -81,24 +81,19 @@ module.exports = {
   "models": {
     "pins": {
       "light": {
-        "model": "claude-haiku-5-5",
-        "effort": null
+        "model": "claude-haiku-5-5"
       },
       "standard": {
-        "model": "claude-sonnet-5-5",
-        "effort": null
+        "model": "claude-sonnet-5-5"
       },
       "heavy": {
-        "model": "claude-opus-5-5",
-        "effort": null
+        "model": "claude-opus-5-5"
       },
       "critical": {
-        "model": "claude-fable-5-2",
-        "effort": null
+        "model": "claude-fable-5-2"
       },
       "lead": {
-        "model": "claude-opus-5-5",
-        "effort": null
+        "model": "claude-opus-5-5"
       }
     },
     "format": "^[a-z0-9][a-z0-9._-]{0,63}$",

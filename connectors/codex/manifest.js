@@ -96,24 +96,19 @@ module.exports = {
   "models": {
     "pins": {
       "light": {
-        "model": "gpt-6-luna",
-        "effort": null
+        "model": "gpt-6-luna"
       },
       "standard": {
-        "model": "gpt-5.6-terra",
-        "effort": null
+        "model": "gpt-5.6-terra"
       },
       "heavy": {
-        "model": "gpt-6.1-sol",
-        "effort": null
+        "model": "gpt-6.1-sol"
       },
       "critical": {
-        "model": "gpt-6-astra",
-        "effort": null
+        "model": "gpt-6-astra"
       },
       "lead": {
-        "model": "gpt-6.1-sol",
-        "effort": null
+        "model": "gpt-6.1-sol"
       }
     },
     "format": "^[a-z0-9][a-z0-9._-]{0,63}$",

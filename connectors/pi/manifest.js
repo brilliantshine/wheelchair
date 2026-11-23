@@ -58,24 +58,19 @@ module.exports = {
   "models": {
     "pins": {
       "light": {
-        "model": "openrouter/auto",
-        "effort": null
+        "model": "openrouter/auto"
       },
       "standard": {
-        "model": "openrouter/auto",
-        "effort": null
+        "model": "openrouter/auto"
       },
       "heavy": {
-        "model": "openrouter/auto",
-        "effort": null
+        "model": "openrouter/auto"
       },
       "critical": {
-        "model": "openrouter/auto",
-        "effort": null
+        "model": "openrouter/auto"
       },
       "lead": {
-        "model": "openrouter/auto",
-        "effort": null
+        "model": "openrouter/auto"
       }
     },
     "format": "^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$",

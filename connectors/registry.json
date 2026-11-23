@@ -82,24 +82,19 @@
       "models": {
         "pins": {
           "light": {
-            "model": "claude-haiku-5-5",
-            "effort": null
+            "model": "claude-haiku-5-5"
           },
           "standard": {
-            "model": "claude-sonnet-5-5",
-            "effort": null
+            "model": "claude-sonnet-5-5"
           },
           "heavy": {
-            "model": "claude-opus-5-5",
-            "effort": null
+            "model": "claude-opus-5-5"
           },
           "critical": {
-            "model": "claude-fable-5-2",
-            "effort": null
+            "model": "claude-fable-5-2"
           },
           "lead": {
-            "model": "claude-opus-5-5",
-            "effort": null
+            "model": "claude-opus-5-5"
           }
         },
         "format": "^[a-z0-9][a-z0-9._-]{0,63}$",
@@ -233,24 +228,19 @@
       "models": {
         "pins": {
           "light": {
-            "model": "gpt-6-luna",
-            "effort": null
+            "model": "gpt-6-luna"
           },
           "standard": {
-            "model": "gpt-5.6-terra",
-            "effort": null
+            "model": "gpt-5.6-terra"
           },
           "heavy": {
-            "model": "gpt-6.1-sol",
-            "effort": null
+            "model": "gpt-6.1-sol"
           },
           "critical": {
-            "model": "gpt-6-astra",
-            "effort": null
+            "model": "gpt-6-astra"
           },
           "lead": {
-            "model": "gpt-6.1-sol",
-            "effort": null
+            "model": "gpt-6.1-sol"
           }
         },
         "format": "^[a-z0-9][a-z0-9._-]{0,63}$",
@@ -359,24 +349,19 @@
       "models": {
         "pins": {
           "light": {
-            "model": "gemini-3.8-flash-low",
-            "effort": null
+            "model": "gemini-3.8-flash-low"
           },
           "standard": {
-            "model": "gemini-3.8-flash-medium",
-            "effort": null
+            "model": "gemini-3.8-flash-medium"
           },
           "heavy": {
-            "model": "gemini-3.8-flash-high",
-            "effort": null
+            "model": "gemini-3.8-flash-high"
           },
           "critical": {
-            "model": "gemini-3.8-flash-high",
-            "effort": null
+            "model": "gemini-3.8-flash-high"
           },
           "lead": {
-            "model": "gemini-3.8-flash-high",
-            "effort": null
+            "model": "gemini-3.8-flash-high"
           }
         },
         "format": "^[a-z0-9][a-z0-9._-]{0,63}$",
@@ -477,24 +462,19 @@
       "models": {
         "pins": {
           "light": {
-            "model": "kimi-code/kimi-for-coding",
-            "effort": null
+            "model": "kimi-code/kimi-for-coding"
           },
           "standard": {
-            "model": "kimi-code/k3",
-            "effort": null
+            "model": "kimi-code/k3"
           },
           "heavy": {
-            "model": "kimi-code/k3.1-pro",
-            "effort": null
+            "model": "kimi-code/k3.1-pro"
           },
           "critical": {
-            "model": "kimi-code/k3.1-pro",
-            "effort": null
+            "model": "kimi-code/k3.1-pro"
           },
           "lead": {
-            "model": "kimi-code/k3.1-pro",
-            "effort": null
+            "model": "kimi-code/k3.1-pro"
           }
         },
         "format": "^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$",
@@ -576,24 +556,19 @@
       "models": {
         "pins": {
           "light": {
-            "model": "openrouter/auto",
-            "effort": null
+            "model": "openrouter/auto"
           },
           "standard": {
-            "model": "openrouter/auto",
-            "effort": null
+            "model": "openrouter/auto"
           },
           "heavy": {
-            "model": "openrouter/auto",
-            "effort": null
+            "model": "openrouter/auto"
           },
           "critical": {
-            "model": "openrouter/auto",
-            "effort": null
+            "model": "openrouter/auto"
           },
           "lead": {
-            "model": "openrouter/auto",
-            "effort": null
+            "model": "openrouter/auto"
           }
         },
         "format": "^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$",

@@ -1,4 +1,18 @@
 'use strict';
+// Manifest schema: all values are JSON data. Regex fields are source strings;
+// a regex needing flags has a separate <field>Flags string. Each manifest holds:
+// cli, provider, label, displayName, optional shortName, typesRoleMessage,
+// singleAccount, and boolean capabilities. install has command, binary, label,
+// optional node, versionArgs, optional fallbackPath, pathRank and sensitivity.
+// settings has modelPattern, modelPlaceholder, cliLabel, vendor, setupUrl,
+// permissionMode, permissionChoices, accountWarning, modelHeadsUp, signInKind,
+// reviewFamily, plans, weights, reportedPlans and oldPlanWeights. models has
+// pins (slot -> { model, effort? }), format, efforts, hubPattern, slotAliases and
+// effortError. placement has workerRank, leadDefault, seenByDefault,
+// addOnMigration and appendWhenRequested. report.useHookText, stopWhenEnded,
+// optional asideParentField, hook.payload and hook.sessionFromEnv, recoverRank
+// and recoverFallback carry the remaining dispatch data. Nullable values mean
+// the option does not apply; omitted fields are optional.
 const REQUIRED = { machine: ['command', 'firstMessage', 'readyText', 'answerPrompts', 'findTranscript', 'loginEnv', 'seed', 'loginCommand', 'parseLogin', 'loginStatus'], hub: ['parseChat', 'readReport'] };
 const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv'], versionCheck: ['checkVersion'], steps: ['readSteps'] };
 const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, machine]) => [name, { machine, hub: [] }]));

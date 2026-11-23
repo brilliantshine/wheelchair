@@ -67,24 +67,19 @@ module.exports = {
   "models": {
     "pins": {
       "light": {
-        "model": "kimi-code/kimi-for-coding",
-        "effort": null
+        "model": "kimi-code/kimi-for-coding"
       },
       "standard": {
-        "model": "kimi-code/k3",
-        "effort": null
+        "model": "kimi-code/k3"
       },
       "heavy": {
-        "model": "kimi-code/k3.1-pro",
-        "effort": null
+        "model": "kimi-code/k3.1-pro"
       },
       "critical": {
-        "model": "kimi-code/k3.1-pro",
-        "effort": null
+        "model": "kimi-code/k3.1-pro"
       },
       "lead": {
-        "model": "kimi-code/k3.1-pro",
-        "effort": null
+        "model": "kimi-code/k3.1-pro"
       }
     },
     "format": "^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$",
