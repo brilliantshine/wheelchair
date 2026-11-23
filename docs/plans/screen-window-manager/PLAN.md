@@ -1,6 +1,6 @@
 ---
 slug: screen-window-manager
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-22
 ---
 
