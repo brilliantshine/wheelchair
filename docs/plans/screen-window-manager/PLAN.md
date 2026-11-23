@@ -1,6 +1,6 @@
 ---
 slug: screen-window-manager
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-22
 ---
 
@@ -38,6 +38,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 Builds on the merged screens work (PRs #113 and #122). File references are to this branch
 at `43707808`. Screens are Linux-only; nothing below runs or warns on macOS. Evidence for
 current behaviour: `docs/plans/screen-window-manager/MAP.md` and `docs/maps/agent-screens.md`.
+
+```mermaid
+flowchart TD
+  A[screen starts its display] --> B{openbox and xprop installed?}
+  B -- no --> N[run as today: no window manager]
+  B -- yes --> C[write the click-to-focus-only setup file]
+  C --> D[start openbox with only that file visible]
+  D --> E{within 5 s, openbox says it loaded our file?}
+  E -- no --> K[stop openbox] --> N
+  E -- yes --> W[screen runs with openbox]
+  W --> L[list windows from openbox's client list; focus by asking openbox]
+  N --> T[list windows from the display; focus directly]
+```
+
+The screen starts its display; if openbox and xprop are installed, it writes the fixed
+setup file and starts openbox with only that file visible. If openbox reports loading that
+file within 5 s, the screen runs with it and lists and focuses windows through openbox;
+otherwise openbox is stopped and the screen runs as today.
 
 ### S1. Detecting openbox
 
@@ -176,9 +194,10 @@ node --test viewer/test/*.test.js
 On hearth with real tools, `bash machine/test/screen-live.sh` still passes. When
 `openbox` and `xprop` are installed, it also asserts `status` shows
 `window_manager: "openbox"`, that `windows` lists the launched app's window, and that
-after focusing the Chromium window and pressing `F11` (`wc.js screen key F11`) its
-`windows` entry reaches the full screen size within 3 s (full screen needs a window
-manager).
+after `wc.js screen focus <xmessage id>` and then `wc.js screen focus <Chromium id>`,
+pressing `F11` (`wc.js screen key F11`) makes Chromium's `windows` entry reach the full
+screen size within 3 s. This shows both that `focus` switched windows and that full
+screen works (it needs a window manager).
 
 ## Deferred
 
@@ -191,6 +210,8 @@ manager).
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| openbox recovers a malformed rc.xml and still sets `_OB_CONFIG_FILE` | The file is a constant this code writes and the tests check; it can only be malformed by tampering with the screen directory, which a sandboxed agent can't write | review-round-2 |
+| `xprop` escapes quotes or backslashes in the state directory path, so readiness fails and the screen runs without openbox | Needs a state directory path containing those characters; the default never does, and the result is today's behaviour | review-round-2 |
 | A window an app minimizes itself before the agent records its id is left out of `windows`, so the agent can't switch back to it | Screens have no titlebar or shortcut to minimize, so only an app minimizing itself causes it; rare path | review-round-1 |
 
 ## Review Rounds
@@ -213,7 +234,7 @@ manager).
 
 ### Round 2 — 2026-11-22
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes. Clean.
 
 **Changed since Round 1:**
 - S3 fixed config: decorations off for all windows (`<applications>` / `<decor>no</decor>`).
@@ -224,6 +245,9 @@ manager).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Rare path: openbox can recover malformed XML and still set `_OB_CONFIG_FILE` | accepted-risk | Rare path: the file is a constant we write and test |
+| mechanics | minor | Rare path: xprop escaping of unusual state paths | accepted-risk | Rare path; falls back to today's behaviour |
+| mechanics | minor | F11 live check doesn't prove `focus` switched windows | upheld (minor) | Live test focuses xmessage, then Chromium, before F11 |
 | intent | minor | Focus without `--sync` is asynchronous; typing right after could hit the old window | check-once-built | Check Once Built row 1 |
 | mechanics | minor | Validation still names `_NET_SUPPORTING_WM_CHECK` for the fake xprop | upheld (minor) | Wording now names `_OB_CONFIG_FILE` |
 
