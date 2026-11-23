@@ -27,6 +27,10 @@ test('states with a link or without wantsCode keep the existing behaviour', () =
 test('the page treats key-only waiting like a link: the startup timeout stops, the key is a password field, 409 offers a restart for OpenRouter only', () => {
   assert.match(source, /if \(\(card\.hadUrl \|\| !\(st\.url \|\| keyOnly\)\) && expired\(\)\) return fail\(\);/);
   assert.match(source, /if \(st\.url \|\| keyOnly\) \{\s*if \(!card\.hadUrl\) card\.firstUrl = Date\.now\(\);\s*card\.hadUrl = true;/);
-  assert.match(source, /type: 'password'[^}]*'aria-label': 'Paste your OpenRouter key'/);
-  assert.match(source, /e\.status === 409 && account\.provider === 'openrouter'[\s\S]*Start again/);
+  assert.match(source, /type: 'password'[^}]*'aria-label': `Paste your \$\{keyName\} key`/);
+  assert.match(source, /e\.status === 409 && toolOf\(account\.provider\)\.settings\.signInKind === 'key'[\s\S]*Start again/);
+  // Rendered text: the key tool is OpenRouter only, and its label fills the template.
+  const keyTools = require('../../connectors').list().filter((t) => t.settings.signInKind === 'key');
+  assert.deepEqual(keyTools.map((t) => t.provider), ['openrouter']);
+  assert.equal(`Paste your ${keyTools[0].label} key`, 'Paste your OpenRouter key');
 });
