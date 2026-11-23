@@ -10,9 +10,9 @@ created: 2026-11-23
 ## What we're building
 
 A personal assistant agent that sits above all of Collin's projects. It knows where every
-thread stands and acts for Collin on what he tells it to do: starting new threads with full
+thread stands and acts for Collin on what Collin tells it to do: starting new threads with full
 project leads, passing instructions to existing leads, and reporting back. Collin talks to
-it in a special pinned thread, and from a pop-up he can open on any page of the app.
+it in a special pinned thread, and from a pop-up that opens on any page of the app.
 
 ## Why — the problem
 
