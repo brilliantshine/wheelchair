@@ -43,6 +43,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ## Spec
 
+A plan with visible work lists its agreed mockups under “Mockups” (path, screen/state, size) instead of describing the look in prose.
+
 The settled design, grown as decisions land. Bar: a fresh agent with no conversation
 history can implement from this section alone — behavior, boundaries, edge cases,
 non-goals, and concrete validation commands.

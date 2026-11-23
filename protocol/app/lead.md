@@ -826,6 +826,35 @@ If you are the lead of a stub, your first message is `[wc:context stub]` with th
 summary. Treat it as your starting context; your reply to it is shown to the user, so start
 by saying what you understood and what you will do first. Then take it from step 1.
 
+## Mockups
+
+In a feature whose idea changes something people see, start one designer after IDEA.md is
+confirmed, alongside design questions. You may skip it for a trivial visible part; say so
+in a line and record a `defaulted` Decision. Brief the designer with the slug, screens,
+states, device sizes, the user's wishes and paths to IDEA.md and existing screens or styles.
+Pick sizes for the devices the thread builds.
+
+Add an Open Question “Agree the mockups” to PLAN.md when starting the designer. For each
+`result`, post one `mockup` diagram card per file. Pass feedback in a `message` quoting the
+user's words verbatim, including any `[attached: <path>]` paths. Planning stays open until
+the user agrees; settle the question with a Decision naming the agreed files, then stop the
+designer. List each agreed file in the Spec under “Mockups”, with path, screen/state and size;
+record the version choice in the Decision Log.
+
+If the user requests a design change during review or after approval, before Start building
+is accepted, retract any open approval card first. In one commit set `status: planning` and
+re-add “Agree the mockups”, then start a fresh designer briefed with the current files and
+the user's words. Planning rules apply: no approval card exists or is posted while planning.
+Once agreed, the new files are a Spec change: set `status: ready-for-review` and list the
+change in the next round's “Changed since”.
+
+After Start building is accepted, including after done, post a `stub` at once for a design
+change. Set `depends_on_parent: true`; its summary quotes the user's words verbatim, names
+the current mockup paths on the parent branch, and describes in one line any screenshot
+that prompted the request. Describe each attachment in one line and say it may be gone once
+the parent is archived, so the stub's lead asks for it again if needed. The stub's lead
+plans from step 1 with its own mockups; this thread finishes against the agreed files.
+
 ## Restarting what died
 
 On a starter nudge about a quiet session, message the agent, or stop and replace it.
@@ -834,16 +863,17 @@ On `[wc:from app] your session <name>'s turn failed: <error>`, that session is s
 Send it a `message` asking it to carry on. Only if it fails again, run `session stop` on
 it, then replace it by its role's restart rule: a worker uses `--replaces <name>` and a
 new `--attempt`; a sub-lead resumes from PLAN.md's Implementation Tasks and the committed `reports/`; a
-reviewer, verifier or mapper starts fresh. Never start a replacement while the failed
+reviewer, verifier, mapper or designer starts fresh. Never start a replacement while the failed
 session is live.
 
 The hub tells the session that started a dead one, as a `message` from the app. As lead you
-restart a dead sub-lead, mapper or reviewer. A new sub-lead resumes from PLAN.md's
+restart a dead sub-lead, mapper, designer or reviewer. A new sub-lead resumes from PLAN.md's
 Implementation Tasks and the committed `reports/` (see `sub-lead.md`); say so in its brief.
 A dead verifier you started is started fresh. A verifier reporting `VERDICT: BLOCKED` has a
 problem with its setup, not a gap: fix it or raise it, then start a fresh verifier; it
 never starts remediation and does not count as a failed check. A dead worker is the
 sub-lead's to restart.
+A fresh designer is briefed with the newest mockup files and feedback not yet reflected in a file.
 Use a new `--attempt` id for each restart.
 
 If you yourself died, the app starts a new lead (the Restart button) and types
@@ -851,7 +881,9 @@ If you yourself died, the app starts a new lead (the Restart button) and types
 carry on from the step you find. For a done thread, the restart rules for check cards are
 in step 10 (Check it yourself). Your reply to that message is shown, so say briefly that
 you are back and where things stand. Run `session list` and `session stop` any session
-whose purpose is gone. Then, for overlap questions (see "Overlap questions"):
+whose purpose is gone. Stop any live designer, whose results would go to the dead lead. If “Agree the mockups”
+remains open, start a fresh designer briefed with the newest files and feedback from recent
+restart-context messages not yet reflected in a file. Then, for overlap questions (see "Overlap questions"):
 - For each overlap card with an actionable answer, no Done marker and no later overlap card for the same thread, act on it now. If status is no longer in the card window (rare), treat it as a late overlap.
 - An open overlap card with no actionable answer, where user messages in `recent_messages` after the card's post answer it, is resolved from the latest such message with a one-line note of that answer, then handled by "Settling an answer".
 - An open overlap card stays open and is not asked again. Facts the restart look finds about a waiting `Overlap with` Open Question update that entry before it is posted.
@@ -909,7 +941,7 @@ A restart context's `cross_thread_messages` lists recent messages you sent to an
 ## Diagrams
 
 See the `diagram` section of `cards-lead.md` for the forms and how to pick one. Show an image
-with an `image` card. To show the user what an agent saw on its invisible screen, post the screenshot path from its report with an `image` card.
+with an `image` card. The sub-lead posts build screenshots itself with `image` cards.
 
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a
 picture, write the graph with `<root>/protocol/graphs.md`: its schema, where graph files
@@ -943,7 +975,7 @@ It is the state machine, not a label. You write these, at these moments, and no 
 
 | Value | When |
 |---|---|
-| `planning` | IDEA.md is confirmed and you create PLAN.md |
+| `planning` | IDEA.md is confirmed and you create PLAN.md; or return from `ready-for-review` or `approved` only for a mockup change before Start building |
 | `ready-for-review` | the last planning question is settled |
 | `approved` | the approval card is shown |
 | `done` | the verifier passed and the sub-lead stopped, committed before the push that opens the pull request |
