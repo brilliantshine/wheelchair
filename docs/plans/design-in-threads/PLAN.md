@@ -469,3 +469,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-23 — Choice: T2, picture page: an image card's mockup with no thread plan shows "Mockup not found."
 - 2026-11-23 — All five tasks done; full validation at d064ee6c (viewer node 911/911, browser 1420 passed, machine 18 pre-existing wslpath failures only). COMPLETION.md written; status verifying.
 - 2026-11-23 — Verification 1 gaps answered by the lead: fix the full-size border, the stacking width and designer revisions on the Agents page and quiet watch; D3 deferred (Built half's full size).
+- 2026-11-23 — R1 accepted (band: scout, 41 lines; the sub-lead read the two CSS lines itself against the brief, which named the exact change, instead of a scout): picture-page mockup iframe is content-box so its viewport is exactly width x height; Built/Mockup stack at 563.98px inner width (599px card). Focused browser specs 36 passed.
+- 2026-11-23 — Choice: R1, app-mockups.spec.js: outer-box assertions now expect 392x846 (border outside) plus clientWidth/clientHeight 390/844.
