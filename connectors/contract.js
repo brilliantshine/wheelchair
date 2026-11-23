@@ -17,6 +17,8 @@
 const REQUIRED = { machine: ['command', 'firstMessage', 'readyText', 'answerPrompts', 'findTranscript', 'loginEnv', 'seed', 'loginCommand', 'parseLogin', 'loginStatus'], hub: ['parseChat', 'readReport'] };
 const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv', 'asideResult', 'asideModel'], versionCheck: ['checkVersion', 'versionStatus'], steps: ['readSteps', 'stepsReady'] };
 const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, machine]) => [name, { machine, hub: [] }]));
+// Keep aligned with codex/model.sh's PIN_MODEL, which reads and writes the shared pin file.
+const PIN_MODEL = /^[a-z0-9][a-z0-9._/:-]*$/;
 const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asidePrepare', 'asideMessage', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
@@ -60,7 +62,12 @@ function validateManifest(m) {
   check('recoverFallback',bool,false);
   check('recoverRank',v=>typeof v==='number'||(!m.capabilities?.recover&&v===null),Boolean(m.capabilities?.recover));
   check('install.label',str);
-  for (const [slot, pin] of Object.entries(m.models.pins)) if (!obj(pin) || !str(pin.model) || (pin.effort !== undefined && !str(pin.effort))) throw new Error(`${m.cli}: models.pins.${slot}`);
+  const modelFormat = new RegExp(m.models.format);
+  for (const [slot, pin] of Object.entries(m.models.pins)) {
+    const field = `models.pins.${slot}`;
+    if (!obj(pin) || !str(pin.model) || (pin.effort !== undefined && !str(pin.effort))) throw new Error(`${m.cli}: ${field}`);
+    if (pin.model !== 'none' && (!PIN_MODEL.test(pin.model) || !modelFormat.test(pin.model))) throw new Error(`${m.cli}: ${field}`);
+  }
   check('settings.modelOptions', v => obj(v) && (arr(v.fixed) && v.fixed.every(pair => arr(pair) && pair.length === 2 && pair.every(str)) || str(v.listedKey) && ['strings','objects'].includes(v.listedShape) && typeof v.includePins === 'boolean'), false);
   check('hook.payload',v=>v==='stdin'||v==='last-arg', Boolean(m.hook));
 }
