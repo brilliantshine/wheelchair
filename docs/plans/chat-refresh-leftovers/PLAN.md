@@ -59,7 +59,8 @@ New behaviour:
 3. `parsedKey = session.cli + JSON.stringify([thread.parent_title])` (unchanged formula).
 4. Request: if an entry exists, has a `gen`, and `entry.parsedKey === parsedKey`, call the
    transcript route with `?known=<gen>:<end>`; otherwise call it with no `known` (full reply).
-5. Reply `unchanged` whose `gen`/`end` match the entry: set `lastRead`, return `entry.parsed`.
+5. Reply `unchanged` whose `gen`/`end` match the entry as it is in `hub.transcripts` after
+   the await (re-read it: pruning may have removed it meanwhile): set `lastRead`, return `entry.parsed`.
    `unchanged` that does not match: make one full request (no `known`) and continue at 6.
 6. Reply with non-empty `data`: compute `hash`. If an entry exists with the same `hash` and
    `parsedKey`, reuse its `parsed` (this keeps today's reuse for machines whose replies carry
@@ -106,7 +107,9 @@ New `markMachineSeen(name, at = new Date().toISOString())`:
    still the one set in step 2, and rethrow (so `hub.call` rejects as today).
 4. Return `at`.
 
-Concurrent calls in the same minute therefore produce one write. No flush on shutdown.
+Concurrent calls for one name in the same minute therefore produce one write. The hub's own
+machine is reached both as `hub` and as its registry name (`state.resolveMachine`), so its
+entry may be written twice a minute (Accepted Risks). No flush on shutdown.
 
 Tests (`viewer/test/app-hub.test.js`): update "returns every machine session and persists
 its last-seen time" (`:899`) so it asserts the disk `last_seen` is a timestamp no later than
@@ -127,9 +130,11 @@ when some copy starts (`machine/service.js:1470-1471`).
    `.unref()`, and clear it in the server `close` handler (`:2453`).
 3. Nothing else about copying, dedupe, stop or end changes.
 
-Tests (`machine/test/service.test.js`): add to or beside the busy-hashes test (`:1818`): an
-entry aged past 10 minutes is dropped by `sweepCopyHashes()` with no copy running; a fresh
-entry stays; the service closes cleanly (no open handle).
+Tests (`machine/test/service.test.js`): add to or beside the busy-hashes test (`:1818`): after
+the service starts, `copyHashesTimer` is set; invoking its registered callback (not the
+method directly) with no copy running drops an entry aged past 10 minutes and keeps a fresh
+one; after the server closes, the timer is cleared (e.g. stub `clearInterval` or check
+`copyHashesTimer` was passed to it).
 
 ### Non-goals
 
@@ -141,6 +146,7 @@ entry stays; the service closes cleanly (no open handle).
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| The hub's own machine entry in `machines.json` can be written twice a minute (once as `hub`, once under its hostname) | Still at most two writes a minute instead of one per call; folding the aliases needs an async lookup before the reservation | review-round-1 |
 | A transcript copy finishing just after `stop` re-inserts that session's hash set | Sub-second race; the S3 sweep drops it within about 11 minutes | planning |
 
 ## Review Rounds
@@ -155,6 +161,9 @@ entry stays; the service closes cleanly (no open handle).
 |------|----------|---------|--------------|------------|
 | intent | minor | Gen-less replies would reparse every poll without raw text to compare | upheld (minor) | S1.2/S1.6: keep a sha256 of `data`; reuse parse on match |
 | intent | minor | Tests at `:384` and `:404` also drive the removed `keepLast` cache | upheld (minor) | S1 Tests: move both onto `sessionChatItems`, keeping their cases |
+| mechanics | blocking | Reservation keyed by name; `hub` and hostname alias the same entry | accepted-risk (minor) | Worst case two small writes a minute for one machine, not a wrong build (`state.js:209-219`); Accepted Risks |
+| mechanics | blocking | Second `keepLast` test not migrated; entry may vanish during conditional read | downgraded (minor) | Test migration already fixed from intent finding; added re-read of the entry to S1.5 |
+| mechanics | minor | S3 test could pass without the timer registered or cleared | upheld (minor) | S3 Tests: drive the registered callback; assert close clears it |
 
 ## Implementation Tasks
 
