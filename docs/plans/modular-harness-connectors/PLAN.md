@@ -15,7 +15,10 @@ name-based branch, with file:line).
 
 ## Open Questions
 
-_None._
+### Q2: Where does each tool's model-list code live?
+- **Context:** `codex/model.sh` holds more per-tool logic than defaults: GPT's pin workflow (bare-tier commands, `set`, aliases, `family claude`, the GPT-only heads-up `check`) and two discovery functions with different output shapes and keys (`show --json` returns `visible` for GPT and `kimi_visible` for Kimi; `codex/model.sh:41-42,73,201-237,240-332,374-449`; `viewer/app/settings.js:434-437`). Decision 14 assumed one `discover()` contract; both reviewers found it doesn't fit (Round 2).
+- **Options:** (A) `model.sh` keeps all its per-tool model code, allowlisted in the guard; it reads only the tool list, default pins, formats and effort levels from `registry.json`. A new tool that can list its own models adds one function there: a narrow exception to IDEA's "one connector". (B) Design a discovery contract (output key per tool, GPT pin workflow as manifest data) and move it into `connectors/<cli>/models.py`.
+- **Recommendation:** A — B is a second design inside this refactor and has drawn findings each round.
 
 ## Watch List
 
@@ -50,23 +53,24 @@ A pure refactor. Every one of the five tools (Claude Code, Codex, Antigravity, K
 Pi for OpenRouter) behaves exactly as before; the change is where code lives and how the
 rest of the code asks about a tool. The current inventory of name-based branches, with
 file:line, is `docs/maps/harness-connector-dispatch.md` ("Dispatch and capability
-inventory"). That inventory is a starting list, not complete: the guard test (S6) is the
-definitive list, and every hit it reports is in scope and gets one of the S4 treatments.
-Known items missing from the inventory are named in S4.
+inventory"). That inventory is not complete. In scope is every item in it, every item S4
+names as missing from it, and every hit of the guard test (S6); each gets one of the S4
+treatments.
 
 ### S1. Layout
 
 ```
 connectors/
-  index.js            registry: list() of manifests (ordered), byCli(cli), byProvider(id);
-                      machine(cli) and hub(cli) require that half on first use
+  index.js            registry: list() and manifest(cli) / byProvider(id) return manifests;
+                      machine(cli) and hub(cli) require and validate that half on first use
+  common.js           shared helpers (today's machine/adapters/common.js) and the shared
+                      output scrub (S4)
+  contract.js         required/optional members and capability names; validate(half)
+  export.js           writes registry.json; --check exits 1 if it is stale
+  registry.json       generated from the manifests, committed (S5)
   README.md           the guide for writing a connector (S7)
-  contract.js         required/optional members and capability names; validate(connector)
   <cli>/              one folder per tool: claude, codex, agy, kimi, pi
     manifest.js       plain data, safe to load anywhere (S2)
-    models.py         this tool's model discovery for codex/model.sh (S5)
-  registry.json       generated from the manifests by export.js, committed (S5)
-  export.js           writes registry.json; --check exits 1 if it is stale
     machine.js        the machine half (today's machine/adapters/<cli>.js, plus moved branches)
     hub.js            the app half (chat parsing, report picking, usage display, model rules)
     (helpers)         anything else the tool needs (e.g. pi/extension.js, pi/guard.js)
@@ -75,10 +79,10 @@ connectors/
 - `connectors/` sits at the repository root. `machine/` and `viewer/app/` require it by
   relative path; every machine runs from a full clone (`install.sh:439`), so no packaging
   changes. `connectors/` must not require anything under `viewer/`; a connector's
-  `machine.js` may require `machine/lib/*` and `machine/adapters/common.js` helpers.
+  `machine.js` may require `machine/lib/*` and `connectors/common.js`.
 - `machine/adapters/` is removed except `common.js`, which moves to `connectors/common.js`
   (`machine/lib` callers updated). `machine/adapters/index.js` is deleted; its callers use
-  `connectors/index.js` (`byCli(cli).machine`).
+  `connectors/index.js` (`machine(cli)`). Callers never reach a half any other way.
 - `viewer/app/providers.js` keeps its exports (`PROVIDERS`, `DISPLAY_NAMES`, `providerOf`,
   `cliOf`) with identical values, now built from the manifests, so existing importers and
   `card.js` validation are unchanged.
@@ -106,18 +110,39 @@ Each `manifest.js` exports a plain object, no functions and no requires of other
   effort choices, permission choices, account policy text, setup and install links).
 - `models`: what `codex/model.sh` holds per provider today (default pins per tier, model
   name format, effort levels).
-- `placement`: the policy data the hub uses today, giving exactly today's results:
-  rank in the fresh-settings default `worker_order` (`viewer/app/settings.js:54`, which
-  today puts GPT before Claude), whether the tool counts as already seen when saved
-  settings have no `worker_order_seen` (today Claude and GPT, `settings.js:280`), and
-  `auto: false` for a tool that is never added to automatic placement and is only appended
-  when explicitly requested (today OpenRouter, `settings.js:281`, `viewer/app/balancer.js:97`).
-  The settings migration logic itself is unchanged.
+- `placement`: the data behind today's defaults, giving exactly today's results and
+  nothing more:
+  - `workerRank`: position in the fresh-settings default `worker_order`
+    (`viewer/app/settings.js:54`; today GPT before Claude).
+  - `leadDefault`: true for the tool named in the fresh-settings `lead_order` before
+    `'any'` (today Claude, `settings.js:36-40,54`).
+  - `seenByDefault`: counts as already seen when saved settings have no
+    `worker_order_seen` (today Claude and GPT, `settings.js:280`).
+  - `addOnMigration: false`: not appended to a saved `worker_order` by the migration at
+    `settings.js:281` (today OpenRouter only). It does not stop Collin adding the tool to
+    either order in Settings, and does not stop the balancer choosing it from a saved order
+    or as the only signed-in review family (`viewer/app/balancer.js:76-109`).
+  - `appendWhenRequested`: when a worker explicitly requests this tool and it is not in the
+    order, the balancer appends it (today OpenRouter, `balancer.js:97`).
+  The settings migration and balancer logic are otherwise unchanged.
 - `shortName`: the name used in machine messages where it differs from `displayName`
   (today Pi: "Pi"), so machine wording stays byte-identical.
-- `asideParentField`: the session field holding the conversation id an aside forks from
-  (`viewer/app/asides.js:41`; today `cli_session_id`, `codex_thread_id`, `cli_session_id`,
-  `agy_conversation_id`).
+- `asideParentField`: only for tools with `capabilities.aside`; the session field holding
+  the conversation id an aside forks from (`viewer/app/asides.js:41`; today Claude and Pi
+  `cli_session_id`, Codex `codex_thread_id`). Antigravity's unreachable entry is dropped.
+- `hook`: for hook-driven tools, how the hook delivers its event: `payload` is `stdin` or
+  `last-arg`, and `sessionFromEnv` is true when the session may come from
+  `WHEELCHAIR_SESSION_NAME` (today: Claude and Pi stdin; Codex last-arg; Antigravity stdin
+  with `sessionFromEnv`).
+- `settings` also carries each per-tool branch of the settings page today: the
+  extra-account warning (`viewer/pages/settings.js:487-491`), the model heads-up line
+  (`:611`), sign-in kind (`:1411,1457`), membership in the review-family choices
+  (`:1600-1601`, `viewer/app/routes.js:378`, `viewer/app/settings.js:323`), and plan and
+  weight tables (`viewer/app/settings.js:36-40`).
+- `install` also carries the fallback binary path the installer checks when the CLI is not
+  on PATH (today Kimi `~/.kimi-code/bin/kimi`, Pi `~/.local/bin/pi`) and `pathRank`, the
+  order the installer prepends CLI directories to the service PATH (today
+  `codex, claude, agy, kimi, pi`, `install.sh:402-415`), so PATH precedence is unchanged.
 
 `connectors/index.js` writes nothing at load.
 
@@ -138,21 +163,19 @@ Optional members, each paired with a capability flag of the same meaning:
 |---|---|---|
 | `usageProbe` | `usageProbe` (the machine usage endpoint, `machine/service.js:2282-2286`) | claude, codex, kimi |
 | `usageEvents` | `usageFrom` (usage carried in hook payloads, `machine/service.js:1641`); without it the service ignores usage in that tool's events | claude, codex |
-| `preflight` | the Codex preflight (`codex/preflight.sh`, `viewer/app/balancer.js:59`, Ready check) | codex |
+| `preflight` | the Codex preflight (`codex/preflight.sh`, `viewer/app/balancer.js:59`, Ready check). The machine endpoint `POST /v1/preflight` keeps its request shape; it runs the preflight of the one connector with this capability (the contract test fails if more than one has it). Hub callers check the capability of the session's tool before calling, as they check "is it GPT" today | codex |
 | `sandbox` | `sandboxed(session)`: true when the session's tools run sandboxed (today Codex with `codex_mode !== 'unrestricted'`). Drives screen command wrapping (`machine/lib/screen.js:223`, via a `sandboxWrap(command)` member), Windows launch denial and status (`machine/lib/win.js:436,452,459`, `machine/lib/win-prompt.js:9`), for both new and recovered sessions | codex |
-| `restartLoss` | `restartLoss(session)`: after a machine restart, returns `{ reason, stopNow }` for a session that cannot be re-attached; `reason` is today's exact text and `stopNow` today's timing (Pi: "Lost track of this Pi session after a machine restart; restart it", stopped at once, `machine/service.js:563,568,1097`; Kimi: "Lost track of this Kimi Code session after a machine restart; restart it", ended on its polling path, `:564,1102`) | kimi, pi |
+| `restartLoss` | Two paths, both kept exactly. (1) `restartLossReason()`: the `end_reason` text given to a session newly adopted from tmux after a machine restart (`machine/service.js:552-564`; Pi "Lost track of this Pi session after a machine restart; restart it", Kimi "Lost track of this Kimi Code session after a machine restart; restart it"). Sessions that already have a recorded `end_reason` keep it. (2) Manifest flag `stopWhenEnded`: at startup and on each later poll, a non-stopped session of this tool with an `end_reason` is stopped fatally, retrying until it stops (today Pi, `:568,1097`). Kimi's sessions end on its polling path as today (`:1102`, part of `turnPoller`) | kimi, pi |
 | `spend` | `spend` | pi |
 | `liveSwitch` | `usual` + switch support | claude, codex |
-| `aside` | `asideArgv`, plus manifest `asideParentField` (`machine/lib/aside-turns.js:61-147`, `viewer/app/asides.js:41`) | claude, codex, pi |
+| `aside` | `asideArgv`, plus manifest `asideParentField` (`machine/lib/aside-turns.js:61-147`, `viewer/app/asides.js:41`). Aside replies, stderr and failure messages pass through the tool's `redact` when it has one, as Pi's do today (`aside-turns.js:80,97,138-142`) | claude, codex, pi |
 | `versionCheck` | `checkVersion` | kimi, pi |
 | `steps` | `readSteps` (tool-call tailing / vocabulary from `machine/lib/steps.js`) | as today |
-| `prepare`, `sessionNameEnv`, `promptText`, `retryStartupEnter`, `onTurnEnded`, `loginCwd`, `loginPrompt`, `loginDone`, `codeNeedsPrompt`, `resolveCli`, `redact` (this tool's transcript and event redaction only, see S4) | same names | as today (`docs/maps/harness-connector-dispatch.md`, "Adapter boundary") |
-
-Required hook-driven member: `hookInput` (S5).
+| `prepare`, `sessionNameEnv`, `promptText`, `retryStartupEnter`, `onTurnEnded`, `loginCwd`, `loginPrompt`, `loginDone`, `codeNeedsPrompt`, `resolveCli`, `redact` (this tool's own redaction of transcript lines, events and aside output, see S4) | same names | as today (`docs/maps/harness-connector-dispatch.md`, "Adapter boundary") |
 
 `contract.js` exports `validate(connector)`: it throws, naming the tool and member, when a
 required member is missing, when a capability flag is true without its members, or when a
-member exists without its flag. The registry validates every connector at load.
+member exists without its flag. Each half is validated when first loaded (S1).
 
 ### S4. Replacing name checks
 
@@ -182,32 +205,34 @@ implementer adds a capability or optional member with a plain name and lists it 
 Known branches missing from the map's inventory: browser pages `viewer/pages/threads.js:15`
 and `viewer/pages/thread.js:4` (`PROVIDER_LABEL`), `viewer/app/asides.js:41`,
 `machine/lib/aside-turns.js:61-147`, the Codex sandbox checks (`sandbox` capability),
-`machine/lib/statusline.js` (S5), and `test-support/smoke/` (S6).
+`machine/lib/statusline.js` (S5), `test-support/smoke/` (S6), the installer's per-tool
+fallback paths and PATH order (S2 `install`), and named property dispatch such as
+`adapters.codex.loginEnv` (`machine/service.js:2293`) and `adapters.pi.redact`.
 
 **Shared output scrub stays shared.** Pane capture and sign-in output are scrubbed of
 OpenRouter keys for every tool today (`machine/service.js:603,1757,1763`). That scrub moves
 to one shared function (in `connectors/common.js`, using the Pi connector's key pattern)
 applied to all panes and login output regardless of tool; it is not an optional per-tool
-member. Only transcript lines and Pi events use the Pi connector's own `redact`
-(`:1489,1618-1622`, `machine/lib/aside-turns.js:80,97`).
+member. The Pi connector's own `redact` additionally covers its transcript lines, events
+and aside replies, stderr and failures (`:1489,1618-1622`,
+`machine/lib/aside-turns.js:80,97,138-142`).
 
 Wording users see stays byte-identical (error messages, labels, settings text).
 
 ### S5. Non-JS callers
 
 - `machine/hook.sh` keeps its path and accepts the same arguments (Decision 10). It no
-  longer branches by tool: it execs a new `machine/lib/hook-in.js` with its tool argument
-  and all its arguments, leaving stdin unread. `hook-in.js` calls the connector's
-  `hookInput({ argv, env, readStdin })` to get `{ session, payload }`; `readStdin()` reads
-  stdin to EOF and is called only by tools that use stdin (Claude, Pi, Antigravity). Codex
-  takes its payload from the last argument and never reads stdin, so a notify with stdin
-  left open posts at once. Antigravity takes the session from `WHEELCHAIR_SESSION_NAME`
-  when the argument is absent and exits 0 when neither is set. `hook-in.js` then posts
-  through `hook-post.js` exactly as today.
+  longer branches by tool: it execs a new `machine/lib/hook-in.js` with all its arguments,
+  leaving stdin unread. `hook-in.js` loads only the tool's manifest and follows its `hook`
+  field (S2): `stdin` reads stdin to EOF; `last-arg` takes the last argument and never
+  reads stdin, so a Codex notify with stdin left open posts at once; with
+  `sessionFromEnv`, a missing session argument falls back to `WHEELCHAIR_SESSION_NAME`,
+  and when neither is set it exits 0. It then posts through `hook-post.js` exactly as
+  today.
 - `machine/lib/hook-post.js` keeps its current command line (`<state> <token> <kind>
   <session>`, payload on stdin) because `machine/lib/statusline.js:28` calls it directly
   for running Claude sessions; the statusline path is unchanged. Unknown tools still exit 64; a missing token still
-  exits 0 silently; spooling is unchanged. `hook.sh` must stay bash 3.2 compatible (macOS CI). `hookInput` becomes required for hook-driven tools.
+  exits 0 silently; spooling is unchanged. `hook.sh` must stay bash 3.2 compatible (macOS CI).
 - `connectors/registry.json` is generated by `node connectors/export.js` from the
   manifests and committed; `node connectors/export.js --check` fails when it is stale, and
   the contract test runs that check (Decision 13).
@@ -218,16 +243,21 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   `model.sh` loads it by file path with `importlib.util.spec_from_file_location` (it runs
   under `python3 -I`, so not via `sys.path`). A tool without `models.py` has no discovery.
   The command-line interface and output of `model.sh` are unchanged.
-- `install.sh` detection, version checks and "harness found" lines read the recipes from
-  `connectors/registry.json` (via `python3`, already required). `hook.sh` and install
+- `install.sh` detection, version checks, "harness found" lines, the `present` list passed
+  to `install/unseen.py`, fallback paths and the service PATH order read
+  `connectors/registry.json` (via `python3`, already required). One-off cleanup of retired
+  Claude skills and Codex prompts (`install.sh:61-62,138-149`) stays as it is, allowlisted
+  as `legacy` (S6). `hook.sh` and install
   scripts stay bash 3.2 compatible.
 - Browser pages get the tool list, labels and `settings` details from the hub (Decision
-  2): add a `tools` array (manifest data minus `install` and `models`) to the response the
-  settings page already loads, and serve the same array to the threads and thread pages
-  through whatever route they already load their data from. Delete the pages' own copies
-  (`viewer/pages/settings.js:15-16`, `threads.js:15`, `thread.js:4`) and per-tool branches.
-  Labels shown stay identical (`thread.js` and `threads.js` show "OpenRouter", the
-  `label` field).
+  2) through a script, not a fetch: the hub serves `/wheelchair/assets/tools.js`, built
+  from the manifests (minus `install` and `models`), which sets a global the page scripts
+  read. The settings, threads and thread pages load it with a `<script>` tag before their
+  own script, so cached renders (`viewer/pages/threads.js:75-78`) have labels at once,
+  including on the first load after the update. Delete the pages' own copies
+  (`viewer/pages/settings.js:15-16`, `threads.js:15`, `thread.js:4`) and per-tool
+  branches. Labels shown stay identical (`thread.js` and `threads.js` show "OpenRouter",
+  the `label` field).
 
 ### S6. Tests
 
@@ -242,12 +272,18 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   ids are unique; `export.js --check` passes; a fake connector missing a required member, or with a flag
   but no member, is rejected with a message naming it; `providers.js` exports equal a
   frozen snapshot of today's values.
-- New name-check guard test: scans `machine/`, `viewer/app/`, `viewer/pages/`, `install.sh`,
-  `codex/model.sh` and `test-support/` except `test-support/smoke/` (excluding test files and
-  `connectors/`) for string literals equal to a tool's
-  cli or provider id used in a comparison or list, and fails listing each hit. An explicit
-  allowlist in the test may hold lines that are not about the tool (e.g. a model name or a
-  URL containing the word), each with a one-line reason.
+- New name-check guard test: scans `machine/`, `viewer/app/`, `viewer/pages/`,
+  `viewer/server.js`, `install.sh` and `codex/model.sh` (excluding test files, `test-support/`
+  and `connectors/`), and fails listing each hit. A hit is a tool's cli or provider id as:
+  a string literal in a comparison (`===`, `!==`, `==`, `!=`, `case`, `includes(...)`), an
+  element of an array literal, an object literal key, a bracket access (`x['pi']`), or a
+  property access on a connector or adapter object (`adapters.codex`); in shell, a `case`
+  pattern, a `[[ ... == name ]]` test or a word in a `for` list; in Python, a string in a
+  comparison, tuple or list. An explicit allowlist in the test holds `file:line-pattern`
+  entries, each tagged and with a one-line reason: `not-tool` (the word means something
+  else, e.g. a model name or URL), `legacy` (one-off cleanup of retired files, e.g.
+  `install.sh:61-62,138-149`), or `compat` (outside connectors' meaning, e.g. the graph
+  viewer's caller label `viewer/server.js:1336,1922-1935`).
 - Existing tests move with their code or keep working; none is deleted without its
   assertions moving.
 
@@ -265,7 +301,7 @@ they name adapter paths or list tools; `protocol/app/*.md` provider lists stay a
 ### Non-goals
 
 No new tool; no change to anything a user sees, any stored file format, the hub API's
-existing fields, `only_ai` / `--provider` values, or the live smoke scope (Decision 11).
+existing fields, `only_ai` / `--provider` values, or the live smoke scope (Decision 12).
 
 ### Validation
 
@@ -348,6 +384,20 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | `model.sh` holds GPT pin workflow and two discovery shapes; Decision 14's single `discover()` doesn't fit | user-decision | Q2 |
+| mechanics | minor | Codex `discover()` has no single return contract (`check` vs `show --json`) | user-decision | merged into Q2 |
+| intent | minor | Guard on `install.sh` hits legacy cleanup lines | upheld | S6 `legacy` allowlist tag; S5 install bullet |
+| intent | minor | `lead_order` default and several settings-page branches missing from manifest | upheld | S2 `placement.leadDefault`, `settings` additions |
+| intent | minor | `hookInput` loads the whole machine half per hook event | upheld | S2 manifest `hook` field; S5 `hook-in.js` reads the manifest only |
+| intent | minor | `asideParentField` for Antigravity is dead and fails validation | upheld | S2: aside tools only |
+| mechanics | blocking | `auto: false` too broad; OpenRouter can be chosen from saved orders and as the only review family | upheld | S2 `placement.addOnMigration` and `appendWhenRequested` |
+| mechanics | blocking | Pi aside replies, stderr and failures are redacted today; S3/S4 dropped them | upheld | S3 `aside` row; S4 redact scope |
+| mechanics | major | `restartLoss` conflates assigning the reason with retrying stops | upheld | S3 `restartLoss` two paths, `stopWhenEnded` |
+| mechanics | major | Guard matcher misses property dispatch and `viewer/server.js` | upheld | S6 hit forms defined; `compat` tag for graph caller label; S4 names property dispatch |
+| mechanics | minor | Preflight endpoint has no connector selection | upheld | S3 `preflight` row: one connector, endpoint shape unchanged |
+| mechanics | minor | Installer PATH precedence would change with registry order | upheld | S2 `install.pathRank` |
+| mechanics | minor | Threads page cached render lacks labels before fetch | upheld | S5 `assets/tools.js` script instead of fetch |
+| mechanics | minor | S1 accessor, helper path and validation timing inconsistent | upheld | S1 tree and loading; S3 validate text |
 
 ## Prior Work
 
