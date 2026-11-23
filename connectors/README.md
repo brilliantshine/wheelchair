@@ -252,10 +252,10 @@ general fallback.
 
 | Field | Type | Required? |
 |---|---|---|
-| `models.pins` | object: slot to `{ model, effort? }`, the default model per slot; each model must be `none` or match both `models.format` and the shared pin-file rule `[a-z0-9][a-z0-9._/:-]*` | required |
+| `models.pins` | object: exactly the five slots `light`, `standard`, `heavy`, `critical` and `lead`, each to `{ model, effort? }`; `sub-lead` follows `lead`; each model must be `none` or match both `models.format` and the shared pin-file rule `[a-z0-9][a-z0-9._/:-]*` | required |
 | `models.format` | string regex that `codex/model.sh` validates pins with | required |
 | `models.hubPattern` | string regex the hub checks model names with | required |
-| `models.efforts` | array of strings, may be empty (empty means the tool has no effort levels) | required |
+| `models.efforts` | ordered subset of `low`, `medium`, `high`, `xhigh`, `max`; may be empty (empty means the tool has no effort levels) | required |
 | `models.slotAliases` | object, alias to slot (Claude's `haiku`, `sonnet`, `opus`) | defaulted: `{}` (no aliases) |
 | `models.effortError` | string, the hub's error text for a bad effort | defaulted: `effort is invalid` |
 | `models.familyCommand` | boolean, the tool uses `model.sh family` | defaulted: false in boolean checks |
@@ -318,7 +318,7 @@ tag before their own script.
    also set `permissionName` to the short name used in grouped Settings labels. If the tool has model choices on the Settings page, add
    `settings.modelOptions`. If the tool recovers adopted panes, give it a `recoverRank`; every
    tool needs `install.label`.
-5. Fill `models` (default pins for light, standard, heavy, critical and lead; sub-lead falls back to lead). Default efforts must be listed in `models.efforts`, and every effort must match `[a-z]+`. Anchor `models.format`, `models.hubPattern` and `settings.modelPattern` with `^` and `$`. If the tool can list its own
+5. Fill `models` (pins for exactly light, standard, heavy, critical and lead; sub-lead follows lead). Each default pin effort must be in `models.efforts`, which is an ordered subset of `low`, `medium`, `high`, `xhigh`, `max`. Anchor `models.format`, `models.hubPattern` and `settings.modelPattern` with `^` and `$`. If the tool can list its own
    models, add a discovery function to `codex/model.sh`; that script keeps all per-tool
    model code (Decision 16 of the connector plan) and allowlists those lines in the name-check
    guard as `model-script`.
