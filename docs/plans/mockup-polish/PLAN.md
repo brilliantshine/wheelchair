@@ -198,7 +198,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 ### Round 2 — 2026-11-23
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt; cross-family: yes.
 
 **Changed since Round 1:**
 - S1: only unchanged entries containing an iframe are pinned in place; others may move. Scroll anchor recorded at the start of `render()`, with a fallback.
