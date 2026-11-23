@@ -45,7 +45,7 @@ test('binding is shared and selects each session marker, ignoring subagents', as
   const other = { ...session, name: 'wc-abc-worker-2' }; machine.sessions[other.name] = other;
   log('sub', [metadata, prompt(session.name), { type: 'turn.ended', agentId: 'main', turnId: 1, reason: 'completed' }], 'other');
   const a = log('a', [metadata, prompt(session.name)]), b = log('b', [metadata, prompt(other.name)]);
-  await Promise.all([machine.bindTranscript(session), machine.pollKimiTurns()]);
+  await Promise.all([machine.bindTranscript(session), machine.pollTurns()]);
   assert.equal(session.source_transcript, a); assert.equal(other.source_transcript, b); assert.deepEqual(machine.events, []);
   assert.equal((await kimi.findTranscript(session, session.account_dir)), a);
 });
@@ -53,7 +53,7 @@ test('turn zero and all outcomes are mapped, persisted and not repeated', async 
   const { machine, session, log, metadata, prompt } = setup();
   const ends = ['completed', 'cancelled', 'failed', 'failed', 'failed', 'other'].map((reason, turnId) => ({ type: 'turn.ended', agentId: 'main', turnId, reason, ...(turnId === 2 ? { error: 'rate limit' } : turnId === 3 ? { error: { code: 'bad', message: 'outer', cause: { code: 'provider.rate_limit', message: 'inner' } } } : {}) }));
   log('one', [metadata, prompt(session.name), ...ends, { type: 'turn.ended', agentId: 'sub', turnId: 9, reason: 'completed' }]);
-  await machine.pollKimiTurns(); await machine.pollKimiTurns();
+  await machine.pollTurns(); await machine.pollTurns();
   assert.deepEqual(machine.events.map(e => e.type), ['turn-ended','turn-ended','limit-hit','limit-hit','turn-failed','turn-failed']);
   assert.equal(machine.events[1].interrupted, true); assert.equal(machine.events[2].error, 'rate limit'); assert.equal(machine.events[3].error, '[bad] outer: inner'); assert.equal(machine.events[4].error, 'Kimi Code turn failed'); assert.equal(machine.events[5].error, 'Kimi Code turn ended (other)');
   assert.deepEqual(machine.events.map(e => e.turn_id), [0,1,2,3,4,5]); assert.ok(machine.events.every(e => e.transcript_path === session.source_transcript));
@@ -62,10 +62,10 @@ test('turn zero and all outcomes are mapped, persisted and not repeated', async 
 test('incompatible marker and missing binding stop with a reason', async () => {
   for (const meta of [{ protocol_version: '2.0' }, { protocol_version: '1.5', min_protocol_version: '1.9' }]) {
     const { machine, session, log, prompt } = setup(); log('one', [{ type:'metadata', ...meta }, prompt(session.name)]);
-    await machine.pollKimiTurns(); assert.match(session.end_reason, /format changed/); assert.equal(session.status, 'stopped');
+    await machine.pollTurns(); assert.match(session.end_reason, /format changed/); assert.equal(session.status, 'stopped');
   }
   const { machine, session } = setup(); const now = Date.now(); session.ready_at = new Date(now-119999).toISOString(); const original = Date.now; Date.now = () => now;
-  try { await machine.pollKimiTurns(); assert.equal(session.end_reason, undefined); Date.now = () => now + 1; await machine.pollKimiTurns(); assert.equal(session.end_reason, "Couldn't find Kimi Code's log for this session"); assert.equal(machine.sessionList().find(s => s.name === session.name).end_reason, session.end_reason); } finally { Date.now = original; }
+  try { await machine.pollTurns(); assert.equal(session.end_reason, undefined); Date.now = () => now + 1; await machine.pollTurns(); assert.equal(session.end_reason, "Couldn't find Kimi Code's log for this session"); assert.equal(machine.sessionList().find(s => s.name === session.name).end_reason, session.end_reason); } finally { Date.now = original; }
 });
 test('protocol versions must be well formed and respect the full minimum', async () => {
   for (const [meta, compatible] of [
@@ -80,7 +80,7 @@ test('protocol versions must be well formed and respect the full minimum', async
   ]) {
     const { machine, session, log, prompt } = setup();
     const file = log('one', [{ type: 'metadata', ...meta }, prompt(session.name)]);
-    await machine.pollKimiTurns();
+    await machine.pollTurns();
     if (compatible) assert.equal(session.source_transcript, file, JSON.stringify(meta));
     else assert.match(session.end_reason, /format changed/, JSON.stringify(meta));
   }
@@ -100,27 +100,27 @@ test('unrelated incompatible logs are ignored and truncation stops a bound sessi
   const { machine, session, log, metadata, prompt } = setup();
   log('bad', [{ type:'metadata', protocol_version:'2.0' }, { text:`quoted [wc:role]\nSession: ${session.name}` }]);
   const file = log('good', [metadata, prompt(session.name), { type:'turn.ended', agentId:'main', turnId:0, reason:'completed' }]);
-  await machine.pollKimiTurns(); assert.equal(session.source_transcript, file); assert.equal(machine.events.length, 1);
-  fs.writeFileSync(file, ''); await machine.pollKimiTurns(); assert.match(session.end_reason, /disappeared or was replaced/);
+  await machine.pollTurns(); assert.equal(session.source_transcript, file); assert.equal(machine.events.length, 1);
+  fs.writeFileSync(file, ''); await machine.pollTurns(); assert.match(session.end_reason, /disappeared or was replaced/);
 });
 test('spool gate holds later turns until the previous event drains', async () => {
   const { machine, session, log, metadata, prompt } = setup();
   log('good', [metadata, prompt(session.name), ...[0, 1].map(turnId => ({ type:'turn.ended', agentId:'main', turnId, reason:'completed' }))]);
   let blocked = false; machine.spoolWaiting = async () => blocked;
   machine.hook = async (name, event) => { machine.events.push(event); blocked = true; };
-  await machine.pollKimiTurns(); assert.deepEqual(machine.events.map(e => e.turn_id), [0]);
-  await machine.pollKimiTurns(); assert.equal(machine.events.length, 1);
-  blocked = false; await machine.pollKimiTurns(); assert.deepEqual(machine.events.map(e => e.turn_id), [0, 1]);
+  await machine.pollTurns(); assert.deepEqual(machine.events.map(e => e.turn_id), [0]);
+  await machine.pollTurns(); assert.equal(machine.events.length, 1);
+  blocked = false; await machine.pollTurns(); assert.deepEqual(machine.events.map(e => e.turn_id), [0, 1]);
 });
 test('offset stays behind an unhandled turn when the spool drains after breaking', async () => {
   const { machine, session, log, metadata, prompt } = setup();
   log('good', [metadata, prompt(session.name), ...[0, 1].map(turnId => ({ type: 'turn.ended', agentId: 'main', turnId, reason: 'completed' }))]);
   let calls = 0;
   machine.spoolWaiting = async () => ++calls === 3;
-  await machine.pollKimiTurns();
+  await machine.pollTurns();
   assert.deepEqual(machine.events.map(e => e.turn_id), [0]);
   assert.equal(session.kimi_offset || 0, 0);
-  await machine.pollKimiTurns();
+  await machine.pollTurns();
   assert.deepEqual(machine.events.map(e => e.turn_id), [0, 1]);
 });
 test('copier refuses replaced or shortened Kimi logs', async () => {
@@ -136,7 +136,7 @@ test('copier refuses replaced or shortened Kimi logs', async () => {
 test('chat binds before polling and simultaneous chat and polling share identity', async () => {
   const { machine, session, log, metadata, prompt } = setup();
   const file = log('own', [metadata, prompt(session.name)]);
-  const [chat] = await Promise.all([machine.transcript(session.name), machine.pollKimiTurns()]);
+  const [chat] = await Promise.all([machine.transcript(session.name), machine.pollTurns()]);
   const stat = fs.statSync(file);
   assert.match(chat.data, /Session: wc-abc-worker/);
   assert.equal(session.source_transcript, file); assert.equal(session.kimi_session_id, 'own');
@@ -149,20 +149,20 @@ test('persisted offsets catch up after restart and a crash before saving replays
   const machine = new MachineService({ win: noWsl, stateDir: root }); machine.sessions[session.name] = session;
   machine.config = {}; machine.hook = async (name, event) => { await machine.spool('events', { ...event, session: name, prepared: true }); };
   const file = log('own', [metadata, prompt(session.name), { type:'turn.ended', agentId:'main', turnId:0, reason:'completed' }]);
-  await machine.pollKimiTurns(); const spool = path.join(root, 'spool/events');
+  await machine.pollTurns(); const spool = path.join(root, 'spool/events');
   for (const name of fs.readdirSync(spool)) fs.unlinkSync(path.join(spool, name));
   // Persist an offset after turn zero and restart from the actual state file.
-  await machine.pollKimiTurns(); const before = fs.readFileSync(machine.sessionsPath, 'utf8');
+  await machine.pollTurns(); const before = fs.readFileSync(machine.sessionsPath, 'utf8');
   fs.appendFileSync(file, JSON.stringify({ type:'turn.ended', agentId:'main', turnId:1, reason:'completed' })+'\n');
   const restarted = new MachineService({ win: noWsl, stateDir:root }); restarted.config = {}; restarted.sessions = JSON.parse(before);
   const events = []; restarted.hook = async (name,event) => events.push(event);
-  await restarted.pollKimiTurns(); await restarted.pollKimiTurns(); assert.deepEqual(events.map(e => e.turn_id), [1]);
+  await restarted.pollTurns(); await restarted.pollTurns(); assert.deepEqual(events.map(e => e.turn_id), [1]);
   // The event is durable but the session record can still be the pre-save version.
   fs.writeFileSync(restarted.sessionsPath, before); restarted.sessions = JSON.parse(fs.readFileSync(restarted.sessionsPath, 'utf8'));
   await restarted.spool('events', { ...events[0], session:session.name, prepared:true });
   assert.equal(await restarted.spoolWaiting(restarted.sessions[session.name]), true);
   for (const name of fs.readdirSync(spool)) fs.unlinkSync(path.join(spool, name));
-  await restarted.pollKimiTurns(); assert.deepEqual(events.map(e => e.turn_id), [1, 1]);
+  await restarted.pollTurns(); assert.deepEqual(events.map(e => e.turn_id), [1, 1]);
 });
 
 test('missing log requires continuous failures and delivery failures never start the clock', async () => {
@@ -172,11 +172,11 @@ test('missing log requires continuous failures and delivery failures never start
   let now = 100000; const oldNow = Date.now; Date.now = () => now;
   try {
     machine.hook = async () => { throw new Error('hub failure'); }; machine.log = () => {};
-    await machine.pollKimiTurns(); now += 31000; await machine.pollKimiTurns();
+    await machine.pollTurns(); now += 31000; await machine.pollTurns();
     assert.equal(session.kimi_missing_since, undefined); assert.equal(session.end_reason, undefined);
-    fs.renameSync(file, file + '.saved'); await machine.pollKimiTurns(); assert.equal(session.kimi_missing_since, now); assert.equal(JSON.parse(fs.readFileSync(machine.sessionsPath, 'utf8'))[session.name].kimi_missing_since, now);
-    now += 29000; fs.renameSync(file + '.saved', file); await machine.pollKimiTurns(); assert.equal(session.kimi_missing_since, undefined); assert.equal(JSON.parse(fs.readFileSync(machine.sessionsPath, 'utf8'))[session.name].kimi_missing_since, undefined);
-    fs.renameSync(file, file + '.saved'); await machine.pollKimiTurns(); now += 30000; await machine.pollKimiTurns();
+    fs.renameSync(file, file + '.saved'); await machine.pollTurns(); assert.equal(session.kimi_missing_since, now); assert.equal(JSON.parse(fs.readFileSync(machine.sessionsPath, 'utf8'))[session.name].kimi_missing_since, now);
+    now += 29000; fs.renameSync(file + '.saved', file); await machine.pollTurns(); assert.equal(session.kimi_missing_since, undefined); assert.equal(JSON.parse(fs.readFileSync(machine.sessionsPath, 'utf8'))[session.name].kimi_missing_since, undefined);
+    fs.renameSync(file, file + '.saved'); await machine.pollTurns(); now += 30000; await machine.pollTurns();
     assert.equal(session.end_reason, "Kimi Code's log for this session disappeared or was replaced");
   } finally { Date.now = oldNow; }
 });
@@ -185,7 +185,7 @@ test('persistence errors after a successful log read do not start the missing cl
   const { machine, session, log, metadata, prompt } = setup();
   log('own', [metadata, prompt(session.name), { type:'turn.ended', agentId:'main', turnId:0, reason:'completed' }]);
   await machine.bindTranscript(session); machine.log = () => {}; machine.persistSessions = async () => { throw new Error('disk'); };
-  await machine.pollKimiTurns(); assert.equal(session.kimi_missing_since, undefined); assert.equal(session.end_reason, undefined);
+  await machine.pollTurns(); assert.equal(session.kimi_missing_since, undefined); assert.equal(session.end_reason, undefined);
 });
 
 test('copier does not open source after fatal and ignores swapped opened file', async () => {
@@ -210,7 +210,7 @@ test('recovery stops Kimi while leaving Claude and marker-priority panes alone',
   assert.equal(machine.sessions['wc-b-worker'].cli, 'claude'); assert.equal(machine.sessions['wc-c-worker'].cli, 'codex');
   assert.equal(machine.sessions['wc-h-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-h-worker'].end_reason, 'Lost track of this Kimi Code session after a machine restart; restart it'); assert.equal(machine.sessions['wc-d-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-e-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-f-worker'].cli, 'agy'); assert.equal(machine.sessions['wc-g-worker'].cli, 'claude');
   const targets = []; machine.tmux = args => { targets.push(args); return { ok:true, stdout:'' }; }; machine.liveTmux = () => new Set();
-  await machine.pollKimiTurns(); assert.deepEqual(targets, [['kill-session','-t','=wc-a-worker'], ['kill-session','-t','=wc-d-worker'], ['kill-session','-t','=wc-e-worker'], ['kill-session','-t','=wc-h-worker'], ['kill-session','-t','=wc-i-worker'], ['kill-session','-t','=wc-k-worker']]); assert.equal(machine.sessions['wc-a-worker'].status, 'stopped');
+  await machine.pollTurns(); assert.deepEqual(targets, [['kill-session','-t','=wc-a-worker'], ['kill-session','-t','=wc-d-worker'], ['kill-session','-t','=wc-e-worker'], ['kill-session','-t','=wc-h-worker'], ['kill-session','-t','=wc-i-worker'], ['kill-session','-t','=wc-k-worker']]); assert.equal(machine.sessions['wc-a-worker'].status, 'stopped');
 });
 
 test('outage spools one turn at a time and drains in order even when the clock moves backwards', async () => {
@@ -222,11 +222,11 @@ test('outage spools one turn at a time and drains in order even when the clock m
   const received = []; const http = require('node:http');
   const hub = http.createServer((req,res) => { let data=''; req.on('data', x => data += x); req.on('end', () => { received.push(JSON.parse(data)); res.writeHead(200); res.end('{}'); }); });
   try {
-    await machine.pollKimiTurns(); await machine.pollKimiTurns();
+    await machine.pollTurns(); await machine.pollTurns();
     const spool = path.join(root, 'spool/events'); assert.equal(fs.readdirSync(spool).length, 1);
     assert.equal(session.kimi_last_turn, 0);
     await new Promise(resolve => hub.listen(0, '127.0.0.1', resolve)); machine.config.hub_url = `http://127.0.0.1:${hub.address().port}`;
-    await machine.drainSpool('events'); now -= 100000; await machine.pollKimiTurns();
+    await machine.drainSpool('events'); now -= 100000; await machine.pollTurns();
     assert.deepEqual(received.map(e => e.turn_id), [0, 1]); assert.equal(fs.readdirSync(spool).length, 0);
   } finally { Date.now = oldNow; if (hub.listening) await new Promise(resolve => hub.close(resolve)); }
 });
@@ -263,7 +263,7 @@ test('HTTP pending stop, archive and hook preserve pending session and its workt
     machine.sessions[chatSession.name] = chatSession;
     const chatFile = path.join(root, 'sessions/work/chat/agents/main/wire.jsonl'); fs.mkdirSync(path.dirname(chatFile), {recursive:true});
     fs.writeFileSync(chatFile, [ {type:'metadata',protocol_version:'1.5'}, {type:'turn.prompt',origin:{kind:'user'},input:[{type:'text',text:`[wc:role] Role: worker\nSession: ${chatSession.name}\n`}]} ].map(JSON.stringify).join('\n')+'\n');
-    const [chatResponse] = await Promise.all([request(`/v1/sessions/${chatSession.name}/transcript`,'GET'), machine.pollKimiTurns()]);
+    const [chatResponse] = await Promise.all([request(`/v1/sessions/${chatSession.name}/transcript`,'GET'), machine.pollTurns()]);
     assert.match((await chatResponse.json()).data, /Session: wc-def-worker/); assert.equal(chatSession.source_transcript,chatFile); assert.equal(chatSession.kimi_session_id,'chat');
     const chatStat = fs.statSync(chatFile); assert.deepEqual(chatSession.kimi_log_id,{dev:chatStat.dev,ino:chatStat.ino});
     let hookCalls = 0; machine.hook = async () => { hookCalls++; };
@@ -276,7 +276,7 @@ test('HTTP pending stop, archive and hook preserve pending session and its workt
     machine.liveTmux = () => new Set();
     response = await request(`/v1/sessions/${session.name}`,'DELETE'); assert.equal(response.status,200); assert.deepEqual(await response.json(),{ok:true,end_reason:'lost'});
     const deadline = { name:'wc-ghi-worker', thread_id:'ghi', cli:'kimi', status:'ready', account_dir:root, created_at:new Date(Date.now()-130000).toISOString(), ready_at:new Date(Date.now()-120000).toISOString() };
-    machine.sessions[deadline.name] = deadline; machine.liveTmux = () => new Set(); await machine.pollKimiTurns();
+    machine.sessions[deadline.name] = deadline; machine.liveTmux = () => new Set(); await machine.pollTurns();
     response = await request('/v1/sessions','GET'); const listed = (await response.json()).find(s => s.name === deadline.name);
     assert.equal(listed.end_reason, "Couldn't find Kimi Code's log for this session"); assert.equal(listed.status,'stopped');
   } finally { await new Promise(resolve => machine.server.close(resolve)); }
@@ -294,13 +294,13 @@ test('sign-in refuses when no Kimi binary is installed', async () => {
 test('duplicate turn ends in one read hand off once', async () => {
   const { machine, session, log, metadata, prompt } = setup();
   log('duplicate', [metadata, prompt(session.name), ...[0, 0, 1].map(turnId => ({ type: 'turn.ended', agentId: 'main', turnId, reason: 'completed' }))]);
-  await machine.pollKimiTurns(); assert.deepEqual(machine.events.map(event => event.turn_id), [0, 1]);
+  await machine.pollTurns(); assert.deepEqual(machine.events.map(event => event.turn_id), [0, 1]);
 });
 
 test('HTTP start retry and listing keep Kimi binding state private', async () => {
   const { machine: source, session, log, metadata, prompt } = setup();
   log('bound', [metadata, prompt(session.name), { type:'turn.ended', agentId:'main', turnId:0, reason:'completed' }]);
-  await source.pollKimiTurns(); await source.transcript(session.name); session.kimi_missing_since = 123; session.end_reason = 'lost';
+  await source.pollTurns(); await source.transcript(session.name); session.kimi_missing_since = 123; session.end_reason = 'lost';
   const fields = ['kimi_session_id', 'source_transcript', 'kimi_log_id', 'kimi_offset', 'kimi_last_turn', 'kimi_missing_since', 'transcript_source'];
   const root = makeTempSync('kimi-public-'), secret = path.join(root, 'secret'); fs.writeFileSync(secret, 'secret');
   const http = require('node:http'), probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
