@@ -268,6 +268,70 @@ def kimi_models():
     return listed
 
 
+# model-script: Antigravity model discovery
+AGY_TTL = 3600
+# The tool whose Settings list is "agy_visible", found from the registry rather than named here.
+AGY = next((tool for tool in TOOLS if (tool.get("settings", {}).get("modelOptions") or {}).get("listedKey") == "agy_visible"), None)
+
+
+def agy_parse(text):
+    """`agy models` lines (`<id>\t<name>`) as [{value, label}]; ids a pin cannot hold are skipped."""
+    listed, seen = [], set()
+    for line in text.splitlines():
+        model, _, name = line.partition("\t")
+        model, name = model.strip(), name.strip()
+        if model == "none" or model in seen or not FORMATS[AGY["provider"]].fullmatch(model):
+            continue
+        seen.add(model)
+        listed.append({"value": model, "label": f"{name} · {model}" if name else model})
+    return listed
+
+
+def agy_models(pin_path):
+    """Antigravity's model list from `agy models`, cached beside the pins for an hour.
+
+    A failed or empty listing keeps the last good cache; with none, [] (the pins still show).
+    WHEELCHAIR_AGY names the binary; set to empty it turns the listing off (tests)."""
+    import shutil
+    import subprocess
+    import time
+    if AGY is None:
+        return []
+    path = os.path.join(os.path.dirname(os.path.abspath(pin_path)), "agy-models.json")
+    cached = None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict) and isinstance(data.get("models"), list) and isinstance(data.get("at"), (int, float)):
+            cached = data
+    except Exception:
+        pass
+    if cached is not None and 0 <= time.time() - cached["at"] < AGY_TTL:
+        return agy_valid(cached["models"])
+    name = AGY["install"]["binary"]
+    binary = os.environ.get("WHEELCHAIR_AGY", shutil.which(name) or os.path.expanduser(f"~/.local/bin/{name}"))
+    listed = []
+    if binary and os.access(binary, os.X_OK):
+        try:
+            run = subprocess.run([binary, "models"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+            if run.returncode == 0:
+                listed = agy_parse(run.stdout)
+        except Exception:
+            listed = []
+    if not listed:
+        return agy_valid(cached["models"]) if cached is not None else []
+    try:
+        atomic_write(path, json.dumps({"at": time.time(), "models": listed}) + "\n")
+    except Exception:
+        pass
+    return listed
+
+
+def agy_valid(models):
+    return [o for o in models if isinstance(o, dict) and isinstance(o.get("value"), str) and isinstance(o.get("label"), str)
+            and o["value"] != "none" and FORMATS[AGY["provider"]].fullmatch(o["value"])]
+
+
 # model-script: GPT heads-up workflow
 def heads_up_events(pin_path, cache_path):
     pins, skipped, malformed = read_pins(pin_path)
@@ -416,6 +480,7 @@ def main(root, argv):
                     "model": model, "effort": effort}
         result["malformed"], result["visible"] = malformed, listed_models(cache_path)
         result["kimi_visible"] = kimi_models()
+        result["agy_visible"] = agy_models(pin_path)
         print(json.dumps(result, separators=(",", ":")))
         return
     if len(argv) == 3 and argv[0] == "set" and (slot := slot_for("gpt", argv[1])) in WORK_TIERS:

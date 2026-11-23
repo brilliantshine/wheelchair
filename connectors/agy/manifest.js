@@ -33,6 +33,7 @@ module.exports = {
   },
   "settings": {
     "monoModelNames": true,
+    "modelOptions": {"listedKey": "agy_visible", "listedShape": "objects", "includePins": true},
     "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
     "modelPlaceholder": "model-name",
     "cliLabel": "Antigravity CLI",

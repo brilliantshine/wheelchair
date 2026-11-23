@@ -21,7 +21,7 @@ async function setup(options = {}) {
     },
   };
   await fs.writeFile(path.join(state, 'machines.json'), JSON.stringify(machines));
-  const server = await startServer({ stateDir: state, env: { ...options.env, WHEELCHAIR_MODELS: models, WHEELCHAIR_MODELS_CACHE: modelsCache } });
+  const server = await startServer({ stateDir: state, env: { ...options.env, WHEELCHAIR_AGY: '', WHEELCHAIR_MODELS: models, WHEELCHAIR_MODELS_CACHE: modelsCache } });
   return { machine, server, state, models, modelsCache };
 }
 

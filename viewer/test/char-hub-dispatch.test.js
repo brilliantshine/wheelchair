@@ -90,7 +90,7 @@ test('settings preserve provider plans, scout wording, review fallback and disco
   assert.deepEqual(o.claude.map(x => x.value), ['haiku','sonnet','opus','fable','claude-haiku-5-5','claude-sonnet-5-5','claude-opus-5-5','claude-fable-5-2']);
   assert.deepEqual(o.gpt, [{ value: 'gpt-a', label: 'gpt-a' }, { value: 'gpt-b', label: 'gpt-b' }]);
   assert.deepEqual(o.kimi, [{ value: 'k-a', label: 'K A' }, { value: 'k-b', label: 'k-b' }]);
-  assert.equal(o.gemini, undefined); assert.equal(o.openrouter, undefined);
+  assert.deepEqual(o.gemini, [{ value: 'g', label: 'g' }]); assert.equal(o.openrouter, undefined);
 });
 
 test('model routes validate each provider, aliases, efforts and review choices', async () => {
