@@ -1,6 +1,6 @@
 'use strict';
 module.exports = {
-  "usage": { "probeWhileLive": true, "tryEveryMachine": true },
+  "usage": { "probeWhileLive": true, "tryEveryMachine": true, "defaultProblem": true },
   "login": { "killTarget": "session" },
   "cli": "kimi",
   "provider": "kimi",

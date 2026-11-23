@@ -424,7 +424,8 @@
     {
       "usage": {
         "probeWhileLive": true,
-        "tryEveryMachine": true
+        "tryEveryMachine": true,
+        "defaultProblem": true
       },
       "login": {
         "killTarget": "session"

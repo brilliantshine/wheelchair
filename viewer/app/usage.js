@@ -82,7 +82,7 @@ async function machineAccounts(hub) {
         } else for (const [provider, info] of Object.entries(PROVIDERS)) {
           logins[`default-${provider}`] = Boolean(status[info.cli]?.logged_in);
           accounts[`default-${provider}`] = Boolean(logins[`default-${provider}`] && status[info.cli]?.installed);
-          if (connectors.manifest(info.cli)?.capabilities.versionCheck && !connectors.manifest(info.cli)?.capabilities.spend && cliProblem(info.cli)) problems[`default-${provider}`] = cliProblem(info.cli);
+          if (connectors.manifest(info.cli)?.capabilities.versionCheck && connectors.manifest(info.cli)?.usage?.defaultProblem && cliProblem(info.cli)) problems[`default-${provider}`] = cliProblem(info.cli);
         }
         const checked = connectors.list().filter(m => m.capabilities.versionCheck);
         const cliProblems = Object.fromEntries(checked.filter(m => cliProblem(m.cli)).map(m => [m.cli, cliProblem(m.cli)]));
