@@ -4,7 +4,7 @@
 // cli, provider, label, displayName, optional shortName, typesRoleMessage,
 // singleAccount, and boolean capabilities. install has command, binary, label,
 // optional node, versionArgs, optional fallbackPath, pathRank and sensitivity.
-// settings has optional modelOptions (fixed pairs or listedKey, listedShape and includePins), modelPattern, modelPlaceholder, cliLabel, vendor, setupUrl,
+// settings has required modelPattern, weights and plans (key/label pairs including unknown and keys present in weights), optional modelOptions (fixed pairs or listedKey, listedShape and includePins), modelPlaceholder, cliLabel, vendor, setupUrl,
 // permissionMode, permissionChoices, accountWarning, modelHeadsUp, signInKind,
 // reviewFamily, plans, weights, reportedPlans, oldPlanWeights, modelError,
 // familyHint, accountPolicy and optional scoutAgentTool, monoModelNames and keyPrompt. models has
@@ -38,6 +38,7 @@ function validateManifest(m) {
   for (const f of ['capabilities','install','settings','models','models.pins','placement','settings.weights']) check(f,obj);
   for (const cap of Object.keys(CAPABILITIES)) check(`capabilities.${cap}`,bool);
   check('settings.weights.unknown', v => typeof v === 'number' && Number.isFinite(v));
+  check('settings.plans', v => arr(v) && v.every(pair => arr(pair) && pair.length === 2 && pair.every(s => str(s) && s.length > 0)) && v.some(([key]) => key === 'unknown') && v.every(([key]) => Object.hasOwn(m.settings.weights, key)));
   check('models.efforts',v=>arr(v)&&v.every(str)); check('placement.workerRank',v=>v===null||typeof v==='number');
   for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested','models.familyCommand','models.bareTierSet','settings.scoutAgentTool','usage.showWarning','usage.probeWhileLive','usage.tryEveryMachine','settings.monoModelNames','usage.defaultProblem']) check(f,bool,false);
   check('shortName',str,false);
@@ -49,7 +50,7 @@ function validateManifest(m) {
   for (const f of ['install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt']) check(f,str,false);
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
   for (const f of ['settings.modelHeadsUp','settings.reviewFamily']) check(f,bool,false);
-  for (const f of ['settings.permissionChoices','settings.plans']) check(f,arr,false);
+  check('settings.permissionChoices',arr,false);
   for (const f of ['settings.reportedPlans','settings.oldPlanWeights','models.slotAliases','report','hook']) check(f,obj,false);
   for (const f of ['install.pathRank','recoverRank']) check(f,v=>v===null||typeof v==='number',false);
   check('recoverFallback',bool,false);
