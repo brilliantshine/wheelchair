@@ -235,7 +235,8 @@ function roleLayers(settings, role, project, scout, provider, preview = false) {
   if (role === 'sub-lead') lines.push('', 'Escalation rules from Settings:', ...escalationSentences(settings.escalation));
   if (role === 'lead') lines.push('', 'The user’s writing style for everything they read (thread replies and the text of cards):', renderStyle(settings.style));
   if (scout && ['lead', 'sub-lead'].includes(role)) {
-    const clause = connectors.byProvider(provider)?.settings.scoutAgentTool ? ` (Claude Code: the Agent tool with model "${scout.light}")` : '';
+    const scoutHelper = connectors.byProvider(provider)?.settings.scoutHelper;
+    const clause = scoutHelper ? ` (${scoutHelper} with model "${scout.light}")` : '';
     lines.push('', scout.light
       ? `Scout model for code reading: ${scout.light}. Questions that need more than a couple of files read go to your CLI's built-in helper on this model${clause}, asking for conclusions with file:line evidence, not file dumps.`
       : 'Scout model for code reading: none on this CLI. Read code yourself.');
@@ -259,7 +260,7 @@ function assertFits(settings) {
   const projects = new Set([undefined]);
   for (const template of settings.templates) if (template.scope !== 'all') projects.add(template.scope);
   for (const role of ROLES) for (const project of projects) {
-    if (roleLayers({ ...settings, lessons: {} }, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, connectors.list().find(m => m.settings.scoutAgentTool)?.provider).text.length > 12000) fail('the composed role instructions exceed 12000 characters');
+    if (roleLayers({ ...settings, lessons: {} }, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, connectors.list().find(m => m.settings.scoutHelper)?.provider).text.length > 12000) fail('the composed role instructions exceed 12000 characters');
   }
 }
 
