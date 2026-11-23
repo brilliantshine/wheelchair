@@ -40,6 +40,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | The assistant acts on threads and projects only; changing Settings (models, accounts, project tools, auto-merge) is deferred to the follow-up. | Collin picked "Threads only, for now". | user |
 | 14 | The assistant speaks only when Collin writes to it; telling Collin about changes on its own is deferred. | Collin picked "Later, not now". | user |
 | 15 | Mockups agreed: mockup-threads, mockup-thread, mockup-popup, mockup-closed and mockup-thinking, each in -phone (390x844) and -desktop (1280x800) files under graphs/ (first and only version, commit face0aff). | Collin picked "Agree them". | user |
+| 16 | The assistant is opt-in: a switch in Settings, off by default. While off there is no pinned thread, no pop-up and no assistant session. Turning it off later stops its session and hides both; its conversation is kept for when it is turned back on. | Collin: "the assistant will be an opt in, we won't force all users to have it" (new IDEA constraint). How it is switched on is defaulted. | user |
 
 ## Spec
 

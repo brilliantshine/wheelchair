@@ -42,3 +42,4 @@ in project Y" or "tell the lead on Z to hold off".
 ## Constraints
 
 - Leads and threads keep working as they do today for anyone not using the assistant.
+- The assistant is opt-in: nobody gets it unless they turn it on.
