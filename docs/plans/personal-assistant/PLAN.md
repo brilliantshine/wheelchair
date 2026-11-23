@@ -43,6 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | When told to, the assistant may do anything Collin can do with threads: start threads, message leads, answer leads' question cards, press Start building, restart leads, and archive threads. | Collin picked "Anything I can do". | user |
 | 12 | Whatever the assistant does in a thread is visible there and marked as done by the assistant (its messages to a lead show as a bubble "From your assistant"; its card presses say "by your assistant"). | Collin must be able to see why a lead acted, without the assistant reporting it. | defaulted |
 | 13 | The assistant acts on threads and projects only; changing Settings (models, accounts, project tools, auto-merge) is deferred to the follow-up. | Collin picked "Threads only, for now". | user |
+| 14 | The assistant speaks only when Collin writes to it; telling Collin about changes on its own is deferred. | Collin picked "Later, not now". | user |
 
 ## Spec
 
@@ -57,6 +58,7 @@ On Collin's instruction, anything Collin can do with threads in the app: start a
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | 1 | The assistant changes Settings for Collin (models, accounts, project tools, auto-merge) | Settings changes are rare; threads are the everyday work | planning | Each Settings screen needs its own action for the assistant; reuse whatever action route this thread builds for thread actions |
+| 2 | The assistant tells Collin on its own when a thread finishes, gets stuck or starts waiting on Collin | Needs you already flags what is waiting; ask-and-act comes first | planning | Needs a background trigger from hub thread events to the assistant session; mind model cost of waking it |
 
 ## Accepted Risks
 
