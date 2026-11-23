@@ -258,7 +258,7 @@ screen works (it needs a window manager).
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | tricky — S1, S3, S4: detect openbox, start it with the fixed rc.xml and readiness wait, list/focus windows through it; fake-tool tests and live-test assertions | machine/lib/screen.js, machine/lib/screen-input.js, machine/test/screen.test.js, machine/test/screen-input.test.js, machine/test/screen-live.js, docs/plans/screen-window-manager/reports/T1.md | standard / gpt-6.1-terra | wc-dfe8d2b752bb-worker | bash machine/test/run.sh | done |
-| T2 | S2: approval card no-window-manager line and installer optional line, with tests (after T1, needs `openboxInstalled`) | machine/service.js (approval warning block only), machine/test/screen-tools-warning.test.js, install.sh, install/test/run.sh, docs/plans/screen-window-manager/reports/T2.md | light / gpt-6-luna |  | node --test machine/test/screen-tools-warning.test.js; bash install/test/run.sh | not started |
+| T2 | S2: approval card no-window-manager line and installer optional line, with tests (after T1, needs `openboxInstalled`); plus a no-openbox-on-PATH screen test | machine/service.js (approval warning block only), machine/test/screen-tools-warning.test.js, machine/test/screen.test.js (one appended test), install.sh, install/test/run.sh, docs/plans/screen-window-manager/reports/T2.md | light / gpt-6-luna | wc-dfe8d2b752bb-worker-2 | node --test machine/test/screen-tools-warning.test.js; bash install/test/run.sh | not started |
 
 ## Log
 
