@@ -139,8 +139,8 @@ The service must learn when a turn finishes. A machine half provides exactly one
   include `turn-ended` (with `transcript_path`), `turn-failed`, `limit-hit`, `prompt`,
   `step`, `usage-source` and `context`.
 - **`turnPoller(cli)`** for tools with no hook. The service calls it (with the service as
-  `this`) on a timer. Kimi reads its wire log and posts events itself. It usually comes with
-  `bindTranscript`, `spoolWaiting` and `validTranscript`.
+  `this`) on a timer. Kimi reads its wire log and posts events itself. It requires
+  `bindTranscript`, `spoolWaiting` and `validTranscript`; hook-driven tools must not export them.
 
 `validate` throws `hookEvent/turnPoller` unless there is exactly one. Two more rules follow:
 a half with `hookEvent` requires the manifest's `hook.payload` (`stdin` or `last-arg`), and a

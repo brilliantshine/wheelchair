@@ -25,6 +25,7 @@ function validate(manifest, half, mod) {
   if (half === 'machine' && (typeof mod.hookEvent === 'function') === (typeof mod.turnPoller === 'function')) fail('hookEvent/turnPoller');
   if (half === 'machine' && typeof mod.hookEvent === 'function' && !['stdin', 'last-arg'].includes(manifest.hook?.payload)) fail('hook.payload');
   if (half === 'machine' && typeof mod.turnPoller === 'function' && manifest.hook !== undefined) fail('hook');
+  if (half === 'machine') for (const member of ['bindTranscript', 'spoolWaiting', 'validTranscript']) if (typeof mod.turnPoller === 'function' ? typeof mod[member] !== 'function' : member in mod) fail(member);
   for (const [cap, halves] of Object.entries(CAPABILITIES)) for (const member of halves[half]) {
     if (manifest.capabilities[cap] ? (member === 'asideModel' ? !(mod[member] instanceof RegExp) : typeof mod[member] !== 'function') : member in mod) fail(member);
   }
