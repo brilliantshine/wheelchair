@@ -21,6 +21,7 @@ module.exports = {
     "steps": false
   },
   "install": {
+    "lookup": "fallback",
     "command": "t=$(mktemp) && curl -fsSL https://code.kimi.com/kimi-code/install.sh -o \"$t\" && bash \"$t\"; r=$?; rm -f \"$t\"; exit $r",
     "binary": "kimi",
     "label": "Kimi Code",

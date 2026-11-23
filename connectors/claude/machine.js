@@ -43,7 +43,16 @@ function parseUsage(raw, now = Date.now()) {
   return { five_hour, week, ...([five_hour, week].some(w => w && w.used >= 100) ? { reached: true } : {}) };
 }
 const DISALLOWED_TOOLS = ['Artifact', 'Workflow', 'ScheduleWakeup', 'SendFeedback', 'ShareOnboardingGuide', 'ReportFindings', 'ListAgents', 'ArtifactComments', 'ArtifactData', 'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger', 'PushNotification', 'PublishPlugin', 'DesignSync', 'EnterWorktree', 'ExitWorktree', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'EndConversation'];
+const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
+  asideModel: /^[A-Za-z0-9._:\[\]-]+$/,
+  asideNewId: true,
+  asideResult(i, r) {
+        let obj = {}; try { obj = JSON.parse(r.out); } catch {}
+        const limit = /rate_limit/i.test(JSON.stringify(obj) + r.err) || obj.api_error_status === 429;
+        return r.code === 0 && obj.is_error === false ? { state: 'ok', reply: obj.result, conversation_id: i.mode === 'fork' ? i.new_id : i.from, limit } : { state: 'failed', error: obj.result || obj.error?.message || obj.error || lastAside(r.err) || `claude exited ${r.code}`, limit };
+  },
+  stepVocabulary: { card: ['Bash'], agents: ['Agent', 'Task'], web: ['WebFetch', 'WebSearch'], files: ['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'NotebookEdit', 'LS'], fileSubstring: false, shellDescription: ['Bash'] },
   provider: 'claude', loginEnv, usual, parseUsage,
   usageProbe(dir, options = {}) { return run('claude', ['-p', '/usage', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', '', '--settings', JSON.stringify({ env: { ANTHROPIC_BASE_URL: closedPort } })], { ...options, env: { ...process.env, ...loginEnv(dir), ANTHROPIC_BASE_URL: closedPort }, parse: parseUsage }); },
   asideArgv(input, context) { return ['claude', '-p', '--output-format', 'json', '--model', input.model, ...(input.effort ? ['--effort', input.effort] : []), ...(input.access === 'full' ? ['--permission-mode', 'bypassPermissions'] : ['--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob']), '--strict-mcp-config', '--system-prompt-snapshot', 'off', '--append-system-prompt', context.prompt, '--resume', input.from, ...(input.mode === 'fork' ? ['--fork-session', '--session-id', input.new_id] : [])]; },

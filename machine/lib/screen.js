@@ -1,10 +1,11 @@
 'use strict';
+const connectors = require('../../connectors');
+const sandboxed = session => { const m = connectors.manifest(session.cli); return !!(m?.capabilities.sandbox && connectors.machine(m.cli).sandboxed(session)); };
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
-const connectors = require('../../connectors');
 const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
 const { parseOp } = require('./screen-args');
 
@@ -221,7 +222,7 @@ class ScreenManager {
     this.fence(session, screen, generation);
     const n = screen.state.next_app++; const log = path.join(screen.dir, `app-${n}.log`); const unit = this.unit(screen, `app${n}`);
     const command = ['env', '--', ...parsed.env.map(([k, v]) => `${k}=${v}`), ...parsed.command];
-    const inner = session.cli === 'codex' && session.codex_mode !== 'unrestricted' ? ['codex', 'sandbox', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '--', ...command] : command;
+    const inner = sandboxed(session) ? connectors.machine(session.cli).sandboxWrap(command) : command;
     const marker = path.join(screen.dir, `app-${n}.started`);
     const args = [...await this.scopeArgs(screen, `app${n}`), 'sh', '-c', '(umask 077; : > "$0") || exit 127; exec "$@"', marker, ...inner]; this.fence(session, screen, generation);
     const app = { n, unit, log, command: parsed.command, pid: null, pgid: null }; screen.state.apps.push(app); this.save(screen);

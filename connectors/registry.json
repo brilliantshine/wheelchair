@@ -22,6 +22,7 @@
         "steps": false
       },
       "install": {
+        "lookup": "path",
         "command": "t=$(mktemp) && curl -fsSL https://claude.ai/install.sh -o \"$t\" && bash \"$t\"; r=$?; rm -f \"$t\"; exit $r",
         "binary": "claude",
         "label": "Claude Code",
@@ -145,17 +146,18 @@
         "usageProbe": true,
         "usageEvents": true,
         "preflight": true,
-        "sandbox": false,
+        "sandbox": true,
         "restartLoss": false,
-        "projectTools": false,
+        "projectTools": true,
         "recover": false,
         "spend": false,
         "liveSwitch": true,
         "aside": true,
         "versionCheck": false,
-        "steps": false
+        "steps": true
       },
       "install": {
+        "lookup": "path",
         "command": "npm install -g --prefix \"$HOME/.local\" @openai/codex@latest",
         "node": "16.0.0",
         "binary": "codex",
@@ -300,6 +302,7 @@
         "steps": false
       },
       "install": {
+        "lookup": "path",
         "command": "t=$(mktemp) && curl -fsSL https://antigravity.google/cli/install.sh -o \"$t\" && bash \"$t\"; r=$?; rm -f \"$t\"; exit $r",
         "binary": "agy",
         "label": "Antigravity",
@@ -425,6 +428,7 @@
         "steps": false
       },
       "install": {
+        "lookup": "fallback",
         "command": "t=$(mktemp) && curl -fsSL https://code.kimi.com/kimi-code/install.sh -o \"$t\" && bash \"$t\"; r=$?; rm -f \"$t\"; exit $r",
         "binary": "kimi",
         "label": "Kimi Code",
@@ -532,6 +536,7 @@
         "steps": false
       },
       "install": {
+        "lookup": "absolute",
         "command": "npm install -g --prefix \"$HOME/.local\" @earendil-works/pi-coding-agent@latest",
         "node": "22.19.0",
         "binary": "pi",

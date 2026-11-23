@@ -101,7 +101,27 @@ function codexOverrides(mcp, { wsl = false, mount = '/mnt', replaceEntries = {} 
   }
   return { args, tooLarge, warnings };
 }
+const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
+  asideMessage: (i, prompt, message) => i.mode === 'fork' ? `${prompt}\n\n${message}` : message,
+  async asidePrepare(runChild, onSpawn) {
+    const list = await runChild(['codex', 'mcp', 'list', '--json'], '', onSpawn);
+    if (list.code !== 0) return { error: lastAside(list.err) || `codex mcp list exited ${list.code}` };
+    try { const parsed = JSON.parse(list.out); if (!Array.isArray(parsed) || parsed.some(x => typeof x.name !== 'string' || !x.name)) throw Error(); return { servers: parsed.map(x => x.name) }; } catch { return { error: 'invalid codex mcp list output' }; }
+  },
+  asideModel: /^[A-Za-z0-9._:\[\]-]+$/,
+  asideResult(i, r) {
+      let reply = null, conversation_id = null, error = null;
+      for (const line of r.out.split('\n')) { let e; try { e = JSON.parse(line); } catch { continue; } if (e.type === 'thread.started') conversation_id = e.thread_id; if (e.type === 'item.completed' && e.item?.type === 'agent_message') reply = e.item.text; if (e.type === 'error' || e.type === 'turn.failed') error = e.message || e.error?.message || e.error || error; }
+      const limit = /rate_limit_reached_type|usage limit/i.test(r.out + r.err);
+      return r.code === 0 && reply ? { state: 'ok', reply, conversation_id, limit } : { state: 'failed', error: error || lastAside(r.err) || `codex exited ${r.code}`, conversation_id, limit };
+  },
+  readSteps: require('./steps').readLines,
+  sandboxed: session => session.codex_mode !== 'unrestricted',
+  sandboxWrap: command => ['codex', 'sandbox', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '--', ...command],
+  projectToolReason(name, entry) { const reason = codexEntryReason(name, entry); return reason ? `on Codex: ${reason}` : null; },
+  projectToolFileWarning(servers) { return codexOverrides({ servers }).tooLarge ? 'project tools skipped on Codex: .mcp.json is too large to pass on the command line' : null; },
+  stepVocabulary: { card: ['exec_command', 'shell'], agents: ['spawn_agent', 'send_input', 'wait_agent', 'close_agent'], web: ['web_search', 'web_fetch'], files: ['apply_patch', 'view_image'], fileSubstring: true, shellDescription: [] },
   preflightCommand(dir) { return { file: path.join(c.root, 'codex', 'preflight.sh'), args: [], env: dir ? { ...process.env, ...loginEnv(dir) } : undefined }; },
   provider: 'gpt', loginEnv, usual, parseUsage, codexEntryReason, codexOverrides,
   usageProbe(dir, options = {}) { return run('codex', ['app-server'], { ...options, env: { ...process.env, ...loginEnv(dir) }, parse: parseUsage, messages: [

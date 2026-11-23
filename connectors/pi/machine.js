@@ -14,7 +14,26 @@ function redactEvent(value) {
   return value;
 }
 function resolveCli() { const result = spawnSync('sh', ['-c', 'command -v pi'], { encoding: 'utf8' }); return result.status === 0 ? result.stdout.trim() || null : null; }
+const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
+  asideProblem: check => check(),
+  asideModel: /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/,
+  asideNewId: true,
+  asideResult(i, r) {
+        const records = r.out.split('\n').filter(line => line.trim()).map(line => { try { return JSON.parse(line); } catch { return null; } });
+        const expected = i.mode === 'fork' ? i.new_id : i.from;
+        const header = records[0];
+        const validHeader = header?.type === 'session' && header.id === expected && !(i.mode === 'fork' && header.id === i.from);
+        let message = null;
+        for (const event of records) if (event?.type === 'message_end' && event.message?.role === 'assistant') message = event.message;
+        const reply = (Array.isArray(message?.content) ? message.content.filter(x => x.type === 'text').map(x => x.text || '').join('') : '').trim();
+        const error = redact(message?.errorMessage || lastAside(redact(r.err)) || `Pi exited ${r.code}`);
+        if (!validHeader && r.code === 0 && !r.err.trim()) return { state: 'failed', error: 'invalid Pi session header' };
+        const failed = !validHeader || r.code !== 0 || !reply || ['error', 'aborted'].includes(message?.stopReason);
+        const limit = failed && /(?:\b(?:402|429)\b|credit|rate[ _-]?limit)/i.test(error);
+        return failed ? { state: 'failed', error, limit } : { state: 'ok', reply: redact(reply), conversation_id: expected, limit: false };
+  },
+  stepVocabulary: require('../codex/machine').stepVocabulary,
   provider: 'openrouter', resolveCli, redact, retryStartupEnter: true,
   loginEnv: dir => dir && path.resolve(dir) !== home(null) ? { PI_CODING_AGENT_DIR: dir } : {},
   loginCommand() { const cli = resolveCli(); if (!cli) throw new Error('Pi is not installed'); return [cli, 'auth', 'login', 'openrouter', '--api-key']; },
@@ -82,7 +101,7 @@ module.exports = {
       if (!raw.toolCallId) return null;
       if (raw.hook_event_name === 'tool_execution_end') return { type: 'step', phase: 'end', step: { id: raw.toolCallId, ended_at: new Date().toISOString(), failed: !!raw.isError, clean: true } };
       const names = { bash: 'Bash', read: 'Read', edit: 'Edit', write: 'Write', grep: 'Grep', find: 'Glob', ls: 'LS' };
-      return { type: 'step', phase: 'start', step: { id: raw.toolCallId, ...classify('claude', names[raw.toolName] || raw.toolName, raw.args), started_at: new Date().toISOString() } };
+      return { type: 'step', phase: 'start', step: { id: raw.toolCallId, ...classify(require('../claude/machine').stepVocabulary, names[raw.toolName] || raw.toolName, raw.args), started_at: new Date().toISOString() } };
     }
     if (raw.hook_event_name !== 'agent_settled') return null;
     if (!raw.aborted && (raw.stopReason === 'error' || raw.entry_id == null)) return { type: 'turn-failed', error: redact(raw.errorMessage || 'Pi ended the turn without a reply') };

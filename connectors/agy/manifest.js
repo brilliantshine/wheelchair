@@ -21,6 +21,7 @@ module.exports = {
     "steps": false
   },
   "install": {
+    "lookup": "path",
     "command": "t=$(mktemp) && curl -fsSL https://antigravity.google/cli/install.sh -o \"$t\" && bash \"$t\"; r=$?; rm -f \"$t\"; exit $r",
     "binary": "agy",
     "label": "Antigravity",
