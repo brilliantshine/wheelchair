@@ -87,7 +87,7 @@ These are called only when present; they need no flag in the manifest.
 | `codeNeedsPrompt` | boolean | A login code is typed after checking the pane for the prompt (Pi). |
 | `resolveCli` | `resolveCli()` returns an executable path or `null` | Find the executable; the service refuses to start a login or session when it is missing. |
 | `redact` | `redact(value)` | The tool's own redaction of transcript lines, events and aside output (Pi). The shared output scrub in `common.js` applies to every tool regardless. |
-| `stylePreviewArgv` | `stylePreviewArgv(model)` returns argv | The tool that runs the writing-style preview. Only the manifest with `stylePreview: true` (one at most) needs it. |
+| `stylePreviewArgv` | `stylePreviewArgv(model)` returns argv | The tool that runs the writing-style preview. Required when `stylePreview: true` (one manifest at most); forbidden otherwise. |
 | `disableProjectServers` | `disableProjectServers(built, dropped)` | Record project tools that were dropped into the built launch settings. |
 | `launchContext` | `async launchContext(service)` returns an object | Values merged into launch context; only the keys listed for `command` are copied to it (including Kimi's executable). |
 | `launchPath` | `launchPath(service)` | Kimi's resolution of its launch executable and version. |
@@ -114,11 +114,11 @@ have none of them. The registry validation also limits `preflight` to one tool.
 | `restartLoss` | `restartLossReason()` returns the end-reason text | A session adopted from tmux after a machine restart gets this reason. The manifest `stopWhenEnded` flag goes with it: an ended session of the tool is stopped on the next poll. | Adopted sessions get no reason. |
 | `projectTools` | `projectToolReason(name, entry)`, `projectToolFileWarning(servers)` | Project-tool checks ask the connector why an entry is skipped or whether the whole file is too large. `lib/project-tools.js` asks every connector with this flag. | Project tools are never skipped for this tool. |
 | `recover` | `recognizePane(text)` returns boolean | After a machine restart the service identifies adopted tmux panes by asking connectors in manifest `recoverRank` order; the first match sets the session's `cli`. A pane matching none gets the tool with `recoverFallback: true`. | The tool's panes are not recognised and fall to the fallback tool. |
-| `spend` | `spend(dir, now)` | `GET /v1/spend` reports offline spend (Pi reads OpenRouter usage logs). | No spend report. |
+| `spend` | `spend(dir, now)` | `GET /v1/spend` reports offline spend (Pi reads OpenRouter usage logs). At most one connector may have this capability. | No spend report. |
 | `liveSwitch` | `usual()` | A running session can be switched to another account (`POST /v1/sessions/:name/switch`); `usual()` names the folder copied from. | A switch request for the tool is refused. |
 | `aside` | `asideArgv(input, context)` returns argv; `asideResult(input, result)`; `asideModel`, a RegExp (not a function) | The tool can run headless aside turns. All three are required, and `validate` rejects an `asideModel` that is not a RegExp. Also set manifest `asideParentField` (the session field holding the conversation id to fork from, for example `cli_session_id`). | The app never offers asides for the tool. |
 | `versionCheck` | `checkVersion(service, executable)`, `versionStatus(service, login)` | The service checks the installed version at launch and in status, and the hub shows the result. | No version gating. |
-| `steps` | `readSteps(state, lines, ctx)` returns step events; `stepsReady(session)` returns boolean | Both are required. The service calls `stepsReady` before polling and reading steps to check whether tailing may start (Codex needs its thread id). The service tails the tool's transcript for tool-call steps (Codex). Hook-driven step events (Claude) do not need this flag. | The tool shows no steps from tailing. |
+| `steps` | `readSteps(state, lines, ctx)` returns step events; `stepsReady(session)` returns boolean | Both are required. The service calls `stepsReady` before polling and reading steps to check whether tailing may start (Codex needs its thread id). The service tails the tool's transcript for tool-call steps (Codex) and flushes steps and resets step state at every turn end, after any `onTurnEnded` ignored check. Hook-driven step events (Claude) do not need this flag. | The tool shows no steps from tailing. |
 
 #### Aside members
 
@@ -209,7 +209,7 @@ the type is checked only when present. Unless a default is stated below, an omit
 
 ### Settings page (`settings`)
 
-`settings.modelPattern` (string), `settings.weights` (object with numeric `unknown`) and `settings.plans` are required. `settings.plans` is an array of `[key, label]` pairs of non-empty strings; it must include `unknown`, and every key must exist in `settings.weights`. Everything else is defaulted: `modelPlaceholder`,
+`settings.modelPattern` (string), `settings.weights` (object with finite numeric `unknown`) and `settings.plans` are required. `settings.plans` is an array of `[key, label]` pairs of non-empty strings; it must include `unknown`, and every key must exist in `settings.weights`. Everything else is defaulted: `modelPlaceholder`,
 `cliLabel`, `vendor`, `setupUrl`, `signInKind`, `modelError` (strings); `permissionMode`,
 `accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices`
 (array of `[value, label]`); `reportedPlans`, `oldPlanWeights` (objects);
@@ -235,9 +235,7 @@ whenever the tool has choices to show.
 Defaults when a field is omitted (as implemented in `viewer/app/settings.js`, `viewer/app/routes.js`
 and `viewer/pages/settings.js`): boolean fields are false; `permissionChoices` is `[]` where
 used; `models.slotAliases` is `{}`; `models.effortError` is `effort is invalid`; an absent
-`weights`, `reportedPlans` or `oldPlanWeights` table gives the tool no entry in that table
-(it does not break the settings store); an absent `plans` list gives the tool no plan control
-on the Settings page; an absent `scoutAgentTool` means the tool is not the scout provider
+`reportedPlans` or `oldPlanWeights` table gives the tool no entry in that table; an absent `scoutAgentTool` means the tool is not the scout provider
 (there is no special scout lookup); `keyPrompt` can fall back to the key-sign-in tool's prompt
 (or an empty string if no such tool exists). Other omitted values are `undefined` with no
 general fallback.
@@ -269,7 +267,7 @@ general fallback.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `stylePreview` | boolean | This tool runs the style preview. At most one manifest. |
+| `stylePreview` | boolean | This tool runs the style preview. At most one manifest; it requires the machine half to export `stylePreviewArgv` as a function, and other halves must not export it. |
 | `wrapProjectTools` | boolean | Launch wraps Windows project tools for WSL sessions. |
 | `injectProjectKeys` | boolean | Stored project keys are injected into tool-role launches. |
 | `joinPaneLines` | boolean | Pane capture joins wrapped lines (`-J`). |
@@ -326,7 +324,7 @@ tag before their own script.
 8. Run `node connectors/export.js` and commit the new `registry.json`.
 9. Tests: `machine/test/connectors-contract.test.js` loads both halves of every registered
    connector and checks the manifests, so a missing member or a wrong type fails by name.
-   `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). It scans whole files, so a comparison, `case`, call argument, ternary or `||`/`&&` operand, array element, object key (including shorthand) or `connectors.<id>` access is caught even when it spans several lines; comments and non-code text are masked first. Exact quoted IDs are checked at their literal positions, including shell case patterns, tests and for lists, Python membership and JavaScript backticks. The detector is pinned by a table of positive and negative snippets in that test (`detector recognizes name checks across lines`): change the detector only with a snippet in the table. It is a heuristic: escaped ids, computed values and ambiguous regex/division syntax can evade it, and unusual syntax can give a false hit. For a hit that is not tool dispatch, add an entry to the `allow` list in that test: `{ file, pattern, tag, reason }`, where `file` is the repository path, `pattern` is a regular expression tested against the hit's source line, `tag` is `not-tool` (also established: `compat`, `legacy`, `model-script`), and `reason` says why. Prefer moving the behaviour into the manifest over allowlisting.
+   `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). It scans whole files, so a comparison, `case`, call argument, ternary or `||`/`&&` operand, array element, object key (including shorthand) or `connectors.<id>` access is caught even when it spans several lines; comments and non-code text are masked first. Exact quoted IDs are checked at their literal positions, including shell case patterns, tests and for lists, Python membership and JavaScript backticks. The detector is pinned by a table of positive and negative snippets in that test (`detector recognizes name checks across lines`): change the detector only with a snippet in the table. It is a heuristic: escaped ids, computed values, ambiguous regex/division syntax, optional chaining (`adapters?.codex`), a dot on the next line (`adapters\n  .codex`), an id after a nested array element (`[[1], 'kimi']`), and a backtick-delimited connector `require` path can evade it, and unusual syntax can give a false hit. For a hit that is not tool dispatch, add an entry to the `allow` list in that test: `{ file, pattern, tag, reason }`, where `file` is the repository path, `pattern` is a regular expression tested against the hit's source line, `tag` is `not-tool` (also established: `compat`, `legacy`, `model-script`), and `reason` says why. Prefer moving the behaviour into the manifest over allowlisting.
    `machine/test/adapters-loaded.test.js` walks the registry. Add characterization tests
    for the tool's behaviour next to the machine and hub tests that cover the other tools. Run
    the suites listed in the root `AGENTS.md`, including `bash codex/test/run.sh` for
