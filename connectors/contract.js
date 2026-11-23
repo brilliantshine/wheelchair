@@ -19,6 +19,8 @@ const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], prefli
 const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, machine]) => [name, { machine, hub: [] }]));
 // Keep aligned with codex/model.sh's PIN_MODEL, which reads and writes the shared pin file.
 const PIN_MODEL = /^[a-z0-9][a-z0-9._/:-]*$/;
+// Keep aligned with machine/service.js EFFORTS and viewer/app/sessions.js checkEffort.
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asidePrepare', 'asideMessage', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
@@ -43,7 +45,7 @@ function validateManifest(m) {
   for (const cap of Object.keys(CAPABILITIES)) check(`capabilities.${cap}`,bool);
   check('settings.weights.unknown', v => typeof v === 'number' && Number.isFinite(v));
   check('settings.plans', v => arr(v) && v.every(pair => arr(pair) && pair.length === 2 && pair.every(s => str(s) && s.length > 0)) && v.some(([key]) => key === 'unknown') && v.every(([key]) => Object.hasOwn(m.settings.weights, key)));
-  check('models.efforts',v=>arr(v)&&v.every(word => str(word) && /^[a-z]+$/.test(word))); check('placement.workerRank',v=>v===null||typeof v==='number');
+  check('models.efforts',v=>arr(v)&&v.every((word, i) => str(word) && EFFORTS.indexOf(word) >= 0 && (i === 0 || EFFORTS.indexOf(word) > EFFORTS.indexOf(v[i - 1])))); check('placement.workerRank',v=>v===null||typeof v==='number');
   for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested','models.familyCommand','models.bareTierSet','settings.scoutAgentTool','usage.showWarning','usage.probeWhileLive','usage.tryEveryMachine','settings.monoModelNames','usage.defaultProblem']) check(f,bool,false);
   check('shortName',str,false);
   if (m.capabilities.aside) check('asideParentField',str); else if ('asideParentField' in m) throw new Error(`${m.cli}: asideParentField`);
@@ -64,15 +66,16 @@ function validateManifest(m) {
   check('install.label',str);
   for (const field of ['models.format', 'models.hubPattern', 'settings.modelPattern']) check(field, v => v.startsWith('^') && v.endsWith('$'));
   for (const slot of ['light', 'standard', 'heavy', 'critical', 'lead']) check(`models.pins.${slot}`, obj);
+  for (const slot of Object.keys(m.models.pins)) if (!['light', 'standard', 'heavy', 'critical', 'lead'].includes(slot)) throw new Error(`${m.cli}: models.pins.${slot}`);
   const modelFormat = new RegExp(m.models.format);
   for (const [slot, pin] of Object.entries(m.models.pins)) {
     const field = `models.pins.${slot}`;
     if (!obj(pin) || !str(pin.model) || (pin.effort !== undefined && !str(pin.effort))) throw new Error(`${m.cli}: ${field}`);
-    if (pin.effort !== undefined && !m.models.efforts.includes(pin.effort)) throw new Error(`${m.cli}: ${field}`);
+    if (pin.effort !== undefined && (!EFFORTS.includes(pin.effort) || !m.models.efforts.includes(pin.effort))) throw new Error(`${m.cli}: models.efforts`);
     if (pin.model !== 'none' && (!PIN_MODEL.test(pin.model) || !modelFormat.test(pin.model))) throw new Error(`${m.cli}: ${field}`);
   }
   check('settings.modelOptions', v => obj(v) && (arr(v.fixed) && v.fixed.every(pair => arr(pair) && pair.length === 2 && pair.every(str)) || str(v.listedKey) && ['strings','objects'].includes(v.listedShape) && typeof v.includePins === 'boolean'), false);
   check('hook.payload',v=>v==='stdin'||v==='last-arg', Boolean(m.hook));
 }
 function validateRegistry(manifests) { manifests.forEach(validateManifest); if (manifests.filter(m=>m.stylePreview).length>1) throw new Error('stylePreview'); if (manifests.filter(m=>m.capabilities.preflight).length>1) throw new Error('capabilities.preflight'); if (manifests.filter(m=>m.capabilities.spend).length>1) throw new Error('capabilities.spend'); if (manifests.filter(m=>m.install.sensitivity).length>2) throw new Error('install.sensitivity'); }
-module.exports = { REQUIRED, CAPABILITIES, OPTIONAL, validate, validateManifest, validateRegistry };
+module.exports = { REQUIRED, CAPABILITIES, OPTIONAL, EFFORTS, validate, validateManifest, validateRegistry };
