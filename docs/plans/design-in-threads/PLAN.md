@@ -441,3 +441,5 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+
+- 2026-11-22 — Ready check: hub and machine service answer; Claude and GPT CLIs signed in (both ran reviewers this thread); codex/preflight.sh passed (token fresh). Approval card 91b87475-b335-49cf-b025-fe2f89fc3529 posted.
