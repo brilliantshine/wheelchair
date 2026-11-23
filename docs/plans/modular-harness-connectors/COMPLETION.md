@@ -261,3 +261,22 @@ $ (cd viewer && node --test --test-timeout=120000 test/*.test.js)   → # tests 
 $ bash codex/test/run.sh          → RESULT 167 passed, 0 failed
 $ node connectors/export.js --check   → exit 0
 ```
+
+### Remediation 6 — 2026-11-23
+
+Verification attempt 6 (69c299a4): verifier-11 (claude-opus-5-5) PASS with no gaps; verifier-12 (gpt-6.2-sol) FAIL with two gaps (`REMEDIATION-6.md`). M1 was the second attempt on L1.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| M1 shipped default pins could break the shared pin file | `validateManifest` requires every default pin to be `none` or match the pin-file rule (`PIN_MODEL`, kept aligned with `codex/model.sh`) and the tool's own `models.format` | `connectors/contract.js` | contract test (`Model-V2` refused; a 65-character pin refused by format only; bite-checked) |
+| M2 guide | `launchContext` keys never replace the service's own context keys; signatures and calling convention of `bindTranscript`, `spoolWaiting`, `validTranscript` | `connectors/README.md` | scout read against `machine/service.js` |
+
+Lane: R7 light / gpt-6-luna.
+
+Validation on the merged head:
+```
+$ node --test --test-timeout=90000 machine/test/*.test.js   → see Log (18 known wslpath failures; load flakes pass alone)
+$ (cd viewer && node --test --test-timeout=120000 test/*.test.js)   → # tests 919  # pass 919  # fail 0   (R7 branch)
+$ bash codex/test/run.sh          → RESULT 167 passed, 0 failed
+$ node connectors/export.js --check   → exit 0;  contract + guard → pass 6, fail 0
+```
