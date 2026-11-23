@@ -1,6 +1,6 @@
 ---
 slug: modular-harness-connectors
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-22
 ---
 
@@ -47,6 +47,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | Keep reviewing after three rounds without a clean one; review budget reset | Collin pressed Keep going on the review-budget card | user |
 
 ## Spec
+
+```mermaid
+flowchart LR
+  F["One folder per tool<br/>(what it is, machine half, app half)"] --> L["Shared tool list<br/>reads every folder, checks each one"]
+  L --> M["Machine service asks:<br/>can this tool do X? then calls it"]
+  L --> H["App asks the same<br/>and parses chat, picks reports"]
+  L --> J["Generated list file<br/>for the model script and installer"]
+  L --> P["Pages load the tool list<br/>as a script"]
+  T["Tests: every folder complete,<br/>no code checks a tool by name"] -.-> L
+```
 
 A pure refactor. Every one of the five tools (Claude Code, Codex, Antigravity, Kimi Code,
 Pi for OpenRouter) behaves exactly as before; the change is where code lives and how the
