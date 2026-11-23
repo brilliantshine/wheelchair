@@ -172,7 +172,7 @@ test('launch preparation selects project keys and dropped MCP settings per tool'
   for (const cli of clis) {
     const input = { cli, role: 'worker' }, session = { name: `wc-${cli}-worker`, cli, token: 'token' };
     const result = await m.prepareLaunch(input, session, adapter, work, path.join(root, 'prompt'), 'role', false);
-    assert.equal(context.kimiExecutable, cli === 'kimi' ? '/resolved/kimi' : undefined);
+    assert.equal(context.launchExtras.kimiExecutable, cli === 'kimi' ? '/resolved/kimi' : undefined);
     const settings = JSON.parse(fs.readFileSync(path.join(state, 'settings', `${cli}.json`), 'utf8'));
     assert.deepEqual(settings.disabledMcpjsonServers, cli === 'claude' ? ['existing', 'windows'] : ['existing']);
     const envFile = path.join(state, 'session-env', `${session.name}.json`), getsKey = ['claude', 'codex'].includes(cli);

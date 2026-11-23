@@ -9,6 +9,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { AsideTurns } = require('../lib/aside-turns');
 const { MachineService } = require('../service');
+const connectors = require('../../connectors');
 const { makeTemp, trackChild, onCleanup } = require('../../test-support/run-dir');
 const root = require('../../connectors/common').root;
 const uuid = () => crypto.randomUUID();
@@ -191,4 +192,21 @@ else msg('stop','answer sk-or-secret');
     const blockedDir = path.join(dir, 'blocked'); await fsp.mkdir(blockedDir);
     const blocked = new AsideTurns(blockedDir,atomic,x=>x,{problem:async()=> 'Pi 1.5.2 or newer is needed (found 1.0.0)'}); i={...base,turn_id:uuid()}; const count=records().length; await blocked.start(i); t=await wait(blocked,i.turn_id); assert.match(t.error,/1.5.2/); assert.equal((await blocked.start(i)).status,200); assert.equal(records().length,count);
   } finally { process.env = old; }
+});
+
+test('aside service redacts raw output and adapter results', async () => {
+  const originalMachine = connectors.machine, baseAdapter = originalMachine('pi'), original = { ...baseAdapter };
+  let handedOff;
+  const cloned = { ...original, redact: value => typeof value === 'string' ? value.replaceAll('ASIDE_MARKER', '[clean]') : value,
+    asideArgv: () => [process.execPath, '-e', "process.stdout.write('ASIDE_MARKER'); process.stderr.write('ASIDE_MARKER')"],
+    asideResult: (_i, r) => { handedOff = r; return { state: r.code === 0 ? 'ok' : 'failed', reply: r.out, error: r.err }; } };
+  connectors.machine = cli => cli === 'pi' ? cloned : baseAdapter;
+  const dir = await makeTemp('aside-service-redact-'), store = new AsideTurns(dir, atomic, x => x);
+  try {
+    const input = { provider:'openrouter', mode:'resume', from:'parent', cwd:dir, model:'vendor/model:variant', prompt:'hello', account_dir:null, turn_id:uuid() };
+    await store.start(input); const result = await wait(store, input.turn_id);
+    assert.equal(result.reply, '[clean]'); assert.equal(result.error, '[clean]');
+    assert.equal(handedOff.out, '[clean]'); assert.equal(handedOff.err, '[clean]');
+    assert.ok(!JSON.stringify(result).includes('ASIDE_MARKER'));
+  } finally { connectors.machine = originalMachine; }
 });

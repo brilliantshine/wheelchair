@@ -54,7 +54,7 @@ any of these is missing or not a function. `command` and `seed` are the ones peo
 
 | Member | Signature | When the service calls it |
 |---|---|---|
-| `command` | `command(input, session, worktree, context)` returns `{ argv, loaded, settingsPath?, settings?, mcpConfig? }` | Building the launch for a new or resumed session. `context` carries `stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `kimiExecutable`, `wsl`, `mount`, `replaceEntries` and `resume`. Values from `launchContext` reach `command` only through these keys. |
+| `command` | `command(input, session, worktree, context)` returns `{ argv, loaded, settingsPath?, settings?, mcpConfig? }` | Building the launch for a new or resumed session. `context` carries `stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `kimiExecutable`, `wsl`, `mount`, `replaceEntries` and `resume`. All keys returned by `launchContext` reach `command`. |
 | `firstMessage` | `firstMessage(input, promptPath, name)` returns the text typed once the tool is ready | Session start; the result becomes the session's pending first message. |
 | `readyText` | `readyText(session, pane)` returns a boolean | Each readiness poll of a starting session's tmux pane. |
 | `answerPrompts` | `answerPrompts(session, pane)` returns `{ step, keys }` or `null` | While a session is starting, to answer first-run screens (theme, trust, terms) with keystrokes. |
@@ -89,7 +89,7 @@ These are called only when present; they need no flag in the manifest.
 | `redact` | `redact(value)` | The tool's own redaction of transcript lines, events and aside output (Pi). The shared output scrub in `common.js` applies to every tool regardless. |
 | `stylePreviewArgv` | `stylePreviewArgv(model)` returns argv | The tool that runs the writing-style preview. Required when `stylePreview: true` (one manifest at most); forbidden otherwise. |
 | `disableProjectServers` | `disableProjectServers(built, dropped)` | Record project tools that were dropped into the built launch settings. |
-| `launchContext` | `async launchContext(service)` returns an object | Values merged into launch context; only the keys listed for `command` are copied to it (including Kimi's executable). |
+| `launchContext` | `async launchContext(service)` returns an object | All returned keys are passed through to `command`. |
 | `launchPath` | `launchPath(service)` | Kimi's resolution of its launch executable and version. |
 | `recordLaunch` | `recordLaunch(session, status)` | Store the version check result on the session at launch (Pi). |
 | `startupCheck` | `startupCheck(session)` returns a reason or `null` | Why a session that never became ready ended, so the stop reason says more than "exited". |
@@ -116,7 +116,7 @@ have none of them. The registry validation also limits `preflight` to one tool.
 | `recover` | `recognizePane(text)` returns boolean | After a machine restart the service identifies adopted tmux panes by asking connectors in manifest `recoverRank` order; the first match sets the session's `cli`. A pane matching none gets the tool with `recoverFallback: true`. | The tool's panes are not recognised and fall to the fallback tool. |
 | `spend` | `spend(dir, now)` | `GET /v1/spend` reports offline spend (Pi reads OpenRouter usage logs). At most one connector may have this capability. | No spend report. |
 | `liveSwitch` | `usual()` | A running session can be switched to another account (`POST /v1/sessions/:name/switch`); `usual()` names the folder copied from. | A switch request for the tool is refused. |
-| `aside` | `asideArgv(input, context)` returns argv; `asideResult(input, result)`; `asideModel`, a RegExp (not a function) | The tool can run headless aside turns. All three are required, and `validate` rejects an `asideModel` that is not a RegExp. Also set manifest `asideParentField` (the session field holding the conversation id to fork from, for example `cli_session_id`). | The app never offers asides for the tool. |
+| `aside` | `asideArgv(input, context)` returns argv; `asideResult(input, result)`; `asideModel`, a RegExp (not a function) | The tool can run headless aside turns. All three are required, and `validate` rejects an `asideModel` that is not a RegExp. Also set manifest `asideParentField` (the session field holding the conversation id to fork from, for example `cli_session_id`). | Aside output is redacted by the service before it is saved. The app never offers asides for the tool. |
 | `versionCheck` | `checkVersion(service, executable)`, `versionStatus(service, login)` | The service checks the installed version at launch and in status, and the hub shows the result. | No version gating. |
 | `steps` | `readSteps(state, lines, ctx)` returns step events; `stepsReady(session)` returns boolean | Both are required. The service calls `stepsReady` before polling and reading steps to check whether tailing may start (Codex needs its thread id). The service tails the tool's transcript for tool-call steps (Codex) and flushes steps and resets step state at every turn end, after any `onTurnEnded` ignored check. Hook-driven step events (Claude) do not need this flag. | The tool shows no steps from tailing. |
 
@@ -202,7 +202,7 @@ the type is checked only when present. Unless a default is stated below, an omit
 | `install.lookup` | `path`, `absolute` or `fallback`: how the install job finds the binary afterwards | required |
 | `install.label` | string, the name in the install job's Node-version message | required |
 | `install.node` | string, minimum Node version the recipe needs | defaulted: no Node prerequisite |
-| `install.versionArgs` | array of strings, or `null` to skip the version check | defaulted: `undefined` (passed to the version command) |
+| `install.versionArgs` | array of strings, or `null` to skip the version check | omitted defaults to `['--version']` |
 | `install.fallbackPath` | string, where the installer looks when the CLI is not on PATH | required and non-empty when `install.lookup` is `fallback`; otherwise defaulted: empty string in `install.sh` and `undefined` in the install job |
 | `install.pathRank` | number or `null`, order the installer prepends CLI folders to the service PATH | defaulted: `null` ordering (last) |
 | `install.sensitivity` | boolean, see the checklist | defaulted (false) |
