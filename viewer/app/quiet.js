@@ -3,7 +3,7 @@
 const roles = new Set(['worker', 'mapper', 'sub-lead', 'reviewer', 'verifier']);
 const reportRole = s => ['reviewer', 'verifier'].includes(s.role);
 const watched = s => Boolean(s.live && s.started_by && roles.has(s.role) && !(reportRole(s) && s.finished));
-const waiting = (thread, s) => thread.sessions.some(c => c.started_by === s.name && c.live && (c.owes_reply || c.status === 'waiting' || c.queue?.length));
+const waiting = (thread, s) => thread.sessions.some(c => c.started_by === s.name && c.live && (c.owes_reply || c.awaiting_answer || c.status === 'waiting' || c.queue?.length));
 const isQuiet = (thread, s) => watched(s) && !s.switching && s.owes_reply && s.turn_ended && !s.queue?.length && !s.permission_open && !s.needs_open && !(Date.parse(s.limited_until) > Date.now()) && !waiting(thread, s);
 const agentText = s => reportRole(s)
   ? '[wc:from app] Your turn ended with no report. If you ended it to wait on your own background work, wait for it in the foreground now. End your next turn with your report as your last message.'

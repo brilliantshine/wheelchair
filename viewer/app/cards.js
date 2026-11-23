@@ -204,6 +204,10 @@ async function acceptCard(hub, payload) {
     // A plain status message mid-task is not a reply the starter can act on: only a question or a result
     // clears the debt. A finished agent answering a follow-up has nothing left to do, so any message does.
     if ((card.kind === 'message' && (card.asks === true || session.finished === true)) || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }
+    // A live agent waiting on someone other than its starter (a worker's question to the lead) still
+    // counts as work its starter is waiting on; the next message delivered to it clears this.
+    if (card.kind === 'message' && card.asks === true && card.to !== session.started_by && session.finished !== true) session.awaiting_answer = true;
+    if (card.kind === 'result') delete session.awaiting_answer;
     if (card.kind === 'message' && !crossThread) {
       const target = hub.session(thread, card.to);
       target.queue ||= [];
