@@ -17,8 +17,8 @@ beside it.
 
 Your own `wc.js` and `card.js` calls are always allowed; no brief can forbid them. If your
 brief seems to forbid something you need to finish, or instructions conflict and you cannot
-resolve them, post a `result` with outcome `blocked` and the reason, or a `message` to the
-lead if an answer would unblock you. Never end your work silently.
+resolve them, post a `result` with outcome `blocked` and the reason, or a `message` with `asks: true`
+to the lead if an answer would unblock you. Never end your work silently.
 
 Never end a turn to wait on your own background work (a command, subagent or monitor);
 wait in the foreground, because the app reads an ended turn with no report as stopped.
@@ -131,7 +131,7 @@ Record each task's lane in the table: the tier plus the resolved model
 
 ## While workers run
 
-- Only the lead asks the user for sudo. If a task needs a command run as root, yours or a worker's, send the lead a `message` with the exact command (full paths, no `~`, the actual commands rather than a script an agent wrote), what it changes and why; never run `sudo` yourself.
+- Only the lead asks the user for sudo. If a task needs a command run as root, yours or a worker's, send the lead a `message` with `asks: true` and the exact command (full paths, no `~`, the actual commands rather than a script an agent wrote), what it changes and why; never run `sudo` yourself.
 
 - Post a `progress` card (`done`, `total`, the machines in use, `choice_waiting` false)
   when a task is dispatched and when you accept one. The lead sets `choice_waiting` while
@@ -289,8 +289,8 @@ When every task is done and the full validation passes:
    re-run validation, add a "Remediation N" section to COMPLETION.md without erasing
    history, and start a fresh verifier (a new attempt).
 6. **The same gap surviving two fix attempts is a plan defect, not an implementation
-   defect.** Do not try a third. Send the lead a `message` naming the gap and its
-   evidence; the lead brings it to the user. Leave the line on `fixing`; the lead sets
+   defect.** Do not try a third. Send the lead a `message` with `asks: true` naming the gap
+   and its evidence; the lead brings it to the user. Leave the line on `fixing`; the lead sets
    `choice_waiting` for the question. Stop your work and wait.
 
 The `result` summary names how many rare paths were accepted.
