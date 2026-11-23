@@ -35,7 +35,7 @@ module.exports = {
   "settings": {
     "roleInstructionsName": "Claude",
     "modelOptions": {"fixed": [["haiku", "Latest Haiku"], ["sonnet", "Latest Sonnet"], ["opus", "Latest Opus"], ["fable", "Latest Fable"], ["claude-haiku-5-5", "claude-haiku-5-5"], ["claude-sonnet-5-5", "claude-sonnet-5-5"], ["claude-opus-5-5", "claude-opus-5-5"], ["claude-fable-5-2", "claude-fable-5-2"]]},
-    "scoutAgentTool": true,
+    "scoutHelper": "Claude Code: the Agent tool",
     "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
     "modelPlaceholder": "model-name",
     "cliLabel": "Claude Code",
