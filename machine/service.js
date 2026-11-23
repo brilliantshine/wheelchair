@@ -1672,29 +1672,16 @@ class MachineService {
   }
   loginState(account) {
     const record = this.loginRecord(account), adapter = adapters[record.cli];
-    if (record.cli === 'kimi' && record.result) return record.result;
+    if (adapter.loginResult?.(record)) return adapter.loginResult(record);
     const captured = this.tmux(['capture-pane', '-p', ...(connectors.manifest(record.cli)?.joinPaneLines ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
     const pane = captured.ok ? scrubOutput(captured.stdout) : '';
-    if (record.cli === 'kimi') {
-      const authenticated = adapter.loginStatus(record.dir).authenticated;
-      const marker = pane.match(/__wc_login_exit (\d+)/);
-      if (marker) return record.result = { state: marker[1] === '0' && authenticated ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated };
-      if (!captured.ok) { const live = this.liveTmux(); if (live && !live.has(`wc-login-${account}`)) return record.result = { state: 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated }; return { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: authenticated }; }
-      const parsed = adapter.parseLogin(pane); return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: false, logged_in: authenticated };
-    }
-    if (record.cli === 'pi') {
-      const marker = pane.match(/__wc_login_exit (\d+)/);
-      if (adapter.loginDone(pane) || marker || !captured.ok) {
-        if (adapter.loginDone(pane)) this.tmux(['kill-session', '-t', `=wc-login-${account}:`]);
-        const logged_in = adapter.loginStatus(record.dir).logged_in;
-        return { state: logged_in && (adapter.loginDone(pane) || !marker || marker[1] === '0') ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
-      }
-    }
+    const specialized = adapter.loginState?.(record, pane, captured.ok, { liveTmux: () => this.liveTmux(), kill: () => this.tmux(['kill-session', '-t', `=wc-login-${account}:`]), account });
+    if (specialized) return specialized;
     if (!captured.ok || /__wc_login_exit \d+/.test(pane)) {
       const logged_in = adapter.loginStatus(record.dir).logged_in;
-      return { state: logged_in && (record.cli !== 'pi' || /__wc_login_exit 0(?:\s|$)/.test(pane)) ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+      return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
     }
-    if (record.cli !== 'pi' && adapter.loginDone?.(pane)) {
+    if (adapter.loginDone?.(pane)) {
       this.tmux(['kill-session', '-t', `wc-login-${account}`]);
       const logged_in = adapter.loginStatus(record.dir).logged_in;
       return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };

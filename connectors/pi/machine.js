@@ -79,6 +79,15 @@ module.exports = {
   stepVocabulary: require('../codex/machine').stepVocabulary,
   provider: 'openrouter', resolveCli, redact, retryStartupEnter: true,
   loginEnv: dir => dir && path.resolve(dir) !== home(null) ? { PI_CODING_AGENT_DIR: dir } : {},
+  loginState(record, pane, captured, { kill }) {
+    const marker = pane.match(/__wc_login_exit (\d+)/);
+    if (module.exports.loginDone(pane) || marker || !captured) {
+      if (module.exports.loginDone(pane)) kill();
+      const logged_in = module.exports.loginStatus(record.dir).logged_in;
+      return { state: logged_in && (module.exports.loginDone(pane) || !marker || marker[1] === '0') ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+    }
+    return null;
+  },
   loginCommand() { const cli = resolveCli(); if (!cli) throw new Error('Pi is not installed'); return [cli, 'auth', 'login', 'openrouter', '--api-key']; },
   loginPrompt: null, codeNeedsPrompt: true,
   parseLogin(pane) { const lines = pane.split(/\r?\n/).filter(line => line.trim()); return !pane.includes('Saved API key for OpenRouter') && !pane.includes('__wc_login_exit') && lines.at(-1)?.trim() === 'Enter OpenRouter API key:' ? { url: null, code: null, wantsCode: true } : null; },

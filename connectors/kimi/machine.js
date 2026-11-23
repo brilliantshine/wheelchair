@@ -294,6 +294,14 @@ module.exports = {
   provider: 'kimi', resolveCli, readConfig, loginStatus, usageProbe,
   loginEnv: dir => ({ KIMI_CODE_HOME: home(dir) }),
   seed(dir, id) { c.seed(dir, home(), 'AGENTS.md', 'kimi', id); }, prepare() {},
+  loginResult: record => record.result,
+  loginState(record, pane, captured, { liveTmux, account }) {
+    const authenticated = module.exports.loginStatus(record.dir).authenticated;
+    const marker = pane.match(/__wc_login_exit (\d+)/);
+    if (marker) return record.result = { state: marker[1] === '0' && authenticated ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated };
+    if (!captured) { const live = liveTmux(); if (live && !live.has(`wc-login-${account}`)) return record.result = { state: 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated }; return { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: authenticated }; }
+    const parsed = module.exports.parseLogin(pane); return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: false, logged_in: authenticated };
+  },
   loginCommand() { const cli = resolveCli(); if (!cli) throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); return [cli, 'login', '--region', 'global']; }, loginPrompt: null,
   parseLogin(pane) { const url = pane.match(/Opening browser for Kimi device login:\s*(https?:\/\/\S+)/)?.[1]; const code = pane.match(/paste the URL above and enter code:\s*(\S+)/i)?.[1]; return url && code ? { url, code, wantsCode: false } : null; },
   loginDone() { return false; },
