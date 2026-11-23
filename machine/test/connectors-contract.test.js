@@ -58,6 +58,7 @@ test('contract rejects missing and inconsistent members and fields', () => {
   badLookup.install.lookup = 'unknown'; assert.throws(() => contract.validateManifest(badLookup), /install.lookup/);
   const fallback = structuredClone(manifests[0]); fallback.install.lookup = 'fallback'; delete fallback.install.fallbackPath; assert.throws(() => contract.validateManifest(fallback), /install.fallbackPath/); fallback.install.fallbackPath = ''; assert.throws(() => contract.validateManifest(fallback), /install.fallbackPath/); fallback.install.fallbackPath = '~/bin/tool'; assert.doesNotThrow(() => contract.validateManifest(fallback));
   const duplicated = manifests.map(m => structuredClone(m)); duplicated[0].capabilities.preflight = true; assert.throws(() => contract.validateRegistry(duplicated), /preflight/);
+  duplicated[0].capabilities.preflight = false; duplicated[0].capabilities.spend = true; assert.throws(() => contract.validateRegistry(duplicated), /capabilities.spend/); duplicated[0].capabilities.spend = false;
   duplicated[0].capabilities.preflight = false; duplicated[2].install.sensitivity = true; assert.throws(() => contract.validateRegistry(duplicated), /sensitivity/);
 });
 test('provider snapshot remains unchanged', () => {
