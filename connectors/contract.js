@@ -21,6 +21,7 @@ const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retrySt
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
   if (half === 'machine' && 'provider' in mod) fail('provider');
+  if (half === 'machine' && (manifest.stylePreview ? typeof mod.stylePreviewArgv !== 'function' : 'stylePreviewArgv' in mod)) fail('stylePreviewArgv');
   for (const member of REQUIRED[half]) if (typeof mod[member] !== 'function') fail(member);
   if (half === 'machine' && (typeof mod.hookEvent === 'function') === (typeof mod.turnPoller === 'function')) fail('hookEvent/turnPoller');
   if (half === 'machine' && typeof mod.hookEvent === 'function' && !['stdin', 'last-arg'].includes(manifest.hook?.payload)) fail('hook.payload');
