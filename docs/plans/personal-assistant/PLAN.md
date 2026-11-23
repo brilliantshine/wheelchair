@@ -1,6 +1,6 @@
 ---
 slug: personal-assistant
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-23
 ---
 
@@ -50,6 +50,19 @@ with the assistant's own rules (`protocol/app/assistant.md`) and may call a new 
 hub actions (`wc.js assistant ...`) that reach every thread on every machine. Collin talks
 to it in a pinned row at the top of the Threads list and in a pop-up on every app page.
 Everything else (project threads, leads, review, building) is unchanged.
+
+```mermaid
+flowchart TD
+  C[Collin types in the pinned thread or the pop-up] --> A[Assistant reads it as an instruction]
+  A --> Q{Clear which project and machine?}
+  Q -- no --> ASK[Ask Collin in its chat]
+  Q -- yes --> W[Run a wc.js assistant action]
+  W --> H{Hub: setting on and caller is the assistant?}
+  H -- no --> R[Refused]
+  H -- yes --> T[Start, message, press, restart or archive a thread on any machine]
+  T --> M[The target thread shows it, marked as the assistant's]
+  T --> REP[Assistant reports the hub's answer to Collin with a link]
+```
 
 ### Mockups
 
