@@ -223,7 +223,7 @@ stays as review history.
 
 ### Round 1 — 2026-11-22
 
-**Lanes:** <family / model>; <family / model>; cross-family: <yes|no>.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 Written for every round, including one where the table below stays empty. The table gets a row
 per finding, so a clean round would otherwise leave no record of which gate ran — which is the
