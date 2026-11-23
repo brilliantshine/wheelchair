@@ -39,8 +39,11 @@ test('contract rejects missing and inconsistent members and fields', () => {
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = '^pattern$'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);
   for (const slot of ['light', 'standard', 'heavy', 'critical', 'lead']) { const bad = structuredClone(manifests[0]); delete bad.models.pins[slot]; assert.throws(() => contract.validateManifest(bad), new RegExp(`models\\.pins\\.${slot}`)); }
-  const badEffort = structuredClone(manifests[0]); badEffort.models.pins.light.effort = 'unlisted'; assert.throws(() => contract.validateManifest(badEffort), /models\.pins\.light/);
+  const badEffort = structuredClone(manifests[0]); badEffort.models.pins.light.effort = 'unlisted'; assert.throws(() => contract.validateManifest(badEffort), /models\.efforts/);
   const badEffortWord = structuredClone(manifests[0]); badEffortWord.models.efforts.push('very-high'); assert.throws(() => contract.validateManifest(badEffortWord), /models\.efforts/);
+  const minimalEffort = structuredClone(manifests[0]); minimalEffort.models.efforts = ['low', 'minimal']; assert.throws(() => contract.validateManifest(minimalEffort), /models\.efforts/);
+  const unorderedEfforts = structuredClone(manifests[0]); unorderedEfforts.models.efforts = ['high', 'low']; assert.throws(() => contract.validateManifest(unorderedEfforts), /models\.efforts/);
+  const subLeadPin = structuredClone(manifests[0]); subLeadPin.models.pins['sub-lead'] = { model: 'model' }; assert.throws(() => contract.validateManifest(subLeadPin), /models\.pins\.sub-lead/);
   for (const [group, key] of [['models', 'format'], ['models', 'hubPattern'], ['settings', 'modelPattern']]) for (const value of ['unanchored$', '^unanchored']) { const bad = structuredClone(manifests[0]); bad[group][key] = value; assert.throws(() => contract.validateManifest(bad), new RegExp(`${group}\\.${key}`)); }
   const noModelError = structuredClone(manifests[0]); delete noModelError.settings.modelError; assert.throws(() => contract.validateManifest(noModelError), /settings.modelError/);
   noModelError.settings.modelError = ''; assert.throws(() => contract.validateManifest(noModelError), /settings.modelError/);
