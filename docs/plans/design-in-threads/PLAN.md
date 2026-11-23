@@ -16,11 +16,6 @@ get buried as this file grows.
 
 Ordered by leverage; discussed one at a time.
 
-### Q4: What happens when Collin asks for a design change during the build?
-- **Context:** Review round 2: the after-done path loses early steering and leaves the verifier comparing against the old mockup.
-- **Options:** stop the build and redesign, then resume; or a follow-up thread after the build.
-- **Recommendation:** follow-up thread.
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -43,6 +38,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | Workers compare their screenshot with the mockup and fix differences before reporting | Catch drift per task, not only at the end | review-round-1 |
 | 10 | "Agree the mockups" is an Open Question while a designer runs, so review waits for agreement | Planning gate must not close on unagreed mockups | review-round-1 |
 | 11 | Mockup changes asked during the build are applied right after it as an after-done fix in the same open pull request | The sub-lead owns the worktree during the build | review-round-1 |
+| 12 | A design change Collin asks for once Start building is accepted becomes a follow-up thread, posted at once; the build finishes as agreed. Supersedes 11 | Collin's pick ("Follow-up thread"): simple and reliable; pausing a build could be its own thread later | user |
 
 ## Spec
 
@@ -178,20 +174,19 @@ Rules, in a new `protocol/app/designer.md`:
   even after a clean round. Once Collin agrees, the new files are a Spec change: status
   `ready-for-review` and the change is in the next round's "Changed since" list. If Start
   building was already recorded when he asks, it is a change after Start building.
-- **Changes after Start building:** the mockups are fixed like the rest of the Spec while
-  the sub-lead owns the worktree. A change Collin asks for after seeing a build screenshot is
-  answered in a line ("I'll apply it right after the build, in the same pull request"); once
-  the sub-lead stops and `done` is posted, the lead makes it as an after-done fix (step 9 of
-  `lead.md`: the pull request is still open, so it is fixed in place and verified). If it
-  needs parallel work, step 9's stub rule applies.
+- **Changes after Start building:** the build finishes against the agreed mockups. When
+  Collin asks for a design change once Start building is accepted (including after `done`),
+  the lead posts a `stub` card at once (durable, so a lead restart loses nothing):
+  `depends_on_parent: true`, summary quoting his words verbatim, the paths of any attached
+  files, the current mockup files and the screenshot card that prompted it. The stub's lead
+  plans it from step 1 with its own mockups. Nothing in this thread changes.
 - **Restart:** a restarted lead stops any live designer (its results would go to the dead
   lead) and, if the "Agree the mockups" question is still open, starts a fresh one briefed
   with the newest mockup files and any of Collin's feedback in the restart context's recent
   messages not yet reflected in a file.
 - **Recording:** agreed mockups are listed in the Spec under a "Mockups" heading: one row per
   file with its path, the screen/state it shows and its size. Choosing which version is
-  agreed is a Decision Log entry. After approval, changing a mockup is a Spec change (the plan
-  returns to review).
+  agreed is a Decision Log entry.
 - The template `protocol/templates/PLAN.md` Spec guidance gains one line: a plan with visible
   work lists its agreed mockups there instead of describing the look in prose.
 
@@ -327,6 +322,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Build-time change promised only in chat, lost on restart | user-decision | Same fork; settled by the answer |
 | mechanics | minor | "Could not try" has no place in the verdict | upheld | Named after the verdict; not a gap |
 | mechanics | minor | image.mockup plan can differ from the archived plan | upheld | `plan` dropped; always the thread's own plan |
+
+### Round 3 — 2026-11-22
+
+**Lanes:** see below.
+
+**Changed since Round 2:** Decision 12 (changes after Start building become a follow-up stub; the after-done path is gone); changes during review or after approval (retract approval, re-open "Agree the mockups", no approval while open); screenshots posted when the sub-lead accepts a task; designer told the file rules; worker self-check uses headless Chromium only; could-not-try named after the verdict; `image.mockup` drops `plan` and always uses the thread's plan.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
