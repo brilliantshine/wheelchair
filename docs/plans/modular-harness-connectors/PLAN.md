@@ -574,6 +574,13 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Characterization tests pinning every untested per-tool branch before code moves (S6 first bullet) | new `machine/test/char-*.test.js`, `viewer/test/char-*.test.js`, their fixtures | standard / gpt-6.1-terra | wc-dfb566cd9dd5-worker | machine suite; viewer npm test | in progress |
+| T2 | `tricky` Foundation: `connectors/` tree (index, contract, common, export, registry.json, five manifests with full S2 data, machine halves moved from `machine/adapters/`, hub halves with `parseChat`/`readReport`), `providers.js` from manifests, contract test, adapters-loaded test, smoke paths | `connectors/**`, `machine/adapters/**`, `viewer/app/providers.js`, `viewer/app/chat.js`, require lines elsewhere, `machine/test/adapters-loaded.test.js`, new `machine/test/connectors-contract.test.js`, `test-support/smoke/*` | standard | | full Validation | not started |
+| T3 | `tricky` Machine rewire: service.js, machine/lib, hook.sh + hook-in.js ask capabilities / call members; adds remaining machine capabilities | `machine/**`, `connectors/*/machine.js`, `connectors/contract.js`, `connectors/common.js`, manifests' capability and machine fields | standard | | machine suite, contract test | not started |
+| T4 | Hub rewire: viewer/app name checks to capabilities/manifest fields; readReport loop | `viewer/app/**` (except server asset), `connectors/*/hub.js`, manifests, contract.js hub part, `viewer/test/app-*.test.js` | standard | | viewer npm test | not started |
+| T5 | Browser pages: `/wheelchair/assets/tools.js`, settings/threads/thread pages read it | `viewer/server.js`, `viewer/pages/**`, page specs | standard | | viewer npm test + browser | not started |
+| T6 | `codex/model.sh` and `install.sh` read `registry.json`; round-trip test | `codex/**`, `install.sh`, `install/**` | standard | | codex, install, sensitivity suites | not started |
+| T7 | Name-check guard test, residual hits, `connectors/README.md`, routers and API docs | guard test, docs, residual hits anywhere | standard | | full Validation | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -581,3 +588,5 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+
+- 2026-11-22 — Build started. Sequence: T1 → T2 → (T3 ∥ T5 ∥ T6) → T4 → T7. T4 runs after T3 because both need manifests and contract.js; T5/T6 treat manifests as read-only.
