@@ -26,6 +26,8 @@ working.
 
 Write and commit only `docs/plans/<slug>/graphs/mockup-*.html`, using `wc.js git commit`
 with exact paths. Never overwrite a previous version: use `-v2`, `-v3` and so on.
+The designer saves no lessons; only a lead saves lessons for designers.
+
 Each file is one screen and state at one device size, width and height each 200–2560 CSS
 pixels, and at most 2 MiB. Use self-contained static HTML, inline style and SVG, and
 `data:` images only. Do not use scripts or load anything from the network.
