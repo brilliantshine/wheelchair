@@ -733,7 +733,7 @@ class MachineService {
   commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context = {}) {
     const adapter = adapters[input.cli];
     if (!adapter) die(`cli must be ${listWords(connectors.list().map(m => m.cli))}`);
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries, resume: context.resume });
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries, resume: context.resume, ...(context.launchExtras || {}) });
   }
 
   threadWorktree(input, worktree) {
@@ -938,7 +938,7 @@ class MachineService {
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
-    const context = { resume, wsl, mount, ...(await adapters[input.cli].launchContext?.(this) || {}) };
+    const context = { resume, wsl, mount, launchExtras: await adapters[input.cli].launchContext?.(this) || {} };
     if (wsl && tools && mcp && connectors.manifest(input.cli).wrapProjectTools) {
       const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
       const commonDir = common.ok && common.stdout.trim() || worktree;
@@ -1714,7 +1714,7 @@ class MachineService {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
     for (const entry of accounts) delete entry.authenticated;
-    for (const entry of accounts) if (statuses[entry.cli].problem && adapters[entry.cli].resolveCli) { entry.logged_in = false; delete entry.problem; }
+    for (const entry of accounts) if (statuses[entry.cli].problem && connectors.manifest(entry.cli)?.capabilities.versionCheck) { entry.logged_in = false; delete entry.problem; }
     return { version: this.version, ...statuses, recipes: Object.fromEntries(providers.map(p => [p, !!loadRecipes()[p]])), accounts, sessions: this.sessionList() };
   }
   async checkStartupExit(session) {
