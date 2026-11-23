@@ -54,15 +54,17 @@ New behaviour:
    and its plain path (single `hub.call`, `data` or local-file fallback, no cache) are
    unchanged.
 2. Cache entry in `hub.transcripts` (same key `${thread.machine}/${session.name}`) is exactly
-   `{ gen, end, parsedKey, parsed, lastRead, thread }`. No raw text is stored anywhere in the
-   hub's cache.
+   `{ gen, end, hash, parsedKey, parsed, lastRead, thread }`, where `hash` is the sha256 hex of
+   the `data` the items were parsed from. No raw text is stored anywhere in the hub's cache.
 3. `parsedKey = session.cli + JSON.stringify([thread.parent_title])` (unchanged formula).
 4. Request: if an entry exists, has a `gen`, and `entry.parsedKey === parsedKey`, call the
    transcript route with `?known=<gen>:<end>`; otherwise call it with no `known` (full reply).
 5. Reply `unchanged` whose `gen`/`end` match the entry: set `lastRead`, return `entry.parsed`.
    `unchanged` that does not match: make one full request (no `known`) and continue at 6.
-6. Reply with non-empty `data`: `parsed = module.exports.transcriptItems(session.cli, data,
-   thread, session.name)`; store a fresh entry with the reply's `gen`, `end`, this
+6. Reply with non-empty `data`: compute `hash`. If an entry exists with the same `hash` and
+   `parsedKey`, reuse its `parsed` (this keeps today's reuse for machines whose replies carry
+   no `gen`); otherwise `parsed = module.exports.transcriptItems(session.cli, data, thread,
+   session.name)`. Store a fresh entry with the reply's `gen`, `end`, `hash`, this
    `parsedKey`, `parsed`, `lastRead = now`; return `parsed`.
 7. Anything else (a throw, empty or missing `data`): if an entry exists, set `lastRead` and
    return `entry.parsed`, whatever its `parsedKey` (Decision 3). With no entry: read
@@ -80,8 +82,11 @@ New behaviour:
 
 Tests (`viewer/test/app-chat.test.js`): rewrite "a failed transcript read keeps the last
 copy for the chat, not for a report" (`:371`) onto `sessionChatItems` (failure after a good
-read returns the same parsed items; plain `sessionTranscript` still returns `''`). Add: an
-entry never has a `text` property; a changed `parent_title` (or `cli`) makes the next request
+read returns the same parsed items; plain `sessionTranscript` still returns `''`). Move "stamped chat polls share parsed items…" (`:384`) and "old machines, missing
+entries, empty replies and failures follow transcript fallback rules" (`:404`) onto
+`sessionChatItems`/`chat()`, keeping every case they cover (gen-less replies, empty
+replies, failures, mismatched `unchanged`, parent-title reparse). Add: an
+entry never has a `text` property; repeated gen-less replies with identical `data` parse once; a changed `parent_title` (or `cli`) makes the next request
 carry no `known` and reparses; a failure after a parse-key change returns the old parsed
 items; a mismatched `unchanged` leads to one full request.
 
@@ -148,6 +153,8 @@ entry stays; the service closes cleanly (no open handle).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Gen-less replies would reparse every poll without raw text to compare | upheld (minor) | S1.2/S1.6: keep a sha256 of `data`; reuse parse on match |
+| intent | minor | Tests at `:384` and `:404` also drive the removed `keepLast` cache | upheld (minor) | S1 Tests: move both onto `sessionChatItems`, keeping their cases |
 
 ## Implementation Tasks
 
