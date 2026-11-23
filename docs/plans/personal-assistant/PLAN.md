@@ -404,6 +404,13 @@ npm --prefix viewer run test:browser
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Hub core: setting, assistant thread record, lead start/switch, fresh starts, list filtering, refusals, `GET /api/assistant` (§1, §2, §7 card kinds) | `viewer/app/**` except `wc.js`; `viewer/test/assistant.test.js`; `viewer/AGENTS.md`, `viewer/app/API.md` | standard / gpt-6.1-terra | wc-eec6963c41b4-worker | `node --test viewer/test/*.test.js` | in progress |
+| T2 | Machine: `assistant: true` start and switch in `<state>/assistant`, `prompt_role: assistant` prompt, `/v1/agent/assistant` relay (120 s, no retry) | `machine/service.js`, `machine/API.md`, `machine/test/assistant.test.js` | standard | — | `bash machine/test/run.sh` | waits for T3 |
+| T3 | Role rules: `protocol/app/assistant.md`, `[wc:assistant]` lines in `lead.md` and `cards.md` (§7) | `protocol/app/assistant.md`, `lead.md`, `cards.md`, `protocol/AGENTS.md` | standard / gpt-6.1-terra | wc-eec6963c41b4-worker-2 | grep checks; `node --test viewer/test/*.test.js` | in progress |
+| T4 | `wc.js assistant` actions, hub route, `[wc:assistant]` delivery and attribution (§3, §4 hub side) | `viewer/app/**`; `viewer/test/assistant.test.js` | standard | — | `node --test viewer/test/*.test.js` | waits for T1, T2 |
+| T5 | Chat labels in `renderTurn` for assistant messages, presses, restarts (§4) | `connectors/hub-common.js`, `viewer/app/chat.js`, `viewer/test/assistant-render.test.js` | standard / gpt-6.1-terra | wc-eec6963c41b4-worker-3 | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | in progress |
+| T6 | Pages: Settings control, pinned Threads row, assistant thread page and labels (§1, §2, §4, §6; mockups threads, thread) | `viewer/pages/settings.js`, `threads.js`, `thread.js`, their css; `viewer/test/app-assistant.spec.js` | standard (claude) | — | `npm --prefix viewer run test:browser` | waits for T1 |
+| T7 | Pop-up in `nav.js` (§5; mockups popup, closed, thinking) | `viewer/pages/nav.js`, new pop-up files, `app.css`; `viewer/test/app-assistant-popup.spec.js` | standard (claude) | — | `npm --prefix viewer run test:browser` | waits for T1 |
 
 ## Log
 
