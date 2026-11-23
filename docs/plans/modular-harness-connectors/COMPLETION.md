@@ -300,3 +300,22 @@ $ (cd viewer && node --test --test-timeout=120000 test/*.test.js)   → # tests 
 $ node --test machine/test/connectors-model-roundtrip.test.js machine/test/connectors-contract.test.js   → pass 7, fail 0
 $ node connectors/export.js --check   → exit 0;  providers.js output vs main → identical
 ```
+
+### Remediation 8 — 2026-11-23
+
+Verification attempt 8 (d2b269b7): verifier-15 (claude-opus-5-5) PASS with no gaps (confirmed the Decision 18 round trip catches routes the direct checks miss); verifier-16 (gpt-6.2-sol) FAIL with two gaps (`REMEDIATION-8.md`), neither an unreadable pin file.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| P1 a `sub-lead` default pin is ignored by `model.sh init` | `models.pins` holds exactly the five slots (`sub-lead` follows `lead` in `model.sh`); the round trip now also checks what `init` writes before any `set` | `connectors/contract.js`; `machine/test/connectors-model-roundtrip.test.js` | contract-test line; round-trip negative case (sixth tool with a `sub-lead` pin fails the init check) |
+| P2 an effort word the machine refuses at launch | `models.efforts` (and default pin efforts) must be an ordered subset of `low, medium, high, xhigh, max` (the list `machine/service.js` and `viewer/app/sessions.js` use) | `connectors/contract.js` (`EFFORTS`) | contract-test lines (`minimal`, out of order) |
+
+Lane: R9 light / gpt-6-luna.
+
+Validation on the merged head:
+```
+$ node --test --test-timeout=90000 machine/test/*.test.js   → # tests 734  # pass 713  # fail 19   (18 known wslpath + "project tools launch privately…", which passes alone)
+$ (cd viewer && node --test --test-timeout=120000 test/*.test.js)   → # tests 919  # pass 918  # fail 1   ("archive through the hub cancels a stalled upload…", passes alone 3/3)
+$ node --test machine/test/connectors-contract.test.js machine/test/connectors-model-roundtrip.test.js machine/test/name-guard.test.js   → pass 9, fail 0
+$ bash codex/test/run.sh          → RESULT 167 passed, 0 failed;  export check → exit 0
+```
