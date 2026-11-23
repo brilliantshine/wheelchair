@@ -27,7 +27,8 @@ noticing.
 
 - Adding a new connector means writing one connector file and one entry in the list of
   tools, plus its install recipe and its settings-page details. Nothing else in the
-  machine service or the app has to name it.
+  machine service or the app has to name it. One exception: a tool that can list its own
+  models also needs a small function in the model script.
 - Outside the connectors and that list, the code asks "can this tool do X?" rather than
   "is this tool Kimi?".
 - All five existing tools behave exactly as before: starting, logging in, usage and
