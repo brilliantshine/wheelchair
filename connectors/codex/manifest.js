@@ -41,6 +41,7 @@ module.exports = {
     "vendor": "OpenAI",
     "setupUrl": "https://github.com/openai/codex",
     "permissionMode": "codex_mode",
+    "permissionName": "Codex",
     "permissionChoices": [
       [
         "sandboxed",
