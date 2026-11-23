@@ -92,7 +92,10 @@ responds to width).
 - **Its folder**: its lead runs in a plain folder `<machine state dir>/assistant` (not a git
   worktree). The hub's lead start passes `assistant: true` instead of `project_dir`; the
   machine service, on a start with `assistant: true` and no `worktree`, creates that folder
-  if missing (`mkdir -p`) and uses it as the worktree, with no branch. Every hub path that
+  if missing (`mkdir -p`) and uses it as the worktree, with no branch. The hub records no
+  branch for the assistant thread (the start path that assigns `wc/<id>` to a thread's
+  first worktree, `viewer/app/sessions.js` near `:425`, skips it). The New thread route's
+  "Used before" project list skips the assistant thread. Every hub path that
   reads `thread.project` for a lead start or account switch (`viewer/app/sessions.js:377-378`,
   `:645` today) handles the assistant thread without throwing: it sends `assistant: true`
   instead of `project`/`project_dir`. The machine's switch body check
@@ -127,16 +130,24 @@ unavailability like `wc.js session`; write actions never retry automatically and
 "hub unavailable" as a failure, so a lost reply never repeats a write (the assistant checks
 `threads`/`thread` before trying again).
 
-Every write action prints `{ok:true, result}` where `result` is what the hub function
-returned (for example the card after a press, or an archive still pending), so the outcome is
-reported, not assumed.
+Every write action prints `{ok:true, result}` where `result` is exactly what the matching
+browser route sends back (for example the card after a press, or an archive still pending),
+never the raw hub function result, which can carry session tokens. The outcome is reported,
+not assumed.
+
+The machine relays `assistant` requests to the hub with a 120-second deadline, not the
+5-second default of `requestJson` in `machine/service.js`, because `start` and `restart`
+wait for a lead to launch.
 
 | Action | What it does |
 |---|---|
 | `projects` | The machines and project folders the New thread screen offers, from the same functions its route uses (`newThread` in `viewer/app/routes.js`), so `hub` and its hostname are one machine: `{machines:[{name, projects:[{path,name}]}]}` |
 | `threads [--archived]` | Every non-archived thread on every machine except the assistant thread (with `--archived`, archived ones too), each with the same summary fields and stage the Threads list route builds for it (reuse that code, including its remote plan refresh), plus `lead_live` and `waiting`, where `waiting` lists the open cards Needs you counts for that thread (the same kinds and test as `viewer/app/views.js`, reused, not copied) as `{id, kind, text}` (`text` is the question, title or first line) |
 | `thread <id>` | Same fields plus `cards` (every open card in full) and `recent` (the last 30 chat items: the user's bubbles, lead replies and context lines, as the thread page shows them) |
-| `start --project <path> --machine <name> --message-file <f> [--title <t>]` | Creates a thread exactly as the browser's `POST /threads` does (same project check), with the file's text as its first user message prefixed as in section 4. Prints `{ok, thread, url}` with `url` = `/wheelchair/app/thread?id=<id>` |
+| `start --project <path> --machine <name> --message-file <f> [--title <t>]` | Creates a thread exactly as the browser's `POST /threads` does (same project check), with the file's text as its first user message prefixed as in section 4. The thread title is
+`--title` when given, otherwise derived (as the browser does) from the text without the
+prefix. If the new thread's lead fails to start, the result says so; the assistant tells
+Collin and, after a Restart, sends the instruction again with `message`. Prints `{ok, thread, url}` with `url` = `/wheelchair/app/thread?id=<id>` |
 | `message <thread> --text-file <f>` | Queues the text for that thread's latest live lead, prefixed as in section 4. Prints `{ok:true, queued:true}`: the text reaches the lead when its current turn ends, and the lead's reply appears in that thread's `recent`. Refused with "that thread has no live lead; restart it first" when none is live, and for archived or handed-off threads. Counts toward the existing 20-messages-per-thread-per-hour limit, keyed on the assistant thread |
 | `press <thread> <card> --action <action> [--value <text>]` | Presses a card button exactly as the browser route does (`hub.press`, same checks and refusals), recording `answered_by: "assistant"` on the card |
 | `restart <thread>` | As the browser's Restart (`hub.restartLead`); refused for archived or handed-off threads |
@@ -154,8 +165,10 @@ action.
 - A press it makes is delivered to the lead as `[wc:assistant] [card <id>] ...` (the usual
   press text after the prefix), so the label lives in the delivered message itself and
   survives later presses and restarts. Its bubble reads "Your assistant: <the usual short
-  text>" (e.g. "Your assistant: Picked B"). The card gets `answered_by: "assistant"` and
-  shows "by your assistant"; a later press by Collin on the same card removes the field.
+  text>" (e.g. "Your assistant: Picked B"). When its press answers the card (the press is accepted and the card is marked answered,
+  with or without a message to the lead), the card gets `answered_by: "assistant"` and
+  shows "by your assistant"; a press that only refreshes the card (such as Start building
+  rerunning a failed Ready check) records nothing; a later press by Collin on the same card removes the field.
 - A restart it makes passes `by: "assistant"` into the restart context, and the context line
   reads "Lead restarted by your assistant". An archive it makes records
   `archived_by: "assistant"` on the thread, and the archived thread's page says "Archived by
@@ -308,6 +321,26 @@ npm --prefix viewer run test:browser
 |------|----------|---------|--------------|------------|
 | intent | minor | Restart rule could drop an unfinished instruction | upheld | §7: carry out what did not happen, repeat nothing that did |
 | intent | minor | `/agents` while on unspecified | upheld | §2: `/agents` shows its lead while on |
+| mechanics | blocking | Raw `start`/`restart` results expose a lead's session token | upheld | §3: writes print the browser route's sanitized result |
+| mechanics | major | 5-second relay deadline misreports start/restart | upheld | §3: 120-second deadline for `assistant` relays |
+| mechanics | major | First instruction lost if lead launch fails after save | downgraded (minor) | Not silent: the start result reports the failure and Collin's words stay in the assistant chat; same as the browser path today. Fixed by §3: assistant reports and resends after Restart |
+| mechanics | minor | Start path would record a nonexistent `wc/<id>` branch | upheld | §2: no branch for the assistant thread |
+| mechanics | minor | Assistant's null project in "Used before" | upheld | §2: skipped |
+| mechanics | minor | When to record `answered_by` | upheld | §4: only when the press answers the card |
+| mechanics | minor | Title precedence for `start` | upheld | §3: `--title`, else from unprefixed text |
+
+### Round 3 — 2026-11-23
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: yes.
+
+**Changed since Round 2:**
+- §2: `/agents` shows the assistant's lead while on; no branch recorded for the assistant thread; "Used before" skips it.
+- §3: writes print the browser route's sanitized result; 120-second relay deadline; `start` title precedence and failed-launch handling.
+- §4: `answered_by` recorded only when the press answers the card.
+- §7: restart rule carries out what did not happen and repeats nothing that did.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
