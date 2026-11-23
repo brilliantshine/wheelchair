@@ -340,6 +340,15 @@ Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
+### Round 2 — 2026-11-22
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 1:** Decisions 12–15 (smoke paths, committed `registry.json` for non-JS callers, `models.py` discovery per tool, hub loads only manifest and `hub.js`); S1 inventory is a starting list with the guard test as the definitive list, listing order only, lazy halves; S2 flags derived from capabilities, new `placement`, `shortName`, `asideParentField`; S3 new capabilities `usageEvents`, `preflight`, `sandbox`, `restartLoss`, `redact` scoped to transcripts/events, `hookInput` required; S4 known missing branches and shared output scrub; S5 `hook-in.js` with lazy stdin, `hook-post.js` unchanged for statusline, `registry.json` and `models.py` for `model.sh`, `tools` array for all browser pages; S6 smoke updates, both-direction registry checks, guard scans `test-support/`; Validation from repo root plus browser suite.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
