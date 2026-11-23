@@ -39,7 +39,7 @@ function createProc({ hasProc = fs.existsSync('/proc'), exec = execFileSync, sig
 }
 const proc = createProc();
 class AsideTurns {
-  constructor(stateDir, atomicWrite, accountDir, { piProblem = async () => null } = {}) { this.piProblem = piProblem; this.file = path.join(stateDir, 'aside-turns.json'); this.atomicWrite = atomicWrite; this.accountDir = accountDir; this.turns = {}; this.proc = proc; this.timeoutMs = 900000; this.writes = Promise.resolve(); }
+  constructor(stateDir, atomicWrite, accountDir, { problem = async () => null } = {}) { this.problem = problem; this.file = path.join(stateDir, 'aside-turns.json'); this.atomicWrite = atomicWrite; this.accountDir = accountDir; this.turns = {}; this.proc = proc; this.timeoutMs = 900000; this.writes = Promise.resolve(); }
   save() { const data = JSON.stringify(this.turns) + '\n'; this.writes = this.writes.then(() => this.atomicWrite(this.file, data)); return this.writes; }
   async load() {
     try { this.turns = JSON.parse(await fsp.readFile(this.file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -97,7 +97,7 @@ class AsideTurns {
   async run(t, dir) {
     const i = t.input, adapter = forProvider(i.provider);
     if (!adapter) throw new Error('invalid provider');
-    if (adapter.asideProblem) { const problem = await adapter.asideProblem(this.piProblem); if (problem) return this.finish(t, { state: 'failed', error: redact(adapter, problem) }); }
+    if (adapter.asideProblem) { const problem = await adapter.asideProblem(this.problem, connectors.byProvider(i.provider).cli); if (problem) return this.finish(t, { state: 'failed', error: redact(adapter, problem) }); }
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WHEELCHAIR_')));
     Object.assign(env, adapter.loginEnv(dir), { WHEELCHAIR_LANE: '1', WHEELCHAIR_ASIDE_TURN: i.turn_id });
     const pointer = `Read ${path.join(root, 'protocol/app/aside.md')} before responding. It is wheelchair's built-in rules for your role.`;

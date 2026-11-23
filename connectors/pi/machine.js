@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFile } = require('node:child_process');
 const { classify } = require('../../machine/lib/steps');
 const c = require('../common');
 const home = dir => path.resolve(dir || path.join(os.homedir(), '.pi/agent'));
@@ -16,7 +16,54 @@ function redactEvent(value) {
 function resolveCli() { const result = spawnSync('sh', ['-c', 'command -v pi'], { encoding: 'utf8' }); return result.status === 0 ? result.stdout.trim() || null : null; }
 const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
-  asideProblem: check => check(),
+  checkVersion: (service, executable) => service.checkPiVersion(executable),
+  versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('pi', executable); return service.piVersionStatus(service.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); },
+  async beforeTurnEvent(service, session, event) {
+    if (['turn-ended', 'turn-failed'].includes(event.type)) {
+      try { session.source_transcript ||= await module.exports.findTranscript(session, session.account_dir); if (session.source_transcript) await service.copyTranscript(session, session.source_transcript); } catch (error) { service.log(error); }
+    }
+    if (event.type === 'turn-failed') event = { ...event, error: (event.error || '') + module.exports.failureNote(session) };
+    if (event.transcript_path) { event = { ...event }; delete event.transcript_path; }
+    return event;
+  },
+  startupCheck(session) {
+    if (!['starting', 'stuck'].includes(session.status) || session.end_reason) return null;
+    return 'Pi exited before it was ready' + module.exports.failureNote(session);
+  },
+  failureNote(session) {
+    const version = session.pi_version, status = module.exports.piVersionStatus(version, { logged_in: true });
+    if (!status.warning) return '';
+    return version ? ` Pi ${version} is newer than the version wheelchair was tested with (1.5.2); that may be the cause.` : " Pi's version couldn't be read; that may be the cause.";
+  },
+  recordLaunch(session, status) { session.pi_version = status.version || null; },
+  checkPiVersion(executable = resolveCli()) {
+    if (!executable) return Promise.resolve();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
+    this.piVersions ||= new Map();
+    const key = JSON.stringify([executable, mtime]);
+    if (!this.piVersions.has(key)) {
+      const entry = {};
+      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.piVersionTimeoutMs ?? 5000 }, (error, stdout) => {
+        const output = stdout.trim();
+        entry.version = !error && /^v?\d+\.\d+\.\d+$/.test(output) ? output.replace(/^v/, '') : null;
+        resolve(entry);
+      }));
+      this.piVersions.set(key, entry);
+    }
+    return this.piVersions.get(key).promise;
+  },
+  piVersionStatus(version, login) {
+    const match = typeof version === 'string' && version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+    if (!match) return { installed: true, logged_in: login.logged_in, version: null, warning: "Pi's version couldn't be read. If OpenRouter agents fail, this may be why." };
+    const [major, minor, patch] = match.slice(1).map(Number);
+    const old = major < 1 || major === 1 && (minor < 5 || minor === 5 && patch < 2);
+    const newer = major > 1 || major === 1 && minor > 5;
+    return { installed: true, logged_in: !old && login.logged_in, version, ...(old ? { problem: `Pi 1.5.2 or newer is needed (found ${version})` } : newer ? { warning: `Pi ${version} is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.` } : {}) };
+  },
+  recognizePane: text => text.includes('escape interrupt') && text.includes('ctrl+c/ctrl+d clear/exit') || /openrouter\/\S+\s*•\s*\S+/.test(text),
+  restartLossReason: () => 'Lost track of this Pi session after a machine restart; restart it',
+
+  asideProblem: (problem, cli) => problem(cli),
   asideModel: /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/,
   asideNewId: true,
   asideResult(i, r) {
@@ -36,6 +83,15 @@ module.exports = {
   stepVocabulary: require('../codex/machine').stepVocabulary,
   provider: 'openrouter', resolveCli, redact, retryStartupEnter: true,
   loginEnv: dir => dir && path.resolve(dir) !== home(null) ? { PI_CODING_AGENT_DIR: dir } : {},
+  loginState(record, pane, captured, { kill }) {
+    const marker = pane.match(/__wc_login_exit (\d+)/);
+    if (module.exports.loginDone(pane) || marker || !captured) {
+      if (module.exports.loginDone(pane)) kill();
+      const logged_in = module.exports.loginStatus(record.dir).logged_in;
+      return { state: logged_in && (module.exports.loginDone(pane) || !marker || marker[1] === '0') ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+    }
+    return null;
+  },
   loginCommand() { const cli = resolveCli(); if (!cli) throw new Error('Pi is not installed'); return [cli, 'auth', 'login', 'openrouter', '--api-key']; },
   loginPrompt: null, codeNeedsPrompt: true,
   parseLogin(pane) { const lines = pane.split(/\r?\n/).filter(line => line.trim()); return !pane.includes('Saved API key for OpenRouter') && !pane.includes('__wc_login_exit') && lines.at(-1)?.trim() === 'Enter OpenRouter API key:' ? { url: null, code: null, wantsCode: true } : null; },

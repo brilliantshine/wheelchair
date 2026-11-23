@@ -15,14 +15,13 @@
 // and recoverFallback carry the remaining dispatch data. Nullable values mean
 // the option does not apply; omitted fields are optional.
 const REQUIRED = { machine: ['command', 'firstMessage', 'readyText', 'answerPrompts', 'findTranscript', 'loginEnv', 'seed', 'loginCommand', 'parseLogin', 'loginStatus'], hub: ['parseChat', 'readReport'] };
-const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv'], versionCheck: ['checkVersion'], steps: ['readSteps'] };
+const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv'], versionCheck: ['checkVersion', 'versionStatus'], steps: ['readSteps'] };
 const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, machine]) => [name, { machine, hub: [] }]));
-const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'asideNewId', 'asideModel', 'asidePrepare', 'asideMessage', 'asideResult', 'asideProblem'], hub: [] };
+const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'stepsReady', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asideModel', 'asidePrepare', 'asideMessage', 'asideResult', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
   for (const member of REQUIRED[half]) if (typeof mod[member] !== 'function') fail(member);
-  // T3b: require exactly one of hookEvent and turnPoller after Kimi gains its poller.
-  if (half === 'machine' && typeof mod.hookEvent !== 'function' && typeof mod.turnPoller !== 'function') fail('hookEvent/turnPoller');
+  if (half === 'machine' && (typeof mod.hookEvent === 'function') === (typeof mod.turnPoller === 'function')) fail('hookEvent/turnPoller');
   for (const [cap, halves] of Object.entries(CAPABILITIES)) for (const member of halves[half]) {
     if (manifest.capabilities[cap] ? typeof mod[member] !== 'function' : member in mod) fail(member);
   }
@@ -35,8 +34,9 @@ function validateManifest(m) {
   for (const f of ['capabilities','install','settings','models','models.pins','placement']) check(f,obj);
   for (const cap of Object.keys(CAPABILITIES)) check(`capabilities.${cap}`,bool);
   check('models.efforts',v=>arr(v)&&v.every(str)); check('placement.workerRank',v=>v===null||typeof v==='number');
-  for (const f of ['hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested']) check(f,bool,false);
+  for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested']) check(f,bool,false);
   for (const f of ['shortName','asideParentField']) check(f,str,false);
+  check('login.killTarget',v=>['pane','session','name'].includes(v),false);
   check('install.lookup',v=>['path','absolute','fallback'].includes(v));
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);
   for (const f of ['install.label','install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError']) check(f,str,false);
@@ -49,5 +49,5 @@ function validateManifest(m) {
   for (const [slot, pin] of Object.entries(m.models.pins)) if (!obj(pin) || !str(pin.model) || (pin.effort !== undefined && !str(pin.effort))) throw new Error(`${m.cli}: models.pins.${slot}`);
   check('hook.payload',v=>v==='stdin'||v==='last-arg', Boolean(m.hook));
 }
-function validateRegistry(manifests) { manifests.forEach(validateManifest); if (manifests.filter(m=>m.capabilities.preflight).length>1) throw new Error('capabilities.preflight'); if (manifests.filter(m=>m.install.sensitivity).length>2) throw new Error('install.sensitivity'); }
+function validateRegistry(manifests) { manifests.forEach(validateManifest); if (manifests.filter(m=>m.stylePreview).length>1) throw new Error('stylePreview'); if (manifests.filter(m=>m.capabilities.preflight).length>1) throw new Error('capabilities.preflight'); if (manifests.filter(m=>m.install.sensitivity).length>2) throw new Error('install.sensitivity'); }
 module.exports = { REQUIRED, CAPABILITIES, OPTIONAL, validate, validateManifest, validateRegistry };

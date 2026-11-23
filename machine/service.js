@@ -30,9 +30,9 @@ const { pipeline } = require('node:stream/promises');
 const { promisify } = require('node:util');
 const gitAsync = promisify(execFile);
 const connectors = require('../connectors');
+const { scrubOutput } = require('../connectors/common');
 const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
 const { limitedUntil } = require('./lib/limits');
-const { readLines: readCodexSteps } = require('../connectors/codex/steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
 const { ScreenManager, screenTools } = require('./lib/screen');
@@ -277,7 +277,7 @@ class MachineService {
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
-    this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir, { piProblem: async () => { await this.checkPiVersion(); const status = this.cliStatus('pi'); return status.installed ? status.problem : 'Pi is not installed'; } });
+    this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir, { problem: async cli => { await this.checkVersion(cli); const status = this.cliStatus(cli), manifest = connectors.manifest(cli); return status.installed ? status.problem : `${manifest.shortName || manifest.displayName} is not installed`; } });
     this.sessions = {};
     this.projectToolsBoot = crypto.randomUUID();
     this.projectToolsState = new Map();
@@ -446,8 +446,7 @@ class MachineService {
     const markers = await readJson(this.archiveMarkersPath, { archiving: [], archived: [] });
     this.archivingThreads = new Set(markers.archiving || []);
     this.archivedThreads = new Set(markers.archived || []);
-    this.checkKimiVersion();
-    this.checkPiVersion();
+    for (const m of connectors.list().filter(m => m.capabilities.versionCheck)) this.checkVersion(m.cli);
     await this.recoverFromTmux();
     await this.screens.startup();
     await this.win.startup();
@@ -558,15 +557,15 @@ class MachineService {
       if (!parsed) continue;
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
+      const recovered = connectors.list().filter(m => m.capabilities.recover).sort((a, b) => a.recoverRank - b.recoverRank).find(m => pane.ok && adapters[m.cli].recognizePane(pane.stdout)) || connectors.list().find(m => m.recoverFallback);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
-        cli: pane.ok && ((/^\s*(?:Ask When Needed|Never Ask)\b/im.test(pane.stdout) && /^\s*context:\s*\d+%/im.test(pane.stdout)) || (() => { const lines = pane.stdout.split(/\r?\n/).map(line => line.trim()); return lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line)); })()) ? 'kimi' : pane.ok && (pane.stdout.includes('escape interrupt') && pane.stdout.includes('ctrl+c/ctrl+d clear/exit') || /openrouter\/\S+\s*•\s*\S+/.test(pane.stdout)) ? 'pi' : pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
+        cli: recovered.cli,
         worktree: where.ok ? where.stdout.trim() : '', created_worktree: false, token: '', created_at: new Date().toISOString() };
-      if (this.sessions[name].cli === 'pi') this.sessions[name].end_reason = 'Lost track of this Pi session after a machine restart; restart it';
-      if (this.sessions[name].cli === 'kimi') this.sessions[name].end_reason = 'Lost track of this Kimi Code session after a machine restart; restart it';
+      if (recovered.capabilities.restartLoss) this.sessions[name].end_reason = adapters[recovered.cli].restartLossReason();
       changed = true;
     }
     if (changed) await this.persistSessions();
-    for (const session of Object.values(this.sessions)) if (session.cli === 'pi' && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
+    for (const session of Object.values(this.sessions)) if (connectors.manifest(session.cli)?.stopWhenEnded && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
   }
   async persistSessions() { await atomicWrite(this.sessionsPath, `${JSON.stringify(this.sessions, (key, value) => key === 'transcript_unsaved' ? undefined : value)}\n`); }
   log(error) { process.stderr.write(`machine: ${error.message || error}\n`); }
@@ -599,9 +598,9 @@ class MachineService {
   // checks that match pane text read it plain.
   pane(name, color = false, history = 0) {
     const session = this.managed(name);
-    const result = this.tmux(['capture-pane', '-p', ...(session.cli === 'pi' ? ['-J'] : []), ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', `=${name}:`]);
+    const result = this.tmux(['capture-pane', '-p', ...(connectors.manifest(session.cli)?.joinPaneLines ? ['-J'] : []), ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', `=${name}:`]);
     if (!result.ok) throw Object.assign(new Error(result.stderr.trim() || 'tmux pane unavailable'), { status: 409 });
-    return adapters.pi.redact(result.stdout);
+    return scrubOutput(result.stdout);
   }
   sessionName(threadId, role) {
     safeName(threadId, 'thread id'); safeName(role, 'role');
@@ -803,8 +802,7 @@ class MachineService {
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
-    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); }
-    if (input.cli === 'kimi') { await this.checkKimiVersion(); const status = this.cliStatus('kimi'); if (!status.installed) die('Kimi Code is not installed'); if (status.problem) die(status.problem); }
+    await this.versionGate(input.cli);
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
     const dir = accountDir(account.dir, account.id);
@@ -812,7 +810,7 @@ class MachineService {
     if (dir) adapter.seed(dir, account.id);
     await adapter.prepare?.(dir);
     const options = startOptions(input);
-    if (input.cli === 'kimi') options.effort = null;
+    if (!connectors.manifest(input.cli).models.efforts.length) options.effort = null;
     const createdWorktree = !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
     if (reserved) this.refuseSharedWorktree(reserved, name);
@@ -837,7 +835,7 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); session.pi_version = status.version || null; }
+    if (adapter.recordLaunch) adapter.recordLaunch(session, await this.versionGate(input.cli));
     let windowsTools;
     try {
     const prepared = await this.prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, false);
@@ -868,7 +866,7 @@ class MachineService {
   }
   async switchSession(name, input) {
     const session = this.managed(name), adapter = adapters[session.cli];
-    if (!['claude', 'codex'].includes(session.cli)) die('unsupported cli');
+    if (!connectors.manifest(session.cli)?.capabilities.liveSwitch) die('unsupported cli');
     if (!input || typeof input.switch_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.switch_id) || !input.account || typeof input.account.id !== 'string' || !Object.hasOwn(input.account, 'dir') || !(input.model === null || typeof input.model === 'string') || typeof input.project !== 'string' || !input.project || path.basename(input.project) !== input.project || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir)) die('invalid switch body');
     const dir = accountDir(input.account.dir, input.account.id);
     if (!dir && input.account.id !== `default-${adapter.provider}`) die('invalid default account');
@@ -938,15 +936,15 @@ class MachineService {
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
-    const context = { resume, wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
-    if (wsl && tools && mcp && ['claude', 'codex', 'agy'].includes(input.cli)) {
+    const context = { resume, wsl, mount, ...(await adapters[input.cli].launchContext?.(this) || {}) };
+    if (wsl && tools && mcp && connectors.manifest(input.cli).wrapProjectTools) {
       const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
       const commonDir = common.ok && common.stdout.trim() || worktree;
       context.replaceEntries = wrapEntries({ servers: mcp.servers, wsl, mount,
         readyFile: path.join(this.stateDir, 'win-ready', name),
         cacheFile: (n, e) => path.join(this.stateDir, 'win-tool-lists', `${cacheKey(commonDir, n, e)}.json`) });
     }
-    if (this.win?.detected?.kernel && tools && ['claude', 'codex', 'agy'].includes(input.cli) && mcp) {
+    if (this.win?.detected?.kernel && tools && connectors.manifest(input.cli).wrapProjectTools && mcp) {
       const names = (mcp.windows || []).filter(name => Object.hasOwn(mcp.servers, name));
       if (names.length) {
         // Marked HTTP tools; wrapEntries above only replaces stdio entries, so names never collide.
@@ -973,7 +971,7 @@ class MachineService {
     const wrappedTools = loaded.some(entry => entry.wrapped);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
-    if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
+    adapters[input.cli].disableProjectServers?.(built, read.dropped);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     if (built.mcpConfig) {
       const file = built.mcpConfig.path;
@@ -1001,7 +999,7 @@ class MachineService {
       await fsp.utimes(built.toolFiles.dir, now, now);
     }
     let wrapper = [];
-    if (mcp && TOOL_ROLES.has(input.role) && (input.cli === 'claude' || input.cli === 'codex') && Object.keys(keyReferences(mcp.rawServers).references).length) {
+    if (mcp && TOOL_ROLES.has(input.role) && connectors.manifest(input.cli).injectProjectKeys && Object.keys(keyReferences(mcp.rawServers).references).length) {
       try {
         const identity = await projectIdentity(worktree, commandAsync);
         const store = await readKeyStore(this.stateDir, identity);
@@ -1074,104 +1072,22 @@ class MachineService {
     }
     return { ok: true, end_reason: session.end_reason };
   }
-  async kimiBinding(session) {
-    try {
-      const had = session.source_transcript;
-      const file = await adapters.kimi.findTranscript(session, session.account_dir);
-      if (!had && file) await this.persistSessions();
-      return file;
-    } catch (error) {
-      if (!error.kimiFatal) throw error;
-      await this.fatalKimi(session, error.message); return null;
-    }
-  }
-  async kimiSpoolWaiting(session) {
-    const dir = path.join(this.stateDir, 'spool', 'events');
-    for (const file of await fsp.readdir(dir).catch(() => [])) {
-      if (!file.endsWith('.json')) continue;
-      const item = await readJson(path.join(dir, file), {});
-      if (item.session === session.name) return true;
-    }
-    return false;
-  }
+  async kimiBinding(session) { return adapters[session.cli].bindTranscript.call(this, session); }
+  async kimiSpoolWaiting(session) { return adapters[session.cli].spoolWaiting.call(this, session); }
   async pollKimiTurns() {
-    for (const session of Object.values(this.sessions)) if (session.cli === 'pi' && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
-    if (this.kimiPolling) return;
-    this.kimiPolling = true;
-    try {
-      for (const session of Object.values(this.sessions)) {
-        if (session.cli !== 'kimi' || session.status === 'stopped') continue;
-        if (session.end_reason) { await this.stopFatal(session); continue; }
-        if (session.status !== 'ready') continue;
-        const file = await this.kimiBinding(session);
-        if (session.end_reason) continue;
-        if (!file) {
-          if (Date.now() - Date.parse(session.ready_at) >= 120000) await this.fatalKimi(session, "Couldn't find Kimi Code's log for this session");
-          continue;
-        }
-        let data, stat, handle, ioError, otherError;
-        const offset = session.kimi_offset || 0;
-        try { handle = await fsp.open(file, 'r'); } catch (error) { ioError = error; }
-        if (handle) {
-          try {
-            try { stat = await handle.stat(); } catch (error) { ioError = error; }
-            if (!ioError && stat.dev === session.kimi_log_id?.dev && stat.ino === session.kimi_log_id?.ino && stat.size >= offset) {
-              let buffer;
-              try { buffer = Buffer.alloc(stat.size - offset); } catch (error) { otherError = error; }
-              if (buffer) {
-                try { const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset); data = buffer.subarray(0, bytesRead); }
-                catch (error) { ioError = error; }
-              }
-            }
-          } finally { await handle.close().catch(error => this.log(error)); }
-        }
-        if (otherError) { this.log(otherError); continue; }
-        if (ioError) {
-          if (session.kimi_missing_since === undefined) { session.kimi_missing_since = Date.now(); await this.persistSessions(); }
-          if (Date.now() - session.kimi_missing_since >= 30000) await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced");
-          continue;
-        }
-        try {
-          if (!data) {
-            await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced"); continue;
-          }
-          if (session.kimi_missing_since !== undefined) { delete session.kimi_missing_since; await this.persistSessions(); }
-          const end = data.lastIndexOf(10);
-          if (end < 0 || await this.kimiSpoolWaiting(session)) continue;
-          const rows = data.subarray(0, end + 1).toString('utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } });
-          const turns = rows.filter(row => row?.type === 'turn.ended' && row.agentId === 'main' && Number.isInteger(row.turnId) && (session.kimi_last_turn === undefined || row.turnId > session.kimi_last_turn)).sort((a,b) => a.turnId-b.turnId);
-          let handedOffAll = true;
-          for (const row of turns) {
-            if (session.kimi_last_turn !== undefined && row.turnId <= session.kimi_last_turn) continue;
-            if (await this.kimiSpoolWaiting(session)) { handedOffAll = false; break; }
-            let event = { type: 'turn-ended', turn_id: row.turnId, transcript_path: file };
-            if (row.reason === 'cancelled') event.interrupted = true;
-            else if (row.reason === 'failed') {
-              let error = row.error, messages = [], codes = [];
-              if (typeof error === 'string') messages.push(error);
-              else for (let e = error; e && typeof e === 'object'; e = e.cause) { if (e.message) messages.push(String(e.message)); if (e.code) codes.push(String(e.code)); if (typeof e.cause === 'string') messages.push(e.cause); }
-              const message = (typeof error === 'object' && error?.code ? `[${error.code}] ` : '') + (messages.join(': ') || 'Kimi Code turn failed');
-              event = { ...event, type: codes.some(code => /rate_limit|quota/i.test(code)) || /quota|rate.?limit|429|too many requests/i.test(message) ? 'limit-hit' : 'turn-failed', error: message };
-            } else if (row.reason !== 'completed') event = { ...event, type: 'turn-failed', error: `Kimi Code turn ended (${row.reason})` };
-            await this.hook(session.name, event);
-            session.kimi_last_turn = row.turnId;
-            await this.persistSessions();
-          }
-          if (handedOffAll && !await this.kimiSpoolWaiting(session)) { session.kimi_offset = offset + end + 1; await this.persistSessions(); }
-        } catch (error) { this.log(error); }
-      }
-    } finally { this.kimiPolling = false; }
+    for (const session of Object.values(this.sessions)) if (connectors.manifest(session.cli)?.stopWhenEnded && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
+    for (const manifest of connectors.list()) if (adapters[manifest.cli].turnPoller) await adapters[manifest.cli].turnPoller.call(this, manifest.cli);
   }
   async pollCodexSteps() {
     const live = this.liveTmux();
     if (!live) return;
-    await Promise.all(Object.values(this.sessions).filter(s => s.cli === 'codex' && s.status !== 'switching' && s.codex_thread_id && live.has(s.name)).map(s => this.readCodexSteps(s)));
+    await Promise.all(Object.values(this.sessions).filter(s => connectors.manifest(s.cli)?.capabilities.steps && s.status !== 'switching' && adapters[s.cli].stepsReady(s) && live.has(s.name)).map(s => this.readCodexSteps(s)));
   }
   async readCodexSteps(session, { spoolOnly = false, flush = false } = {}) {
     const previous = this.stepReads.get(session.name) || Promise.resolve();
     const reading = previous.catch(() => {}).then(async () => {
-      if (!session.codex_thread_id) return;
-      const file = session.source_transcript || await adapters.codex.findTranscript(session, session.account_dir);
+      if (!adapters[session.cli].stepsReady(session)) return;
+      const file = session.source_transcript || await adapters[session.cli].findTranscript(session, session.account_dir);
       if (!file) return;
       session.source_transcript = file;
       let handle;
@@ -1196,7 +1112,7 @@ class MachineService {
             } else break; // Leave an incomplete trailing line for the next read.
           } else {
             const complete = data.subarray(0, end + 1);
-            const events = readCodexSteps(state, complete.toString('utf8').split('\n'), { cwd: session.worktree });
+            const events = adapters[session.cli].readSteps(state, complete.toString('utf8').split('\n'), { cwd: session.worktree });
             for (const event of events) await this.spool('events', { ...event, session: session.name, thread_id: session.thread_id, prepared: true });
             session.steps_offset = start + end + 1; session.steps_state = state;
             await this.persistSessions();
@@ -1240,7 +1156,7 @@ class MachineService {
     if (age >= 30_000 && session.active_switch) { await this.failedResume(session); return false; }
     if (age >= 30_000 && session.status !== 'stuck') {
       session.status = 'stuck'; await this.persistSessions();
-      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id, ...(session.cli === 'pi' && this.piVersionNote(session.pi_version) ? { note: this.piVersionNote(session.pi_version) } : {}) });
+      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id, ...(adapters[session.cli]?.failureNote?.(session) ? { note: adapters[session.cli].failureNote(session) } : {}) });
     }
     return false;
   }
@@ -1476,18 +1392,18 @@ class MachineService {
   async copyTranscriptNow(session, source) {
     this.copyHashes ??= new Map();
     this.sweepCopyHashes();
-    if (!source || (session.cli === 'kimi' && session.end_reason)) return { offset: 0, lines: [] };
-    let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
+    if (!source || (adapters[session.cli]?.turnPoller && session.end_reason)) return { offset: 0, lines: [] };
+    let stat = adapters[session.cli]?.turnPoller ? null : await fsp.stat(source);
     const current = session.transcript_source;
-    let begin = session.cli === 'kimi' ? (current?.offset || 0) : (current && (current.path !== source || stat.size < current.offset || stat.ino !== current.ino) ? 0 : (current?.offset || 0));
-    if (session.cli !== 'kimi' && current?.path === source && current.ino === stat.ino && stat.size === current.offset && session.transcript_path && !session.transcript_unsaved) return { offset: current.offset, lines: [] };
+    let begin = adapters[session.cli]?.turnPoller ? (current?.offset || 0) : (current && (current.path !== source || stat.size < current.offset || stat.ino !== current.ino) ? 0 : (current?.offset || 0));
+    if (!adapters[session.cli]?.turnPoller && current?.path === source && current.ino === stat.ino && stat.size === current.offset && session.transcript_path && !session.transcript_unsaved) return { offset: current.offset, lines: [] };
     const file = await fsp.open(source, 'r'); let text;
-    try { if (session.cli === 'kimi') { stat = await file.stat(); if (stat.dev !== session.kimi_log_id?.dev || stat.ino !== session.kimi_log_id?.ino || stat.size < begin || session.end_reason) return { offset: begin, lines: [] }; if (stat.size === begin && current?.path === source && current.ino === stat.ino && session.transcript_path && !session.transcript_unsaved) return { offset: begin, lines: [] }; } const size = stat.size - begin; const buffer = Buffer.alloc(Math.max(size, 0)); await file.read(buffer, 0, buffer.length, begin); text = buffer.toString('utf8'); } finally { await file.close(); }
+    try { if (adapters[session.cli]?.turnPoller) { stat = await file.stat(); if (!adapters[session.cli].validTranscript(session, stat, begin)) return { offset: begin, lines: [] }; if (stat.size === begin && current?.path === source && current.ino === stat.ino && session.transcript_path && !session.transcript_unsaved) return { offset: begin, lines: [] }; } const size = stat.size - begin; const buffer = Buffer.alloc(Math.max(size, 0)); await file.read(buffer, 0, buffer.length, begin); text = buffer.toString('utf8'); } finally { await file.close(); }
     // A JSONL record isn't durable until its newline arrives.  Leave an unfinished
     // tail for the next read instead of copying a fragment and advancing past it.
     const newline = text.lastIndexOf('\n');
     const complete = newline < 0 ? '' : text.slice(0, newline + 1);
-    const lines = complete ? complete.slice(0, -1).split('\n').map(line => session.cli === 'pi' ? adapters.pi.redact(line) : line) : [];
+    const lines = complete ? complete.slice(0, -1).split('\n').map(line => adapters[session.cli]?.redact?.(line) ?? line) : [];
     const nextOffset = begin + Buffer.byteLength(complete);
     const target = path.join(this.stateDir, 'transcripts', session.thread_id, `${session.name}.jsonl`);
     let additions = [];
@@ -1552,7 +1468,7 @@ class MachineService {
       if (!kept) throw error;
       return kept;
     }
-    if (!session.source_transcript && !session.end_reason) { if (session.cli === 'kimi') await this.kimiBinding(session); else session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir); }
+    if (!session.source_transcript && !session.end_reason) { if (adapters[session.cli]?.bindTranscript) await this.kimiBinding(session); else session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir); }
     return this.copyTranscript(session, session.source_transcript, async () => await this.readTranscript(session.transcript_path, offset, known) || { offset: 0, data: '' });
   }
   async spool(kind, payload) {
@@ -1616,16 +1532,12 @@ class MachineService {
     const current = this.managed(session);
     if (current.status === 'switching') return { ignored: true };
     const adapter = adapters[current.cli];
-    if (current.cli === 'pi' && ['turn-ended', 'turn-failed'].includes(event.type)) {
-      try { current.source_transcript ||= await adapter.findTranscript(current, current.account_dir); if (current.source_transcript) await this.copyTranscript(current, current.source_transcript); } catch (error) { this.log(error); }
-    }
-    if (current.cli === 'pi' && event.type === 'turn-failed') event = { ...event, error: (event.error || '') + this.piVersionNote(current.pi_version) };
-    if (current.cli === 'pi' && event.transcript_path) { event = { ...event }; delete event.transcript_path; }
+    if (adapter.beforeTurnEvent) event = await adapter.beforeTurnEvent(this, current, event);
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
     if (event.type === 'turn-ended' && adapter.onTurnEnded) {
       const result = await adapter.onTurnEnded(current, event);
       if (result.ignored) return { ignored: true };
-      if (current.cli === 'codex') {
+      if (connectors.manifest(current.cli)?.capabilities.steps) {
         await this.readCodexSteps(current, { spoolOnly: spooled, flush: true });
         // The hub closes any still-running steps at the turn boundary.
         current.steps_state = { open: {}, yielded: null };
@@ -1738,11 +1650,12 @@ class MachineService {
     if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !adapter) die('invalid account or cli');
     const dir = accountDir(input.dir, account);
     if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
-    if ((cli === 'kimi' || cli === 'pi') && !adapter.resolveCli()) throw Object.assign(new Error(cli === 'pi' ? 'Pi is not installed' : 'Kimi Code is not installed'), { status: 409 });
+    if (adapter.resolveCli && !adapter.resolveCli()) { const manifest = connectors.manifest(cli); throw Object.assign(new Error(`${manifest.shortName || manifest.displayName} is not installed`), { status: 409 }); }
     if (dir) adapter.seed(dir, account);
     await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
-    this.tmux(['kill-session', '-t', cli === 'pi' ? `=${name}:` : cli === 'kimi' ? `=${name}` : name]);
+    const killTarget = connectors.manifest(cli).login?.killTarget;
+    this.tmux(['kill-session', '-t', killTarget === 'pane' ? `=${name}:` : killTarget === 'session' ? `=${name}` : name]);
     const cmd = ['env', `PATH=${process.env.PATH || ''}`, ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
     const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
     const cwd = adapter.loginCwd?.(this.stateDir);
@@ -1753,35 +1666,22 @@ class MachineService {
   }
   loginPane(account) {
     const record = this.loginRecord(account);
-    const result = this.tmux(['capture-pane', '-p', '-e', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
+    const result = this.tmux(['capture-pane', '-p', '-e', ...(connectors.manifest(record.cli)?.joinPaneLines ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
     if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
-    return adapters.pi.redact(result.stdout);
+    return scrubOutput(result.stdout);
   }
   loginState(account) {
     const record = this.loginRecord(account), adapter = adapters[record.cli];
-    if (record.cli === 'kimi' && record.result) return record.result;
-    const captured = this.tmux(['capture-pane', '-p', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
-    const pane = captured.ok ? adapters.pi.redact(captured.stdout) : '';
-    if (record.cli === 'kimi') {
-      const authenticated = adapter.loginStatus(record.dir).authenticated;
-      const marker = pane.match(/__wc_login_exit (\d+)/);
-      if (marker) return record.result = { state: marker[1] === '0' && authenticated ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated };
-      if (!captured.ok) { const live = this.liveTmux(); if (live && !live.has(`wc-login-${account}`)) return record.result = { state: 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated }; return { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: authenticated }; }
-      const parsed = adapter.parseLogin(pane); return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: false, logged_in: authenticated };
-    }
-    if (record.cli === 'pi') {
-      const marker = pane.match(/__wc_login_exit (\d+)/);
-      if (adapter.loginDone(pane) || marker || !captured.ok) {
-        if (adapter.loginDone(pane)) this.tmux(['kill-session', '-t', `=wc-login-${account}:`]);
-        const logged_in = adapter.loginStatus(record.dir).logged_in;
-        return { state: logged_in && (adapter.loginDone(pane) || !marker || marker[1] === '0') ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
-      }
-    }
+    if (adapter.loginResult?.(record)) return adapter.loginResult(record);
+    const captured = this.tmux(['capture-pane', '-p', ...(connectors.manifest(record.cli)?.joinPaneLines ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
+    const pane = captured.ok ? scrubOutput(captured.stdout) : '';
+    const specialized = adapter.loginState?.(record, pane, captured.ok, { liveTmux: () => this.liveTmux(), kill: () => this.tmux(['kill-session', '-t', `=wc-login-${account}:`]), account });
+    if (specialized) return specialized;
     if (!captured.ok || /__wc_login_exit \d+/.test(pane)) {
       const logged_in = adapter.loginStatus(record.dir).logged_in;
-      return { state: logged_in && (record.cli !== 'pi' || /__wc_login_exit 0(?:\s|$)/.test(pane)) ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+      return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
     }
-    if (record.cli !== 'pi' && adapter.loginDone?.(pane)) {
+    if (adapter.loginDone?.(pane)) {
       this.tmux(['kill-session', '-t', `wc-login-${account}`]);
       const logged_in = adapter.loginStatus(record.dir).logged_in;
       return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
@@ -1804,7 +1704,7 @@ class MachineService {
   }
   status() {
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
-    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex), agy = this.cliStatus('agy', defaults.agy), kimi = this.cliStatus('kimi', defaults.kimi), pi = this.cliStatus('pi', defaults.pi);
+    const statuses = Object.fromEntries(connectors.list().map(m => [m.cli, this.cliStatus(m.cli, defaults[m.cli])]));
     const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
     const root = path.join(os.homedir(), '.wheelchair', 'accounts');
     let folders = []; try { folders = fs.readdirSync(root, { withFileTypes: true }); } catch {}
@@ -1812,92 +1712,36 @@ class MachineService {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
     for (const entry of accounts) delete entry.authenticated;
-    if (pi.problem) for (const entry of accounts) if (entry.cli === 'pi') { entry.logged_in = false; delete entry.problem; }
-    if (kimi.problem) for (const entry of accounts) if (entry.cli === 'kimi') { entry.logged_in = false; delete entry.problem; }
-    return { version: this.version, claude, codex, agy, kimi, pi, recipes: Object.fromEntries(providers.map(p => [p, !!loadRecipes()[p]])), accounts, sessions: this.sessionList() };
+    for (const entry of accounts) if (statuses[entry.cli].problem && adapters[entry.cli].resolveCli) { entry.logged_in = false; delete entry.problem; }
+    return { version: this.version, ...statuses, recipes: Object.fromEntries(providers.map(p => [p, !!loadRecipes()[p]])), accounts, sessions: this.sessionList() };
   }
-  piVersionNote(version) {
-    const status = this.piVersionStatus(version, { logged_in: true });
-    if (!status.warning) return '';
-    return version ? ` Pi ${version} is newer than the version wheelchair was tested with (1.5.2); that may be the cause.` : " Pi's version couldn't be read; that may be the cause.";
-  }
+  piVersionNote(version) { return Object.values(adapters).find(a => a.failureNote).failureNote({ pi_version: version }); }
   async piExitedBeforeReady(session) {
-    if (session.cli !== 'pi' || !['starting', 'stuck'].includes(session.status) || session.end_reason) return;
-    session.end_reason = 'Pi exited before it was ready' + this.piVersionNote(session.pi_version);
+    const reason = adapters[session.cli]?.startupCheck?.(session);
+    if (!reason) return;
+    session.end_reason = reason;
     await this.persistSessions();
   }
   async reconcilePiExits() {
     const live = this.liveTmux();
     if (live) for (const session of Object.values(this.sessions)) if (!live.has(session.name)) await this.piExitedBeforeReady(session);
   }
-  checkPiVersion(executable = adapters.pi.resolveCli()) {
-    if (!executable) return Promise.resolve();
-    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
-    this.piVersions ||= new Map();
-    const key = JSON.stringify([executable, mtime]);
-    if (!this.piVersions.has(key)) {
-      const entry = {};
-      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.piVersionTimeoutMs ?? 5000 }, (error, stdout) => {
-        const output = stdout.trim();
-        entry.version = !error && /^v?\d+\.\d+\.\d+$/.test(output) ? output.replace(/^v/, '') : null;
-        resolve(entry);
-      }));
-      this.piVersions.set(key, entry);
-    }
-    return this.piVersions.get(key).promise;
-  }
-  piVersionStatus(version, login) {
-    const match = typeof version === 'string' && version.match(/^(\d+)\.(\d+)\.(\d+)$/);
-    if (!match) return { installed: true, logged_in: login.logged_in, version: null, warning: "Pi's version couldn't be read. If OpenRouter agents fail, this may be why." };
-    const [major, minor, patch] = match.slice(1).map(Number);
-    const old = major < 1 || major === 1 && (minor < 5 || minor === 5 && patch < 2);
-    const newer = major > 1 || major === 1 && minor > 5;
-    return { installed: true, logged_in: !old && login.logged_in, version, ...(old ? { problem: `Pi 1.5.2 or newer is needed (found ${version})` } : newer ? { warning: `Pi ${version} is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.` } : {}) };
-  }
-  checkKimiVersion(executable = adapters.kimi.resolveCli()) {
-    if (!executable) return Promise.resolve();
-    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
-    this.kimiVersions ||= new Map();
-    const key = JSON.stringify([executable, mtime]);
-    if (!this.kimiVersions.has(key)) {
-      const entry = {};
-      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.kimiVersionTimeoutMs ?? 5000 }, (error, stdout, stderr) => {
-        entry.output = stdout.trim() || stderr.trim() || 'no output';
-        entry.failed = !!error;
-        resolve(entry);
-      }));
-      this.kimiVersions.set(key, entry);
-    }
-    return this.kimiVersions.get(key).promise;
-  }
-  async kimiLaunchPath() {
-    const executable = adapters.kimi.resolveCli();
-    if (!executable) die('Kimi Code is not installed');
-    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { die('Kimi Code is not installed'); }
-    await this.checkKimiVersion(executable);
-    const entry = this.kimiVersions?.get(JSON.stringify([executable, mtime]));
-    if (!entry || entry.output === undefined) die('Kimi Code is not installed');
-    const status = this.kimiVersionStatus(entry, { logged_in: false });
+  checkPiVersion(executable) { return Object.values(adapters).find(a => a.recordLaunch).checkPiVersion.call(this, executable); }
+  piVersionStatus(version, login) { return Object.values(adapters).find(a => a.recordLaunch).piVersionStatus(version, login); }
+  checkKimiVersion(executable) { return Object.values(adapters).find(a => a.launchPath).checkKimiVersion.call(this, executable); }
+  kimiLaunchPath() { return Object.values(adapters).find(a => a.launchPath).launchPath(this); }
+  kimiVersionStatus(entry, login) { return Object.values(adapters).find(a => a.launchPath).kimiVersionStatus(entry, login); }
+  checkVersion(cli, executable) { return adapters[cli].checkVersion(this, executable); }
+  async versionGate(cli) {
+    if (!connectors.manifest(cli).capabilities.versionCheck) return;
+    await this.checkVersion(cli);
+    const status = this.cliStatus(cli), manifest = connectors.manifest(cli);
+    if (!status.installed) die(`${manifest.shortName || manifest.displayName} is not installed`);
     if (status.problem) die(status.problem);
-    return { executable };
-  }
-  kimiVersionStatus(entry, login) {
-    if (!entry || entry.output === undefined) return { installed: true, logged_in: false, problem: "Checking Kimi Code's version" };
-    const output = entry.output;
-    const firstLine = output.split(/\r?\n/, 1)[0].replace(/^(?:kimi-code|kimi code|kimi)(?:\s+|,\s*)/i, '').replace(/^version\s+/i, '');
-    const match = (firstLine.split(/\s+/)[0] || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
-    const valid = !entry.failed && match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && (Number(match[3]) > 3 || Number(match[3]) === 3 && !match[4])));
-    return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
+    return status;
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
-    if (cli === 'pi') { const executable = adapters.pi.resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } this.checkPiVersion(executable); return this.piVersionStatus(this.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); }
-    if (cli === 'kimi') {
-      const executable = adapters.kimi.resolveCli(); if (!executable) return { installed: false, logged_in: false };
-      let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; }
-      this.checkKimiVersion();
-      const entry = this.kimiVersions.get(JSON.stringify([executable, mtime]));
-      return this.kimiVersionStatus(entry, login);
-    }
+    if (connectors.manifest(cli).capabilities.versionCheck) return adapters[cli].versionStatus(this, login);
     const version = command('sh', ['-c', `command -v ${cli}`]);
     if (!version.ok) return { installed: false, logged_in: false };
     const check = command(cli, ['--version']);
@@ -1910,20 +1754,22 @@ class MachineService {
     const model = input.model; const prompt = input.prompt;
     if (typeof model !== 'string' || !/^[A-Za-z0-9._:\[\]-]+$/.test(model)) die('model is required');
     if (typeof prompt !== 'string' || !prompt.trim()) die('prompt is required');
+    const previewTool = connectors.list().find(m => m.stylePreview);
+    const previewCli = previewTool.cli;
     return new Promise(resolve => {
       let child; let out = ''; let err = ''; let done = false;
       const finish = (status, body) => { if (done) return; done = true; clearTimeout(timer); resolve({ status, body }); };
       const timer = setTimeout(() => { finish(504, { error: 'preview timed out after 60 s' }); if (child) child.kill('SIGKILL'); }, this.previewTimeoutMs);
-      try { child = spawn('claude', ['-p', '--model', model, '--permission-mode', 'dontAsk'], { env: { ...process.env, WHEELCHAIR_LANE: '1' }, stdio: ['pipe', 'pipe', 'pipe'] }); }
-      catch (error) { return finish(503, { error: 'claude is not installed' }); }
-      child.on('error', error => finish(error.code === 'ENOENT' ? 503 : 502, { error: error.code === 'ENOENT' ? 'claude is not installed' : error.message }));
+      try { child = spawn(previewCli, adapters[previewCli].stylePreviewArgv(model), { env: { ...process.env, WHEELCHAIR_LANE: '1' }, stdio: ['pipe', 'pipe', 'pipe'] }); }
+      catch (error) { return finish(503, { error: `${previewCli} is not installed` }); }
+      child.on('error', error => finish(error.code === 'ENOENT' ? 503 : 502, { error: error.code === 'ENOENT' ? `${previewCli} is not installed` : error.message }));
       child.stdout.on('data', chunk => { out += chunk; });
       child.stderr.on('data', chunk => { err += chunk; });
       child.stdin.on('error', () => {});
       child.on('close', code => {
         if (code === 0) return finish(200, { text: out.trim() });
         const last = err.split('\n').map(l => l.trim()).filter(Boolean).pop();
-        finish(502, { error: last || `claude exited ${code}` });
+        finish(502, { error: last || `${previewCli} exited ${code}` });
       });
       child.stdin.end(prompt);
     });
@@ -2266,13 +2112,14 @@ class MachineService {
         await this.authorize(request, 'hub');
         const root = path.join(os.homedir(), '.wheelchair', 'accounts');
         const folders = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
-        const entries = [{ account: 'default-openrouter', dir: null }];
+        const spend = connectors.list().find(m => m.capabilities.spend);
+        const entries = [{ account: `default-${spend.provider}`, dir: null }];
         for (const folder of folders) {
           if (!folder.isDirectory() || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(folder.name)) continue;
           const dir = path.join(root, folder.name);
-          try { const meta = JSON.parse(await fsp.readFile(path.join(dir, 'wheelchair-account.json'), 'utf8')); if (meta.id === folder.name && meta.cli === 'pi') entries.push({ account: meta.id, dir }); } catch {}
+          try { const meta = JSON.parse(await fsp.readFile(path.join(dir, 'wheelchair-account.json'), 'utf8')); if (meta.id === folder.name && meta.cli === spend.cli) entries.push({ account: meta.id, dir }); } catch {}
         }
-        const accounts = await Promise.all(entries.map(async ({ account, dir }) => ({ account, ...await adapters.pi.spend(dir) })));
+        const accounts = await Promise.all(entries.map(async ({ account, dir }) => ({ account, ...await adapters[spend.cli].spend(dir) })));
         return send(response, 200, { accounts });
       }
       if (request.method === 'POST' && url.pathname === '/v1/usage') {
@@ -2280,11 +2127,11 @@ class MachineService {
         const input = await bodyOf(request);
         if (!input || typeof input !== 'object' || Array.isArray(input)) die('invalid usage request');
         const { account, cli } = input;
-        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex', 'kimi'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
+        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !connectors.manifest(cli)?.capabilities.usageProbe || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
         const adapter = adapters[cli], dir = accountDir(input.dir, account);
         if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
         try {
-          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000, ...(cli === 'kimi' && this.options.kimiUsageUrl ? { url: this.options.kimiUsageUrl } : {}) });
+          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000, ...(this.options[`${cli}UsageUrl`] ? { url: this.options[`${cli}UsageUrl`] } : {}) });
           const { reached, ...windows } = parsed;
           const reading = { account, at: new Date().toISOString(), ...windows };
           if (reached) reading.limited_until = limitedUntil(reading);
@@ -2441,7 +2288,7 @@ class MachineService {
           return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id });
         }
       }
-      if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, agent.cli === 'kimi' ? { ignored: true } : await this.hook(agent.name, input)); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, adapters[agent.cli]?.turnPoller ? { ignored: true } : await this.hook(agent.name, input)); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/win') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.win.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }

@@ -1,5 +1,6 @@
 'use strict';
 module.exports = {
+  "login": { "killTarget": "pane" },
   "cli": "pi",
   "provider": "openrouter",
   "label": "OpenRouter",
@@ -12,13 +13,13 @@ module.exports = {
     "usageEvents": false,
     "preflight": false,
     "sandbox": false,
-    "restartLoss": false,
+    "restartLoss": true,
     "projectTools": false,
-    "recover": false,
+    "recover": true,
     "spend": true,
     "liveSwitch": false,
     "aside": true,
-    "versionCheck": false,
+    "versionCheck": true,
     "steps": false
   },
   "install": {
@@ -99,6 +100,9 @@ module.exports = {
   "report": {
     "useHookText": false
   },
+  "wrapProjectTools": false,
+  "injectProjectKeys": false,
+  "joinPaneLines": true,
   "stopWhenEnded": true,
   "asideParentField": "cli_session_id",
   "hook": {

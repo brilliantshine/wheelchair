@@ -13,7 +13,7 @@ module.exports = {
     "sandbox": false,
     "restartLoss": false,
     "projectTools": false,
-    "recover": false,
+    "recover": true,
     "spend": false,
     "liveSwitch": false,
     "aside": false,
@@ -117,6 +117,9 @@ module.exports = {
   "report": {
     "useHookText": true
   },
+  "wrapProjectTools": true,
+  "injectProjectKeys": false,
+  "joinPaneLines": false,
   "stopWhenEnded": false,
   "hook": {
     "payload": "stdin",

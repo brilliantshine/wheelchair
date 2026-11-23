@@ -1,5 +1,6 @@
 'use strict';
 module.exports = {
+  "stylePreview": true,
   "cli": "claude",
   "provider": "claude",
   "label": "Claude",
@@ -126,6 +127,9 @@ module.exports = {
   "report": {
     "useHookText": true
   },
+  "wrapProjectTools": true,
+  "injectProjectKeys": true,
+  "joinPaneLines": false,
   "stopWhenEnded": false,
   "asideParentField": "cli_session_id",
   "hook": {

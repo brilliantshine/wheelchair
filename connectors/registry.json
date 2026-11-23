@@ -1,6 +1,7 @@
 {
   "tools": [
     {
+      "stylePreview": true,
       "cli": "claude",
       "provider": "claude",
       "label": "Claude",
@@ -127,6 +128,9 @@
       "report": {
         "useHookText": true
       },
+      "wrapProjectTools": true,
+      "injectProjectKeys": true,
+      "joinPaneLines": false,
       "stopWhenEnded": false,
       "asideParentField": "cli_session_id",
       "hook": {
@@ -149,7 +153,7 @@
         "sandbox": true,
         "restartLoss": false,
         "projectTools": true,
-        "recover": false,
+        "recover": true,
         "spend": false,
         "liveSwitch": true,
         "aside": true,
@@ -272,6 +276,9 @@
       "report": {
         "useHookText": true
       },
+      "wrapProjectTools": true,
+      "injectProjectKeys": true,
+      "joinPaneLines": false,
       "stopWhenEnded": false,
       "asideParentField": "codex_thread_id",
       "hook": {
@@ -294,7 +301,7 @@
         "sandbox": false,
         "restartLoss": false,
         "projectTools": false,
-        "recover": false,
+        "recover": true,
         "spend": false,
         "liveSwitch": false,
         "aside": false,
@@ -398,6 +405,9 @@
       "report": {
         "useHookText": true
       },
+      "wrapProjectTools": true,
+      "injectProjectKeys": false,
+      "joinPaneLines": false,
       "stopWhenEnded": false,
       "hook": {
         "payload": "stdin",
@@ -407,6 +417,9 @@
       "recoverFallback": false
     },
     {
+      "login": {
+        "killTarget": "session"
+      },
       "cli": "kimi",
       "provider": "kimi",
       "label": "Kimi Code",
@@ -418,13 +431,13 @@
         "usageEvents": false,
         "preflight": false,
         "sandbox": false,
-        "restartLoss": false,
+        "restartLoss": true,
         "projectTools": false,
-        "recover": false,
+        "recover": true,
         "spend": false,
         "liveSwitch": false,
         "aside": false,
-        "versionCheck": false,
+        "versionCheck": true,
         "steps": false
       },
       "install": {
@@ -509,11 +522,17 @@
       "report": {
         "useHookText": true
       },
+      "wrapProjectTools": false,
+      "injectProjectKeys": false,
+      "joinPaneLines": false,
       "stopWhenEnded": false,
       "recoverRank": 0,
       "recoverFallback": false
     },
     {
+      "login": {
+        "killTarget": "pane"
+      },
       "cli": "pi",
       "provider": "openrouter",
       "label": "OpenRouter",
@@ -526,13 +545,13 @@
         "usageEvents": false,
         "preflight": false,
         "sandbox": false,
-        "restartLoss": false,
+        "restartLoss": true,
         "projectTools": false,
-        "recover": false,
+        "recover": true,
         "spend": true,
         "liveSwitch": false,
         "aside": true,
-        "versionCheck": false,
+        "versionCheck": true,
         "steps": false
       },
       "install": {
@@ -613,6 +632,9 @@
       "report": {
         "useHookText": false
       },
+      "wrapProjectTools": false,
+      "injectProjectKeys": false,
+      "joinPaneLines": true,
       "stopWhenEnded": true,
       "asideParentField": "cli_session_id",
       "hook": {

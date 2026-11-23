@@ -20,9 +20,14 @@ test('contract rejects missing and inconsistent members and fields', () => {
   delete mod.command; assert.throws(() => contract.validate(m, 'machine', mod), /command/);
   mod.command = connectors.machine(m.cli).command; delete mod.usageProbe; assert.throws(() => contract.validate(m, 'machine', mod), /usageProbe/);
   mod.usageProbe = () => {}; m.capabilities.usageProbe = false; assert.throws(() => contract.validate(m, 'machine', mod), /usageProbe/);
+  const turnMod = { ...connectors.machine(manifests[0].cli) }; delete turnMod.hookEvent; assert.throws(() => contract.validate(manifests[0], 'machine', turnMod), /hookEvent\/turnPoller/); turnMod.hookEvent = () => {}; turnMod.turnPoller = () => {}; assert.throws(() => contract.validate(manifests[0], 'machine', turnMod), /hookEvent\/turnPoller/);
   const missing = structuredClone(manifests[0]); delete missing.models.format; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 'pattern'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);
+  const badFlag = structuredClone(manifests[0]); badFlag.joinPaneLines = 'yes'; assert.throws(() => contract.validateManifest(badFlag), /joinPaneLines/);
+  const badPreview = structuredClone(manifests[0]); badPreview.stylePreview = 'yes'; assert.throws(() => contract.validateManifest(badPreview), /stylePreview/);
+  const previews = manifests.map(m => ({ ...m, stylePreview: true })); assert.throws(() => contract.validateRegistry(previews), /stylePreview/);
+  const badLogin = structuredClone(manifests[0]); badLogin.login = { killTarget: 'invalid' }; assert.throws(() => contract.validateManifest(badLogin), /login.killTarget/);
   const badLookup = structuredClone(manifests[0]); badLookup.install.lookup = 42; assert.throws(() => contract.validateManifest(badLookup), /install.lookup/);
   badLookup.install.lookup = 'unknown'; assert.throws(() => contract.validateManifest(badLookup), /install.lookup/);
   const duplicated = manifests.map(m => structuredClone(m)); duplicated[0].capabilities.preflight = true; assert.throws(() => contract.validateRegistry(duplicated), /preflight/);

@@ -1,5 +1,6 @@
 'use strict';
 module.exports = {
+  "login": { "killTarget": "session" },
   "cli": "kimi",
   "provider": "kimi",
   "label": "Kimi Code",
@@ -11,13 +12,13 @@ module.exports = {
     "usageEvents": false,
     "preflight": false,
     "sandbox": false,
-    "restartLoss": false,
+    "restartLoss": true,
     "projectTools": false,
-    "recover": false,
+    "recover": true,
     "spend": false,
     "liveSwitch": false,
     "aside": false,
-    "versionCheck": false,
+    "versionCheck": true,
     "steps": false
   },
   "install": {
@@ -102,6 +103,9 @@ module.exports = {
   "report": {
     "useHookText": true
   },
+  "wrapProjectTools": false,
+  "injectProjectKeys": false,
+  "joinPaneLines": false,
   "stopWhenEnded": false,
   "recoverRank": 0,
   "recoverFallback": false
