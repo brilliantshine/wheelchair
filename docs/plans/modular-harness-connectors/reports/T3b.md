@@ -1376,3 +1376,271 @@ machine/service.js:1834:      try { child = spawn('claude', ['-p', '--model', mo
 exit 0
 {"PROVIDERS":{"claude":{"cli":"claude","label":"Claude","effort":true,"preflight":false,"typesRoleMessage":false,"asideFork":true,"singleAccount":false},"gpt":{"cli":"codex","label":"GPT","effort":true,"preflight":true,"typesRoleMessage":true,"asideFork":true,"singleAccount":false},"gemini":{"cli":"agy","label":"Antigravity","effort":true,"preflight":false,"typesRoleMessage":true,"asideFork":false,"singleAccount":true},"kimi":{"cli":"kimi","label":"Kimi Code","effort":false,"preflight":false,"typesRoleMessage":true,"asideFork":false,"singleAccount":false},"openrouter":{"cli":"pi","label":"OpenRouter","effort":true,"preflight":false,"typesRoleMessage":false,"asideFork":true,"singleAccount":false}},"DISPLAY_NAMES":{"claude":"Claude Code","gpt":"Codex","gemini":"Antigravity","kimi":"Kimi Code","openrouter":"Pi (OpenRouter)"}}
 ```
+
+## T3c
+
+Partial work: groups 6, 7 and 10 only. `machine/service.js` uses connector data for login executable checks, login kill targets and style preview. `connectors/{pi,kimi,claude}/manifest.js`, `connectors/claude/machine.js`, `connectors/contract.js`, `connectors/registry.json`, and `machine/test/connectors-contract.test.js` supply and validate those fields. Remaining groups and final validation are unfinished.
+
+### Group 10: `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js`
+
+```
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 47.731441
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 70.422571
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 33.693078
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 15.968382
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 42.179924
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 19.752743
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 89.981351
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 91.42347
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 9.251817
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 62.529464
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 3.818126
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 0.972208
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9409.079663
+```
+
+### Group 6: `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js`
+
+```
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 42.948144
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 63.354168
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 27.657928
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 13.510888
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 39.090391
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 15.113648
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 81.896995
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 83.899231
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 10.530683
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 59.957334
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 4.042817
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 0.936268
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9382.2249
+```
+
+### Group 7: `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js`
+
+```
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 44.522681
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 85.840786
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 42.143011
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 17.130168
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 35.900438
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 13.118602
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 90.951264
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 88.536988
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 8.778835
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 50.296694
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 4.761728
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 1.091597
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9400.72852
+```
+
+Final machine suite, viewer suite, export check, grep and provider command were not run; the implementation is incomplete.
+
+### Choices
+
+- `login.killTarget`: omitted field defaults to the bare session name, preserving existing behavior for the other connectors.
