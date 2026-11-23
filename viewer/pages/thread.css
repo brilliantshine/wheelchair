@@ -426,7 +426,7 @@ a.sent-file:hover { border-color: var(--accent-line); }
   body:not(.aside-open) .shell.on-thread.side-collapsed { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) 44px; }
   body:not(.aside-open) .shell.on-thread.list-collapsed.side-collapsed { grid-template-columns: 44px minmax(0, 1fr) 44px; }
   .shell.on-thread.list-collapsed .col-list { padding: 12px 8px; align-items: center; }
-  .shell.on-thread.list-collapsed .col-list > :not(.list-head),
+  .shell.on-thread.list-collapsed .col-list > :not(#list-head),
   .shell.on-thread.list-collapsed #new-toggle { display: none; }
   body:not(.aside-open) .shell.on-thread.side-collapsed .col-side { padding: 12px 8px; align-items: center; }
   body:not(.aside-open) .shell.on-thread.side-collapsed .col-side > :not(#side-collapse) { display: none; }
