@@ -3,7 +3,7 @@
 Checked against: `207c02f5e0b56cfbcc96046cca10a8df92002a9c` (origin/main and worktree HEAD).
 Files covered: `install.sh`, `machine/service.js`, `machine/API.md`, `machine/lib/project-mcp.js`, `machine/adapters/claude.js`, `machine/adapters/codex.js`, `machine/adapters/agy.js`, `viewer/app/threads.js`, `viewer/app/sessions.js`, `viewer/app/ready.js`, `viewer/app/cards.js`, `viewer/pages/thread.js`, `protocol/app/worker.md`, `protocol/app/verifier.md`, `protocol/app/cards-lead.md`, `docs/plans/local-projects/PLAN.md`.
 
-> Screen and archive paths were rechecked at `e4117bdcacf06f2a3c73dd22d8af8d8086cb00e3`; see [agent-screens.md](agent-screens.md). Other historical coverage keeps its original checked commit.
+> Screen and Ready paths: see [agent-screens.md](agent-screens.md), rechecked against `6e89dfb4b0bf67e121b8ab4c3b720844ee4a74d7`; historical claims below that screens and approval warnings do not exist are superseded. Other coverage retains its historical checked commit.
 
 ```text
 thread selects machine -> hub checks project and readiness -> machine creates worktree
