@@ -15,7 +15,7 @@ Four changes to how mockups and built screenshots behave in a thread:
 
 1. A thread with mockups in it stays still when new messages or cards arrive: no jump, no flash, no mockup reloading.
 2. Collin can tap a spot on a mockup and write a comment about that spot. The comment reaches whoever is drafting the mockups, with where it points.
-3. From a mockup's Open full size page, Collin can download it as a PNG picture, like he already can for diagrams.
+3. From a mockup's Open full size page, Collin can download it as a PNG picture, as already works for diagrams.
 4. A built screenshot's Open full size shows it at its true size on a phone, scrollable, with no extra tap to zoom.
 
 ## Why — the problem
