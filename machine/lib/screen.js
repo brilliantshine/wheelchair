@@ -22,7 +22,7 @@ function findCommand(word, cwd, searchPath) {
   return (searchPath || '').split(path.delimiter).some(dir => executable(path.resolve(cwd, dir || '.', word)));
 }
 function screenTools(searchPath = process.env.PATH) {
-  return { missing: TOOLS.filter(name => !findCommand(name, process.cwd(), searchPath)) };
+  return { missing: TOOLS.filter(name => !findCommand(name, process.cwd(), searchPath)), openboxInstalled: ['openbox', 'xprop'].every(name => findCommand(name, process.cwd(), searchPath)) };
 }
 function run(cmd, args, { env = process.env, timeout = 10000 } = {}) {
   return new Promise(resolve => {
@@ -37,7 +37,7 @@ function run(cmd, args, { env = process.env, timeout = 10000 } = {}) {
 class ScreenManager {
   constructor(service) {
     this.service = service; this.root = path.join(service.stateDir, 'screens'); this.prefix = `wcscreen-${hash(service.stateDir)}`;
-    this.maxScreens = 8; this.handoverMs = 5000;
+    this.maxScreens = 8; this.handoverMs = 5000; this.allowOpenbox = true;
     this.screens = new Map(); this.queues = new Map(); this.timers = new Set(); this.version = null;
   }
   dir(session) { return path.join(this.root, session.thread_id, session.name); }
@@ -54,12 +54,12 @@ class ScreenManager {
     try { state = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     let files = []; try { files = fs.readdirSync(dir); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     const next = kind => Math.max(1, ...files.map(f => Number(new RegExp(`^${kind}-(\\d+)\\.${kind === 'shot' ? 'png' : 'log'}$`).exec(f)?.[1] || 0) + 1));
-    state = { generation: 0, status: 'none', display: null, size: null, xvfb_pid: null, next_shot: 1, next_app: 1, apps: [], input_locked: false, ...state };
+    state = { generation: 0, status: 'none', display: null, size: null, xvfb_pid: null, next_shot: 1, next_app: 1, apps: [], input_locked: false, window_manager: null, ...state };
     state.next_shot = Math.max(state.next_shot, next('shot')); state.next_app = Math.max(state.next_app, next('app'));
     return { name: session.name, thread: session.thread_id, dir, state, base: `${this.prefix}-${session.thread_id}-${hash(session.name)}g${state.generation}` };
   }
   reset(screen) {
-    screen.state.generation++; screen.state.status = 'none'; screen.state.display = null; screen.state.size = null; screen.state.xvfb_pid = null; screen.state.apps = []; screen.state.input_locked = false;
+    screen.state.generation++; screen.state.status = 'none'; screen.state.display = null; screen.state.size = null; screen.state.xvfb_pid = null; screen.state.apps = []; screen.state.input_locked = false; screen.state.window_manager = null;
     try { this.trySave(screen); try { fs.unlinkSync(path.join(screen.dir, 'xauth')); } catch (e) { if (e.code !== 'ENOENT') this.service.log(e); } }
     finally { if (this.screens.get(screen.name) === screen) this.screens.delete(screen.name); }
   }
@@ -145,10 +145,10 @@ class ScreenManager {
     if (!reachable.ok) throw error(422, 'screens need a systemd user session on this machine');
     this.check(session, true);
     if (this.screens.size >= this.maxScreens) throw error(422, `screen limit reached: ${this.screens.size} screens running on this machine (limit ${this.maxScreens}); try again later`);
-    const screen = this.load(session); screen.state.generation++; screen.state.status = 'starting'; screen.state.size = size; screen.state.display = null; screen.state.apps = []; screen.state.input_locked = false;
+    const screen = this.load(session); screen.state.generation++; screen.state.status = 'starting'; screen.state.size = size; screen.state.display = null; screen.state.apps = []; screen.state.input_locked = false; screen.state.window_manager = null;
     screen.base = `${this.prefix}-${session.thread_id}-${hash(session.name)}g${screen.state.generation}`; this.screens.set(session.name, screen);
     try { this.save(screen); } catch (e) { if (this.screens.get(session.name) === screen) this.screens.delete(session.name); throw e; }
-    const generation = screen.state.generation, cookieFile = path.join(screen.dir, 'xauth'); let child;
+    const generation = screen.state.generation, cookieFile = path.join(screen.dir, 'xauth'); let child, wm;
     try {
       const cookie = await run('mcookie', [], { timeout: 10000 }); if (!cookie.ok || !cookie.stdout.trim()) throw error(422, 'screen did not start');
       this.fence(session, screen, generation);
@@ -173,11 +173,38 @@ class ScreenManager {
       if (number === null || !/^\d+$/.test(number)) throw error(422, 'screen did not start');
       result = await run('xauth', ['-f', cookieFile, 'add', `:${number}`, '.', cookie.stdout.trim()]); if (!result.ok) throw error(422, 'screen did not start');
       this.fence(session, screen, generation);
-      screen.state.display = `:${number}`; screen.state.xvfb_pid = child.pid; screen.state.status = 'running'; this.save(screen); return screen;
+      screen.state.display = `:${number}`;
+      if (this.allowOpenbox && screenTools().openboxInstalled) {
+        const configDir = path.join(screen.dir, 'openbox'), config = path.join(configDir, 'rc.xml');
+        try {
+          fs.mkdirSync(configDir, { recursive: true, mode: 0o700 }); fs.chmodSync(configDir, 0o700);
+          const bindings = ['Client', 'Frame'].map(context => `<context name="${context}">${['Left', 'Middle', 'Right'].map(button => `<mousebind button="${button}" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>`).join('')}</context>`).join('');
+          fs.writeFileSync(config, `<?xml version="1.0" encoding="UTF-8"?><openbox_config xmlns="http://openbox.org/3.4/rc"><keyboard/><mouse>${bindings}</mouse><applications><application class="*"><decor>no</decor></application></applications></openbox_config>`, { mode: 0o600 }); fs.chmodSync(config, 0o600);
+          const args = [...await this.scopeArgs(screen, 'wm'), 'openbox', '--sm-disable', '--config-file', config];
+          this.fence(session, screen, generation);
+          const fd = fs.openSync(path.join(screen.dir, 'wm.log'), 'a', 0o600); let exited = false;
+          const env = { ...process.env, DISPLAY: screen.state.display, XAUTHORITY: cookieFile, XDG_CONFIG_HOME: screen.dir, XDG_CONFIG_DIRS: screen.dir, HOME: screen.dir };
+          try { wm = spawn('systemd-run', args, { env, stdio: ['ignore', fd, fd] }); wm.once('exit', () => { exited = true; }); wm.once('error', () => { exited = true; }); } finally { fs.closeSync(fd); }
+          const end = Date.now() + 5000; let ready = false;
+          while (!exited && Date.now() < end) {
+            const probe = await run('xprop', ['-root', '_OB_CONFIG_FILE'], { env, timeout: Math.min(1000, end - Date.now()) });
+            if (!exited && probe.ok && probe.stdout.trim() === `_OB_CONFIG_FILE(UTF8_STRING) = "${config}"`) { ready = true; break; }
+            if (!exited && Date.now() < end) await delay(Math.min(100, end - Date.now()));
+          }
+          if (ready) screen.state.window_manager = 'openbox';
+          else { if (!exited) wm.kill('SIGKILL'); this.immediate(this.unit(screen, 'wm')); this.service.log('screen openbox did not become ready'); }
+        } catch (e) {
+          if (wm) { wm.kill('SIGKILL'); this.immediate(this.unit(screen, 'wm')); }
+          this.service.log(`screen openbox failed: ${e.message}`);
+        }
+      }
+      this.fence(session, screen, generation);
+      screen.state.xvfb_pid = child.pid; screen.state.status = 'running'; this.save(screen); return screen;
     } catch (e) {
       if (this.screens.get(session.name) === screen) await this.teardown(screen);
       else {
         if (child) this.immediate(this.unit(screen, 'x'));
+        if (wm) this.immediate(this.unit(screen, 'wm'));
         throw error(409, 'session stopped or thread archived');
       }
       throw e.status ? e : error(422, 'screen did not start');
@@ -189,7 +216,7 @@ class ScreenManager {
     env.DISPLAY = screen.state.display; env.XAUTHORITY = path.join(screen.dir, 'xauth');
     const appEnv = { ...env, ...Object.fromEntries(parsed.env) };
     if (!findCommand(parsed.command[0], session.worktree, appEnv.PATH)) throw error(422, `command not found: ${parsed.command[0]}`);
-    const input = require('./screen-input'); const ctx = { env }; const phaseStart = Date.now(); const baseline = await input.windowIds(ctx, { probeTimeoutMs: 1000, deadline: phaseStart + 6000 });
+    const input = require('./screen-input'); const ctx = { env, openbox: screen.state.window_manager === 'openbox' }; const phaseStart = Date.now(); const baseline = await input.windowIds(ctx, { probeTimeoutMs: 1000, deadline: phaseStart + 6000 });
     this.fence(session, screen, generation);
     const n = screen.state.next_app++; const log = path.join(screen.dir, `app-${n}.log`); const unit = this.unit(screen, `app${n}`);
     const command = ['env', '--', ...parsed.env.map(([k, v]) => `${k}=${v}`), ...parsed.command];
@@ -248,13 +275,13 @@ class ScreenManager {
     }
     if (op === 'stop') { if (screen) await this.teardown(screen); return { ok: true }; }
     if (op === 'status') {
-      if (!screen) return { ok: true, running: false };
+      if (!screen) return { ok: true, running: false, window_manager: null };
       const apps = await Promise.all(screen.state.apps.map(async app => ({ n: app.n, state: !app.failed && await this.scopeActive(app.unit) ? 'running' : 'exited', log: app.log, pid: app.pid ?? null })));
-      return { ok: true, running: true, display: screen.state.display, size: screen.state.size, apps };
+      return { ok: true, running: true, display: screen.state.display, size: screen.state.size, apps, window_manager: screen.state.window_manager };
     }
     if (!screen) throw error(422, 'no screen; run wc.js screen start first');
     if (screen.state.input_locked && ['move', 'click', 'drag', 'type', 'key', 'focus'].includes(op)) throw error(422, LOCKED);
-    const input = require('./screen-input'); const ctx = { env: { ...process.env, DISPLAY: screen.state.display, XAUTHORITY: path.join(screen.dir, 'xauth') } }; const generation = screen.state.generation;
+    const input = require('./screen-input'); const ctx = { env: { ...process.env, DISPLAY: screen.state.display, XAUTHORITY: path.join(screen.dir, 'xauth') }, openbox: screen.state.window_manager === 'openbox' }; const generation = screen.state.generation;
     let result;
     try {
       if (op === 'shot') { const n = screen.state.next_shot++; this.save(screen); result = { ok: true, ...await input.shot(ctx, { size: screen.state.size, window: parsed.window, outPath: path.join(screen.dir, `shot-${n}.png`) }) };

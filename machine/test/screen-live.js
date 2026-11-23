@@ -10,6 +10,7 @@ const crypto = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
 const { makeTemp } = require('../../test-support/run-dir');
 const { MachineService } = require('../service');
+const { screenTools } = require('../lib/screen');
 
 const chrome = process.argv[2];
 const wc = path.join(__dirname, '..', '..', 'viewer', 'app', 'wc.js');
@@ -142,6 +143,16 @@ exit 0
   check('run xmessage succeeds', run2.status === 0 && run2.body?.ok, run2.err || run2.out);
   const win2 = run2.body?.focused?.id;
   check('run xmessage reports focused as its own window, not the first', typeof win2 === 'number' && win2 !== win1, run2.body);
+
+  if (screenTools().openboxInstalled) {
+    check('openbox is running', (await client(['status'])).body?.window_manager === 'openbox');
+    check('openbox lists Chromium', (await windows()).some(w => w.id === win1));
+    const f2 = await client(['focus', String(win2)]), f1 = await client(['focus', String(win1)]), key = await client(['key', 'F11']);
+    let full = false, end = Date.now() + 3000;
+    while (Date.now() < end && !full) { const w = (await windows()).find(w => w.id === win1); full = !!w && w.width === 1280 && w.height === 800; if (!full) await delay(100); }
+    check('focus switches windows and F11 fills the screen', f2.status === 0 && f1.status === 0 && key.status === 0 && full);
+    await client(['key', 'F11']);
+  }
 
   // Clear the second window's name directly, with the screen's own display and cookie.
   let dirs = []; try { dirs = fs.readdirSync(shotDir); } catch { /* no screen dir: the checks below fail visibly */ }
