@@ -34,6 +34,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Built's Open full size opens the picture page with the screenshot at its natural pixel size in a scrolling area. | The picture page already does this for mockups (`viewer/pages/picture.js:61-79`); the raw file link leaves scaling to the phone. | defaulted |
 | 7 | A mockup PNG is drawn in the phone's browser (fetch the mockup HTML, draw it to a canvas), not on the machine. | Collin picked it: no new install, same as diagram PNGs. If a browser refuses, the HTML download stays and the machine route is Deferred. | user |
 | 8 | A spot comment's message names the mockup by file path, not by card (supersedes that part of Decision 4); the lead handles it by the existing Mockups rules for the current stage. | Round 1: a designer may not be running, and comments on a build's Mockup half are usually about the build; the versioned file path already identifies the mockup. | review-round-1 |
+| 9 | Decision 8 also supersedes Decision 4's "passes it to the designer": the lead routes a spot comment by the Mockups rules for the current stage (live designer while drafting, fresh designer during review, stub after Start building), keeping its location line. | Round 2: the log contradicted itself. | review-round-2 |
 
 ## Spec
 
@@ -207,6 +208,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Decision 4's routing to the designer not superseded | upheld | Decision 9 |
 
 ## Implementation Tasks
 
