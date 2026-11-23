@@ -240,3 +240,24 @@ $ bash machine/test/run.sh        → # tests 731  # pass 711  # fail 18   (the 
 $ (cd viewer && npm test)         → # tests 918  # pass 918  # fail 0
 $ node connectors/export.js --check   → exit 0;  contract + guard tests → pass 6, fail 0
 ```
+
+### Remediation 5 — 2026-11-23
+
+Verification attempt 5 (9fba590b): verifier-9 (claude-opus-5-5) PASS with no gaps; verifier-10 (gpt-6.2-sol) FAIL with five future-tool gaps (`REMEDIATION-5.md`). One rare path (guard spellings `kimi )` and `[[ codex == $cli ]]`) to Accepted Risks (`verification-5`).
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| L1 a pin the pin reader rejects | one pin-model rule (`PIN_MODEL`) used by `parse_pins` and by `set`, which refuses names the pin file cannot hold | `codex/model.sh` | `codex/test/run.sh` 167/167 (sixth provider with capitals refused; GPT pin still read back) |
+| L2 effort outside the tool's list | `checkEffort` refuses any effort not in `models.efforts`: above the highest → `<label>'s highest effort is <highest>` (GPT text unchanged), otherwise `<label> has no <effort> effort` | `viewer/app/sessions.js` | `viewer/test/worker-effort-membership.test.js` (bite-checked) |
+| L3 missing model error text | `settings.modelError` required | `connectors/contract.js` | contract test; minimal-connector fixtures keep it |
+| L4 hand-written permission labels | manifest `settings.permissionName` (required with `permissionMode`); the page joins names in registry order; the four labels are byte-identical | `viewer/pages/settings.js`, `connectors/{claude,codex,agy,kimi}/manifest.js` | `viewer/test/app-settings.spec.js` (exact strings) |
+
+Lanes: R6 and R6b light / gpt-6-luna.
+
+Validation on the merged head 1e75a6d9:
+```
+$ node --test --test-timeout=90000 machine/test/*.test.js   → # tests 732  # pass 709  # fail 20  # cancelled 1   (18 known wslpath + win-tool-proxy timeout and "project tools launch privately…" under load; alone: 27/27 and pass)
+$ (cd viewer && node --test --test-timeout=120000 test/*.test.js)   → # tests 919  # pass 919  # fail 0   (R6b branch, identical code)
+$ bash codex/test/run.sh          → RESULT 167 passed, 0 failed
+$ node connectors/export.js --check   → exit 0
+```
