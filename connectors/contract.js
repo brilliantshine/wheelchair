@@ -43,7 +43,7 @@ function validateManifest(m) {
   for (const cap of Object.keys(CAPABILITIES)) check(`capabilities.${cap}`,bool);
   check('settings.weights.unknown', v => typeof v === 'number' && Number.isFinite(v));
   check('settings.plans', v => arr(v) && v.every(pair => arr(pair) && pair.length === 2 && pair.every(s => str(s) && s.length > 0)) && v.some(([key]) => key === 'unknown') && v.every(([key]) => Object.hasOwn(m.settings.weights, key)));
-  check('models.efforts',v=>arr(v)&&v.every(str)); check('placement.workerRank',v=>v===null||typeof v==='number');
+  check('models.efforts',v=>arr(v)&&v.every(word => str(word) && /^[a-z]+$/.test(word))); check('placement.workerRank',v=>v===null||typeof v==='number');
   for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested','models.familyCommand','models.bareTierSet','settings.scoutAgentTool','usage.showWarning','usage.probeWhileLive','usage.tryEveryMachine','settings.monoModelNames','usage.defaultProblem']) check(f,bool,false);
   check('shortName',str,false);
   if (m.capabilities.aside) check('asideParentField',str); else if ('asideParentField' in m) throw new Error(`${m.cli}: asideParentField`);
@@ -62,10 +62,13 @@ function validateManifest(m) {
   check('recoverFallback',bool,false);
   check('recoverRank',v=>typeof v==='number'||(!m.capabilities?.recover&&v===null),Boolean(m.capabilities?.recover));
   check('install.label',str);
+  for (const field of ['models.format', 'models.hubPattern', 'settings.modelPattern']) check(field, v => v.startsWith('^') && v.endsWith('$'));
+  for (const slot of ['light', 'standard', 'heavy', 'critical', 'lead']) check(`models.pins.${slot}`, obj);
   const modelFormat = new RegExp(m.models.format);
   for (const [slot, pin] of Object.entries(m.models.pins)) {
     const field = `models.pins.${slot}`;
     if (!obj(pin) || !str(pin.model) || (pin.effort !== undefined && !str(pin.effort))) throw new Error(`${m.cli}: ${field}`);
+    if (pin.effort !== undefined && !m.models.efforts.includes(pin.effort)) throw new Error(`${m.cli}: ${field}`);
     if (pin.model !== 'none' && (!PIN_MODEL.test(pin.model) || !modelFormat.test(pin.model))) throw new Error(`${m.cli}: ${field}`);
   }
   check('settings.modelOptions', v => obj(v) && (arr(v.fixed) && v.fixed.every(pair => arr(pair) && pair.length === 2 && pair.every(str)) || str(v.listedKey) && ['strings','objects'].includes(v.listedShape) && typeof v.includePins === 'boolean'), false);
