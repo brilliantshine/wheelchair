@@ -626,7 +626,7 @@ async function event(hub, payload) {
     const prior = readings[target.account] || { account: target.account, machine: thread.machine, five_hour: null, week: null };
     await usage.record(hub, { ...prior, at: new Date(Math.max(Date.now(), Date.parse(prior.at) + 1 || 0)).toISOString(), limited_until: limit });
     target.limited_until = limit;
-    if (target.live && !target.switching && ['claude', 'gpt'].includes(target.provider)) {
+    if (target.live && !target.switching && connectors.byProvider(target.provider)?.capabilities.liveSwitch) {
       const selection = await chooseSwitch(hub, thread, target);
       if (selection) {
         const id = crypto.randomUUID(), from = target.account, account = selection.account;
