@@ -446,8 +446,7 @@ class MachineService {
     const markers = await readJson(this.archiveMarkersPath, { archiving: [], archived: [] });
     this.archivingThreads = new Set(markers.archiving || []);
     this.archivedThreads = new Set(markers.archived || []);
-    this.checkKimiVersion();
-    this.checkPiVersion();
+    for (const m of connectors.list().filter(m => m.capabilities.versionCheck)) this.checkVersion(m.cli);
     await this.recoverFromTmux();
     await this.screens.startup();
     await this.win.startup();
@@ -803,8 +802,7 @@ class MachineService {
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
-    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); }
-    if (input.cli === 'kimi') { await this.checkKimiVersion(); const status = this.cliStatus('kimi'); if (!status.installed) die('Kimi Code is not installed'); if (status.problem) die(status.problem); }
+    await this.versionGate(input.cli);
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
     const dir = accountDir(account.dir, account.id);
@@ -837,7 +835,7 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); session.pi_version = status.version || null; }
+    if (adapter.recordLaunch) adapter.recordLaunch(session, await this.versionGate(input.cli));
     let windowsTools;
     try {
     const prepared = await this.prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, false);
@@ -1748,74 +1746,22 @@ class MachineService {
     const live = this.liveTmux();
     if (live) for (const session of Object.values(this.sessions)) if (!live.has(session.name)) await this.piExitedBeforeReady(session);
   }
-  checkPiVersion(executable = adapters.pi.resolveCli()) {
-    if (!executable) return Promise.resolve();
-    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
-    this.piVersions ||= new Map();
-    const key = JSON.stringify([executable, mtime]);
-    if (!this.piVersions.has(key)) {
-      const entry = {};
-      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.piVersionTimeoutMs ?? 5000 }, (error, stdout) => {
-        const output = stdout.trim();
-        entry.version = !error && /^v?\d+\.\d+\.\d+$/.test(output) ? output.replace(/^v/, '') : null;
-        resolve(entry);
-      }));
-      this.piVersions.set(key, entry);
-    }
-    return this.piVersions.get(key).promise;
-  }
-  piVersionStatus(version, login) {
-    const match = typeof version === 'string' && version.match(/^(\d+)\.(\d+)\.(\d+)$/);
-    if (!match) return { installed: true, logged_in: login.logged_in, version: null, warning: "Pi's version couldn't be read. If OpenRouter agents fail, this may be why." };
-    const [major, minor, patch] = match.slice(1).map(Number);
-    const old = major < 1 || major === 1 && (minor < 5 || minor === 5 && patch < 2);
-    const newer = major > 1 || major === 1 && minor > 5;
-    return { installed: true, logged_in: !old && login.logged_in, version, ...(old ? { problem: `Pi 1.5.2 or newer is needed (found ${version})` } : newer ? { warning: `Pi ${version} is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.` } : {}) };
-  }
-  checkKimiVersion(executable = adapters.kimi.resolveCli()) {
-    if (!executable) return Promise.resolve();
-    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
-    this.kimiVersions ||= new Map();
-    const key = JSON.stringify([executable, mtime]);
-    if (!this.kimiVersions.has(key)) {
-      const entry = {};
-      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.kimiVersionTimeoutMs ?? 5000 }, (error, stdout, stderr) => {
-        entry.output = stdout.trim() || stderr.trim() || 'no output';
-        entry.failed = !!error;
-        resolve(entry);
-      }));
-      this.kimiVersions.set(key, entry);
-    }
-    return this.kimiVersions.get(key).promise;
-  }
-  async kimiLaunchPath() {
-    const executable = adapters.kimi.resolveCli();
-    if (!executable) die('Kimi Code is not installed');
-    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { die('Kimi Code is not installed'); }
-    await this.checkKimiVersion(executable);
-    const entry = this.kimiVersions?.get(JSON.stringify([executable, mtime]));
-    if (!entry || entry.output === undefined) die('Kimi Code is not installed');
-    const status = this.kimiVersionStatus(entry, { logged_in: false });
+  checkPiVersion(executable) { return Object.values(adapters).find(a => a.recordLaunch).checkPiVersion.call(this, executable); }
+  piVersionStatus(version, login) { return Object.values(adapters).find(a => a.recordLaunch).piVersionStatus(version, login); }
+  checkKimiVersion(executable) { return Object.values(adapters).find(a => a.launchPath).checkKimiVersion.call(this, executable); }
+  kimiLaunchPath() { return Object.values(adapters).find(a => a.launchPath).launchPath(this); }
+  kimiVersionStatus(entry, login) { return Object.values(adapters).find(a => a.launchPath).kimiVersionStatus(entry, login); }
+  checkVersion(cli, executable) { return adapters[cli].checkVersion(this, executable); }
+  async versionGate(cli) {
+    if (!connectors.manifest(cli).capabilities.versionCheck) return;
+    await this.checkVersion(cli);
+    const status = this.cliStatus(cli), manifest = connectors.manifest(cli);
+    if (!status.installed) die(`${manifest.shortName || manifest.displayName} is not installed`);
     if (status.problem) die(status.problem);
-    return { executable };
-  }
-  kimiVersionStatus(entry, login) {
-    if (!entry || entry.output === undefined) return { installed: true, logged_in: false, problem: "Checking Kimi Code's version" };
-    const output = entry.output;
-    const firstLine = output.split(/\r?\n/, 1)[0].replace(/^(?:kimi-code|kimi code|kimi)(?:\s+|,\s*)/i, '').replace(/^version\s+/i, '');
-    const match = (firstLine.split(/\s+/)[0] || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
-    const valid = !entry.failed && match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && (Number(match[3]) > 3 || Number(match[3]) === 3 && !match[4])));
-    return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
+    return status;
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
-    if (cli === 'pi') { const executable = adapters.pi.resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } this.checkPiVersion(executable); return this.piVersionStatus(this.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); }
-    if (cli === 'kimi') {
-      const executable = adapters.kimi.resolveCli(); if (!executable) return { installed: false, logged_in: false };
-      let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; }
-      this.checkKimiVersion();
-      const entry = this.kimiVersions.get(JSON.stringify([executable, mtime]));
-      return this.kimiVersionStatus(entry, login);
-    }
+    if (connectors.manifest(cli).capabilities.versionCheck) return adapters[cli].versionStatus(this, login);
     const version = command('sh', ['-c', `command -v ${cli}`]);
     if (!version.ok) return { installed: false, logged_in: false };
     const check = command(cli, ['--version']);

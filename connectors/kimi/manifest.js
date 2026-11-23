@@ -18,7 +18,7 @@ module.exports = {
     "spend": false,
     "liveSwitch": false,
     "aside": false,
-    "versionCheck": false,
+    "versionCheck": true,
     "steps": false
   },
   "install": {

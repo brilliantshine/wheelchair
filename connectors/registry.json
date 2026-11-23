@@ -437,7 +437,7 @@
         "spend": false,
         "liveSwitch": false,
         "aside": false,
-        "versionCheck": false,
+        "versionCheck": true,
         "steps": false
       },
       "install": {
@@ -551,7 +551,7 @@
         "spend": true,
         "liveSwitch": false,
         "aside": true,
-        "versionCheck": false,
+        "versionCheck": true,
         "steps": false
       },
       "install": {

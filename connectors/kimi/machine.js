@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const fsp = fs.promises;
 const path = require('node:path');
 const os = require('node:os');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFile } = require('node:child_process');
 const c = require('../common');
 const home = dir => path.resolve(dir || c.home('KIMI_CODE_HOME', '.kimi-code'));
 function resolveCli() {
@@ -246,6 +246,44 @@ const poller = {
   }
 };
 module.exports = {
+  checkVersion: (service, executable) => service.checkKimiVersion(executable),
+  versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('kimi'); return service.kimiVersionStatus(service.kimiVersions.get(JSON.stringify([executable, mtime])), login); },
+  launchPath: service => module.exports.kimiLaunchPath.call(service),
+  checkKimiVersion(executable = resolveCli()) {
+    if (!executable) return Promise.resolve();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
+    this.kimiVersions ||= new Map();
+    const key = JSON.stringify([executable, mtime]);
+    if (!this.kimiVersions.has(key)) {
+      const entry = {};
+      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.kimiVersionTimeoutMs ?? 5000 }, (error, stdout, stderr) => {
+        entry.output = stdout.trim() || stderr.trim() || 'no output';
+        entry.failed = !!error;
+        resolve(entry);
+      }));
+      this.kimiVersions.set(key, entry);
+    }
+    return this.kimiVersions.get(key).promise;
+  },
+  async kimiLaunchPath() {
+    const executable = resolveCli();
+    if (!executable) (() => { throw new Error('Kimi Code is not installed'); })();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { (() => { throw new Error('Kimi Code is not installed'); })(); }
+    await this.checkKimiVersion(executable);
+    const entry = this.kimiVersions?.get(JSON.stringify([executable, mtime]));
+    if (!entry || entry.output === undefined) (() => { throw new Error('Kimi Code is not installed'); })();
+    const status = this.kimiVersionStatus(entry, { logged_in: false });
+    if (status.problem) (() => { throw new Error(status.problem); })();
+    return { executable };
+  },
+  kimiVersionStatus(entry, login) {
+    if (!entry || entry.output === undefined) return { installed: true, logged_in: false, problem: "Checking Kimi Code's version" };
+    const output = entry.output;
+    const firstLine = output.split(/\r?\n/, 1)[0].replace(/^(?:kimi-code|kimi code|kimi)(?:\s+|,\s*)/i, '').replace(/^version\s+/i, '');
+    const match = (firstLine.split(/\s+/)[0] || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
+    const valid = !entry.failed && match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && (Number(match[3]) > 3 || Number(match[3]) === 3 && !match[4])));
+    return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
+  },
   validTranscript: (session, stat, offset) => stat.dev === session.kimi_log_id?.dev && stat.ino === session.kimi_log_id?.ino && stat.size >= offset && !session.end_reason,
   turnPoller: poller.turnPoller, bindTranscript: poller.kimiBinding, spoolWaiting: poller.kimiSpoolWaiting,
   recognizePane(text) { const lines = text.split(/\r?\n/).map(line => line.trim()); return (/^\s*(?:Ask When Needed|Never Ask)\b/im.test(text) && /^\s*context:\s*\d+%/im.test(text)) || (lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line))); },
