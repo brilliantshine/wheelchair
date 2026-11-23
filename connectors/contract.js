@@ -33,8 +33,9 @@ function validateManifest(m) {
   const str = v => typeof v === 'string', bool = v => typeof v === 'boolean', obj = v => !!v && typeof v === 'object' && !Array.isArray(v), arr = Array.isArray;
   for (const f of ['cli','provider','label','displayName','install.command','install.binary','settings.modelPattern','models.format','models.hubPattern']) check(f,str);
   for (const f of ['typesRoleMessage','singleAccount']) check(f,bool);
-  for (const f of ['capabilities','install','settings','models','models.pins','placement']) check(f,obj);
+  for (const f of ['capabilities','install','settings','models','models.pins','placement','settings.weights']) check(f,obj);
   for (const cap of Object.keys(CAPABILITIES)) check(`capabilities.${cap}`,bool);
+  check('settings.weights.unknown', v => typeof v === 'number' && Number.isFinite(v));
   check('models.efforts',v=>arr(v)&&v.every(str)); check('placement.workerRank',v=>v===null||typeof v==='number');
   for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested','models.familyCommand','models.bareTierSet','settings.scoutAgentTool','usage.showWarning','usage.probeWhileLive','usage.tryEveryMachine','settings.monoModelNames','usage.defaultProblem']) check(f,bool,false);
   for (const f of ['shortName','asideParentField']) check(f,str,false);
@@ -46,7 +47,7 @@ function validateManifest(m) {
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
   for (const f of ['settings.modelHeadsUp','settings.reviewFamily']) check(f,bool,false);
   for (const f of ['settings.permissionChoices','settings.plans']) check(f,arr,false);
-  for (const f of ['settings.weights','settings.reportedPlans','settings.oldPlanWeights','models.slotAliases','report','hook']) check(f,obj,false);
+  for (const f of ['settings.reportedPlans','settings.oldPlanWeights','models.slotAliases','report','hook']) check(f,obj,false);
   for (const f of ['install.pathRank','recoverRank']) check(f,v=>v===null||typeof v==='number',false);
   check('recoverFallback',bool,false);
   check('recoverRank',v=>typeof v==='number'||(!m.capabilities?.recover&&v===null),Boolean(m.capabilities?.recover));

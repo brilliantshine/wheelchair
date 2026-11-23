@@ -209,10 +209,10 @@ the type is checked only when present. Unless a default is stated below, an omit
 
 ### Settings page (`settings`)
 
-`settings.modelPattern` (string) is required. Everything else is defaulted: `modelPlaceholder`,
+`settings.modelPattern` (string) and `settings.weights` (object with numeric `unknown`) are required. Everything else is defaulted: `modelPlaceholder`,
 `cliLabel`, `vendor`, `setupUrl`, `signInKind`, `modelError` (strings); `permissionMode`,
 `accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices` and
-`plans` (arrays of `[value, label]`); `weights`, `reportedPlans`, `oldPlanWeights` (objects);
+`plans` (arrays of `[value, label]`); `reportedPlans`, `oldPlanWeights` (objects);
 `modelHeadsUp`, `reviewFamily`, `scoutAgentTool`, `monoModelNames` (booleans); `keyPrompt`
 (string); `modelOptions` (object). `modelPattern` is the browser's own model-name check and
 differs from `models.format` and `models.hubPattern` on purpose, so each place keeps rejecting
