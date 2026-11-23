@@ -115,13 +115,16 @@ class AsideTurns {
     const timer = setTimeout(() => { if (t.state === 'running') { if (t.pid) this.proc.kill(t.pid); this.finish(t, { state: 'failed', error: 'took too long' }).catch(() => {}); } }, this.timeoutMs);
     try {
       const prepared = adapter.asidePrepare ? await adapter.asidePrepare(runChild, onSpawn) : { servers: [] };
-      if (prepared.error) return await this.finish(t, { state: 'failed', error: prepared.error });
+      if (prepared.error) return await this.finish(t, { state: 'failed', error: redact(adapter, prepared.error) });
       const servers = prepared.servers;
       if (t.state !== 'running') return;
       const message = i.access ? `${i.prompt}\n\nYour access is ${i.access}.` : i.prompt;
       const r = await runChild(adapter.asideArgv(i, { prompt, servers }), adapter.asideMessage ? adapter.asideMessage(i, prompt, message) : message, onSpawn);
       if (t.state !== 'running') return;
-      await this.finish(t, adapter.asideResult(i, r));
+      const result = adapter.asideResult(i, { ...r, out: redact(adapter, r.out), err: redact(adapter, r.err) });
+      if (result.reply !== undefined) result.reply = redact(adapter, result.reply);
+      if (result.error !== undefined) result.error = redact(adapter, result.error);
+      await this.finish(t, result);
     } finally { clearTimeout(timer); }
   }
 }
