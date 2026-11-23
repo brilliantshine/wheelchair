@@ -50,3 +50,28 @@ npm --prefix viewer run test:browser -- app-harnesses.spec.js app-file-preview.s
 Log: /tmp/backgrounds-main-harness-file-NeKStR/output.log. Representative Harnesses rows/switch/install UI and all sent-file preview cases execute in both browsers.
 
 Changed JS syntax checks and the integration viewer diff whitespace check pass. The earlier full Node/browser passes remain documented historical results; no claim is made that the entire evolved upstream suite was rerun. Fresh independent verification follows this committed integration.
+
+
+## Fresh independent integration verification
+
+Verifier: /root/finish_normal_use/verify_main_integration (native independent agent)
+
+```text
+COMMIT: 174b4607e831df60a0b6d3d00994a90e16fab380
+VERDICT: PASS
+TMPDIR=/tmp/backgrounds-independent-integration-node-7yKIIk/tmp node --test --test-name-pattern 'background normalization retains|API saves and serves all formats' viewer/test/background-completion.test.js
+2 passed; 0 failed; 0 skipped; exit0
+```
+
+Log: /tmp/backgrounds-independent-integration-node-7yKIIk/output.log.
+
+```text
+npm --prefix viewer run test:browser -- background-readiness.spec.js background-editor.spec.js background-rendering.spec.js background-settings-surfaces.spec.js app-settings.spec.js --grep 'file choice waits|unchanged saved metadata|opening an agent lesson|clean editor follows shared|eight sections|shared pages and standalone|all Settings categories' --output=/tmp/backgrounds-independent-integration-browser-Lcre29/results
+14 passed (13.2s); 0 failed; 0 skipped; exit0
+```
+
+Log: /tmp/backgrounds-independent-integration-browser-Lcre29/output.log. This run used the private browser environment described above. Other tests were excluded by filters, not reported as skipped.
+
+Independent source review found no normal-use integration gap. Incoming Harnesses code is byte-for-byte retained, and the settings module differs from upstream only by the two background additions. Eight-section navigation, readiness/focus, real remote updates, lesson teardown, sent-file appearance and solid Harnesses surfaces check out. All eight accepted risks remain closed. Syntax and viewer diff-whitespace checks pass; the verifier left the worktree clean. Broad evolved-upstream suites were not repeated.
+
+The following report-record commit is documentation only; the verified source/tests remain unchanged.

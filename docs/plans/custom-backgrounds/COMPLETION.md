@@ -2,7 +2,7 @@
 slug: custom-backgrounds
 date: 2026-11-20
 implemented-by: standard gpt/gpt-6.1-terra (including xhigh completion lanes); sub-lead gpt/gpt-6.1-sol
-verified-by: ["/root/finish_normal_use/verify_remediation (native independent)"]
+verified-by: ["/root/finish_normal_use/verify_remediation (native independent)", "/root/finish_normal_use/verify_main_integration (native independent)"]
 ---
 
 # Completion Report — Custom image and GIF backgrounds
@@ -31,7 +31,7 @@ Viewer-only implementation is complete. Initial independent verification found t
 | Bounded format signatures/container payload checks; safe errors; native UI decoding | this run | viewer/pages/background-format.js:15; viewer/app/background.js:159 | background-completion.test.js:67 |
 | GIF block walk infinite loop/no-loop/finite/GIF87a promotion without frame changes | this run | viewer/pages/background-format.js:93 | background-completion.test.js:48; background.test.js:9 |
 | Shared browser/CommonJS helper; original bounded bytes vs normalized preview | this run | viewer/pages/background-format.js:1; viewer/pages/settings.js:1422 | background-completion.test.js; background-editor.spec.js |
-| Shared external renderer/css on ten signed-in shells; ownership routers | this run | viewer/pages/background.js:1; viewer/pages/background.css:1; viewer/AGENTS.md | background-rendering.spec.js:107 |
+| Shared external renderer/css on eleven signed-in shells; ownership routers | this run | viewer/pages/background.js:1; viewer/pages/background.css:1; viewer/AGENTS.md | background-rendering.spec.js:107 |
 | Fixed centered-cover decorative layer; only image opacity; original reset painting | this run | viewer/pages/background.js:13; viewer/pages/background.css:1 | background-editor.spec.js:111; background-rendering.spec.js:162 |
 | Solid content surfaces, gutters,390/1280 widths, input/focus/scroll | this run | viewer/pages/background.css:5; viewer/pages/background.css:24; viewer/pages/settings.css | background-rendering.spec.js:107 |
 | Standalone graph exempt; framed documents skip initialization before requests | this run | viewer/index.html; viewer/pages/background.js:6 | background-rendering.spec.js:107; existing graph browser suite |
@@ -41,7 +41,7 @@ Viewer-only implementation is complete. Initial independent verification found t
 | No repeated image/node assignment on opacity/poll; native GIF beyond finite stop | this run | viewer/pages/background.js:23; viewer/pages/background.js:54 | background-editor.spec.js:111; background-rendering.spec.js:77 |
 | Narrow img-src blob CSP; no arbitrary HTML/styles from images | this run | viewer/server.js:45; viewer/pages/settings.js:1424 | routes.test.js; background-completion.test.js |
 | Isolated shared/helper and manual browser fixture state; sequential restart | this run | viewer/test/helpers/server.js:66; viewer/test/pages.spec.js:85; viewer/test/server-isolation.test.js | server-isolation.test.js; background.test.js:18 |
-| All seven Settings categories keep unboxed text/control groups opaque, with transparent outer gutters | this run | viewer/pages/background.css:28 | background-settings-surfaces.spec.js:25 (red before fix, green both browsers) |
+| All eight Settings categories keep unboxed text/control groups opaque, with transparent outer gutters | this run | viewer/pages/background.css:28 | background-settings-surfaces.spec.js:25 (red before fix, green both browsers) |
 | Thread controls wait for own initial data; slow appearance metadata does not block Send | this run | viewer/pages/thread.html:50; viewer/pages/thread.js:1141 | background-rendering.spec.js:200 (red before fix, green both browsers) |
 | Unchanged clean polling preserves slider keyboard focus and native image identity | this run | viewer/pages/settings.js:1413; viewer/pages/settings.js:1506 | background-readiness.spec.js:45 |
 | Existing auth, graph interactions and unrelated Settings behavior | pre-existing | viewer/server.js; viewer/pages/settings.js | pre-existing architecture; full Node and both-browser suite |
@@ -135,3 +135,6 @@ Fresh independent remediation verification passed on4cf9349548597a09560b2c0197ce
 ## Current main integration
 
 Upstream main0682593b was merged in d83cb509 with all incoming functionality retained. Background remains appended to the now-eight-section Settings UI; combined preferences retain Harnesses/onboarding/lessons/auto-merge/user-name fields. Lesson deep-links release local previews; the new sent-file shell loads shared appearance assets; Harnesses inner surfaces stay opaque. Focused post-merge Node77, appearance58, Settings70 and Harnesses/sent-file20 checks pass. Exact commands and limits are in INTEGRATION.md. No broad evolved-upstream pass is claimed, and no accepted risk was reopened. Fresh independent integration verification follows the committed merge/test expectation record.
+
+
+Fresh independent integration verification PASS on174b4607e831df60a0b6d3d00994a90e16fab380:2 targeted Node and14 both-browser cases pass with no normal-use gap. The verifier confirmed incoming Harnesses is byte-for-byte preserved and settings differs from current main only by background defaults/normalization. All eight accepted risks stay closed; source/tests remain unchanged by the documentation-only verification record. See INTEGRATION.md for exact commands and limits.
