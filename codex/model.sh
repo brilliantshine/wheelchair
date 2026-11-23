@@ -63,6 +63,9 @@ def blank_pins():
     return {provider: {} for provider in PROVIDERS}
 
 
+PIN_MODEL = re.compile(r"[a-z0-9][a-z0-9._/:-]*")
+
+
 # model-script: legacy GPT pin syntax
 def parse_pins(text):
     pins, skipped, seen = blank_pins(), [], set()
@@ -77,11 +80,11 @@ def parse_pins(text):
             skipped.append(skip.group(1))
             continue
         entry = re.fullmatch(
-            r"(" + "|".join(map(re.escape, PROVIDERS)) + r")\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._/:-]*)(?:\s+@([a-z]+))?", line)
+            r"(" + "|".join(map(re.escape, PROVIDERS)) + r")\.([a-z-]+)\s*=\s*(\S+?)(?:\s+@([a-z]+))?", line)
         if entry is not None:
             provider, raw_slot, model, effort = entry.groups()
             slot = slot_for(provider, raw_slot)
-            if slot is None or not value_ok(provider, model):
+            if slot is None or PIN_MODEL.fullmatch(model) is None or not value_ok(provider, model):
                 return None
             if model == "none":
                 if effort is not None:
@@ -432,7 +435,7 @@ def main(root, argv):
             # model-script: GPT effort wording
             print("GPT effort must be one of: low, medium, high, xhigh", file=sys.stderr)
             die_usage()
-        if (slot is None or not value_ok(provider, model)
+        if (slot is None or (model != "none" and PIN_MODEL.fullmatch(model) is None) or not value_ok(provider, model)
                 or (model == "none" and effort is not None)
                 or (effort is not None and effort not in EFFORTS[provider])):
             die_usage()
