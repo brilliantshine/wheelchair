@@ -367,7 +367,7 @@ npm --prefix viewer run test:browser
 
 ### Round 4 — 2026-11-23
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:**
 - Decision 17 / §2 "Fresh starts": every new assistant lead starts with an empty restart context; queued messages still move; §1 turning on uses it; §7 rule replaced.
