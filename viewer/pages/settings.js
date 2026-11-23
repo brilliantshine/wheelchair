@@ -177,7 +177,7 @@
     const effort = cell && cell.effort ? cell.effort : '';
     const wrap = h('div', { class: 'cell' });
     const label = `${PROVIDER_NAME[provider]} ${slot} model`;
-    const select = h('select', { 'aria-label': label, class: provider === 'claude' ? '' : 'mono' },
+    const select = h('select', { 'aria-label': label, class: toolOf(provider).settings.monoModelNames ? 'mono' : '' },
       optionList(provider, current, { allowNone }).map((o) => h('option', { value: o.value, text: o.label })));
     select.value = current || NONE;
     wrap.append(select);
@@ -1338,7 +1338,7 @@
   };
   // OpenRouter sign-in is key only: waiting, no link, and the machine wants the key pasted.
   const keyOnlySignin = (st) => st.state === 'waiting' && !st.url && st.wantsCode === true;
-  const signinHint = (st) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : 'Paste your OpenRouter key');
+  const signinHint = (st) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : TOOLS.find((t) => t.settings.signInKind === 'key').settings.keyPrompt);
   const safeHref = (u) => (/^https?:\/\//i.test(String(u)) ? String(u) : '#');
 
   async function refreshUsage() {
@@ -1393,8 +1393,8 @@
     const actions = h('div', { class: 'actions signin-actions' });
     const codeBox = h('div', { class: 'signin-code' });
     const paste = h('textarea', { rows: 2, 'aria-label': 'Paste the code from the sign-in page', placeholder: 'Paste the code here' });
-    const keyName = ((toolOf(account.provider).settings.signInKind === 'key' ? toolOf(account.provider) : TOOLS.find((t) => t.settings.signInKind === 'key')) || { label: '' }).label;
-    const keyInput = h('input', { type: 'password', class: 'ctl', autocomplete: 'off', 'aria-label': `Paste your ${keyName} key`, placeholder: `Paste your ${keyName} key`, hidden: true });
+    const keyPrompt = ((toolOf(account.provider).settings.signInKind === 'key' ? toolOf(account.provider) : TOOLS.find((t) => t.settings.signInKind === 'key')) || { settings: { keyPrompt: '' } }).settings.keyPrompt;
+    const keyInput = h('input', { type: 'password', class: 'ctl', autocomplete: 'off', 'aria-label': keyPrompt, placeholder: keyPrompt, hidden: true });
     const activeField = () => (keyInput.hidden ? paste : keyInput);
     const send = h('button', { type: 'button', class: 'primary small', text: 'Send code', onclick: async () => {
       const field = activeField();
@@ -1447,7 +1447,7 @@
         if (!card.hadUrl) card.firstUrl = Date.now();
         card.hadUrl = true;
         status.className = 'hint'; status.textContent = signinHint(st);
-        keyInput.hidden = !keyOnly; paste.hidden = keyOnly; pasteLabel.textContent = keyOnly ? `Paste your ${keyName} key` : 'Paste the code';
+        keyInput.hidden = !keyOnly; paste.hidden = keyOnly; pasteLabel.textContent = keyOnly ? keyPrompt : 'Paste the code';
         if (keyOnly) actions.replaceChildren();
         else if (toolOf(account.provider).settings.signInKind === 'link') {
           actions.replaceChildren(h('a', { class: 'btn-link primary', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: 'Open sign-in link' }));
