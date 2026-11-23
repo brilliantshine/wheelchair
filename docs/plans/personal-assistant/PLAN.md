@@ -331,7 +331,7 @@ npm --prefix viewer run test:browser
 
 ### Round 3 — 2026-11-23
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:**
 - §2: `/agents` shows the assistant's lead while on; no branch recorded for the assistant thread; "Used before" skips it.
