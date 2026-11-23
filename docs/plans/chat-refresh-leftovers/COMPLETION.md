@@ -2,7 +2,10 @@
 slug: chat-refresh-leftovers
 date: 2026-11-22
 implemented-by: "standard, gpt-6.1-terra (T1, T2); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: verifier claude-opus-5-5
+    checks: standard gpt-6.1-terra (T1, T2)
 ---
 
 # Completion Report — Chat refresh: three leftovers from the duplicate thread
