@@ -325,7 +325,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 3 — 2026-11-22
 
-**Lanes:** see below.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 2:** Decision 12 (changes after Start building become a follow-up stub; the after-done path is gone); changes during review or after approval (retract approval, re-open "Agree the mockups", no approval while open); screenshots posted when the sub-lead accepts a task; designer told the file rules; worker self-check uses headless Chromium only; could-not-try named after the verdict; `image.mockup` drops `plan` and always uses the thread's plan.
 
