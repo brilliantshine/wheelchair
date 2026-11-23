@@ -16,11 +16,6 @@ get buried as this file grows.
 
 Ordered by leverage; discussed one at a time.
 
-### Q3: How do build screenshots reach the thread?
-- **Context:** Workers already screenshot visible work and pass paths up; only the lead posts image cards, so screenshots arrive only if the lead relays them (`protocol/app/worker.md:45`, `protocol/app/sub-lead.md:179`).
-- **Options:** (a) let the sub-lead post image cards directly as each visible task finishes; (b) the lead relays each one; (c) one batch per build stage.
-- **Recommendation:** (a).
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -39,6 +34,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | A new design agent role drafts and revises mockups; the lead starts it during planning, briefs it, and posts what it makes | Collin's pick: mockups get a focused agent and the lead stays free to talk | user |
 | 6 | Mockup frame size depends on what is being worked on: "it should depend on what you're working on" (Collin usually views wheelchair in a laptop browser) | Collin's answer; a phone app gets a phone-sized frame, a desktop web page a desktop-sized one | user |
 | 7 | Mockups show live (the HTML page itself, not a rendered picture), scaled to fit the viewer's screen; "Open full size" shows it instead of downloading | Works on every machine without a headless browser; Collin did not object to live, only to a fixed phone shape | defaulted |
+| 8 | During the build, a screenshot of each finished visible task is posted to the thread as it lands, next to its mockup, by the sub-lead directly | Collin's pick: see it take shape and steer early | user |
 
 ## Spec
 
