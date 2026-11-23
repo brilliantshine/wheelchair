@@ -6,7 +6,11 @@
   const listEl = document.getElementById('list');
   const emptyEl = document.getElementById('empty');
   const errorEl = document.getElementById('list-error');
-  const archivedBox = document.getElementById('show-archived');
+  const archivedBtn = document.getElementById('show-archived');
+  // Archived is a separate view (only archived threads), kept for this tab so opening one keeps it.
+  const ARCHIVED_KEY = 'wheelchair.showArchived';
+  let showArchived = false;
+  try { showArchived = sessionStorage.getItem(ARCHIVED_KEY) === '1'; } catch (e) { /* off */ }
   const currentId = new URLSearchParams(location.search).get('id') || '';
   const STAGE = {
     idea: 'Idea', planning: 'Planning', review: 'Review', building: 'Building', verifying: 'Verifying', done: 'Done',
@@ -80,11 +84,15 @@
   }
 
   function render() {
-    const shown = threads.filter((t) => archivedBox.checked || !t.archived)
+    const shown = threads.filter((t) => !!t.archived === showArchived)
       .sort((a, b) => stamp(b) - stamp(a));
+    archivedBtn.setAttribute('aria-pressed', String(showArchived));
+    archivedBtn.textContent = showArchived ? '\u2190 Back to threads' : 'Archived';
     listEl.textContent = '';
+    emptyEl.textContent = showArchived ? 'No archived threads.' : 'No threads yet.';
     emptyEl.hidden = shown.length > 0;
-    if (onboarding) {
+    if (showArchived) listEl.appendChild(el('li', 'group-label', 'Archived'));
+    if (onboarding && !showArchived) {
       const li = el('li', 'card onboarding'); li.id = 'onboarding';
       li.appendChild(el('h3', '', 'Set up an agent'));
       const steps = el('ul', 'ob-steps');
@@ -101,7 +109,7 @@
       const open = el('a', 'btn-link primary', 'Open Settings'); open.href = '/wheelchair/app/settings#harnesses';
       li.appendChild(open); listEl.appendChild(li);
     }
-    for (const notice of notices) {
+    for (const notice of showArchived ? [] : notices) {
       const li = el('li', 'card amber'); li.appendChild(el('p', '', notice.text));
       const dismiss = el('button', 'small', 'Dismiss'); dismiss.type = 'button';
       dismiss.addEventListener('click', async () => {
@@ -173,7 +181,11 @@
     }
   }
 
-  archivedBox.addEventListener('change', render);
+  archivedBtn.addEventListener('click', () => {
+    showArchived = !showArchived;
+    try { sessionStorage.setItem(ARCHIVED_KEY, showArchived ? '1' : '0'); } catch (e) { /* this page only */ }
+    render();
+  });
   if (new URLSearchParams(location.search).get('new')) location.replace('/wheelchair/app/new');
 
   poll();

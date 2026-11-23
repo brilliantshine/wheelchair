@@ -115,12 +115,17 @@ label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; 
 .col-main { min-width: 0; display: flex; flex-direction: column; min-height: calc(100dvh - var(--nav-h)); }
 .shell.no-side { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
 
-.col-list #new-toggle { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 40px;
-  margin-bottom: 8px; border-radius: 8px; background: var(--accent); border: 1px solid var(--accent);
+.col-list .list-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.col-list #new-toggle { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 32px;
+  border-radius: 8px; background: var(--accent); border: 1px solid var(--accent);
   color: var(--accent-ink); font-weight: 600; font-size: 13px; text-decoration: none; }
 .col-list #new-toggle:hover { background: var(--accent-hi); color: var(--accent-ink); }
-.list-opts { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); padding: 0 4px 6px; margin: 0; }
-.list-opts input { min-height: 0; padding: 0; width: auto; }
+/* Archived: a switch at the foot of the list between your threads and only the archived ones. */
+.col-list .list-archived { position: sticky; bottom: -16px; z-index: 2; margin: auto -12px -16px; padding: 10px 16px; min-height: 0;
+  border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--bg); color: var(--dim);
+  font-size: 13px; text-align: left; }
+.col-list .list-archived:hover { color: var(--ink); }
+.col-list .list-archived[aria-pressed="true"] { color: var(--accent-text); }
 ul#list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 ul#list li.group-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
   color: var(--dim); padding: 14px 10px 6px; overflow-wrap: anywhere; }
@@ -155,6 +160,7 @@ ul#list li.row.current .title { font-weight: 600; }
   .shell { display: block; min-height: 0; }
   .col-list, .col-side { position: static; height: auto; overflow: visible; border: 0; }
   .col-list { padding: 14px 16px; }
+  .col-list .list-archived { position: static; margin: 12px 0 0; padding: 10px 4px; background: transparent; }
   .col-main { min-height: 0; }
   .col-side { padding: 0 16px 16px; background: transparent; }
   .shell.on-thread .col-list, .shell.on-thread .col-side { display: none; }
