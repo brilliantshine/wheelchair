@@ -1156,7 +1156,7 @@ class MachineService {
     if (age >= 30_000 && session.active_switch) { await this.failedResume(session); return false; }
     if (age >= 30_000 && session.status !== 'stuck') {
       session.status = 'stuck'; await this.persistSessions();
-      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id, ...(session.cli === 'pi' && this.piVersionNote(session.pi_version) ? { note: this.piVersionNote(session.pi_version) } : {}) });
+      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id, ...(adapters[session.cli]?.failureNote?.(session) ? { note: adapters[session.cli].failureNote(session) } : {}) });
     }
     return false;
   }
@@ -1535,7 +1535,7 @@ class MachineService {
     if (current.cli === 'pi' && ['turn-ended', 'turn-failed'].includes(event.type)) {
       try { current.source_transcript ||= await adapter.findTranscript(current, current.account_dir); if (current.source_transcript) await this.copyTranscript(current, current.source_transcript); } catch (error) { this.log(error); }
     }
-    if (current.cli === 'pi' && event.type === 'turn-failed') event = { ...event, error: (event.error || '') + this.piVersionNote(current.pi_version) };
+    if (adapter.failureNote && event.type === 'turn-failed') event = { ...event, error: (event.error || '') + adapter.failureNote(current) };
     if (current.cli === 'pi' && event.transcript_path) { event = { ...event }; delete event.transcript_path; }
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
     if (event.type === 'turn-ended' && adapter.onTurnEnded) {
@@ -1732,11 +1732,7 @@ class MachineService {
     for (const entry of accounts) if (statuses[entry.cli].problem && adapters[entry.cli].resolveCli) { entry.logged_in = false; delete entry.problem; }
     return { version: this.version, ...statuses, recipes: Object.fromEntries(providers.map(p => [p, !!loadRecipes()[p]])), accounts, sessions: this.sessionList() };
   }
-  piVersionNote(version) {
-    const status = this.piVersionStatus(version, { logged_in: true });
-    if (!status.warning) return '';
-    return version ? ` Pi ${version} is newer than the version wheelchair was tested with (1.5.2); that may be the cause.` : " Pi's version couldn't be read; that may be the cause.";
-  }
+  piVersionNote(version) { return Object.values(adapters).find(a => a.failureNote).failureNote({ pi_version: version }); }
   async piExitedBeforeReady(session) {
     if (session.cli !== 'pi' || !['starting', 'stuck'].includes(session.status) || session.end_reason) return;
     session.end_reason = 'Pi exited before it was ready' + this.piVersionNote(session.pi_version);

@@ -18,6 +18,11 @@ const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).po
 module.exports = {
   checkVersion: (service, executable) => service.checkPiVersion(executable),
   versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('pi', executable); return service.piVersionStatus(service.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); },
+  failureNote(session) {
+    const version = session.pi_version, status = module.exports.piVersionStatus(version, { logged_in: true });
+    if (!status.warning) return '';
+    return version ? ` Pi ${version} is newer than the version wheelchair was tested with (1.5.2); that may be the cause.` : " Pi's version couldn't be read; that may be the cause.";
+  },
   recordLaunch(session, status) { session.pi_version = status.version || null; },
   checkPiVersion(executable = resolveCli()) {
     if (!executable) return Promise.resolve();
