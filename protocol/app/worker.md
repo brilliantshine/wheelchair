@@ -18,6 +18,10 @@ lead if an answer would unblock you. Never end your work silently.
 Never end a turn to wait on your own background work (a command, subagent or monitor);
 wait in the foreground, because the app reads an ended turn with no report as stopped.
 
+Never end a turn on a status `message` while work remains: only a `result`, or a `message`
+with `asks: true`, tells your starter you are waiting. After a plain status update, keep
+working.
+
 Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; echo "exit $?"; tail -n 80 <log>`. On a non-zero exit, read failures from the log with `grep -n -A30 'not ok\|FAIL\|Error' <log>` before reporting. Never pipe a suite straight into `tail`; paste the exit line and the tail in your report.
 
 ## Rules

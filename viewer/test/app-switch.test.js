@@ -92,7 +92,7 @@ test('quiet sweep holds reminders during a switch and sends them afterward', asy
   assert.equal(thread.sessions[0].quiet_stage || 0, 0);
   delete thread.sessions[0].switching; await c.hub.save(thread);
   await quiet.checkQuiet(c.hub);
-  assert.match(c.submits.join(' '), /Your turn ended without a result or message card/);
+  assert.match(c.submits.join(' '), /Your turn ended without a result or a question/);
 });
 test('matching failures restore hold and unrelated callbacks are ignored', async () => {
   const c = await fixture(); const limit = future();

@@ -25,6 +25,10 @@ wait in the foreground, because the app reads an ended turn with no report as st
 Sessions you started through `wc.js session start` are not background work: the app sees
 them.
 
+Never end a turn on a status `message` while work remains: only a `result`, or a `message`
+with `asks: true`, tells your starter you are waiting. After a plain status update, keep
+working.
+
 ## Starting, and resuming after a restart
 
 1. Read IDEA.md, then the whole PLAN.md, then MAP.md.

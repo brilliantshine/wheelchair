@@ -20,6 +20,10 @@ lead if an answer would unblock you. Never end your work silently.
 Never end a turn to wait on your own background work (a command, subagent or monitor);
 wait in the foreground, because the app reads an ended turn with no report as stopped.
 
+Never end a turn on a status `message` while work remains: only a `result`, or a `message`
+with `asks: true`, tells your starter you are waiting. After a plain status update, keep
+working.
+
 ## What you write
 
 Two things.

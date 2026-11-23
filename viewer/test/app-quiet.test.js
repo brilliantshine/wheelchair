@@ -15,7 +15,7 @@ async function fixture(extraEnv = {}) {
   const submits = s => c.machine.sessions.get(s.name).submits || [];
   const end = (s, extra) => event(c, t.id, s.name, 'turn-ended', extra);
   const result = s => card(c, t.id, s.name, { kind: 'result', task: 'T1', outcome: 'done', summary: 'done' });
-  const message = (s, to) => card(c, t.id, s.name, { kind: 'message', to: to.name, text: 'question' });
+  const message = (s, to) => card(c, t.id, s.name, { kind: 'message', to: to.name, text: 'question', asks: true });
   const quietCard = async () => (await read()).cards.find(x => x.title === 'An agent stopped without reporting');
   const stage1 = async () => { await end(worker); await until(() => submits(worker).some(x => x.includes('[wc:from app]'))); };
   const stage2 = async () => { await stage1(); await end(sub); await end(worker); await until(() => submits(sub).some(x => x.includes('ended two turns'))); };
@@ -30,11 +30,12 @@ async function feed(f, s, from) {
 }
 async function run(fn, extraEnv) { const f = await fixture(extraEnv); try { await fn(f); } finally { await close(f.c); } }
 
-test('1 first quiet turn nudges worker', () => run(async f => { await f.stage1(); assert.match(f.submits(f.worker)[0], /Your turn ended without a result or message card/); assert.equal(f.submits(f.sub).length, 0); }));
+test('1 first quiet turn nudges worker', () => run(async f => { await f.stage1(); assert.match(f.submits(f.worker)[0], /Your turn ended without a result or a question/); assert.equal(f.submits(f.sub).length, 0); }));
 test('2 second quiet turn nudges starter', () => run(async f => { await f.stage2(); assert.match(f.submits(f.sub).join(' '), /ended two turns/); }));
 test('3 third quiet turn creates and result closes card', () => run(async f => { await f.stage2(); await f.end(f.worker); const a = await until(f.quietCard); assert.equal(a.system, true); assert.equal((await f.result(f.worker)).status, 202); assert.equal((await f.quietCard()).answered, true); assert.equal((await f.session(f.worker)).quiet_stage, 0); }));
 test('4 timer escalates after starter told', () => run(async f => { await f.stage2(); const a = await until(f.quietCard); assert.match(a.body, /hasn't reported back/); }));
 test('5 late result within grace prevents nudge', () => run(async f => { await f.end(f.worker); await delay(100); assert.equal((await f.session(f.worker)).turn_ended, true); assert.equal(f.submits(f.worker).length, 0); assert.equal((await f.result(f.worker)).status, 202); await delay(500); assert.equal((await f.session(f.worker)).owes_reply, false); assert.equal(f.submits(f.worker).length, 0); }, { WHEELCHAIR_QUIET_GRACE_MS: '300' }));
+test('6b status message without a question does not clear debt', () => run(async f => { await f.end(f.worker); assert.equal((await card(f.c, f.t.id, f.worker.name, { kind: 'message', to: f.sub.name, text: 'status' })).status, 202); await until(() => f.submits(f.worker).some(x => x.includes('Your turn ended without a result or a question'))); }));
 test('6 message clears debt', () => run(async f => { await f.end(f.worker); assert.equal((await f.message(f.worker, f.sub)).status, 202); await delay(220); assert.equal(f.submits(f.worker).length, 0); }));
 test('7 child owing reply or waiting protects sub-lead', () => run(async f => {
   await f.end(f.sub); await delay(220); assert.equal(f.submits(f.sub).length, 0);
