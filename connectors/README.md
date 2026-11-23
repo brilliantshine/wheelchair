@@ -209,10 +209,10 @@ the type is checked only when present. Unless a default is stated below, an omit
 
 ### Settings page (`settings`)
 
-`settings.modelPattern` (string) and `settings.weights` (object with numeric `unknown`) are required. Everything else is defaulted: `modelPlaceholder`,
+`settings.modelPattern` (string), `settings.weights` (object with numeric `unknown`) and `settings.plans` are required. `settings.plans` is an array of `[key, label]` pairs of non-empty strings; it must include `unknown`, and every key must exist in `settings.weights`. Everything else is defaulted: `modelPlaceholder`,
 `cliLabel`, `vendor`, `setupUrl`, `signInKind`, `modelError` (strings); `permissionMode`,
-`accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices` and
-`plans` (arrays of `[value, label]`); `reportedPlans`, `oldPlanWeights` (objects);
+`accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices`
+(array of `[value, label]`); `reportedPlans`, `oldPlanWeights` (objects);
 `modelHeadsUp`, `reviewFamily`, `scoutAgentTool`, `monoModelNames` (booleans); `keyPrompt`
 (string); `modelOptions` (object). `modelPattern` is the browser's own model-name check and
 differs from `models.format` and `models.hubPattern` on purpose, so each place keeps rejecting
@@ -306,8 +306,9 @@ tag before their own script.
 2. Add the folder name to `names` in `connectors/index.js`. The order is only a listing
    order, never placement policy.
 3. Fill `install` (recipe, binary, lookup, `versionArgs`, `fallbackPath` and `pathRank` as needed).
-4. Fill `settings` (model pattern and placeholder, permission choices, account text, plans and
-   weights, sign-in kind, setup link). If the tool has model choices on the Settings page, add
+4. Fill `settings` (model pattern and placeholder, permission choices, account text, required
+   `plans` and `weights`, sign-in kind, setup link). `plans` must include `unknown` and every
+   plan key must exist in `weights`. If the tool has model choices on the Settings page, add
    `settings.modelOptions`. If the tool recovers adopted panes, give it a `recoverRank`; every
    tool needs `install.label`.
 5. Fill `models` (default pins per slot, formats, efforts). If the tool can list its own
