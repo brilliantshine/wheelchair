@@ -42,12 +42,7 @@ function transcriptRows(raw) {
   });
 }
 
-function isCodexHuman(row, codexTurn, text) {
-  const payload = row.payload || row;
-  const role = payload.type === 'message' ? payload.role : row.message?.role;
-  if (row.type !== 'response_item' || role !== 'user' || !codexTurn) return false;
-  return !text.startsWith('# AGENTS.md') && !text.startsWith('<environment_context>');
-}
+
 
 // A line without a timestamp takes the previous line's: stamping it "now" would sort it after
 // every card, and the page places cards by time.
@@ -90,34 +85,8 @@ function foldResults(calls, found) {
   }
   return found.length > 0;
 }
-function claudeReply(turns, row, calls) {
-  if (row.type === 'user' && Array.isArray(row.message?.content) && foldResults(calls, row.message.content.filter((p) => p.type === 'tool_result').map((p) => [p.tool_use_id, p.content]))) return;
-  if (!turns.length || row.type !== 'assistant' || row.message?.role !== 'assistant') return;
-  const content = row.message.content;
-  const text = unwrap(textOf(content));
-  if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
-  for (const item of Array.isArray(content) ? content.filter((p) => p.type === 'tool_use') : []) {
-    const tool = { type: 'tool', text: item.name || 'tool call', at: itemAt(row), detail: toolDetail(item.input) };
-    turns.at(-1).replies.push(tool);
-    if (item.id) calls.set(item.id, { item: tool, input: item.input });
-  }
-}
-function codexReply(turns, row, calls) {
-  const payload = row.payload || row;
-  if (['function_call_output', 'custom_tool_call_output'].includes(payload.type)) { foldResults(calls, [[payload.call_id, payload.output]]); return; }
-  if (!turns.length) return;
-  const content = payload.type === 'message' ? payload.content : row.message?.content;
-  const role = payload.type === 'message' ? payload.role : row.message?.role;
-  if (row.type === 'response_item' && role === 'assistant') {
-    const text = unwrap(textOf(content));
-    if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
-  } else if (['custom_tool_call', 'function_call'].includes(payload.type)) {
-    const input = payload.arguments ?? payload.input;
-    const tool = { type: 'tool', text: payload.name || payload.function?.name || 'tool call', at: itemAt(row), detail: toolDetail(input) };
-    turns.at(-1).replies.push(tool);
-    if (payload.call_id) calls.set(payload.call_id, { item: tool, input });
-  }
-}
+
+
 
 function renderTurn(turn, thread) {
   const humanText = stripStyleTrailer(turn.human);
@@ -142,43 +111,12 @@ function renderTurn(turn, thread) {
   return [human, ...turn.replies];
 }
 
-// A message typed while the lead is mid-turn ("Send now") is recorded only as a queued_command
-// attachment, never as a user row; it opens a turn like any other message from the user.
-function isClaudeMidTurnHuman(row) {
-  const item = row.type === 'attachment' ? row.attachment : null;
-  return Boolean(item && item.type === 'queued_command' && item.commandMode === 'prompt' && item.origin?.kind === 'human');
-}
 
-function hasPiEntry(raw, entryId) {
-  return transcriptRows(raw).some((row) => row.id === entryId && row.type === 'message' && row.message?.role === 'assistant');
-}
 
-function piReport(raw, entryId) {
-  if (entryId == null) return '';
-  const row = transcriptRows(raw).find((item) => item.id === entryId && item.type === 'message' && item.message?.role === 'assistant');
-  return row ? textOf(row.message.content) : '';
-}
 
-function kimiReport(raw, turnId) {
-  const turns = [];
-  let turn;
-  for (const row of transcriptRows(raw)) {
-    if (row.type === 'turn.prompt' && row.origin?.kind === 'user') {
-      turn = { id: row.turnId, steps: new Map() };
-      turns.push(turn);
-    } else if (row.type === 'turn.ended' && row.turnId === turn?.id && (row.agentId === undefined || row.agentId === 'main')) {
-      turn = null;
-    } else if (turn && row.type === 'context.append_loop_event') {
-      const event = row.event || {};
-      if (event.type === 'step.begin' && !turn.steps.has(event.uuid)) turn.steps.set(event.uuid, []);
-      if (event.type === 'content.part' && event.part?.type === 'text' && turn.steps.has(event.stepUuid)) {
-        turn.steps.get(event.stepUuid).push({ block: event.block, text: event.part.text || '' });
-      }
-    }
-  }
-  const selected = turnId == null ? turns.at(-1) : turns.find((item) => item.id === turnId);
-  const parts = selected && [...selected.steps.values()].filter((step) => step.length).at(-1);
-  return parts ? parts.sort((a, b) => a.block - b.block).map((part) => part.text).join('') : '';
-}
 
-module.exports = { textOf, unwrap, stripStyleTrailer, cardBubble, transcriptRows, isCodexHuman, itemAt, resetAt, toolDetail, resultText, foldResults, claudeReply, codexReply, renderTurn, isClaudeMidTurnHuman, hasPiEntry, piReport, kimiReport };
+
+
+
+
+module.exports = { textOf, unwrap, stripStyleTrailer, cardBubble, transcriptRows, itemAt, resetAt, toolDetail, resultText, foldResults, renderTurn };
