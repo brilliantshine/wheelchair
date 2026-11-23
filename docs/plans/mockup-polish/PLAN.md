@@ -35,6 +35,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | A mockup PNG is drawn in the phone's browser (fetch the mockup HTML, draw it to a canvas), not on the machine. | Collin picked it: no new install, same as diagram PNGs. If a browser refuses, the HTML download stays and the machine route is Deferred. | user |
 | 8 | A spot comment's message names the mockup by file path, not by card (supersedes that part of Decision 4); the lead handles it by the existing Mockups rules for the current stage. | Round 1: a designer may not be running, and comments on a build's Mockup half are usually about the build; the versioned file path already identifies the mockup. | review-round-1 |
 | 9 | Decision 8 also supersedes Decision 4's "passes it to the designer": the lead routes a spot comment by the Mockups rules for the current stage (live designer while drafting, fresh designer during review, stub after Start building), keeping its location line. | Round 2: the log contradicted itself. | review-round-2 |
+| 10 | Keep all four items; run another review round (budget reset). | Collin picked "Run another round" after three rounds without a clean one. | user |
 
 ## Spec
 
@@ -252,6 +253,19 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | mechanics | major | Draft editable while Send is pending | downgraded (minor) | Window is one request long; fixed by disabling the draft while pending |
 | mechanics | minor | Frozen-card lock blocks Cancel if a hand-off replaces a card mid-draft | accepted-risk | Rare path: a hand-off started while a comment is being written |
 | mechanics | minor | Poll error banner changes before the scroll anchor is captured | upheld | S1: capture before anything above the chat changes, poll path included |
+
+### Round 4 — 2026-11-23
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 3:**
+- S3: the `foreignObject` root box is width x height and carries the page's canvas background (html, else body). Validation 4 checks below short content and an unset-background fixture.
+- S2: draft disabled while Send is pending.
+- S1: scroll anchor captured before anything above the chat changes, including the poll error banner.
+- Accepted Risk: hand-off mid-draft.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
