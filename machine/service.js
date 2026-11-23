@@ -1532,11 +1532,7 @@ class MachineService {
     const current = this.managed(session);
     if (current.status === 'switching') return { ignored: true };
     const adapter = adapters[current.cli];
-    if (current.cli === 'pi' && ['turn-ended', 'turn-failed'].includes(event.type)) {
-      try { current.source_transcript ||= await adapter.findTranscript(current, current.account_dir); if (current.source_transcript) await this.copyTranscript(current, current.source_transcript); } catch (error) { this.log(error); }
-    }
-    if (adapter.failureNote && event.type === 'turn-failed') event = { ...event, error: (event.error || '') + adapter.failureNote(current) };
-    if (current.cli === 'pi' && event.transcript_path) { event = { ...event }; delete event.transcript_path; }
+    if (adapter.beforeTurnEvent) event = await adapter.beforeTurnEvent(this, current, event);
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
     if (event.type === 'turn-ended' && adapter.onTurnEnded) {
       const result = await adapter.onTurnEnded(current, event);

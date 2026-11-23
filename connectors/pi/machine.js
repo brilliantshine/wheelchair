@@ -18,6 +18,14 @@ const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).po
 module.exports = {
   checkVersion: (service, executable) => service.checkPiVersion(executable),
   versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('pi', executable); return service.piVersionStatus(service.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); },
+  async beforeTurnEvent(service, session, event) {
+    if (['turn-ended', 'turn-failed'].includes(event.type)) {
+      try { session.source_transcript ||= await module.exports.findTranscript(session, session.account_dir); if (session.source_transcript) await service.copyTranscript(session, session.source_transcript); } catch (error) { service.log(error); }
+    }
+    if (event.type === 'turn-failed') event = { ...event, error: (event.error || '') + module.exports.failureNote(session) };
+    if (event.transcript_path) { event = { ...event }; delete event.transcript_path; }
+    return event;
+  },
   failureNote(session) {
     const version = session.pi_version, status = module.exports.piVersionStatus(version, { logged_in: true });
     if (!status.warning) return '';
