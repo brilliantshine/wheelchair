@@ -1827,20 +1827,22 @@ class MachineService {
     const model = input.model; const prompt = input.prompt;
     if (typeof model !== 'string' || !/^[A-Za-z0-9._:\[\]-]+$/.test(model)) die('model is required');
     if (typeof prompt !== 'string' || !prompt.trim()) die('prompt is required');
+    const previewTool = connectors.list().find(m => m.stylePreview);
+    const previewCli = previewTool.cli;
     return new Promise(resolve => {
       let child; let out = ''; let err = ''; let done = false;
       const finish = (status, body) => { if (done) return; done = true; clearTimeout(timer); resolve({ status, body }); };
       const timer = setTimeout(() => { finish(504, { error: 'preview timed out after 60 s' }); if (child) child.kill('SIGKILL'); }, this.previewTimeoutMs);
-      try { child = spawn('claude', ['-p', '--model', model, '--permission-mode', 'dontAsk'], { env: { ...process.env, WHEELCHAIR_LANE: '1' }, stdio: ['pipe', 'pipe', 'pipe'] }); }
-      catch (error) { return finish(503, { error: 'claude is not installed' }); }
-      child.on('error', error => finish(error.code === 'ENOENT' ? 503 : 502, { error: error.code === 'ENOENT' ? 'claude is not installed' : error.message }));
+      try { child = spawn(previewCli, adapters[previewCli].stylePreviewArgv(model), { env: { ...process.env, WHEELCHAIR_LANE: '1' }, stdio: ['pipe', 'pipe', 'pipe'] }); }
+      catch (error) { return finish(503, { error: `${previewCli} is not installed` }); }
+      child.on('error', error => finish(error.code === 'ENOENT' ? 503 : 502, { error: error.code === 'ENOENT' ? `${previewCli} is not installed` : error.message }));
       child.stdout.on('data', chunk => { out += chunk; });
       child.stderr.on('data', chunk => { err += chunk; });
       child.stdin.on('error', () => {});
       child.on('close', code => {
         if (code === 0) return finish(200, { text: out.trim() });
         const last = err.split('\n').map(l => l.trim()).filter(Boolean).pop();
-        finish(502, { error: last || `claude exited ${code}` });
+        finish(502, { error: last || `${previewCli} exited ${code}` });
       });
       child.stdin.end(prompt);
     });

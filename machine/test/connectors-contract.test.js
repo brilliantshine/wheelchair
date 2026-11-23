@@ -25,6 +25,8 @@ test('contract rejects missing and inconsistent members and fields', () => {
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 'pattern'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);
   const badFlag = structuredClone(manifests[0]); badFlag.joinPaneLines = 'yes'; assert.throws(() => contract.validateManifest(badFlag), /joinPaneLines/);
+  const badPreview = structuredClone(manifests[0]); badPreview.stylePreview = 'yes'; assert.throws(() => contract.validateManifest(badPreview), /stylePreview/);
+  const previews = manifests.map(m => ({ ...m, stylePreview: true })); assert.throws(() => contract.validateRegistry(previews), /stylePreview/);
   const badLookup = structuredClone(manifests[0]); badLookup.install.lookup = 42; assert.throws(() => contract.validateManifest(badLookup), /install.lookup/);
   badLookup.install.lookup = 'unknown'; assert.throws(() => contract.validateManifest(badLookup), /install.lookup/);
   const duplicated = manifests.map(m => structuredClone(m)); duplicated[0].capabilities.preflight = true; assert.throws(() => contract.validateRegistry(duplicated), /preflight/);

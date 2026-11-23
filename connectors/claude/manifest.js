@@ -1,5 +1,6 @@
 'use strict';
 module.exports = {
+  "stylePreview": true,
   "cli": "claude",
   "provider": "claude",
   "label": "Claude",
