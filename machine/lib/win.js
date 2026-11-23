@@ -1,4 +1,6 @@
 'use strict';
+const connectors = require('../../connectors');
+const sandboxed = session => { const m = connectors.manifest(session.cli); return !!(m?.capabilities.sandbox && connectors.machine(m.cli).sandboxed(session)); };
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -433,13 +435,13 @@ class WinBridge {
   }
 
   async info(session, ctx) {
-    const sandboxed = session.cli === 'codex' && session.codex_mode !== 'unrestricted';
+    const isSandboxed = sandboxed(session);
     const versions = await this.winEnv.versions();
     const reason = this.readyErrors.get(ctx.key) || versions.reason;
     const ready = !this.readying.has(ctx.key) && !reason;
     this.disk ||= new (require('./win-disk').WinDisk)(this.winEnv);
     const disk = await this.disk.info(ctx);
-    return { wsl: true, ok: versions.ok, ready, ...(reason ? { reason } : {}), copy_windows: ctx.copy.windows, copy_linux: ctx.copy.linux, sandboxed, disk };
+    return { wsl: true, ok: versions.ok, ready, ...(reason ? { reason } : {}), copy_windows: ctx.copy.windows, copy_linux: ctx.copy.linux, sandboxed: isSandboxed, disk };
   }
 
   async handle(session, body) {
@@ -449,14 +451,14 @@ class WinBridge {
     const op = body?.op;
     const args = parseWinOp(op, body?.args);
     if (args.env?.some(([key]) => key.toUpperCase() === 'WHEELCHAIR_SESSION_TOKEN')) throw error(400, 'invalid environment variable');
-    if ((op === 'run' || op === 'start') && session.cli === 'codex' && session.codex_mode !== 'unrestricted') throw error(403, SANDBOX);
+    if ((op === 'run' || op === 'start') && sandboxed(session)) throw error(403, SANDBOX);
     try {
       let ctx;
       try {
         ctx = await this.context(session);
       } catch (err) {
         if (op !== 'info') throw err;
-        return { wsl: true, ok: false, ready: false, reason: err.message, copy_windows: null, copy_linux: null, sandboxed: session.cli === 'codex' && session.codex_mode !== 'unrestricted' };
+        return { wsl: true, ok: false, ready: false, reason: err.message, copy_windows: null, copy_linux: null, sandboxed: sandboxed(session) };
       }
       if (this.exists(ctx)) {
         this.register(ctx, session);

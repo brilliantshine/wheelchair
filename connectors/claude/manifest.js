@@ -21,6 +21,7 @@ module.exports = {
     "steps": false
   },
   "install": {
+    "lookup": "path",
     "command": "t=$(mktemp) && curl -fsSL https://claude.ai/install.sh -o \"$t\" && bash \"$t\"; r=$?; rm -f \"$t\"; exit $r",
     "binary": "claude",
     "label": "Claude Code",

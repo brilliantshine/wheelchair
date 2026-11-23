@@ -156,6 +156,7 @@ async function findTranscript(session, dir) {
   try { return await run; } finally { bindings.delete(session); }
 }
 module.exports = {
+  stepVocabulary: require('../codex/machine').stepVocabulary,
   provider: 'kimi', resolveCli, readConfig, loginStatus, usageProbe,
   loginEnv: dir => ({ KIMI_CODE_HOME: home(dir) }),
   seed(dir, id) { c.seed(dir, home(), 'AGENTS.md', 'kimi', id); }, prepare() {},

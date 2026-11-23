@@ -10,17 +10,18 @@ module.exports = {
     "usageProbe": true,
     "usageEvents": true,
     "preflight": true,
-    "sandbox": false,
+    "sandbox": true,
     "restartLoss": false,
-    "projectTools": false,
+    "projectTools": true,
     "recover": false,
     "spend": false,
     "liveSwitch": true,
     "aside": true,
     "versionCheck": false,
-    "steps": false
+    "steps": true
   },
   "install": {
+    "lookup": "path",
     "command": "npm install -g --prefix \"$HOME/.local\" @openai/codex@latest",
     "node": "16.0.0",
     "binary": "codex",

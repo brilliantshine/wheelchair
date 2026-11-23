@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { readLines } = require('../lib/codex-steps');
+const { readLines } = require('../../connectors/codex/steps');
 const fixture = name => fs.readFileSync(path.join(__dirname,'fixtures/codex-steps',name+'.jsonl'),'utf8').trim().split('\n');
 const call = (id,name,input,at='2026-01-01T00:00:00Z') => ({timestamp:at,type:'response_item',payload:{type:'custom_tool_call',call_id:id,name,input}});
 const output = (id,output,at='2026-01-01T00:00:01Z') => ({timestamp:at,type:'response_item',payload:{type:'custom_tool_call_output',call_id:id,output}});

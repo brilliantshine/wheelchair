@@ -22,6 +22,7 @@ module.exports = {
     "steps": false
   },
   "install": {
+    "lookup": "absolute",
     "command": "npm install -g --prefix \"$HOME/.local\" @earendil-works/pi-coding-agent@latest",
     "node": "22.19.0",
     "binary": "pi",

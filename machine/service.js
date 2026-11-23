@@ -32,7 +32,7 @@ const gitAsync = promisify(execFile);
 const connectors = require('../connectors');
 const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
 const { limitedUntil } = require('./lib/limits');
-const { readLines: readCodexSteps } = require('./lib/codex-steps');
+const { readLines: readCodexSteps } = require('../connectors/codex/steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
 const { ScreenManager, screenTools } = require('./lib/screen');
