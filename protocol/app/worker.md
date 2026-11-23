@@ -12,11 +12,15 @@ else writes there.
 
 Your own `wc.js` and `card.js` calls are always allowed; no brief can forbid them. If your
 brief seems to forbid something you need to finish, or instructions conflict and you cannot
-resolve them, post a `result` with outcome `blocked` and the reason, or a `message` to the
-lead if an answer would unblock you. Never end your work silently.
+resolve them, post a `result` with outcome `blocked` and the reason, or a `message` with `asks: true`
+to the lead if an answer would unblock you. Never end your work silently.
 
 Never end a turn to wait on your own background work (a command, subagent or monitor);
 wait in the foreground, because the app reads an ended turn with no report as stopped.
+
+Never end a turn on a status `message` while work remains: only a `result`, or a `message`
+with `asks: true`, tells your starter you are waiting. After a plain status update, keep
+working.
 
 Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; echo "exit $?"; tail -n 80 <log>`. On a non-zero exit, read failures from the log with `grep -n -A30 'not ok\|FAIL\|Error' <log>` before reporting. Never pipe a suite straight into `tail`; paste the exit line and the tail in your report.
 
