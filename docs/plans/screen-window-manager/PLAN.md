@@ -257,9 +257,14 @@ screen works (it needs a window manager).
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | tricky — S1, S3, S4: detect openbox, start it with the fixed rc.xml and readiness wait, list/focus windows through it; fake-tool tests and live-test assertions | machine/lib/screen.js, machine/lib/screen-input.js, machine/test/screen.test.js, machine/test/screen-input.test.js, machine/test/screen-live.js, docs/plans/screen-window-manager/reports/T1.md | standard / gpt-6.1-terra |  | bash machine/test/run.sh | not started |
+| T1 | tricky — S1, S3, S4: detect openbox, start it with the fixed rc.xml and readiness wait, list/focus windows through it; fake-tool tests and live-test assertions | machine/lib/screen.js, machine/lib/screen-input.js, machine/test/screen.test.js, machine/test/screen-input.test.js, machine/test/screen-live.js, docs/plans/screen-window-manager/reports/T1.md | standard / gpt-6.1-terra | wc-dfe8d2b752bb-worker | bash machine/test/run.sh | done |
 | T2 | S2: approval card no-window-manager line and installer optional line, with tests (after T1, needs `openboxInstalled`) | machine/service.js (approval warning block only), machine/test/screen-tools-warning.test.js, install.sh, install/test/run.sh, docs/plans/screen-window-manager/reports/T2.md | light / gpt-6-luna |  | node --test machine/test/screen-tools-warning.test.js; bash install/test/run.sh | not started |
 
 ## Log
 
 Build accepted: approval 19163b0c-a9f9-4f9f-bde2-682b2e875286
+- 2026-11-22 — Choice: T1, screen.js status: a stopped screen's `status` also reports `window_manager: null`.
+- 2026-11-22 — Choice: T1, screen.js start: an error writing rc.xml or spawning openbox is logged and the screen continues without it; a generation fence runs just before the spawn as well as before the `running` save.
+- 2026-11-22 — Choice: T1, screen.js readiness: the poll stops as soon as openbox exits rather than waiting out the 5 s.
+- 2026-11-22 — Choice: T1, screen-live.js: after the F11 check it presses F11 again to leave full screen before the existing checks continue.
+- 2026-11-22 — T1 accepted (band: self): diff matches S1/S3/S4; 65 screen tests pass on re-run; the 18 win*.test.js failures (no wslpath on hearth) also fail on the feature branch before T1. A no-openbox-on-PATH test is missing; added to T2.
