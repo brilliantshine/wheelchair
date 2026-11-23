@@ -70,7 +70,9 @@ In `start()` (`machine/lib/screen.js:139-185`), after the second `xauth add` and
   `<keyboard/>` and a `<mouse>` section whose only bindings are, for each context `Client`
   and `Frame` and each button `Left`, `Middle`, `Right`, one `Press` binding running
   `Focus` then `Raise`. No `<menu>` section, no `Root` bindings, no other actions (in
-  particular no `Execute` or `ShowMenu`). Clicking into a dialog focuses it; nothing an
+  particular no `Execute` or `ShowMenu`). An `<applications>` section with one
+  `<application class="*">` entry containing `<decor>no</decor>`, so windows get no
+  titlebar or buttons (they would be inert without bindings). Clicking into a dialog focuses it; nothing an
   agent clicks or types can start a process.
 - **Spawn.** `systemd-run` with `await this.scopeArgs(screen, 'wm')`, then
   `openbox --sm-disable --config-file <dir>/openbox/rc.xml` (plain `openbox`, never
@@ -142,7 +144,8 @@ and `xprop`.
 - openbox invocation: `--sm-disable --config-file <dir>/openbox/rc.xml`, with
   `XDG_CONFIG_HOME`, `XDG_CONFIG_DIRS` and `HOME` equal to the screen directory. The file
   is `0600` in a `0700` directory, has an empty `<keyboard/>`, no `<menu>`, no `Execute`
-  or `ShowMenu`, and its only actions are `Focus` and `Raise` in `Client` and `Frame`.
+  or `ShowMenu`, its only actions are `Focus` and `Raise` in `Client` and `Frame`, and
+  it has `<application class="*">` with `<decor>no</decor>`.
 - Without openbox on PATH, or with `allowOpenbox = false`: no `wm` scope,
   `window_manager: null`, and the existing `xwininfo -root -children` / `windowfocus`
   calls.
@@ -186,6 +189,7 @@ On hearth with real tools, `bash machine/test/screen-live.sh` still passes. When
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Default openbox frames would show inert titlebar buttons and take space | upheld (minor) | S3 config turns decorations off for all windows; Validation checks it |
 
 ## Prior Work
 
