@@ -96,8 +96,10 @@ Three pieces:
 
 - `image` cards gain an optional `mockup` object `{graph, width, height}` naming a mockup
   file of the thread's own plan (the hub uses `thread.slug`, the same plan the archived
-  reader uses, registers it as for a diagram card, and refuses `mockup` when the thread has
-  no plan), with the same rules as a mockup diagram card. When present, the card shows the
+  reader uses; when it is unset, the hub first runs the same plan discovery the thread page
+  runs, `viewer/app/routes.js:507-517` / `viewer/app/chat.js:433-439`, and saves it; it then
+  registers the plan as for a diagram card, and refuses `mockup` only when the thread still
+  has no plan), with the same rules as a mockup diagram card. When present, the card shows the
   screenshot and the mockup side by side, labelled "Built" and "Mockup", each scaled to half
   the card width; under 599px card width they stack, Built first. Each half has its own
   "Open full size": the screenshot opens as an image at true size; the mockup opens the
@@ -169,16 +171,23 @@ Rules, in a new `protocol/app/designer.md`:
   designer. If the lead skips the designer, it logs that as a `defaulted` Decision instead.
 - **Changes during review or after approval** (before Start building is accepted): the
   lead first retracts any open approval card (as `lead.md` step 6 does for a Spec change),
-  re-adds the "Agree the mockups" Open Question, and starts a fresh designer briefed with the
-  current files and Collin's words. While that question is open, no approval card is posted,
-  even after a clean round. Once Collin agrees, the new files are a Spec change: status
-  `ready-for-review` and the change is in the next round's "Changed since" list. If Start
+  then in one commit sets `status: planning` and re-adds the "Agree the mockups" Open
+  Question, and starts a fresh designer briefed with the current files and Collin's words.
+  This is a new allowed move in the `status:` table of `lead.md` (back to `planning` from
+  `ready-for-review` or `approved`, only for this). Planning rules then apply unchanged: no
+  approval card exists or is posted from `planning`, and a restarted lead resumes planning
+  (and the designer restart rule below). Once Collin agrees, the new files are a Spec change:
+  status `ready-for-review` and the change is in the next round's "Changed since" list. If Start
   building was already recorded when he asks, it is a change after Start building.
 - **Changes after Start building:** the build finishes against the agreed mockups. When
   Collin asks for a design change once Start building is accepted (including after `done`),
   the lead posts a `stub` card at once (durable, so a lead restart loses nothing):
-  `depends_on_parent: true`, summary quoting his words verbatim, the paths of any attached
-  files, the current mockup files and the screenshot card that prompted it. The stub's lead
+  `depends_on_parent: true`, summary quoting his words verbatim, the current mockup file
+  paths (on the parent branch) and a one-line description of the screenshot that prompted
+  it. Before the stub, the lead posts each file Collin attached with the request as a
+  `file` card (lead-authored uploads survive archiving), and the summary names each one by
+  both paths: `<stateDir>/uploads/<parent thread>/<name>` and, once the parent is archived,
+  `<stateDir>/kept/<parent thread>/<name>` (`machine/service.js:1436-1445`). The stub's lead
   plans it from step 1 with its own mockups. Nothing in this thread changes.
 - **Restart:** a restarted lead stops any live designer (its results would go to the dead
   lead) and, if the "Agree the mockups" question is still open, starts a fresh one briefed
@@ -192,17 +201,21 @@ Rules, in a new `protocol/app/designer.md`:
 
 ### Build and verify rules
 
-- **Worker** (`protocol/app/worker.md`): a task whose brief names a mockup builds to match it
-  (layout, content, hierarchy, colours, type, spacing). When the task finishes, it
+- **Worker** (`protocol/app/worker.md`): a task whose brief names a mockup builds its part
+  to match it (layout, content, hierarchy, colours, type, spacing). The brief says which
+  parts of the mockup the task owns; parts owned by other tasks are not its differences. When the task finishes, it
   screenshots the built screen at the mockup's `width` x `height`: a web page with headless
   Chromium (an isolated server per the project's rules); a desktop app or game with its
   invisible screen (`wc.js screen`). It then looks at its screenshot beside the mockup (rendering the mockup at its size with
-  headless Chromium) and fixes any difference by the
-  verifier's bar below before reporting. It lists each screenshot path with the mockup it
+  headless Chromium) and fixes any difference in its own
+  parts by the verifier's bar below before reporting. If it cannot render the mockup, it
+  still reports the screenshot and says the comparison was not done and why. It lists each screenshot path with the mockup it
   matches in its report, and any difference it chose to leave, with why. A task with visible work but no mockup still reports a screenshot. If it
   cannot take one, it says why; this does not block the task.
 - **Sub-lead** (`protocol/app/sub-lead.md`): briefs name the mockup files and sizes from the
-  Spec's Mockups list for each task that touches those screens. When it checks a
+  Spec's Mockups list for each task that touches those screens, and which parts of each
+  mockup that task owns. The whole screen is expected to match once all its tasks are
+  merged, which the verifier checks. When it checks a
   worker's `result`, a difference from the mockup the worker left without a good reason is
   a reason to send the task back, like any other mismatch with the brief. When it accepts a
   task whose report has screenshots, it posts one `image` card per screenshot (with `mockup`
@@ -215,7 +228,8 @@ Rules, in a new `protocol/app/designer.md`:
   differences are not. It names the screenshot paths it compared. Where no capture path
   exists (for example a desktop app on a machine without the screen tool), the comparison is
   not a gap and does not change the verdict: it is named in the sentences after the verdict
-  ("visual comparison not tried for <mockup>: <reason>").
+  ("visual comparison not tried for <mockup>: <reason>"), whichever half could not be
+  produced.
 
 ### Not in this thread
 
@@ -260,6 +274,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A lead that dies after Collin asks for a build-time design change and before it posts the stub loses the request | Rare path: posting the stub is the lead's first act on the request; Collin sees no stub and can ask again | review-round-3 |
 
 ## Check Once Built
 
@@ -328,6 +343,23 @@ exit. Downgrades and declines cite evidence.
 **Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 2:** Decision 12 (changes after Start building become a follow-up stub; the after-done path is gone); changes during review or after approval (retract approval, re-open "Agree the mockups", no approval while open); screenshots posted when the sub-lead accepts a task; designer told the file rules; worker self-check uses headless Chromium only; could-not-try named after the verdict; `image.mockup` drops `plan` and always uses the thread's plan.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Attachments cited in a follow-up stub are deleted when the parent is archived | upheld | Lead posts each as a `file` card (kept on archive) and the summary names both paths |
+| intent | minor | Stub cites a screenshot card id the next lead can't use | upheld | One-line description instead |
+| mechanics | major | Reopened agreement leaves status `approved`; restart could post Start building | upheld | Status returns to `planning` in the same commit; new allowed move |
+| mechanics | major | Lead dies between a change request and posting the stub | accepted-risk | Rare path: the stub is the lead's first act on the request; needs a crash inside that window |
+| mechanics | major | Attachments lost before the follow-up starts (same as intent major) | upheld | As above |
+| mechanics | major | `thread.slug` can be unset when a sub-lead posts a comparison | upheld | Hub runs plan discovery before refusing |
+| mechanics | major | Tasks compared against the whole mockup though they own only part | upheld | Briefs name owned parts; whole screen checked by the verifier |
+| mechanics | minor | No worker fallback when the mockup can't be rendered | upheld | Report screenshot, say comparison not done; verifier note covers either half |
+
+### Round 4 — 2026-11-22
+
+**Lanes:** see below.
+
+**Changed since Round 3:** a mockup change before Start building returns status to `planning` (new allowed move); follow-up stub posts attachments as `file` cards and describes the screenshot; hub resolves the plan before refusing `image.mockup`; briefs name which parts of a mockup each task owns; worker fallback when the mockup can't be rendered; verifier note covers either half.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
