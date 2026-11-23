@@ -274,7 +274,7 @@ general fallback.
 | `injectProjectKeys` | boolean | Stored project keys are injected into tool-role launches. |
 | `joinPaneLines` | boolean | Pane capture joins wrapped lines (`-J`). |
 | `report.useHookText`, `stopWhenEnded` | boolean | See above and `restartLoss`. |
-| `asideParentField` | string | See the `aside` capability. |
+| `asideParentField` | string | Required with the `aside` capability; forbidden without it. |
 | `hook.payload`, `hook.sessionFromEnv` | see "How a turn ends" | |
 | `login.killTarget` | `pane`, `session` or `name` | What the service kills to end a login. |
 | `recoverRank` | number | Match order for the `recover` capability. Required (a number) when `capabilities.recover` is true, because the restart-recovery sort in `machine/service.js` uses it; otherwise optional (a number or `null`). |
