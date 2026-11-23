@@ -7,7 +7,7 @@
 // settings has required modelPattern, modelError, weights and plans (key/label pairs including unknown and keys present in weights), optional modelOptions (fixed pairs or listedKey, listedShape and includePins), modelPlaceholder, cliLabel, vendor, setupUrl,
 // permissionMode (requires permissionName), permissionName, permissionChoices, accountWarning, modelHeadsUp, signInKind,
 // reviewFamily, plans, weights, reportedPlans, oldPlanWeights, modelError,
-// familyHint, accountPolicy and optional scoutAgentTool, monoModelNames and keyPrompt. models has
+// familyHint, accountPolicy and optional scoutHelper, monoModelNames and keyPrompt. models has
 // pins (slot -> { model, effort? }), format, efforts, hubPattern, and optional slotAliases,
 // effortError, familyCommand and bareTierSet. placement has workerRank, leadDefault, seenByDefault,
 // addOnMigration and appendWhenRequested. report.useHookText, stopWhenEnded,
@@ -46,14 +46,15 @@ function validateManifest(m) {
   check('settings.weights.unknown', v => typeof v === 'number' && Number.isFinite(v));
   check('settings.plans', v => arr(v) && v.every(pair => arr(pair) && pair.length === 2 && pair.every(s => str(s) && s.length > 0)) && v.some(([key]) => key === 'unknown') && v.every(([key]) => Object.hasOwn(m.settings.weights, key)));
   check('models.efforts',v=>arr(v)&&v.every((word, i) => str(word) && EFFORTS.indexOf(word) >= 0 && (i === 0 || EFFORTS.indexOf(word) > EFFORTS.indexOf(v[i - 1])))); check('placement.workerRank',v=>v===null||typeof v==='number');
-  for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested','models.familyCommand','models.bareTierSet','settings.scoutAgentTool','usage.showWarning','usage.probeWhileLive','usage.tryEveryMachine','settings.monoModelNames','usage.defaultProblem']) check(f,bool,false);
+  for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested','models.familyCommand','models.bareTierSet','usage.showWarning','usage.probeWhileLive','usage.tryEveryMachine','settings.monoModelNames','usage.defaultProblem']) check(f,bool,false);
   check('shortName',str,false);
   if (m.capabilities.aside) check('asideParentField',str); else if ('asideParentField' in m) throw new Error(`${m.cli}: asideParentField`);
   check('login.killTarget',v=>['pane','session','name'].includes(v),false);
   check('install.lookup',v=>['path','absolute','fallback'].includes(v));
   if (m.install.lookup === 'fallback') check('install.fallbackPath', v => str(v) && v.length > 0);
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);
-  for (const f of ['install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt','settings.roleInstructionsName']) check(f,str,false);
+  for (const f of ['install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt','settings.scoutHelper','settings.roleInstructionsName']) check(f,str,false);
+  if (m.settings.signInKind === 'key') check('settings.keyPrompt', v => str(v) && v.length > 0);
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
   if (m.settings.permissionMode) check('settings.permissionName', v => str(v) && v.length > 0);
   else if ('permissionName' in m.settings) throw new Error(`${m.cli}: settings.permissionName`);
