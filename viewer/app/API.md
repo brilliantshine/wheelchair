@@ -171,10 +171,7 @@ are accepted; invalid keys, values, and non-object inputs receive 400.
 
 Threads include `lead_name`, retained until and after archive; archived threads release the name for reuse. Settings `lead_name_list` picks where names come from: `greek` (the default), `nato`, `stars` (one-word proper star names), `people` (popular US first names) or `custom`, which uses `lead_names`. A saved file from before the choice existed reads as `custom` when it has names. `lead_names` is an array of up to 1000 unique case-insensitive names, trimmed to 1–40 characters, with blank entries discarded; the Settings page fills it from an uploaded text file. `custom` with no names uses Greek letters. Sending `lead_names` without `lead_name_list` keeps the older meaning: names switch to `custom`, and an empty list switches `custom` back to `greek`. A new lead gets a random free name from the list; only when every plain name is held does it draw from "<name> 2", then "<name> 3". New session records include the resolved `model` and `effort` (which may be null). Older sessions may omit them.
 
-Diagram cards accept optional `format` (`graph`, the default, `form`, or `html`). Image
-cards are lead-only and contain `path` and `title`; stored image cards also carry `file`,
-the basename supplied by the machine. Form and HTML diagrams register their plan but do
-not enter the graph registry.
+Diagram cards accept optional `format` (`graph`, the default, `form`, `html`, or `mockup`). Mockup diagrams require integer `width` and `height` from 200 to 2560; other formats refuse them. Image cards from leads and sub-leads contain `path` and `title` and may include `mockup: {graph, width, height}` for the thread plan, with the same dimension limits. Mockup files must be regular HTML files of at most 2 MiB. Stored image cards also carry `file`, the basename supplied by the machine. Form, HTML and mockup diagrams register their plan but do not enter the graph registry. Archiving keeps file and image uploads posted by leads and sub-leads.
 
 `POST /threads/:id/uploads?name=...` streams a raw file of at most 25 MiB to the lead's
 machine and returns `201 {path}`. A lead waiting for room or starting counts as live: the hub passes `vouched=1`, so the machine does not judge the lead itself. It returns 409 for an archived thread or absent live lead,
