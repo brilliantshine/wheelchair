@@ -97,15 +97,18 @@ connectors/
 Each `manifest.js` exports a plain object, no functions and no requires of other modules:
 
 - `cli`, `provider`, `label`, `displayName` — today's values from `providers.js`.
-- The existing flags `effort`, `typesRoleMessage`, `singleAccount`. `asideFork` and
-  `preflight` are not stored separately: `providers.js` derives them from
-  `capabilities.aside` and `capabilities.preflight`, so each fact is written once.
+- The existing flags `typesRoleMessage`, `singleAccount`. `asideFork`, `preflight` and
+  `effort` are not stored separately: `providers.js` derives them from
+  `capabilities.aside`, `capabilities.preflight` and whether `models.efforts` is non-empty,
+  so each fact is written once. Effort levels live only in `models.efforts`; the settings
+  page's effort choices and `codex/model.sh`'s effort lists read them from there (today
+  `viewer/pages/settings.js:16`, `codex/model.sh:42-43,104-106`; Kimi has none).
 - `capabilities`: an object of booleans naming the optional features in S3, true only for
   the tools that have them today.
 - `install`: today's recipe from `machine/lib/harness-recipes.js` and binary name and label
   from `machine/lib/harness-install.js`.
 - `settings`: what `viewer/pages/settings.js` shows per tool today (model placeholder,
-  effort choices, permission choices, account policy text, setup and install links).
+  permission choices, account policy text, setup and install links).
 - `models`: what `codex/model.sh` holds per provider today (default pins per tier, model
   name format, effort levels).
 - `placement`: the data behind today's defaults, giving exactly today's results and
@@ -137,6 +140,16 @@ Each `manifest.js` exports a plain object, no functions and no requires of other
   (`:611`), sign-in kind (`:1411,1457`), membership in the review-family choices
   (`:1600-1601`, `viewer/app/routes.js:378`, `viewer/app/settings.js:323`), and plan and
   weight tables (`viewer/app/settings.js:36-40`).
+- `install` also carries `instructionsFile`: the tool's global instructions file that
+  diagram-sensitivity setup writes, relative to its home (today Claude `CLAUDE.md` under
+  `WHEELCHAIR_CLAUDE_HOME`/`~/.claude`, Codex `AGENTS.md` under
+  `WHEELCHAIR_CODEX_HOME`/`~/.codex`; others none), with its home variable and default.
+  `sensitivity/set.sh` and the sensitivity step in `machine/lib/harness-install.js:102-110`
+  read the list of such tools from `registry.json` instead of naming Claude and Codex;
+  `WHEELCHAIR_PRESENT` keeps its meaning (comma-separated cli names).
+- `install` also carries `versionArgs`: the arguments the install job uses to check the
+  installed CLI's version (`--version` for all but Pi, which has none and is skipped, as
+  `machine/lib/harness-install.js:116-125` does today).
 - `install` also carries the fallback binary path the installer checks when the CLI is not
   on PATH (today Kimi `~/.kimi-code/bin/kimi`, Pi `~/.local/bin/pi`) and `pathRank`, the
   order the installer prepends CLI directories to the service PATH (today
@@ -152,8 +165,14 @@ Required machine members (every tool has these today): `command`, `firstMessage`
 (hook-driven) or `turnPoller` (log-polled, today only Kimi).
 
 Required hub members: `parseChat` (today's per-CLI parser in `viewer/app/chat.js`) and
-`pickReport` (today's per-CLI last-report selection, `viewer/app/chat.js:270-299,369-375`,
-`viewer/app/sessions.js:435-450`).
+`readReport(raw, payload)` (today's per-CLI last-report selection,
+`viewer/app/chat.js:270-299,369-375`). `readReport` returns `{ text, settled }`:
+`settled: false` means the transcript has not caught up yet (today only Pi, when
+`payload.entry_id` is set and that entry is absent, `chat.hasPiEntry`). The delivery loop in
+`viewer/app/sessions.js:432-454` keeps its budget and schedule exactly, retrying while
+`settled` is false and stopping on the first settled read, as today. Manifest flag
+`report.useHookText` (false for Pi, true for the rest) says whether the loop first takes
+the report from the hook payload (`sessions.js:435`).
 
 Optional members, each paired with a capability flag of the same meaning:
 
@@ -164,6 +183,7 @@ Optional members, each paired with a capability flag of the same meaning:
 | `preflight` | the Codex preflight (`codex/preflight.sh`, `viewer/app/balancer.js:59`, Ready check). The machine endpoint `POST /v1/preflight` keeps its request shape; it runs the preflight of the one connector with this capability (the contract test fails if more than one has it). Hub callers check the capability of the session's tool before calling, as they check "is it GPT" today | codex |
 | `sandbox` | `sandboxed(session)`: true when the session's tools run sandboxed (today Codex with `codex_mode !== 'unrestricted'`). Drives screen command wrapping (`machine/lib/screen.js:223`, via a `sandboxWrap(command)` member), Windows launch denial and status (`machine/lib/win.js:436,452,459`, `machine/lib/win-prompt.js:9`), for both new and recovered sessions | codex |
 | `restartLoss` | Two paths, both kept exactly. (1) `restartLossReason()`: the `end_reason` text given to a session newly adopted from tmux after a machine restart (`machine/service.js:552-564`; Pi "Lost track of this Pi session after a machine restart; restart it", Kimi "Lost track of this Kimi Code session after a machine restart; restart it"). Sessions that already have a recorded `end_reason` keep it. (2) Manifest flag `stopWhenEnded`: at startup and on each later poll, a non-stopped session of this tool with an `end_reason` is stopped fatally, retrying until it stops (today Pi, `:568,1097`). Kimi's sessions end on its polling path as today (`:1102`, part of `turnPoller`) | kimi, pi |
+| `projectTools` | `projectToolReason(name, entry)` returning the full skip text or null, and `projectToolFileWarning(servers)` (today Codex: `codexEntryReason`, "on Codex: …", and `codexOverrides(...).tooLarge`, `machine/lib/project-tools.js:7,20-34`). Project-tool checks run without a session, so `project-tools.js` iterates every connector with this capability | codex |
 | `spend` | `spend` | pi |
 | `liveSwitch` | `usual` + switch support | claude, codex |
 | `aside` | `asideArgv`, plus manifest `asideParentField` (`machine/lib/aside-turns.js:61-147`, `viewer/app/asides.js:41`). Aside replies, stderr and failure messages pass through the tool's `redact` when it has one, as Pi's do today (`aside-turns.js:80,97,138-142`) | claude, codex, pi |
@@ -204,8 +224,10 @@ Known branches missing from the map's inventory: browser pages `viewer/pages/thr
 and `viewer/pages/thread.js:4` (`PROVIDER_LABEL`), `viewer/app/asides.js:41`,
 `machine/lib/aside-turns.js:61-147`, the Codex sandbox checks (`sandbox` capability),
 `machine/lib/statusline.js` (S5), `test-support/smoke/` (S6), the installer's per-tool
-fallback paths and PATH order (S2 `install`), and named property dispatch such as
-`adapters.codex.loginEnv` (`machine/service.js:2293`) and `adapters.pi.redact`.
+fallback paths and PATH order (S2 `install`), `machine/lib/project-tools.js:7,20-34` (`projectTools`
+capability), diagram-sensitivity setup (`sensitivity/set.sh`,
+`machine/lib/harness-install.js:102-110`; S2 `install.instructionsFile`), and named
+property dispatch such as `adapters.codex.loginEnv` (`machine/service.js:2293`) and `adapters.pi.redact`.
 
 **Shared output scrub stays shared.** Pane capture and sign-in output are scrubbed of
 OpenRouter keys for every tool today (`machine/service.js:603,1757,1763`). That scrub moves
@@ -236,14 +258,20 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   the contract test runs that check (Decision 13).
 - `codex/model.sh` reads its provider list (`PROVIDERS`, `codex/model.sh:14`), default
   pins, model formats and effort levels from `connectors/registry.json` with Python's
-  `json`, never by running `node` (Decision 16). Everything else per tool stays in
+  `json`, never by running `node` (Decision 16). Every place in `model.sh` that enumerates
+  providers derives them from that list, including the pin-file parser's provider
+  alternatives (`parse_pins`, `codex/model.sh:94-124`), so a registry-only provider's pins
+  round-trip through `init`, `set` and reads. `WHEELCHAIR_REGISTRY`, when set, points
+  `model.sh` at another `registry.json` (test seam). Everything else per tool stays in
   `model.sh` unchanged: GPT's pin workflow (bare-tier commands, `set`, aliases,
   `family claude`, the heads-up `check`) and GPT and Kimi model discovery with their
   `show --json` keys. Those lines are allowlisted in the guard with the tag
   `model-script`. The command-line interface and output of `model.sh` are unchanged.
-- `install.sh` detection, version checks, "harness found" lines, the `present` list passed
-  to `install/unseen.py`, fallback paths and the service PATH order read
-  `connectors/registry.json` (via `python3`, already required). One-off cleanup of retired
+- `install.sh` detection, "harness found" lines, the `present` list passed to
+  `install/unseen.py`, fallback paths and the service PATH order read
+  `connectors/registry.json` (via `python3`, already required). `install.sh` gains no CLI
+  version probes; CLI version checks stay in the install job
+  (`machine/lib/harness-install.js`), driven by `install.versionArgs`. One-off cleanup of retired
   Claude skills and Codex prompts (`install.sh:61-62,138-149`) stays as it is, allowlisted
   as `legacy` (S6). `hook.sh` and install
   scripts stay bash 3.2 compatible.
@@ -271,9 +299,11 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   but no member, is rejected with a message naming it; `providers.js` exports equal a
   frozen snapshot of today's values.
 - New name-check guard test: scans `machine/`, `viewer/app/`, `viewer/pages/`,
-  `viewer/server.js`, `install.sh` and `codex/model.sh` (excluding test files, `test-support/`
+  `viewer/server.js`, `install.sh`, `sensitivity/set.sh` and `codex/model.sh` (excluding test files, `test-support/`
   and `connectors/`), and fails listing each hit. A hit is a tool's cli or provider id as:
-  a string literal in a comparison (`===`, `!==`, `==`, `!=`, `case`, `includes(...)`), an
+  a string literal in a comparison (`===`, `!==`, `==`, `!=`, `case`, `includes(...)`), a
+  string literal argument to any call (`machine('codex')`, `manifest('kimi')`,
+  `byProvider('gpt')`), a `require` path into a specific connector folder, an
   element of an array literal, an object literal key, a bracket access (`x['pi']`), or a
   property access on a connector or adapter object (`adapters.codex`); in shell, a `case`
   pattern, a `[[ ... == name ]]` test or a word in a `for` list; in Python, a string in a
@@ -283,6 +313,9 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   `install.sh:61-62,138-149`), `model-script` (per-tool model code kept in `codex/model.sh`,
   Decision 16), or `compat` (outside connectors' meaning, e.g. the graph
   viewer's caller label `viewer/server.js:1336,1922-1935`).
+- `codex/test/` gains a round trip: with `WHEELCHAIR_REGISTRY` pointing at a copy of
+  `registry.json` plus a sixth provider, `model.sh init`, `set` and a read of that
+  provider's pin succeed and the other providers' pins are unchanged.
 - Existing tests move with their code or keep working; none is deleted without its
   assertions moving.
 
@@ -325,6 +358,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| `hook.sh` exit-code precedence for malformed calls (missing tool, missing session argument, Kimi called through the hook) may differ in detail after the manifest-driven rewrite | Rare path: the CLIs always call the hook with the arguments wheelchair configured | review-round-3 |
 
 ## Check Once Built
 
@@ -406,6 +440,14 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Guard misses tool ids passed as call arguments; `project-tools.js` Codex import not covered | upheld (blocking; same as mechanics) | S6 call-argument and `require` hit forms; S3 `projectTools` capability |
+| mechanics | blocking | Same guard gap via `machine('codex')`; project-tool checks run without a session | upheld | merged with the row above |
+| intent | minor | Diagram-sensitivity setup is per-tool and uncovered | upheld | S2 `install.instructionsFile`; `sensitivity/set.sh` in guard scope |
+| intent | minor | Effort held in three places per manifest | upheld | S2: `models.efforts` only; `effort` derived |
+| mechanics | blocking | `parse_pins` provider regex stays hard-coded; a sixth tool's pins would invalidate the file | upheld (major: only affects a future tool) | S5 all provider enumerations in `model.sh` from the registry; S6 round-trip test |
+| mechanics | major | `pickReport` cannot express Pi's skip-hook-text and retry-until-entry | upheld | S3 `readReport` returns `{ text, settled }`; manifest `report.useHookText` |
+| mechanics | minor | Version checks belong to the install job, not `install.sh`; Pi skips them | upheld | S2 `install.versionArgs`; S5 install bullet |
+| mechanics | minor | Rare path: hook exit precedence for malformed calls | accepted-risk | Accepted Risks (rare path) |
 
 ## Prior Work
 
