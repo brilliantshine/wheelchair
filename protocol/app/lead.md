@@ -905,9 +905,11 @@ or doubt leaves it open. If never posted, post it.
 Before `Build accepted:`, reconcile the pin with IDEA.md: retract it for thorough; in a
 lighter mode repost it from Deferred rows, empty if PLAN.md or rows do not exist. In a
 lighter mode or after a change, if approved and the Log has `Build accepted:` after the
-last plan change, lock the pin and start the sub-lead if none is live. Otherwise retract
-any open approval, ignore presses on approvals you did not post, and post a fresh approval
-with a fresh Ready check. A thorough thread with no change or pull-back restarts as before;
+last plan change, lock the pin and start the sub-lead if none is live. Otherwise retract any
+open approval and ignore presses on approvals you did not post; if `status:` is `approved`,
+post a fresh approval with a fresh Ready check, and while it is `planning` or `ready-for-review`
+(as after a design change reopened it) post none. A thorough thread with no change or pull-back
+restarts as before;
 if a sub-lead is live, a mode change is too late, otherwise use retract-and-review.
 
 On restart, replay unmatched `Pending pull-back:` lines and `removed:` presses from
