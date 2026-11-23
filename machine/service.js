@@ -1536,8 +1536,8 @@ class MachineService {
     const adapter = adapters[current.cli];
     if (adapter.beforeTurnEvent) event = await adapter.beforeTurnEvent(this, current, event);
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
-    if (event.type === 'turn-ended' && adapter.onTurnEnded) {
-      const result = await adapter.onTurnEnded(current, event);
+    if (event.type === 'turn-ended') {
+      const result = adapter.onTurnEnded ? await adapter.onTurnEnded(current, event) : {};
       if (result.ignored) return { ignored: true };
       if (connectors.manifest(current.cli)?.capabilities.steps) {
         await this.readSteps(current, { spoolOnly: spooled, flush: true });
