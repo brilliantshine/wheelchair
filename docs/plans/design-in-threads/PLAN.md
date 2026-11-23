@@ -291,6 +291,7 @@ Optional; present only in the lighter modes.
 |---|------|-----------------|--------|-------------------------|
 | D1 | Tap on a mockup to leave a comment on that spot | Chat feedback works for normal use | planning | Decision 4; comments would need to reach the designer as messages |
 | D2 | Download a mockup as a PNG from "Open full size" | Viewing works without it; needs a browser-side render of the iframe | planning | `viewer/pages/picture.js` offers PNG for graphs and forms today |
+| D3 | The Built half's "Open full size" shows the screenshot at true size on a phone | Worst case one extra tap: Chromium's image viewer fits it to the screen until tapped | verification | Open it on the picture page at natural size with scrolling (`viewer/pages/picture.js`, `viewer/pages/thread.js` image case) |
 
 ## Accepted Risks
 
@@ -467,3 +468,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-23 — Choice: T2, mockup iframe: `scrolling="no"` and a white background.
 - 2026-11-23 — Choice: T2, picture page: an image card's mockup with no thread plan shows "Mockup not found."
 - 2026-11-23 — All five tasks done; full validation at d064ee6c (viewer node 911/911, browser 1420 passed, machine 18 pre-existing wslpath failures only). COMPLETION.md written; status verifying.
+- 2026-11-23 — Verification 1 gaps answered by the lead: fix the full-size border, the stacking width and designer revisions on the Agents page and quiet watch; D3 deferred (Built half's full size).
