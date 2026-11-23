@@ -479,3 +479,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-23 — Worker reported no choices; I listed 1 from the scout: re-wrapped the tails of both lead.md paragraphs (one 94-character line, one short line).
 - 2026-11-23 — R4 accepted (band: scout): lead.md restart rule posts a fresh approval only when status is approved; none while planning or ready-for-review after a design change. protocol-rules 44/44.
 - 2026-11-23 — Worker reported no choices; I listed 1 from the scout: re-wrapped lead.md 908-912 (two lines of 95-96 characters and a short trailing line; cosmetic).
+- 2026-11-23 — Verification attempt 4 at f60a26a6: both verifiers (claude-opus-5-5, gpt-6.2-sol) PASS, no gaps. 2 rare paths accepted over the build (verification-1, verification-2); D3 deferred.
