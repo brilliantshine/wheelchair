@@ -196,6 +196,18 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | mechanics | minor | Scroll anchor measured after banners update; no fallback if it disappears | upheld | S1: record at start of render; fall back to next surviving entry |
 | mechanics | minor | PNG test passes with a blank image | upheld | Validation 4 checks known pixels |
 
+### Round 2 — 2026-11-23
+
+**Lanes:** pending.
+
+**Changed since Round 1:**
+- S1: only unchanged entries containing an iframe are pinned in place; others may move. Scroll anchor recorded at the start of `render()`, with a fallback.
+- S2: protocol sentence defers to the Mockups rules by stage (Decision 8); sending uses the composer's `POST /messages` path; draft kept on failure; picture page re-checks before sending; message names the file, not the card.
+- Validation 4 checks known pixels. Accepted Risk: PNG untested in WebKit.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
