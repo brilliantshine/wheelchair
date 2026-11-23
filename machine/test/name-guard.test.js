@@ -9,7 +9,7 @@ const connectors = require('../../connectors');
 const root = path.resolve(__dirname, '../..');
 const ids = [...new Set(connectors.list().flatMap(m => [m.cli, m.provider]))];
 const word = ids.join('|');
-const literal = `['"]#+['"]`;
+const literal = `['"\x60]#+['"\x60]`;
 const js = [
   new RegExp(`(?:===|!==|==|!=)\\s*${literal}|${literal}\\s*(?:===|!==|==|!=)`),
   new RegExp(`\\bcase\\s+${literal}\\s*:`),
@@ -40,7 +40,7 @@ function walk(dir, extensions) {
 }
 // Preserve offsets and newlines; only exact ID literals and connector paths receive
 // markers. Template expressions are code, while template text remains blank.
-function mask(source, file) {
+function mask(source, file, literals) {
   const out = source.split('');
   const blank = (a, b, mark = ' ') => { for (let j = a; j < b; j++) if (source[j] !== '\n' && source[j] !== '\r') out[j] = mark; };
   const shellLike = !file.endsWith('.js');
@@ -63,9 +63,11 @@ function mask(source, file) {
         while (end < source.length && source[end] !== c) { if (source[end] === '\\') end++; end++; }
         const value = source.slice(i + 1, end);
         const marker = ids.includes(value) ? '#' : /(?:^|\/)connectors\/(?:[^/]+)\//.test(value) && ids.some(id => value.includes(`connectors/${id}/`)) ? '@' : ' ';
-        blank(i + 1, end, marker); i = Math.min(end + 1, source.length); continue;
+        blank(i + 1, end, marker); if (marker !== ' ') literals.push({ start: i, end: Math.min(end + 1, source.length), marker }); i = Math.min(end + 1, source.length); continue;
       }
       if (!shellLike && c === '`') {
+        const end = source.indexOf('`', i + 1), value = source.slice(i + 1, end);
+        if (end >= 0 && ids.includes(value)) { blank(i + 1, end, '#'); literals.push({ start: i, end: end + 1, marker: '#' }); i = end + 1; continue; }
         out[i++] = ' ';
         while (i < source.length) {
           if (source[i] === '\\') { blank(i, Math.min(i + 2, source.length)); i += 2; continue; }
@@ -94,20 +96,33 @@ function mask(source, file) {
   return out.join('');
 }
 function detect(source, file = 'snippet.js') {
-  const hits = [], scan = mask(source, file);
-  const patterns = file.endsWith('.js') ? js : [shell, ...(file === 'codex/model.sh' ? [python] : [])];
-  for (const re of patterns) {
-    const global = new RegExp(re.source, [...new Set(re.flags + 'gm')].join(''));
-    for (const match of scan.matchAll(global)) {
-      const target = new RegExp(literal + `|['"]@+['"]|\\b(?:${word})\\b`).exec(match[0]);
-      if (!target) continue;
-      const offset = match.index + target.index;
-      const lineNumber = source.slice(0, offset).split('\n').length;
-      const line = source.split('\n')[lineNumber - 1];
-      if (!allow.some(a => a.file === file && a.pattern.test(line))) hits.push({ line: lineNumber, text: line.trim() });
-    }
+  const hits = [], literals = [], scan = mask(source, file, literals);
+  const report = offset => {
+    const lineNumber = source.slice(0, offset).split('\n').length;
+    const line = source.split('\n')[lineNumber - 1];
+    if (!allow.some(a => a.file === file && a.pattern.test(line))) hits.push({ line: lineNumber, text: line.trim() });
+  };
+  const shellLiteral = [
+    new RegExp(String.raw`(?:^|[| (])\s*${literal}\s*(?:[|)]|\]\])`),
+    new RegExp(String.raw`\[\[[\s\S]*?${literal}[\s\S]*?\]\]`),
+    new RegExp(String.raw`\bfor\s+\w+\s+in\s+[^;\n]*(?:\\\n[^;\n]*)*${literal}`),
+  ];
+  const pythonLiteral = new RegExp(String.raw`(?:==|!=|\b(?:not\s+)?in\b)\s*${literal}|${literal}\s*(?:==|!=|\b(?:not\s+)?in\b|,)|[[(,]\s*${literal}\s*[,\])]`);
+  for (const item of literals) {
+    // Isolate this literal so a match can only report its own position.
+    const isolated = scan.split('');
+    for (const other of literals) if (other !== item) for (let i = other.start; i < other.end; i++) if (isolated[i] !== '\n') isolated[i] = ' ';
+    const code = isolated.join('');
+    const patterns = file.endsWith('.js') ? js : [...shellLiteral, pythonLiteral];
+    if (patterns.some(re => { const flags = [...new Set(re.flags + 'gm')].join(''); return [...code.matchAll(new RegExp(re.source, flags))].some(m => m.index <= item.start && m.index + m[0].length >= item.end); })) report(item.start);
   }
-  return hits;
+  // Bare shell words and JS shorthand keys retain their existing checks.
+  const patterns = file.endsWith('.js') ? [js[5], js[6], js[7]] : [shell];
+  for (const re of patterns) for (const match of scan.matchAll(new RegExp(re.source, [...new Set(re.flags + 'gm')].join('')))) {
+    const target = new RegExp(`\\b(?:${word})\\b`).exec(match[0]);
+    if (target) report(match.index + target.index);
+  }
+  return hits.sort((a, b) => a.line - b.line);
 }
 test('detector recognizes name checks across lines', () => {
   for (const snippet of ["x === 'codex'", "'codex' !== x", "case 'codex':", "f('codex')", "f(\n x,\n 'codex'\n)", "x ? 'codex' : y", "'codex' || x", "x && 'codex'", "['codex']", "{\n codex\n: 1}", "{ codex, other }", "connectors.codex", "require('connectors/codex/machine')"]) assert.ok(detect(snippet).length, snippet);
@@ -117,6 +132,9 @@ test('detector recognizes name checks across lines', () => {
   assert.equal(detect("f(\n  'codex'\n)")[0].line, 2);
   assert.deepEqual(detect("f('codex',\n 'kimi')").map(x => x.line), [1, 2]);
   for (const snippet of ["x\n===\n'codex'", "case\n'codex':", "['codex',\n x]", "obj[\n'codex'\n]", "x ||\n'codex'", "'codex'\n&& x", "{\n'codex'\n: x}"]) assert.ok(detect(snippet).length, snippet);
+  for (const snippet of ["cli === `kimi`", "`kimi` === cli"]) assert.ok(detect(snippet).length, snippet);
+  for (const snippet of ["case \"$cli\" in \"kimi\")", "case $cli in kimi)", "[[ $x == \"codex\" ]]", "[[ $x == 'codex' ]]", "[[ $x == codex ]]", "for t in \"claude\" \"codex\"", "for t in claude codex"]) assert.ok(detect(snippet, 'test.sh').length, snippet);
+  for (const snippet of ["'kimi' in enabled", "'kimi' not in enabled", "enabled in 'kimi'"]) assert.ok(detect(snippet, 'test.py').length, snippet);
   for (const snippet of ['# for x in codex', "echo 'for x in codex'"]) assert.deepEqual(detect(snippet, 'test.sh'), [], snippet);
   for (const snippet of ['case x in codex)', '[[ $x == codex ]]', 'for x in claude codex', 'case x in\n codex)', '[[ $x ==\n codex ]]', 'for x in other \\\n codex']) assert.ok(detect(snippet, 'test.sh').length, snippet);
   for (const snippet of ["x == 'codex'", "x ==\n 'codex'", "x in ['codex']", "x in [\n 'codex'\n]", "('codex', 'other')", "(\n 'codex',\n 'other')"]) assert.ok(detect(snippet, 'codex/model.sh').length, snippet);
