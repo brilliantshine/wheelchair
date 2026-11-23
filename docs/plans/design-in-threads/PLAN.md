@@ -96,8 +96,11 @@ Three pieces:
 
 - `image` cards gain an optional `mockup` object `{graph, width, height}` naming a mockup
   file of the thread's own plan (the hub uses `thread.slug`, the same plan the archived
-  reader uses; when it is unset, the hub first runs the same plan discovery the thread page
-  runs, `viewer/app/routes.js:507-517` / `viewer/app/chat.js:433-439`, and saves it; it then
+  reader uses; when it is unset, the hub first discovers it the way the thread page does
+  (`viewer/app/routes.js:507-517` / `viewer/app/chat.js:433-439`) but without that path's own
+  save, because card acceptance already holds the thread's write queue
+  (`viewer/app/cards.js:57`, `viewer/app/state.js:137`); the slug is set in the same update
+  that stores the card; it then
   registers the plan as for a diagram card, and refuses `mockup` only when the thread still
   has no plan), with the same rules as a mockup diagram card. When present, the card shows the
   screenshot and the mockup side by side, labelled "Built" and "Mockup", each scaled to half
@@ -184,10 +187,9 @@ Rules, in a new `protocol/app/designer.md`:
   the lead posts a `stub` card at once (durable, so a lead restart loses nothing):
   `depends_on_parent: true`, summary quoting his words verbatim, the current mockup file
   paths (on the parent branch) and a one-line description of the screenshot that prompted
-  it. Before the stub, the lead posts each file Collin attached with the request as a
-  `file` card (lead-authored uploads survive archiving), and the summary names each one by
-  both paths: `<stateDir>/uploads/<parent thread>/<name>` and, once the parent is archived,
-  `<stateDir>/kept/<parent thread>/<name>` (`machine/service.js:1436-1445`). The stub's lead
+  it. If Collin attached files with the request, the summary describes each in a line and
+  says they may be gone once the parent is archived, so the stub's lead asks him to attach
+  them again if it needs them. The stub's lead
   plans it from step 1 with its own mockups. Nothing in this thread changes.
 - **Restart:** a restarted lead stops any live designer (its results would go to the dead
   lead) and, if the "Agree the mockups" question is still open, starts a fresh one briefed
@@ -219,7 +221,9 @@ Rules, in a new `protocol/app/designer.md`:
   worker's `result`, a difference from the mockup the worker left without a good reason is
   a reason to send the task back, like any other mismatch with the brief. When it accepts a
   task whose report has screenshots, it posts one `image` card per screenshot (with `mockup`
-  set when the report names one) before merging. It does not relay screenshots to
+  set when the report names one) before merging. The card's `title` names the task and the
+  parts of the mockup it built ("Built: header and filters (rest comes in later tasks)"),
+  so a part-built screen reads as part-built. It does not relay screenshots to
   the lead.
 - **Verifier** (`protocol/app/verifier.md`): each Spec mockup is a Spec item. The verifier
   screenshots the built screen at the mockup's size and compares the two. A difference a user
@@ -274,6 +278,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A queued approval retract arriving after Collin presses Start building leaves a build accepted on a plan reopened for design | Rare path: a connection drop and a press inside that window together | review-round-4 |
 | A lead that dies after Collin asks for a build-time design change and before it posts the stub loses the request | Rare path: posting the stub is the lead's first act on the request; Collin sees no stub and can ask again | review-round-3 |
 
 ## Check Once Built
@@ -357,9 +362,22 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 4 — 2026-11-22
 
-**Lanes:** see below.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 3:** a mockup change before Start building returns status to `planning` (new allowed move); follow-up stub posts attachments as `file` cards and describes the screenshot; hub resolves the plan before refusing `image.mockup`; briefs name which parts of a mockup each task owns; worker fallback when the mockup can't be rendered; verifier note covers either half.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Part-built screenshot beside the whole mockup reads as drift | upheld | Image title names the task and the parts it built |
+| mechanics | blocking | Attachments can't be posted as `file` cards from uploads; kept name unknown | upheld | Cut: the stub describes attachments and its lead asks Collin to re-attach if needed |
+| mechanics | blocking | Slug discovery inside card acceptance would deadlock on the write queue | downgraded (minor) | Any test of the new path hangs at once, so it can't ship unnoticed; Spec now says discover without the nested save |
+| mechanics | major | Queued approval retract can lose to a Start building press | accepted-risk | Rare path: needs a connection drop and a press inside that window; same pattern as the existing mode-change rule |
+
+### Round 5 — 2026-11-22
+
+**Lanes:** see below.
+
+**Changed since Round 4:** follow-up stub no longer posts attachments (describes them; re-attach on request); slug discovery for `image.mockup` happens without a nested save, in the card's own update; screenshot card titles name the task and the parts it built.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
