@@ -1,6 +1,6 @@
 ---
 slug: chat-refresh-leftovers
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-22
 ---
 
@@ -35,6 +35,23 @@ None.
 | 5 | Machine: a 60 s unref'd sweep timer drops hash sets unused for `COPY_HASHES_IDLE_MS`; the on-copy sweep stays. A copy finishing just after stop re-inserting a set is left to the sweep | Bounded memory without new locking; the re-insert is a sub-second race and self-heals within ~11 minutes | defaulted |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  P[Chat poll for a session] --> K{Cached and same parse inputs?}
+  K -- yes --> A[Ask machine: anything new since last time?]
+  K -- no --> F[Ask machine for the whole transcript]
+  A -- nothing new --> U[Show the cached chat]
+  A -- new text --> H{Same text as last parse?}
+  F --> H
+  H -- yes --> U
+  H -- no --> R[Parse it, cache only the parsed chat] --> U
+  A -- failed --> U
+  P -.every call.-> S[Note machine last seen in memory] --> W{Saved in the last minute?}
+  W -- no --> D[Write machines.json]
+  W -- yes --> X[Skip the write]
+  T[Machine: every minute] --> E[Drop fingerprints unused for 10 minutes]
+```
 
 Three independent changes. Validation for all: `node --test viewer/test/*.test.js` and
 `bash machine/test/run.sh` pass.
@@ -171,3 +188,5 @@ one; after the server closes, the timer is cleared (e.g. stub `clearInterval` or
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- Ready check 2026-11-22: hub and machine service answer; claude and codex installed; Codex preflight passed.
