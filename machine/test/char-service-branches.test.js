@@ -16,6 +16,13 @@ async function serverFor(m) {
   return { url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(resolve => server.close(resolve)) };
 }
 
+test('unknown cli reports the registry choices', async () => {
+  const m = machine();
+  const message = 'cli must be claude, codex, agy, kimi or pi';
+  assert.throws(() => m.commandFor({ cli: 'unknown' }), { message });
+  await assert.rejects(m.startNamed({ cli: 'unknown' }, 'wc-test-worker'), { message });
+});
+
 test('recovery classifies panes and retries only Pi fatal stops on the recovery path', async () => {
   const m = machine(), panes = {
     'wc-a-worker': 'ordinary unknown pane', 'wc-b-worker': 'Codex',

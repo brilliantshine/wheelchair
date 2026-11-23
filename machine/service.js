@@ -31,6 +31,7 @@ const { promisify } = require('node:util');
 const gitAsync = promisify(execFile);
 const connectors = require('../connectors');
 const { scrubOutput } = require('../connectors/common');
+const listWords = items => items.slice(0, -1).join(', ') + ' or ' + items.at(-1);
 const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
 const { limitedUntil } = require('./lib/limits');
 const { AsideTurns } = require('./lib/aside-turns');
@@ -730,7 +731,7 @@ class MachineService {
   }
   commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context = {}) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
+    if (!adapter) die(`cli must be ${listWords(connectors.list().map(m => m.cli))}`);
     return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries, resume: context.resume });
   }
 
@@ -801,7 +802,7 @@ class MachineService {
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
+    if (!adapter) die(`cli must be ${listWords(connectors.list().map(m => m.cli))}`);
     await this.versionGate(input.cli);
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
