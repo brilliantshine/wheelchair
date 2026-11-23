@@ -34,6 +34,8 @@ test('contract rejects missing and inconsistent members and fields', () => {
   const polled = structuredClone(manifests.find(x => x.cli === 'kimi')); polled.hook = { payload: 'stdin' }; assert.throws(() => contract.validate(polled, 'machine', connectors.machine(polled.cli)), /hook/);
   for (const member of ['bindTranscript', 'spoolWaiting', 'validTranscript']) { const pollManifest = manifests.find(x => x.cli === 'kimi'); const pollHalf = { ...connectors.machine(pollManifest.cli) }; delete pollHalf[member]; assert.throws(() => contract.validate(pollManifest, 'machine', pollHalf), new RegExp(member)); const hookHalf = { ...connectors.machine(manifests[0].cli), [member]: () => {} }; assert.throws(() => contract.validate(manifests[0], 'machine', hookHalf), new RegExp(member)); }
   const missing = structuredClone(manifests[0]); delete missing.models.format; assert.throws(() => contract.validateManifest(missing), /models.format/);
+  const badPinSyntax = structuredClone(manifests[0]); badPinSyntax.models.pins.worker = { model: 'Model-V2' }; assert.throws(() => contract.validateManifest(badPinSyntax), /models\.pins\.worker/);
+  const badPinFormat = structuredClone(manifests[0]); badPinFormat.models.pins.worker = { model: 'Model' }; assert.throws(() => contract.validateManifest(badPinFormat), /models\.pins\.worker/);
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 'pattern'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);
   const noModelError = structuredClone(manifests[0]); delete noModelError.settings.modelError; assert.throws(() => contract.validateManifest(noModelError), /settings.modelError/);
