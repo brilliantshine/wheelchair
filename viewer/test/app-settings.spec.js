@@ -258,7 +258,10 @@ test.describe('desktop', () => {
   test('the auto-merge switch says Saved, not applies to new sessions, and survives a reload', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
     const merge = page.getByRole('radiogroup', { name: 'Merge pull requests when done' });
+    await expect(page.getByRole('radiogroup', { name: 'Delete the branch after merging' })).toHaveCount(0);
     await merge.getByRole('radio', { name: 'On' }).click();
+    await page.getByRole('radiogroup', { name: 'Delete the branch after merging' }).getByRole('radio', { name: 'On' }).click();
+    await expect.poll(async () => (await settings(page)).auto_merge_delete_branch).toBe('on');
     await expect(merge.getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('.note').first()).toHaveText('Saved');
     await expect.poll(async () => (await settings(page)).auto_merge).toBe('on');
