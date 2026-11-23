@@ -21,9 +21,11 @@ DEFAULTS = {tool["provider"]: {slot: (pin["model"], pin.get("effort"))
             for slot, pin in tool["models"]["pins"].items()} for tool in TOOLS}
 FORMATS = {tool["provider"]: re.compile(tool["models"]["format"]) for tool in TOOLS}
 EFFORTS = {tool["provider"]: set(tool["models"]["efforts"]) for tool in TOOLS}
+LABELS = {tool["provider"]: tool["label"] for tool in TOOLS}
 # model-script: GPT and Claude retain their tier aliases and discovery formats.
 ALIASES = {"luna": "light", "terra": "standard", "sol": "heavy", "astra": "critical"}
 CLAUDE_ALIASES = {"haiku": "light", "sonnet": "standard", "opus": "heavy"}
+# model-script: GPT and Kimi discovery use these formats
 VALUE = FORMATS["gpt"]
 KIMI_VALUE = FORMATS["kimi"]
 
@@ -423,10 +425,11 @@ def main(root, argv):
         _, provider, raw_slot, model, *tail = argv
         slot = slot_for(provider, raw_slot)
         effort = tail[0] if tail else None
-        if provider == "kimi" and effort is not None:
-            print("Kimi Code has no effort setting", file=sys.stderr)
+        if not EFFORTS[provider] and effort is not None:
+            print(f"{LABELS[provider]} has no effort setting", file=sys.stderr)
             sys.exit(2)
         if provider == "gpt" and effort is not None and effort not in EFFORTS[provider]:
+            # model-script: GPT effort wording
             print("GPT effort must be one of: low, medium, high, xhigh", file=sys.stderr)
             die_usage()
         if (slot is None or not value_ok(provider, model)

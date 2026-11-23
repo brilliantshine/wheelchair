@@ -67,8 +67,11 @@ for name, values in (
     ("tool_clis", [t["cli"] for t in tools]),
     ("tool_binaries", [t["install"]["binary"] for t in tools]),
     ("tool_fallbacks", [os.path.expanduser(t["install"].get("fallbackPath", "")) for t in tools]),
-    ("tool_sensitivity", [int(t["install"]["sensitivity"]) for t in tools]),
-    ("ranked_indices", sorted(range(len(tools)), key=lambda i: tools[i]["install"]["pathRank"])),
+    ("tool_sensitivity", [int(bool(t["install"].get("sensitivity", False))) for t in tools]),
+    ("ranked_indices", sorted(range(len(tools)), key=lambda i: (
+        tools[i]["install"].get("pathRank") is None,
+        tools[i]["install"].get("pathRank") or 0,
+        i))),
 ):
     print(name + "=(" + " ".join(shlex.quote(str(v)) for v in values) + ")")
 PYREG

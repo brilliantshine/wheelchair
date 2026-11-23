@@ -155,6 +155,8 @@ run_model set openrouter light a/b bogus
 assert 'OpenRouter rejects unknown effort' test "$status" -eq 2
 run_model set kimi light kimi-x high
 assert 'Kimi still rejects effort' test "$status" -eq 2
+run_model set kimi standard kimi-code/k3 high
+assert 'Kimi effort refusal uses the exact label message' bash -c '[[ $1 -eq 2 && $2 == "Kimi Code has no effort setting" ]]' _ "$status" "$(cat "$stderr")"
 run_model set openrouter light none
 assert 'OpenRouter saves none' test "$status" -eq 0
 run_model openrouter light
