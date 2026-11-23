@@ -305,6 +305,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | A queued approval retract arriving after Collin presses Start building leaves a build accepted on a plan reopened for design | Rare path: a connection drop and a press inside that window together | review-round-4 |
 | A lead that dies after Collin asks for a build-time design change and before it posts the stub loses the request | Rare path: posting the stub is the lead's first act on the request; Collin sees no stub and can ask again | review-round-3 |
 | `card.js`'s mockup file check does not confirm the resolved file stays inside the plan's `graphs/` directory | Rare path: needs a crafted `..` or symlinked graph name from a local agent; the hub's image check and the server's read both enforce containment | verification-1 |
+| Built and Mockup stay side by side on a card between about 598 and 599px wide (the stacking query measures the card's inner width, and the card border's rendered width varies by a fraction of a pixel) | Rare path: needs a window whose card width lands in a one-pixel band at the cutoff; worst case is a side-by-side layout one pixel early | verification-2 |
 
 ## Check Once Built
 
