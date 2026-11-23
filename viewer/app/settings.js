@@ -427,17 +427,20 @@ async function models(hub) { return JSON.parse((await modelCommand(hub, ['show',
 async function headsUp(hub) { return JSON.parse((await modelCommand(hub, ['check', '--json'])).stdout); }
 
 function options(models) {
-  const claude = [
-    ['haiku', 'Latest Haiku'], ['sonnet', 'Latest Sonnet'], ['opus', 'Latest Opus'], ['fable', 'Latest Fable'],
-    ['claude-haiku-5-5', 'claude-haiku-5-5'], ['claude-sonnet-5-5', 'claude-sonnet-5-5'], ['claude-opus-5-5', 'claude-opus-5-5'], ['claude-fable-5-2', 'claude-fable-5-2'],
-  ].map(([value, label]) => ({ value, label }));
-  const visible = Array.isArray(models.visible) ? models.visible : [];
-  const current = Object.values(models.gpt || {}).map((cell) => cell?.model).filter(Boolean);
-  const gpt = [...new Set([...visible, ...current])].map((value) => ({ value, label: value }));
-  const kimiListed = (Array.isArray(models.kimi_visible) ? models.kimi_visible : []).filter((o) => o && typeof o.value === 'string' && typeof o.label === 'string');
-  const kimiCurrent = Object.values(models.kimi || {}).map((cell) => cell?.model).filter((value) => value && !kimiListed.some((o) => o.value === value));
-  const kimi = [...kimiListed.map(({ value, label }) => ({ value, label })), ...[...new Set(kimiCurrent)].map((value) => ({ value, label: value }))];
-  return { claude, gpt, kimi };
+  const result = {};
+  for (const manifest of connectors.list()) {
+    const spec = manifest.settings.modelOptions;
+    if (!spec) continue;
+    if (spec.fixed) { result[manifest.provider] = spec.fixed.map(([value, label]) => ({ value, label })); continue; }
+    const listed = Array.isArray(models[spec.listedKey]) ? models[spec.listedKey] : [];
+    const current = spec.includePins ? Object.values(models[manifest.provider] || {}).map(cell => cell?.model).filter(Boolean) : [];
+    if (spec.listedShape === 'strings') result[manifest.provider] = [...new Set([...listed, ...current])].map(value => ({ value, label: value }));
+    else {
+      const valid = listed.filter(o => o && typeof o.value === 'string' && typeof o.label === 'string');
+      result[manifest.provider] = [...valid.map(({ value, label }) => ({ value, label })), ...[...new Set(current.filter(value => !valid.some(o => o.value === value)))].map(value => ({ value, label: value }))];
+    }
+  }
+  return result;
 }
 
 async function describe(hub) {

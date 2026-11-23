@@ -4,7 +4,7 @@
 // cli, provider, label, displayName, optional shortName, typesRoleMessage,
 // singleAccount, and boolean capabilities. install has command, binary, label,
 // optional node, versionArgs, optional fallbackPath, pathRank and sensitivity.
-// settings has modelPattern, modelPlaceholder, cliLabel, vendor, setupUrl,
+// settings has optional modelOptions (fixed pairs or listedKey, listedShape and includePins), modelPattern, modelPlaceholder, cliLabel, vendor, setupUrl,
 // permissionMode, permissionChoices, accountWarning, modelHeadsUp, signInKind,
 // reviewFamily, plans, weights, reportedPlans, oldPlanWeights, modelError,
 // familyHint, accountPolicy and optional scoutAgentTool, monoModelNames and keyPrompt. models has
@@ -47,6 +47,7 @@ function validateManifest(m) {
   for (const f of ['install.pathRank','recoverRank']) check(f,v=>v===null||typeof v==='number',false);
   check('recoverFallback',bool,false);
   for (const [slot, pin] of Object.entries(m.models.pins)) if (!obj(pin) || !str(pin.model) || (pin.effort !== undefined && !str(pin.effort))) throw new Error(`${m.cli}: models.pins.${slot}`);
+  check('settings.modelOptions', v => obj(v) && (arr(v.fixed) && v.fixed.every(pair => arr(pair) && pair.length === 2 && pair.every(str)) || str(v.listedKey) && ['strings','objects'].includes(v.listedShape) && typeof v.includePins === 'boolean'), false);
   check('hook.payload',v=>v==='stdin'||v==='last-arg', Boolean(m.hook));
 }
 function validateRegistry(manifests) { manifests.forEach(validateManifest); if (manifests.filter(m=>m.stylePreview).length>1) throw new Error('stylePreview'); if (manifests.filter(m=>m.capabilities.preflight).length>1) throw new Error('capabilities.preflight'); if (manifests.filter(m=>m.install.sensitivity).length>2) throw new Error('install.sensitivity'); }

@@ -33,6 +33,7 @@ module.exports = {
     "sensitivity": true
   },
   "settings": {
+    "modelOptions": {"listedKey": "visible", "listedShape": "strings", "includePins": true},
     "monoModelNames": true,
     "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
     "modelPlaceholder": "model-name",

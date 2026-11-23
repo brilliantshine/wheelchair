@@ -35,6 +35,7 @@ module.exports = {
     "sensitivity": false
   },
   "settings": {
+    "modelOptions": {"listedKey": "kimi_visible", "listedShape": "objects", "includePins": true},
     "monoModelNames": true,
     "modelPattern": "^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$",
     "modelPlaceholder": "model-name",
