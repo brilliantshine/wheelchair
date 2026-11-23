@@ -61,12 +61,25 @@
   async function showCard() {
     let chat;
     try { chat = await fetchJson(T() + '/chat', 'thread'); } catch (e) { return say(e.message); }
-    const card = (chat.cards || []).find((c) => c.id === cardId && c.kind === 'diagram');
+    const card = (chat.cards || []).find((c) => c.id === cardId && (c.kind === 'diagram' || (c.kind === 'image' && c.mockup)));
     if (!card) return say('This picture was not found in the thread.');
-    title(card.title || card.graph);
     const thread = chat.thread;
-    messageEl.hidden = true;
     const ctx = { id: id, archived: !!thread.archived, worktree: thread.worktree };
+    if (card.kind === 'image' || card.format === 'mockup') {
+      const m = card.kind === 'image' ? card.mockup : card;
+      if (card.kind === 'image' && !thread.slug) return say('Mockup not found.');
+      title(card.kind === 'image' ? 'Mockup: ' + card.title : (card.title || card.graph));
+      messageEl.hidden = true;
+      const spec = { plan: card.kind === 'image' ? thread.slug : card.plan, graph: m.graph };
+      const src = window.WCDiagram.source({ format: 'mockup', plan: spec.plan, graph: spec.graph }, ctx);
+      const f = document.createElement('iframe'); f.className = 'picture-mockup'; f.src = src; f.title = titleEl.textContent; f.setAttribute('sandbox', '');
+      f.style.width = m.width + 'px'; f.style.height = m.height + 'px';
+      pictureEl.appendChild(f);
+      dlEl.hidden = false; dlEl.href = src + '&download=1';
+      return;
+    }
+    title(card.title || card.graph);
+    messageEl.hidden = true;
     const src = window.WCDiagram.source(card, ctx);
     if (card.format === 'form') { const cache = new Map(); window.WCDiagram.draw(card, pictureEl, ctx, cache); formPng(cache, card.id, card.graph); }
     else {
