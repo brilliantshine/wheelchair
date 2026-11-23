@@ -122,10 +122,10 @@ as `wc.js git` does, except "hub unavailable", which follows the existing retry 
 | Action | What it does |
 |---|---|
 | `projects` | Every project the hub knows, with its machines: `{projects:[{path,name,machines:[...]}]}` |
-| `threads [--archived]` | Every non-archived thread on every machine except the assistant thread (with `--archived`, archived ones too): `id, title, project, machine, stage, plan_status, progress (last progress card fields), lead_live, pr_url, updated_at, waiting` where `waiting` lists open `question`/`needs`/`approval`/`check`/`reach`/`sudo` cards as `{id, kind, text}` (`text` is the question, title or first line) |
+| `threads [--archived]` | Every non-archived thread on every machine except the assistant thread (with `--archived`, archived ones too): `id, title, project, machine, stage, plan_status, progress (last progress card fields), lead_live, pr_url, updated_at, waiting` where `waiting` lists the open cards Needs you counts for that thread (the same kinds and test as `viewer/app/views.js`, reused, not copied) as `{id, kind, text}` (`text` is the question, title or first line) |
 | `thread <id>` | Same fields plus `cards` (every open card in full) and `recent` (the last 30 chat items: the user's bubbles, lead replies and context lines, as the thread page shows them) |
 | `start --project <path> --machine <name> --message-file <f> [--title <t>]` | Creates a thread exactly as the browser's `POST /threads` does (same project check), with the file's text as its first user message prefixed as in section 4. Prints `{ok, thread, url}` |
-| `message <thread> --text-file <f>` | Queues the text for that thread's latest live lead, prefixed as in section 4. Refused with "that thread has no live lead; restart it first" when none is live, and for archived threads. Counts toward the existing 20-messages-per-thread-per-hour limit, keyed on the assistant thread |
+| `message <thread> --text-file <f>` | Queues the text for that thread's latest live lead, prefixed as in section 4. Prints `{ok:true, queued:true}`: the text reaches the lead when its current turn ends, and the lead's reply appears in that thread's `recent`. Refused with "that thread has no live lead; restart it first" when none is live, and for archived threads. Counts toward the existing 20-messages-per-thread-per-hour limit, keyed on the assistant thread |
 | `press <thread> <card> --action <action> [--value <text>]` | Presses a card button exactly as the browser route does (`hub.press`, same checks and refusals), recording `answered_by: "assistant"` on the card |
 | `restart <thread>` | As the browser's Restart (`hub.restartLead`) |
 | `archive <thread>` | As the browser's Archive (`hub.archive`) |
@@ -181,12 +181,13 @@ A new role file, with these rules:
 - To start work it needs a project and machine; when Collin's words leave either unclear,
   it asks in its chat (a `question` card when there are options) before acting.
 - When Collin asks it to do something to a thread, it does it with the matching action and
-  replies with what it did and a link. It does not act beyond what Collin asked, and does
+  replies with what it did and a link. For a message it says it is queued for the lead's
+  next turn, not that the lead has read it, unless `thread` shows the lead's reply. It does not act beyond what Collin asked, and does
   not answer a lead's question unless Collin told it the answer.
 - It does not change Settings (Deferred 1) and speaks only in reply to Collin (Deferred 2).
-- Card kinds it may post: `title`, `question`, `needs`, `resolve`, `retract`, `file`,
+- Card kinds it may post: `question`, `needs`, `resolve`, `retract`, `file`,
   `image`, `diagram` (the hub's existing lead permissions; it has no plan, so
-  `offer`, `idea`, `deferred`, `approval`, `progress`, `done`, `check`, `stub`, `sudo` and
+  `title`, `offer`, `idea`, `deferred`, `approval`, `progress`, `done`, `check`, `stub`, `sudo` and
   `reach` are refused for the assistant thread with "the assistant doesn't post <kind>").
 - `lead.md` gains one line in its markers handling: a message starting `[wc:assistant]` is
   Collin's instruction passed on by the assistant; treat it as Collin's own words. `cards.md`'s
@@ -250,6 +251,9 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `message` output unspecified; assistant can't tell queued from delivered | upheld | §3 `message` prints `{ok, queued:true}`; §7 says to report it as queued |
+| intent | minor | `title` card allowed but the title is fixed | upheld | `title` moved to the refused kinds |
+| intent | minor | `waiting` kinds differ from Needs you's | upheld | `waiting` reuses Needs you's test from `views.js` |
 
 ## Implementation Tasks
 
