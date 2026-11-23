@@ -114,7 +114,9 @@ responds to width).
   sessions. The hub's restart path, for the assistant thread, sends a `[wc:context restart]`
   context with no recent messages, cards or cross-thread history (the thread's id and title
   only); messages still queued for the old lead move to the new one as today, since Collin
-  has not had an answer to them yet. The context line reads "Assistant restarted · starting
+  has not had an answer to them yet. Its own open `question` and `needs` cards are withdrawn
+  (marked retracted, note "The assistant restarted"), the way `restartLead` already closes
+  open "Sessions ended" cards. The context line reads "Assistant restarted · starting
   fresh". Earlier chat stays visible on the page. A live account switch is not a restart
   and keeps the conversation.
 - **Lists**: while the setting is off, it is left out of every collection route (`/threads`,
@@ -375,6 +377,7 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Assistant's open cards survive a fresh start | upheld | §2: fresh start withdraws its open question/needs cards |
 
 ## Implementation Tasks
 
