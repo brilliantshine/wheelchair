@@ -126,7 +126,13 @@ Each `manifest.js` exports a plain object, no functions and no requires of other
   - `appendWhenRequested`: when a worker explicitly requests this tool and it is not in the
     order, the balancer appends it (today OpenRouter, `balancer.js:97`).
   The settings migration and balancer logic are otherwise unchanged.
+- `install.sensitivity` (default false): see S4, diagram-sensitivity setup.
 - `report.useHookText` (default true) and `stopWhenEnded` (default false): see S3.
+- `settings.modelPattern`: the settings page's own model-name check, kept separate from
+  `models` format because the two differ today (browser `viewer/pages/settings.js:17-19`,
+  e.g. `MODEL_VALUE`, `KIMI_MODEL_VALUE`, `OPENROUTER_MODEL_VALUE`; script
+  `codex/model.sh:44-53`). Each keeps today's rule, so the same inputs are rejected in the
+  same place with the same wording.
 - `shortName`: the name used in machine messages where it differs from `displayName`
   (today Pi: "Pi"), so machine wording stays byte-identical.
 - `asideParentField`: only for tools with `capabilities.aside`; the session field holding
@@ -223,13 +229,16 @@ capability), diagram-sensitivity setup (`sensitivity/set.sh`,
 `machine/lib/harness-install.js:102-110`: stays as it is, see below), and named
 property dispatch such as `adapters.codex.loginEnv` (`machine/service.js:2293`) and `adapters.pi.redact`.
 
-**Diagram-sensitivity setup keeps its own tool list.** `sensitivity/set.sh` (Claude's
-`CLAUDE.md`, Codex's `AGENTS.md`, the Codex `AGENTS.override.md` refusal, two-tool messages
-and disagreement check) and the sensitivity step in `machine/lib/harness-install.js:102-110`
-(including its `install/unseen.py` hook cleanup and "the other tool" level copy) are
-unchanged and allowlisted in the guard with the tag `own-list`, like `codex/model.sh`
-(Decision 16). The guide's checklist says a tool with a global instructions file needs an
-entry there.
+**Diagram-sensitivity setup.** `sensitivity/set.sh` (Claude's `CLAUDE.md`, Codex's
+`AGENTS.md`, the Codex `AGENTS.override.md` refusal, two-tool messages and disagreement
+check) is unchanged and keeps its own tool list; it is outside the machine service and the
+app and outside the guard's scope. The trigger in the install job
+(`machine/lib/harness-install.js:102-110`) uses a manifest flag instead of names:
+`install.sensitivity: true` (today Claude and Codex). After a successful install of a
+flagged tool, the step runs as today with `installedName` = that tool's `cli` and
+`other` = the other flagged tool's `cli`, including the `install/unseen.py` hook cleanup.
+The step supports at most two flagged tools; the contract test fails if more than two
+manifests set the flag.
 
 **Shared output scrub stays shared.** Pane capture and sign-in output are scrubbed of
 OpenRouter keys for every tool today (`machine/service.js:603,1757,1763`). That scrub moves
@@ -264,7 +273,11 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   providers derives them from that list, including the pin-file parser's provider
   alternatives (`parse_pins`, `codex/model.sh:94-124`), so a registry-only provider's pins
   round-trip through `init`, `set` and reads. `WHEELCHAIR_REGISTRY`, when set, points
-  `model.sh` at another `registry.json` (test seam). Everything else per tool stays in
+  `model.sh` at another `registry.json` (test seam). Otherwise `model.sh` finds
+  `connectors/registry.json` from its own real path, resolving symlinks (with Python's
+  `os.path.realpath`; bash 3.2 has no `readlink -f`), because callers such as the preflight
+  test fixture run it through a symlink outside the checkout (`codex/test/run.sh:448-493`).
+  Only the registry lookup changes; every other path `model.sh` uses is resolved as today. Everything else per tool stays in
   `model.sh` unchanged: GPT's pin workflow (bare-tier commands, `set`, aliases,
   `family claude`, the heads-up `check`) and GPT and Kimi model discovery with their
   `show --json` keys. Those lines are allowlisted in the guard with the tag
@@ -299,13 +312,18 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   connector passes `validate` for both halves; every folder under `connectors/` that has a
   `manifest.js` is registered and every registry entry has a folder; `cli` and `provider`
   ids are unique; every manifest has every required field of S2 with the right type
-  (`cli`, `provider`, `label`, `displayName`, `capabilities`, `install` recipe, `settings`,
-  `models`, `placement`, and `hook` for hook-driven tools), and a fake manifest missing one
-  is rejected naming the field; `export.js --check` passes; a fake connector missing a required member, or with a flag
+  (required: `cli`, `provider`, `label`, `displayName`, `typesRoleMessage`, `singleAccount`,
+  `capabilities` with a boolean for every capability, `install.command`, `install.binary`,
+  `settings.modelPattern`, `models.efforts` (array, may be empty), `models.pins`,
+  `placement.workerRank`, and for hook-driven tools `hook.payload` equal to `stdin` or
+  `last-arg`; defaulted, type-checked only when present: `hook.sessionFromEnv`,
+  `report.useHookText`, `stopWhenEnded`, `install.sensitivity`, `install.versionArgs`, the
+  other `placement` and `settings` fields, `shortName`, `asideParentField`), and a fake
+  manifest missing a required field or with a wrong type is rejected naming the field; `export.js --check` passes; a fake connector missing a required member, or with a flag
   but no member, is rejected with a message naming it; `providers.js` exports equal a
   frozen snapshot of today's values.
 - New name-check guard test: scans `machine/`, `viewer/app/`, `viewer/pages/`,
-  `viewer/server.js`, `install.sh`, `sensitivity/set.sh` and `codex/model.sh` (excluding test files, `test-support/`
+  `viewer/server.js`, `install.sh` and `codex/model.sh` (excluding test files, `test-support/`
   and `connectors/`), and fails listing each hit. A hit is a tool's cli or provider id as:
   a string literal in a comparison (`===`, `!==`, `==`, `!=`, `case`, `includes(...)`), a
   string literal argument to any call (`machine('codex')`, `manifest('kimi')`,
@@ -317,7 +335,7 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   entries, each tagged and with a one-line reason: `not-tool` (the word means something
   else, e.g. a model name or URL), `legacy` (one-off cleanup of retired files, e.g.
   `install.sh:61-62,138-149`), `model-script` (per-tool model code kept in `codex/model.sh`,
-  Decision 16), `own-list` (diagram-sensitivity setup, S4), or `compat` (outside connectors' meaning, e.g. the graph
+  Decision 16), or `compat` (outside connectors' meaning, e.g. the graph
   viewer's caller label `viewer/server.js:1336,1922-1935`).
 - `codex/test/` gains a round trip: with `WHEELCHAIR_REGISTRY` pointing at a copy of
   `registry.json` plus a sixth provider, `model.sh init`, `set` and a read of that
@@ -331,8 +349,10 @@ Wording users see stays byte-identical (error messages, labels, settings text).
 member with its signature and when it is called, every capability and what the app does
 without it, how turn end works (hook vs poller), and a checklist for adding a tool (folder,
 registry line, install recipe, settings details, model defaults, a discovery function in
-`codex/model.sh` if the tool can list its own models, placement data, an entry in diagram-sensitivity setup if the tool has a global
-instructions file, regenerating `registry.json`, tests). Update
+`codex/model.sh` if the tool can list its own models, placement data, and, if the tool has a global instructions file, `install.sensitivity`
+plus support in `sensitivity/set.sh` (whose disagreement check and messages assume at most
+two tools, as does the install job's "other tool" copy; a third such tool means changing
+both), regenerating `registry.json`, tests). Update
 `machine/AGENTS.md`, `viewer/AGENTS.md`, `machine/API.md` and `viewer/app/API.md` where
 they name adapter paths or list tools; `protocol/app/*.md` provider lists stay as they are
 (they describe the user-facing names, which do not change).
@@ -482,6 +502,12 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Sensitivity cut left hard-coded names in the install job (machine service), a second unapproved exception to IDEA.md | upheld | S4: install-job trigger uses manifest `install.sensitivity`; `set.sh` keeps its list (outside service and app) |
+| intent | minor | Scanning `sensitivity/set.sh` with the guard adds nothing | upheld | Removed from guard scope |
+| mechanics | blocking | `model.sh` registry lookup breaks when run through the preflight fixture's symlink | upheld | S5: lookup resolves the script's real path; `WHEELCHAIR_REGISTRY` seam |
+| mechanics | minor | Browser and script model validators differ today | upheld | S2 `settings.modelPattern` kept separate from `models` format |
+| mechanics | minor | Required nested manifest fields unnamed | upheld | S6 lists required and defaulted fields |
+| mechanics | minor | Sensitivity checklist hides the two-tool assumptions | upheld | S7 checklist names both points; contract test caps flagged tools at two |
 
 ## Prior Work
 
