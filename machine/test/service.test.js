@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -64,7 +66,7 @@ async function service(root, options = {}) {
   await write(path.join(state, 'machine.json'), JSON.stringify({ secret_file: secret, host: '127.0.0.1', port: listen, ...(options.config || {}) }));
   const prior = { PATH: process.env.PATH, FAKE_LOG: process.env.FAKE_LOG, FAKE_PANE: process.env.FAKE_PANE };
   process.env.PATH = `${fake.bin}:${prior.PATH}`; process.env.FAKE_LOG = fake.log; process.env.FAKE_PANE = fake.pane;
-  let instance = new MachineService({ stateDir: state, host: '127.0.0.1', port: listen });
+  let instance = new MachineService({ win: noWsl, stateDir: state, host: '127.0.0.1', port: listen });
   try { await instance.listen(); } catch (error) { Object.assign(process.env, prior); throw error; }
   return { instance, state, fake, base: `http://127.0.0.1:${listen}`, async close() {
     // A test that fails mid-start ends with that start still running. Wait for it before PATH
@@ -264,7 +266,7 @@ test('transcript copy dedupes content after source shrinks', async () => {
   const env = await service(await temp()); try { await start(env); const source = path.join(path.dirname(env.state), 'source.jsonl'); await write(source, '{"one":1}\n{"two":2}\n'); const session = env.instance.sessions['wc-t-lead']; await env.instance.copyTranscript(session, source); await write(source, '{"one":1}\n'); await env.instance.copyTranscript(session, source); assert.equal((await fs.readFile(session.transcript_path, 'utf8')).trim().split('\n').length, 2); } finally { await env.close(); }
 });
 test('card spool keeps order and retries until acknowledged', async () => {
-  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' }); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'two', text: 'two' }] }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 2); hub.setStatus(200); await env.instance.drainSpool('cards'); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0); const cards = hub.calls.filter(call => call.path.endsWith('/cards')); assert.match(cards.at(-2).body, /"id":"one"/); assert.match(cards.at(-1).body, /"id":"two"/); } finally { await env.close(); await hub.close(); }
+  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); const first = await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' }); const second = await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'two', text: 'two' }] }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal(first.body.spooled, true); assert.equal(second.body.spooled, true); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 2); hub.setStatus(200); await env.instance.drainSpool('cards'); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0); const cards = hub.calls.filter(call => call.path.endsWith('/cards')); assert.equal(JSON.parse(cards.at(-2).body).delivery_id, first.body.id); assert.equal(JSON.parse(cards.at(-1).body).delivery_id, second.body.id); assert.match(cards.at(-2).body, /"id":"one"/); assert.match(cards.at(-1).body, /"id":"two"/); } finally { await env.close(); await hub.close(); }
 });
 test('a card stored before a hub 500 is queued and deduplicated on drain', async () => {
   const hub = await hubServer(200, { failAfterStore: true }); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
@@ -705,7 +707,7 @@ test('pane history captures requested scrollback and rejects invalid values', as
   const env = await service(await temp()); try {
     await start(env);
     assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane?history=2000', undefined, hubHeader)).status, 200);
-    assert.match(await log(env), /tmux capture-pane -p -e -S -2000 -t wc-t-lead/);
+    assert.match(await log(env), /tmux capture-pane -p -e -S -2000 -t =wc-t-lead:/);
     await fs.writeFile(env.fake.log, '');
     assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane', undefined, hubHeader)).status, 200);
     assert.doesNotMatch(await log(env), /capture-pane.* -S /);
@@ -978,7 +980,7 @@ test('account starts bind the CLI environment, validate directories, and report 
     const invalid = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'x', worktree: root, account: { id: 'bad', dir: '~/elsewhere/bad' } }, hubHeader);
     assert.equal(invalid.status, 400);
     const status = await api(env, 'GET', '/v1/status', undefined, hubHeader);
-    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'default-kimi', 'one', 'two']);
+    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'default-kimi', 'default-openrouter', 'one', 'two']);
     const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/elsewhere/bad' }, hubHeader); assert.equal(preflight.status, 400);
   } finally { await env.close(); process.env.HOME = oldHome; }
 });
@@ -1024,12 +1026,12 @@ test('login sessions start, expose state, accept code and stay out of session re
   const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
   const env = await service(root); try {
     const started = await api(env, 'POST', '/v1/logins', { account: 'test', cli: 'claude', dir: '~/.wheelchair/accounts/test' }, hubHeader);
-    assert.equal(started.status, 201); const cmd = await log(env); assert.doesNotMatch(cmd.split('\n').find(line => line.includes('new-session') && line.includes('wc-login-test')), / -c /); assert.match(cmd, /CLAUDE_CONFIG_DIR=/); assert.match(cmd, /auth.*login/); assert.doesNotMatch(cmd, /WHEELCHAIR_SESSION_TOKEN/);
+    assert.equal(started.status, 201); const cmd = await log(env); assert.doesNotMatch(cmd.split('\n').find(line => line.includes('new-session') && line.includes('wc-login-test')), / -c /); assert.match(cmd.split('\n').find(line => line.includes('new-session') && line.includes('wc-login-test')), /PATH=/); assert.match(cmd, /CLAUDE_CONFIG_DIR=/); assert.match(cmd, /auth.*login/); assert.doesNotMatch(cmd, /WHEELCHAIR_SESSION_TOKEN/);
     await write(env.fake.pane, 'starting'); assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'starting');
     await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude.txt'), 'utf8'));
     assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'waiting');
     assert.equal((await api(env, 'POST', '/v1/logins/test/code', { code: 'test-code' }, hubHeader)).status, 200);
-    assert.match(await log(env), /test-code[\s\S]*send-keys -t wc-login-test Enter/);
+    assert.match(await log(env), /test-code[\s\S]*paste-buffer -p -d -b \S+ -t =wc-login-test:[\s\S]*send-keys -t =wc-login-test: Enter/);
     await write(env.fake.pane, '__wc_login_exit 0'); assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'done');
     process.env.FAKE_CLAUDE_AUTH = '{"loggedIn":false}'; assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'failed'); delete process.env.FAKE_CLAUDE_AUTH;
     process.env.FAKE_SESSIONS = 'wc-login-test'; await env.instance.recoverFromTmux(); assert.equal(env.instance.sessions['wc-login-test'], undefined);
@@ -1066,7 +1068,7 @@ test('default Claude start preserves complete command and settings', async () =>
     const hook = `'${path.resolve(__dirname, '../hook.sh')}' claude 'wc-t-lead'`;
     const entry = [{ hooks: [{ type: 'command', command: hook }] }];
     assert.deepEqual(JSON.parse(await fs.readFile(settingsPath, 'utf8')), { cleanupPeriodDays: 30, promptSuggestionEnabled: false, hooks: { Stop: entry, Notification: entry, StopFailure: entry, ...Object.fromEntries(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'].map(name => [name, [{ matcher: '*', hooks: [{ type: 'command', command: hook, async: true }] }]])) }, statusLine: { type: 'command', command: `'${path.resolve(__dirname, '../statusline.sh')}' claude 'wc-t-lead'` } });
-    const expected = ['env', 'WHEELCHAIR_LANE=1', 'WHEELCHAIR_SESSION_TOKEN=alpha', `WHEELCHAIR_STATE_DIR=${env.state}`, `WHEELCHAIR_MACHINE_ORIGIN=http://127.0.0.1:${env.instance.config.port}`, ...session.command].map(x => `'${x}'`).join(' ');
+    const expected = ['env', `PATH=${process.env.PATH || ''}`, 'WHEELCHAIR_LANE=1', 'WHEELCHAIR_SESSION_TOKEN=alpha', `WHEELCHAIR_STATE_DIR=${env.state}`, `WHEELCHAIR_MACHINE_ORIGIN=http://127.0.0.1:${env.instance.config.port}`, ...session.command].map(x => `'${x}'`).join(' ');
     assert.ok((await log(env)).includes(`tmux new-session -d -s wc-t-lead -x 200 -y 50 -c ${session.worktree} ${expected}`));
   } finally { await env.close(); }
 });
@@ -1215,8 +1217,9 @@ test('uploads sanitize, stream, serve, and enforce admission and size', async ()
     assert.equal((await fs.readdir(dir)).length, 5);
     await write(path.join(dir, '6-image.png'), 'png');
     let r = await fetch(`${env.base}/v1/uploads/t/6-image.png`, { headers: hubHeader });
-    assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.equal(await r.text(), 'png');
-    r = await fetch(`${env.base}/v1/uploads/t/3---x.txt`, { headers: hubHeader }); assert.equal(r.headers.get('content-type'), 'application/octet-stream'); assert.equal(r.headers.get('content-disposition'), 'attachment'); await r.text();
+    assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.equal(r.headers.get('content-disposition'), null); assert.equal(await r.text(), 'png');
+    await write(path.join(dir, '3-report.pdf'), 'pdf');
+    r = await fetch(`${env.base}/v1/uploads/t/3-report.pdf`, { headers: hubHeader }); assert.equal(r.headers.get('content-type'), 'application/octet-stream'); assert.equal(r.headers.get('content-disposition'), 'attachment; filename="report.pdf"'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); await r.text();
     assert.equal((await fetch(`${env.base}/v1/uploads/t/1-missing`, { headers: hubHeader })).status, 404);
     assert.equal((await fetch(`${env.base}/v1/uploads/t/bad`, { headers: hubHeader })).status, 400);
     env.instance.sessions['wc-t-lead'].archived_pending = true; assert.equal((await upload('x')).status, 409);
@@ -1243,6 +1246,45 @@ test('image cards are validated and copied before spooling, including archive or
     const late = api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: png, title: 'late' }, headers); await started;
     assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader)).body.uploads_removed, true); release(); assert.equal((await late).status, 409);
     await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+  } finally { await env.close(); }
+});
+
+test('file cards validate before copying and forward sanitized names and sizes', async () => {
+  const root = await temp(); const env = await service(root);
+  try {
+    await start(env); await start(env, { role: 'worker', thread_id: 't', token: 'worker-token' });
+    const txt = path.join(root, 'hello world.txt'); const pdf = path.join(root, 'report.pdf');
+    const secret = path.join(env.state, 'secret-file'); const worktreeFile = path.join(env.state, 'worktrees', 'checkout', 'work.txt');
+    const link = path.join(root, 'link'); const big = path.join(root, 'big');
+    await write(txt, 'hello'); await write(pdf, '%PDF'); await write(secret, 'secret'); await write(worktreeFile, 'work');
+    await fs.symlink(txt, link); await write(big, ''); await fs.truncate(big, 25 * 1024 * 1024 + 1);
+    const base = { kind: 'file', path: txt, title: 'Document' };
+    const cases = [
+      [{ ...base, path: 'relative' }, 'alpha', 422, 'file path must be absolute'],
+      [{ ...base, path: path.join(root, 'missing') }, 'alpha', 422, 'file does not exist'],
+      [{ ...base, path: root }, 'alpha', 422, 'file is not a regular file'],
+      [{ ...base, path: link }, 'alpha', 422, 'file is not a regular file'],
+      [{ ...base, path: big }, 'alpha', 422, 'file exceeds 25 MB'],
+      [{ ...base, path: secret }, 'alpha', 422, 'file is inside the wheelchair state folder'],
+      [base, 'worker-token', 403, 'only a lead may post a file card'],
+      [{ ...base, extra: true }, 'alpha', 422, 'field extra is not allowed'],
+      [{ ...base, warnings: [] }, 'alpha', 422, 'field warnings is not allowed'],
+      [{ ...base, title: '  \t ' }, 'alpha', 422, 'title is required'],
+      [{ kind: 'file', path: txt }, 'alpha', 422, 'title is required'],
+    ];
+    for (const [input, token, status, message] of cases) {
+      const response = await api(env, 'POST', '/v1/agent/cards', input, agentHeader(token));
+      assert.equal(response.status, status); assert.equal(response.body.error, message);
+      await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+    }
+    for (const [source, name, contents] of [[txt, 'hello-world.txt', 'hello'], [pdf, 'report.pdf', '%PDF'], [worktreeFile, 'work.txt', 'work']]) {
+      const response = await api(env, 'POST', '/v1/agent/cards', { ...base, path: source }, agentHeader('alpha'));
+      assert.equal(response.status, 202);
+      const spool = await fs.readdir(path.join(env.state, 'spool', 'cards'));
+      const cards = await Promise.all(spool.map(file => fs.readFile(path.join(env.state, 'spool', 'cards', file), 'utf8').then(JSON.parse)));
+      const card = cards.find(item => item.name === name);
+      assert.equal(card.title, 'Document'); assert.equal(card.size, Buffer.byteLength(contents)); assert.equal(path.basename(card.path).replace(/^\d+-/, ''), name); assert.equal(await fs.readFile(card.path, 'utf8'), contents);
+    }
   } finally { await env.close(); }
 });
 
@@ -1368,7 +1410,7 @@ test('hook-post sends both status events individually to the service', async () 
 
 test('Codex rollout reads persist complete lines, serialize reads, and flush before turn end', async () => {
   const root = await temp(), file = path.join(root,'rollout.jsonl');
-  const svc = new MachineService({stateDir:root});
+  const svc = new MachineService({ win: noWsl, stateDir:root});
   const session = {name:'wc-test',cli:'codex',thread_id:'thread',codex_thread_id:'codex-id',source_transcript:file};
   svc.sessions[session.name] = session;
   const seen = []; let active=0, peak=0;
@@ -1385,7 +1427,7 @@ test('Codex rollout reads persist complete lines, serialize reads, and flush bef
   assert.equal(svc.sessions['wc-unbound'].steps_offset,undefined);
   await fs.appendFile(file,'\n'); await svc.readCodexSteps(session);
   const saved=JSON.parse(await fs.readFile(svc.sessionsPath,'utf8')); assert.equal(saved['wc-test'].steps_state.yielded,'a');
-  const restarted=new MachineService({stateDir:root}); restarted.sessions=saved; restarted.emitEvent=svc.emitEvent; restarted.spool=svc.spool;
+  const restarted=new MachineService({ win: noWsl, stateDir:root}); restarted.sessions=saved; restarted.emitEvent=svc.emitEvent; restarted.spool=svc.spool;
   const poll=row('p','function_call',{name:'wait',arguments:'{}'}), finish=row('p','function_call_output',{output:'Script completed'});
   await fs.appendFile(file,poll+'\n'+finish+'\n');
   await restarted.hook('wc-test',{type:'turn-ended',thread_id:'codex-id'});
@@ -1395,7 +1437,7 @@ test('Codex rollout reads persist complete lines, serialize reads, and flush bef
 
 test('Codex rollout reader tails bounded chunks, reads appends once, and resets after truncation', async () => {
   const root = await temp(), file = path.join(root,'rollout.jsonl');
-  const svc = new MachineService({stateDir:root});
+  const svc = new MachineService({ win: noWsl, stateDir:root});
   const session = {name:'wc-tail',cli:'codex',thread_id:'thread',codex_thread_id:'codex-id',source_transcript:file};
   svc.sessions[session.name] = session; svc.emitEvent = async () => {};
   const row = (id,type,extra={}) => JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type,call_id:id,...extra}});
@@ -1422,7 +1464,7 @@ test('Codex rollout reader tails bounded chunks, reads appends once, and resets 
 
 test('spooled Codex turn end drains without blocking later Claude events', async () => {
   const root = await temp(), file = path.join(root, 'rollout.jsonl'), hub = await hubServer();
-  const svc = new MachineService({stateDir: root}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
+  const svc = new MachineService({ win: noWsl, stateDir: root}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
   const session = {name:'wc-x-worker',cli:'codex',thread_id:'t',codex_thread_id:'cid',source_transcript:file};
   svc.sessions[session.name] = session;
   svc.sessions['wc-x-lead'] = {name:'wc-x-lead',cli:'claude',thread_id:'t'};
@@ -1447,7 +1489,7 @@ test('spooled Codex turn end drains without blocking later Claude events', async
 
 test('live Codex turn end flushes every bounded chunk before the turn event', async () => {
   const root = await temp(), file = path.join(root, 'rollout.jsonl'), hub = await hubServer();
-  const svc = new MachineService({stateDir:root, codexStepChunkSize:256}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
+  const svc = new MachineService({ win: noWsl, stateDir:root, codexStepChunkSize:256}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
   const session = {name:'wc-x-worker',cli:'codex',thread_id:'t',codex_thread_id:'cid',source_transcript:file}; svc.sessions[session.name] = session;
   const row = id => JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type:'function_call',call_id:id,name:'exec_command',arguments:'{"cmd":"npm test"}'}}) + '\n';
   const data = row('one') + row('two') + row('three');
@@ -1588,6 +1630,18 @@ test('handoff claims use exact leases, state checks, and safe revocation', async
   } finally { await env.close(); }
 });
 
+test('handoff claim commits even when git on the machine has no name or email set', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const id = '012345abcdef'; const repo = await project(root);
+    git(['-C', repo, 'config', '--unset', 'user.name']); git(['-C', repo, 'config', '--unset', 'user.email']);
+    const parent = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim(); const emptyConfig = path.join(root, 'empty-gitconfig'); await write(emptyConfig, '');
+    await withEnv({ GIT_CONFIG_GLOBAL: emptyConfig, GIT_CONFIG_NOSYSTEM: '1' }, async () => {
+      const response = await api(env, 'POST', '/v1/handoff', { action: 'claim-commit', thread_id: id, project: repo, parent, message: 'pickup' }, hubHeader);
+      assert.equal(response.status, 200, JSON.stringify(response.body)); assert.match(response.body.sha || '', /^[0-9a-f]{40}$/, JSON.stringify(response.body));
+    });
+  } finally { await env.close(); }
+});
+
 test('handoff local branch operations guard divergence and report ownership', async () => {
   const root = await temp(); const env = await service(root, { realGit: true }); try {
     const id = '012345abcdef'; const { repo, worktree } = await startedWorktree(env, root, id); const branch = `wc/${id}`;
@@ -1640,7 +1694,7 @@ test('archive ownership markers survive restart and reopening clears them', asyn
   const root = await temp(); const env = await service(root, { realGit: true }); try {
     const id = '012345abcdef'; const repo = await project(root); const head = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
     let response = await api(env, 'POST', '/v1/archive', { thread_id: id }, hubHeader); assert.equal(response.status, 200, JSON.stringify(response.body));
-    const restarted = new MachineService({ stateDir: env.state, host: '127.0.0.1', port: await port() }); await restarted.init();
+    const restarted = new MachineService({ win: noWsl, stateDir: env.state, host: '127.0.0.1', port: await port() }); await restarted.init();
     try {
       assert.equal(restarted.archivedThreads.has(id), true);
       let result = await restarted.handoff({ action: 'known', thread_id: id, project: repo, head }); assert.equal(result.known, true, JSON.stringify(result));
@@ -1716,32 +1770,20 @@ test('archive saves the in-progress marker before stopping and clears it on fail
   } finally { await env.close(); }
 });
 
-test('approval warnings are machine owned and never await a refresh', async () => {
+test('agents cannot set approval warnings', async () => {
   const env = await service(await temp());
   try {
     await start(env);
     await start(env, { role: 'worker', thread_id: 'w', token: 'worker-token' });
-    let release; let scans = 0;
-    env.instance.scanStartupWarning = async () => { scans++; if (scans === 1) await new Promise(r => { release = r; }); return null; };
-    env.instance.startupWarning = 'machine warning';
+    env.instance.platform = 'darwin';
     const headers = agentHeader('alpha');
     await api(env, 'POST', '/v1/agent/cards', { kind: 'approval', warnings: ['forged'] }, headers);
-    assert.equal(env.instance.startupWarningRerun, false);
-    await api(env, 'POST', '/v1/agent/cards', { kind: 'approval', warnings: ['forged'] }, headers);
-    assert.equal(env.instance.startupWarningRerun, true);
     await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', warnings: ['forged'] }, headers);
     await api(env, 'POST', '/v1/agent/cards', { kind: 'approval', warnings: ['forged'] }, agentHeader('worker-token'));
     const files = (await fs.readdir(path.join(env.state, 'spool', 'cards'))).sort();
     const cards = await Promise.all(files.map(file => fs.readFile(path.join(env.state, 'spool', 'cards', file), 'utf8').then(JSON.parse)));
-    assert.equal(cards.filter(c => c.warnings?.[0] === 'machine warning').length, 2);
-    assert.equal(cards.filter(c => !('warnings' in c)).length, 2);
-    release();
-    while (env.instance.startupWarningRunning) await new Promise(resolve => setImmediate(resolve));
-    assert.equal(scans, 2);
-    await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', warnings: ['forged'] }, headers);
-    const after = (await fs.readdir(path.join(env.state, 'spool', 'cards'))).sort();
-    const last = JSON.parse(await fs.readFile(path.join(env.state, 'spool', 'cards', after.at(-1)), 'utf8'));
-    assert.equal('warnings' in last, false);
+    assert.equal(cards.length, 3);
+    assert.equal(cards.filter(c => !('warnings' in c)).length, 3);
   } finally { await env.close(); }
 });
 
@@ -1773,6 +1815,55 @@ test('copier cuts a crash fragment before replaying a complete source row', asyn
   } finally { await env.close(); }
 });
 
+test('busy transcript copies reuse in-memory hashes and drop them when idle or stopped', async () => {
+  const env = await service(await temp()); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'busy-hashes.jsonl');
+    await write(source, '{"one":1}\n'); await env.instance.copyTranscript(session, source);
+    const readFile = fs.readFile; let keptReads = 0;
+    fs.readFile = async (file, ...args) => { if (file === session.transcript_path) keptReads++; return readFile(file, ...args); };
+    try {
+      await fs.appendFile(source, '{"two":2}\n'); await env.instance.copyTranscript(session, source);
+      await fs.appendFile(source, '{"three":3}\n{"three":3}\n'); await env.instance.copyTranscript(session, source);
+      assert.equal(keptReads, 0);
+      assert.equal(await readFile(session.transcript_path, 'utf8'), '{"one":1}\n{"two":2}\n{"three":3}\n');
+      const appendFile = fs.appendFile; fs.appendFile = async (file, ...args) => { if (file === session.transcript_path) { await appendFile(file, '{"fo'); throw new Error('disk full'); } return appendFile(file, ...args); };
+      await fs.appendFile(source, '{"four":4}\n');
+      try { await assert.rejects(env.instance.copyTranscript(session, source), /disk full/); } finally { fs.appendFile = appendFile; }
+      assert.equal(env.instance.copyHashes.has(session.name), false);
+      session.transcript_source.offset = 0; await env.instance.copyTranscript(session, source);
+      assert.equal(keptReads, 1);
+      assert.equal(await readFile(session.transcript_path, 'utf8'), '{"one":1}\n{"two":2}\n{"three":3}\n{"four":4}\n');
+      env.instance.copyHashes.get(session.name).used -= 11 * 60_000;
+      await env.instance.copyTranscript(session, source);
+      assert.equal(env.instance.copyHashes.has(session.name), false);
+      await fs.appendFile(source, '{"five":5}\n'); await env.instance.copyTranscript(session, source);
+      assert.equal(env.instance.copyHashes.has(session.name), true);
+      await env.instance.stop(session.name);
+      assert.equal(env.instance.copyHashes.has(session.name), false);
+    } finally { fs.readFile = readFile; }
+  } finally { await env.close(); }
+});
+
+test('idle hash timer sweeps without a copy and is cleared on close', async () => {
+  const env = await service(await temp());
+  const timer = env.instance.copyHashesTimer;
+  const clear = global.clearInterval; const cleared = [];
+  try {
+    assert.ok(timer);
+    env.instance.copyHashes = new Map([
+      ['old', { used: Date.now() - 11 * 60_000 }],
+      ['fresh', { used: Date.now() }],
+    ]);
+    timer._onTimeout();
+    assert.equal(env.instance.copyHashes.has('old'), false);
+    assert.equal(env.instance.copyHashes.has('fresh'), true);
+  } finally {
+    global.clearInterval = value => { cleared.push(value); return clear(value); };
+    try { await env.close(); } finally { global.clearInterval = clear; }
+  }
+  assert.ok(cleared.includes(timer));
+});
+
 test('transcript stamps avoid all content reads on a match and detect replacement', async () => {
   const env = await service(await temp()); try {
     await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'stamp.jsonl');
@@ -1798,4 +1889,56 @@ test('transcript stamps avoid all content reads on a match and detect replacemen
     const archived = (await api(env, 'GET', `${route}?known=${encodeURIComponent(`${replaced.gen}:${replaced.end}`)}`, undefined, hubHeader)).body;
     assert.deepEqual(archived, { unchanged: true, gen: replaced.gen, end: replaced.end });
   } finally { await env.close(); }
+});
+
+test('Kimi usage route protects credentials and reports usage failures', async () => {
+  const root = await temp();
+  await withEnv({ HOME: root, KIMI_CODE_HOME: path.join(root, 'kimi-home') }, async () => {
+    const env = await service(root), requests = [], token = 'dummy-route-token';
+    let status = 200, payload = JSON.stringify({ usages: { limit_7d: { used_ratio: '1', reset_time: '2030-01-01T00:00:00Z' }, limit_5h: { used_ratio: 0.2, reset_time: '2030-01-02T00:00:00Z' } } });
+    const server = http.createServer((req, res) => { requests.push({ method: req.method, path: req.url, headers: req.headers }); res.writeHead(status, status === 302 ? { location: '/redirected' } : {}); res.end(payload); });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    env.instance.options.kimiUsageUrl = `http://127.0.0.1:${server.address().port}/coding/v1/usages`;
+    const config = path.join(root, 'kimi-home/config.toml'), credential = path.join(root, 'kimi-home/credentials/dummy.json');
+    const setConfig = host => write(config, `[providers."managed:kimi-code".oauth]\nkey = "oauth/dummy"\noauth_host = "${host}"\n`);
+    const setCredential = expires_at => write(credential, JSON.stringify({ access_token: token, expires_at }));
+    const request = () => api(env, 'POST', '/v1/usage', { account: 'default-kimi', cli: 'kimi', dir: null }, hubHeader);
+    try {
+      await setConfig('https://auth.kimi.ai'); await setCredential(Date.now() / 1000 + 600);
+      let result = await request(); assert.equal(result.status, 200); assert.equal(result.body.reading.week.used, 100); assert.equal(result.body.reading.five_hour.used, 20); assert.ok(result.body.reading.limited_until);
+      assert.equal(requests[0].method, 'GET'); assert.equal(requests[0].path, '/coding/v1/usages'); assert.equal(requests[0].headers.authorization, `Bearer ${token}`);
+      await setCredential(Date.now() / 1000 - 1); let count = requests.length; result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count);
+      await setCredential(Date.now() / 1000 + 600); await setConfig('https://auth.kimi.cn'); result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count);
+      await write(config, ''); result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count);
+      await setConfig('https://auth.kimi.ai'); status = 401; payload = token; result = await request(); assert.equal(result.status, 502); assert.equal(result.body.error, 'Kimi usage request failed (HTTP 401)'); assert.ok(!JSON.stringify(result).includes(token));
+      status = 200; payload = 'dummy-secret-not-json'; result = await request(); assert.equal(result.status, 502); assert.equal(result.body.error, 'invalid usage response'); assert.ok(!JSON.stringify(result).includes(payload));
+      status = 302; count = requests.length; result = await request(); assert.equal(result.status, 502); assert.equal(requests.length, count + 1);
+      assert.equal((await api(env, 'POST', '/v1/usage', { account: 'default-kimi', cli: 'agy', dir: null }, hubHeader)).status, 400);
+    } finally { await new Promise(resolve => server.close(resolve)); await env.close(); }
+  });
+});
+
+test('spooled receipt id becomes the drained hub card id', async () => {
+  const { acceptCard } = require('../../viewer/app/cards');
+  const thread = { id: 't', sessions: [{ name: 'wc-t-lead', role: 'lead' }], cards: [], queues: {}, pinned: {} };
+  const hub = { updateThread: async (_, fn) => fn(thread), session: (t, name) => t.sessions.find(s => s.name === name) };
+  const server = http.createServer((req, res) => {
+    let body = ''; req.on('data', chunk => { body += chunk; }); req.on('end', async () => {
+      try {
+        const result = req.url.endsWith('/cards') ? await acceptCard(hub, JSON.parse(body)) : { ok: true };
+        res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(result));
+      } catch (error) { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); }
+    });
+  });
+  const env = await service(await temp());
+  try {
+    await start(env);
+    const result = await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' });
+    assert.equal(result.body.spooled, true);
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    env.instance.config.hub_url = `http://127.0.0.1:${server.address().port}`;
+    await env.instance.drainSpool('cards');
+    assert.equal(thread.cards.length, 1);
+    assert.equal(thread.cards[0].id, result.body.id);
+  } finally { await env.close(); if (server.listening) await new Promise(resolve => server.close(resolve)); }
 });

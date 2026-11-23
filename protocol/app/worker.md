@@ -12,11 +12,15 @@ else writes there.
 
 Your own `wc.js` and `card.js` calls are always allowed; no brief can forbid them. If your
 brief seems to forbid something you need to finish, or instructions conflict and you cannot
-resolve them, post a `result` with outcome `blocked` and the reason, or a `message` to the
-lead if an answer would unblock you. Never end your work silently.
+resolve them, post a `result` with outcome `blocked` and the reason, or a `message` with `asks: true`
+to the lead if an answer would unblock you. Never end your work silently.
 
 Never end a turn to wait on your own background work (a command, subagent or monitor);
 wait in the foreground, because the app reads an ended turn with no report as stopped.
+
+Never end a turn on a status `message` while work remains: only a `result`, or a `message`
+with `asks: true`, tells your starter you are waiting. After a plain status update, keep
+working.
 
 Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; echo "exit $?"; tail -n 80 <log>`. On a non-zero exit, read failures from the log with `grep -n -A30 'not ok\|FAIL\|Error' <log>` before reporting. Never pipe a suite straight into `tail`; paste the exit line and the tail in your report.
 
@@ -39,6 +43,10 @@ Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; 
 ## Seeing a desktop app
 
 When the task changes something visible in a desktop app or game, look at it on your own invisible screen. Launch it with `node <root>/viewer/app/wc.js screen run -- <command> [args...]`, never by setting `DISPLAY` yourself (an app you start yourself is not cleaned up, and in a Codex session it dies when your command ends). Pass environment changes with `--env KEY=VALUE`, or launch `sh -c '<setup>; exec <app>'`. Look with `wc.js screen shot` and open the PNG path it prints with your image-reading tool; drive the app with `click`, `type` and `key`, list its windows with `windows`, and run `wc.js screen stop` when you are done. Point the app at temporary data, never the user's live data, and give each launch its own profile or data directory (for example Chromium's `--user-data-dir`) so it cannot hand off to another agent's copy of the same app. When a screenshot would help the user see the result, put its absolute path in your report. If the command says tools are missing on this machine, report that to the lead; do not work around it.
+
+On a WSL machine, use `node <root>/viewer/app/wc.js win <op>` to run or look at things on Windows. Your Windows copy is synced with git around each command; after editing files, run `win sync` before asking a Windows-side tool to look at them. A sync can report conflicts: text files then contain git conflict markers to resolve; binary files and files deleted on one side or renamed keep your version. The Windows side is in the ref named by the result: use `git show <ref>:<path>` to recover a file when it exists there, and `git ls-tree -r <ref>` to see what it had if a path was renamed or deleted. If a Windows-side tool failed at session start, check `win info` for `ready` and say so in your report. Windows apps appear on the user's desktop: never leave them running or try to type into them; use `win stop` when done. For Unity tests, run `win run -- <Unity.exe path> -batchmode -runTests -projectPath <copy> -testResults <copy>\Logs\wheelchair-results.xml` with no Editor open on that copy (Unity refuses a second instance). `Logs/` is ignored in Unity projects, so read results through `copy_linux` from `win info`, not the worktree. The first Unity open in a thread imports the whole project and can outlast the run limit; use `win start` and poll `win status` for it. Before reporting your task done, run `win sync` and commit what it brought back so the merge carries every Windows-side change.
+
+Store-packaged apps such as Windows 11's Notepad, Calculator and Paint hand their windows to processes Windows starts outside the bridge, so `windows`, `shot` and `stop` cannot reach them; use classic desktop programs.
 
 ## When the plan did not settle something
 
@@ -75,3 +83,20 @@ lead" or no template, the rule stands as written above.
 Your turn ending is not the signal that you are finished. The `result` card is. The
 sub-lead will re-run your validation and read your diff: a finished worker is a claim,
 not a fact.
+
+A document meant for the user goes to the lead with a `message` naming its path.
+
+## Lessons
+
+Save a `lesson` card (see `cards.md`) for workers.
+
+- A lesson is saved only when all hold: a mistake cost real time (an extra review round, a
+  retried task, a redo, a failed check); something proved it wrong (the user corrected it,
+  or a check failed twice for the same reason); it will come up again for the same type of
+  agent in other threads; and it fits in one or two sentences as an instruction.
+- Not lessons: facts about one codebase, one-off fixes, decisions for one thread, hunches,
+  or anything these rules already say.
+- Read the existing lessons in your instructions first; if one already covers the point or is now wrong, replace or remove
+  that one instead of adding.
+  Each role holds at most 12. Never reword or remove one marked "(edited by the user)"; if you think it is wrong, tell the lead in a `message`.
+- If it conflicts with these rules or should always apply, do not save it; send the lead a `message` suggesting a protocol change.

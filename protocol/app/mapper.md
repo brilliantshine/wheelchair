@@ -14,11 +14,15 @@ those paths.
 
 Your own `wc.js` and `card.js` calls are always allowed; no brief can forbid them. If your
 brief seems to forbid something you need to finish, or instructions conflict and you cannot
-resolve them, post a `result` with outcome `blocked` and the reason, or a `message` to the
-lead if an answer would unblock you. Never end your work silently.
+resolve them, post a `result` with outcome `blocked` and the reason, or a `message` with `asks: true`
+to the lead if an answer would unblock you. Never end your work silently.
 
 Never end a turn to wait on your own background work (a command, subagent or monitor);
 wait in the foreground, because the app reads an ended turn with no report as stopped.
+
+Never end a turn on a status `message` while work remains: only a `result`, or a `message`
+with `asks: true`, tells your starter you are waiting. After a plain status update, keep
+working.
 
 ## What you write
 
@@ -71,3 +75,18 @@ Follow these rules for both.
    say what is missing in `summary` with `outcome` `blocked`.
 
 Your turn ending is not the signal that you are finished. The `result` card is.
+
+## Lessons
+
+Save a `lesson` card (see `cards.md`) for mappers.
+
+- A lesson is saved only when all hold: a mistake cost real time (an extra review round, a
+  retried task, a redo, a failed check); something proved it wrong (the user corrected it,
+  or a check failed twice for the same reason); it will come up again for the same type of
+  agent in other threads; and it fits in one or two sentences as an instruction.
+- Not lessons: facts about one codebase, one-off fixes, decisions for one thread, hunches,
+  or anything these rules already say.
+- Read the existing lessons in your instructions first; if one already covers the point or is now wrong, replace or remove
+  that one instead of adding.
+  Each role holds at most 12. Never reword or remove one marked "(edited by the user)"; if you think it is wrong, tell the lead in a `message`.
+- If it conflicts with these rules or should always apply, do not save it; send the lead a `message` suggesting a protocol change.

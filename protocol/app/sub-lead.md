@@ -17,13 +17,17 @@ beside it.
 
 Your own `wc.js` and `card.js` calls are always allowed; no brief can forbid them. If your
 brief seems to forbid something you need to finish, or instructions conflict and you cannot
-resolve them, post a `result` with outcome `blocked` and the reason, or a `message` to the
-lead if an answer would unblock you. Never end your work silently.
+resolve them, post a `result` with outcome `blocked` and the reason, or a `message` with `asks: true`
+to the lead if an answer would unblock you. Never end your work silently.
 
 Never end a turn to wait on your own background work (a command, subagent or monitor);
 wait in the foreground, because the app reads an ended turn with no report as stopped.
 Sessions you started through `wc.js session start` are not background work: the app sees
 them.
+
+Never end a turn on a status `message` while work remains: only a `result`, or a `message`
+with `asks: true`, tells your starter you are waiting. After a plain status update, keep
+working.
 
 ## Starting, and resuming after a restart
 
@@ -111,8 +115,8 @@ looks.
 
 Start a worker with `node <root>/viewer/app/wc.js session start --role worker --tier
 <tier> --brief-file <path> --attempt <id> --title "<a few words saying what this agent
-does, in the user's terms>" [--provider <claude|gpt|gemini|kimi> |
---not-provider <claude|gpt|gemini|kimi>] [--effort <e>]`. The optional `--effort` is for worker starts
+does, in the user's terms>" [--provider <claude|gpt|gemini|kimi|openrouter> |
+--not-provider <claude|gpt|gemini|kimi|openrouter>] [--effort <e>]`. The optional `--effort` is for worker starts
 only and overrides the tier's pinned effort for that session. The tier is `light`, `standard`, `heavy`, `critical` or `top` (Heavy), for all CLIs; a tier whose
 cell in Settings is Not used for that CLI is refused. The old names `luna`, `terra`, `sol`, `astra`
 (any CLI) and `haiku`, `sonnet`, `opus` (Claude) are still accepted and mean the Light, Standard,
@@ -123,11 +127,11 @@ write-workers never share a checkout. You may start workers and verifiers for th
 only. You may stop sessions you started, once their `result` arrives.
 
 Record each task's lane in the table: the tier plus the resolved model
-(`<root>/codex/model.sh <gpt|claude|gemini|kimi> <tier>` prints it).
+(`<root>/codex/model.sh <gpt|claude|gemini|kimi|openrouter> <tier>` prints it).
 
 ## While workers run
 
-- Only the lead asks the user for sudo. If a task needs a command run as root, yours or a worker's, send the lead a `message` with the exact command (full paths, no `~`, the actual commands rather than a script an agent wrote), what it changes and why; never run `sudo` yourself.
+- Only the lead asks the user for sudo. If a task needs a command run as root, yours or a worker's, send the lead a `message` with `asks: true` and the exact command (full paths, no `~`, the actual commands rather than a script an agent wrote), what it changes and why; never run `sudo` yourself.
 
 - Post a `progress` card (`done`, `total`, the machines in use, `choice_waiting` false)
   when a task is dispatched and when you accept one. The lead sets `choice_waiting` while
@@ -222,11 +226,11 @@ When every task is done and the full validation passes:
    ones. It is written for a hostile reader: every claim checkable.
 2. Set `status: verifying` and commit PLAN.md and COMPLETION.md.
 3. Read `review_families` and the builders in `sessions` from `wc.js session list`. If
-   `review_families` is `claude`, `gpt`, `gemini`, or `kimi`, start exactly one top-tier verifier with no
+   `review_families` is `claude`, `gpt`, `gemini`, `kimi`, or `openrouter`, start exactly one top-tier verifier with no
    provider flag, whatever families built. If it is `both` and every builder ran on one
    provider, start one top-tier verifier with `--not-provider <that provider>`. If it is
    `both` and two or more providers built, start one top-tier verifier on each of the
-   first two that built, in the order `claude`, `gpt`, `gemini`, `kimi`, using `--provider` for each. If the first
+   first two that built, in the order `claude`, `gpt`, `gemini`, `kimi`, `openrouter`, using `--provider` for each. If the first
    start's output has a `note` saying its provider was not honoured, start no second verifier.
    If the second start's output has such a note (it landed on the first verifier's provider),
    stop the second verifier at once.
@@ -285,11 +289,33 @@ When every task is done and the full validation passes:
    re-run validation, add a "Remediation N" section to COMPLETION.md without erasing
    history, and start a fresh verifier (a new attempt).
 6. **The same gap surviving two fix attempts is a plan defect, not an implementation
-   defect.** Do not try a third. Send the lead a `message` naming the gap and its
-   evidence; the lead brings it to the user. Leave the line on `fixing`; the lead sets
+   defect.** Do not try a third. Send the lead a `message` with `asks: true` naming the gap
+   and its evidence; the lead brings it to the user. Leave the line on `fixing`; the lead sets
    `choice_waiting` for the question. Stop your work and wait.
 
 The `result` summary names how many rare paths were accepted.
 
 You do not write `done`; the lead does, after your `result`. A `result` you send marks the
 build finished, and the worktree goes back to the lead.
+
+A document meant for the user goes to the lead with a `message` naming its path.
+
+## Lessons
+
+Save a `lesson` card (see `cards.md`) for the sub-lead and for workers.
+
+- A lesson is saved only when all hold: a mistake cost real time (an extra review round, a
+  retried task, a redo, a failed check); something proved it wrong (the user corrected it,
+  or a check failed twice for the same reason); it will come up again for the same type of
+  agent in other threads; and it fits in one or two sentences as an instruction.
+- Not lessons: facts about one codebase, one-off fixes, decisions for one thread, hunches,
+  or anything these rules already say.
+- Read the existing lessons in your instructions first; if one already covers the point or is now wrong, replace or remove
+  that one instead of adding.
+  Each role holds at most 12. Never reword or remove one marked "(edited by the user)"; if you think it is wrong, tell the lead in a `message`.
+- You write worker lessons from what you see across worker tasks; name the worker's AI in
+  `only_ai` when the mistake is that AI's habit.
+- You read verifier reports during a build. When a verifier mistake meets this bar, send the
+  lead a `message` with the proposed lesson text, the proof and the verifier's AI; the lead
+  decides and saves it.
+- If it conflicts with these rules or should always apply, do not save it; send the lead a `message` suggesting a protocol change.

@@ -6,17 +6,23 @@
   const listEl = document.getElementById('list');
   const emptyEl = document.getElementById('empty');
   const errorEl = document.getElementById('list-error');
-  const archivedBox = document.getElementById('show-archived');
+  const archivedBtn = document.getElementById('show-archived');
+  // Archived is a separate view (only archived threads), kept for this tab so opening one keeps it.
+  const ARCHIVED_KEY = 'wheelchair.showArchived';
+  let showArchived = false;
+  try { showArchived = sessionStorage.getItem(ARCHIVED_KEY) === '1'; } catch (e) { /* off */ }
   const currentId = new URLSearchParams(location.search).get('id') || '';
   const STAGE = {
     idea: 'Idea', planning: 'Planning', review: 'Review', building: 'Building', verifying: 'Verifying', done: 'Done',
   };
-  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
+  const QUICK_STAGE = { building: 'Building', verifying: 'Verifying', verified: 'Verified' };
+  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
   let threads = [];
   let notices = [];
   let titles = {};
   let stages = {};   // thread id -> stage label, from the features data
   let waiting = {};  // thread id -> number of open cards that need you
+  let onboarding = null; // GET /onboarding when show is true, else null
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -35,15 +41,16 @@
     return Math.floor(s / 86400) + 'd ago';
   }
   // Your last message in the thread; agent activity does not move it. Older threads fall back to creation.
-  function stamp(t) { return Date.parse(t.collin_at || t.created_at) || 0; }
+  function stamp(t) { return Date.parse(t.user_at || t.created_at) || 0; }
   function nameOf(t) { return t.title || t.slug || base(t.project); }
 
   function row(t) {
     const li = el('li', 'row' + (t.id === currentId ? ' current' : ''));
     li.dataset.id = t.id;
     const top = el('div', 'top');
-    // A small fix has no plan and so no stage; its done card marks it Done.
-    const stage = stages[t.id] || (t.done_card ? 'Done' : undefined);
+    // A small fix has no plan and so no plan stage: its done card marks it Done, and until then
+    // its pinned progress line says Building, Verifying or Verified.
+    const stage = stages[t.id] || (t.done_card ? 'Done' : QUICK_STAGE[t.progress_stage]);
     const working = !t.archived && (t.sessions || []).some((s) => s.role === 'lead' && s.live && s.ready && s.turn_ended === false);
     const dot = el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : stage === 'Done' ? 'green' : stage ? 'blue' : '') + (working ? ' working' : ''));
     if (working) dot.title = 'Working';
@@ -71,17 +78,38 @@
     if (t.archived) top.appendChild(el('span', 'badge', 'archived'));
     li.appendChild(top);
     li.appendChild(el('div', 'sub', [
-      stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.collin_at || t.created_at),
+      stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.user_at || t.created_at),
     ].filter(Boolean).join(' · ')));
     return li;
   }
 
   function render() {
-    const shown = threads.filter((t) => archivedBox.checked || !t.archived)
+    const shown = threads.filter((t) => !!t.archived === showArchived)
       .sort((a, b) => stamp(b) - stamp(a));
+    archivedBtn.setAttribute('aria-pressed', String(showArchived));
+    archivedBtn.textContent = showArchived ? '\u2190 Back to threads' : 'Archived';
     listEl.textContent = '';
+    emptyEl.textContent = showArchived ? 'No archived threads.' : 'No threads yet.';
     emptyEl.hidden = shown.length > 0;
-    for (const notice of notices) {
+    if (showArchived) listEl.appendChild(el('li', 'group-label', 'Archived'));
+    if (onboarding && !showArchived) {
+      const li = el('li', 'card onboarding'); li.id = 'onboarding';
+      li.appendChild(el('h3', '', 'Set up an agent'));
+      const steps = el('ul', 'ob-steps');
+      for (const step of onboarding.steps || []) {
+        const item = el('li', 'ob-step' + (step.done ? ' done' : ''));
+        item.dataset.step = step.id;
+        item.appendChild(el('span', 'ob-tick', step.done ? '\u2713' : '\u25CB'));
+        const text = el('span', 'ob-text'); text.appendChild(el('span', '', step.label));
+        if (step.id === 'start' && !step.done && step.reason) text.appendChild(el('span', 'ob-reason dim', step.reason));
+        item.appendChild(text); steps.appendChild(item);
+      }
+      li.appendChild(steps);
+      li.appendChild(el('p', 'dim', "Leave out the ones you don't use."));
+      const open = el('a', 'btn-link primary', 'Open Settings'); open.href = '/wheelchair/app/settings#harnesses';
+      li.appendChild(open); listEl.appendChild(li);
+    }
+    for (const notice of showArchived ? [] : notices) {
       const li = el('li', 'card amber'); li.appendChild(el('p', '', notice.text));
       const dismiss = el('button', 'small', 'Dismiss'); dismiss.type = 'button';
       dismiss.addEventListener('click', async () => {
@@ -124,7 +152,18 @@
     if (cached && Array.isArray(cached.threads)) apply(cached.threads, cached.features || {});
   } catch (e) { /* draw on the first fetch instead */ }
 
+  async function pollOnboarding() {
+    try {
+      const res = await fetch(API + '/onboarding');
+      if (!res.ok) throw new Error('http ' + res.status);
+      const body = await res.json();
+      onboarding = body && body.show && Array.isArray(body.steps) && body.steps.length ? body : null;
+    } catch (e) { onboarding = null; }
+    render();
+  }
+
   async function poll() {
+    pollOnboarding();
     try {
       const [res, features] = await Promise.all([
         fetch(API + '/threads?view=list'),
@@ -142,7 +181,11 @@
     }
   }
 
-  archivedBox.addEventListener('change', render);
+  archivedBtn.addEventListener('click', () => {
+    showArchived = !showArchived;
+    try { sessionStorage.setItem(ARCHIVED_KEY, showArchived ? '1' : '0'); } catch (e) { /* this page only */ }
+    render();
+  });
   if (new URLSearchParams(location.search).get('new')) location.replace('/wheelchair/app/new');
 
   poll();

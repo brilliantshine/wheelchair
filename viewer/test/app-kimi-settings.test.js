@@ -28,7 +28,7 @@ test('Kimi settings: defaults, plans, migration and review families', () => {
   // A current save whose seen list lacks kimi gets kimi appended without reordering.
   const current = settings.normalize({ worker_order: ['gemini', 'gpt', 'claude'], worker_order_seen: ['claude', 'gpt', 'gemini'] });
   assert.deepEqual(current.worker_order, ['gemini', 'gpt', 'claude', 'kimi']);
-  assert.deepEqual(current.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi']);
+  assert.deepEqual(current.worker_order_seen, ['claude', 'gpt', 'gemini', 'kimi', 'openrouter']);
   // Already seen and removed: stays removed.
   assert.deepEqual(settings.normalize({ worker_order: ['claude'], worker_order_seen: ['claude', 'gpt', 'gemini', 'kimi'] }).worker_order, ['claude']);
   assert.equal(settings.normalize({ review_families: 'kimi' }).review_families, 'kimi');
@@ -43,7 +43,7 @@ test('Kimi through the Settings API: accounts, preferences, effort and slashed m
     assert.equal((await api(context, '/settings')).body.accounts.filter((a) => a.provider === 'kimi').length, 3);
     assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { review_families: 'kimi' } })).body.review_families, 'kimi');
     const bad = await api(context, '/settings/preferences', { method: 'PUT', body: { review_families: 'nope' } });
-    assert.equal(bad.body.detail, 'review_families must be both, claude, gpt, gemini or kimi');
+    assert.equal(bad.body.detail, 'review_families must be both, claude, gpt, gemini, kimi or openrouter');
     const saved = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'kimi', slot: 'heavy', model: 'kimi-code/k3-custom' } });
     assert.equal(saved.status, 200);
     assert.deepEqual(saved.body.models.kimi.heavy, { model: 'kimi-code/k3-custom', effort: null });
@@ -117,7 +117,7 @@ test('Usage: one Kimi account signed in on one machine and with a problem on ano
 test('Usage: a named Kimi account with no home on a machine below the floor shows the version problem', async () => {
   const floor = 'Kimi Code 2.6.3 or newer is needed (found 2.6.2)';
   const hub = await hubWith({
-    a: { version: 'v1', kimi: row({ problem: floor }), accounts: [{ id: 'default-kimi', cli: 'kimi', logged_in: false }, { id: 'default-claude', cli: 'claude', logged_in: true }] },
+    a: { version: 'v1', claude: { installed: true }, kimi: row({ problem: floor }), accounts: [{ id: 'default-kimi', cli: 'kimi', logged_in: false }, { id: 'default-claude', cli: 'claude', logged_in: true }] },
     b: { version: 'v1', kimi: row(), accounts: [{ id: 'default-kimi', cli: 'kimi', logged_in: false }] },
   }, (s) => { s.accounts.push({ id: 'k-two', provider: 'kimi', name: 'Work', plan: 'unknown', weight: 1, paused: false }); });
   const machines = await usage.machineAccounts(hub);
@@ -128,4 +128,12 @@ test('Usage: a named Kimi account with no home on a machine below the floor show
   assert.deepEqual(byId['k-two'], { a: { state: 'problem', text: floor }, b: 'signed_out' });
   assert.deepEqual(byId['default-kimi'], { a: { state: 'problem', text: floor }, b: 'signed_out' });
   assert.equal(providers.claude.accounts.find((x) => x.id === 'default-claude').machines.a, 'signed_in');
+});
+
+test('OpenRouter Pi warning appears in usage and does not block Ready', async () => {
+  const warning = 'Pi 1.6.0 is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.';
+  const hub = await hubWith({ m: { version: 'v1', pi: row({ logged_in: true, warning }), accounts: [{ id: 'default-openrouter', cli: 'pi', logged_in: true }] } });
+  assert.equal((await ready.check(hub, { machine: 'm', cli: 'pi' })).ok, true);
+  const account = (await usage.summary(hub)).providers.openrouter.accounts.find(a => a.id === 'default-openrouter');
+  assert.deepEqual(account.machines.m, { state: 'signed_in', warning });
 });

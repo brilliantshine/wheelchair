@@ -38,7 +38,7 @@ test.describe('merged card', () => {
     let action;
     await page.route('**/api/threads/*/cards/merged-1/press', async (route) => {
       action = route.request().postDataJSON().action;
-      await ctx.patch(made.id, (t) => Object.assign(t.cards.find((c) => c.id === 'merged-1'), { answered: true, resolved_by: 'collin', resolved_note: 'Kept' }));
+      await ctx.patch(made.id, (t) => Object.assign(t.cards.find((c) => c.id === 'merged-1'), { answered: true, resolved_by: 'user', resolved_note: 'Kept' }));
       await route.fulfill({ json: { queued: false } });
     });
     await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
@@ -49,4 +49,15 @@ test.describe('merged card', () => {
     await expect(card.locator('.answered-tag')).toContainText('Kept');
     await expect(card.getByRole('button')).toHaveCount(0);
   });
+});
+
+test('an old dismissed card retains its label', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    await signIn(page, ctx);
+    const made = await ctx.make({ cli: 'claude' });
+    await ctx.patch(made.id, (t) => t.cards.push({ id: 'old-needs', kind: 'needs', title: 'Old request', body: 'Earlier', at: new Date().toISOString(), answered: true, resolved_by: 'collin' }));
+    await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    await expect(page.locator('#card-old-needs .answered-tag')).toContainText('Dismissed');
+  } finally { await ctx.close(); }
 });

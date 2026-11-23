@@ -6,6 +6,7 @@ const usual = () => c.home('CODEX_HOME', '.codex');
 const loginEnv = dir => dir ? { CODEX_HOME: dir } : {};
 const { run } = require('../lib/usage-probe');
 const { DUPLICATE_HEADERS, serverLabel } = require('../lib/project-mcp');
+const { isWindowsProgram } = require('../lib/project-programs');
 function parseUsage(response) {
   if (response?.error || !response?.result?.rateLimits) throw new Error('invalid Codex usage response');
   const limits = response.result.rateLimits; let five_hour = null, week = null;
@@ -48,10 +49,12 @@ function codexEntryReason(name, entry) {
   return null;
 }
 // The -c overrides for every server Codex can take, measured against the budget as a whole.
-function codexOverrides(mcp) {
+function codexOverrides(mcp, { wsl = false, mount = '/mnt', replaceEntries = {} } = {}) {
   const args = [], warnings = [], included = [];
   for (const name of Object.keys(mcp?.servers || {})) {
-    const entry = mcp.servers[name];
+    const original = mcp.servers[name];
+    const entry = Object.hasOwn(replaceEntries, name) ? replaceEntries[name] : original;
+    if (entry === null) continue;
     const reason = codexEntryReason(name, entry);
     if (reason) { warnings.push({ names: [name], text: `${serverLabel(name)}: skipped on Codex: ${reason}` }); continue; }
     included.push(name);
@@ -77,6 +80,12 @@ function codexOverrides(mcp) {
         if (value === `\${${key}}` && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) passthrough.push(tomlString(key));
         else literal.push(`${tomlString(key)}=${tomlString(value)}`);
       }
+      if (wsl && (original.type === undefined || original.type === 'stdio') && isWindowsProgram(original.command, mount)) {
+        for (const name of ['WHEELCHAIR_WINDOWS_PROJECT', 'WSLENV']) {
+          const quoted = tomlString(name);
+          if (!passthrough.includes(quoted)) passthrough.push(quoted);
+        }
+      }
       add('command', tomlString(entry.command));
       add('args', `[${(entry.args || []).map(tomlString).join(',')}]`);
       add('env', `{${literal.join(',')}}`);
@@ -93,7 +102,7 @@ function codexOverrides(mcp) {
   return { args, tooLarge, warnings };
 }
 module.exports = {
-  provider: 'gpt', loginEnv, parseUsage, codexEntryReason, codexOverrides,
+  provider: 'gpt', loginEnv, usual, parseUsage, codexEntryReason, codexOverrides,
   usageProbe(dir, options = {}) { return run('codex', ['app-server'], { ...options, env: { ...process.env, ...loginEnv(dir) }, parse: parseUsage, messages: [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: 'wheelchair', version: '1' } } },
     { jsonrpc: '2.0', method: 'initialized' },
@@ -127,12 +136,14 @@ module.exports = {
     const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
     const argv = ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
     const projectStart = argv.length;
-    const { args, warnings } = codexOverrides(context?.tools ? context.mcp : null);
+    const { args, warnings, tooLarge } = codexOverrides(context?.tools ? context.mcp : null, context);
     argv.push(...args);
     // Every project override is redacted in the stored command (Spec §3): '-c' then 'key=value'.
     const redactions = [];
     for (let i = projectStart + 1; i < argv.length; i += 2) redactions.push(i);
-    return { argv, warnings, redactions };
+    const names = context?.tools && !tooLarge ? Object.keys(context.mcp?.servers || {}).filter(name => { const entry = Object.hasOwn(context.replaceEntries || {}, name) ? context.replaceEntries[name] : context.mcp.servers[name]; return entry !== null && !codexEntryReason(name, entry); }) : [];
+    if (context?.resume) argv.push('resume', session.codex_thread_id);
+    return { argv, warnings, redactions, loaded: c.loadedTools(names, context?.mcp, context?.mount, context?.replaceEntries) };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('Ask Codex to do anything'); }, answerPrompts() { return null; },

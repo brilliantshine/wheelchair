@@ -15,8 +15,11 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/state.js` | Hub-state paths, atomic JSON writes, and thread persistence. `allThreads()` and `threadSnapshot(id)` serve shared, deep-frozen records from a stat-checked cache; code that mutates or saves reads with `thread(id)` (or clones the one record). |
 | `app/machine-client.js` | The authenticated client for machine-service routes, including JSON status and body pass-through. |
 | `app/cards.js`, `card.js` | Hub card handling, including hidden `resolve` and `retract` cards, and the agent-side card validator/CLI. |
+| `app/peer-log.js` | Peer message limits, log retention and held-queue cleanup. |
+| `app/peers.js` | Same-machine peer and linked-thread discovery and lead summaries. |
 | `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js screen`, the invisible-screen commands). |
 | `app/quiet.js` | The quiet-turn detector: who owes a report, the reminders to an agent and its starter, and the system `needs` card, run on the queue retry timer. |
+| `app/auto-merge.js` | The opt-in auto-merge run after a `check` card is accepted: gates, GitHub readiness re-check, the exact-head REST merge, the attempt record per head and the "Not merged automatically" `needs` card. |
 | `app/background.js` | Shared appearance metadata, bounded authenticated image requests, immutable image storage and queued cleanup; one hub writer per state directory. |
 | `pages/background-format.js` | Pure bounded image-container validation and GIF loop normalization shared by hub and local previews. |
 | `pages/background.js`, `pages/background.css` | Saved appearance renderer, token-scoped local preview ownership, Settings editor and opaque content surfaces; signed-in top-level pages only. |
@@ -25,17 +28,23 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/handoff.js` | Thread handoffs: the export file format and its validator, history text, the export points and quiet test, the frozen guard, export itself, the handed-off banner, Download again and the `handoffs/` start-up sweep. |
 | `app/handoff-ops.js` | Handoff operations (Create, Advance, Undo): the saved operation record, pre-claim checks, claims, Retry and Cancel, and the cancelled-claim revoke list and sweep. |
 | `app/handoff-import.js` | `POST /threads/import`: validation, repository, branch and stage checks, and the outcome table that opens, creates or advances a thread. |
+| `app/documents.js` | Plan document eligibility, listing and live reads. |
+| `app/remote-plan.js` | Remote document reads and background discovery cache. |
+| `app/zip.js`, `app/html-download.js` | Stored ZIP creation and inert HTML download transformation. |
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, including Project tools forwarding, module composition, and the page-facing JSON contract. |
 | `app/names.js`, `agents.js` | Lead name allocation and the public agent tree and machine reachability view. |
-| `app/providers.js` | Hub provider names, CLI mappings and labels: Claude, GPT, Antigravity (`gemini`) and Kimi Code (`kimi`). |
+| `app/providers.js` | Hub provider names, CLI mappings and labels: Claude, GPT, Antigravity (`gemini`) Kimi Code (`kimi`), and OpenRouter (`openrouter`, CLI `pi`). |
+| `app/harnesses.js` | Harness status, placement eligibility and first-run checklist. |
 | `app/balancer.js` | Provider and account placement, constraints and waiting decisions. |
 | `app/usage-poll.js` | Idle account usage polling and machine selection. |
 | `app/usage.js` | Account usage persistence, machine sign-in state, forecasts and ranking. |
 | `app/ready.js` | The Ready check before Start building: each machine reachable, on the hub's commit, and its CLIs logged in. |
 | `index.html` | The graph page, at `/wheelchair/?path=<graph>`; `/wheelchair/` with no path redirects to the app's Threads page. Holds the second copy of the box and group size constants the server's layout reserves room for |
 | `doc.html`, `doc.js` | The plan document page, read from a plan's `docs/plans/<slug>/`; its Markdown renderer is the shared `pages/markdown.js` |
-| `pages/project-tools.js` | Settings' Project tools section: machine and project picker, tool list and form, keys list, save and remove-key calls. |
+| `pages/picture-export.js` | The picture page's PNG export: a graph cloned from the graph viewer's SVG (pan/zoom removed, bbox plus 24 px margin, computed styles inlined) and form drawers on a canvas, 2x capped at 8192 px, saved via a blob URL |
+| `pages/file.html`, `file.js`, `file.css` | The sent-file preview page at `/wheelchair/app/file?thread=&file=`: Markdown through `renderMarkdown` (external links only), other text in a `<pre>`, "Too big to preview" past 2 MiB; `file.js` also exposes `window.WCFilePreview.previewable(name, size)` and `.href(thread, stored)` for the thread page |
+| `pages/project-tools.js` | Settings' Project tools section: machine and project picker, tool list and form, keys list, save and remove-key calls, the Add MCP for Unity button, the Runs on Windows switch and its status line. |
 | `pages/aside.js` | Thread-page aside selection, panel, marks and list. |
 | `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; page polls go through `window.wcPoller` (defined in `nav.js`), which pauses while the tab is hidden; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the lead sidebar, agent tree, side panel and bottom terminal panel. `term-view.js` is the terminal view (xterm, View only / Typing switch, mouse-report filter, scrollback history) that both the Agents panel and `terminal.html`/`terminal.js` mount. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
 | `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/`. The app's fonts are not here: `/wheelchair/assets/fonts/<name>.woff2` serves four allowlisted files from `node_modules/@fontsource` (`FONT_FILES` in `server.js`) |

@@ -2,7 +2,7 @@
 
 // The handoff is data, not a live card or session record.
 const LIMIT = 10 * 1024 * 1024;
-const KINDS = new Set(['message', 'press', 'offer', 'idea', 'question', 'approval', 'progress', 'needs', 'done', 'check', 'diagram', 'image', 'stub', 'sudo', 'title', 'resolve', 'retract', 'result', 'merged']);
+const KINDS = new Set(['message', 'press', 'offer', 'idea', 'question', 'reach', 'approval', 'progress', 'needs', 'done', 'check', 'diagram', 'image', 'stub', 'sudo', 'title', 'resolve', 'retract', 'result', 'merged']);
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, required, optional = []) => object(value)
   && required.every((key) => Object.hasOwn(value, key))
@@ -15,8 +15,9 @@ function validateHandoffFile(bytesOrString) {
   let file;
   try { file = JSON.parse(bytes.toString('utf8')); } catch { return { ok: false, what: 'invalid JSON' }; }
   const fail = (what) => ({ ok: false, what });
-  if (!keys(file, ['format', 'version', 'exported_at', 'thread', 'repository', 'branch', 'head', 'stage', 'history'], ['pr_url'])) return fail('invalid fields');
-  if (file.format !== 'wheelchair-handoff' || file.version !== 1) return fail('unknown format or version');
+  if (!keys(file, ['format', 'version', 'exported_at', 'thread', 'repository', 'branch', 'head', 'stage', 'history'], ['pr_url', ...(file?.version === 3 ? ['lessons'] : [])])) return fail('invalid fields');
+  if (file.format !== 'wheelchair-handoff' || ![1, 2, 3].includes(file.version)) return fail('unknown format or version');
+  if (Object.hasOwn(file, 'lessons') && !Array.isArray(file.lessons)) return fail('invalid lessons');
   if (!iso(file.exported_at)) return fail('invalid export time');
   if (!keys(file.thread, ['id', 'title', 'slug']) || typeof file.thread.id !== 'string' || !/^[0-9a-f]{12}$/.test(file.thread.id)
     || typeof file.thread.title !== 'string' || file.thread.title.length > 120 || typeof file.thread.slug !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(file.thread.slug)) return fail('invalid thread');
@@ -26,8 +27,9 @@ function validateHandoffFile(bytesOrString) {
   if (!['idea-confirmed', 'approved', 'done'].includes(file.stage)) return fail('invalid stage');
   if (file.stage === 'done' ? typeof file.pr_url !== 'string' || !file.pr_url : Object.hasOwn(file, 'pr_url')) return fail('invalid pull request');
   if (!Array.isArray(file.history) || file.history.length > 2000 || !file.history.every((entry) => keys(entry, ['at', 'who', 'kind', 'text'])
-    && iso(entry.at) && ['collin', 'lead', 'app'].includes(entry.who) && KINDS.has(entry.kind)
+    && iso(entry.at) && (file.version === 1 ? ['collin', 'lead', 'app'] : ['user', 'lead', 'app']).includes(entry.who) && KINDS.has(entry.kind)
     && typeof entry.text === 'string' && entry.text.length <= 20000)) return fail('invalid history');
+  if (file.version === 1) for (const entry of file.history) if (entry.who === 'collin') entry.who = 'user';
   return { ok: true, file };
 }
 
@@ -35,6 +37,7 @@ function historyText(card) {
   const answer = card.retracted_at ? 'withdrawn' : card.answered_value || card.resolved_note || card.answered_action || (card.answered ? 'answered' : '');
   const lines = (...items) => items.flat(Infinity).filter((item) => typeof item === 'string' && item.length).join('\n');
   switch (card.kind) {
+    case 'reach': return lines(`Talk to ${card.target_title} (${String(card.target_project || '').split('/').filter(Boolean).at(-1) || ''})`, card.why, card.allow_failed ? `allow failed: ${card.allow_failed}` : (answer || 'withdrawn'));
     case 'question': return lines(card.question, (card.options || []).map((option) => option.label), answer || 'withdrawn');
     case 'idea': return lines((card.bullets || []).map((bullet) => bullet.text));
     case 'approval': return lines((card.objections || []).map((item) => lines(item.finding, item.reason)), answer);
@@ -53,12 +56,12 @@ function handoffFileName(title) {
   return `${stem || 'thread'}.wheelchair.json`;
 }
 
-function buildHandoffFile(thread, { head, stage, repository, pr_url }) {
+function buildHandoffFile(thread, { head, stage, repository, pr_url, lessons = {} }) {
   const since = thread.imported?.at;
   const newer = (at) => !since || at > since;
   const history = (thread.imported?.history || []).map((entry) => ({ ...entry }));
   for (const sent of thread.sent || []) {
-    if (['collin', 'card'].includes(sent.source) && newer(sent.at)) history.push({ at: sent.at, who: 'collin', kind: sent.source === 'card' ? 'press' : 'message', text: sent.text });
+    if (['user', 'card'].includes(sent.source) && newer(sent.at)) history.push({ at: sent.at, who: 'user', kind: sent.source === 'card' ? 'press' : 'message', text: sent.text });
   }
   for (const card of thread.cards || []) {
     const at = card.created_at || card.at;
@@ -68,7 +71,8 @@ function buildHandoffFile(thread, { head, stage, repository, pr_url }) {
   }
   history.sort((a, b) => String(a.at).localeCompare(String(b.at)));
   for (const entry of history) if (typeof entry.text === 'string' && entry.text.length > 20000) entry.text = `${entry.text.slice(0, 19990)}… (cut)`;
-  const file = { format: 'wheelchair-handoff', version: 1, exported_at: new Date().toISOString(), thread: { id: thread.id, title: thread.title || '', slug: thread.slug }, repository, branch: `wc/${thread.id}`, head, stage, ...(stage === 'done' ? { pr_url } : {}), history };
+  const carried = Object.entries(lessons).flatMap(([role, items]) => items.filter((item) => item.thread === thread.id && (!item.project || item.project === thread.project)).map((item) => ({ role, text: item.text, ...(item.provider !== undefined ? { provider: item.provider } : {}), ...(item.project ? { project: true } : {}), saved_by: item.saved_by, saved_at: item.saved_at, ...(item.kept_at !== undefined ? { kept_at: item.kept_at } : {}) })));
+  const file = { format: 'wheelchair-handoff', version: 3, exported_at: new Date().toISOString(), thread: { id: thread.id, title: thread.title || '', slug: thread.slug }, repository, branch: `wc/${thread.id}`, head, stage, ...(stage === 'done' ? { pr_url } : {}), history, lessons: carried };
   let dropped = 0;
   let size = Buffer.byteLength(JSON.stringify(file));
   const omission = () => ({ at: history[0].at, who: 'app', kind: 'message', text: `${dropped} earlier entries were left out` });
@@ -93,8 +97,9 @@ function quietReason(hub, thread) {
   const sessions = thread.sessions || [];
   if (sessions.some((s) => s.role !== 'lead' && s.live) || (thread.asides || []).some((aside) => aside.status === 'open' || aside.turn)) return 'Agents are still working';
   if (sessions.some((s) => (s.role === 'lead' && s.live && s.turn_ended !== true)
-    || ((s.live || s.status === 'pending' || s.role === 'lead') && (s.queue || thread.queues?.[s.name] || []).length))) return 'The lead is busy';
+    || ((s.live || s.status === 'pending' || s.role === 'lead') && (s.queue || thread.queues?.[s.name] || []).some(entry => !require('./peer-log.js').heldEntry(s, entry))))) return 'The lead is busy';
   if ((thread.cards || []).some((card) => card.kind === 'sudo' && ['waiting', 'running'].includes(card.state))) return 'A root command is waiting';
+  if ((thread.cards || []).some((card) => card.kind === 'reach' && !card.answered && !card.retracted_at)) return 'A request to talk to another project is waiting';
   if ((hub.uploadsInFlight?.get(thread.id) || 0) > 0) return 'A file is still uploading';
   return null;
 }
@@ -147,7 +152,8 @@ async function exportThread(hub, id) {
     if (reason) throw appError(409, reason);
     const stage = stageFor(thread, status);
     const pr_url = donePr(thread);
-    const file = buildHandoffFile(thread, { head: status.head, stage, repository: status.repository, pr_url });
+    const settings = await require('./settings.js').load(hub);
+    const file = buildHandoffFile(thread, { head: status.head, stage, repository: status.repository, pr_url, lessons: settings.lessons });
     const bytes = Buffer.from(JSON.stringify(file));
     const checked = validateHandoffFile(bytes);
     if (!checked.ok) throw appError(500, `Could not build the handoff file: ${checked.what}`);
@@ -160,6 +166,7 @@ async function exportThread(hub, id) {
     try {
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
       await fs.writeFile(next, bytes, { mode: 0o600 });
+      require('./peer-log.js').dropHeld(thread);
       thread.handed_off = { at: file.exported_at, head: file.head, stage: file.stage };
       for (const aside of thread.asides || []) {
         if (aside.status === 'open') require('./asides.js').close(aside);

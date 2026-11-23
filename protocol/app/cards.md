@@ -23,10 +23,19 @@ Rules for every card:
 - The file holds one JSON object. `kind` must equal the kind on the command line.
 - Fields marked required must be present and non-empty. A field not listed for the kind
   is refused.
-- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient.) The app learns who you
+- You never put a thread id, your own session name or a card id in a card. (A `message` names its recipient; `reach` carries the other thread's id, `question.about_thread` the other thread's id for an overlap card, and `stub.adds_to` the target thread's id: the only exceptions.) The app learns who you
   are from your session token and which thread you belong to from its own record, and it
   assigns every card its `id`.
 - A card is accepted only for the thread your session belongs to.
+- On success `card.js` prints exactly one JSON line. For a kind that makes a stored card it is
+  `{"id":"<id>","kind":"<kind>"}`; for `title`, `resolve` and `retract` it is `{"ok":true}`.
+  A `lesson` receipt also names the lesson: `{"id":"<id>","kind":"lesson","lesson":"<lesson id>"}`
+  when a notice was recorded, and `{"kind":"lesson","lesson":"<lesson id>"}` (no card id) when
+  the hub found the same lesson already saved and recorded no new notice.
+  Either gains `"queued":true` when the machine's response body has `spooled: true` (the app was
+  unreachable and the card waits on the machine; a delivered post can also return HTTP 202, which
+  adds nothing). A cross-thread `message` receipt also gains `"held":true` when the other thread has no live lead and the message waits for its next lead. It never prints any other card field. Keep the id: a queued card's printed id is
+  the id it gets, so `retract` and `resolve` can name it.
 - Text fields are plain sentences for a person, not codenames. A card the user sees is read
   on a phone, so write the short version.
 
@@ -46,8 +55,11 @@ Rules for every card:
 | `merged` | yes | app | no |
 | `diagram` | yes | lead | no |
 | `image` | yes | lead | no |
+| `file` | yes | lead | no |
 | `stub` | yes | lead | no |
 | `sudo` | yes | lead | no |
+| `reach` | yes | lead | no |
+| `lesson` | yes | lead, sub-lead, worker, mapper | no |
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
 | `retract` | never | lead | no |
@@ -59,8 +71,9 @@ the old one in the pin (there is one offer, one idea list, one deferred list and
 thread). An approval unpins when Start building is accepted or it is retracted; a fresh
 approval replaces an open pinned approval. The app also posts `needs` cards of its own (a session stuck at startup, a
 permission prompt, "Sessions ended"); you never post those.
+The user can dismiss any system needs card except a "Permission needed" or "Session stuck at startup" card while its live session is still held, and the quiet card also closes when its agent’s starter messages it or the agent starts another agent.
 
-Sections for `progress`, `message` and `result` are below; all other kind sections are
+Sections for `progress`, `lesson`, `message` and `result` are below; all other kind sections are
 in `cards-lead.md`.
 
 ## The shown kinds
@@ -96,21 +109,56 @@ Review and verify have no segment bar; verify appends machines when non-empty. T
 label joins the label and text with " · ", adding ": choice for you" when waiting; the
 build folded label remains "Building D of T". Text wraps at phone widths.
 
+### `lesson`
+
+Saves, replaces or removes one lesson for a type of agent; the card is the notice the user
+sees. See your role's Lessons section for when to save one.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `action` | `add` \| `replace` \| `remove` | yes | What to do |
+| `for` | role | yes | Whose lessons: lead may save for lead, reviewer, verifier, mapper; sub-lead for sub-lead, worker; worker for worker; mapper for mapper |
+| `text` | string | `add`, `replace` | 1-300 characters, one line |
+| `lesson` | string | `replace`, `remove` | The id of the lesson, as shown in your instructions |
+| `only_ai` | string | no | `add`/`replace`: `any` or `claude`, `gpt`, `gemini`, `kimi`, `openrouter`; the lesson reaches only agents on that AI. Name the AI of the agent that made the mistake |
+| `only_project` | boolean | no | `add`/`replace`: true limits the lesson to this thread's project |
+| `why` | string | `add`, `replace`, `remove` | One line, shown to the user: what went wrong and how it was proven |
+
+On a `replace`, an absent `only_ai` or `only_project` keeps the stored one; `only_ai: "any"`
+and `only_project: false` clear it. On an `add`, absent means no limit.
+
+A `lesson` card is never queued; the machine relays it synchronously. On the 503 (`the app
+did not confirm the lesson; run the same card again in a minute (repeating it is safe)`),
+do exactly that. Refusals (422), each a sentence you can act on:
+
+- `a <saver> may not save lessons for <target>s`.
+- `lessons for <role>s are full (12): replace or remove one instead`, then every lesson for
+  that role, one per line as `[<id>] <first 80 characters>` with its markers. If none is
+  worth dropping, do not save.
+- `no lesson <id> for <role>s`: a `replace` naming an id not present for that role, or a
+  `replace` or `remove` naming an id kept under another role.
+- `the user edited this lesson; agents leave it as it is`: a `replace` or `remove` of a
+  lesson marked "(edited by the user)".
+- A field error (400) from validation, such as an unknown `only_ai` or a missing `why`: fix
+  the field and run the card again.
+
 ## The kinds never shown
 
 ### `message`
 
-To another session in the same thread.
+To another session in the same thread, or, from a lead only, to another thread's lead (see `lead.md`, Other leads on this machine).
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `to` | string | yes | The session's name, `wc-<thread-id>-<role>[-<n>]`. `wc.js session list` shows the names |
 | `text` | string | yes | The message |
 | `asks` | boolean | no | True when this message needs an answer |
-| `passes_on` | string | no | The id of the question message this passes on |
+| `passes_on` | string | no | The id of the question message this passes on; names only a question in your own thread |
 
 The app types it into that session when its turn ends, as one message starting
 `[wc:from <your session name>]`. The thread hides it and the receiver's whole reply.
+A message to another thread's lead goes to that thread's latest live lead and carries `[thread <id>: <title>]` (the sender's thread) after the `[wc:from <session>]` marker. It may name any lead session of that thread you already know, live or ended; when none is live it is held for that thread's next lead and the receipt shows `"held":true`.
+A lead that sends 20 messages to one thread within an hour is paused with that thread until the user writes in the sending thread; the refusal says so.
 A worker's question to the lead, a sub-lead's report of a surviving gap and the app's
 "your session died" notices all travel this way.
 
@@ -139,10 +187,11 @@ app uses to hide traffic the user did not write:
 | Starts with | Meaning | Thread shows |
 |---|---|---|
 | `[wc:role]` | Your role instruction (Codex sessions get it as their first message) | hidden, and your reply to it |
-| `[wc:from <session>]` | Another session's `message`, or a `result` delivered to you | hidden, and your reply to it |
+| `[wc:from <session>]`, then for another thread's lead `[thread <id>: <title>]` | Another session's `message`, or a `result` delivered to you | hidden, and your reply to it |
 | `[wc:context stub]` | Context for a lead that starts a stub thread: the stub's summary | hidden, your reply **shown**, with "Started from <parent thread>" in its place |
 | `[wc:context restart]` | Context for a lead that replaces a dead one: the plan and the cards so far | hidden, your reply **shown**, with "Lead restarted" in its place |
 | `[wc:context import]` | Context for a lead continuing an imported thread | hidden, your reply **shown**, with "Imported from a handoff" in its place |
+| `[wc:context switch]` | Tells an agent its conversation was moved to another account after a usage limit, and to carry on | hidden with no line in its place, your reply **shown** |
 | `[card <id>] ...` | The user pressed a button on card `<id>` | a short bubble from them ("Picked B"), and your reply is shown |
 | a final `[wc:style]` block, after a blank line at the END of a message | The user's writing style, delivered to a lead, replacing any earlier style | stripped from the user's bubble |
 | anything else | The user's own words, typed in the app, the browser terminal or over `tmux attach` | their bubble, and your reply is shown |
@@ -162,6 +211,7 @@ The press forms, in full:
 - `[card <id>] start building`
 - `[card <id>] start thread about: <text>`
 - `[card <id>] keep going` and `[card <id>] talk about: <needs card title>`, on your `needs` card
+- `[card <id>] picked: allow`, `picked: don't allow` and `allow failed: <reason>`, on your `reach` card
 - `[card <id>] sudo ran: exit <n>`, `declined`, `sudo expired`, `sudo failed: <reason>` and `talk about: sudo request`, on your `sudo` card
 
 Two consequences for a lead. Nothing you write in the reply to a `[wc:from ...]` message
@@ -178,6 +228,7 @@ waiting for; for a reviewer or verifier it means the last turn ended with no rep
 node <root>/viewer/app/card.js <kind> <json-file>
 node <root>/viewer/app/wc.js git <fetch|commit|merge|cherry-pick|revert|push|pr> ...
 node <root>/viewer/app/wc.js session <start|stop|list> ...
+node <root>/viewer/app/wc.js session leads [--all-projects]
 ```
 
 A session's own `wc.js` and `card.js` calls go to its own machine service (default port

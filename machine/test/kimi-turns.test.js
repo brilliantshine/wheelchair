@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -144,7 +146,7 @@ test('chat binds before polling and simultaneous chat and polling share identity
 
 test('persisted offsets catch up after restart and a crash before saving replays the turn', async () => {
   const { session, log, metadata, prompt } = setup(); const root = session.account_dir;
-  const machine = new MachineService({ stateDir: root }); machine.sessions[session.name] = session;
+  const machine = new MachineService({ win: noWsl, stateDir: root }); machine.sessions[session.name] = session;
   machine.config = {}; machine.hook = async (name, event) => { await machine.spool('events', { ...event, session: name, prepared: true }); };
   const file = log('own', [metadata, prompt(session.name), { type:'turn.ended', agentId:'main', turnId:0, reason:'completed' }]);
   await machine.pollKimiTurns(); const spool = path.join(root, 'spool/events');
@@ -152,7 +154,7 @@ test('persisted offsets catch up after restart and a crash before saving replays
   // Persist an offset after turn zero and restart from the actual state file.
   await machine.pollKimiTurns(); const before = fs.readFileSync(machine.sessionsPath, 'utf8');
   fs.appendFileSync(file, JSON.stringify({ type:'turn.ended', agentId:'main', turnId:1, reason:'completed' })+'\n');
-  const restarted = new MachineService({ stateDir:root }); restarted.config = {}; restarted.sessions = JSON.parse(before);
+  const restarted = new MachineService({ win: noWsl, stateDir:root }); restarted.config = {}; restarted.sessions = JSON.parse(before);
   const events = []; restarted.hook = async (name,event) => events.push(event);
   await restarted.pollKimiTurns(); await restarted.pollKimiTurns(); assert.deepEqual(events.map(e => e.turn_id), [1]);
   // The event is durable but the session record can still be the pre-save version.
@@ -200,7 +202,7 @@ test('recovery stops Kimi while leaving Claude and marker-priority panes alone',
   const { machine } = setup(); machine.sessions = {};
   const panes = { 'wc-a-worker': '│ >\nAsk When Needed  K3.1 Pro thinking: high  …/clone/wc/db3f0b03dcf6  wc/db3f0b03dcf6\ncontext: 0% (0/256k)', 'wc-b-worker': '│ >\ncontext: 10%', 'wc-c-worker': 'Codex\n› input\ncontext: 0%', 'wc-d-worker': '│ >\nNever Ask  K3 thinking: high  …/worktrees/clone/wc-smoke-w2  wc-smoke-w2\ncontext: 7% (17.5k/256k)', 'wc-e-worker': '│ >\nAsk When Needed  K2.7 Code Highspeed thinking\ncontext: 0% (0/256k)', 'wc-f-worker': 'Antigravity CLI\n> input', 'wc-g-worker': 'Claude Code\n│ >\ncontext: 10%\n  bypass permissions on', 'wc-h-worker': '▶ Run this command?\n▶ 1. Approve once\n  2. Reject\nAsk When Needed  K3.1 Pro thinking: high\ncontext: 5% (13k/256k)', 'wc-i-worker': ' ──────────────────────────────────────────────\n  Trust this folder?\n  ↑↓ navigate · Enter select · Esc exit\n\n  /tmp/example/worktrees/clone/wc-smoke-w1\n\n  No project integrations or instructions to activate.\n\n  Trust is remembered for this folder, including future project config changes.\n  Tool approvals follow your permission settings.\n\n   ❯ Trust and continue\n     Exit\n ──────────────────────────────────────────────', 'wc-j-worker': 'Claude Code says: Trust this folder? is what the prompt displayed, but no options are present.', 'wc-k-worker': '│ >\nAsk When Needed  K3.1 Pro  …/clone/wc/db3f0b03dcf6  wc/db3f0b03dcf6\ncontext: 3% (8k/256k)', 'wc-l-worker': 'Claude Code\n│ >\nThe Kimi footer starts with Ask When Needed\ncontext: 10%' };
   machine.liveTmux = () => new Set(Object.keys(panes));
-  machine.tmux = args => ({ ok:true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1)] : '/tmp' });
+  machine.tmux = args => ({ ok:true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1).replace(/^=(.*):$/, '$1')] : '/tmp' });
   await machine.recoverFromTmux();
   assert.equal(machine.sessions['wc-a-worker'].end_reason, 'Lost track of this Kimi Code session after a machine restart; restart it');
   assert.equal(machine.sessions['wc-i-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-i-worker'].end_reason, 'Lost track of this Kimi Code session after a machine restart; restart it');
@@ -213,7 +215,7 @@ test('recovery stops Kimi while leaving Claude and marker-priority panes alone',
 
 test('outage spools one turn at a time and drains in order even when the clock moves backwards', async () => {
   const { session, log, metadata, prompt } = setup();
-  const root = session.account_dir; const machine = new MachineService({ stateDir: root });
+  const root = session.account_dir; const machine = new MachineService({ win: noWsl, stateDir: root });
   machine.config = {}; machine.sessions[session.name] = session;
   log('own', [metadata, prompt(session.name), ...[0,1].map(turnId => ({ type:'turn.ended', agentId:'main', turnId, reason:'completed' }))]);
   let now = Date.now(); const oldNow = Date.now; Date.now = () => now;
@@ -233,7 +235,7 @@ test('HTTP pending stop, archive and hook preserve pending session and its workt
   const root = makeTempSync('kimi-http-turns-'), secret = path.join(root, 'secret'); fs.writeFileSync(secret, 'secret');
   const http = require('node:http'), probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
-  const machine = new MachineService({ stateDir: root, host:'127.0.0.1', port, secretFile:secret });
+  const machine = new MachineService({ win: noWsl, stateDir: root, host:'127.0.0.1', port, secretFile:secret });
   machine.liveTmux = () => new Set(); await machine.listen();
   const worktree = path.join(root, 'work'); fs.mkdirSync(worktree);
   const session = { name:'wc-abc-worker', thread_id:'abc', cli:'kimi', status:'ready', token:'token', end_reason:'lost', worktree, created_worktree:true, role:'worker' };
@@ -303,7 +305,7 @@ test('HTTP start retry and listing keep Kimi binding state private', async () =>
   const root = makeTempSync('kimi-public-'), secret = path.join(root, 'secret'); fs.writeFileSync(secret, 'secret');
   const http = require('node:http'), probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
-  const machine = new MachineService({ stateDir:root, host:'127.0.0.1', port, secretFile:secret });
+  const machine = new MachineService({ win: noWsl, stateDir:root, host:'127.0.0.1', port, secretFile:secret });
   machine.liveTmux = () => new Set();
   const other = { name:'wc-abc-worker-2', role:'worker', cli:'claude', thread_id:'abc', token:'token', status:'ready' };
   await machine.listen(); machine.sessions[session.name] = session; machine.sessions[other.name] = other;
@@ -327,7 +329,7 @@ test('fatal verifier stop and archive remove created worktrees, while worker sto
   const root = makeTempSync('kimi-git-'), repo = path.join(root, 'repo'); fs.mkdirSync(repo);
   const git = (...args) => execFileSync('git', args, { encoding:'utf8', stdio:['ignore','pipe','pipe'] });
   git('init', repo); git('-C', repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'initial');
-  const machine = new MachineService({ stateDir:path.join(root, 'state') }); machine.tmux = () => ({ok:true}); machine.liveTmux = () => new Set();
+  const machine = new MachineService({ win: noWsl, stateDir:path.join(root, 'state') }); machine.tmux = () => ({ok:true}); machine.liveTmux = () => new Set();
   const make = (name, role, thread) => { const worktree = path.join(root, name); git('-C', repo, 'worktree', 'add', '--detach', worktree); const session = { name, role, thread_id:thread, cli:'kimi', end_reason:'lost', status:'ready', created_worktree:true, worktree }; machine.sessions[name] = session; return session; };
   const stopped = make('wc-stop-verifier', 'verifier', 'stop');
   await machine.stop(stopped.name); assert.equal(fs.existsSync(stopped.worktree), false); assert.ok(!git('-C', repo, 'worktree', 'list', '--porcelain').includes(stopped.worktree));

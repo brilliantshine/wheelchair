@@ -3,6 +3,10 @@
 Checked against: `4654f16090e18a4b044d6e9f09f771ec976bb26e` (origin/main)
 Files covered: `viewer/app/card.js`, `viewer/app/cards.js`, `viewer/app/threads.js`, `viewer/app/state.js`, `viewer/app/chat.js`, `viewer/app/views.js`, `viewer/pages/thread.js`, `viewer/pages/thread.css`, `machine/service.js`, `machine/lib/sudo.js`, `sudo-helper/helper.py`, `protocol/app/cards.md`, `protocol/app/lead.md`
 
+> Overlap, card receipt and restart paths are rechecked at origin/main in [overlap decision flow](overlap-decision-flow.md); other claims retain their historical checks.
+
+> Lead-chat paths rechecked against `1ee9ad1487d2a3f8b6ceda7f73cf7218657f52c2`; see [lead-chat/MAP.md](../plans/lead-chat/MAP.md). Other claims retain their historical checked commit.
+
 > Historical map: covered files changed since the checked-against commit. The launch, ledger, hooks and approval paths relevant to startup growth were rechecked in `docs/plans/startup-growth-warning/MAP.md` against `c81c022e30a5d3fa11aaf2ed9fbe28b903eab011`; other parts below have not been revalidated for that commit.
 
 ## Flow

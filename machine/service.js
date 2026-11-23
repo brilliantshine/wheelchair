@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 'use strict';
-const { startupWarning } = require('./lib/startup-warning');
+const { wrapEntries, cacheKey } = require('./lib/win-tool-wrap');
+const { TryService } = require('./lib/try');
+const { providers, loadRecipes } = require('./lib/harness-recipes');
+const harnessInstall = require('./lib/harness-install');
 const { createProjectTools } = require('./lib/project-tools');
-const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
+const { TOOL_ROLES, readProjectMcp, hasWindowsProgram, serverLabel } = require('./lib/project-mcp');
+const { windowsTarget, rewriteUrl } = require('./lib/win-mark');
 const { missingPrograms } = require('./lib/project-programs');
 const { projectIdentity, readKeyStore, launchKeys, keyReferences } = require('./lib/project-keys');
 
@@ -23,12 +27,15 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, spawn, execFile } = require('node:child_process');
 const { pipeline } = require('node:stream/promises');
+const { promisify } = require('node:util');
+const gitAsync = promisify(execFile);
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
 const { readLines: readCodexSteps } = require('./lib/codex-steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
 const { ScreenManager, screenTools } = require('./lib/screen');
+const { WinBridge } = require('./lib/win');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
@@ -43,6 +50,41 @@ function uploadName(name) {
   const ext = match ? match[2] : '';
   const stem = (match ? match[1] : clean).slice(0, 100 - ext.length) || 'file';
   return stem + ext;
+}
+
+const PLAN_FILES = ['MAP.md', 'IDEA.md', 'PLAN.md'];
+const validSlug = (slug) => typeof slug === 'string' && /^[a-z0-9][a-z0-9._-]{0,79}$/.test(slug) && slug !== '.' && slug !== '..';
+const storedName = name => typeof name === 'string' && /^[0-9]+-[A-Za-z0-9._-]+$/.test(name);
+async function planFiles(input) {
+  const { thread_id, project, default_branch, slug, action, file } = input;
+  if (typeof thread_id !== 'string' || !/^[0-9a-f]{12}$/.test(thread_id) || typeof project !== 'string' || !path.isAbsolute(project) || typeof default_branch !== 'string' || !default_branch || default_branch.startsWith('-') || default_branch.includes('\0') || !['discover', 'list', 'read'].includes(action)) die('invalid plan request');
+  if (action !== 'discover' && !validSlug(slug)) die('invalid slug');
+  if (action === 'read' && !PLAN_FILES.includes(file)) die('invalid file');
+  try { if (!(await fsp.stat(project)).isDirectory()) die('invalid project'); await fsp.stat(path.join(project, '.git')); } catch (error) { if (error.status) throw error; die('invalid project'); }
+  const branch = `wc/${thread_id}`;
+  const git = async (...args) => (await gitAsync('git', ['-C', project, ...args], { maxBuffer: 4 * 1024 * 1024 })).stdout;
+  const missing = () => Object.assign(new Error('not found'), { status: 404 });
+  try { await git('rev-parse', '--git-dir'); await git('check-ref-format', '--branch', default_branch); } catch { die('invalid project or default branch'); }
+  try {
+    await git('rev-parse', '--verify', `${branch}^{commit}`);
+    if (action === 'discover') {
+      let base;
+      try { base = (await git('merge-base', branch, `origin/${default_branch}`)).trim(); }
+      catch { base = (await git('merge-base', branch, default_branch)).trim(); }
+      const added = await git('diff', '--name-only', '--diff-filter=A', base, branch, '--', 'docs/plans');
+      const existing = new Set((await git('ls-tree', '--name-only', base, 'docs/plans/')).split('\n').map(line => line.trim().split('/').pop()).filter(Boolean));
+      const names = new Set();
+      for (const line of added.split('\n')) { const match = line.match(/docs\/plans\/([^/]+)\//); if (match && !existing.has(match[1])) names.add(match[1]); }
+      return { slug: names.size === 1 ? [...names][0] : null };
+    }
+    const object = name => `${branch}:docs/plans/${slug}/${name}`;
+    const eligible = async name => { try { return Number((await git('cat-file', '-s', object(name))).trim()) <= 2 * 1024 * 1024; } catch { return false; } };
+    if (action === 'read') { if (!await eligible(file)) throw missing(); return { content: await git('show', object(file)) }; }
+    const checks = await Promise.all(PLAN_FILES.map(eligible));
+    const files = PLAN_FILES.filter((_, i) => checks[i]);
+    const content = files.includes('PLAN.md') ? await git('show', object('PLAN.md')) : '';
+    return { files, status: content.match(/^status:\s*([^\s#]+)/m)?.[1] || null };
+  } catch (error) { if (error.status) throw error; throw missing(); }
 }
 
 // Canonical identity shared by SSH and HTTPS GitHub origins.
@@ -90,6 +132,12 @@ function command(program, args, options = {}) {
   // callers select the documented fallback instead of crashing the service.
   if (result.error) return { ok: false, status: result.status ?? 127, stdout: result.stdout || '', stderr: result.stderr || result.error.message };
   return { ok: result.status === 0, status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
+}
+// git refuses to commit when the machine has no user.name or user.email set ("empty ident
+// name"). Fill only the missing ones for this one command; a configured identity is kept.
+function gitIdentityArgs(cwd) {
+  const value = (key) => { const r = command('git', ['-C', cwd, 'config', key]); return r.ok ? r.stdout.trim() : ''; };
+  return [...(value('user.name') ? [] : ['-c', 'user.name=wheelchair']), ...(value('user.email') ? [] : ['-c', 'user.email=wheelchair@localhost'])];
 }
 // The same result as command(), without blocking the event loop: for anything slow (a git
 // fetch can take many seconds), so /v1/status, hooks and other sessions keep being answered.
@@ -142,6 +190,8 @@ const PERMISSION_MODES = { auto: 'auto', bypass: 'bypassPermissions' };
 const CODEX_MODES = ['sandboxed', 'unrestricted'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const PREVIEW_TIMEOUT_MS = 60_000;
+// A session's in-memory copy hashes are dropped when it stops or ends, or after this long without new lines.
+const COPY_HASHES_IDLE_MS = 10 * 60_000;
 const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md'], worker: ['cards.md'], mapper: ['cards.md'], reviewer: [], verifier: [] };
 const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
 function composeRolePrompt(input) {
@@ -220,22 +270,18 @@ function requestJson(urlText, method, headers, payload, timeout = 5000) {
 class MachineService {
   constructor(options) {
     this.stateDir = path.resolve(options.stateDir || DEFAULT_STATE);
-    this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir });
+    this.tryService = new TryService({ stateDir: this.stateDir, root: ROOT, projects: params => this.projects(params) });
+    this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir, wsl: () => !!this.win?.detected?.kernel });
     this.projectToolsLocks = new Map();
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
-    this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
+    this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir, { piProblem: async () => { await this.checkPiVersion(); const status = this.cliStatus('pi'); return status.installed ? status.problem : 'Pi is not installed'; } });
     this.sessions = {};
     this.projectToolsBoot = crypto.randomUUID();
     this.projectToolsState = new Map();
     this.projectToolsWrites = new Map();
     this.platform = process.platform;
-    this.startupWarning = null;
-    this.startupSamples = new Map();
-    this.startupWarningRunning = false;
-    this.startupWarningRerun = false;
-    this.scanStartupWarning = startupWarning;
     this.stepReads = new Map();
     this.codexStepChunkSize = options.codexStepChunkSize || 8 * 1024 * 1024;
     this.startingWorktrees = new Set();
@@ -263,17 +309,7 @@ class MachineService {
     this.options = options;
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
     this.screens = new ScreenManager(this);
-  }
-
-  async refreshStartupWarning() {
-    if (this.startupWarningRunning) { this.startupWarningRerun = true; return; }
-    this.startupWarningRunning = true;
-    do {
-      this.startupWarningRerun = false;
-      try { this.startupWarning = await this.scanStartupWarning(this.stateDir, this.startupSamples); }
-      catch (error) { this.startupWarning = null; this.log(error); }
-    } while (this.startupWarningRerun);
-    this.startupWarningRunning = false;
+    this.win = new WinBridge(this, options.win || {});
   }
 
   async withThreadLock(id, fn) {
@@ -297,6 +333,7 @@ class MachineService {
     const dir = path.join(this.stateDir, 'uploads', threadName(id));
     await mkdir(dir);
     const entries = await fsp.readdir(dir);
+    entries.push(...await fsp.readdir(path.join(this.stateDir, 'kept', id)).catch(error => { if (error.code === 'ENOENT') return []; throw error; }));
     let n = entries.reduce((max, entry) => Math.max(max, Number(/^(\d+)-/.exec(entry)?.[1] || 0)), 0) + 1;
     for (;;) {
       const target = path.join(dir, `${n}-${uploadName(name)}`);
@@ -366,6 +403,32 @@ class MachineService {
       return { ...input, path: target };
     });
   }
+  async copyFile(agent, input) {
+    return this.withThreadLock(agent.thread_id, async () => {
+      const current = this.sessions[agent.name];
+      if (!current || current.archived_pending || current.status === 'stopped') throw Object.assign(new Error('session is not writable'), { status: 409 });
+      if (typeof input.path !== 'string' || !path.isAbsolute(input.path)) throw Object.assign(new Error('file path must be absolute'), { status: 422 });
+      let stat;
+      try { stat = await fsp.lstat(input.path); } catch { throw Object.assign(new Error('file does not exist'), { status: 422 }); }
+      if (!stat.isFile()) throw Object.assign(new Error('file is not a regular file'), { status: 422 });
+      if (stat.size > UPLOAD_LIMIT) throw Object.assign(new Error('file exceeds 25 MB'), { status: 422 });
+      const real = await fsp.realpath(input.path);
+      const state = await fsp.realpath(this.stateDir);
+      const worktrees = await fsp.realpath(path.join(this.stateDir, 'worktrees')).catch(error => {
+        if (error.code === 'ENOENT') return path.join(state, 'worktrees');
+        throw error;
+      });
+      const inside = (base, target) => { const relative = path.relative(base, target); return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)); };
+      if (inside(state, real) && !inside(worktrees, real)) throw Object.assign(new Error('file is inside the wheelchair state folder'), { status: 422 });
+      const name = uploadName(path.basename(input.path));
+      const { target, file } = await this.reserveUpload(agent.thread_id, path.basename(input.path));
+      try {
+        await pipeline(fs.createReadStream(input.path), file.createWriteStream());
+        await fsp.rename(`${target}.part`, target);
+      } catch (error) { await file.close().catch(() => {}); await fsp.unlink(`${target}.part`).catch(() => {}); throw error; }
+      return { kind: 'file', path: target, title: input.title, name, size: stat.size };
+    });
+  }
   async init() {
     await mkdir(this.stateDir);
     const toolsDir = path.join(this.stateDir, 'project-tools');
@@ -383,8 +446,12 @@ class MachineService {
     this.archivingThreads = new Set(markers.archiving || []);
     this.archivedThreads = new Set(markers.archived || []);
     this.checkKimiVersion();
+    this.checkPiVersion();
     await this.recoverFromTmux();
     await this.screens.startup();
+    await this.win.startup();
+    this.winTimer = setInterval(() => this.win.sweep().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_WIN_SWEEP_MS || 60000));
+    this.winTimer.unref();
     this.screenTimer = setInterval(() => this.screens.sweep().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SCREEN_SWEEP_MS || 60000));
     this.screenTimer.unref();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
@@ -401,6 +468,8 @@ class MachineService {
     this.trustTimer.unref();
     this.agyToolsTimer = setInterval(() => this.sweepAgyTools(), 60000);
     this.agyToolsTimer.unref();
+    this.copyHashesTimer = setInterval(() => this.sweepCopyHashes(), 60000);
+    this.copyHashesTimer.unref();
   }
   // The names of the running tmux sessions, or null when tmux could not be asked. "No server" is
   // a real empty answer; any other failure is unknown, and must not read as "every session ended".
@@ -413,26 +482,33 @@ class MachineService {
   }
   sweepAgyTools() {
     if (!this.stateDir) return;
-    const dir = path.join(this.stateDir, 'agy-tools');
-    let entries;
-    // Read the directory first so a machine with no Antigravity tool files never asks tmux.
-    try { entries = fs.readdirSync(dir); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return; }
-    if (!entries.length) return;
+    const specs = [
+      { dir: path.join(this.stateDir, 'agy-tools'), name: entry => decodeURIComponent(entry), legacy: true },
+      { dir: path.join(this.stateDir, 'settings'), name: entry => entry.endsWith('.mcp.json') ? entry.slice(0, -'.mcp.json'.length) : null },
+      { dir: path.join(this.stateDir, 'win-ready'), name: entry => entry },
+    ];
+    const scans = specs.map(spec => {
+      let entries;
+      try { entries = fs.readdirSync(spec.dir); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return { ...spec, decoded: [] }; }
+      const decoded = entries.map(entry => {
+        let name;
+        try { name = spec.name(entry); safeName(name, 'session name'); if (!name.startsWith('wc-')) name = null; } catch { name = null; }
+        return { entry, name };
+      }).filter(item => spec.legacy || item.name);
+      return { ...spec, decoded };
+    });
+    if (!scans.some(scan => scan.decoded.length)) return;
     const starting = new Set(this.startingNames.keys());
     const live = this.liveTmux();
     if (!live) return;
+    for (const { dir, decoded } of scans) {
     const groups = new Map();
-    const decoded = entries.map(entry => {
-      let name;
-      try { name = decodeURIComponent(entry); safeName(name, 'session name'); if (!name.startsWith('wc-')) name = null; } catch { name = null; }
-      const item = { entry, name };
-      if (name) {
-        const tmuxName = name.replace(/[.:]/g, '_');
-        if (!groups.has(tmuxName)) groups.set(tmuxName, []);
-        groups.get(tmuxName).push(item);
-      }
-      return item;
-    });
+    for (const item of decoded) {
+      if (!item.name) continue;
+      const tmuxName = item.name.replace(/[.:]/g, '_');
+      if (!groups.has(tmuxName)) groups.set(tmuxName, []);
+      groups.get(tmuxName).push(item);
+    }
     const protectedEntries = new Set();
     const mtime = item => {
       if (!('mtime' in item)) {
@@ -469,6 +545,7 @@ class MachineService {
       try { fs.rmSync(path.join(dir, item.entry), { recursive: true, force: true }); }
       catch (error) { this.log(error); }
     }
+    }
   }
   // Spec "Machine service on the hub": a live wc-* tmux session missing from sessions.json (a lost or
   // stale file) is adopted again, so it can still be read, typed into and stopped.  It has no token.
@@ -481,12 +558,14 @@ class MachineService {
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
-        cli: pane.ok && ((/^\s*(?:Ask When Needed|Never Ask)\b/im.test(pane.stdout) && /^\s*context:\s*\d+%/im.test(pane.stdout)) || (() => { const lines = pane.stdout.split(/\r?\n/).map(line => line.trim()); return lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line)); })()) ? 'kimi' : pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
+        cli: pane.ok && ((/^\s*(?:Ask When Needed|Never Ask)\b/im.test(pane.stdout) && /^\s*context:\s*\d+%/im.test(pane.stdout)) || (() => { const lines = pane.stdout.split(/\r?\n/).map(line => line.trim()); return lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line)); })()) ? 'kimi' : pane.ok && (pane.stdout.includes('escape interrupt') && pane.stdout.includes('ctrl+c/ctrl+d clear/exit') || /openrouter\/\S+\s*•\s*\S+/.test(pane.stdout)) ? 'pi' : pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
         worktree: where.ok ? where.stdout.trim() : '', created_worktree: false, token: '', created_at: new Date().toISOString() };
+      if (this.sessions[name].cli === 'pi') this.sessions[name].end_reason = 'Lost track of this Pi session after a machine restart; restart it';
       if (this.sessions[name].cli === 'kimi') this.sessions[name].end_reason = 'Lost track of this Kimi Code session after a machine restart; restart it';
       changed = true;
     }
     if (changed) await this.persistSessions();
+    for (const session of Object.values(this.sessions)) if (session.cli === 'pi' && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
   }
   async persistSessions() { await atomicWrite(this.sessionsPath, `${JSON.stringify(this.sessions, (key, value) => key === 'transcript_unsaved' ? undefined : value)}\n`); }
   log(error) { process.stderr.write(`machine: ${error.message || error}\n`); }
@@ -518,10 +597,10 @@ class MachineService {
   // `color` keeps the escape codes (capture-pane -e) for the terminal page; the internal
   // checks that match pane text read it plain.
   pane(name, color = false, history = 0) {
-    this.managed(name);
-    const result = this.tmux(['capture-pane', '-p', ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', name]);
+    const session = this.managed(name);
+    const result = this.tmux(['capture-pane', '-p', ...(session.cli === 'pi' ? ['-J'] : []), ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', `=${name}:`]);
     if (!result.ok) throw Object.assign(new Error(result.stderr.trim() || 'tmux pane unavailable'), { status: 409 });
-    return result.stdout;
+    return adapters.pi.redact(result.stdout);
   }
   sessionName(threadId, role) {
     safeName(threadId, 'thread id'); safeName(role, 'role');
@@ -651,8 +730,8 @@ class MachineService {
   }
   commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context = {}) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude, codex, agy or kimi');
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable });
+    if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries, resume: context.resume });
   }
 
   threadWorktree(input, worktree) {
@@ -663,20 +742,7 @@ class MachineService {
       return fs.realpathSync(worktree) === fs.realpathSync(path.join(this.stateDir, 'worktrees', project, 'wc', thread));
     } catch { return false; }
   }
-  async tmuxPath() {
-    return new Promise(resolve => {
-      let stdout = '', done = false;
-      const finish = value => { if (!done) { done = true; clearTimeout(timer); resolve(value); } };
-      let child;
-      try { child = spawn('tmux', ['show-environment', '-g', 'PATH'], { stdio: ['ignore', 'pipe', 'ignore'] }); }
-      catch { return resolve(process.env.PATH || ''); }
-      const timer = setTimeout(() => { child.kill('SIGKILL'); finish(process.env.PATH || ''); }, 2000);
-      child.stdout.setEncoding('utf8');
-      child.stdout.on('data', chunk => { stdout += chunk; });
-      child.on('error', () => finish(process.env.PATH || ''));
-      child.on('close', code => finish(code === 0 && stdout.startsWith('PATH=') ? stdout.slice(5).replace(/\r?\n$/, '') : (process.env.PATH || '')));
-    });
-  }
+  async tmuxPath() { return process.env.PATH || ''; }
   validProjectToolsState(value) {
     const plain = v => v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype;
     const lines = v => Array.isArray(v) && v.every(line => plain(line) && Array.isArray(line.names) && line.names.every(name => typeof name === 'string') && typeof line.text === 'string');
@@ -735,7 +801,8 @@ class MachineService {
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude, codex, agy or kimi');
+    if (!adapter) die('cli must be claude, codex, agy, kimi or pi');
+    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); }
     if (input.cli === 'kimi') { await this.checkKimiVersion(); const status = this.cliStatus('kimi'); if (!status.installed) die('Kimi Code is not installed'); if (status.problem) die(status.problem); }
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
@@ -761,7 +828,7 @@ class MachineService {
     }
   }
   launchEnv(session, adapter) {
-    return [['WHEELCHAIR_LANE', '1'], ...(adapter.sessionNameEnv ? [['WHEELCHAIR_SESSION_NAME', session.name]] : []), ['WHEELCHAIR_STATE_DIR', this.stateDir], ['WHEELCHAIR_MACHINE_ORIGIN', `http://${this.config.host}:${this.config.port}`], ...Object.entries(adapter.loginEnv(session.account_dir))];
+    return [['PATH', process.env.PATH || ''], ['WHEELCHAIR_LANE', '1'], ...(adapter.sessionNameEnv ? [['WHEELCHAIR_SESSION_NAME', session.name]] : []), ['WHEELCHAIR_STATE_DIR', this.stateDir], ['WHEELCHAIR_MACHINE_ORIGIN', `http://${this.config.host}:${this.config.port}`], ...Object.entries(adapter.loginEnv(session.account_dir))];
   }
   async startIn(input, name, adapter, account, dir, options, createdWorktree, created, promptPath, rolePrompt) {
     const worktree = created.worktree;
@@ -769,17 +836,151 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    const read = await readProjectMcp(worktree);
+    if (input.cli === 'pi') { await this.checkPiVersion(); const status = this.cliStatus('pi'); if (!status.installed) die('Pi is not installed'); if (status.problem) die(status.problem); session.pi_version = status.version || null; }
+    let windowsTools;
+    try {
+    const prepared = await this.prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, false);
+    const commandText = prepared.commandText;
+    windowsTools = prepared.windowsTools;
+    const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
+    // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
+    // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
+    if (this.cancelledStarts.has(name)) die('session start was cancelled');
+    const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', `--description=wheelchair ${name}`, 'tmux', ...tmuxArgs]);
+    if (this.cancelledStarts.has(name)) { if (scoped.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
+    const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
+    if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
+    if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
+    this.sessions[name] = session;
+    } catch (error) {
+      try { await this.win?.removeReady(name); } catch (cleanupError) { this.log(cleanupError); }
+      await this.removeMcpConfig(name);
+      throw error;
+    }
+    if (windowsTools) this.win?.afterLaunch(session);
+    await this.persistSessions();
+    try {
+      await fsp.appendFile(path.join(this.stateDir, 'session-ledger.jsonl'), `${json({ at: new Date().toISOString(), name, role: input.role, provider: adapter.provider, model: input.model || null, account_dir: dir, cli_session_id: session.cli_session_id, thread_id: input.thread_id })}\n`);
+    } catch (error) { console.error('session ledger append failed:', error.message); }
+    await this.checkReady(session);
+    return session;
+  }
+  async switchSession(name, input) {
+    const session = this.managed(name), adapter = adapters[session.cli];
+    if (!['claude', 'codex'].includes(session.cli)) die('unsupported cli');
+    if (!input || typeof input.switch_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.switch_id) || !input.account || typeof input.account.id !== 'string' || !Object.hasOwn(input.account, 'dir') || !(input.model === null || typeof input.model === 'string') || typeof input.project !== 'string' || !input.project || path.basename(input.project) !== input.project || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir)) die('invalid switch body');
+    const dir = accountDir(input.account.dir, input.account.id);
+    if (!dir && input.account.id !== `default-${adapter.provider}`) die('invalid default account');
+    session.switches ||= {};
+    const prior = Object.hasOwn(session.switches, input.switch_id) ? session.switches[input.switch_id] : null;
+    if (prior) return { accepted: true, switch_id: input.switch_id, state: prior.state };
+    if (Object.values(session.switches).some(item => item.state === 'running')) throw Object.assign(new Error('switch already running'), { status: 409 });
+    const live = this.liveTmux();
+    if (!live || !live.has(name)) throw Object.assign(new Error('session is not running'), { status: 409 });
+    const snapshot = JSON.parse(json(session));
+    Object.defineProperty(session.switches, input.switch_id, { value: { state: 'running' }, enumerable: true, writable: true, configurable: true });
+    session.status = 'switching';
+    await this.persistSessions();
+    setImmediate(() => this.runSwitch(session, snapshot, input, dir).catch(error => this.log(error)));
+    return { accepted: true, switch_id: input.switch_id, state: 'running' };
+  }
+  async runSwitch(session, snapshot, input, dir) {
+    const adapter = adapters[session.cli], name = session.name, id = input.switch_id;
+    try {
+      if (dir) adapter.seed(dir, input.account.id);
+      await adapter.prepare?.(dir);
+      const source = await adapter.findTranscript(session, snapshot.account_dir);
+      if (!source) throw new Error('conversation transcript not found');
+      await this.copyTranscript(session, source);
+      const oldRoot = snapshot.account_dir || adapter.usual(), newRoot = dir || adapter.usual();
+      const relative = path.relative(oldRoot, source);
+      if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('invalid transcript path');
+      const destination = path.join(newRoot, relative);
+      await mkdir(path.dirname(destination));
+      if (source !== destination) await fsp.copyFile(source, destination);
+      const stat = await fsp.stat(destination);
+      session.account = input.account.id; session.account_dir = dir;
+      session.ready = false; session.source_transcript = destination;
+      session.transcript_source = { ...(session.transcript_source || {}), path: destination, ino: stat.ino };
+      delete session.last_reading;
+      for (const suffix of ['', '.context']) await fsp.unlink(path.join(this.stateDir, 'statusline', name + suffix)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+      await this.persistSessions();
+      const promptPath = path.join(this.stateDir, 'prompts', `${name}.md`);
+      const rolePrompt = await fsp.readFile(promptPath, 'utf8');
+      const launchInput = { ...session, model: input.model, project: input.project, project_dir: input.project_dir };
+      const prepared = await this.prepareLaunch(launchInput, session, adapter, session.worktree, promptPath, rolePrompt, true);
+      const result = await commandAsync('tmux', ['respawn-pane', '-k', '-t', `=${name}:`, prepared.commandText]);
+      if (!result.ok) throw new Error(result.stderr.trim() || 'tmux respawn failed');
+      session.status = 'starting'; session.relaunched_at = new Date().toISOString(); session.active_switch = id;
+      await this.persistSessions();
+    } catch (error) {
+      const switches = session.switches;
+      for (const key of Object.keys(session)) delete session[key];
+      Object.assign(session, snapshot, { switches });
+      switches[id].state = 'failed';
+      await this.persistSessions();
+      await this.emitEvent({ type: 'switch-failed', session: name, thread_id: session.thread_id, switch_id: id, error: String(error.message || error).replace(/[\r\n]+/g, ' ') });
+    }
+  }
+  async failedResume(session) {
+    session.end_reason = 'switch-resume-failed';
+    if (session.switches?.[session.active_switch]) session.switches[session.active_switch].state = 'failed';
+    delete session.active_switch;
+    await this.stopFatal(session);
+  }
+  async prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, resume) {
+    const name = session.name;
+    const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
+    const read = await readProjectMcp(worktree, { wsl, mount, kernel: !!this.win?.detected?.kernel });
     const { mcp, warnings } = read;
     const tools = TOOL_ROLES.has(input.role);
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
-    if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath() });
-    const context = input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {};
+    if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
+    const context = { resume, wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
+    if (wsl && tools && mcp && ['claude', 'codex', 'agy'].includes(input.cli)) {
+      const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
+      const commonDir = common.ok && common.stdout.trim() || worktree;
+      context.replaceEntries = wrapEntries({ servers: mcp.servers, wsl, mount,
+        readyFile: path.join(this.stateDir, 'win-ready', name),
+        cacheFile: (n, e) => path.join(this.stateDir, 'win-tool-lists', `${cacheKey(commonDir, n, e)}.json`) });
+    }
+    if (this.win?.detected?.kernel && tools && ['claude', 'codex', 'agy'].includes(input.cli) && mcp) {
+      const names = (mcp.windows || []).filter(name => Object.hasOwn(mcp.servers, name));
+      if (names.length) {
+        // Marked HTTP tools; wrapEntries above only replaces stdio entries, so names never collide.
+        context.replaceEntries ||= Object.create(null);
+        await Promise.all(names.map(async name => {
+          const entry = mcp.servers[name];
+          try {
+            const target = windowsTarget(entry);
+            if (!target) throw new Error('invalid Windows tool address');
+            const port = await this.win.forwards.get(target.port);
+            const url = rewriteUrl(entry.url, port);
+            if (url === null) throw new Error('invalid Windows tool address');
+            Object.defineProperty(context.replaceEntries, name, { value: { ...entry, url }, enumerable: true, writable: true, configurable: true });
+          } catch (error) {
+            Object.defineProperty(context.replaceEntries, name, { value: null, enumerable: true, writable: true, configurable: true });
+            console.error(`${session.name}: project tools: ${serverLabel(name)}: couldn't reach Windows (${error.message || String(error)}); left out of this session`);
+          }
+        }));
+      }
+    }
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
+    const loaded = built.loaded || [];
+    const windowsTools = loaded.some(entry => entry.windows);
+    const wrappedTools = loaded.some(entry => entry.wrapped);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
+    if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
+    if (built.mcpConfig) {
+      const file = built.mcpConfig.path;
+      await mkdir(path.dirname(file));
+      const temp = `${file}.${crypto.randomUUID()}.tmp`;
+      try { await fsp.writeFile(temp, JSON.stringify(built.mcpConfig.data), { mode: 0o600 }); await fsp.rename(temp, file); }
+      finally { await fsp.rm(temp, { force: true }); }
+    }
     if (built.toolFiles) {
       const root = path.join(this.stateDir, 'agy-tools');
       for (const file of built.toolFiles.files) {
@@ -816,27 +1017,29 @@ class MachineService {
       } catch (error) { console.error("the key store on this machine can't be read"); }
     }
     const env = this.launchEnv(session, adapter);
-    env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
+    if (tools) {
+      const started = Date.now();
+      await this.win?.beforeLaunch(session, { windowsTools, wrappedTools });
+      let timer;
+      const remaining = Math.max(0, (this.win?.readyTimeoutMs ?? 45000) - (Date.now() - started));
+      const extra = await Promise.race([
+        this.win?.sessionEnv(session, { ...process.env, ...Object.fromEntries(env) }) || {},
+        new Promise(resolve => { timer = setTimeout(() => resolve({}), remaining); })
+      ]);
+      clearTimeout(timer);
+      env.push(...Object.entries(extra));
+      let version;
+      try { version = (await fsp.readFile(path.join(worktree, 'ProjectSettings', 'ProjectVersion.txt'), 'utf8')).match(/^m_EditorVersion:\s*(\S+)/m)?.[1]; } catch {}
+      const unityExists = !!version && fs.existsSync(path.join(mount, 'c/Program Files/Unity/Hub/Editor', version, 'Editor/Unity.exe'));
+      const lines = require('./lib/win-prompt').promptLines({ health: this.win?.bridgeHealth(), wsl, loaded, mcp, copy: extra.WHEELCHAIR_WINDOWS_PROJECT, cli: session.cli, codexMode: session.codex_mode, version, unityExists });
+      if (!resume && lines.length) await atomicWrite(promptPath, rolePrompt + "\n\n" + lines.join("\n"));
+    }
+    env.splice(adapter.sessionNameEnv ? 3 : 2, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
     const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
     const redactions = new Set(built.redactions || []);
     session.command = built.argv.map((arg, index) => redactions.has(index) ? `${arg.slice(0, arg.indexOf('=') + 1)}<redacted>` : arg);
-    session.pending_initial = adapter.firstMessage(input, promptPath, name);
-    const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
-    // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
-    // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
-    if (this.cancelledStarts.has(name)) die('session start was cancelled');
-    const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', `--description=wheelchair ${name}`, 'tmux', ...tmuxArgs]);
-    if (this.cancelledStarts.has(name)) { if (scoped.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
-    const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
-    if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
-    if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
-    this.sessions[name] = session;
-    await this.persistSessions();
-    try {
-      await fsp.appendFile(path.join(this.stateDir, 'session-ledger.jsonl'), `${json({ at: new Date().toISOString(), name, role: input.role, provider: adapter.provider, model: input.model || null, account_dir: dir, cli_session_id: session.cli_session_id, thread_id: input.thread_id })}\n`);
-    } catch (error) { console.error('session ledger append failed:', error.message); }
-    await this.checkReady(session);
-    return session;
+    session.pending_initial = resume ? '' : adapter.firstMessage(input, promptPath, name);
+    return { commandText, windowsTools };
   }
   readyText(session, pane) {
     return adapters[session.cli]?.readyText(session, pane) || false;
@@ -848,16 +1051,26 @@ class MachineService {
     return spool;
   }
   async fatalKimi(session, reason) {
-    if (!session.end_reason) { session.end_reason = reason; await this.persistSessions(); }
+    if (!session.end_reason) { session.end_reason = reason; this.copyHashes?.delete(session.name); await this.persistSessions(); }
     return this.stopFatal(session);
   }
+  async removeMcpConfig(name) {
+    if (!this.stateDir) return;
+    try { await fsp.rm(path.join(this.stateDir, 'settings', `${name}.mcp.json`), { force: true }); }
+    catch (error) { this.log(error); }
+  }
   async stopFatal(session) {
+    await this.removeMcpConfig(session.name);
+    this.win?.onStop(session);
     this.tmux(['kill-session', '-t', `=${session.name}`]);
     const live = this.liveTmux();
     if (!live || live.has(session.name)) return { pending: true, end_reason: session.end_reason };
     session.status = 'stopped'; session.prompt_open = false; session.stopped_at = new Date().toISOString();
     await this.persistSessions();
-    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+    if (session.role === 'verifier' && session.created_worktree) {
+      const removed = command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+      if (removed.ok) this.win.onWorktreeRemoved(session, { kind: 'verifier' }).catch(error => this.log(error));
+    }
     return { ok: true, end_reason: session.end_reason };
   }
   async kimiBinding(session) {
@@ -881,6 +1094,7 @@ class MachineService {
     return false;
   }
   async pollKimiTurns() {
+    for (const session of Object.values(this.sessions)) if (session.cli === 'pi' && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
     if (this.kimiPolling) return;
     this.kimiPolling = true;
     try {
@@ -950,7 +1164,7 @@ class MachineService {
   async pollCodexSteps() {
     const live = this.liveTmux();
     if (!live) return;
-    await Promise.all(Object.values(this.sessions).filter(s => s.cli === 'codex' && s.codex_thread_id && live.has(s.name)).map(s => this.readCodexSteps(s)));
+    await Promise.all(Object.values(this.sessions).filter(s => s.cli === 'codex' && s.status !== 'switching' && s.codex_thread_id && live.has(s.name)).map(s => this.readCodexSteps(s)));
   }
   async readCodexSteps(session, { spoolOnly = false, flush = false } = {}) {
     const previous = this.stepReads.get(session.name) || Promise.resolve();
@@ -997,8 +1211,10 @@ class MachineService {
   }
   async checkReady(session) {
     if (session.status === 'ready') return true;
+    if (session.status === 'switching') return false;
     let pane;
-    try { pane = this.pane(session.name); } catch { return false; }
+    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (session.active_switch && ((live && !live.has(session.name)) || Date.now() - new Date(session.relaunched_at).getTime() >= 30_000)) await this.failedResume(session); else if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
+    if (session.active_switch && Date.now() - new Date(session.relaunched_at).getTime() >= 30_000) { await this.failedResume(session); return false; }
     const prompt = adapters[session.cli]?.answerPrompts(session, pane);
     if (prompt) {
       for (const key of prompt.keys) this.tmux(['send-keys', '-t', session.name, key]);
@@ -1015,13 +1231,15 @@ class MachineService {
         await this.persistSessions();
         await this.submit(session.name, initial);
       }
-      if (changed) await this.emitEvent({ type: 'ready', session: session.name, thread_id: session.thread_id });
+      if (changed) await this.emitEvent({ type: 'ready', session: session.name, thread_id: session.thread_id, ...(session.active_switch ? { switch_id: session.active_switch } : {}) });
+      if (session.active_switch) { session.switches[session.active_switch].state = 'done'; delete session.active_switch; await this.persistSessions(); }
       return true;
     }
-    const age = Date.now() - new Date(session.created_at).getTime();
+    const age = Date.now() - new Date(session.relaunched_at || session.created_at).getTime();
+    if (age >= 30_000 && session.active_switch) { await this.failedResume(session); return false; }
     if (age >= 30_000 && session.status !== 'stuck') {
       session.status = 'stuck'; await this.persistSessions();
-      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id });
+      await this.emitEvent({ type: 'stuck', session: session.name, thread_id: session.thread_id, ...(session.cli === 'pi' && this.piVersionNote(session.pi_version) ? { note: this.piVersionNote(session.pi_version) } : {}) });
     }
     return false;
   }
@@ -1042,17 +1260,35 @@ class MachineService {
     const now = Date.now();
     await Promise.all(Object.values(this.sessions)
       .filter(session => adapters[session.cli]?.answerPrompts && session.status === 'starting'
-        && now - new Date(session.created_at).getTime() < 30_000)
+        && now - new Date(session.relaunched_at || session.created_at).getTime() < 30_000)
       .map(session => this.checkReady(session)));
   }
   // A permission prompt the service relayed is cleared once the pane shows the input screen again.
   async checkPrompt(session) {
     let pane;
-    try { pane = this.pane(session.name); } catch { return false; }
+    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
     if (!this.readyText(session, pane)) return false;
     session.prompt_open = false; await this.persistSessions();
     await this.emitEvent({ type: 'prompt-cleared', session: session.name, thread_id: session.thread_id });
     return true;
+  }
+  retryPiStartupEnter(session) {
+    this.piStartupRetries ||= new Map();
+    const previous = this.piStartupRetries.get(session.name);
+    if (previous) clearTimeout(previous.timer);
+    const retry = { deadline: Date.now() + 60_000, lastEnter: 0 };
+    this.piStartupRetries.set(session.name, retry);
+    const check = () => {
+      if (this.piStartupRetries.get(session.name) !== retry) return;
+      if (this.sessions[session.name] !== session || session.status !== 'ready' || session.end_reason || Date.now() >= retry.deadline) { this.piStartupRetries.delete(session.name); return; }
+      let pane; try { pane = this.pane(session.name); } catch { this.piStartupRetries.delete(session.name); return; }
+      if (/Working\s*[─-]/.test(pane)) { this.piStartupRetries.delete(session.name); return; }
+      if (pane.includes('Startup is still in progress') && Date.now() - retry.lastEnter >= 1000) {
+        this.tmux(['send-keys', '-t', session.name, 'Enter']); retry.lastEnter = Date.now();
+      }
+      retry.timer = setTimeout(check, 500); retry.timer.unref();
+    };
+    retry.timer = setTimeout(check, 500); retry.timer.unref();
   }
   async submit(name, text) {
     const session = this.managed(name);
@@ -1064,6 +1300,7 @@ class MachineService {
     const pasted = this.tmux(['paste-buffer', '-p', '-b', buffer, '-t', name]);
     const enter = this.tmux(['send-keys', '-t', name, 'Enter']);
     if (!pasted.ok || !enter.ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 });
+    if (adapters[session.cli]?.retryStartupEnter) this.retryPiStartupEnter(session);
   }
   raw(name, keys) {
     const session = this.managed(name);
@@ -1074,12 +1311,19 @@ class MachineService {
   async stop(name) {
     const session = this.managed(name);
     if (session.end_reason) return this.stopFatal(session);
+    await this.removeMcpConfig(name);
     this.tmux(['kill-session', '-t', name]);
+    this.copyHashes?.delete(name);
     session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     this.screens.killSession(name);
+    this.win?.onStop(session);
     await this.persistSessions();
-    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+    if (session.role === 'verifier' && session.created_worktree) {
+      const removed = command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+      if (removed.ok) this.win.onWorktreeRemoved(session, { kind: 'verifier' }).catch(error => this.log(error));
+    }
+    await fsp.rm(path.join(this.stateDir, 'settings', `${name}.mcp.json`), { force: true });
     this.sweepAgyTools();
   }
   gitPath(worktree, name) {
@@ -1099,12 +1343,13 @@ class MachineService {
   archiveCommit(worktree, message) {
     const added = command('git', ['-C', worktree, 'add', '-A']);
     if (!added.ok) return { ok: false, reason: added.stderr.trim() || 'git add failed' };
-    const committed = command('git', ['-C', worktree, 'commit', '-m', message]);
+    const committed = command('git', ['-C', worktree, ...gitIdentityArgs(worktree), 'commit', '-m', message]);
     if (!committed.ok) return { ok: false, reason: committed.stderr.trim() || 'git commit failed' };
     const head = command('git', ['-C', worktree, 'rev-parse', 'HEAD']);
     return head.ok ? { ok: true, commit: head.stdout.trim() } : { ok: false, reason: head.stderr.trim() || 'git rev-parse failed' };
   }
-  async archive(threadId) {
+  async archive(threadId, keep = []) {
+    const names = [...new Set((Array.isArray(keep) ? keep : []).filter(storedName))];
     if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
     threadName(threadId);
     this.closingThreads.set(threadId, (this.closingThreads.get(threadId) || 0) + 1);
@@ -1123,12 +1368,17 @@ class MachineService {
       if (result?.pending) pending.push(session);
       else stopped.push(session.name);
     }
-    if (pending.length) return { pending: true, pending_sessions: pending.map(session => session.name), stopped, committed: [], removed: [], kept: pending.map(session => ({ worktree: session.worktree, reason: session.end_reason })) };
+    if (pending.length) {
+      const bridge = this.win.archiveCheck(threadId);
+      return { pending: true, pending_sessions: [...new Set([...pending.map(session => session.name), ...bridge.pending])], stopped, committed: [], removed: [], kept: pending.map(session => ({ worktree: session.worktree, reason: session.end_reason })) };
+    }
     for (const session of sessions) {
       if (session.archived_pending || session.end_reason) continue;
       await this.stop(session.name);
       stopped.push(session.name);
     }
+    const bridge = this.win.archiveCheck(threadId);
+    if (bridge.pending.length) return { pending: true, pending_sessions: [...new Set(bridge.pending)], stopped, committed: [], removed: [], kept: [] };
     const worktrees = [...new Map(sessions
       .filter(session => session.created_worktree && session.role !== 'verifier')
       .map(session => [path.resolve(session.worktree), session])).values()];
@@ -1160,7 +1410,9 @@ class MachineService {
       const result = command('git', ['-C', worktree, 'worktree', 'remove', worktree]);
       if (!result.ok) { kept.push({ worktree, reason: result.stderr.trim() || 'git worktree remove failed' }); continue; }
       removed.push(worktree);
+      await this.win.onWorktreeRemoved(session, { kind: 'other' }).catch(error => this.log(error));
     }
+    await this.win.archiveFinish(threadId).catch(error => this.log(error));
     const keptWorktrees = new Set(kept.map(item => path.resolve(item.worktree)));
     for (const session of sessions) {
       const worktree = typeof session.worktree === 'string' ? path.resolve(session.worktree) : null;
@@ -1180,10 +1432,22 @@ class MachineService {
       // Only a finished archive counts: the hub reopens a thread whose archive kept a rebase or
       // could not remove its uploads, and that thread takes uploads again. Still inside the lock,
       // so an upload queued behind it sees this.
-      try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); await this.screens.removeThreadDir(threadId); }
+      try {
+        const uploads = path.join(this.stateDir, 'uploads', threadId); const keptDir = path.join(this.stateDir, 'kept', threadId);
+        for (const name of names) {
+          const source = path.join(uploads, name); let stat;
+          try { stat = await fsp.lstat(source); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+          if (!stat.isFile()) continue;
+          await mkdir(keptDir);
+          try { await fsp.rename(source, path.join(keptDir, name)); }
+          catch (error) { if (error.code !== 'EXDEV') throw error; await fsp.copyFile(source, path.join(keptDir, name)); await fsp.unlink(source); }
+        }
+        await fsp.rm(uploads, { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); await this.screens.removeThreadDir(threadId); }
       catch (error) { uploads_removed = false; uploads_error = error.message; }
     }
-    return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
+    const kept_uploads = [];
+    for (const name of names) { try { if ((await fsp.lstat(path.join(this.stateDir, 'kept', threadId, name))).isFile()) kept_uploads.push(name); } catch (error) { if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error; } }
+    return { stopped, committed, removed, kept, kept_uploads, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
     } finally {
       this.archivingThreads.delete(threadId);
       await this.persistArchiveMarkers();
@@ -1204,7 +1468,13 @@ class MachineService {
     settled.then(() => { if (this.copying.get(session.name) === settled) this.copying.delete(session.name); });
     return run;
   }
+  sweepCopyHashes() {
+    if (!this.copyHashes) return;
+    for (const [name, entry] of this.copyHashes) if (Date.now() - entry.used > COPY_HASHES_IDLE_MS) this.copyHashes.delete(name);
+  }
   async copyTranscriptNow(session, source) {
+    this.copyHashes ??= new Map();
+    this.sweepCopyHashes();
     if (!source || (session.cli === 'kimi' && session.end_reason)) return { offset: 0, lines: [] };
     let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
     const current = session.transcript_source;
@@ -1216,17 +1486,39 @@ class MachineService {
     // tail for the next read instead of copying a fragment and advancing past it.
     const newline = text.lastIndexOf('\n');
     const complete = newline < 0 ? '' : text.slice(0, newline + 1);
-    const lines = complete ? complete.slice(0, -1).split('\n') : [];
+    const lines = complete ? complete.slice(0, -1).split('\n').map(line => session.cli === 'pi' ? adapters.pi.redact(line) : line) : [];
     const nextOffset = begin + Buffer.byteLength(complete);
     const target = path.join(this.stateDir, 'transcripts', session.thread_id, `${session.name}.jsonl`);
     let additions = [];
     if (lines.length) {
-      let copied = '';
-      try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      if (copied && !copied.endsWith('\n')) { copied = copied.slice(0, copied.lastIndexOf('\n') + 1); await fsp.truncate(target, Buffer.byteLength(copied)); }
-      const hashes = new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex')));
-      additions = lines.filter(line => { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (hashes.has(hash)) return false; hashes.add(hash); return true; });
-      if (additions.length) { await mkdir(path.dirname(target)); await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+      // Each session keeps its kept copy's line hashes in memory, valid while the kept
+      // file's inode and size match what this copier last left there.  Anything else
+      // (first copy, restart, a crash fragment, an outside edit) rebuilds from the file.
+      const now = Date.now();
+      let kept = this.copyHashes.get(session.name);
+      let keptStat = null;
+      try { keptStat = await fsp.stat(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (!kept || kept.target !== target || !keptStat || keptStat.ino !== kept.ino || keptStat.size !== kept.size) {
+        this.copyHashes.delete(session.name);
+        let copied = '';
+        try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        if (copied && !copied.endsWith('\n')) { copied = copied.slice(0, copied.lastIndexOf('\n') + 1); await fsp.truncate(target, Buffer.byteLength(copied)); }
+        kept = { target, ino: keptStat?.ino, size: Buffer.byteLength(copied), hashes: new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex'))) };
+      }
+      kept.used = now;
+      const fresh = new Map();
+      for (const line of lines) { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (!kept.hashes.has(hash) && !fresh.has(hash)) fresh.set(hash, line); }
+      additions = [...fresh.values()];
+      if (additions.length) {
+        await mkdir(path.dirname(target));
+        // Hashes join the set only once the append succeeded; a failed append may have
+        // left part of a write behind, so the next copy rebuilds from the file.
+        try { await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+        catch (error) { this.copyHashes.delete(session.name); throw error; }
+        for (const hash of fresh.keys()) kept.hashes.add(hash);
+        const after = await fsp.stat(target); kept.ino = after.ino; kept.size = after.size;
+      }
+      if (kept.ino !== undefined) this.copyHashes.set(session.name, kept);
     }
     const changed = session.transcript_path !== target || !current || current.path !== source || current.offset !== nextOffset || current.ino !== stat.ino;
     session.transcript_path = target;
@@ -1321,7 +1613,13 @@ class MachineService {
   }
   async hook(session, event, { spooled = false } = {}) {
     const current = this.managed(session);
+    if (current.status === 'switching') return { ignored: true };
     const adapter = adapters[current.cli];
+    if (current.cli === 'pi' && ['turn-ended', 'turn-failed'].includes(event.type)) {
+      try { current.source_transcript ||= await adapter.findTranscript(current, current.account_dir); if (current.source_transcript) await this.copyTranscript(current, current.source_transcript); } catch (error) { this.log(error); }
+    }
+    if (current.cli === 'pi' && event.type === 'turn-failed') event = { ...event, error: (event.error || '') + this.piVersionNote(current.pi_version) };
+    if (current.cli === 'pi' && event.transcript_path) { event = { ...event }; delete event.transcript_path; }
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
     if (event.type === 'turn-ended' && adapter.onTurnEnded) {
       const result = await adapter.onTurnEnded(current, event);
@@ -1369,7 +1667,7 @@ class MachineService {
     if (!branch.ok || !branch.stdout.trim() || branch.stdout.trim() === 'HEAD') die('worker branch cannot be determined');
     if (!command('git', ['merge-base', '--is-ancestor', branch.stdout.trim(), 'HEAD'], { cwd }).ok) die('worker branch is not fully merged into yours');
     const result = command('git', ['worktree', 'remove', path.resolve(worker.worktree)], { cwd });
-    if (result.ok) { worker.worktree_removed = true; await this.persistSessions(); }
+    if (result.ok) { worker.worktree_removed = true; await this.persistSessions(); await this.win.onWorktreeRemoved(worker, { kind: 'merge' }).catch(error => this.log(error)); }
     return { ok: result.ok, status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
   async git(session, input) {
@@ -1389,12 +1687,12 @@ class MachineService {
     if (operation === 'commit') result = run('git', ['add', '--', ...input.paths,]);
     if (operation === 'commit' && result.ok) {
       const merging = run('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD']).ok;
-      result = run('git', ['commit', '-m', input.message, ...(merging ? [] : ['--', ...input.paths])]);
+      result = run('git', [...gitIdentityArgs(cwd), 'commit', '-m', input.message, ...(merging ? [] : ['--', ...input.paths])]);
     }
     if (operation === 'fetch') result = run('git', ['fetch', ...args]);
-    if (operation === 'merge') result = run('git', ['merge', ...args]);
-    if (operation === 'cherry-pick') result = run('git', ['cherry-pick', ...args]);
-    if (operation === 'revert') result = run('git', ['revert', ...args]);
+    if (operation === 'merge') result = run('git', [...gitIdentityArgs(cwd), 'merge', ...args]);
+    if (operation === 'cherry-pick') result = run('git', [...gitIdentityArgs(cwd), 'cherry-pick', ...args]);
+    if (operation === 'revert') result = run('git', [...gitIdentityArgs(cwd), 'revert', ...args]);
     if (operation === 'push') result = run('git', ['push', ...args]);
     if (operation === 'pr') result = run('gh', ['pr', 'create', ...args]);
     return { ok: result.ok, status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -1439,12 +1737,12 @@ class MachineService {
     if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !adapter) die('invalid account or cli');
     const dir = accountDir(input.dir, account);
     if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
-    if (cli === 'kimi' && !adapter.resolveCli()) throw Object.assign(new Error('Kimi Code is not installed'), { status: 409 });
+    if ((cli === 'kimi' || cli === 'pi') && !adapter.resolveCli()) throw Object.assign(new Error(cli === 'pi' ? 'Pi is not installed' : 'Kimi Code is not installed'), { status: 409 });
     if (dir) adapter.seed(dir, account);
     await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
-    this.tmux(['kill-session', '-t', cli === 'kimi' ? `=${name}` : name]);
-    const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
+    this.tmux(['kill-session', '-t', cli === 'pi' ? `=${name}:` : cli === 'kimi' ? `=${name}` : name]);
+    const cmd = ['env', `PATH=${process.env.PATH || ''}`, ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
     const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
     const cwd = adapter.loginCwd?.(this.stateDir);
     const result = this.tmux(['new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...(cwd ? ['-c', cwd] : []), ['sh', '-c', script].map(shellQuote).join(' ')]);
@@ -1454,15 +1752,15 @@ class MachineService {
   }
   loginPane(account) {
     const record = this.loginRecord(account);
-    const result = this.tmux(['capture-pane', '-p', '-e', '-t', record.cli === 'kimi' ? `=wc-login-${account}:` : `wc-login-${account}`]);
+    const result = this.tmux(['capture-pane', '-p', '-e', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
     if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
-    return result.stdout;
+    return adapters.pi.redact(result.stdout);
   }
   loginState(account) {
     const record = this.loginRecord(account), adapter = adapters[record.cli];
     if (record.cli === 'kimi' && record.result) return record.result;
-    const captured = this.tmux(['capture-pane', '-p', '-t', record.cli === 'kimi' ? `=wc-login-${account}:` : `wc-login-${account}`]);
-    const pane = captured.ok ? captured.stdout : '';
+    const captured = this.tmux(['capture-pane', '-p', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
+    const pane = captured.ok ? adapters.pi.redact(captured.stdout) : '';
     if (record.cli === 'kimi') {
       const authenticated = adapter.loginStatus(record.dir).authenticated;
       const marker = pane.match(/__wc_login_exit (\d+)/);
@@ -1470,11 +1768,19 @@ class MachineService {
       if (!captured.ok) { const live = this.liveTmux(); if (live && !live.has(`wc-login-${account}`)) return record.result = { state: 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated }; return { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: authenticated }; }
       const parsed = adapter.parseLogin(pane); return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: false, logged_in: authenticated };
     }
+    if (record.cli === 'pi') {
+      const marker = pane.match(/__wc_login_exit (\d+)/);
+      if (adapter.loginDone(pane) || marker || !captured.ok) {
+        if (adapter.loginDone(pane)) this.tmux(['kill-session', '-t', `=wc-login-${account}:`]);
+        const logged_in = adapter.loginStatus(record.dir).logged_in;
+        return { state: logged_in && (adapter.loginDone(pane) || !marker || marker[1] === '0') ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+      }
+    }
     if (!captured.ok || /__wc_login_exit \d+/.test(pane)) {
       const logged_in = adapter.loginStatus(record.dir).logged_in;
-      return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+      return { state: logged_in && (record.cli !== 'pi' || /__wc_login_exit 0(?:\s|$)/.test(pane)) ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
     }
-    if (adapter.loginDone?.(pane)) {
+    if (record.cli !== 'pi' && adapter.loginDone?.(pane)) {
       this.tmux(['kill-session', '-t', `wc-login-${account}`]);
       const logged_in = adapter.loginStatus(record.dir).logged_in;
       return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
@@ -1497,7 +1803,7 @@ class MachineService {
   }
   status() {
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
-    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex), agy = this.cliStatus('agy', defaults.agy), kimi = this.cliStatus('kimi', defaults.kimi);
+    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex), agy = this.cliStatus('agy', defaults.agy), kimi = this.cliStatus('kimi', defaults.kimi), pi = this.cliStatus('pi', defaults.pi);
     const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
     const root = path.join(os.homedir(), '.wheelchair', 'accounts');
     let folders = []; try { folders = fs.readdirSync(root, { withFileTypes: true }); } catch {}
@@ -1505,8 +1811,47 @@ class MachineService {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
     for (const entry of accounts) delete entry.authenticated;
+    if (pi.problem) for (const entry of accounts) if (entry.cli === 'pi') { entry.logged_in = false; delete entry.problem; }
     if (kimi.problem) for (const entry of accounts) if (entry.cli === 'kimi') { entry.logged_in = false; delete entry.problem; }
-    return { version: this.version, claude, codex, agy, kimi, accounts, sessions: this.sessionList() };
+    return { version: this.version, claude, codex, agy, kimi, pi, recipes: Object.fromEntries(providers.map(p => [p, !!loadRecipes()[p]])), accounts, sessions: this.sessionList() };
+  }
+  piVersionNote(version) {
+    const status = this.piVersionStatus(version, { logged_in: true });
+    if (!status.warning) return '';
+    return version ? ` Pi ${version} is newer than the version wheelchair was tested with (1.5.2); that may be the cause.` : " Pi's version couldn't be read; that may be the cause.";
+  }
+  async piExitedBeforeReady(session) {
+    if (session.cli !== 'pi' || !['starting', 'stuck'].includes(session.status) || session.end_reason) return;
+    session.end_reason = 'Pi exited before it was ready' + this.piVersionNote(session.pi_version);
+    await this.persistSessions();
+  }
+  async reconcilePiExits() {
+    const live = this.liveTmux();
+    if (live) for (const session of Object.values(this.sessions)) if (!live.has(session.name)) await this.piExitedBeforeReady(session);
+  }
+  checkPiVersion(executable = adapters.pi.resolveCli()) {
+    if (!executable) return Promise.resolve();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
+    this.piVersions ||= new Map();
+    const key = JSON.stringify([executable, mtime]);
+    if (!this.piVersions.has(key)) {
+      const entry = {};
+      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.piVersionTimeoutMs ?? 5000 }, (error, stdout) => {
+        const output = stdout.trim();
+        entry.version = !error && /^v?\d+\.\d+\.\d+$/.test(output) ? output.replace(/^v/, '') : null;
+        resolve(entry);
+      }));
+      this.piVersions.set(key, entry);
+    }
+    return this.piVersions.get(key).promise;
+  }
+  piVersionStatus(version, login) {
+    const match = typeof version === 'string' && version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+    if (!match) return { installed: true, logged_in: login.logged_in, version: null, warning: "Pi's version couldn't be read. If OpenRouter agents fail, this may be why." };
+    const [major, minor, patch] = match.slice(1).map(Number);
+    const old = major < 1 || major === 1 && (minor < 5 || minor === 5 && patch < 2);
+    const newer = major > 1 || major === 1 && minor > 5;
+    return { installed: true, logged_in: !old && login.logged_in, version, ...(old ? { problem: `Pi 1.5.2 or newer is needed (found ${version})` } : newer ? { warning: `Pi ${version} is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.` } : {}) };
   }
   checkKimiVersion(executable = adapters.kimi.resolveCli()) {
     if (!executable) return Promise.resolve();
@@ -1544,6 +1889,7 @@ class MachineService {
     return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
+    if (cli === 'pi') { const executable = adapters.pi.resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } this.checkPiVersion(executable); return this.piVersionStatus(this.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); }
     if (cli === 'kimi') {
       const executable = adapters.kimi.resolveCli(); if (!executable) return { installed: false, logged_in: false };
       let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; }
@@ -1704,7 +2050,7 @@ class MachineService {
       }
       return { result: 'moved', remote_tip: tip, picked_up_at };
     };
-    if (action === 'claim-commit') return { sha: await run('commit-tree', `${input.parent}^{tree}`, '-p', input.parent, '-m', input.message) };
+    if (action === 'claim-commit') return { sha: await run(...gitIdentityArgs(repo), 'commit-tree', `${input.parent}^{tree}`, '-p', input.parent, '-m', input.message) };
     if (action === 'claim-state') return claimState();
     if (action === 'claim-push') {
       let state = await claimState(); let pushed;
@@ -1859,7 +2205,47 @@ class MachineService {
           return result.ok ? send(response, 200, { level: input.level, text: result.stdout }) : send(response, 422, failure(result));
         } finally { this.sensitivityWriting = false; }
       }
-      if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
+      if (pathBits[0] === 'v1' && pathBits[1] === 'harnesses' && pathBits[3] === 'install' && pathBits.length === 4 && ['GET', 'POST', 'DELETE'].includes(request.method)) {
+        await this.authorize(request, 'hub');
+        const provider = pathBits[2];
+        if (!providers.includes(provider)) return send(response, 404, { error: 'unknown provider' });
+        if (request.method === 'GET') return send(response, 200, harnessInstall.state(provider));
+        if (request.method === 'DELETE') return harnessInstall.stopJob(provider) ? send(response, 202, { state: 'cancelling' }) : send(response, 409, { error: 'not installing' });
+        if (!loadRecipes()[provider]) return send(response, 404, { error: 'no recipe' });
+        if (!harnessInstall.start(provider)) return send(response, 409, { error: 'already installing' });
+        return send(response, 202, { state: 'running' });
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); await this.reconcilePiExits(); return send(response, 200, this.status()); }
+      if (request.method === 'POST' && url.pathname === '/v1/project-tools/unity-prep') {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        this.unityPrep ||= require('./lib/unity-prep').createUnityPrep({ detected: this.win.detected, winEnv: this.win.winEnv });
+        return send(response, 200, await this.unityPrep(input));
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/project-tools/windows-status') {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        if (!input || typeof input !== 'object' || !Array.isArray(input.tools) || input.tools.length > 100) throw Object.assign(new Error('tools must be an array of at most 100 items'), { status: 400 });
+        const status = Object.create(null);
+        if (!this.win?.detected?.kernel) return send(response, 200, { wsl: false, status });
+        await Promise.all(input.tools.map(async tool => {
+          if (!tool || typeof tool !== 'object' || typeof tool.id !== 'string') return;
+          const target = windowsTarget(tool);
+          if (!target) return;
+          let result;
+          if (!this.win.forwardReady()) result = { state: 'unavailable', reason: 'Windows bridge not available' };
+          else {
+            let timer;
+            try {
+              const checked = await Promise.race([this.win.forwards.check(target.port), new Promise(resolve => { timer = setTimeout(() => resolve({ ok: false, reason: `couldn't check Windows for port ${target.port}` }), 10000); })]);
+              result = checked.ok ? { state: 'reachable' } : { state: 'unreachable', reason: checked.reason };
+            } catch { result = { state: 'unreachable', reason: `couldn't check Windows for port ${target.port}` }; }
+            finally { clearTimeout(timer); }
+          }
+          status[tool.id] = { ...result, ...this.win.forwards.status(target.port) };
+        }));
+        return send(response, 200, { wsl: true, status });
+      }
       if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
@@ -1875,16 +2261,29 @@ class MachineService {
         finally { if (this.projectToolsLocks.get(identity) === current) this.projectToolsLocks.delete(identity); release(); }
       }
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
+      if (request.method === 'GET' && url.pathname === '/v1/spend') {
+        await this.authorize(request, 'hub');
+        const root = path.join(os.homedir(), '.wheelchair', 'accounts');
+        const folders = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
+        const entries = [{ account: 'default-openrouter', dir: null }];
+        for (const folder of folders) {
+          if (!folder.isDirectory() || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(folder.name)) continue;
+          const dir = path.join(root, folder.name);
+          try { const meta = JSON.parse(await fsp.readFile(path.join(dir, 'wheelchair-account.json'), 'utf8')); if (meta.id === folder.name && meta.cli === 'pi') entries.push({ account: meta.id, dir }); } catch {}
+        }
+        const accounts = await Promise.all(entries.map(async ({ account, dir }) => ({ account, ...await adapters.pi.spend(dir) })));
+        return send(response, 200, { accounts });
+      }
       if (request.method === 'POST' && url.pathname === '/v1/usage') {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
         if (!input || typeof input !== 'object' || Array.isArray(input)) die('invalid usage request');
         const { account, cli } = input;
-        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
+        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex', 'kimi'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
         const adapter = adapters[cli], dir = accountDir(input.dir, account);
         if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
         try {
-          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000 });
+          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000, ...(cli === 'kimi' && this.options.kimiUsageUrl ? { url: this.options.kimiUsageUrl } : {}) });
           const { reached, ...windows } = parsed;
           const reading = { account, at: new Date().toISOString(), ...windows };
           if (reached) reading.limited_until = limitedUntil(reading);
@@ -1902,14 +2301,23 @@ class MachineService {
       }
       if (request.method === 'POST' && url.pathname === '/v1/logins') { await this.authorize(request, 'hub'); return send(response, 201, await this.startLogin(await bodyOf(request))); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'logins' && pathBits[2]) {
-        await this.authorize(request, 'hub'); const account = decodeURIComponent(pathBits[2]); const loginRecord = this.loginRecord(account); const loginTarget = loginRecord.cli === 'kimi' ? `=wc-login-${account}:` : `wc-login-${account}`;
+        await this.authorize(request, 'hub'); const account = decodeURIComponent(pathBits[2]); const loginRecord = this.loginRecord(account); const loginTarget = `=wc-login-${account}:`;
         if (request.method === 'GET' && pathBits.length === 3) return send(response, 200, this.loginState(account));
         if (request.method === 'GET' && pathBits[3] === 'pane') return send(response, 200, { text: this.loginPane(account) });
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); const r = this.tmux(['send-keys', '-t', loginTarget, String(input.keys || '')]); if (!r.ok) throw Object.assign(new Error('tmux keys failed'), { status: 409 }); return send(response, 200, { ok: true }); }
-        if (request.method === 'POST' && pathBits[3] === 'code') { const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required'); const buffer = `wc-${crypto.randomUUID()}`; const a = this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }); const b = this.tmux(['paste-buffer', '-p', '-b', buffer, '-t', loginTarget]); const c = this.tmux(['send-keys', '-t', loginTarget, 'Enter']); if (!a.ok || !b.ok || !c.ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 }); return send(response, 200, { ok: true }); }
+        if (request.method === 'POST' && pathBits[3] === 'code') {
+          const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required');
+          const adapter = adapters[loginRecord.cli];
+          if (adapter.codeNeedsPrompt) { const pane = this.tmux(['capture-pane', '-p', '-J', '-t', loginTarget]); if (!pane.ok || pane.stdout.includes('__wc_login_exit') || !adapter.parseLogin(pane.stdout)?.wantsCode) throw Object.assign(new Error('the sign-in screen has moved on; start again'), { status: 409 }); }
+          const buffer = `wc-${crypto.randomUUID()}`;
+          try {
+            if (!this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }).ok || !this.tmux(['paste-buffer', '-p', '-d', '-b', buffer, '-t', loginTarget]).ok || !this.tmux(['send-keys', '-t', loginTarget, 'Enter']).ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 });
+          } catch (error) { this.tmux(['delete-buffer', '-b', buffer]); throw error; }
+          return send(response, 200, { ok: true });
+        }
       }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
-      if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.sessionList()); }
+      if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); await this.reconcilePiExits(); return send(response, 200, this.sessionList()); }
       if (request.method === 'POST' && url.pathname === '/v1/uploads') {
         await this.authorize(request, 'hub');
         const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request, url.searchParams.get('vouched') === '1');
@@ -1919,11 +2327,21 @@ class MachineService {
         await this.authorize(request, 'hub');
         const id = threadName(decodeURIComponent(pathBits[2])); const name = decodeURIComponent(pathBits[3]);
         if (!/^[0-9]+-[A-Za-z0-9._-]+$/.test(name)) die('invalid file name');
-        const target = path.join(this.stateDir, 'uploads', id, name);
-        let file; try { file = await fsp.open(target, 'r'); } catch (error) { if (error.code === 'ENOENT') throw Object.assign(new Error('not found'), { status: 404 }); throw error; }
+        let file;
+        for (const dir of ['uploads', 'kept']) {
+          try { file = await fsp.open(path.join(this.stateDir, dir, id, name), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); break; }
+          catch (error) { if (error.code === 'ENOENT') continue; if (error.code === 'ELOOP') throw Object.assign(new Error('not found'), { status: 404 }); throw error; }
+        }
+        if (!file) throw Object.assign(new Error('not found'), { status: 404 });
         const type = IMAGE_TYPES[path.extname(name).toLowerCase()];
-        response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': 'attachment' } : {}) });
+        response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': `attachment; filename="${name.replace(/^\d+-/, '')}"` } : {}) });
         file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/try') {
+        await this.authorize(request, 'hub');
+        let input;
+        try { input = await bodyOf(request); } catch (error) { if (error.status === 400) error.status = 422; throw error; }
+        return send(response, 200, await this.tryService.handle(input));
       }
       if (request.method === 'POST' && url.pathname === '/v1/handoff') {
         await this.authorize(request, 'hub');
@@ -1931,7 +2349,8 @@ class MachineService {
         try { input = await bodyOf(request); } catch (error) { if (error.status === 400) throw Object.assign(error, { status: 422, handoff: true }); throw error; }
         return send(response, 200, await this.handoff(input));
       }
-      if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
+      if (request.method === 'POST' && url.pathname === '/v1/plan-files') { await this.authorize(request, 'hub'); return send(response, 200, await planFiles(await bodyOf(request))); }
+      if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); const input = await bodyOf(request); return send(response, 200, await this.archive(input.thread_id, input.keep)); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
         if (request.method === 'DELETE' && pathBits.length === 3) { const result = await this.stop(name); return send(response, result?.pending ? 202 : 200, result || { ok: true }); }
@@ -1945,6 +2364,7 @@ class MachineService {
           return send(response, 200, { pane: this.pane(name, true, history) });
         }
         if (request.method === 'GET' && pathBits[3] === 'transcript') return send(response, 200, await this.transcript(name, url.searchParams.get('offset') || 0, url.searchParams.get('known')));
+        if (request.method === 'POST' && pathBits[3] === 'switch' && pathBits.length === 4) return send(response, 202, await this.switchSession(name, await bodyOf(request)));
         if (request.method === 'POST' && pathBits[3] === 'submit') { const input = await bodyOf(request); await this.submit(name, String(input.text || '')); return send(response, 200, { ok: true }); }
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); this.raw(name, String(input.keys || '')); return send(response, 200, { ok: true }); }
       }
@@ -1956,18 +2376,33 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/cards') {
         const agent = await this.authorize(request, 'agent');
         let input = await bodyOf(request);
-        delete input.warnings;
+        if (input.kind !== 'file') delete input.warnings;
         if (input.kind === 'approval' && agent.role === 'lead') {
           const warnings = [];
-          if (typeof this.startupWarning === 'string') warnings.push(this.startupWarning);
           if (this.platform === 'linux') {
-            const { missing } = screenTools();
+            const { missing, openboxInstalled } = screenTools();
             if (missing.length) warnings.push(`Screens won't work on ${os.hostname()}: missing ${missing.join(', ')}. Builds that don't use a screen are unaffected.`);
+            else if (!openboxInstalled) warnings.push(`Screens on ${os.hostname()} have no window manager, so apps that need one may misbehave. Optional: sudo apt install openbox.`);
+            if (this.win.detected.kernel && agent.worktree) {
+              const { mount } = this.win.detected;
+              const { mcp } = await readProjectMcp(agent.worktree, { wsl: true, mount, kernel: !!this.win?.detected?.kernel });
+              if (hasWindowsProgram(mcp, { mount })) {
+                let health = this.win.bridgeHealth();
+                if (health.ok === null) health = await this.win.bridgeHealthWait(15000);
+                if (health.ok === false) warnings.push(`The Windows bridge won't work on ${os.hostname()}: ${health.reason}. Builds that don't use Windows are unaffected.`);
+              }
+            }
           }
           if (warnings.length) input.warnings = warnings.slice(0, 10);
-          this.refreshStartupWarning();
         }
         if (input.kind === 'image') input = await this.copyImage(agent, input);
+        if (input.kind === 'file') {
+          if (agent.role !== 'lead') throw Object.assign(new Error('only a lead may post a file card'), { status: 403 });
+          const extra = Object.keys(input).find(key => !['kind', 'path', 'title'].includes(key));
+          if (extra) throw Object.assign(new Error(`field ${extra} is not allowed`), { status: 422 });
+          if (typeof input.title !== 'string' || !input.title.trim()) throw Object.assign(new Error('title is required'), { status: 422 });
+          input = await this.copyFile(agent, input);
+        }
         if (input.kind === 'sudo') {
           if (agent.role !== 'lead') throw Object.assign(new Error('only a lead may post a sudo card'), { status: 403 });
           try { input = { ...input, ...await this.sudo.register(input) }; }
@@ -1980,8 +2415,8 @@ class MachineService {
         const waiting = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).filter(f => f.endsWith('.json'));
         if (waiting.length && this.config.hub_url) await this.drainSpool('cards');
         const behind = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).some(f => f.endsWith('.json'));
-        if (input.kind === 'done') {
-          const unavailable = { error: 'the app is unreachable; the done card was not recorded; try again in a minute' };
+        if (input.kind === 'done' || input.kind === 'lesson') {
+          const unavailable = { error: input.kind === 'lesson' ? 'the app did not confirm the lesson; run the same card again in a minute (repeating it is safe)' : 'the app is unreachable; the done card was not recorded; try again in a minute' };
           if (behind || !this.config.hub_url) return send(response, 503, unavailable);
           try {
             const payload = { ...input, session: agent.name, thread_id: agent.thread_id, delivery_id: input.delivery_id || crypto.randomUUID() };
@@ -1991,21 +2426,22 @@ class MachineService {
             return send(response, relay.status, body);
           } catch { return send(response, 503, unavailable); }
         }
-        if (behind) { await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true }); }
+        if (behind) { const queued = await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id }); }
         const queued = await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id });
-        if (!this.config.hub_url) return send(response, 202, { ok: true, spooled: true });
+        if (!this.config.hub_url) return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id });
         try {
           const relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/cards`, 'POST', { [HUB_HEADER]: await this.secret() }, queued.payload);
           let body; try { body = JSON.parse(relay.body || '{}'); } catch { body = { error: relay.body || 'hub returned invalid JSON' }; }
           if (relay.status >= 200 && relay.status < 300) { await this.sudo.accepted(queued.payload); await fsp.unlink(queued.file); return send(response, relay.status, body); }
-          if ([500, 502, 503, 504].includes(relay.status)) return send(response, 202, { ok: true, spooled: true });
+          if ([500, 502, 503, 504].includes(relay.status)) return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id });
           if (relay.status >= 400 && relay.status < 500) { await this.sudo.dropped(queued.payload); await this.rejectSpool('cards', path.basename(queued.file), body.error || `hub refused (${relay.status})`); }
           return send(response, relay.status, body);
         } catch {
-          return send(response, 202, { ok: true, spooled: true });
+          return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id });
         }
       }
       if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, agent.cli === 'kimi' ? { ignored: true } : await this.hook(agent.name, input)); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/win') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.win.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
@@ -2019,12 +2455,9 @@ class MachineService {
     // Spec "Machine service on the hub": spools are retried until the hub acknowledges them.
     this.spoolTimer = setInterval(() => { for (const kind of ['events', 'cards']) this.drainSpool(kind).catch(error => this.log(error)); }, this.spoolInterval);
     this.spoolTimer.unref();
-    this.refreshStartupWarning();
-    this.startupWarningTimer = setInterval(() => this.refreshStartupWarning(), 10 * 60 * 1000);
-    this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.win.healthTimer); clearInterval(this.agyToolsTimer); clearInterval(this.copyHashesTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

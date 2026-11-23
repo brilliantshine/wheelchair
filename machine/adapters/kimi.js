@@ -58,6 +58,44 @@ function loginStatus(dir) {
   let global = false; try { global = new URL(config.oauth_host).hostname === 'auth.kimi.ai'; } catch {}
   return { logged_in: authenticated && global, authenticated, ...(authenticated && !global ? { problem: "signed in to Kimi's China region; log in again" } : {}) };
 }
+const USAGE_URL = 'https://api.kimi.ai/coding/v1/usages';
+async function usageProbe(dir, { timeout = 10000, url = USAGE_URL } = {}) {
+  if (!loginStatus(dir).logged_in) throw new Error('Kimi Code is not signed in');
+  let token, expires;
+  try {
+    const key = readConfig(dir).key;
+    if (!/^oauth\/[A-Za-z0-9._-]+$/.test(key || '')) throw new Error();
+    const credential = JSON.parse(fs.readFileSync(path.join(home(dir), 'credentials', `${key.slice(6)}.json`), 'utf8'));
+    token = credential.access_token; expires = credential.expires_at;
+    if (typeof token !== 'string' || !token.trim() || typeof expires !== 'number' || !Number.isFinite(expires)) throw new Error();
+  } catch { throw new Error("Kimi Code's login can't be read"); }
+  if (expires * 1000 <= Date.now() + 30000) throw new Error("Kimi Code's login key has expired; it renews the next time Kimi Code runs");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.min(timeout, 10000));
+  let response, body;
+  try {
+    response = await fetch(url, { method: 'GET', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }, redirect: 'error', signal: controller.signal });
+    if (!response.ok) throw new Error(`Kimi usage request failed (HTTP ${response.status})`);
+    body = await response.text();
+  } catch (error) {
+    if (response && !response.ok) throw new Error(`Kimi usage request failed (HTTP ${response.status})`);
+    throw new Error('Kimi usage request failed');
+  } finally { clearTimeout(timer); }
+  let data;
+  try { data = JSON.parse(body); } catch { throw new Error('invalid usage response'); }
+  if (!data?.usages || typeof data.usages !== 'object' || Array.isArray(data.usages)) throw new Error('invalid usage response');
+  const window = entry => {
+    if (!entry || !['number', 'string'].includes(typeof entry.used_ratio) || (typeof entry.used_ratio === 'string' && !entry.used_ratio.trim())) return null;
+    const ratio = Number(entry.used_ratio);
+    if (!Number.isFinite(ratio) || typeof entry.reset_time !== 'string' || !entry.reset_time.trim()) return null;
+    const reset = Date.parse(entry.reset_time);
+    if (!Number.isFinite(reset)) return null;
+    return { used: Math.min(ratio * 100, 100), resets_at: new Date(reset).toISOString() };
+  };
+  const five_hour = window(data.usages.limit_5h), week = window(data.usages.limit_7d);
+  if (!five_hour && !week) throw new Error('no usage windows');
+  return { five_hour, week, ...([five_hour, week].some(w => w && w.used >= 100) ? { reached: true } : {}) };
+}
 const bindings = new Map();
 function marker(value, name) {
   if (typeof value === 'string') return value.startsWith('[wc:role]') && value.split(/\r?\n/).includes(`Session: ${name}`);
@@ -118,14 +156,14 @@ async function findTranscript(session, dir) {
   try { return await run; } finally { bindings.delete(session); }
 }
 module.exports = {
-  provider: 'kimi', resolveCli, readConfig, loginStatus,
+  provider: 'kimi', resolveCli, readConfig, loginStatus, usageProbe,
   loginEnv: dir => ({ KIMI_CODE_HOME: home(dir) }),
   seed(dir, id) { c.seed(dir, home(), 'AGENTS.md', 'kimi', id); }, prepare() {},
   loginCommand() { const cli = resolveCli(); if (!cli) throw new Error('Kimi Code is not installed'); return [cli, 'login', '--region', 'global']; }, loginPrompt: null,
   parseLogin(pane) { const url = pane.match(/Opening browser for Kimi device login:\s*(https?:\/\/\S+)/)?.[1]; const code = pane.match(/paste the URL above and enter code:\s*(\S+)/i)?.[1]; return url && code ? { url, code, wantsCode: false } : null; },
   loginDone() { return false; },
   command(input, session, worktree, context) {
-    return { ...(context.tools && context.mcp?.names.length ? { warnings: [{ names: [...context.mcp.names], text: "project tools aren't supported on Kimi Code yet; this agent runs without them" }] } : {}), argv: [context.kimiExecutable || resolveCli(), session.permission_mode === 'bypass' ? '--auto' : '--yolo', ...(input.model ? ['--model', input.model] : [])] };
+    return { loaded: [], ...(context.tools && context.mcp?.names.length ? { warnings: [{ names: [...context.mcp.names], text: "project tools aren't supported on Kimi Code yet; this agent runs without them" }] } : {}), argv: [context.kimiExecutable || resolveCli(), session.permission_mode === 'bypass' ? '--auto' : '--yolo', ...(input.model ? ['--model', input.model] : [])] };
   },
   firstMessage(input, promptPath, name) { return `[wc:role] Role: ${input.role}\nSession: ${name}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${input.brief || input.first_message || ''}`; },
   readyText(session, pane) { return /│\s*>/.test(pane) && pane.includes('context:') && !pane.includes('Trust this folder?'); },

@@ -1,15 +1,19 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 // Spec "Security" and "Views": browser and machine callback HTTP routes.
 const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
 const { discoverSlug, findSlug } = require('./views.js');
 const settings = require('./settings.js');
+const cards = require('./cards.js');
 const diagramSensitivity = require('./diagram-sensitivity.js');
 const usage = require('./usage.js');
 const balancer = require('./balancer.js');
-const { PROVIDERS, cliOf } = require('./providers.js');
+const harnesses = require('./harnesses.js');
+const { PROVIDERS, DISPLAY_NAMES, cliOf } = require('./providers.js');
 const threadsModule = require('./threads.js');
 const UPLOAD_LIMIT = 25 * 1024 * 1024;
 const HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox";
@@ -61,10 +65,19 @@ async function handle(hub, request, response, url, machineAuthenticated) {
     });
     return send(response, 200, await hub.importHandoff(bytes, url.searchParams.get('machine') || 'hub', url.searchParams.get('project')));
   }
+  if (request.method === 'POST' && bits.join('/') === 'settings/lessons/import') {
+    const limit = 1024 * 1024, chunks = []; let size = 0, tooBig = false;
+    for await (const chunk of request) { size += chunk.length; if (size > limit) tooBig = true; else chunks.push(chunk); }
+    if (tooBig) throw appError(413, 'This file is too big for a lessons file');
+    let file; try { file = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw appError(400, "This isn't a wheelchair lessons file"); }
+    if (!file || file.format !== 'wheelchair-lessons' || file.version !== 1 || !file.lessons || typeof file.lessons !== 'object' || Array.isArray(file.lessons) || Object.values(file.lessons).some((v) => !Array.isArray(v))) throw appError(400, "This isn't a wheelchair lessons file");
+    const incoming = Object.entries(file.lessons).flatMap(([role, list]) => list.map((item) => item && typeof item === 'object' && !Array.isArray(item) ? { ...item, role } : null));
+    return send(response, 200, await settings.mergeIncoming(hub, incoming, { source: 'file' }));
+  }
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'project-tools' &&
-      ['read', 'save', 'remove-key'].includes(bits[1])) {
+      ['read', 'save', 'remove-key', 'unity-prep', 'windows-status'].includes(bits[1])) {
     if (!body || typeof body.path !== 'string') return send(response, 400, { error: 'path is required' });
     const { machine, ...input } = body;
     const name = typeof machine === 'string' && machine ? machine : 'hub';
@@ -89,6 +102,16 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   }
   if (bits[0] === 'new-thread' && bits.length === 1 && request.method === 'GET') {
     return send(response, 200, await newThread(hub, url.searchParams.get('machine') || 'hub'));
+  }
+  if (bits[0] === 'harnesses' && bits.length === 1 && request.method === 'GET') return send(response, 200, await harnesses.describe(hub, url.searchParams.get('fresh') === '1'));
+  if (bits[0] === 'onboarding' && bits.length === 1 && request.method === 'GET') return send(response, 200, await harnesses.onboarding(hub));
+  if (bits[0] === 'machines' && bits.length === 5 && bits[2] === 'harnesses' && bits[4] === 'install' && ['GET', 'POST', 'DELETE'].includes(request.method)) {
+    const name = bits[1], provider = bits[3];
+    if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
+    if (!(await hub.state.resolveMachine(await hub.machines(), name))) throw appError(404, 'machine not found');
+    if (request.method === 'POST' && (await settings.load(hub)).harnesses[provider] === false) return send(response, 409, { error: `${DISPLAY_NAMES[provider]} is switched off` });
+    try { const result = await hub.client.passThrough(name, `/v1/harnesses/${provider}/install`, request.method, body); return send(response, result.status, result.body); }
+    catch { return send(response, 502, { error: `${name} isn't reachable.` }); }
   }
   if (bits[0] === 'settings') return handleSettings(hub, request, response, url, bits, body);
   if (bits[0] === 'usage') {
@@ -203,6 +226,40 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (request.method === 'POST') { const result = await diagramSensitivity.write(hub, body); return send(response, result.status, result.body); }
   }
   if (bits.length === 1 && request.method === 'GET') return send(response, 200, { ...await settings.describe(hub), reserved_provider: await reservedLabel(hub, await settings.load(hub)) });
+  if (bits[1] === 'harnesses' && bits.length === 3 && request.method === 'PUT') {
+    const provider = bits[2];
+    if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
+    if (typeof body.enabled !== 'boolean') throw appError(400, 'enabled must be a boolean');
+    await settings.update(hub, (value) => { value.harnesses[provider] = body.enabled; if (!body.enabled && !harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
+    if (!body.enabled) {
+      // Stop any install of this harness on every known machine; the answers are ignored.
+      hub.machines().then((all) => { for (const name of Object.keys(all || {})) Promise.resolve().then(() => hub.client.passThrough(name, `/v1/harnesses/${provider}/install`, 'DELETE', {})).catch(() => {}); }).catch(() => {});
+    }
+    return send(response, 200, await settings.describe(hub));
+  }
+  if (bits[1] === 'lessons' && bits[2] === 'export' && bits.length === 3 && request.method === 'GET') {
+    response.setHeader('Content-Disposition', 'attachment; filename="wheelchair-lessons.json"');
+    return send(response, 200, settings.exportLessons(await settings.load(hub)));
+  }
+  const lessonResponse = (value, role, extra = {}) => ({ lessons: value.lessons[role], history: Object.fromEntries(Object.entries(value.lesson_history).filter(([, entry]) => entry.role === role)), waiting: value.lesson_waiting.filter((item) => item.role === role), ...extra });
+  if (bits[1] === 'lessons' && bits.length === 4 && request.method === 'POST' && settings.ROLES.has(bits[2])) {
+    const role = bits[2];
+    if (bits[3] === 'restore') return send(response, 200, lessonResponse(await settings.restoreLesson(hub, role, body.id, body.vid), role));
+    if (bits[3] === 'keep') return send(response, 200, lessonResponse(await settings.keepLesson(hub, role, body.id), role));
+    if (bits[3] === 'waiting') { const { value, result } = await settings.waitingAction(hub, role, body.wid, body.action); return send(response, 200, lessonResponse(value, role, { result })); }
+  }
+  if (bits[1] === 'lessons' && bits.length === 3 && request.method === 'PUT') {
+    const role = bits[2];
+    if (!settings.ROLES.has(role) || !body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !['edits', 'removals'].includes(key)) || !Array.isArray(body.edits) || !Array.isArray(body.removals) || body.edits.some((edit) => !edit || typeof edit !== 'object' || Array.isArray(edit) || Object.keys(edit).some((key) => !['id', 'text'].includes(key)) || typeof edit.id !== 'string' || !settings.validLessonText(edit.text)) || body.removals.some((id) => typeof id !== 'string')) throw appError(400, 'invalid lesson edits');
+    const value = await settings.update(hub, (current) => {
+      const list = current.lessons[role];
+      if (body.edits.some((edit) => !list.some((item) => item.id === edit.id))) throw appError(409, 'an agent removed a lesson you edited; reload to see the current list');
+      for (const edit of body.edits) { const item = list.find((entry) => entry.id === edit.id); if (item.text !== edit.text) { settings.recordHistory(current, role, item, 'user'); item.text = edit.text; item.saved_by = 'user'; item.saved_at = new Date().toISOString(); } }
+      for (const item of list) if (body.removals.includes(item.id)) settings.recordHistory(current, role, item, 'user', true);
+      current.lessons[role] = list.filter((item) => !body.removals.includes(item.id));
+    });
+    return send(response, 200, lessonResponse(value, role));
+  }
   if (bits[1] === 'accounts') {
     if (bits.length === 2 && request.method === 'POST') {
       let account;
@@ -250,18 +307,18 @@ async function handleSettings(hub, request, response, url, bits, body) {
     }
   }
   if (bits[1] === 'balancing' && bits.length === 2 && request.method === 'PUT') {
-    const value = await settings.update(hub, (value) => { for (const [key, v] of Object.entries(body)) { if (!settings.BALANCING.includes(key) || !settings.validBalancing(key, v)) throw appError(400, `invalid ${key}`); value[key] = v; } });
+    const value = await settings.update(hub, (value) => { for (const [key, v] of Object.entries(body)) { if (!settings.BALANCING.includes(key) || !settings.validBalancing(key, v)) throw appError(400, `invalid ${key}`); value[key] = v; } if (!harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
     return send(response, 200, { ...Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])), reserved_provider: await reservedLabel(hub, value) });
   }
   if (bits[1] === 'models' && request.method === 'PUT') {
-    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude, gpt, gemini or kimi');
+    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude, gpt, gemini, kimi or openrouter');
     let slot = settings.TIER_ALIASES[body.slot] || body.slot;
     if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead', 'sub-lead'].includes(slot)) throw appError(400, 'slot is invalid');
-    if (body.model !== null && (typeof body.model !== 'string' || !(body.provider === 'kimi' ? /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/ : /^[a-z0-9][a-z0-9._-]{0,63}$/).test(body.model))) throw appError(400, 'model is invalid');
+    if (body.model !== null && (typeof body.model !== 'string' || !(body.provider === 'openrouter' ? /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/ : body.provider === 'kimi' ? /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/ : /^[a-z0-9][a-z0-9._-]{0,63}$/).test(body.model))) throw appError(400, 'model is invalid');
     if (!PROVIDERS[body.provider].effort && body.effort !== undefined) throw appError(400, `${PROVIDERS[body.provider].label} has no effort setting`);
     if (body.provider === 'gpt' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh'].includes(body.effort)) throw appError(400, 'effort for GPT must be one of low, medium, high, xhigh');
-    if (['claude', 'gemini'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
+    if (['claude', 'gemini', 'openrouter'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
@@ -310,8 +367,16 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (!['read-only', 'full'].includes(body.aside_access)) throw appError(400, 'aside_access must be read-only or full');
         value.aside_access = body.aside_access;
       }
+      if (body.auto_merge !== undefined) {
+        if (!['off', 'on'].includes(body.auto_merge)) throw appError(400, 'auto_merge must be off or on');
+        value.auto_merge = body.auto_merge;
+      }
+      if (body.auto_merge_delete_branch !== undefined) {
+        if (!['off', 'on'].includes(body.auto_merge_delete_branch)) throw appError(400, 'auto_merge_delete_branch must be off or on');
+        value.auto_merge_delete_branch = body.auto_merge_delete_branch;
+      }
       if (body.review_families !== undefined) {
-        if (!['both', 'claude', 'gpt', 'gemini', 'kimi'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude, gpt, gemini or kimi');
+        if (!['both', 'claude', 'gpt', 'gemini', 'kimi', 'openrouter'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude, gpt, gemini, kimi or openrouter');
         value.review_families = body.review_families;
       }
       if (body.tool_steps !== undefined) {
@@ -331,12 +396,15 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (typeof body.default_project_folder !== 'string') throw appError(400, 'default_project_folder must be text');
         value.default_project_folder = validFolder(body.default_project_folder);
       }
+      if (body.user_name !== undefined) {
+        value.user_name = settings.validUserName(body.user_name);
+      }
       if (body.other_agents !== undefined) {
         if (!body.other_agents || typeof body.other_agents !== 'object' || Array.isArray(body.other_agents)) throw appError(400, 'other_agents must be an object');
         for (const role of ['reviewer', 'verifier', 'mapper', 'scout', 'scout-heavy']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));
@@ -422,7 +490,7 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
   if (!authenticated) throw appError(401, 'machine secret required');
   if (bits[1] === 'cards' && request.method === 'POST') {
     const result = await hub.acceptCard(body);
-    return send(response, result.duplicate ? 200 : 202, result);
+    return send(response, result[cards.REPLAY] ? 200 : 202, result);
   }
   if (bits[1] === 'events' && request.method === 'POST') {
     const result = await hub.event(body);
@@ -442,12 +510,13 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const listed = await hub.allThreads();
     const all = await Promise.all(listed.map((thread) => hub.withThread(thread.id, async () => {
       let current = await hub.readSnapshot(thread.id);
-      if (await discoverSlug(current)) {
+      if (await discoverSlug(current, hub)) {
         current = await hub.thread(thread.id);
         await findSlug(hub, current);
       }
       return { ...thread, ...current };
     })));
+    for (const thread of all) require('./remote-plan.js').refresh(hub, thread);
     // `?view=list` is what the pages poll: each thread's summary without its history
     // (cards, sent messages, briefs), which is most of the bytes and none of the list.
     const lean = url.searchParams.get('view') === 'list';
@@ -456,7 +525,13 @@ async function handleThreads(hub, request, response, url, bits, body) {
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
       const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
-      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
+      // Before that, its pinned progress line says where it is: building, verifying or verified.
+      // A planned thread (it has a slug) takes its stage from PLAN.md, even archived.
+      const progress = !summary.slug && pinned && pinned.progress;
+      const progressStage = !progress ? null
+        : (progress.stage || 'build') === 'build' ? 'building'
+          : progress.stage === 'verify' ? (progress.phase === 'clean' ? 'verified' : 'verifying') : null;
+      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, progress_stage: progressStage, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
     const revoke_notices = (await require('./handoff-ops.js').revokes(hub)).filter((entry) => entry.last_result === 'failed').map((entry) => ({ thread_id: entry.thread_id, sha: entry.sha, text: `Couldn't take back a cancelled pick-up on ${entry.repository || entry.project} ${entry.branch}: ${entry.error}` }));
     return send(response, 200, { threads, revoke_notices });
@@ -467,6 +542,48 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (!bits[1]) throw appError(404, 'route not found');
   const id = bits[1];
+  if (bits[2] === 'try' && bits.length === 3 && ['GET', 'POST'].includes(request.method)) {
+    const thread = await hub.thread(id);
+    const machines = await hub.state.machines();
+    const local = await hub.state.resolveMachine(machines, 'hub');
+    const target = await hub.state.resolveMachine(machines, thread.machine);
+    let ownRoot = false;
+    if (local && target && local === target) {
+      try {
+        const [project, root] = await Promise.all([fs.realpath(thread.project), fs.realpath(hub.root)]);
+        const relative = path.relative(project, root);
+        ownRoot = relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+      } catch { /* The machine reports invalid folders. */ }
+    }
+    const refusal = 'This folder runs wheelchair itself; switching it would swap the running app for untested code.';
+    const statusWithTitle = async (status) => ({
+      ...status,
+      ...(ownRoot ? { refused: refusal } : {}),
+      active_thread_title: (await hub.allThreads()).find((item) => item.id === status.active_thread_id)?.title ?? null,
+    });
+    const base = { thread_id: id, project: thread.project };
+    const call = async (input) => {
+      try { return await hub.client.tryCheckout(thread.machine, input); }
+      catch (error) {
+        if (error.status === 422 || error.status === 502) {
+          send(response, error.status, { error: error.message });
+          return null;
+        }
+        throw error;
+      }
+    };
+    if (request.method === 'GET' || (ownRoot && ['try', 'back'].includes(body.action))) {
+      const result = await call({ action: 'status', ...base });
+      if (!result) return;
+      const status = await statusWithTitle(result);
+      return send(response, 200, request.method === 'GET' ? status : { accepted: false, reason: refusal, status });
+    }
+    const input = { action: body.action, ...base };
+    for (const field of ['version', 'kept']) if (Object.hasOwn(body, field)) input[field] = body[field];
+    const answer = await call(input);
+    if (!answer) return;
+    return send(response, 200, { ...answer, status: await statusWithTitle(answer.status) });
+  }
   if (request.method === 'GET' && bits[2] === 'handoff' && bits.length === 3) return send(response, 200, await hub.handoffBanner(id));
   if (request.method === 'GET' && bits[2] === 'handoff-file' && bits.length === 3) {
     const file = await hub.handoffFile(id);
@@ -513,16 +630,48 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (request.method === 'GET' && bits[2] === 'diagram-html' && bits.length === 3) {
     const html = await threadsModule.archivedHtml(hub, id, url.searchParams.get('file'));
-    response.writeHead(200, HTML_HEADERS);
-    response.end(html);
+    const download = url.searchParams.get('download') === '1';
+    response.writeHead(200, download ? { ...HTML_HEADERS, 'content-disposition': `attachment; filename="${url.searchParams.get('file')}"` } : HTML_HEADERS);
+    response.end(download ? require('./html-download.js').htmlDownload(html) : html);
     return;
   }
   if (request.method === 'GET' && bits[2] === 'chat') {
     return send(response, 200, await hub.chat(id));
   }
+  if (request.method === 'GET' && bits[2] === 'docs.zip' && bits.length === 3) {
+    const thread = await hub.thread(id), documents = require('./documents.js'), remote = require('./remote-plan.js');
+    if (!documents.validSlug(thread.slug)) throw appError(404, 'document not found');
+    const isRemote = await remote.isRemote(hub, thread);
+    let files;
+    if (isRemote) {
+      try { files = (await remote.call(hub, thread, 'list', { slug: thread.slug })).files; if (!Array.isArray(files)) throw new Error('invalid list'); }
+      catch { throw appError(502, `Couldn't reach ${thread.machine}`); }
+      files = files.filter((file) => documents.FILES.includes(file));
+    } else files = await documents.list(thread, hub);
+    const entries = [];
+    for (const file of files) {
+      try {
+        const content = isRemote ? (await remote.call(hub, thread, 'read', { slug: thread.slug, file })).content : thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
+        if (typeof content !== 'string' && !Buffer.isBuffer(content)) throw new Error('invalid content');
+        entries.push({ name: `${thread.slug}/${file}`, data: content });
+      } catch { if (isRemote) throw appError(502, `Couldn't reach ${thread.machine}`); }
+    }
+    if (!entries.length) throw appError(404, 'document not found');
+    response.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${thread.slug}-documents.zip"`, 'cache-control': 'no-store' });
+    return response.end(require('./zip.js').zip(entries));
+  }
   if (request.method === 'GET' && bits[2] === 'doc') {
-    const content = await hub.archivedDocument(id, url.searchParams.get('file'));
-    return send(response, 200, { content });
+    const file = url.searchParams.get('file');
+    const thread = await hub.thread(id);
+    const documents = require('./documents.js');
+    if (!documents.validSlug(thread.slug) || !documents.FILES.includes(file)) throw appError(404, 'document not found');
+    const remote = require('./remote-plan.js');
+    const content = await remote.isRemote(hub, thread) ? await remote.read(hub, thread, file) : thread.archived ? await hub.archivedDocument(id, file) : await documents.readLive(thread, file);
+    if (url.searchParams.get('download') === '1') {
+      response.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8', 'x-content-type-options': 'nosniff', 'content-disposition': `attachment; filename="${thread.slug}-${file}"`, 'cache-control': 'no-store' });
+      return response.end(content);
+    }
+    return send(response, 200, { content: content.toString('utf8') });
   }
   if (request.method === 'GET' && bits[2] === 'graph') {
     return send(response, 200, await require('./threads.js').archivedGraph(hub, id, url.searchParams.get('file')));
@@ -533,7 +682,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
       require('./handoff.js').refuseFrozen(hub, thread);
       const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
       if (!lead) throw appError(409, 'no live lead');
-      await hub.enqueue(thread, lead.name, String(body.text || ''), 'collin');
+      await hub.enqueue(thread, lead.name, String(body.text || ''), 'user');
     });
     return send(response, 202, { queued: true });
   }

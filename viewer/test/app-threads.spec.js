@@ -33,6 +33,21 @@ for (const [label, size] of SIZES) {
 
     const open = (page, id) => page.goto(`${ctx.server.url}/app/thread?id=${id}`);
 
+    test('a jump-to-bottom button shows only when scrolled well up', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      for (let i = 0; i < 30; i++) await ctx.post(made.id, { kind: 'needs', title: `Thing ${i}`, body: 'Line one.\nLine two.\nLine three.' });
+      await open(page, made.id);
+      await expect(page.locator('#chat')).toContainText('Thing 29');
+      const jump = page.locator('#jump-bottom');
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await expect(jump).toBeHidden();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect(jump).toBeVisible();
+      await jump.click();
+      await expect.poll(() => page.evaluate(() => document.body.scrollHeight - (window.innerHeight + window.scrollY))).toBeLessThan(5);
+      await expect(jump).toBeHidden();
+    });
+
     test('deferred cards show mode, bullets and locking', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.post(made.id, { kind: 'deferred', mode: 'two-part', bullets: [{ id: 'a', text: 'Later' }] });
@@ -105,21 +120,21 @@ for (const [label, size] of SIZES) {
       const gone = await ctx.make({ cli: 'claude' });
       const opened = await ctx.make({ cli: 'claude' });
       const t = (n) => new Date(Date.now() - n * 60000).toISOString();
-      await ctx.patch(old.id, (x) => { x.title = 'Old one'; x.collin_at = t(50); x.updated_at = t(0); });
-      await ctx.patch(fresh.id, (x) => { x.title = 'Fresh one'; x.collin_at = t(1); });
+      await ctx.patch(old.id, (x) => { x.title = 'Old one'; x.user_at = t(50); x.updated_at = t(0); });
+      await ctx.patch(fresh.id, (x) => { x.title = 'Fresh one'; x.collin_at = t(1); delete x.user_at; });
       // A long parent name: its "waiting for" badge must wrap under the stub's title, not squeeze it.
-      await ctx.patch(parent.id, (x) => { x.title = 'Parent work with a long name that fills the row'; x.collin_at = t(40); });
+      await ctx.patch(parent.id, (x) => { x.title = 'Parent work with a long name that fills the row'; x.user_at = t(40); });
       await ctx.patch(waiting.id, (x) => {
-        x.title = 'Waiting stub'; x.collin_at = t(10); x.stub = true; x.sessions = [];
+        x.title = 'Waiting stub'; x.user_at = t(10); x.stub = true; x.sessions = [];
         x.parent = parent.id; x.waiting_on_parent = true; x.depends_on_parent = true;
       });
       await ctx.patch(ready.id, (x) => {
-        x.title = 'Ready stub'; x.collin_at = t(20); x.stub = true; x.sessions = []; x.ready = true;
+        x.title = 'Ready stub'; x.user_at = t(20); x.stub = true; x.sessions = []; x.ready = true;
       });
-      await ctx.patch(gone.id, (x) => { x.title = 'Gone one'; x.collin_at = t(5); x.archived = true; });
+      await ctx.patch(gone.id, (x) => { x.title = 'Gone one'; x.user_at = t(5); x.archived = true; });
       // A stub someone opened: a lead runs in it, so it is no longer marked a stub.
       await ctx.patch(opened.id, (x) => {
-        x.title = 'Opened stub'; x.collin_at = t(30); x.stub = true; x.ready = true;
+        x.title = 'Opened stub'; x.user_at = t(30); x.stub = true; x.ready = true;
         x.parent = parent.id; x.depends_on_parent = true;
       });
 
@@ -145,10 +160,8 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('#list li', { hasText: 'Opened stub' }).locator('.badge')).toHaveCount(0);
       await expect(page.locator('#list li', { hasText: 'Ready stub' })).toContainText('ready');
       await expect(page.locator('#list li', { hasText: 'Gone one' })).toHaveCount(0);
-      await page.locator('#show-archived').check();
-      await expect.poll(titles).toEqual(
-        ['Fresh one', 'Gone one', 'Waiting stub', 'Ready stub', 'Opened stub',
-          'Parent work with a long name that fills the row', 'Old one']);
+      await page.locator('#show-archived').click();
+      await expect.poll(titles).toEqual(['Gone one']);
       await expect(page.locator('#list li', { hasText: 'Gone one' })).toContainText('archived');
       await expect(page.locator('#app-nav a[aria-current="page"]')).toHaveText('Threads');
       await noSideScroll(page);
@@ -353,7 +366,7 @@ for (const [label, size] of SIZES) {
       const made = await ctx.make({ cli: 'claude' });
       const at = new Date().toISOString();
       await ctx.patch(made.id, (t) => {
-        Object.assign(t.sessions[0], { ready: true, turn_ended: false, queue: [{ text: 'do this now', source: 'collin', at }] });
+        Object.assign(t.sessions[0], { ready: true, turn_ended: false, queue: [{ text: 'do this now', source: 'user', at }] });
         t.queues = { [t.sessions[0].name]: t.sessions[0].queue };
       });
       await open(page, made.id);
@@ -380,7 +393,7 @@ for (const [label, size] of SIZES) {
       const later = new Date(Date.now() + 1000).toISOString();
       await ctx.patch(made.id, (t) => {
         Object.assign(t.sessions[0], { transcript_path: file, cli: 'claude', ready: true, turn_ended: false,
-          queue: [{ text: 'yes', source: 'collin', at }, { text: 'yes', source: 'collin', at: later }] });
+          queue: [{ text: 'yes', source: 'user', at }, { text: 'yes', source: 'user', at: later }] });
         t.queues = { [t.sessions[0].name]: t.sessions[0].queue };
       });
       await open(page, made.id);
@@ -408,7 +421,7 @@ for (const [label, size] of SIZES) {
         await expect(page.locator('#chat .bubble.pending', { hasText: text })).toHaveCount(1);
       }
       // C arrives from another tab, so this page has no pending bubble for it.
-      await ctx.patch(made.id, (t) => { t.sessions[0].queue.push({ text: 'C three', source: 'collin', at: new Date().toISOString() }); t.queues = { [t.sessions[0].name]: t.sessions[0].queue }; });
+      await ctx.patch(made.id, (t) => { t.sessions[0].queue.push({ text: 'C three', source: 'user', at: new Date().toISOString() }); t.queues = { [t.sessions[0].name]: t.sessions[0].queue }; });
       await expect(page.locator('#chat .bubble.pending')).toHaveCount(3);
       const order = await page.locator('#chat .bubble.pending').evaluateAll((els) => els.map((e) => e.firstChild.textContent));
       expect(order).toEqual(['A one', 'B two', 'C three']);
@@ -519,15 +532,19 @@ for (const [label, size] of SIZES) {
       await page.locator('#pinned').getByRole('button', { name: 'Talk about this' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'talk', value: 'Moves lose work' });
 
+      // The link stays hidden until the line is hovered.
+      const leftRow = page.locator('.card-done .bullet', { hasText: 'Resize terminal' });
+      await expect(leftRow.getByRole('button', { name: 'Start a thread about it' })).toHaveCSS('opacity', '0');
+      await leftRow.hover();
       req = pressTo(dn.id);
-      await page.locator('.card-done .bullet', { hasText: 'Resize terminal' })
-        .getByRole('button', { name: 'Start a thread about it' }).click();
+      await leftRow.getByRole('button', { name: 'Start a thread about it' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'start-thread', value: 'Resize terminal' });
 
       // Every can_do entry offers it too, with the same press form.
+      const doRow = page.locator('.card-done .bullet', { hasText: 'Use it' });
+      await doRow.hover();
       req = pressTo(dn.id);
-      await page.locator('.card-done .bullet', { hasText: 'Use it' })
-        .getByRole('button', { name: 'Start a thread about it' }).click();
+      await doRow.getByRole('button', { name: 'Start a thread about it' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'start-thread', value: 'Use it' });
 
       req = pressTo(ideaCard.id);
@@ -592,6 +609,30 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('#pinned .card-idea .bullet')).toHaveCount(3);
     });
 
+    test('stub: an addition card names the target thread; the unopened page keeps context line breaks', async ({ page }) => {
+      const parent = await ctx.make({ cli: 'claude' });
+      await ctx.post(parent.id, { kind: 'stub', title: 'Fix it', summary: 'First part.\n\nSecond part.', depends_on_parent: false });
+      const threads = (await (await fetch(`${ctx.server.url}/api/threads?token=${ctx.server.token}`)).json()).threads;
+      const stub = threads.find((x) => x.stub);
+      // Seed addition cards directly: the card is what the page renders, whatever built it.
+      await ctx.patch(parent.id, (t) => {
+        const base = { kind: 'stub', summary: 'Also do this.', depends_on_parent: false, adds_to: stub.id, thread_id: stub.id, target_title: 'Target thread', created_at: new Date().toISOString() };
+        t.cards.push({ ...base, id: 'addcard00001', title: 'Add one' });
+        t.cards.push({ ...base, id: 'addcard00002', title: 'Add two', duplicate: true });
+      });
+      await open(page, parent.id);
+      const added = page.locator('#card-addcard00001');
+      await expect(added).toContainText('Added to another thread');
+      await expect(added).toContainText('Target thread');
+      await expect(added).toContainText('Also do this.');
+      await expect(added.locator('a', { hasText: 'Go to it' })).toHaveAttribute('href', `/wheelchair/app/thread?id=${stub.id}`);
+      const dup = page.locator('#card-addcard00002');
+      await expect(dup).toContainText('Already a thread for this');
+      await expect(dup).not.toContainText('Added to another thread');
+      await open(page, stub.id);
+      await expect(page.locator('#stub-open p').first()).toHaveCSS('white-space', 'pre-line');
+    });
+
     test('stub: a dependent stub waits by itself; start now anyway opens the lead', async ({ page }) => {
       const parent = await ctx.make({ cli: 'claude' });
       await ctx.patch(parent.id, (x) => { x.title = 'Parent'; });
@@ -622,6 +663,15 @@ for (const [label, size] of SIZES) {
       await ctx.patch(made.id, (x) => { x.sessions[0].live = false; });
       await open(page, made.id);
       await expect(page.locator('#dead')).toContainText('The lead has stopped');
+      // It sticks under the thread header, so Restart stays in sight in a long chat.
+      expect(await page.locator('#dead').evaluate((n) => getComputedStyle(n).position)).toBe('sticky');
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await expect(page.getByRole('button', { name: 'Restart lead' })).toBeInViewport();
+      // A refused restart says so inside the box, which is in sight, not only in the banner up top.
+      await page.route(`**/threads/${made.id}/restart`, (r) => r.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: 'start refused' }) }), { times: 1 });
+      await page.getByRole('button', { name: 'Restart lead' }).click();
+      await expect(page.locator('#dead .dead-error')).toHaveText(/Restart failed: .*start refused/);
+      await expect(page.locator('#dead .dead-error')).toBeInViewport();
       await expect(page.locator('#msg')).toBeDisabled();
       const req = page.waitForRequest((r) => r.url().endsWith(`/threads/${made.id}/restart`));
       await page.getByRole('button', { name: 'Restart lead' }).click();
@@ -657,10 +707,13 @@ for (const [label, size] of SIZES) {
     test('plan links use the slug the API returns, not a diagram card plan', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.post(made.id, { kind: 'diagram', plan: 'other-plan', graph: 'flow', title: 'Flow' });
-      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
+      const wt = await makeTemp('wc-plan-links-');
+      await fs.mkdir(path.join(wt, 'docs/plans/dark'), { recursive: true });
+      for (const f of ['MAP', 'IDEA', 'PLAN']) await fs.writeFile(path.join(wt, 'docs/plans/dark', f + '.md'), '# ' + f);
+      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = wt; });
       await open(page, made.id);
       for (const f of ['MAP', 'IDEA', 'PLAN']) {
-        await expect(page.locator('#files a', { hasText: f })).toHaveAttribute(
+        await expect(page.locator('#files a', { hasText: f + '.md' }).first()).toHaveAttribute(
           'href', `/wheelchair/app/doc?thread=${made.id}&file=${f}.md`);
       }
     });
@@ -907,12 +960,16 @@ for (const [label, size] of SIZES) {
 
     test('plan document links open the in-app document page', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
-      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
+      const wt = await makeTemp('wc-plan-docs-');
+      await fs.mkdir(path.join(wt, 'docs/plans/dark'), { recursive: true });
+      await fs.writeFile(path.join(wt, 'docs/plans/dark/PLAN.md'), '# plan');
+      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = wt; });
       await open(page, made.id);
-      const plan = page.locator('#files a', { hasText: 'PLAN' });
+      const plan = page.locator('#files a', { hasText: 'PLAN.md' }).first();
       await expect(plan).toHaveAttribute('href', `/wheelchair/app/doc?thread=${made.id}&file=PLAN.md`);
-      await expect(page.locator('#files a', { hasText: 'MAP' })).toHaveCount(1);
-      await expect(page.locator('#files a', { hasText: 'IDEA' })).toHaveCount(1);
+      // Only the documents that exist are listed.
+      await expect(page.locator('#files a', { hasText: 'MAP' })).toHaveCount(0);
+      await expect(page.locator('#files a', { hasText: 'IDEA' })).toHaveCount(0);
     });
   });
 }

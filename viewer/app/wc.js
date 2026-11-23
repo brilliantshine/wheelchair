@@ -69,9 +69,10 @@ function gitRequest(operation, tail) {
 }
 
 function sessionRequest(operation, tail) {
-  if (!['start', 'stop', 'list'].includes(operation)) {
+  if (!['start', 'stop', 'list', 'leads'].includes(operation)) {
     throw new Error('unsupported session operation');
   }
+  if (operation === 'leads') return { path: '/session', body: { action: 'leads', all_projects: tail.includes('--all-projects') } };
   const parsed = flags(tail);
   if (operation !== 'start') return { path: '/session', body: { action: operation, name: parsed._[0] } };
   if (!parsed.role || !parsed.attempt || !parsed['brief-file']) {
@@ -101,6 +102,13 @@ function screenRequest(operation, tail) {
     throw new Error('unsupported screen operation');
   }
   return { path: '/screen', body: { op: operation, args: tail } };
+}
+
+function winRequest(operation, tail) {
+  if (!['info', 'sync', 'run', 'start', 'status', 'windows', 'shot', 'stop', 'path'].includes(operation)) {
+    throw new Error('unsupported win operation');
+  }
+  return { path: '/win', body: { op: operation, args: tail } };
 }
 
 const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'round', 'title', 'branch', 'worktree', 'project_tools'];
@@ -172,18 +180,27 @@ async function main(argv) {
       ? sessionRequest(operation, requestTail)
       : group === 'screen'
         ? screenRequest(operation, tail)
+        : group === 'win'
+          ? winRequest(operation, tail)
       : null;
-  if (!input) throw new Error('usage: wc.js git|session|screen …');
+  if (!input) throw new Error('usage: wc.js git|session <start|stop|list|leads [--all-projects]>|screen|win …');
   const result = group === 'session'
     ? await postSessionWithRetry(`${base}${input.path}`, token, input.body)
     : await request(`${base}${input.path}`, token, input.body);
   if (result.status < 200 || result.status >= 300) {
     throw new Error(result.status === 503 ? 'hub unavailable' : result.output);
   }
+  if (group === 'win' && operation === 'info') {
+    const response = JSON.parse(result.output);
+    for (const warning of response.disk?.warnings || []) process.stderr.write(`${warning}\n`);
+  }
   if (group === 'session' && operation === 'start') {
     const response = JSON.parse(result.output);
     if (response.note) process.stderr.write(`${response.note}\n`);
-    if (response.session?.status === 'waiting') process.stdout.write(`waiting for room until ${response.session.waiting_until}\n`);
+    if (response.session?.status === 'waiting') {
+      process.stdout.write(`waiting for room until ${response.session.waiting_until}\n`);
+      if (response.session.waiting_reason?.endsWith(' is left out in Settings')) process.stdout.write(`waiting: ${response.session.waiting_reason}\n`);
+    }
   }
   if (group === 'session' && !full && ['start', 'list'].includes(operation)) {
     const response = JSON.parse(result.output);
@@ -201,4 +218,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { flags, gitRequest, sessionRequest, screenRequest };
+module.exports = { flags, gitRequest, sessionRequest, screenRequest, winRequest };

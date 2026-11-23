@@ -66,3 +66,17 @@ test('unchanged saved metadata preserves slider keyboard focus and the displayed
   await expect(page.getByLabel('Visibility')).toHaveValue('36');
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
 });
+
+test('opening an agent lesson deep-link discards the local background preview', async ({ page }) => {
+  await signedIn(page); await editor(page);
+  await expect.poll(() => page.evaluate(() => window.wcBackground.current().metadata !== null)).toBe(true);
+  await choose(page);
+  await expect(page.getByText(/ready.png/)).toBeVisible();
+  await expect(page.locator('.background-layer img')).toHaveCount(1);
+  await page.evaluate(() => { location.hash = 'templates/lessons/lead'; });
+  await expect(page.locator('#sections a[data-section="templates"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('.background-layer')).toHaveCount(0);
+  await page.locator('#sections a[data-section="background"]').click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(page.getByText(/ready.png/)).toHaveCount(0);
+});

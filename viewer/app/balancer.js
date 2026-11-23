@@ -4,7 +4,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const settingsStore = require('./settings.js');
 const usage = require('./usage.js');
-const { PROVIDERS, providerOf } = require('./providers.js');
+const { PROVIDERS, DISPLAY_NAMES, providerOf } = require('./providers.js');
 const { appError } = require('./state.js');
 const exec = promisify(execFile);
 
@@ -22,7 +22,46 @@ function signedIn(settings, machines, machineName, provider) {
 }
 function reservedProvider(settings, machines, machineName) {
   const order = [...new Set(settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]))];
-  return order.find((p) => signedIn(settings, machines, machineName, p)) || null;
+  return order.find((p) => settings.harnesses[p] && signedIn(settings, machines, machineName, p)) || null;
+}
+async function machineNameOf(hub, thread) {
+  const configured = await hub.machines();
+  const resolvedMachine = await hub.state.resolveMachine(configured, thread.machine);
+  return Object.keys(configured).find((name) => configured[name] === resolvedMachine || configured[name].name === resolvedMachine?.name) || thread.machine;
+}
+// What leads and sub-leads are told about review families. "Mix families" with only one
+// family signed in means one reviewer per round on that family, not two on it. Only sign-in
+// counts, not per-tier models, so verifier choices for multi-family setups are unchanged.
+// Placement uses the same answer, so a lone family outside the worker order still gets them.
+function effectiveFamilies(settings, machines, machineName) {
+  if (settings.review_families !== 'both') return settings.review_families;
+  const signed = Object.keys(PROVIDERS).filter((p) => settings.harnesses[p] && signedIn(settings, machines, machineName, p));
+  return signed.length === 1 ? signed[0] : 'both';
+}
+async function reviewFamilies(hub, thread) {
+  const [settings, machines, machineName] = await Promise.all([settingsStore.load(hub), usage.machineAccounts(hub), machineNameOf(hub, thread)]);
+  return effectiveFamilies(settings, machines, machineName);
+}
+function providerAccounts(settings, threads, provider) {
+  return settings.accounts.filter(a => a.provider === provider).map(a => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter(s => s.live && s.account === a.id).length, 0) }));
+}
+function heldBack(settings, reserved, role, provider, accounts, readings, now) {
+  return provider === reserved && !['lead', 'sub-lead'].includes(role) && settings.held_back[role] === true && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
+}
+async function chooseSwitch(hub, thread, target) {
+  const [settings, readings, machines, last, threads, machineName] = await Promise.all([settingsStore.load(hub), usage.readings(hub), usage.machineAccounts(hub), usage.lastChosen(hub), hub.allThreads(), machineNameOf(hub, thread)]);
+  const now = Date.now(), provider = target.provider;
+  const accounts = providerAccounts(settings, threads, provider);
+  if (heldBack(settings, reservedProvider(settings, machines, machineName), target.role, provider, accounts, readings, now)) return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const account = usage.rank(accounts, readings, machines, settings, machineName, now, last).find(a => a.next);
+    if (!account) return null;
+    if (provider !== 'gpt') return { account };
+    const dir = account.id === `default-${provider}` ? null : `~/.wheelchair/accounts/${account.id}`;
+    try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir }); return { account }; }
+    catch { if (machines[machineName]) machines[machineName].accounts[account.id] = false; }
+  }
+  return null;
 }
 async function choose(hub, thread, role, tier, constraints = {}) {
   let { provider, not_provider: excluded } = constraints;
@@ -30,35 +69,35 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   const slot = await slotFor(hub, role, tier);
   const [settings, readings, machines, last, threads] = await Promise.all([settingsStore.load(hub), usage.readings(hub), usage.machineAccounts(hub), usage.lastChosen(hub), hub.allThreads()]);
   const now = Date.now();
-  const configured = await hub.machines();
-  const resolvedMachine = await hub.state.resolveMachine(configured, thread.machine);
-  const machineName = Object.keys(configured).find((name) => configured[name] === resolvedMachine || configured[name].name === resolvedMachine?.name) || thread.machine;
+  const machineName = await machineNameOf(hub, thread);
   const reserved = reservedProvider(settings, machines, machineName);
   let fallbackReview = null, droppedProvider = null, strictReview = null;
-  if (['reviewer', 'verifier'].includes(role) && settings.review_families !== 'both') {
-    const family = settings.review_families;
-    let used = signedIn(settings, machines, machineName, family);
+  const families = effectiveFamilies(settings, machines, machineName);
+  if (['reviewer', 'verifier'].includes(role) && families !== 'both') {
+    const family = families;
+    let used = settings.harnesses[family] && signedIn(settings, machines, machineName, family);
     if (used) {
       try { await exec(path.join(hub.root, 'codex', 'model.sh'), [family, slot]); }
       catch (e) { if (e.code === 3) used = false; else throw e; }
     }
     provider = undefined; excluded = undefined;
-    if (used) strictReview = family; else fallbackReview = family;
+    if (used) strictReview = family; else if (settings.review_families !== 'both') fallbackReview = family;
   }
-  if (role === 'worker' && provider && !signedIn(settings, machines, machineName, provider)) { droppedProvider = provider; provider = undefined; }
+  if (role === 'worker' && provider && (!settings.harnesses[provider] || !signedIn(settings, machines, machineName, provider))) { droppedProvider = provider; provider = undefined; }
   if (!thread.provider && thread.cli && thread.sessions?.length) thread.provider = providerOf(thread.cli);
   let order = role === 'lead' && !thread.provider ? settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]) : ['lead', 'sub-lead'].includes(role) ? [thread.provider] : [...settings.worker_order];
-  order = strictReview ? [strictReview] : [...new Set(order.filter(Boolean))];
+  if (['lead', 'sub-lead'].includes(role) && thread.provider && !settings.harnesses[thread.provider]) return { wait: { provider: thread.provider, until: new Date(now + 60000).toISOString(), reason: `${DISPLAY_NAMES[thread.provider]} is left out in Settings` } };
+  order = (strictReview ? [strictReview] : [...new Set(order.filter(Boolean))]).filter((p) => settings.harnesses[p]);
   if (provider && role === 'worker') {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [provider, slot]); }
     catch (e) { if (e.code === 3) throw appError(400, `${PROVIDERS[provider].label} is not used at ${slot}`); throw e; }
   }
   const available = {};
   const margin = {};
-  for (const p of order) {
+  for (const p of provider === 'openrouter' && !order.includes(provider) ? [...order, provider] : order) {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, slot]); } catch (e) { if (e.code === 3) continue; throw e; }
-    const accounts = settings.accounts.filter((a) => a.provider === p).map((a) => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter((s) => s.live && s.account === a.id).length, 0) }));
-    margin[p] = p === reserved && !['lead', 'sub-lead'].includes(role) && settings.held_back[role] === true && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
+    const accounts = providerAccounts(settings, threads, p);
+    margin[p] = heldBack(settings, reserved, role, p, accounts, readings, now);
     available[p] = usage.rank(accounts, readings, machines, settings, machineName, now, last).find((a) => a.next);
   }
   const normal = (exclude) => {
@@ -77,6 +116,11 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     if (provider && picked) note = `Could not use ${provider}; using ${picked}.`;
   }
   if (picked && droppedProvider) note = `Could not use ${droppedProvider}; using ${picked}.`;
+  // Mix families narrowed to one signed-in family still reports a constraint it could not meet.
+  if (picked && settings.review_families === 'both' && strictReview) {
+    if (constraints.provider && constraints.provider !== picked) note = `Could not use ${constraints.provider}; using ${picked}.`;
+    else if (constraints.not_provider === picked) note = `Could not avoid ${picked}; using ${picked}.`;
+  }
   if (picked && fallbackReview) note = `Reviewers and checkers are set to ${PROVIDERS[fallbackReview].label}, but ${PROVIDERS[fallbackReview].label} is not available; using ${PROVIDERS[picked].label}.`;
   if (picked) return { provider: picked, account: available[picked], ...(note ? { note } : {}) };
   const relevant = provider && role === 'worker' && !margin[provider] ? [provider] : excluded && role === 'worker' ? order.filter((p) => p !== excluded) : order;
@@ -91,7 +135,7 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     }
     return blockers.length ? [new Date(Math.max(...blockers)).toISOString()] : [];
   }).sort();
-  const waitingProvider = strictReview || (['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? settings.lead_order.find((p) => p !== 'any') || null : null);
+  const waitingProvider = strictReview || (['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? order[0] || null : null);
   return { wait: { provider: waitingProvider, until: resets[0] || new Date(now + 60000).toISOString(), reason: `no ${relevant.length === 1 ? relevant[0] + ' account' : 'account'} has room` } };
 }
-module.exports = { choose, slotFor, reservedProvider };
+module.exports = { chooseSwitch, choose, slotFor, reservedProvider, reviewFamilies };

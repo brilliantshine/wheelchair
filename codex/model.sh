@@ -11,7 +11,7 @@ import re
 import sys
 import tempfile
 
-PROVIDERS = ("claude", "gpt", "gemini", "kimi")
+PROVIDERS = ("claude", "gpt", "gemini", "kimi", "openrouter")
 SLOTS = ("light", "standard", "heavy", "critical", "lead", "sub-lead")
 WORK_TIERS = ("light", "standard", "heavy", "critical")
 DEFAULTS = {
@@ -35,6 +35,7 @@ DEFAULTS = {
         "heavy": ("kimi-code/k3.1-pro", None), "critical": ("kimi-code/k3.1-pro", None),
         "lead": ("kimi-code/k3.1-pro", None),
     },
+    "openrouter": {slot: ("openrouter/auto", None) for slot in ("light", "standard", "heavy", "critical", "lead")},
 }
 ALIASES = {"luna": "light", "terra": "standard", "sol": "heavy", "astra": "critical"}
 CLAUDE_ALIASES = {"haiku": "light", "sonnet": "standard", "opus": "heavy"}
@@ -43,12 +44,16 @@ GPT_EFFORTS = {"low", "medium", "high", "xhigh"}
 VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 KIMI_VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$")
 
+OPENROUTER_VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$")
+
 
 def value_ok(provider, model):
+    if provider == "openrouter":
+        return model == "none" or (len(model) <= 128 and OPENROUTER_VALUE.fullmatch(model) is not None)
     return (KIMI_VALUE if provider == "kimi" else VALUE).match(model) is not None
 MODEL = re.compile(r"^gpt-(\d+(?:\.\d+)*)-([a-z]+)$")
-USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt|gemini|kimi> <slot> | "
-         "effort <claude|gpt|gemini|kimi> <slot> | family claude <slot> | "
+USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt|gemini|kimi|openrouter> <slot> | "
+         "effort <claude|gpt|gemini|kimi|openrouter> <slot> | family claude <slot> | "
          "set [<provider> <slot> | <tier>] <model|none> [effort] | "
          "skip <model> | init | reset | check [--json] | show --json")
 
@@ -87,7 +92,7 @@ def parse_pins(text):
             skipped.append(skip.group(1))
             continue
         entry = re.fullmatch(
-            r"(claude|gpt|gemini|kimi)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._-]{0,63}(?:/[a-z0-9][a-z0-9._-]{0,63})?)(?:\s+@([a-z]+))?", line)
+            r"(claude|gpt|gemini|kimi|openrouter)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._/:-]*)(?:\s+@([a-z]+))?", line)
         if entry is not None:
             provider, raw_slot, model, effort = entry.groups()
             slot = slot_for(provider, raw_slot)

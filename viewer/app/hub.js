@@ -40,6 +40,7 @@ class Hub {
     this.stateDir = this.state.dir;
     this.threadsDir = this.state.threadsDir;
     this.lastSeen = new Map();
+    this.seenSaved = new Map();
     this.threadLocks = new Map();
     this.runningHandoffOps = new Set();
     this.uploadsInFlight = new Map();
@@ -110,7 +111,14 @@ class Hub {
   machineSeen(name) { return this.lastSeen.get(name) || null; }
   async markMachineSeen(name, at = new Date().toISOString()) {
     this.lastSeen.set(name, at);
-    await this.state.markMachineSeen(name, at);
+    if (this.seenSaved.has(name) && this.now() - this.seenSaved.get(name) < 60_000) return at;
+    const reservation = this.now();
+    this.seenSaved.set(name, reservation);
+    try { await this.state.markMachineSeen(name, at); }
+    catch (error) {
+      if (this.seenSaved.get(name) === reservation) this.seenSaved.delete(name);
+      throw error;
+    }
     return at;
   }
   machine(name) { return this.state.machine(name); }
@@ -198,7 +206,23 @@ class Hub {
         if (!result.ok) throw appError(422, result.reason);
       }
     }
-    return this.withThread(payload.thread_id, () => cards.acceptCard(this, payload));
+    const result = await this.withThread(payload.thread_id, () => cards.acceptCard(this, payload));
+    if (!result.targetThread) return result;
+    const delivery = await this.withThread(result.targetThread, async () => {
+      const chosen = await this.updateThread(result.targetThread, (thread) => {
+        const peers = require('./peers.js');
+        if (!peers.reachable(this, thread)) return null;
+        const lead = peers.latestLiveLead(thread) || [...(thread.sessions || [])].reverse().find(s => s.role === 'lead');
+        if (!lead) return null;
+        lead.queue ||= [];
+        lead.queue.push({ text: `[wc:from ${result.card.session}] [thread ${payload.thread_id}: ${result.senderTitle}] ${result.card.asks === true ? `[question ${result.card.id}] ` : ''}${result.card.text}`, source: 'session', at: new Date().toISOString(), peer: { thread: payload.thread_id, title: result.senderTitle, session: result.card.session, ...(result.card.asks === true ? { question: result.card.id } : {}) } });
+        thread.queues ||= {}; thread.queues[lead.name] = lead.queue;
+        return { name: lead.name, held: !lead.live };
+      });
+      if (chosen && !chosen.held) await this.deliver(await this.thread(result.targetThread), chosen.name);
+      return chosen;
+    });
+    return delivery?.held ? { ...result.card, held: true } : result.card;
   }
   createThread(input) { return threads.createThread(this, input); }
   threadBySession(name) { return threads.threadBySession(this, name); }
@@ -277,6 +301,7 @@ class Hub {
       result.thread.handoff_op = thread.handoff_op ? { kind: thread.handoff_op.kind, last_error: thread.handoff_op.last_error, can_cancel: !thread.handoff_op.claim_landed } : null;
       return { result, thread, refresh };
     });
+    require('./remote-plan.js').refresh(this, snapshot.thread);
     if (snapshot.refresh) this.refreshHandoffStatus(snapshot.thread).catch(() => {});
     return snapshot.result;
   }

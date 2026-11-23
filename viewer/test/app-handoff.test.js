@@ -11,7 +11,7 @@ test('handoff validator checks schema, limits and unknown fields', () => {
   assert.equal(valid(file), true);
   assert.equal(validateHandoffFile('{').ok, false);
   for (const edit of [
-    (f) => { f.thread.id = 'bad'; }, (f) => { f.version = 2; }, (f) => { f.extra = 1; },
+    (f) => { f.thread.id = 'bad'; }, (f) => { f.version = 4; }, (f) => { f.extra = 1; },
     (f) => { f.thread.extra = 1; }, (f) => { f.history = [{ at, who: 'lead', kind: 'question', text: 'x', extra: 1 }]; },
     (f) => { f.history = [{ at, who: 'nobody', kind: 'question', text: 'x' }]; },
     (f) => { f.branch = 'wc/other'; }, (f) => { f.pr_url = 'url'; }, (f) => { f.stage = 'done'; },
@@ -37,13 +37,13 @@ test('history renders shown cards and skips hidden and progress cards', () => {
 });
 test('history accumulates, orders and trims entries, and names downloads', () => {
   const old = '2026-11-16T12:00:00.000Z';
-  const thread = { id, title: 'A title!', slug: 'plan', imported: { at: old, history: [{ at: old, who: 'lead', kind: 'message', text: 'prior' }] }, sent: [{ at: old, source: 'collin', text: 'excluded' }, { at, source: 'card', text: 'pressed' }], cards: [{ at, kind: 'needs', title: 'Notice', body: 'X'.repeat(21000) }, { at, kind: 'progress' }] };
+  const thread = { id, title: 'A title!', slug: 'plan', imported: { at: old, history: [{ at: old, who: 'lead', kind: 'message', text: 'prior' }] }, sent: [{ at: old, source: 'user', text: 'excluded' }, { at, source: 'card', text: 'pressed' }], cards: [{ at, kind: 'needs', title: 'Notice', body: 'X'.repeat(21000) }, { at, kind: 'progress' }] };
   let file = buildHandoffFile(thread, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/owner/repo' });
   assert.equal(file.history.length, 3); assert.equal(file.history[0].text, 'prior'); assert.equal(file.history[1].kind, 'press'); assert.match(file.history[2].text, /… \(cut\)$/); assert.ok(valid(file));
-  thread.sent = Array.from({ length: 2100 }, (_, i) => ({ at, source: 'collin', text: String(i) })); thread.cards = [];
+  thread.sent = Array.from({ length: 2100 }, (_, i) => ({ at, source: 'user', text: String(i) })); thread.cards = [];
   file = buildHandoffFile(thread, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/owner/repo' });
   assert.equal(file.history.length, 2000); assert.match(file.history[0].text, /102 earlier entries/); assert.ok(valid(file));
-  thread.sent = Array.from({ length: 600 }, () => ({ at, source: 'collin', text: '😀'.repeat(10000) }));
+  thread.sent = Array.from({ length: 600 }, () => ({ at, source: 'user', text: '😀'.repeat(10000) }));
   file = buildHandoffFile(thread, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/owner/repo' });
   assert.ok(Buffer.byteLength(JSON.stringify(file)) <= 10 * 1024 * 1024); assert.match(file.history[0].text, /earlier entries/); assert.ok(valid(file));
   assert.equal(handoffFileName('Hello, WORLD!'), 'hello-world.wheelchair.json'); assert.equal(handoffFileName('!!!'), 'thread.wheelchair.json'); assert.equal(handoffFileName('a'.repeat(120)), `${'a'.repeat(60)}.wheelchair.json`);
@@ -106,7 +106,7 @@ test('frozen threads refuse mutation entry points and never deliver queued work'
       const current = await hub.thread(made.id);
       current.cards.push({ id: 'real-question', kind: 'question', question: 'Ready?', options: [], answered: false, at });
       current.cards.push({ id: 'real-needs', kind: 'needs', title: 'Help', body: 'Help', answered: false, at });
-      current[field] = {}; current.sessions[0].queue = [{ text: 'waiting', source: 'collin', at }]; current.sessions[0].ready = true; current.sessions[0].turn_ended = true;
+      current[field] = {}; current.sessions[0].queue = [{ text: 'waiting', source: 'user', at }]; current.sessions[0].ready = true; current.sessions[0].turn_ended = true;
       await hub.save(current);
       const expected = field === 'handed_off' ? 'handed off' : 'Retry the unfinished import first';
       for (const [route, body] of [
@@ -379,4 +379,60 @@ test('chat holds the thread lock through assembly while status refresh remains o
   const mutation = hub.withThread(id, async () => { mutationRan = true; const thread = await hub.thread(id); thread.handed_off = { at, head: 'a'.repeat(40), stage: 'approved' }; await hub.save(thread); });
   await new Promise((resolve) => setImmediate(resolve)); assert.equal(mutationRan, false);
   release(); await Promise.all([reading, mutation]); assert.equal((await hub.thread(id)).handed_off.head, 'a'.repeat(40));
+});
+
+test('handoff versions translate v1 and enforce their history labels', () => {
+  const file = sample();
+  file.history = [{ at, who: 'user', kind: 'message', text: 'hello' }];
+  assert.equal(file.version, 3);
+  assert.equal(validateHandoffFile(JSON.stringify(file)).file.history[0].who, 'user');
+  const old = { format: 'wheelchair-handoff', version: 1, exported_at: at, thread: { id, title: 'Title', slug: 'plan' }, repository: 'github.com/owner/repo', branch: `wc/${id}`, head: 'a'.repeat(40), stage: 'approved', history: [{ at, who: 'collin', kind: 'message', text: 'hello' }] };
+  const v2 = { format: 'wheelchair-handoff', version: 2, exported_at: at, thread: { id, title: 'Title', slug: 'plan' }, repository: 'github.com/owner/repo', branch: `wc/${id}`, head: 'a'.repeat(40), stage: 'approved', history: [{ at, who: 'user', kind: 'message', text: 'hello' }] };
+  assert.equal(validateHandoffFile(JSON.stringify(v2)).ok, true);
+  const translated = validateHandoffFile(JSON.stringify(old));
+  assert.equal(translated.file.history[0].who, 'user');
+  for (const [version, who, what] of [[1, 'user', 'invalid history'], [2, 'collin', 'invalid history'], [4, 'user', 'unknown format or version']]) {
+    const bad = structuredClone(version === 1 ? old : v2); bad.version = version; bad.history[0].who = who;
+    assert.equal(validateHandoffFile(JSON.stringify(bad)).what, what);
+  }
+  const reexport = buildHandoffFile({ id, title: 'Title', slug: 'plan', imported: { at, history: translated.file.history }, sent: [], cards: [] }, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/owner/repo' });
+  assert.equal(reexport.version, 3); assert.equal(reexport.history[0].who, 'user');
+});
+
+test('v3 exports only this thread’s lessons in transferable scope', () => {
+  const lesson = { text: 'Remember', saved_by: 'agent', saved_at: '2026-01-01T00:00:00Z', thread: id };
+  const thread = { id, title: 'Title', slug: 'plan', project: '/source' };
+  const result = buildHandoffFile(thread, { head: 'a'.repeat(40), stage: 'approved', repository: 'github.com/owner/repo', lessons: {
+    worker: [lesson, { ...lesson, text: 'Scoped', project: '/source', provider: 'gpt' }, { ...lesson, project: '/else' }, { ...lesson, thread: 'other' }],
+  } });
+  assert.deepEqual(result.lessons, [
+    { role: 'worker', text: 'Remember', saved_by: 'agent', saved_at: lesson.saved_at },
+    { role: 'worker', text: 'Scoped', provider: 'gpt', project: true, saved_by: 'agent', saved_at: lesson.saved_at },
+  ]);
+  assert.equal(validateHandoffFile(JSON.stringify({ ...result, lessons: null })).what, 'invalid lessons');
+  assert.equal(validateHandoffFile(JSON.stringify({ ...result, lessons: [null] })).ok, true);
+  assert.equal(validateHandoffFile(JSON.stringify({ ...result, version: 2 })).what, 'invalid fields');
+  const { lessons, ...withoutLessons } = result;
+  assert.equal(validateHandoffFile(JSON.stringify(withoutLessons)).ok, true);
+});
+
+
+test('export download includes exactly the saved lessons for the thread', async () => {
+  const { hub } = await exportFixture();
+  const settings = require('../app/settings.js');
+  const base = { saved_by: 'agent', saved_at: at };
+  await settings.update(hub, (value) => { value.lessons.worker = [
+    { id: 'L000001', text: 'Thread lesson', thread: id, ...base },
+    { id: 'L000002', text: 'Other thread', thread: 'other', ...base },
+    { id: 'L000003', text: 'Project lesson', project: '/repo', ...base },
+    { id: 'L000004', text: 'Other project', project: '/other', ...base },
+    { id: 'L000005', text: 'Thread project', project: '/repo', thread: id, ...base },
+  ]; });
+  const result = await hub.exportThread(id);
+  const downloaded = await hub.handoffFile(id);
+  assert.deepEqual(JSON.parse(downloaded.bytes).lessons, [
+    { role: 'worker', text: 'Thread lesson', ...base },
+    { role: 'worker', text: 'Thread project', project: true, ...base },
+  ]);
+  assert.deepEqual(downloaded.bytes, result.bytes);
 });

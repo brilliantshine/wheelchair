@@ -12,6 +12,7 @@ const { makeTemp } = require('../../test-support/run-dir');
 const { State } = require('../app/state');
 const background = require('../app/background');
 const { normalize } = require('../pages/background-format');
+const settings = require('../app/settings');
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
 // Small structural containers exercise the server's bounded header checks, not pixel decoding.
@@ -20,6 +21,21 @@ const webp = Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAA
 const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAAh+QQBAAAAACwAAAAAAQABAAACAUQAOw==', 'base64');
 const infinite = Buffer.from('21ff0b4e45545343415045322e300301000000', 'hex');
 const headerEnd = 19;
+
+test('background normalization retains current harness, onboarding, lessons and merge preferences', () => {
+  const saved = settings.defaults();
+  saved.background = { image_id: 'a'.repeat(64), media_type: 'image/png', opacity: 79, revision: 4 };
+  saved.harnesses.openrouter = false;
+  saved.onboarding_done = true;
+  saved.auto_merge = 'on';
+  saved.auto_merge_delete_branch = 'on';
+  saved.user_name = 'Taylor';
+  const normalized = settings.normalize(saved);
+  for (const key of ['background', 'harnesses', 'onboarding_done', 'auto_merge', 'auto_merge_delete_branch', 'lessons', 'lesson_history', 'lesson_waiting', 'user_name']) {
+    assert.deepEqual(normalized[key], saved[key], key);
+  }
+});
+
 function api(ctx, route = '', options = {}) {
   const { method = 'GET', body, type, auth = true, origin = true } = options;
   const url = new URL(`${ctx.url}/api/settings/background${route}`);

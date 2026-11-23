@@ -6,12 +6,15 @@ const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
 const path = require('node:path');
+const { PROVIDERS } = require('./providers.js');
 
 const shown = new Set([
+  'lesson',
   'offer',
   'idea',
   'deferred',
   'question',
+  'reach',
   'approval',
   'progress',
   'needs',
@@ -19,15 +22,18 @@ const shown = new Set([
   'check',
   'diagram',
   'image',
+  'file',
   'stub',
   'sudo',
 ]);
 
 const roles = {
+  lesson: ['lead', 'sub-lead', 'worker', 'mapper'],
   offer: ['lead'],
   idea: ['lead'],
   deferred: ['lead'],
   question: ['lead'],
+  reach: ['lead'],
   approval: ['lead'],
   progress: ['lead', 'sub-lead'],
   needs: ['lead'],
@@ -35,6 +41,7 @@ const roles = {
   check: ['lead'],
   diagram: ['lead'],
   image: ['lead'],
+  file: ['lead'],
   stub: ['lead'],
   sudo: ['lead'],
   title: ['lead'],
@@ -45,6 +52,7 @@ const roles = {
 };
 
 const text = (value) => typeof value === 'string' && value.trim().length > 0;
+const line = (value) => text(value) && !/[\n\r]/.test(value);
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const array = (value, check, minimum = 0) => (
   Array.isArray(value) && value.length >= minimum && value.every(check)
@@ -73,6 +81,15 @@ const sudoMachineFields = {
 };
 
 const fields = {
+  lesson: {
+    action: (v) => ['add', 'replace', 'remove'].includes(v),
+    for: (v) => ['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper'].includes(v),
+    why: (v) => line(v) && !/[\v\f\u0085\u2028\u2029]/.test(v),
+    text: (v) => v === undefined || (line(v) && v.length <= 300 && !/[\v\f\u0085\u2028\u2029]/.test(v)),
+    lesson: (v) => v === undefined || (typeof v === 'string' && /^L[0-9a-f]{6}$/.test(v)),
+    only_ai: (v) => v === undefined || v === 'any' || (typeof v === 'string' && Object.hasOwn(PROVIDERS, v)),
+    only_project: (v) => v === undefined || typeof v === 'boolean',
+  },
   offer: { summary: text },
   idea: {
     bullets: (value) => array(value, (item) => object(item) && text(item.id) && text(item.text), 1),
@@ -86,6 +103,7 @@ const fields = {
   },
   question: {
     fits: text,
+    about_thread: (value) => value === undefined || (typeof value === 'string' && /^[0-9a-f]{12}$/.test(value)),
     question: text,
     options: (value) => (
       array(value, (item) => (
@@ -98,6 +116,7 @@ const fields = {
     passes_on: (value) => value === undefined || text(value),
     doc: (value) => value === undefined || ['MAP.md', 'IDEA.md', 'PLAN.md'].includes(value),
   },
+  reach: { thread: text, why: line },
   approval: {
     objections: (value) => array(value, (item) => (
       object(item)
@@ -131,6 +150,7 @@ const fields = {
     pr_url: text,
     head: (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value),
     note: (value) => value === undefined || text(value),
+    verified: (value) => value === undefined || typeof value === 'boolean',
   },
   check: {
     head: (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value),
@@ -146,11 +166,14 @@ const fields = {
   },
   diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html'].includes(value) },
   image: { path: (value) => text(value) && path.isAbsolute(value), title: text },
+  file: { path: (value) => text(value) && path.isAbsolute(value), title: text },
   stub: {
     title: text,
     summary: text,
     depends_on_parent: (value) => typeof value === 'boolean',
     commits: (value) => value === undefined || array(value, text),
+    adds_to: (value) => value === undefined || (typeof value === 'string' && /^[0-9a-f]{12}$/.test(value)),
+    duplicate: (value) => value === undefined || typeof value === 'boolean',
   },
   sudo: sudoFields,
   title: { title: text },
@@ -166,6 +189,8 @@ const fields = {
   },
 };
 
+const fileMachineFields = { ...fields.file, name: text, size: (value) => Number.isSafeInteger(value) && value >= 0 };
+
 const approvalMachineFields = {
   ...fields.approval,
   warnings: (value) => value === undefined || (array(value, text, 1) && value.length <= 10),
@@ -178,7 +203,8 @@ function validate(kind, card, role, options = {}) {
   if (card.kind !== undefined && card.kind !== kind) {
     return { ok: false, reason: 'kind must equal the command-line kind' };
   }
-  const spec = options.machine && kind === 'sudo' ? sudoMachineFields
+  const spec = options.machine && kind === 'file' ? fileMachineFields
+    : options.machine && kind === 'sudo' ? sudoMachineFields
     : options.machine && kind === 'approval' ? approvalMachineFields : fields[kind];
   const allowed = new Set([...Object.keys(spec), 'kind']);
   for (const key of Object.keys(card)) {
@@ -187,6 +213,9 @@ function validate(kind, card, role, options = {}) {
   for (const [key, check] of Object.entries(spec)) {
     if (!check(card[key])) return { ok: false, reason: `invalid or missing field: ${key}` };
   }
+  if (kind === 'stub' && card.duplicate !== undefined && card.adds_to === undefined) return { ok: false, reason: 'duplicate requires adds_to' };
+  if (kind === 'stub' && card.adds_to !== undefined && (card.depends_on_parent || card.commits !== undefined)) return { ok: false, reason: "an addition can't depend on this thread's unmerged work; post your own stub" };
+  if (kind === 'lesson' && ((card.action !== 'remove' && card.text === undefined) || (card.action !== 'add' && card.lesson === undefined) || (card.action === 'add' && card.lesson !== undefined) || (card.action === 'remove' && (card.text !== undefined || card.only_ai !== undefined || card.only_project !== undefined)))) return { ok: false, reason: 'invalid fields for lesson action' };
   if (kind === 'question' && !card.options.some((option) => option.id === card.leaning)) {
     return { ok: false, reason: 'leaning must name an option' };
   }
@@ -224,13 +253,17 @@ function validate(kind, card, role, options = {}) {
 // Which card a resolve may close: an open needs card a lead posted in this thread, or, for a
 // lead, an open question. The hub's own needs cards (system) close themselves or have their
 // own button.
+function blockingNeeds(thread, cardId) {
+  return (thread.sessions || []).some((session) => session.live && session.needs_card === cardId && session.needs_open);
+}
+
 function resolvable(thread, cardId, mode) {
   const target = (thread.cards || []).find((item) => item.id === cardId && !item.replaced);
   if (!target) return { ok: false, reason: 'no such card in this thread' };
   if (target.kind !== 'needs' && !(mode === 'lead' && target.kind === 'question')) {
     return { ok: false, reason: mode === 'lead' ? 'only a needs or question card can be resolved' : 'only a needs card can be resolved' };
   }
-  if (target.kind === 'needs' && target.system) return { ok: false, reason: 'a system needs card closes itself' };
+  if (target.kind === 'needs' && target.system && !(target.auto_merge === true && mode !== 'lead')) return { ok: false, reason: 'a system needs card closes itself' };
   if (target.answered) return { ok: false, reason: 'card is already answered' };
   return { ok: true, card: target };
 }
@@ -238,8 +271,8 @@ function resolvable(thread, cardId, mode) {
 function retractable(thread, cardId) {
   const target = (thread.cards || []).find((item) => item.id === cardId && !item.replaced);
   if (!target) return { ok: false, reason: 'no such card in this thread' };
-  if (!['question', 'offer', 'approval', 'needs', 'sudo', 'deferred'].includes(target.kind)) {
-    return { ok: false, reason: 'only a question, offer, approval, needs, sudo or deferred card can be retracted' };
+  if (!['question', 'offer', 'approval', 'needs', 'sudo', 'deferred', 'reach'].includes(target.kind)) {
+    return { ok: false, reason: 'only a question, offer, approval, needs, sudo, deferred or reach card can be retracted' };
   }
   if (target.kind === 'needs' && target.system) return { ok: false, reason: 'a system needs card closes itself' };
   if (target.kind !== 'sudo' && target.answered) return { ok: false, reason: 'card is already answered' };
@@ -292,6 +325,13 @@ async function main(argv) {
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`machine refused card (${result.status}): ${result.body}`);
   }
+  const body = JSON.parse(result.body);
+  const receipt = ['title', 'resolve', 'retract'].includes(kind) ? { ok: true } : { id: body.id, kind };
+  // A lesson's receipt names the lesson, including a repeat the hub saved earlier (no new card id then).
+  if (kind === 'lesson' && typeof body.lesson === 'string') receipt.lesson = body.lesson;
+  if (body.spooled === true) receipt.queued = true;
+  if (body.held === true) receipt.held = true;
+  process.stdout.write(`${JSON.stringify(receipt)}\n`);
 }
 
 if (require.main === module) {
@@ -301,4 +341,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fields, resolvable, retractable, roles, shown, truncateTitle, validate };
+module.exports = { blockingNeeds, fields, resolvable, retractable, roles, shown, truncateTitle, validate };

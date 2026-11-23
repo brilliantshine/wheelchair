@@ -5,17 +5,18 @@
 // copy of its own beyond the unsaved editor drafts.
 (() => {
   const API = '/wheelchair/api';
-  const SECTIONS = [['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools'], ['background', 'Background Customization']];
+  const SECTIONS = [['harnesses', 'Harnesses'], ['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools'], ['background', 'Background Customization']];
   const TIERS = [
     ['light', 'Light', 'Spelled-out changes, few files'],
     ['standard', 'Standard', 'Most building'],
     ['heavy', 'Heavy', 'Leading, planning, review, checking'],
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
-  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI']];
-  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'] };
+  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI'], ['openrouter', 'OpenRouter', 'Pi']];
+  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'], openrouter: ['low', 'medium', 'high', 'xhigh', 'max'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
   const KIMI_MODEL_VALUE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/;
+  const OPENROUTER_MODEL_VALUE = /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/;
   const NONE = '__none';
   const OTHER = '__other';
   const ROLES = [
@@ -35,6 +36,8 @@
   let selected = null; // a template id, or 'new'
   let draft = null;
   let confirming = false;
+  let lessonEdit = null; // the open Lessons learned editor: { role, texts, removals, confirming }
+  let lessonThreads = null; // thread id -> title, read when a Lessons editor opens
   let fullPrompt = null; // {text} | {error}
   let styleDraft = null;
   let preview = { running: false, after: null, error: '' };
@@ -42,6 +45,7 @@
   let diagram = null; // GET /settings/diagram-sensitivity, or null until read for this visit
   let diagramLoading = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
+  let nameDraft = null; // the typed Your name, kept across re-renders until saved
   // Lead name saves, kept across re-renders: they run one after another in the order made,
   // `choice` is the list last picked in the dropdown, which a save's answer never undoes, and
   // `reads` counts file picks so only the newest file is saved.
@@ -210,8 +214,8 @@
       const row = h('div', { class: 'other' }, input, use);
       const go = () => {
         const value = input.value.trim();
-        if (!(provider === 'kimi' ? KIMI_MODEL_VALUE : MODEL_VALUE).test(value)) {
-          inlineErr(wrap, 'Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.');
+        if (!(provider === 'openrouter' ? OPENROUTER_MODEL_VALUE : provider === 'kimi' ? KIMI_MODEL_VALUE : MODEL_VALUE).test(value)) {
+          inlineErr(wrap, provider === 'openrouter' ? 'Use vendor/model with an optional :variant, up to 128 lowercase letters, digits, dots, dashes and underscores.' : 'Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.');
           return;
         }
         commit(value, effort);
@@ -391,6 +395,30 @@
     showLeadNames();
   }
 
+  // Enter to send in a thread's message box. Saved in this browser only, so a phone and a
+  // computer can differ; unset, it is on unless the device is touch-first (thread.js reads it).
+  function enterSendsNow() {
+    let v = null; try { v = localStorage.getItem('enter-sends'); } catch (e) { /* default below */ }
+    if (v === '1' || v === '0') return v === '1';
+    return !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+  function enterRow() {
+    const on = enterSendsNow();
+    const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': 'Enter to send' },
+      [[true, 'On'], [false, 'Off']].map(([value, text]) => h('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(on === value), text,
+        onclick: () => {
+          if (on === value) return;
+          try { localStorage.setItem('enter-sends', value ? '1' : '0'); } catch (e) { setNote('This browser would not save it', true); return; }
+          renderPanel();
+          setNote('Saved for this browser', false);
+        },
+      })));
+    return h('div', { class: 'row-line' },
+      h('div', { class: 'what' }, h('span', { text: 'Enter to send' }), h('span', { class: 'hint', text: (on ? 'Enter sends a message; Shift+Enter starts a new line.' : 'Enter starts a new line; send with the button.') + ' Applies to this browser only.' })),
+      group);
+  }
+
   // The Default project folder: typed, then saved with the button. A refusal shows under the
   // input and the typed value stays.
   function folderRow() {
@@ -420,6 +448,34 @@
       host);
   }
 
+  // Your name: typed, then saved with the button. Blank means agents say "the user".
+  function nameRow() {
+    const saved = data.user_name || '';
+    const input = h('input', { type: 'text', id: 'user-name', 'aria-label': 'Your name', placeholder: 'the user', autocomplete: 'off', maxLength: 80, value: nameDraft === null ? saved : nameDraft });
+    const save = h('button', { type: 'button', text: 'Save' });
+    const status = h('p', { class: 'note', role: 'status' });
+    const host = h('div', { class: 'ctl wide' }, h('div', { class: 'folder' }, input, save), status);
+    input.addEventListener('input', () => { nameDraft = input.value; status.textContent = ''; inlineErr(host, ''); });
+    const go = async () => {
+      save.disabled = true;
+      inlineErr(host, '');
+      status.textContent = '';
+      try {
+        const res = await api('/settings/preferences', { method: 'PUT', body: { user_name: input.value.trim() } });
+        data.user_name = res.user_name || '';
+        nameDraft = null;
+        input.value = data.user_name;
+        status.textContent = 'Saved';
+      } catch (e) { inlineErr(host, e.message); }
+      save.disabled = false;
+    };
+    save.addEventListener('click', go);
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
+    return h('div', { class: 'row-line' },
+      h('div', { class: 'what' }, h('span', { text: 'Your name' }), h('span', { class: 'hint', text: 'Agents call you by it. Blank means they say "the user". Agents started after you save use it.' })),
+      host);
+  }
+
   function renderModels() {
     const items = (data.heads_up || []).slice();
     if (data.models.malformed && !items.some((i) => i.kind === 'malformed')) items.unshift({ kind: 'malformed' });
@@ -428,8 +484,8 @@
 
     const head = h('tr', {}, h('th', { scope: 'col', text: 'Provider' }),
       TIERS.map(([, label, desc]) => h('th', { scope: 'col' }, h('span', { class: 'tier-name', text: label }), h('span', { class: 'tier-desc', text: desc }))));
-    const body = PROVIDERS.map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
-      h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli })),
+    const body = PROVIDERS.filter(([provider]) => harnessOn(provider)).map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
+      h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli }), provider === 'openrouter' && h('span', { class: 'hint', text: 'Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.' })),
       TIERS.map(([slot, label]) => {
         const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
         if (provider === 'gpt') for (const item of tierItems(slot)) td.append(headsUpLine(item));
@@ -438,7 +494,7 @@
     const table = h('table', { class: 'tiers' }, h('thead', {}, head), h('tbody', {}, body));
 
     // One segmented choice per CLI; each saves its own key through the preferences route.
-    const modeGroup = (key, label, choices) => {
+    const modeGroup = (key, label, choices, saved = SAVED) => {
       const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
         choices.map(([value, text]) => h('button', {
           type: 'button', role: 'radio', 'aria-checked': String(data[key] === value), text,
@@ -450,7 +506,7 @@
               data[key] = res[key];
               inlineErr(row, '');
               renderPanel();
-              setNote(SAVED, false);
+              setNote(saved, false);
             } catch (e) { inlineErr(row, e.message); setNote('', false); }
           },
         })));
@@ -485,6 +541,7 @@
     const asideHint = data.aside_access === 'full'
       ? 'Never asks, no sandbox: an aside can read anywhere, run commands and change files.'
       : 'Reads files in the thread\'s worktree only. Runs no commands.';
+    const AUTO_MERGE_HINT = 'When on, a thread merges its own pull request once an agent has seen at least one Check it yourself step work and none broke. A thread where you chose to push something that failed its check, or a thread handed over from another machine, is never merged automatically. It applies to pull requests checked after it is turned on. It never merges past failing checks, conflicts or GitHub\'s rules.';
     const codexHint = data.codex_mode === 'unrestricted'
       ? 'Never asks, no sandbox: it can change anything on the machine. Reviewers stay read-only.'
       : 'Never asks: it can write only inside its worktree.';
@@ -534,7 +591,15 @@
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
-          folderRow())),
+          h('div', { class: 'row-line' },
+            h('div', { class: 'what' }, h('span', { text: 'Merge pull requests when done' }), h('span', { class: 'hint', text: AUTO_MERGE_HINT })),
+            modeGroup('auto_merge', 'Merge pull requests when done', [['off', 'Off'], ['on', 'On']], 'Saved')),
+          data.auto_merge === 'on' ? h('div', { class: 'row-line' },
+            h('div', { class: 'what' }, h('span', { text: 'Delete the branch after merging' }), h('span', { class: 'hint', text: 'When a thread merges its own pull request, it also deletes that branch on GitHub. The thread keeps its own copy on this machine.' })),
+            modeGroup('auto_merge_delete_branch', 'Delete the branch after merging', [['off', 'Off'], ['on', 'On']], 'Saved')) : null,
+          enterRow(),
+          folderRow(),
+          nameRow())),
       h('section', { 'aria-labelledby': 'diagrams' },
         h('h2', { id: 'diagrams', text: 'Diagrams' }),
         h('div', { class: 'box', id: 'diagram-choices' })),
@@ -542,8 +607,8 @@
         h('h2', { id: 'others', text: 'Other agents' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
-            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code']])),
+            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
+            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']].filter(([v]) => v === 'both' || harnessOn(v)))),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
@@ -568,6 +633,7 @@
     selected = id;
     confirming = false;
     fullPrompt = null;
+    if (isLessons(id)) { lessonEdit = { role: id.slice(8), texts: {}, removals: new Set(), confirming: null, history: new Set() }; draft = null; loadLessonThreads(); return; }
     const found = data.templates.find((t) => t.id === id);
     draft = found ? structuredClone(found) : blankDraft();
     if (found && !draft.switches) draft.switches = {};
@@ -650,7 +716,7 @@
     if (fullPrompt.error) return h('p', { id: 'full-prompt', class: 'inline-err', role: 'alert', text: fullPrompt.error });
     return h('div', { class: 'full-prompt-wrap' },
       h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text }),
-      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it.' }));
+      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it. Lessons marked for one AI or one project reach only agents on that AI or in that project.' }));
   }
 
   function switchRow(title, hint, control) {
@@ -771,16 +837,308 @@
       errHost);
   }
 
+  // ---------------------------------------------------------------- Lessons learned (written by agents)
+
+  const LESSON_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers' };
+  const isLessons = (id) => typeof id === 'string' && id.startsWith('lessons:');
+  const lessonList = (role) => (data.lessons && data.lessons[role]) || [];
+
+  async function loadLessonThreads() {
+    try {
+      const res = await api('/threads?view=list');
+      lessonThreads = Object.fromEntries((res.threads || []).map((t) => [t.id, t.title || t.slug || String(t.project || '').split('/').filter(Boolean).pop() || t.id]));
+      if (lessonEdit && section === 'templates') renderPanel();
+    } catch { lessonThreads = lessonThreads || {}; }
+  }
+
+  function lessonMarkers(item) {
+    const marks = [];
+    if (item.provider) marks.push('only on ' + ((PROVIDERS.find((p) => p[0] === item.provider) || [])[1] || item.provider));
+    if (item.project) marks.push('only in ' + (item.project.split('/').filter(Boolean).pop() || item.project));
+    if (item.saved_by === 'user') marks.push('edited by the user');
+    return marks;
+  }
+
+  async function saveLessons(errHost) {
+    const role = lessonEdit.role;
+    const list = lessonList(role);
+    const edits = [];
+    for (const item of list) {
+      if (lessonEdit.removals.has(item.id)) continue;
+      const text = lessonEdit.texts[item.id];
+      if (text === undefined || text === item.text) continue;
+      if (!text.length || text.length > 300) { inlineErr(errHost, 'A lesson needs 1 to 300 characters.'); return; }
+      edits.push({ id: item.id, text });
+    }
+    const removals = [...lessonEdit.removals];
+    lessonEdit.saving = true;
+    setLessonsBusy(true);
+    try {
+      await api('/settings/lessons/' + encodeURIComponent(role), { method: 'PUT', body: { edits, removals } });
+      await reload(false);
+      lessonEdit = { role, texts: {}, removals: new Set(), confirming: null, history: lessonEdit.history };
+      setNote(SAVED, false);
+      renderPanel();
+    } catch (e) {
+      lessonEdit.saving = false;
+      setLessonsBusy(false);
+      inlineErr(errHost, e.message);
+    }
+  }
+
+  // While a save is in flight nothing can be typed, so no edit is lost.
+  function setLessonsBusy(busy) {
+    document.querySelectorAll('.lessons-edit .lesson-text, .lessons-edit .lesson-row button, #save-lessons').forEach((n) => {
+      const row = n.closest('.lesson-row');
+      n.disabled = busy || (n.matches('.lesson-text') && !!row && lessonEdit.removals.has(row.dataset.id));
+    });
+    // Idle again: the buttons the renderer disables by a rule get that rule back.
+    if (!busy) { refreshRestore(); refreshAdd(); }
+  }
+
+  const STALE_MS = 90 * 24 * 3600 * 1000;
+  const lessonStaleSince = (item) => Math.max(Date.parse(item.saved_at) || 0, Date.parse(item.kept_at) || 0);
+  const lessonStale = (item) => Date.now() - lessonStaleSince(item) >= STALE_MS;
+  const shortDate = (iso) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : ''; };
+  const lessonHistory = (role) => Object.entries(data.lesson_history || {}).filter(([, e]) => e.role === role);
+  const lessonRemoved = (role) => lessonHistory(role).filter(([, e]) => e.removed && e.versions.length).sort((a, b) => Date.parse(b[1].removed.at) - Date.parse(a[1].removed.at));
+  const lessonWaiting = (role) => (data.lesson_waiting || []).filter((w) => w.role === role);
+  const lessonFull = (role) => lessonList(role).length >= 12;
+  const lessonDirty = () => !!lessonEdit && (lessonEdit.removals.size > 0 || lessonList(lessonEdit.role).some((item) => lessonEdit.texts[item.id] !== undefined && lessonEdit.texts[item.id] !== item.text));
+
+  // Every lessons route answers { lessons, history, waiting } for the role; take them in as they are.
+  function applyLessonReply(role, res) {
+    data.lessons = { ...(data.lessons || {}), [role]: res.lessons || [] };
+    data.lesson_history = Object.fromEntries([...Object.entries(data.lesson_history || {}).filter(([, e]) => e.role !== role), ...Object.entries(res.history || {})]);
+    data.lesson_waiting = [...(data.lesson_waiting || []).filter((w) => w.role !== role), ...(res.waiting || [])];
+  }
+
+  async function lessonAction(route, body, errHost) {
+    const role = lessonEdit.role;
+    inlineErr(errHost, '');
+    const before = Object.fromEntries(lessonList(role).map((i) => [i.id, i.text]));
+    try {
+      const res = await api('/settings/lessons/' + encodeURIComponent(role) + '/' + route, { method: 'POST', body });
+      applyLessonReply(role, res);
+      const lost = keepLessonEdits(before);
+      if (lost.length) {
+        setNote('', false);
+        renderPanel();
+        showLessonLost(lost);
+        return;
+      }
+      setNote(res.result === 'already' ? 'Already in your lessons' : SAVED, false);
+      renderPanel();
+    } catch (e) {
+      if (e.status === 409) {
+        await reload(false);
+        const lost = keepLessonEdits(before);
+        renderPanel();
+        if (showLessonLost(lost, [e.message])) return;
+      }
+      inlineErr(errHost, e.message);
+    }
+  }
+
+  // After a server reply, keep unsaved text (differing from what was shown before) and pending removals for lessons that still exist.
+  // Returns the typed texts dropped because their lesson is gone.
+  const lostSentences = (lost) => lost.map((t) => `An agent removed a lesson you were editing. Your unsaved text was: \u201c${t}\u201d`).join('\n');
+  // Show dropped drafts (and any extra lines) in the re-rendered editor's error host; false when nothing was shown.
+  function showLessonLost(lost, extra = []) {
+    const host = document.querySelector('.lessons-edit .lesson-err');
+    if (!host || (!lost.length && !extra.length)) return false;
+    inlineErr(host, [...lostSentences(lost).split('\n').filter(Boolean), ...extra].join('\n'));
+    host.querySelector('.inline-err').style.whiteSpace = 'pre-line';
+    return true;
+  }
+  const shownLessonTexts = () => lessonEdit ? Object.fromEntries(lessonList(lessonEdit.role).map((i) => [i.id, i.text])) : null;
+  function keepLessonEdits(before) {
+    const ids = new Set(lessonList(lessonEdit.role).map((i) => i.id));
+    const lost = Object.entries(lessonEdit.texts).filter(([id, t]) => !ids.has(id) && t !== before[id] && typeof t === 'string' && t !== '').map(([, t]) => t);
+    lessonEdit.texts = Object.fromEntries(Object.entries(lessonEdit.texts).filter(([id, t]) => ids.has(id) && t !== before[id]));
+    lessonEdit.removals = new Set([...lessonEdit.removals].filter((id) => ids.has(id)));
+    return lost;
+  }
+
+  // Restore waits for the editor to be saved or undone; typing must not re-render, so toggle in place.
+  function refreshRestore() {
+    const dirty = lessonDirty();
+    document.querySelectorAll('.lessons-edit .restore-lesson').forEach((b) => { b.disabled = dirty || !!lessonEdit.saving; });
+    const hint = document.getElementById('restore-hint');
+    if (hint) hint.hidden = !(dirty && document.querySelector('.lessons-edit .restore-lesson'));
+  }
+
+  // Add waits for room in a full role; same rule the waiting section renders with.
+  function refreshAdd() {
+    const full = lessonFull(lessonEdit.role);
+    document.querySelectorAll('.lessons-edit .add-waiting').forEach((b) => { b.disabled = full || !!lessonEdit.saving; b.title = full ? 'Remove one first' : ''; });
+  }
+
+  function versionRows(id, entry, errHost, dirty) {
+    const open = lessonEdit.history && lessonEdit.history.has(id);
+    if (!open) return null;
+    return h('ul', { class: 'lesson-versions' }, [...entry.versions].reverse().map((v) => h('li', { class: 'lesson-version', 'data-vid': v.vid },
+      h('p', { class: 'lesson-version-text', text: v.text }),
+      h('div', { class: 'lesson-foot' },
+        h('span', { class: 'lesson-marks' },
+          lessonMarkers({ ...v, saved_by: 'agent' }).map((m) => h('span', { class: 'lesson-mark', text: m })),
+          h('span', { class: 'lesson-mark', text: `replaced by ${v.changed_by === 'user' ? 'you' : 'an agent'} ${shortDate(v.changed_at)}` })),
+        h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: v.vid }, errHost) })))));
+  }
+
+  function historyToggle(id, n) {
+    if (!n) return null;
+    const open = lessonEdit.history && lessonEdit.history.has(id);
+    return h('button', { type: 'button', class: 'history-toggle', 'aria-expanded': String(!!open), text: `History (${n})`, onclick: () => {
+      lessonEdit.history = lessonEdit.history || new Set();
+      if (open) lessonEdit.history.delete(id); else lessonEdit.history.add(id);
+      renderPanel();
+    } });
+  }
+
+  function renderRemoved(role, errHost, dirty) {
+    const removed = lessonRemoved(role);
+    if (!removed.length) return null;
+    return h('section', { class: 'lesson-removed' },
+      h('h3', { text: 'Removed' }),
+      h('ul', { class: 'lesson-rows' }, removed.map(([id, entry]) => {
+        const last = entry.versions[entry.versions.length - 1];
+        return h('li', { class: 'lesson-row removed-row', 'data-id': id },
+          h('p', { class: 'lesson-version-text', text: last.text }),
+          h('div', { class: 'lesson-foot' },
+            h('span', { class: 'lesson-marks' },
+              lessonMarkers({ ...last, saved_by: 'agent' }).map((m) => h('span', { class: 'lesson-mark', text: m })),
+              h('span', { class: 'lesson-mark', text: `removed by ${entry.removed.by === 'user' ? 'you' : 'an agent'} ${shortDate(entry.removed.at)}` })),
+            h('span', { class: 'lesson-buttons' },
+              historyToggle(id, entry.versions.length),
+              h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: last.vid }, errHost) }))),
+          versionRows(id, entry, errHost, dirty));
+      })));
+  }
+
+  function renderWaiting(role, errHost) {
+    const waiting = lessonWaiting(role);
+    if (!waiting.length) return null;
+    const full = lessonFull(role);
+    return h('section', { class: 'lesson-waiting' },
+      h('h3', { text: 'Waiting to add' }),
+      full ? h('p', { class: 'hint', text: 'Remove one first' }) : null,
+      h('ul', { class: 'lesson-rows' }, waiting.map((w) => h('li', { class: 'lesson-row waiting-row', 'data-wid': w.wid },
+        h('p', { class: 'lesson-version-text', text: w.text }),
+        h('div', { class: 'lesson-foot' },
+          h('span', { class: 'lesson-marks' },
+            lessonMarkers({ ...w, saved_by: 'agent' }).map((m) => h('span', { class: 'lesson-mark', text: m })),
+            h('span', { class: 'lesson-mark', text: w.source === 'handoff' ? 'from a handoff' : 'from a file' })),
+          h('span', { class: 'lesson-buttons' },
+            h('button', { type: 'button', class: 'add-waiting', text: 'Add', title: full ? 'Remove one first' : '', disabled: full || !!lessonEdit.saving, onclick: () => lessonAction('waiting', { wid: w.wid, action: 'add' }, errHost) }),
+            h('button', { type: 'button', class: 'discard-waiting', text: 'Discard', disabled: !!lessonEdit.saving, onclick: () => lessonAction('waiting', { wid: w.wid, action: 'discard' }, errHost) })))))));
+  }
+
+  async function exportLessons() {
+    try {
+      const res = await fetch(API + '/settings/lessons/export');
+      if (!res.ok) throw new Error('Could not export the lessons.');
+      const url = URL.createObjectURL(await res.blob());
+      const a = h('a', { href: url, download: 'wheelchair-lessons.json' });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setNote(e.message, true); }
+  }
+
+  async function importLessons(file) {
+    let lost = [];
+    try {
+      let res;
+      try { res = await fetch(API + '/settings/lessons/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: await file.arrayBuffer() }); } catch { throw new Error('Could not reach the hub.'); }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || body.error || body.message || ('http ' + res.status));
+      let text = `Added ${body.added}, skipped ${body.skipped} already here or removed or changed here, ${body.waiting} waiting for room`;
+      if (body.invalid > 0) text += `, ${body.invalid} unreadable`;
+      if (body.unknown_project > 0) text += `, ${body.unknown_project} for projects not on this machine (add the project, then import the file again)`;
+      const before = shownLessonTexts();
+      await reload(false);
+      setNote(text, false);
+      lost = before ? keepLessonEdits(before) : [];
+    } catch (e) { setNote(e.message, true); }
+    renderPanel();
+    showLessonLost(lost);
+  }
+
+  function lessonsTools() {
+    const input = h('input', { type: 'file', id: 'import-lessons-file', accept: '.json,application/json', hidden: true });
+    input.addEventListener('change', () => { const f = input.files && input.files[0]; input.value = ''; if (f) importLessons(f); });
+    return h('div', { class: 'lessons-tools' },
+      h('button', { type: 'button', id: 'export-lessons', text: 'Export lessons', onclick: exportLessons }),
+      h('button', { type: 'button', id: 'import-lessons', text: 'Import lessons', onclick: () => input.click() }),
+      input);
+  }
+
+  function renderLessonEditor() {
+    const role = lessonEdit.role;
+    const plural = LESSON_PLURAL[role] || role + 's';
+    const list = lessonList(role);
+    const errHost = h('div', { class: 'lesson-err' });
+    const dirty = lessonDirty();
+    const rows = list.map((item) => {
+      const entry = (data.lesson_history || {})[item.id];
+      const removed = lessonEdit.removals.has(item.id);
+      const value = lessonEdit.texts[item.id] !== undefined ? lessonEdit.texts[item.id] : item.text;
+      const field = h('textarea', { class: 'lesson-text', rows: 2, maxLength: 300, value, disabled: removed || !!lessonEdit.saving, 'aria-label': 'Lesson text' });
+      field.addEventListener('input', () => { lessonEdit.texts[item.id] = field.value; refreshRestore(); });
+      const marks = lessonMarkers(item);
+      const title = item.thread && lessonThreads && lessonThreads[item.thread];
+      let remove;
+      if (removed) remove = h('button', { type: 'button', class: 'undo-remove', text: 'Undo', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.delete(item.id); renderPanel(); } });
+      else if (lessonEdit.confirming === item.id) remove = h('button', { type: 'button', class: 'danger confirm-remove', text: 'Really remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.add(item.id); lessonEdit.confirming = null; renderPanel(); } });
+      else remove = h('button', { type: 'button', class: 'danger remove-lesson', text: 'Remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.confirming = item.id; renderPanel(); } });
+      return h('li', { class: 'lesson-row' + (removed ? ' removed' : ''), 'data-id': item.id },
+        field,
+        h('div', { class: 'lesson-foot' },
+          h('span', { class: 'lesson-marks' },
+            marks.map((m) => h('span', { class: 'lesson-mark', text: m })),
+            title ? h('a', { class: 'lesson-from', href: '/wheelchair/app/thread?id=' + encodeURIComponent(item.thread), text: 'saved from ' + title }) : null,
+            removed ? h('span', { class: 'lesson-mark', text: 'will be removed when you save' }) : null),
+          h('span', { class: 'lesson-buttons' }, entry ? historyToggle(item.id, entry.versions.length) : null, remove)),
+        lessonStale(item) ? h('div', { class: 'lesson-stale' },
+          h('span', { class: 'lesson-mark', text: 'Possibly out of date: not changed or kept since ' + shortDate(new Date(lessonStaleSince(item)).toISOString()) }),
+          h('button', { type: 'button', class: 'keep-lesson', text: 'Keep', disabled: !!lessonEdit.saving, onclick: () => lessonAction('keep', { id: item.id }, errHost) })) : null,
+        entry ? versionRows(item.id, entry, errHost, dirty) : null);
+    });
+    return h('div', { class: 'tpl-edit lessons-edit' },
+      noteEl(),
+      h('h2', { text: 'Lessons learned · ' + (roleInfo(role)[1]) }),
+      h('p', { class: 'hint lesson-warning', text: 'Agents keep this list up to date. Editing is not recommended; a lesson you edit is marked as yours and agents leave it alone.' }),
+      list.length ? h('ul', { class: 'lesson-rows' }, rows) : h('p', { class: 'empty-note', text: `No lessons for ${plural} right now.` }),
+      list.length ? h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'primary', id: 'save-lessons', text: 'Save', disabled: !!lessonEdit.saving, onclick: () => saveLessons(errHost) }),
+        h('span', { class: 'grow', id: 'using', text: `Changes apply to ${plural} started after you save.` })) : h('p', { class: 'hint', id: 'using', text: `Changes apply to ${plural} started after you save.` }),
+      h('p', { class: 'hint', id: 'restore-hint', hidden: !(dirty && (list.some((i) => (data.lesson_history || {})[i.id]) || lessonRemoved(role).length)), text: 'Save or undo your changes first' }),
+      renderRemoved(role, errHost, dirty),
+      renderWaiting(role, errHost),
+      errHost);
+  }
+
   function renderTemplates() {
     if (selected === null) select(data.templates[0] ? data.templates[0].id : 'new');
     const list = h('nav', { class: 'tpl-list', 'aria-label': 'Templates' },
       h('h1', { text: 'Behavior templates' }),
       h('p', { class: 'hint', text: "How each kind of agent works, on top of wheelchair's own rules." }),
-      h('button', { type: 'button', class: 'new', id: 'new-template', text: '+ New template', onclick: () => { select('new'); renderPanel(); } }));
+      h('button', { type: 'button', class: 'new', id: 'new-template', text: '+ New template', onclick: () => { select('new'); renderPanel(); } }),
+      lessonsTools());
     for (const [role, label] of ROLES) {
       const items = data.templates.filter((t) => t.role === role);
-      if (!items.length) continue;
+      const lessons = lessonList(role);
+      const waitingN = lessonWaiting(role).length;
+      if (!items.length && !lessons.length && !lessonRemoved(role).length && !waitingN) continue;
       list.append(h('span', { class: 'group-label', text: label }));
+      if (lessons.length || lessonRemoved(role).length || waitingN) {
+        const staleN = lessons.filter(lessonStale).length;
+        const id = 'lessons:' + role;
+        list.append(h('button', {
+          type: 'button', class: 'tpl-item tpl-lessons', 'data-lessons': role, 'aria-current': String(selected === id),
+          onclick: () => { select(id); renderPanel(); },
+        }, h('span', { class: 'nm', text: 'Lessons learned' }), h('span', { class: 'tag agent-tag', text: 'Written by agents · ' + lessons.length + (staleN ? ` · ${staleN} may be out of date` : '') + (waitingN ? ` · ${waitingN} waiting to add` : '') })));
+      }
       for (const t of items) {
         const tags = [];
         if (t.in_use) tags.push(t.scope === 'all' ? 'in use' : 'in use here');
@@ -791,7 +1149,7 @@
         }, h('span', { class: 'nm', text: t.name }), h('span', { class: 'tag', text: tags.join(' · ') })));
       }
     }
-    return h('div', { class: 'tpl' }, list, draft ? renderEditor() : h('p', { class: 'empty-note', text: 'No templates yet.' }));
+    return h('div', { class: 'tpl' }, list, lessonEdit && isLessons(selected) ? renderLessonEditor() : draft ? renderEditor() : h('p', { class: 'empty-note', text: 'No templates yet.' }));
   }
 
   // ---------------------------------------------------------------- Writing style
@@ -940,12 +1298,13 @@
 
   const PLAN_OPTIONS = {
     claude: [['unknown', 'Not sure'], ['pro', 'Pro'], ['max5', 'Max 5x'], ['max20', 'Max 20x']],
-    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
+    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['prolite', 'Pro Lite'], ['pro', 'Pro'], ['promax', 'Pro Max']],
     gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
     kimi: [['unknown', 'Not sure']],
+    openrouter: [['unknown', 'Not sure']],
   };
   const planLabel = (provider, plan) => ((PLAN_OPTIONS[provider] || []).find((p) => p[0] === plan) || [0, plan])[1];
-  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
+  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
   const WITHIN = [['soonest', 'Soonest refill first'], ['spread', 'Spread evenly'], ['one', 'Stay on one account']];
   const CLAUDE_TERMS = "Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.";
   const SIGNIN_WAIT_MS = 30000;
@@ -977,6 +1336,15 @@
   const dayTime = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'long' }) + ' '
     + new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   const pct = (n) => Math.round(n) + '%';
+  const usd = (n) => (n > 0 && n < 0.005 ? '<$0.01' : '$' + n.toFixed(2));
+  const spendText = (sp) => {
+    const none = !sp.today && !sp.last_7_days && !sp.last_30_days;
+    const line = none && !sp.incomplete ? 'no spend yet' : `${usd(sp.today)} today · ${usd(sp.last_7_days)} last 7 days · ${usd(sp.last_30_days)} last 30 days`;
+    return line + (sp.incomplete ? ' · total may be incomplete' : '');
+  };
+  // OpenRouter sign-in is key only: waiting, no link, and the machine wants the key pasted.
+  const keyOnlySignin = (st) => st.state === 'waiting' && !st.url && st.wantsCode === true;
+  const signinHint = (st) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : 'Paste your OpenRouter key');
   const safeHref = (u) => (/^https?:\/\//i.test(String(u)) ? String(u) : '#');
 
   async function refreshUsage() {
@@ -991,6 +1359,7 @@
 
   // The timer runs only while Accounts or Usage is shown.
   function syncSection() {
+    if (section === 'harnesses') enterHarnesses(); else stopHarnesses();
     const live = section === 'accounts' || section === 'usage';
     if (live && !usageTimer) usageTimer = window.wcPoller(refreshUsage, 30000);
     if (!live && usageTimer) { usageTimer.stop(); usageTimer = null; }
@@ -1017,31 +1386,44 @@
     if (!signCard) return;
     clearInterval(signCard.poll); clearTimeout(signCard.close);
     signCard.el.remove();
+    const inRow = signCard.harness;
     signCard = null;
     refreshUsage();
+    if (inRow) loadHarnesses(true);
   }
 
-  function openSignin(account, machine) {
+  function openSignin(account, machine, harness) {
     closeSignin();
     const terminal = `/wheelchair/app/terminal?login=${encodeURIComponent(account.id)}&machine=${encodeURIComponent(machine)}`;
     const status = h('p', { class: 'hint waiting', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Starting sign-in on ' + machine + '…'));
     const actions = h('div', { class: 'actions signin-actions' });
     const codeBox = h('div', { class: 'signin-code' });
     const paste = h('textarea', { rows: 2, 'aria-label': 'Paste the code from the sign-in page', placeholder: 'Paste the code here' });
+    const keyInput = h('input', { type: 'password', class: 'ctl', autocomplete: 'off', 'aria-label': 'Paste your OpenRouter key', placeholder: 'Paste your OpenRouter key', hidden: true });
+    const activeField = () => (keyInput.hidden ? paste : keyInput);
     const send = h('button', { type: 'button', class: 'primary small', text: 'Send code', onclick: async () => {
-      const code = paste.value.trim();
+      const field = activeField();
+      const code = field.value.trim();
       if (!code) return;
-      try { await api(`/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}/code`, { method: 'POST', body: { code } }); paste.value = ''; status.textContent = 'Code sent.'; } catch (e) { inlineErr(codeBox, e.message); }
+      try { await api(`/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}/code`, { method: 'POST', body: { code } }); field.value = ''; status.textContent = 'Code sent.'; inlineErr(codeBox, ''); }
+      catch (e) {
+        inlineErr(codeBox, e.message);
+        if (e.status === 409 && account.provider === 'openrouter') {
+          field.value = '';
+          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine, harness) }));
+        }
+      }
     } });
-    const pasteWrap = h('div', { class: 'paste', hidden: true }, h('label', { text: 'Paste the code' }), paste, send);
+    const pasteLabel = h('label', { text: 'Paste the code' });
+    const pasteWrap = h('div', { class: 'paste', hidden: true }, pasteLabel, paste, keyInput, send);
     const termLink = h('a', { class: 'small-link', href: terminal, target: '_blank', rel: 'noopener', text: 'Open terminal' });
     const closeBtn = h('button', { type: 'button', class: 'small', text: 'Close', onclick: closeSignin });
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
       h('div', { class: 'head-line' }, h('h2', { text: `Sign in ${account.name} on ${machine}` }), closeBtn),
       status, actions, codeBox, pasteWrap, h('div', { class: 'actions' }, termLink));
-    const card = { account: account.id, machine, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
+    const card = { account: account.id, provider: account.provider, machine, harness: harness || null, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
     signCard = card;
-    const hostEl = document.getElementById('signin-host');
+    const hostEl = harness ? document.querySelector(`[data-signin-host="${harness}"]`) : document.getElementById('signin-host');
     if (hostEl) hostEl.replaceChildren(root);
 
     const fail = () => {
@@ -1064,12 +1446,15 @@
         return;
       }
       if (st.state === 'failed') return fail();
-      if ((card.hadUrl || !st.url) && expired()) return fail();
-      if (st.url) {
+      const keyOnly = keyOnlySignin(st);
+      if ((card.hadUrl || !(st.url || keyOnly)) && expired()) return fail();
+      if (st.url || keyOnly) {
         if (!card.hadUrl) card.firstUrl = Date.now();
         card.hadUrl = true;
-        status.className = 'hint'; status.textContent = st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.';
-        if (account.provider === 'claude' || account.provider === 'gemini') {
+        status.className = 'hint'; status.textContent = signinHint(st);
+        keyInput.hidden = !keyOnly; paste.hidden = keyOnly; pasteLabel.textContent = keyOnly ? 'Paste your OpenRouter key' : 'Paste the code';
+        if (keyOnly) actions.replaceChildren();
+        else if (account.provider === 'claude' || account.provider === 'gemini') {
           actions.replaceChildren(h('a', { class: 'btn-link primary', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: 'Open sign-in link' }));
         } else {
           actions.replaceChildren(h('a', { class: 'btn-link', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: st.url }));
@@ -1085,7 +1470,7 @@
       } else if (card.hadUrl) {
         status.className = 'hint waiting';
         status.replaceChildren(h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Finishing sign-in on ' + machine + '…'));
-        actions.replaceChildren(); codeBox.replaceChildren(); paste.value = ''; pasteWrap.hidden = true;
+        actions.replaceChildren(); codeBox.replaceChildren(); paste.value = ''; keyInput.value = ''; pasteWrap.hidden = true;
       }
     };
     (async () => {
@@ -1149,7 +1534,8 @@
         a.paused && h('span', { class: 'v-badge', text: 'paused' }),
         h('span', { class: 'in-use' + (a.live_sessions ? ' on' : ''), text: a.live_sessions ? `in use · ${a.live_sessions} ${a.live_sessions === 1 ? 'agent' : 'agents'}` : 'idle' })),
       machines.length && h('ul', { class: 'machines' }, machines.map(([m, st]) => h('li', { 'data-machine': m, 'data-state': stateName(st) },
-        h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[st] || st) }),
+        h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[stateName(st)] || stateName(st)) }),
+        st && st.warning && h('span', { class: 'mstate note', text: st.warning }),
         stateName(st) !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) })))),
       h('div', { class: 'wins' },
         windowLine('5-hour window', a.reading && a.reading.five_hour),
@@ -1202,8 +1588,12 @@
     } catch (e) { adding.warn = false; renderPanel(); inlineErr(document.querySelector('.add-form') || form, e.message); }
   }
 
+  function addProviders() { return Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini' && harnessOn(v)); }
+
   function addForm() {
-    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: 'claude', name: '', plan: 'unknown', warn: false }; renderPanel(); } });
+    const offered = addProviders();
+    if (!offered.length) return null;
+    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: offered[0][0], name: '', plan: 'unknown', warn: false }; renderPanel(); } });
     const form = h('form', { class: 'box add-form', onsubmit: (ev) => {
       ev.preventDefault();
       if (!adding.name.trim()) { inlineErr(form, 'Give the account a name.'); return; }
@@ -1212,7 +1602,7 @@
       saveAdd(form);
     } });
     const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; renderPanel(); } },
-      Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini').map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
+      offered.map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
     const name = h('input', { id: 'add-name', value: adding.name, 'aria-label': 'Account name', placeholder: 'Name, e.g. Work', required: true, oninput: () => { adding.name = name.value; } });
     const plan = planSelect(adding.provider, adding.plan);
     plan.id = 'add-plan';
@@ -1242,8 +1632,8 @@
       h('div', {}, h('h1', { text: 'Accounts' }),
         h('p', { class: 'lede', text: 'The logins agents run on. New sessions pick the account with the most room.' }),
         usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
-      h('div', { id: 'signin-host' }, signCard ? signCard.el : null),
-      Object.entries(PROVIDER_NAME).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
+      h('div', { id: 'signin-host' }, signCard && !signCard.harness ? signCard.el : null),
+      Object.entries(PROVIDER_NAME).filter(([provider]) => harnessOn(provider)).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
         h('h2', { text: label }),
         provider === 'gemini' && h('p', { class: 'hint', text: 'Antigravity supports one account per machine' }),
         accountRows(provider).filter((a) => provider !== 'gemini' || a.id === 'default-gemini').map(accountCard),
@@ -1267,10 +1657,22 @@
   // An order editor: the providers in order, up/down to move; leads may end in "then whatever's left".
   function orderEditor(key, label) {
     ensureDraft();
-    const real = balDraft[key].filter((p) => p !== 'any');
+    const all = balDraft[key].filter((p) => p !== 'any');
+    const real = all.filter(harnessOn);
+    const left = all.filter((p) => !harnessOn(p)); // switched off: hidden here, kept in the saved order
     const hasAny = balDraft[key].includes('any');
-    const missing = Object.keys(PROVIDER_NAME).filter((p) => !real.includes(p));
-    const commit = (list) => { balDraft[key] = hasAny && key === 'lead_order' ? [...list, 'any'] : list; renderPanel(); };
+    const missing = Object.keys(PROVIDER_NAME).filter((p) => harnessOn(p) && !real.includes(p));
+    // Switched-off providers keep their saved index; the visible ones fill the other slots in their new order.
+    const commit = (list) => {
+      const total = left.length + list.length;
+      const out = new Array(total).fill(null);
+      const rest = [];
+      for (const p of left) { const i = all.indexOf(p); if (i < total && out[i] === null) out[i] = p; else rest.push(p); }
+      const vis = list.slice();
+      for (let i = 0; i < total; i++) if (out[i] === null) out[i] = vis.length ? vis.shift() : rest.shift();
+      balDraft[key] = hasAny && key === 'lead_order' ? [...out, 'any'] : out;
+      renderPanel();
+    };
     const move = (i, d) => { const next = real.slice(); const [item] = next.splice(i, 1); next.splice(i + d, 0, item); commit(next); };
     return h('div', { class: 'order', 'data-order': key, role: 'group', 'aria-label': label },
       h('ol', {}, real.map((p, i) => h('li', {}, h('span', { text: PROVIDER_NAME[p] }),
@@ -1279,7 +1681,7 @@
         real.length > 1 && h('button', { type: 'button', class: 'small', text: 'Remove', 'aria-label': `Leave ${PROVIDER_NAME[p]} out`, onclick: () => commit(real.filter((x) => x !== p)) })))),
       missing.map((p) => h('button', { type: 'button', class: 'small', text: `+ ${PROVIDER_NAME[p]}`, onclick: () => commit([...real, p]) })),
       key === 'lead_order' && h('label', { class: 'check' },
-        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...real, 'any'] : real; renderPanel(); } }),
+        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...all, 'any'] : all.slice(); renderPanel(); } }),
         h('span', { text: "then whatever's left" })));
   }
 
@@ -1292,6 +1694,7 @@
       inlineErr(host, '');
       renderPanel();
       setNote(SAVED, false);
+      loadHarnesses(true);
     } catch (e) { inlineErr(host, e.message); setNote('', false); }
   }
 
@@ -1303,11 +1706,17 @@
   function providerBar(provider, f) {
     const left = f.left;
     const lines = [];
-    if (f.all_paused) lines.push(h('p', { class: 'usage-line', text: 'All accounts paused' }));
+    if (f.all_paused) lines.push(h('p', { class: 'usage-line', text: (f.accounts || []).length ? 'All accounts paused' : 'No accounts added' }));
     else if (left === null) lines.push(h('p', { class: 'usage-line dim', text: 'no reading yet' }));
     if (f.amber && f.runs_out_at) lines.push(h('p', { class: 'usage-line amber', text: `Runs out ${dayPart(f.runs_out_at)}, before the first refill ${f.first_refill ? dayTime(f.first_refill) : ''}`.trim() }));
     if (f.below_notify) lines.push(h('p', { class: 'usage-line amber', text: 'Under your notify line for this week.' }));
     const open = openProvider === provider;
+    if (f.spend) {
+      return h('div', { class: 'usage-prov', 'data-provider': provider },
+        h('div', { class: 'usage-toggle' },
+          h('span', { class: 'usage-name usage-name-spend', text: f.label }),
+          h('span', { class: 'usage-spend-text', text: spendText(f.spend) })));
+    }
     return h('div', { class: 'usage-prov' + (f.amber ? ' amber' : ''), 'data-provider': provider },
       h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; renderPanel(); } },
         h('span', { class: 'usage-name', text: f.label }),
@@ -1511,6 +1920,286 @@
     window.addEventListener('backgrounddispose', discardBackground);
   }
 
+  // ---------------------------------------------------------------- Harnesses
+
+  const HARNESSES = [
+    ['claude', 'Claude Code', 'Anthropic', 'https://docs.claude.com/en/docs/claude-code/setup'],
+    ['gpt', 'Codex', 'OpenAI', 'https://github.com/openai/codex'],
+    ['gemini', 'Antigravity', 'Google', 'https://antigravity.google/cli'],
+    ['kimi', 'Kimi Code', 'Kimi', 'https://code.kimi.com'],
+    ['openrouter', 'Pi (OpenRouter)', 'Pi', 'https://www.npmjs.com/package/@earendil-works/pi-coding-agent'],
+  ];
+  // A switch the hub does not report counts as on (an older hub, or a fresh read still on its way).
+  function harnessOn(provider) { return !data || !data.harnesses || data.harnesses[provider] !== false; }
+
+  // hz: the Harnesses section's own state. `jobs` holds the last install state per "machine/provider",
+  // `polls` the running install pollers.
+  const hz = { data: null, error: '', machine: null, seq: 0, jobs: {}, polls: {}, reachTimer: null, checked: null, confirmOff: null, rowErr: {}, active: false, pending: null };
+
+  function harnessMachine() {
+    const list = (hz.data && hz.data.machines) || [];
+    if (!list.length) return null;
+    if (!list.some((m) => m.name === hz.machine)) {
+      const start = hz.data.can_start && hz.data.can_start.machine;
+      hz.machine = (list.find((m) => m.name === start) || list.find((m) => m.reachable) || list[0]).name;
+    }
+    return list.find((m) => m.name === hz.machine);
+  }
+
+  function stopPoll(key) {
+    const run = hz.polls[key];
+    if (run) { run.stopped = true; clearTimeout(run.timer); delete hz.polls[key]; }
+  }
+  function stopHarnesses() {
+    hz.active = false;
+    for (const key of Object.keys(hz.polls)) stopPoll(key);
+    clearTimeout(hz.reachTimer); hz.reachTimer = null;
+    hz.checked = null;
+  }
+  function paintHarnesses() { if (section === 'harnesses') renderPanel(); }
+
+  function enterHarnesses() {
+    stopHarnesses();
+    hz.active = true;
+    loadHarnesses(true);
+  }
+
+  async function loadHarnesses(fresh) {
+    const seq = ++hz.seq;
+    let res;
+    try { res = await api('/harnesses' + (fresh ? '?fresh=1' : '')); } catch (e) {
+      if (seq !== hz.seq) return;
+      hz.pending = null;
+      hz.error = e.message; paintHarnesses();
+      if (hz.active) { clearTimeout(hz.reachTimer); hz.reachTimer = setTimeout(() => loadHarnesses(true), 5000); }
+      return;
+    }
+    if (seq !== hz.seq) return;
+    hz.pending = null;
+    hz.data = res; hz.error = '';
+    if (data && res.switches) data.harnesses = { ...(data.harnesses || {}), ...res.switches };
+    const machine = harnessMachine();
+    clearTimeout(hz.reachTimer); hz.reachTimer = null;
+    if (!hz.active) return;
+    paintHarnesses();
+    if (machine && !machine.reachable) {
+      hz.checked = null;
+      hz.reachTimer = setTimeout(() => loadHarnesses(true), 5000);
+    } else if (machine && hz.checked !== machine.name) {
+      for (const key of Object.keys(hz.polls)) stopPoll(key);
+      hz.checked = machine.name;
+      for (const [provider] of HARNESSES) if (harnessOn(provider)) pollInstall(machine.name, provider, 'GET');
+    }
+  }
+
+  // Poll one provider's install on one machine every 2 s until it is idle, failed or succeeded.
+  // A 502, network error or no answer keeps polling and marks the row as unreachable meanwhile.
+  function pollInstall(machine, provider, firstMethod) {
+    const key = machine + '/' + provider;
+    stopPoll(key);
+    const run = { stopped: false, timer: null };
+    hz.polls[key] = run;
+    const url = API + `/machines/${encodeURIComponent(machine)}/harnesses/${encodeURIComponent(provider)}/install`;
+    const finish = () => { stopPoll(key); };
+    const again = () => { if (!run.stopped) run.timer = setTimeout(() => step('GET'), 2000); };
+    async function step(method) {
+      if (run.stopped) return;
+      if (machine !== hz.machine) { finish(); return; }
+      let res = null; let body = {};
+      try {
+        res = await fetch(url, { method, signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+        body = await res.json().catch(() => ({}));
+      } catch { res = null; }
+      if (run.stopped) return;
+      if (machine !== hz.machine) { finish(); return; }
+      if (!res || res.status >= 500) {
+        hz.jobs[key] = { ...(hz.jobs[key] || { state: 'running', tail: '' }), offline: true };
+        paintHarnesses(); return again();
+      }
+      if (res.status === 404 && method === 'POST') { finish(); delete hz.jobs[key]; loadHarnesses(true); return; }
+      if (res.status === 404) { finish(); delete hz.jobs[key]; paintHarnesses(); return; }
+      if (res.status === 409 && method === 'POST') {
+        if (body.error === 'already installing') return step('GET');
+        finish(); delete hz.jobs[key]; hz.rowErr[provider] = body.error || 'Couldn\'t start the install.'; paintHarnesses(); return;
+      }
+      if (!res.ok) { hz.jobs[key] = { state: 'failed', tail: body.error || ('http ' + res.status) }; finish(); paintHarnesses(); return; }
+      const tail = body.output_tail || '';
+      if (body.state === 'running') {
+        const before = hz.jobs[key];
+        hz.jobs[key] = { state: 'running', tail, confirmed: true, cancelling: !!(before && before.cancelling), cancelErr: before && before.cancelErr };
+        paintHarnesses(); return again();
+      }
+      finish();
+      if (body.state === 'failed') { hz.jobs[key] = { state: 'failed', tail, explanation: body.explanation || null }; paintHarnesses(); return; }
+      if (body.state === 'cancelled') { hz.jobs[key] = { state: 'cancelled', tail, explanation: null }; paintHarnesses(); return; }
+      delete hz.jobs[key];
+      if (body.state === 'succeeded') refreshAfterInstall(machine, provider); else paintHarnesses();
+    }
+    step(firstMethod);
+  }
+
+  // Cancel a running install: DELETE through the hub; the poll already running reports the outcome.
+  async function cancelInstall(machine, provider) {
+    const key = machine + '/' + provider;
+    const job = hz.jobs[key];
+    if (!job || job.cancelling) return;
+    job.cancelErr = undefined;
+    job.cancelling = true; paintHarnesses();
+    let res = null;
+    try { res = await fetch(API + `/machines/${encodeURIComponent(machine)}/harnesses/${encodeURIComponent(provider)}/install`, { method: 'DELETE', signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }); } catch { res = null; }
+    const now = hz.jobs[key];
+    if (!now || now.state !== 'running') return;
+    if (res && (res.status === 202 || res.status === 409)) return;
+    now.cancelling = false;
+    now.cancelErr = (!res || res.status >= 500) ? `Couldn't cancel: ${machine} isn't reachable.` : `Couldn't cancel: update wheelchair on ${machine}.`;
+    paintHarnesses();
+  }
+
+  // A just-installed CLI's version is read in the background on the machine, so the first
+  // fresh status can say "installed" with no version yet. Re-fetch a few times, 2 s apart,
+  // until the version shows, so the row fills in without reopening the section. A sign-in
+  // card opened meanwhile stops the retries: a repaint would take focus from its fields.
+  async function refreshAfterInstall(machine, provider, tries = 4, first = true) {
+    if (!first && signCard) return;
+    await loadHarnesses(true);
+    if (!hz.active || machine !== hz.machine || tries <= 1 || signCard) return;
+    const m = ((hz.data && hz.data.machines) || []).find((entry) => entry.name === machine);
+    const st = m && m.harnesses && m.harnesses[provider];
+    if (st && st.installed && !st.version) setTimeout(() => refreshAfterInstall(machine, provider, tries - 1, false), 2000);
+  }
+
+  async function setHarness(provider, enabled) {
+    hz.confirmOff = null; delete hz.rowErr[provider];
+    try {
+      const res = await api('/settings/harnesses/' + encodeURIComponent(provider), { method: 'PUT', body: { enabled } });
+      if (data && res && res.harnesses) data.harnesses = res.harnesses;
+    } catch (e) { hz.rowErr[provider] = e.message; paintHarnesses(); return; }
+    if (!enabled && signCard && (signCard.harness === provider || signCard.provider === provider)) closeSignin();
+    if (adding) { const first = addProviders()[0]; if (!first) adding = null; else if (!addProviders().some(([v]) => v === adding.provider)) { adding.provider = first[0]; adding.plan = 'unknown'; adding.warn = false; } if (section === 'accounts') renderPanel(); }
+    paintHarnesses();
+    await loadHarnesses(true);
+    const machine = harnessMachine();
+    if (enabled && machine && machine.reachable) pollInstall(machine.name, provider, 'GET');
+    else if (!enabled && machine) { stopPoll(machine.name + '/' + provider); delete hz.jobs[machine.name + '/' + provider]; paintHarnesses(); }
+  }
+
+  // The first account of the provider that is neither retired nor paused.
+  function signinAccount(provider) {
+    const mine = ((data && data.accounts) || []).filter((a) => a.provider === provider && !((data.retired_accounts || []).includes(a.id)));
+    return { usable: mine.find((a) => !a.paused) || null, any: mine.length > 0 };
+  }
+
+  function linkReasons(text) {
+    return String(text).split(/(Workers try first|Leads try)/).map((part) => (part === 'Workers try first'
+      ? h('a', { href: '#usage', text: part }) : part === 'Leads try' ? h('a', { href: '#models', text: part }) : part));
+  }
+
+  function harnessRow(info, machine) {
+    const [provider, name, vendor, docs] = info;
+    const st = (machine.harnesses || {})[provider] || { installed: false, version: null, signed_in: false, recipe: false };
+    const on = harnessOn(provider);
+    const job = hz.jobs[machine.name + '/' + provider];
+    const stateText = st.signed_in ? 'Signed in' : st.installed ? 'Installed' + (st.version ? ' ' + st.version : '') : 'Not installed';
+    const actions = h('div', { class: 'h-actions' });
+    const extra = [];
+    const install = (label) => h('button', { type: 'button', class: 'small primary', text: label, 'aria-label': `${label} ${name}`, onclick: () => {
+      const target = hz.machine; // always the machine the picker shows
+      if (!target || hz.pending) return;
+      delete hz.rowErr[provider];
+      hz.jobs[target + '/' + provider] = { state: 'running', tail: '' };
+      pollInstall(target, provider, 'POST'); paintHarnesses();
+    } });
+    if (on) {
+      if (job && job.state === 'running') {
+        actions.append(h('span', { class: 'hint waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }),
+          document.createTextNode(job.offline ? `Can't reach ${machine.name}, retrying…` : 'Installing…')));
+        if (job.confirmed && !job.offline) {
+          if (job.cancelling) actions.append(h('span', { class: 'hint', text: 'Cancelling…' }));
+          else actions.append(h('button', { type: 'button', class: 'small', text: 'Cancel', 'aria-label': `Cancel installing ${name}`, onclick: () => cancelInstall(machine.name, provider) }));
+        }
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (job && job.state === 'failed' && st.recipe !== false) {
+        actions.append(h('span', { class: 'inline-err', role: 'alert', text: 'Install failed' }));
+        if (st.recipe !== null) actions.append(install('Try again'));
+        if (job.explanation) extra.push(h('p', { class: 'h-explain', text: job.explanation }));
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (job && job.state === 'cancelled' && !st.installed) {
+        actions.append(h('span', { class: 'hint', text: 'Install cancelled' }), install('Install'));
+        if (job.tail) extra.push(h('pre', { class: 'h-tail', tabindex: 0, text: job.tail }));
+      } else if (!st.installed) {
+        if (st.recipe === false) actions.append(h('a', { class: 'btn-link', href: docs, target: '_blank', rel: 'noopener', text: `Install from ${vendor}'s site` }));
+        else if (st.recipe === true) actions.append(install('Install'));
+      } else if (!st.signed_in) {
+        const { usable, any } = signinAccount(provider);
+        if (usable) actions.append(h('button', { type: 'button', class: 'small primary', text: 'Sign in', 'aria-label': `Sign in ${name}`, onclick: () => { openSignin(usable, machine.name, provider); paintHarnesses(); } }));
+        else if (any) actions.append(h('span', { class: 'hint', text: `All ${name} accounts are paused ` }), h('a', { href: '#accounts', text: 'Open Accounts' }));
+        else actions.append(h('a', { href: '#accounts', text: 'Add an account' }));
+      }
+    }
+    const confirming = hz.confirmOff === provider;
+    const count = (hz.data.threads_using || {})[provider] || 0;
+    const sw = h('label', { class: 'h-switch' },
+      h('input', { type: 'checkbox', role: 'switch', checked: on, 'aria-label': `Use ${name}`, onchange: (ev) => {
+        if (ev.target.checked) return setHarness(provider, true);
+        ev.target.checked = true;
+        if (count > 0) { hz.confirmOff = provider; paintHarnesses(); } else setHarness(provider, false);
+      } }),
+      h('span', { text: 'Use' }));
+    const row = h('div', { class: 'h-row' + (on ? '' : ' off'), 'data-provider': provider },
+      h('div', { class: 'h-head' },
+        h('div', { class: 'h-name' }, h('strong', { text: name }), h('span', { class: 'hint h-state', text: stateText })),
+        sw),
+      actions,
+      confirming && h('div', { class: 'actions h-confirm' },
+        h('span', { text: `${count} ${count === 1 ? 'thread uses' : 'threads use'} ${name}. Their running agents keep going, but no new agent starts on it. Leave it out?` }),
+        h('button', { type: 'button', class: 'danger small', text: 'Leave it out', onclick: () => setHarness(provider, false) }),
+        h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { hz.confirmOff = null; paintHarnesses(); } })),
+      (hz.rowErr[provider] || (job && job.state === 'running' && job.cancelErr)) && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] || job.cancelErr }),
+      extra,
+      h('div', { class: 'h-signin', 'data-signin-host': provider }, signCard && signCard.harness === provider && signCard.machine === machine.name ? signCard.el : null));
+    return row;
+  }
+
+  function renderHarnesses() {
+    const head = h('div', {}, h('h1', { text: 'Harnesses' }),
+      h('p', { class: 'lede', text: 'The agent programs wheelchair can run. Install and sign in to the ones you use, and leave out the rest.' }));
+    if (!hz.data) {
+      return h('div', { class: 'models harnesses' }, head, hz.error
+        ? h('p', { class: 'inline-err', role: 'alert', text: 'Could not read harnesses: ' + hz.error })
+        : h('p', { class: 'v-empty waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Loading harnesses…')));
+    }
+    const machines = hz.data.machines || [];
+    const machine = harnessMachine();
+    const parts = [head];
+    if (machines.length > 1) {
+      parts.push(h('label', { class: 'h-picker' }, h('span', { text: 'Machine' }),
+        h('select', { 'aria-label': 'Machine', onchange: (ev) => {
+          hz.machine = ev.target.value; hz.checked = null; hz.confirmOff = null; hz.pending = hz.machine;
+          for (const key of Object.keys(hz.polls)) stopPoll(key);
+          paintHarnesses();
+          loadHarnesses(false);
+        } }, machines.map((m) => h('option', { value: m.name, text: m.name, selected: m.name === hz.machine })))));
+    }
+    const cs = hz.data.can_start;
+    if (cs && ((cs.lead && !cs.lead.ok) || (cs.worker && !cs.worker.ok))) {
+      const reasons = [['lead', cs.lead], ['worker', cs.worker]].filter(([, r]) => r && !r.ok && r.reason).map(([, r]) => r.reason);
+      parts.push(h('div', { class: 'h-notice', role: 'status' },
+        h('strong', { text: `Agents can't start yet on ${cs.machine}:` }),
+        [...new Set(reasons)].map((r) => h('p', {}, linkReasons(r)))));
+    }
+    if (!machine) parts.push(h('p', { class: 'v-empty', text: 'No machines are known yet.' }));
+    else if (hz.pending === machine.name) {
+      parts.push(h('p', { class: 'v-empty waiting', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode(`Checking ${machine.name}…`)));
+    } else if (!machine.reachable) {
+      parts.push(h('p', { class: 'hint waiting h-offline', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode(`Can't reach ${machine.name}, retrying…`)));
+    } else {
+      const old = HARNESSES.some(([p]) => ((machine.harnesses || {})[p] || {}).recipe === null);
+      if (old) parts.push(h('p', { class: 'h-notice', role: 'status', text: 'This machine needs updating: re-run ./install.sh on it.' }));
+      parts.push(h('div', { class: 'box h-rows' }, HARNESSES.map((info) => harnessRow(info, machine))));
+    }
+    return h('div', { class: 'models harnesses' }, parts);
+  }
+
   // ---------------------------------------------------------------- shell
 
   function renderSections() {
@@ -1538,6 +2227,7 @@
     if (!data) return;
     const view = section === 'background' && bg ? renderBackground() : section === 'tools' ? renderProjectTools()
       : section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
+      : section === 'harnesses' ? renderHarnesses()
       : section === 'accounts' ? renderAccounts() : section === 'usage' ? renderUsage() : renderModels();
     const keep = document.getElementById('error');
     panel.replaceChildren(keep, view);
@@ -1547,6 +2237,12 @@
 
   function readHash() {
     const key = location.hash.replace(/^#/, '');
+    const lessonRole = (/^templates\/lessons\/([a-z-]+)$/.exec(key) || [])[1];
+    if (lessonRole && LESSON_PLURAL[lessonRole]) {
+      if (section !== 'templates') { if (section === 'background') discardBackground(); section = 'templates'; setNote('', false); styleNote = ''; diagram = null; }
+      if (selected !== 'lessons:' + lessonRole) select('lessons:' + lessonRole);
+      return;
+    }
     const next = SECTIONS.some(([k]) => k === key) ? key : 'models';
     if (next !== section) { if (section === 'background') discardBackground(); section = next; setNote('', false); styleNote = ''; diagram = null; }
   }

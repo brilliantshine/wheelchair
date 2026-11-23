@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const fsc = require('node:fs').constants;
+const { windowsTarget } = require('./win-mark');
 
 const DUPLICATE_HEADERS = Symbol('duplicate headers');
 const TOOL_ROLES = new Set(['lead', 'sub-lead', 'worker', 'verifier']);
@@ -77,7 +78,12 @@ function entryReason(name, entry) {
   const http = object(entry) && (entry.type === 'http' || entry.type === 'sse') && typeof entry.url === 'string' && entry.url.length > 0 && (entry.headers === undefined || (object(entry.headers) && Object.values(entry.headers).every(value => typeof value === 'string')));
   return stdio || http ? null : 'not a valid stdio, http or sse entry';
 }
-async function readProjectMcp(worktree) {
+function hasWindowsProgram(mcp, { mount = '/mnt' } = {}) {
+  const { isWindowsProgram } = require('./project-programs');
+  return !!mcp && Object.values(mcp.servers).some(entry =>
+    (entry.type === undefined || entry.type === 'stdio') && isWindowsProgram(entry.command, mount));
+}
+async function readProjectMcp(worktree, { wsl = true, mount = '/mnt', kernel = false } = {}) {
   try {
     const file = path.join(worktree, '.mcp.json');
     let info;
@@ -102,19 +108,38 @@ async function readProjectMcp(worktree) {
     const checked = checkDocumentText(text);
     if (!checked.ok) return failure(checked.reason, hash);
     const { data } = checked;
-    const names = Object.keys(data.mcpServers), servers = {}, warnings = [];
-    for (const name of names) {
+    const names = [], servers = {}, rawServers = {}, warnings = [], dropped = [];
+    for (const name of Object.keys(data.mcpServers)) {
       const entry = data.mcpServers[name];
       const reason = entryReason(name, entry);
+      if (!reason && !wsl && (entry.type === undefined || entry.type === 'stdio') && require('./project-programs').isWindowsProgram(entry.command, mount)) { dropped.push(name); continue; }
+      names.push(name);
+      Object.defineProperty(rawServers, name, { value: entry, enumerable: true, writable: true, configurable: true });
       if (!reason) Object.defineProperty(servers, name, { value: entry, enumerable: true, writable: true, configurable: true });
       else warnings.push({ names: [name], text: `${serverLabel(name)}: skipped: ${reason}` });
+    }
+    const windows = [];
+    if (Object.hasOwn(data, 'wheelchair')) {
+      const mark = data.wheelchair;
+      if (!object(mark) || (Object.hasOwn(mark, 'windows') && (!Array.isArray(mark.windows) || !mark.windows.every(name => typeof name === 'string')))) {
+        if (kernel) warnings.push({ names: [], text: '"wheelchair" in .mcp.json is not in the expected form; ignored' });
+      } else if (Object.hasOwn(mark, 'windows')) {
+        for (const name of new Set(mark.windows)) {
+          if (!Object.hasOwn(data.mcpServers, name)) continue;
+          const entry = data.mcpServers[name];
+          if (!entryReason(name, entry) && windowsTarget(entry)) windows.push(name);
+          else if (kernel) warnings.push({ names: [name], text: entry?.type === 'sse'
+            ? `${serverLabel(name)}: "Runs on Windows" doesn't apply to SSE tools; it loads as usual`
+            : `${serverLabel(name)}: "Runs on Windows" only applies to an http://localhost or http://127.0.0.1 address` });
+        }
+      }
     }
     const duplicates = duplicateHeaderServers(text);
     for (const name of Object.keys(servers)) {
       const entry = servers[name];
       if ((entry.type === 'http' || entry.type === 'sse') && duplicates.has(name)) entry[DUPLICATE_HEADERS] = true;
     }
-    return { mcp: { names, servers, rawServers: data.mcpServers }, warnings, hash };
+    return { mcp: { names, servers, rawServers, windows }, warnings, hash, dropped };
   } catch { return failure('read failed'); }
 }
-module.exports = { DUPLICATE_HEADERS, TOOL_ROLES, readProjectMcp, serverLabel, entryReason, checkDocumentText };
+module.exports = { DUPLICATE_HEADERS, TOOL_ROLES, readProjectMcp, serverLabel, entryReason, checkDocumentText, hasWindowsProgram };

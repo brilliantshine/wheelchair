@@ -2,6 +2,8 @@
 
 Checked against: `2752b94b3185c92c751788a1c729cdb0f3ac8261` (worktree HEAD; fetched origin/main `92c2db2211096a2360b7b93f7bb1623805f6209d` differs). Files covered: `protocol/app/lead.md`, `protocol/app/reviewer.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.md`, `protocol/app/cards.md`, `protocol/app/cards-lead.md`, `protocol/templates/PLAN.md`, `protocol/templates/IDEA.md`, `viewer/app/card.js`, `viewer/app/cards.js`, `viewer/app/chat.js`, `viewer/app/threads.js`, `viewer/app/hub.js`, `viewer/app/routes.js`, `viewer/app/state.js`, `viewer/app/settings.js`, `viewer/app/sessions.js`, `viewer/app/views.js`, `viewer/pages/new.js`, `viewer/pages/settings.js`, `viewer/pages/thread.js`, `viewer/pages/doc.js`, `viewer/doc.js`, `viewer/server.js`.
 
+> Overlap, card receipt and restart paths are rechecked at origin/main in [overlap decision flow](overlap-decision-flow.md); other claims retain their historical checks.
+
 ```text
 new thread -> lead confirms idea -> plan -> review -> approval -> build -> verify -> done
                                   |                                    |

@@ -116,6 +116,7 @@ test('shared pages and standalone or framed documents use the expected appearanc
     [`/app/agents?lead=${thread.id}`, '.agents-heading'], ['/app/settings#background', '.background-editor .box'],
     ['/app/terminal?login=default-claude&machine=hub', '.term-bar'],
     [`/app/doc?thread=${thread.id}&file=PLAN.md`, '#content'],
+    [`/app/file?thread=${thread.id}&file=1-missing.txt`, '#message'],
     [`/app/picture?thread=${thread.id}&card=${card.id}`, 'iframe.picture-frame'],
     [`/docs?plan=${encodeURIComponent(plan)}&file=PLAN.md`, '#content'],
   ];

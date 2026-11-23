@@ -152,7 +152,11 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
     const unavailable = await request('POST', '/asides', data);
     assert.equal(unavailable.status, 400);
     assert.equal(unavailable.error, "Side conversations aren't available on Antigravity sessions yet");
-    before.sessions[0].provider = 'claude'; await hub.save(before);
+    before.sessions[0].provider = 'kimi'; await hub.save(before);
+    assert.equal((await request('POST', '/asides', data)).error, "Side conversations aren't available on Kimi Code sessions yet");
+    before.sessions[0].provider = 'openrouter'; before.sessions[0].cli_session_id = 'pi-parent'; await hub.save(before);
+    const piAside = await request('POST', '/asides', data); assert.equal(piAside.status, 201); assert.equal(piAside.body.fork_parent, 'pi-parent');
+    before = await hub.thread('routes'); before.asides = []; before.sessions[0].provider = 'claude'; before.sessions[0].cli_session_id = null; await hub.save(before);
     assert.equal((await request('POST', '/asides', data)).error, "the lead isn't ready yet");
     before.sessions[0].cli_session_id = 'parent'; await hub.save(before);
     settings.modelCommand = async () => { const error = new Error('unused'); error.code = 3; throw error; };
@@ -173,7 +177,7 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
     const full = await request('GET', `/asides/${id}`); assert.equal(full.body.history.length, 3); assert.deepEqual(registered, ['/tmp/a.json']);
     assert.equal((await request('GET', '/chat')).body.asides[0].history, undefined);
     const closed = await request('POST', `/asides/${id}/close`, { outcome: 'changed', line: 'Use this' }); assert.equal(closed.status, 200);
-    await asides.pump(hub, 'routes'); t = await hub.thread('routes'); assert.equal(t.asides[0].outcome, 'changed'); assert.equal(t.queues.lead[0].source, 'collin'); assert.match(t.queues.lead[0].text, /from aside 1 on: "Hello"/);
+    await asides.pump(hub, 'routes'); t = await hub.thread('routes'); assert.equal(t.asides[0].outcome, 'changed'); assert.equal(t.queues.lead[0].source, 'user'); assert.match(t.queues.lead[0].text, /from aside 1 on: "Hello"/);
     t.asides[0].status = 'open'; t.asides[0].turn = { id: 'turn1', state: 'running', message: { kind: 'ask', text: 'test' } }; await hub.save(t);
     assert.equal((await request('POST', '/archive', {})).status, 200); assert.ok(calls.some((c) => c.route === '/v1/aside-turns/turn1' && c.method === 'DELETE'));
     const archived = await request('GET', `/asides/${id}`); assert.equal(archived.status, 200); assert.equal(archived.body.status, 'closed'); assert.equal(archived.body.history.at(-1).reply, 'better answer');

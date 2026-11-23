@@ -56,6 +56,7 @@ One decision for the user. Also used to confirm IDEA.md.
 | `progress` | string | no | For example "decision 4 of roughly 9" |
 | `doc` | string | no | One of `MAP.md`, `IDEA.md` or `PLAN.md` |
 | `passes_on` | string | no | The id of the question message this passes on |
+| `about_thread` | string | no | For an overlap card: the other thread's id, 12 lowercase hex characters. Stored on the card, never shown |
 
 A press comes back as `[card <id>] picked: <option label>`. Under the options the card has
 a box for their own words; sending it closes the card and comes back as
@@ -73,7 +74,7 @@ in-app page.
 |---|---|---|---|
 | `objections` | array of `{id, finding, severity, reason}` | yes | Every finding a reviewer rated `blocking` or `major` that you declined or downgraded. `severity` is the reviewer's, `blocking` or `major`; `reason` is yours. May be empty. N on the card is the length of this list |
 | `ready` | object `{ok, missing}` | yes | `ok` is true or false; `missing` is an array of plain-language strings naming exactly what is missing (empty when `ok` is true) |
-| `warnings` | array of strings | no | Added by the machine, never by the lead: startup-size warnings. Shown as information; never affects Start building. |
+| `warnings` | array of strings | no | Added by the machine, never by the lead: such as missing screen tools. Shown as information; never affects Start building. |
 
 Each objection has a "Talk about this" button; a press comes back as
 `[card <id>] talk about: <finding>`. Start building is enabled only when `ready.ok` is
@@ -85,6 +86,8 @@ first; if it changed, the card updates and nothing starts. When it holds, it com
 ### `needs`
 
 Something only the user can fix or decide, where a question card does not fit.
+
+The user can dismiss any system needs card except a "Permission needed" or "Session stuck at startup" card while its live session is still held, and the quiet card also closes when its agent’s starter messages it or the agent starts another agent.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -130,6 +133,7 @@ the same treatment: say what you will do now instead of going quiet.
 | `pr_url` | string | yes | The pull request, for the Review pull request link |
 | `head` | string | yes | The full 40-character lowercase hex commit id pushed by the lead: the remote branch tip read after the push |
 | `note` | string | no | Anything they must know, such as "this fix failed its check and was pushed at your request" |
+| `verified` | boolean | no | `true` only when the lead holds a passing check of this exact change (lead.md, Making the pull request mergeable); omitted otherwise. The app auto-merges only when every done card in the thread has it |
 
 The app accepts the card only when GitHub says this thread's pull request, at `head`, is merged or ready to merge; otherwise `card.js` fails with the reason. A `done` card is never queued, so "the app is unreachable" means try again.
 
@@ -219,6 +223,18 @@ The machine copies the file into the thread's uploads folder, so the original ma
 deleted afterwards. Only the lead posts it: a screenshot another session took reaches
 the user when the lead posts it. Images are removed when the thread is archived.
 
+### `file`
+
+A document sent to the user.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | yes | Absolute path to a regular file on the lead's machine, at most 25 MB |
+| `title` | string | yes | One line: what the document is |
+
+The machine copies the file at send time, so later edits to the source do not reach the user.
+It shows in chat and in the sidebar's Sent to you section. Archiving the thread deletes it.
+
 ### `stub`
 
 New work that belongs in its own thread.
@@ -229,9 +245,15 @@ New work that belongs in its own thread.
 | `summary` | string | yes | Context for the next lead: what was asked, what this thread already knows, links to its plan documents and pull request. Written so a lead that has seen none of this thread can start |
 | `depends_on_parent` | boolean | yes | True when the work builds on this thread's unmerged work (an after-done fix always does) |
 | `commits` | array of strings | no | For a fix that missed the merge: the fix's own commit ids, not merge commits, for the stub's lead to cherry-pick |
+| `adds_to` | string | no | Target stub thread id, 12 lowercase hex characters |
+| `duplicate` | boolean | no | Marks a duplicate note; allowed only with `adds_to` |
 
-The app adds a stub thread to the list (same project, CLI and machine) and shows the card
+Without `adds_to`, the app adds a stub thread to the list (same project and machine) and shows the card
 in this thread with a "Go to it" button. No session starts until the user opens it.
+
+With `adds_to`, `depends_on_parent` must be false and `commits` absent. Otherwise `card.js` refuses: `an addition can't depend on this thread's unmerged work; post your own stub`. The hub checks the target in this order and refuses with `no such stub`, `that stub is archived, handed off or finished`, or `that stub has started; post your own stub`.
+
+On success the target's context gains its own paragraph: `Added from "<parent title>" (<YYYY-MM-DD>): <summary>`, or for a duplicate, `Also came up in "<parent title>" (<YYYY-MM-DD>): <summary>`. The parent card shows "Added to another thread" (or "Already a thread for this" for a duplicate), the target title, the summary and "Go to it".
 
 ### `sudo`
 
@@ -270,6 +292,27 @@ What reaches you, once per card (the output follows `ran` on the next lines):
 
 The password is never in any of these.
 
+### `reach`
+
+Asks the user to let this thread's lead talk to the lead of a thread in another project. Only a lead posts it.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `thread` | string | yes | The other thread's id, from `session leads --all-projects`; a thread id, like `about_thread` on a `question` |
+| `why` | string | yes | One line, in the user's terms, on why the leads should talk |
+
+The user sees "Let this thread's lead talk to the lead of **<thread title>** (<last path segment of its project>)?", the `why`, and two buttons, **Allow** and **Don't allow**. One answer only; a second press is refused `card is already answered`. An open `reach` card counts in "Needs you". Only one `reach` card may be open per thread (`a reach request is already open`).
+
+The hub refuses it at post time (422): `no such thread`, `that is this thread`, `that thread is on another machine`, `that thread is archived`, `that thread was handed off`, `already in your project; no OK needed`, `already allowed`, `a reach request is already open`.
+
+What reaches you, once per card:
+
+- `[card <id>] picked: allow`: the link exists; message that lead.
+- `[card <id>] picked: don't allow`: drop it and say so in a line.
+- `[card <id>] allow failed: <reason>`: the other thread went away before the press (reasons as above); nothing is linked. Drop it and say so in a line.
+
+The link lasts until either thread is archived and works both ways: the other lead can message you back without a card of its own.
+
 ## The kinds never shown
 
 ### `retract`
@@ -280,15 +323,15 @@ card of its own.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `card` | string | yes | The target card's id |
+| `card` | string | yes | The target card's id: the one `card.js` printed when you posted it, or from the restart context |
 | `note` | string | yes | One line saying why it was withdrawn |
 
 Only a lead may retract, and any lead of the thread may retract an earlier lead's card.
 The hub checks these refusals in order (422):
 
 1. `no such card in this thread`: missing, in another thread, or replaced.
-2. `only a question, offer, approval, needs, sudo or deferred card can be retracted`.
-3. `a system needs card closes itself`.
+2. `only a question, offer, approval, needs, sudo, deferred or reach card can be retracted`.
+3. `a system needs card closes itself` (the user can dismiss it unless its live session is still held).
 4. `card is already answered`: including a previous retraction, resolution or press; sudo
    cards are checked by state instead.
 

@@ -33,6 +33,7 @@ test('all Settings categories keep content solid and outer gutters visible', asy
   await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.wcBackground.current().available)).toBe(true);
   for (const [section, selector] of [
+    ['harnesses', '.harnesses > *'],
     ['accounts', '.prov-group > h2, #add-account'],
     ['usage', '.usage-bars, .models.usage > section'],
     ['models', '.models > section'],

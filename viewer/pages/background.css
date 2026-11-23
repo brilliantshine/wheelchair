@@ -25,4 +25,4 @@ html.background-active body { position: relative; isolation: isolate; }
 
 /* Settings groups are content panels; the main column and its gutters stay clear. */
 .background-active .settings :is(.models > section, .writing > section, .writing > .actions,
-  .writing > div:last-child, .pt > *, .accounts > #add-account) { background-color: var(--bg); }
+  .writing > div:last-child, .pt > *, .accounts > #add-account, .harnesses > *) { background-color: var(--bg); }

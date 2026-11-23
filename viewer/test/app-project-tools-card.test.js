@@ -220,3 +220,17 @@ test('a handoff import creates a thread with the default project_tools, even whe
   assert.deepEqual(thread.project_tools, defaultProjectTools());
   assert.deepEqual(thread.project_tools, { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] });
 });
+
+test('dismissed project tools card stays closed until problem names change', async () => {
+  const f = await fixture();
+  try {
+    await f.apply({ project_tools: tools({ programs: [line('first', 'a')] }) });
+    let t = await f.get(); const id = open(t)[0].id;
+    assert.equal((await api(f.c, `/threads/${f.made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} })).status, 200);
+    await f.apply({ project_tools: tools({ seq: 2, programs: [line('changed text', 'a')] }) });
+    t = await f.get(); assert.equal(open(t).length, 0); assert.equal(t.project_tools.seq, 2);
+    assert.equal(t.project_tools.state.programs[0].text, 'changed text'); assert.equal(t.project_tools.card, id);
+    await f.apply({ project_tools: tools({ seq: 3, programs: [line('new name', 'b')] }) });
+    t = await f.get(); assert.equal(open(t).length, 1); assert.notEqual(open(t)[0].id, id);
+  } finally { await finish(f); }
+});

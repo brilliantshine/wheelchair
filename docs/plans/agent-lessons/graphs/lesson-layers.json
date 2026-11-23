@@ -1,0 +1,10 @@
+{
+  "form": "layers",
+  "explanation": "What an agent is told when it starts, top to bottom, with lessons added as their own layer. Lower layers win where they disagree, so your own template can override a lesson. Leaves out where lessons are stored and how agents save them.",
+  "layers": [
+    {"label": "1 · Wheelchair's rules for this role", "detail": "Fixed, can't be turned off"},
+    {"label": "2 · Lessons learned (agent-written)", "detail": "One per agent type, always on. Marked as written by agents; you can edit it, with a warning"},
+    {"label": "3 · Your template", "detail": "Unchanged: the one you mark in use, if any"},
+    {"label": "4 · The brief", "detail": "What it is asked to do this time"}
+  ]
+}

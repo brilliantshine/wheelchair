@@ -44,3 +44,40 @@ test('the list view marks a thread whose lead posted a done card', async () => {
     assert.equal((await lean()).done_card, true);
   } finally { await close(context); }
 });
+
+test('the list view gives a quick fix its stage from the pinned progress line', async () => {
+  const context = await setup();
+  try {
+    const made = await thread(context, { project: '/srv/proj', machine: 'hub', message: 'Quick fix' });
+    const lead = made.sessions.find((s) => s.role === 'lead');
+    const lean = async () => (await api(context, '/threads?view=list')).body.threads.find((t) => t.id === made.id);
+    assert.equal((await lean()).progress_stage, null);
+    const steps = [
+      [{ stage: 'build', done: 0, total: 1 }, 'building'],
+      [{ stage: 'verify', pass: 1, phase: 'checking' }, 'verifying'],
+      [{ stage: 'verify', pass: 1, phase: 'fixing', found: 1, fixed: 0 }, 'verifying'],
+      [{ stage: 'verify', pass: 2, phase: 'clean' }, 'verified'],
+    ];
+    for (const [fields, expected] of steps) {
+      const posted = await card(context, made.id, lead.name, { kind: 'progress', machines: [], choice_waiting: false, ...fields });
+      assert.equal(posted.status, 202, JSON.stringify(posted.body));
+      assert.equal((await lean()).progress_stage, expected);
+    }
+  } finally { await close(context); }
+});
+
+test('the list view leaves a planned thread to its plan, even with a progress line', async () => {
+  const context = await setup();
+  try {
+    const made = await thread(context, { project: '/srv/proj', machine: 'hub', message: 'Planned' });
+    const file = path.join(context.state, 'threads', `${made.id}.json`);
+    const data = JSON.parse(await fs.readFile(file)); data.slug = 'some-plan';
+    await fs.writeFile(file, JSON.stringify(data));
+    const lead = made.sessions.find((s) => s.role === 'lead');
+    const posted = await card(context, made.id, lead.name, { kind: 'progress', stage: 'verify', pass: 1, phase: 'clean', machines: [], choice_waiting: false });
+    assert.equal(posted.status, 202, JSON.stringify(posted.body));
+    const listed = (await api(context, '/threads?view=list')).body.threads.find((t) => t.id === made.id);
+    assert.equal(listed.slug, 'some-plan');
+    assert.equal(listed.progress_stage, null);
+  } finally { await close(context); }
+});

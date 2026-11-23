@@ -67,6 +67,10 @@ app state: `viewer/test/helpers/server.js:66-74`). Follow app steps in a headles
 phone size (390×844), using the project's Playwright if it has one, otherwise any headless
 browser available on the machine. A desktop app or game is checked the same way, on your session's invisible screen rather than in a headless browser, with the same isolation rules: `node <root>/viewer/app/wc.js screen run -- <command>`, then `shot`, `click`, `type` and `key`, and `screen stop` when done. Name in your report the screenshot paths that show what you saw. If the screen command says tools are missing on this machine, that step is COULD NOT TRY with that reason.
 
+On a WSL machine, use `node <root>/viewer/app/wc.js win <op>` to run or look at things on Windows. Your Windows copy is synced with git around each command; after editing files, run `win sync` before asking a Windows-side tool to look at them. A sync can report conflicts: text files then contain git conflict markers to resolve; binary files and files deleted on one side or renamed keep your version. The Windows side is in the ref named by the result: use `git show <ref>:<path>` to recover a file when it exists there, and `git ls-tree -r <ref>` to see what it had if a path was renamed or deleted. If a Windows-side tool failed at session start, check `win info` for `ready` and say so in your report. Windows apps appear on the user's desktop: never leave them running or try to type into them; use `win stop` when done. For Unity tests, run `win run -- <Unity.exe path> -batchmode -runTests -projectPath <copy> -testResults <copy>\Logs\wheelchair-results.xml` with no Editor open on that copy (Unity refuses a second instance). `Logs/` is ignored in Unity projects, so read results through `copy_linux` from `win info`, not the worktree. The first Unity open in a thread imports the whole project and can outlast the run limit; use `win start` and poll `win status` for it. A `win` 422 for "not WSL" is COULD NOT TRY.
+
+Store-packaged apps such as Windows 11's Notepad, Calculator and Paint hand their windows to processes Windows starts outside the bridge, so `windows`, `shot` and `stop` cannot reach them; use classic desktop programs.
+
 If the project gives no safe way to run its app in isolation (it needs real accounts,
 devices, paid services or its live data), report those steps COULD NOT TRY with that reason;
 do not improvise against live systems.
@@ -124,3 +128,5 @@ A blocked verdict is not a `GAP` and never starts remediation.
 One `GAP` line per gap, each with evidence (a `file:line`, or a command and what it
 printed). A gap you cannot support with evidence is not a gap. Say what you ran in a
 sentence or two after the verdict if it helps; keep the verdict lines first.
+
+The lessons in your instructions are kept by the lead; you do not save lessons.

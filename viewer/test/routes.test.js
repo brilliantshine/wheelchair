@@ -386,6 +386,9 @@ test('diagram readers restrict registered graph files and preserve forms and san
     const read = (route, file) => raw(ctx, `/${route}?path=${encodeURIComponent(file)}`, { headers: { cookie } });
     const json = await read('diagram-form', form); assert.equal(json.status, 200); assert.deepEqual(json.body, { form: 'timeline', unknown: { keep: true } });
     const result = await read('diagram-html', html); assert.equal(result.status, 200); assert.equal(result.body, '<p>Picture</p>');
+    const download = await raw(ctx, `/diagram-html?path=${encodeURIComponent(html)}&download=1`, { headers: { cookie } });
+    assert.equal(download.headers.get('content-disposition'), 'attachment; filename="picture.html"');
+    assert.match(download.body, /^<meta charset="utf-8">/);
     assert.equal(result.headers.get('content-type'), 'text/html; charset=utf-8'); assert.equal(result.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(result.headers.get('content-security-policy'), "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox");
     assert.equal((await read('diagram-html', form)).status, 403);

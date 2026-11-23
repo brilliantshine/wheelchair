@@ -258,11 +258,11 @@ test('records a press and lets a lead resolve an open question only in its threa
 
     const openQuestion = await card(context, made.id, lead.name, question);
     const resolved = await card(context, made.id, lead.name, {
-      kind: 'resolve', card: openQuestion.body.id, note: 'Collin chose A in chat.',
+      kind: 'resolve', card: openQuestion.body.id, note: 'the user chose A in chat.',
     });
     assert.equal(resolved.status, 202);
     const resolvedCard = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === openQuestion.body.id);
-    assert.equal(resolvedCard.resolved_note, 'Collin chose A in chat.');
+    assert.equal(resolvedCard.resolved_note, 'the user chose A in chat.');
 
     const answered = await card(context, made.id, lead.name, {
       kind: 'resolve', card: openQuestion.body.id, note: 'Again.',
@@ -363,7 +363,7 @@ test('marks a result task finished and relays it to its starter', async () => {
 
 test('holds a queued message until both readiness and a turn end', async () => {
   await withContext(async (context) => {
-    const made = await thread(context, { message: 'Hello from Collin.' });
+    const made = await thread(context, { message: 'Hello from the user.' });
     const file = path.join(context.state, 'threads', `${made.id}.json`);
     const stored = JSON.parse(await fs.readFile(file, 'utf8'));
     stored.sessions[0].ready = false;
@@ -372,16 +372,16 @@ test('holds a queued message until both readiness and a turn end', async () => {
     assert.equal(context.machine.sessions.get(made.sessions[0].name).submits, undefined);
     await event(context, made.id, made.sessions[0].name, 'ready');
     assert.deepEqual(context.machine.sessions.get(made.sessions[0].name).submits, [
-      'Hello from Collin.',
+      'Hello from the user.',
     ]);
   });
 });
 
-test('stamps when Collin last wrote in a thread, and only for his messages', async () => {
+test('stamps when the user last wrote in a thread, and only for their messages', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     // Read through the same list route the Threads page polls.
-    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).collin_at;
+    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).user_at;
     const before = await stampOf();
     await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Sort me up.' } });
     const stamped = await stampOf();
@@ -391,11 +391,11 @@ test('stamps when Collin last wrote in a thread, and only for his messages', asy
   });
 });
 
-test('stamps when Collin answers a card, so the thread moves up the list', async () => {
+test('stamps when the user answers a card, so the thread moves up the list', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0];
-    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).collin_at;
+    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).user_at;
     const question = await card(context, made.id, lead.name, {
       kind: 'question', fits: 'This settles the approach.', question: 'Which?',
       options: [{ id: 'a', label: 'A', consequence: 'Use A.' }, { id: 'b', label: 'B', consequence: 'Use B.' }],
@@ -454,10 +454,11 @@ test('posts and clears a stuck-session need', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0];
-    await event(context, made.id, lead.name, 'stuck');
+    await event(context, made.id, lead.name, 'stuck', { note: ' Pi version note.' });
     await event(context, made.id, lead.name, 'ready');
     const chat = await api(context, `/threads/${made.id}/chat`);
     const need = chat.body.cards.find((item) => item.title === 'Session stuck at startup');
+    assert.match(need.body, /Pi version note/);
     assert.equal(need.answered, true);
   });
 });
@@ -903,8 +904,27 @@ test('returns every machine session and persists its last-seen time', async () =
     assert.equal(result.body[0].sessions[0].name, made.sessions[0].name);
     assert.match(result.body[0].last_seen, /^\d{4}-\d{2}-\d{2}T/);
     const machines = JSON.parse(await fs.readFile(path.join(context.state, 'machines.json'), 'utf8'));
-    assert.equal(machines.hub.last_seen, result.body[0].last_seen);
+    assert.match(machines.hub.last_seen, /^\d{4}-\d{2}-\d{2}T/);
+    assert.ok(Date.parse(machines.hub.last_seen) <= Date.parse(result.body[0].last_seen));
   });
+});
+
+test('throttles persisted last-seen times and retries a failed write', async () => {
+  let now = 0; let writes = 0; let fail = false;
+  const hub = new Hub({ now: () => now, codeVersion: '' });
+  hub.state.markMachineSeen = async () => { writes++; if (fail) { fail = false; throw new Error('write failed'); } };
+  await hub.markMachineSeen('machine', 'first');
+  now = 59_999;
+  await hub.markMachineSeen('machine', 'later');
+  assert.equal(writes, 1);
+  assert.equal(hub.machineSeen('machine'), 'later');
+  now = 60_000;
+  await hub.markMachineSeen('machine', 'boundary');
+  assert.equal(writes, 2);
+  now = 120_000; fail = true;
+  await assert.rejects(hub.markMachineSeen('machine', 'failed'), /write failed/);
+  await hub.markMachineSeen('machine', 'retry');
+  assert.equal(writes, 4);
 });
 
 test('proxies pane reads and raw terminal keys through the machine service', async () => {
@@ -1371,7 +1391,7 @@ test('successful submits record their destination, source, text, and time', asyn
       to: stored.sent[0].to,
       text: stored.sent[0].text,
       source: stored.sent[0].source,
-    }, { to: lead.name, text: 'Remember this.', source: 'collin' });
+    }, { to: lead.name, text: 'Remember this.', source: 'user' });
     assert.match(stored.sent[0].at, /^\d{4}-\d{2}-\d{2}T/);
   });
 });
@@ -1382,7 +1402,7 @@ test('sent history keeps 500 entries and appends older entries beside the thread
     const file = path.join(context.state, 'threads', `${made.id}.json`);
     const before = JSON.parse(await fs.readFile(file, 'utf8'));
     before.sent = Array.from({ length: 500 }, (_, index) => ({
-      to: made.sessions[0].name, text: `old-${index}`, source: 'collin', at: `2026-01-01T00:00:${String(index % 60).padStart(2, '0')}.000Z`,
+      to: made.sessions[0].name, text: `old-${index}`, source: 'user', at: `2026-01-01T00:00:${String(index % 60).padStart(2, '0')}.000Z`,
     }));
     await fs.writeFile(file, `${JSON.stringify(before)}\n`);
     await event(context, made.id, made.sessions[0].name, 'turn-ended');
@@ -1397,7 +1417,7 @@ test('sent history keeps 500 entries and appends older entries beside the thread
   });
 });
 
-test('restart context includes the latest twenty Collin and card messages', async () => {
+test('restart context includes the latest twenty the user and card messages', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const oldLead = made.sessions[0];
@@ -1406,7 +1426,7 @@ test('restart context includes the latest twenty Collin and card messages', asyn
     before.sent = Array.from({ length: 28 }, (_, index) => ({
       to: oldLead.name,
       text: `message-${index}`,
-      source: index % 4 === 0 ? 'app' : (index % 2 ? 'collin' : 'card'),
+      source: index % 4 === 0 ? 'app' : (index % 2 ? 'user' : 'card'),
       at: `2026-01-01T00:00:${String(index).padStart(2, '0')}.000Z`,
     }));
     await fs.writeFile(file, `${JSON.stringify(before)}\n`);
@@ -1419,7 +1439,7 @@ test('restart context includes the latest twenty Collin and card messages', asyn
     const replacement = after.sessions.find((session) => session.name === restarted.body.name);
     const contextMessage = replacement.queue.find((message) => message.source === 'context');
     const state = JSON.parse(contextMessage.text.replace(/^\[wc:context restart] Thread state:\n/, ''));
-    const expected = before.sent.filter((message) => ['collin', 'card'].includes(message.source)).slice(-20).map((message) => ({ ...message, source: message.source === 'collin' ? 'user' : message.source }));
+    const expected = before.sent.filter((message) => ['user', 'card'].includes(message.source)).slice(-20).map((message) => ({ ...message, source: message.source === 'user' ? 'user' : message.source }));
     assert.deepEqual(state.recent_messages, expected);
   });
 });
@@ -1785,7 +1805,7 @@ test('keep going and talk about it close a lead needs card and reach the lead', 
     assert.equal(pressed.body.text, 'keep going');
     let card = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === first);
     assert.equal(card.answered, true);
-    assert.equal(card.resolved_by, 'collin');
+    assert.equal(card.resolved_by, 'user');
     assert.equal(card.resolved_note, 'Keep going');
     const again = await api(context, `/threads/${made.id}/cards/${first}/press`, { method: 'POST', body: { action: 'keep-going' } });
     assert.equal(again.status, 422);
@@ -1801,7 +1821,7 @@ test('keep going and talk about it close a lead needs card and reach the lead', 
   });
 });
 
-test('dismiss closes a lead needs card as collin and refuses a system one', async () => {
+test('dismiss closes lead needs and refuses a live held system card', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0].name;
@@ -1811,13 +1831,20 @@ test('dismiss closes a lead needs card as collin and refuses a system one', asyn
     const system = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.system);
     const refused = await api(context, `/threads/${made.id}/cards/${system.id}/dismiss`, { method: 'POST', body: {} });
     assert.equal(refused.status, 422);
+    const view = (await api(context, `/threads/${made.id}/chat`)).body;
+    assert.equal(view.cards.find(c => c.id === system.id).blocking, true);
+    assert.equal(view.thread.cards.find(c => c.id === system.id).blocking, true);
+    const held = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));
+    assert.equal(held.sessions.find(s => s.name === lead).needs_open, true);
+    assert.equal(held.sessions.find(s => s.name === lead).permission_open, true);
+    assert.equal(held.cards.find(c => c.id === system.id).blocking, undefined);
     const missing = await api(context, `/threads/${made.id}/cards/nope/dismiss`, { method: 'POST', body: {} });
     assert.equal(missing.status, 404);
     const ok = await api(context, `/threads/${made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} });
     assert.equal(ok.status, 200);
     const closed = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === id);
     assert.equal(closed.answered, true);
-    assert.equal(closed.resolved_by, 'collin');
+    assert.equal(closed.resolved_by, 'user');
     assert.equal((await needsStrip(context)).some((item) => item.card_id === id), false);
     // The live lead hears the dismissal (held here behind the open permission prompt).
     const stored = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));
@@ -2027,6 +2054,9 @@ test('archived HTML route sends the static sandbox headers', async () => {
     assert.equal(response.headers['content-type'], 'text/html; charset=utf-8');
     assert.equal(response.headers['x-content-type-options'], 'nosniff');
     assert.equal(response.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox");
+    await routes.handle({}, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html&download=1'), false);
+    assert.equal(response.headers['content-disposition'], 'attachment; filename="picture.html"');
+    assert.match(response.body.toString(), /^<meta charset="utf-8">/);
   } finally { threads.archivedHtml = original; }
 });
 
@@ -2073,7 +2103,7 @@ test('retract validates targets, removes pins and refuses stale presses', async 
   assert.equal(validate('retract', { card: 'x', note: 'one\ntwo' }, 'lead').ok, false);
   assert.equal(validate('retract', { card: 'x', note: 'No longer needed' }, 'worker').ok, false);
   const targets = { cards: [{ id: 'x', kind: 'idea' }, { id: 's', kind: 'needs', system: true }, { id: 'a', kind: 'question', answered: true }, { id: 'r', kind: 'offer', replaced: true }] };
-  for (const [id, reason] of [['x', 'only a question, offer, approval, needs, sudo or deferred card can be retracted'], ['s', 'a system needs card closes itself'], ['a', 'card is already answered'], ['r', 'no such card in this thread']]) assert.equal(retractable(targets, id).reason, reason);
+  for (const [id, reason] of [['x', 'only a question, offer, approval, needs, sudo, deferred or reach card can be retracted'], ['s', 'a system needs card closes itself'], ['a', 'card is already answered'], ['r', 'no such card in this thread']]) assert.equal(retractable(targets, id).reason, reason);
   await withContext(async (context) => {
     const made = await thread(context); const other = await thread(context); const lead = made.sessions[0].name;
     const foreign = await openNeed(context, other);
@@ -2203,5 +2233,78 @@ test('restart context preserves stub summary and all card kinds', async () => {
     const state = JSON.parse(message.replace(/^\[wc:context restart] Thread state:\n/, ''));
     assert.equal(state.stub_summary, 'Summary only'); assert.equal(state.card_kinds[a.id], 'deferred'); assert.equal(state.card_kinds[b.id], 'deferred');
     assert.doesNotMatch(message, /commits|cherry-pick/i);
+  });
+});
+
+test('nonblocking system needs dismiss without notifying lead, including stale holds', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context); const lead = made.sessions[0].name;
+    const hub = new (require('../app/hub.js').Hub)({ stateDir: context.state });
+    let t = await hub.thread(made.id);
+    const add = title => require('../app/cards.js').addCard(t, { kind: 'needs', title, body: 'test' }, { system: true });
+    const quiet = add('An agent stopped without reporting'); const ended = add('Session ended'); const stale = add('Permission needed'); const stopped = add('Session stuck at startup');
+    t.sessions.push({ name: 'stopped-held', live: false, needs_open: true, needs_card: stopped.id, queue: [] }); await hub.save(t);
+    for (const c of [quiet, ended, stale, stopped]) {
+      assert.equal((await api(context, `/threads/${made.id}/cards/${c.id}/dismiss`, { method: 'POST', body: {} })).status, 200);
+      t = await hub.thread(made.id); const saved = t.cards.find(x => x.id === c.id);
+      assert.equal(saved.resolved_by, 'user'); assert.equal(saved.resolved_note, 'Dismissed');
+      assert.ok(!(t.queues[lead] || []).some(q => q.text.includes(c.id)));
+    }
+  });
+});
+
+test('restart context carries recent peer messages after import cutoff and omits empty history', async () => {
+  await withContext(async context => {
+    const made = await thread(context); const hub = new Hub({ stateDir: context.state }); await hub.state.init();
+    let current = await hub.thread(made.id); current.sessions[0].live = false;
+    const message = { at: '2026-02-01T00:00:00Z', thread: 'other', title: 'Other', session: 'peer', direction: 'received', text: 'question', question: 'q' };
+    current.imported = { at: '2026-01-01T00:00:00Z', history: [] }; current.peer_log = [{ ...message, at: '2025-01-01T00:00:00Z' }, message, { ...message, direction: 'limit' }]; await hub.save(current);
+    context.machine.handoffReplies.running = { names: [] };
+    let lead = await hub.restartLead(made.id); let state = JSON.parse(lead.queue[0].text.split('Thread state:\n')[1]);
+    assert.deepEqual(state.cross_thread_messages, [message]);
+    current = await hub.thread(made.id); current.sessions.find(s => s.name === lead.name).live = false; current.peer_log = []; await hub.save(current);
+    lead = await hub.restartLead(made.id); state = JSON.parse(lead.queue[0].text.split('Thread state:\n')[1]); assert.equal(Object.hasOwn(state, 'cross_thread_messages'), false);
+  });
+});
+
+test('stub additions validate and append only to unopened candidates', async () => {
+  const base = { kind: 'stub', title: 'New work', summary: 'More detail', depends_on_parent: false };
+  const targetId = 'a'.repeat(12);
+  for (const value of [{ ...base, adds_to: targetId, depends_on_parent: true }, { ...base, adds_to: targetId, commits: [] }]) assert.equal(validate('stub', value).reason, "an addition can't depend on this thread's unmerged work; post your own stub");
+  for (const value of [{ ...base, duplicate: false }, { ...base, adds_to: 'ABC' }, { ...base, adds_to: targetId, duplicate: 'yes' }]) assert.equal(validate('stub', value).ok, false);
+  await withContext(async context => {
+    const parent = await thread(context);
+    const lead = parent.sessions[0].name;
+    const created = await card(context, parent.id, lead, { ...base, title: 'Target', summary: 'Original context' });
+    const id = created.body.thread_id;
+    const hub = new Hub({ stateDir: context.state });
+    const beforeCount = (await hub.state.allThreads()).length;
+    const parentName = parent.title || parent.slug || parent.project.split('/').filter(Boolean).at(-1) || parent.id;
+    const date = new Date().toISOString().slice(0, 10);
+    for (const duplicate of [false, true]) {
+      const result = await card(context, parent.id, lead, { ...base, adds_to: id, duplicate });
+      assert.equal(result.status, 202); assert.equal(result.body.thread_id, id); assert.equal(result.body.target_title, 'Target');
+    }
+    assert.equal((await hub.thread(id)).context, `Original context\n\nAdded from "${parentName}" (${date}): More detail\n\nAlso came up in "${parentName}" (${date}): More detail`);
+    const deliveryId = 'duplicate-note-retry';
+    const payload = { thread_id: parent.id, session: lead, ...base, adds_to: id, duplicate: true, summary: 'Retry detail', delivery_id: deliveryId };
+    const first = await machinePost(context, '/machine/cards', payload);
+    const replay = await machinePost(context, '/machine/cards', payload);
+    assert.equal(first.status, 202);
+    assert.equal(replay.status, 200);
+    assert.deepEqual(replay.body, { ok: true, duplicate: true, id: deliveryId });
+    assert.equal((await hub.thread(id)).context, `Original context\n\nAdded from "${parentName}" (${date}): More detail\n\nAlso came up in "${parentName}" (${date}): More detail\n\nAlso came up in "${parentName}" (${date}): Retry detail`);
+    assert.equal((await hub.state.allThreads()).length, beforeCount);
+    for (const invalid of [{ ...base, adds_to: id, depends_on_parent: true }, { ...base, adds_to: id, commits: [] }, { ...base, duplicate: true }]) assert.equal((await card(context, parent.id, lead, invalid)).status, 422);
+    const targetFile = path.join(context.state, 'threads', `${id}.json`);
+    for (const [change, reason] of [[{ project: '/elsewhere' }, 'no such stub'], [{ archived: true }, 'that stub is archived, handed off or finished'], [{ sessions: [{ role: 'lead' }] }, 'that stub has started; post your own stub']]) {
+      const target = await hub.thread(id); const original = structuredClone(target);
+      Object.assign(target, change); await fs.writeFile(targetFile, JSON.stringify(target));
+      const count = (await hub.thread(parent.id)).cards.length;
+      const result = await card(context, parent.id, lead, { ...base, adds_to: id });
+      assert.equal(result.status, 422); assert.equal(result.body.detail, reason);
+      assert.equal((await hub.thread(id)).context, original.context); assert.equal((await hub.thread(parent.id)).cards.length, count);
+      await fs.writeFile(targetFile, JSON.stringify(original));
+    }
   });
 });

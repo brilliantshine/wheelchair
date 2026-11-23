@@ -88,6 +88,8 @@ new_case() {
   tailscale_absent[$name]=0
   detect_path[$name]=0
   restricted_path[$name]=0
+  missing_tmux[$name]=0
+  case_real_node[$name]=$real_node
   tailscale_ip[$name]=100.64.0.1
   tailscale_ip_status[$name]=0
   serve_status[$name]=$(status_with_handlers '{}')
@@ -165,6 +167,15 @@ run_case() {
     for tool in awk basename bash cat chmod cp cut dirname grep head id mkdir mktemp od python3 rm sed tail tr uname; do
       ln -sf "$(command -v "$tool")" "${shim[$name]}/$tool"
     done
+    for tool in npm tmux git gh curl; do
+      [[ -e ${shim[$name]}/$tool || ${missing_tmux[$name]} == 1 && $tool == tmux ]] && continue
+      if command -v "$tool" >/dev/null 2>&1; then
+        ln -s "$(command -v "$tool")" "${shim[$name]}/$tool"
+      else
+        printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[$name]}/$tool"
+        chmod +x "${shim[$name]}/$tool"
+      fi
+    done
     command_path=${shim[$name]}
     [[ ${tailscale_absent[$name]} == 1 ]] && rm -f "${shim[$name]}/tailscale"
   fi
@@ -179,7 +190,7 @@ run_case() {
     "WHEELCHAIR_TTY=${tty[$name]}" "WHEELCHAIR_TAILSCALE_DNS=${dns[$name]}"
     "WHEELCHAIR_PLATFORM=${case_platform:-Linux}" "WHEELCHAIR_SYSTEMD_RUN_DIR=$fixture/systemd"
     "WHEELCHAIR_TAILSCALE_APP=${case_tailscale_app:-/nonexistent}"
-    "WHEELCHAIR_REAL_NODE=$real_node"
+    "WHEELCHAIR_REAL_NODE=${case_real_node[$name]}"
     "WHEELCHAIR_TAILSCALE_SERVE_STATUS=${serve_status[$name]}"
     "WHEELCHAIR_TAILSCALE_SERVE_STATUS_EXIT=${serve_status_exit[$name]}"
     "WHEELCHAIR_TAILSCALE_IP=${tailscale_ip[$name]}"
@@ -273,7 +284,7 @@ run_case codex_only
 assert 'codex-only install succeeds and reports Codex' bash -c '[[ $1 == 0 && $2 == *"harness found: codex"* ]]' _ "${status[codex_only]}" "${output[codex_only]}"
 assert 'codex-only install creates no retired wrappers' no_retired_wrappers "${claude[codex_only]}" "${codex[codex_only]}"
 assert 'codex-only install does not create the absent Claude home' test ! -e "${claude[codex_only]}"
-assert 'codex-only install creates the default model pins' cmp -s <(printf "# wheelchair's model pins. Change them with codex/model.sh.\nclaude.light = claude-haiku-5-5\nclaude.standard = claude-sonnet-5-5\nclaude.heavy = claude-opus-5-5\nclaude.critical = claude-fable-5-2\nclaude.lead = claude-opus-5-5\nclaude.sub-lead = claude-opus-5-5\ngpt.light = gpt-6-luna\ngpt.standard = gpt-5.6-terra\ngpt.heavy = gpt-6.1-sol\ngpt.critical = gpt-6-astra\ngpt.lead = gpt-6.1-sol\ngpt.sub-lead = gpt-6.1-sol\ngemini.light = gemini-3.8-flash-low\ngemini.standard = gemini-3.8-flash-medium\ngemini.heavy = gemini-3.8-flash-high\ngemini.critical = gemini-3.8-flash-high\ngemini.lead = gemini-3.8-flash-high\ngemini.sub-lead = gemini-3.8-flash-high\nkimi.light = kimi-code/kimi-for-coding\nkimi.standard = kimi-code/k3\nkimi.heavy = kimi-code/k3.1-pro\nkimi.critical = kimi-code/k3.1-pro\nkimi.lead = kimi-code/k3.1-pro\nkimi.sub-lead = kimi-code/k3.1-pro\n") "${home[codex_only]}/.wheelchair/models"
+assert 'codex-only install creates the default model pins' cmp -s <(printf "# wheelchair's model pins. Change them with codex/model.sh.\nclaude.light = claude-haiku-5-5\nclaude.standard = claude-sonnet-5-5\nclaude.heavy = claude-opus-5-5\nclaude.critical = claude-fable-5-2\nclaude.lead = claude-opus-5-5\nclaude.sub-lead = claude-opus-5-5\ngpt.light = gpt-6-luna\ngpt.standard = gpt-5.6-terra\ngpt.heavy = gpt-6.1-sol\ngpt.critical = gpt-6-astra\ngpt.lead = gpt-6.1-sol\ngpt.sub-lead = gpt-6.1-sol\ngemini.light = gemini-3.8-flash-low\ngemini.standard = gemini-3.8-flash-medium\ngemini.heavy = gemini-3.8-flash-high\ngemini.critical = gemini-3.8-flash-high\ngemini.lead = gemini-3.8-flash-high\ngemini.sub-lead = gemini-3.8-flash-high\nkimi.light = kimi-code/kimi-for-coding\nkimi.standard = kimi-code/k3\nkimi.heavy = kimi-code/k3.1-pro\nkimi.critical = kimi-code/k3.1-pro\nkimi.lead = kimi-code/k3.1-pro\nkimi.sub-lead = kimi-code/k3.1-pro\nopenrouter.light = openrouter/auto\nopenrouter.standard = openrouter/auto\nopenrouter.heavy = openrouter/auto\nopenrouter.critical = openrouter/auto\nopenrouter.lead = openrouter/auto\nopenrouter.sub-lead = openrouter/auto\n") "${home[codex_only]}/.wheelchair/models"
 
 new_case kimi_only
 present[kimi_only]=kimi
@@ -284,6 +295,46 @@ new_case agy_only
 present[agy_only]=agy
 run_case agy_only
 assert 'agy-only install succeeds and initializes model pins' bash -c '[[ $1 == 0 && $2 == *"harness found: agy"* && -f $3 ]]' _ "${status[agy_only]}" "${output[agy_only]}" "${home[agy_only]}/.wheelchair/models"
+
+new_case pi_on_path
+detect_path[pi_on_path]=1
+args[pi_on_path]=--serve
+printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[pi_on_path]}/pi"
+chmod +x "${shim[pi_on_path]}/pi"
+run_case pi_on_path
+assert 'pi on PATH is detected alone' bash -c '[[ $1 == 0 && $2 == *"harness found: pi"* && $2 != *"harness found: kimi"* ]]' _ "${status[pi_on_path]}" "${output[pi_on_path]}"
+assert 'PATH pi directory leads the machine service PATH' grep -Fq "PATH=${shim[pi_on_path]}:" "$(machine_unit_path pi_on_path)"
+
+new_case pi_fallback
+detect_path[pi_fallback]=1
+args[pi_fallback]=--serve
+mkdir -p "${home[pi_fallback]}/.local/bin" "${home[pi_fallback]}/target"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${home[pi_fallback]}/target/pi"
+chmod +x "${home[pi_fallback]}/target/pi"
+ln -s "${home[pi_fallback]}/target/pi" "${home[pi_fallback]}/.local/bin/pi"
+run_case pi_fallback
+assert 'fallback pi symlink is detected alone' bash -c '[[ $1 == 0 && $2 == *"harness found: pi"* ]]' _ "${status[pi_fallback]}" "${output[pi_fallback]}"
+assert 'fallback pi symlink directory leads the machine service PATH' grep -Fq "PATH=${home[pi_fallback]}/.local/bin:" "$(machine_unit_path pi_fallback)"
+
+new_case pi_with_others
+present[pi_with_others]=claude,codex,kimi,pi
+restricted_path[pi_with_others]=1
+args[pi_with_others]=--serve
+mkdir -p "${home[pi_with_others]}/.local/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${home[pi_with_others]}/.local/bin/pi"
+chmod +x "${home[pi_with_others]}/.local/bin/pi"
+run_case pi_with_others
+assert 'presence override reports pi alongside other harnesses' bash -c '[[ $1 == 0 && $2 == *"harness found: pi"* && $2 == *"harness found: claude"* && $2 == *"harness found: codex"* && $2 == *"harness found: kimi"* ]]' _ "${status[pi_with_others]}" "${output[pi_with_others]}"
+assert 'pi alongside others reaches the machine service PATH' grep -Fq "PATH=${home[pi_with_others]}/.local/bin:" "$(machine_unit_path pi_with_others)"
+
+new_case no_pi
+detect_path[no_pi]=1
+args[no_pi]=--serve
+printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[no_pi]}/codex"
+chmod +x "${shim[no_pi]}/codex"
+run_case no_pi
+assert 'absent pi is not reported' bash -c '[[ $1 == 0 && $2 != *"harness found: pi"* ]]' _ "${status[no_pi]}" "${output[no_pi]}"
+assert 'local bin is on the machine service PATH even with pi absent' grep -Fq "${home[no_pi]}/.local/bin" "$(machine_unit_path no_pi)"
 
 new_case kimi_fallback
 detect_path[kimi_fallback]=1
@@ -389,10 +440,25 @@ assert 'malformed settings survive with warning and successful install' bash -c 
 
 new_case neither
 present[neither]=''
+args[neither]=--serve
 run_case neither
-assert 'no provider exits non-zero and names all missing commands' bash -c '[[ $1 != 0 && $2 == *"no claude, codex, agy or kimi found"* ]]' _ "${status[neither]}" "${output[neither]}"
+assert 'no provider succeeds and explains setup' bash -c '[[ $1 == 0 && $2 == *"No agent CLI yet. After install, open the app: its setup checklist installs them from Settings."* ]]' _ "${status[neither]}" "${output[neither]}"
 assert 'neither harness writes no homes' bash -c '[[ ! -e $1 && ! -e $2 ]]' _ "${claude[neither]}" "${codex[neither]}"
-assert 'neither harness does not run the stale-viewer check' test ! -e "$(log_path neither)"
+assert 'neither harness runs the stale-viewer check' grep -Fq "node $repo/viewer/server.js --stop --if-stale" "$(log_path neither)"
+assert 'neither harness service PATH includes both install directories' bash -c 'grep -Fq "$2/.local/bin" "$1" && grep -Fq "$2/.kimi-code/bin" "$1"' _ "$(machine_unit_path neither)" "${home[neither]}"
+
+new_case missing_tmux_case
+restricted_path[missing_tmux_case]=1
+missing_tmux[missing_tmux_case]=1
+run_case missing_tmux_case
+assert 'missing tmux fails before writing state' bash -c '[[ $1 == 1 && $2 == *tmux* && -z $(ls -A "$3") ]]' _ "${status[missing_tmux_case]}" "${output[missing_tmux_case]}" "${home[missing_tmux_case]}"
+
+new_case old_node
+printf '#!/usr/bin/env bash\nprintf 18.0.0\n' > "$fixture/node18"
+chmod +x "$fixture/node18"
+case_real_node[old_node]=$fixture/node18
+run_case old_node
+assert 'Node 18 fails with Node 20 requirement' bash -c '[[ $1 == 1 && $2 == *"Node 20"* && $2 == *18.0.0* ]]' _ "${status[old_node]}" "${output[old_node]}"
 
 new_case both_idempotent
 run_case both_idempotent
@@ -687,6 +753,7 @@ args[screen_missing]=--serve
 run_case screen_missing
 expected_screen_warning="screens: warning — missing Xvfb, xauth, mcookie, ffmpeg, xdotool, xwininfo, systemd-run; agents can't use screens until they're installed (Debian: sudo apt install xvfb xauth util-linux ffmpeg xdotool x11-utils systemd)"
 assert 'Linux screen warning lists missing tools and unique packages' bash -c '[[ $1 == *"$2"* ]]' _ "${output[screen_missing]}" "$expected_screen_warning"
+assert 'missing screen tools do not print optional window manager hint' bash -c '[[ $1 != *"screens: optional"* ]]' _ "${output[screen_missing]}"
 assert 'screen warning leaves bookmark last' last_line_is "${output[screen_missing]}" 'https://fixture.tailnet.ts.net/?token=fixture'
 assert 'screen warning leaves the exit status at 0' bash -c '[[ $1 == 0 ]]' _ "${status[screen_missing]}"
 new_case screen_partial
@@ -698,14 +765,26 @@ for tool in Xvfb xauth mcookie ffmpeg; do
 done
 run_case screen_partial
 assert 'Linux screen warning names only the missing tools and their packages' bash -c '[[ $1 == *"$2"* && $3 == 0 ]]' _ "${output[screen_partial]}" "screens: warning — missing xdotool, xwininfo, systemd-run; agents can't use screens until they're installed (Debian: sudo apt install xdotool x11-utils systemd)" "${status[screen_partial]}"
+assert 'partially missing screen tools do not print optional window manager hint' bash -c '[[ $1 != *"screens: optional"* ]]' _ "${output[screen_partial]}"
 new_case screen_present
 restricted_path[screen_present]=1
+args[screen_present]=--serve
 for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl; do
   printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[screen_present]}/$tool"
   chmod +x "${shim[screen_present]}/$tool"
 done
 run_case screen_present
-assert 'Linux with screen tools prints no screen warning' bash -c '[[ $1 != *"screens:"* && $2 == 0 ]]' _ "${output[screen_present]}" "${status[screen_present]}"
+assert 'Linux with screen tools prints optional window manager hint only' bash -c '[[ $1 == *"screens: optional — no window manager; for apps that need one: sudo apt install openbox"* && $1 != *"screens: warning"* && $2 == 0 ]]' _ "${output[screen_present]}" "${status[screen_present]}"
+assert 'optional screen hint leaves bookmark last' last_line_is "${output[screen_present]}" 'https://fixture.tailnet.ts.net/?token=fixture'
+new_case screen_wm
+restricted_path[screen_wm]=1
+args[screen_wm]=--serve
+for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl openbox xprop; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[screen_wm]}/$tool"
+  chmod +x "${shim[screen_wm]}/$tool"
+done
+run_case screen_wm
+assert 'Linux with screen tools and openbox prints no screen message' bash -c '[[ $1 != *"screens:"* && $2 == 0 ]]' _ "${output[screen_wm]}" "${status[screen_wm]}"
 case_platform=Darwin
 new_case screen_darwin
 restricted_path[screen_darwin]=1

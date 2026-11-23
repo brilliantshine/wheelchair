@@ -1,0 +1,21 @@
+# Map: overlap discovery, questions and restart
+
+Checked against: `c9c6451819f00556a5d875d42f6a8e462f3eb22a` (origin/main). Files covered: `protocol/app/lead.md`, `protocol/app/cards-lead.md`, `viewer/app/wc.js`, `viewer/app/sessions.js`, `viewer/app/peers.js`, `viewer/app/state.js`, `viewer/app/cards.js`, `viewer/app/card.js`, `viewer/app/threads.js`, `viewer/app/views.js`, `viewer/app/remote-plan.js`, `viewer/test/protocol-rules.test.js`.
+
+> Peer-list behavior and the Other leads section were rechecked for stub discovery against `7204dd2af8986aa1cdbca73f6b98c25d0fc26095`; see [stub lifecycle](stub-lifecycle.md). The later overlap-question changes are outside that recheck.
+
+```text
+lead lists threads -> discovers overlap -> question or late mention
+                         | other project
+                       reach -> user allows -> linked leads can message
+question -> answer or resolve -> stored card -> restart context
+```
+
+- `session leads` is lead-only; it lists reachable, unarchived, same-machine threads, sorted by update time. Same-project threads with a prior lead and linked threads have `thread`, live `lead` or null, `project`, `title`, `linked`, `stage`, `idea`, `progress`, `branch`, `pr_url`; `--all-projects` additionally returns other-project threads with a prior lead, with only the first five fields. A linked cross-project thread still has the full fields even with that flag (`viewer/app/wc.js:71`, `viewer/app/sessions.js:670`, `viewer/app/peers.js:41`, `viewer/app/state.js:194`). `linked` is false for same-project entries; cross-project links work in either direction (`viewer/app/peers.js:11`, `:46`).
+- A reach card checks the target exists, is reachable on the same machine, is in another project and is not already linked; an allow press rechecks and stores the link on the requesting thread. Cross-thread messages require leads, a live target and either the same project or a link (`viewer/app/peers.js:16`, `viewer/app/cards.js:143`, `viewer/app/threads.js:327`).
+- The question validator accepts an optional 12-lowercase-hex `about_thread`; the hub stores the validated field on the originating thread's card without looking up its target or checking its project. Thus another project's id is accepted by code, although current lead protocol limits overlap cards to this project (`viewer/app/card.js:104`, `viewer/app/cards.js:56`, `:168`, `protocol/app/lead.md:757`).
+- The peer `stage` is cached `last_status`, or `unknown` with a slug, `no plan` without one; listing does not refresh it. Local and remote plan reads refresh the cache separately, so it may lag the current PLAN. `pr_url` comes from the latest non-retracted done card after any import, not a live PR check; a done card without a URL is indistinguishable from no done card in this field (`viewer/app/peers.js:54`, `viewer/app/views.js:116`, `viewer/app/remote-plan.js:24`, `viewer/app/cards.js:51`). The protocol treats `done`, or `no plan` plus `pr_url`, as finished; it currently posts a waiting question as held and keeps an open card valid even if the peer finishes (`protocol/app/lead.md:757`, `:779`, `:784`).
+- Restart sends the full non-replaced cards, pins, all card id-to-kind pairs and the last 20 sent user/card messages; delivered peer messages are excluded, though queued non-context messages are moved to the new lead (`viewer/app/threads.js:138`, `:180`). Cards retain `answered_action` and `answered_value` for presses, `resolved_by`, `resolved_note`, `resolved_at` for resolves, and `retracted_at` for withdrawals (`viewer/app/threads.js:398`, `viewer/app/cards.js:37`).
+- The lead's discovery rules are in `protocol/app/lead.md:740`; overlap terms, card windows, answers and waiting questions follow at `:753`, with restart recovery at `:841`. The protocol test checks the first section exists and forbids four historical phrases there; it does not check the `Overlap with` wording (`viewer/test/protocol-rules.test.js:96`).
+
+Not checked: browser rendering, unrelated card kinds, and transport or race behavior beyond the paths above.

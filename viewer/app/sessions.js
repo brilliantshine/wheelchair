@@ -11,7 +11,7 @@ const { appError } = require('./state.js');
 const { outOfDate } = require('./ready.js');
 const settingsStore = require('./settings.js');
 const usage = require('./usage.js');
-const { choose, slotFor } = require('./balancer.js');
+const { choose, chooseSwitch, slotFor, reviewFamilies } = require('./balancer.js');
 const { PROVIDERS, cliOf, providerOf } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
@@ -171,6 +171,8 @@ function applyProjectTools(thread, started) {
     return;
   }
   const names = [...new Set(lines.flatMap((line) => (line.names.length ? line.names : ['file'])))].sort();
+  const dismissed = stored.card && thread.cards.find((item) => item.id === stored.card && item.answered && item.resolved_by === 'user');
+  if (dismissed && JSON.stringify(names) === JSON.stringify(stored.card_names)) return;
   const items = lines.slice(0, 20).map((line) => line.text);
   if (lines.length > 20) items.push(`and ${lines.length - 20} more`);
   const body = "Some project tools won't work for agents in this thread:";
@@ -430,8 +432,25 @@ async function startSession(hub, thread, input) {
 async function deliverReport(hub, thread, target, payload) {
   if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
   const chat = require('./chat.js');
-  let text = String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
-  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target), payload.turn_id);
+  let text = target.cli === 'pi' ? '' : String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
+  if (!text) {
+    const now = hub.reportNow || Date.now;
+    const sleep = hub.reportSleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    const deadline = now() + 4000;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) {
+        if (deadline - now() < 750) break;
+        await sleep(500);
+      }
+      const remaining = deadline - now();
+      if (remaining <= 0) break;
+      try {
+        const raw = await chat.sessionTranscript(hub, thread, target, { strict: true, timeout: Math.min(attempt ? 1000 : 3000, remaining) });
+        text = chat.lastAssistantText(target.cli, raw, payload.turn_id, payload.entry_id);
+        if (!(target.cli === 'pi' && payload.entry_id && !chat.hasPiEntry(raw, payload.entry_id))) break;
+      } catch { /* retry transient read failures within the recovery budget */ }
+    }
+  }
   if (!text) return;
   const commit = text.match(/^COMMIT:\s*([0-9a-f]{7,40})/m)?.[1];
   addCard(
@@ -473,8 +492,8 @@ async function enqueue(hub, thread, name, text, source = 'app', first = false, {
   target.queue ||= [];
   thread.queues ||= {};
   const message = { text, source, at: new Date().toISOString(), ...(quietTag ? { quiet: quietTag } : {}), ...(about ? { about } : {}) };
-  // The thread list orders threads by when Collin last wrote or pressed a card in them (see threads.js press), not by any activity.
-  if (source === 'collin') thread.collin_at = message.at;
+  // The thread list orders threads by when the user last wrote or pressed a card in them (see threads.js press), not by any activity.
+  if (source === 'user') thread.user_at = message.at;
   if (first) target.queue.unshift(message);
   else target.queue.push(message);
   thread.queues[name] = target.queue;
@@ -484,7 +503,7 @@ async function enqueue(hub, thread, name, text, source = 'app', first = false, {
 }
 
 function held(target) {
-  return Boolean(target.permission_open || target.needs_open || (target.limited_until && Date.parse(target.limited_until) > Date.now()));
+  return Boolean(target.switching || target.permission_open || target.needs_open || (target.limited_until && Date.parse(target.limited_until) > Date.now()));
 }
 
 // `midTurn` skips only the wait for the turn to end; a held or unready session still waits.
@@ -515,7 +534,9 @@ async function deliver(hub, thread, target, { midTurn = false } = {}) {
     return false;
   }
   target.queue.shift();
+  if (next.peer) require('./peer-log.js').append(thread, { at: new Date().toISOString(), ...next.peer, direction: 'received', text: next.text.slice(`[wc:from ${next.peer.session}] [thread ${next.peer.thread}: ${next.peer.title}] ${next.peer.question ? `[question ${next.peer.question}] ` : ''}`.length) });
   if (quiet.watched(target)) target.owes_reply = true;
+  delete target.awaiting_answer;
   delete target.quiet_check_at;
   if (next.quiet === 'starter') { const about = thread.sessions.find(s => s.name === next.about); if (about) about.quiet_starter_at = new Date().toISOString(); }
   if (deliveredStyleVersion !== undefined) target.style_version = deliveredStyleVersion;
@@ -533,13 +554,13 @@ async function deliver(hub, thread, target, { midTurn = false } = {}) {
   return true;
 }
 
-// Collin's "Send now" on one of his queued messages: it goes to the lead at once instead of
+// The user's "Send now" on one of their queued messages: it goes to the lead at once instead of
 // at the turn's end. Both CLIs take input typed mid-turn and read it at their next step, so
 // the message joins the running turn rather than interrupting it.
 async function sendNow(hub, thread, at) {
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   if (!lead) throw appError(409, 'no live lead');
-  const index = (lead.queue || []).findIndex((item) => item.source === 'collin' && item.at === at);
+  const index = (lead.queue || []).findIndex((item) => item.source === 'user' && item.at === at);
   if (index < 0) throw appError(404, 'message is no longer queued');
   if (!lead.ready || held(lead)) throw appError(409, 'the lead cannot take a message right now');
   lead.queue.unshift(...lead.queue.splice(index, 1));
@@ -549,6 +570,29 @@ async function sendNow(hub, thread, at) {
   return deliver(hub, thread, lead, { midTurn: true });
 }
 
+const CARRY_ON = '[wc:context switch] Your account hit its usage limit, so this conversation was moved to another account. Carry on from where you stopped.';
+async function restoreSwitchLimit(hub, target, account) {
+  const reading = (await usage.readings(hub))[account];
+  if (reading?.limited_until) target.limited_until = reading.limited_until;
+}
+async function requestSwitch(hub, threadId, name, switchId, from, account, request) {
+  await hub.withThread(threadId, async () => {
+  let accepted = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { await hub.call(request.machine, `/v1/sessions/${encodeURIComponent(name)}/switch`, 'POST', request.body); accepted = true; break; }
+    catch (error) { if (error.status || attempt === 2) break; await new Promise(resolve => setTimeout(resolve, 2000)); }
+  }
+    const thread = await hub.thread(threadId);
+    const target = thread.sessions.find(s => s.name === name);
+    if (!target || target.switching?.id !== switchId) return;
+    if (accepted) {
+      target.account = account.id;
+      (target.switches ||= []).push({ from, to: account.id, at: target.switching.at });
+      await usage.recordChosen(hub, target.provider, account.id);
+    } else { delete target.switching; await restoreSwitchLimit(hub, target, from); }
+    await hub.save(thread);
+  });
+}
 async function event(hub, payload) {
   const thread = await hub.thread(payload.thread_id);
   thread.delivered_ids ||= [];
@@ -564,6 +608,8 @@ async function event(hub, payload) {
   }
   const deliveryTargets = new Set();
   const type = payload.type;
+  if ((type === 'ready' || type === 'switch-failed') && ((target.switching && payload.switch_id !== target.switching.id) || (!target.switching && type === 'switch-failed'))) return { ok: true };
+  let pendingSwitch;
   if (['turn-ended', 'turn-failed', 'limit-hit'].includes(type) && payload.turn_id != null) {
     if (target.last_turn_id != null && payload.turn_id <= target.last_turn_id) return { ok: true, duplicate: true };
     target.last_turn_id = payload.turn_id;
@@ -579,6 +625,16 @@ async function event(hub, payload) {
     const prior = readings[target.account] || { account: target.account, machine: thread.machine, five_hour: null, week: null };
     await usage.record(hub, { ...prior, at: new Date(Math.max(Date.now(), Date.parse(prior.at) + 1 || 0)).toISOString(), limited_until: limit });
     target.limited_until = limit;
+    if (target.live && !target.switching && ['claude', 'gpt'].includes(target.provider)) {
+      const selection = await chooseSwitch(hub, thread, target);
+      if (selection) {
+        const id = crypto.randomUUID(), from = target.account, account = selection.account;
+        target.switching = { id, to: account.id, at: new Date().toISOString() };
+        delete target.limited_until;
+        delete target.quiet_check_at;
+        pendingSwitch = { id, from, account, request: { machine: thread.machine, body: { switch_id: id, account: { id: account.id, dir: account.id === `default-${target.provider}` ? null : `~/.wheelchair/accounts/${account.id}` }, model: target.model ?? null, project: path.basename(thread.project), project_dir: thread.project } } };
+      }
+    }
     target.turn_ended = true;
     target.turn_ended_at = new Date().toISOString();
   } else if (limitEnded && limit && Date.parse(limit) <= Date.now()) {
@@ -599,7 +655,18 @@ async function event(hub, payload) {
       addCard(thread, { kind: 'needs', title: "The lead's turn failed", body: `${payload.error}. The lead is still running: reply in the thread to have it try again.` }, { system: true, session: target.name });
     }
   }
+  if (type === 'switch-failed') {
+    const last = target.switches?.at(-1);
+    const from = last?.to === target.switching.to ? last.from : target.account;
+    target.account = from;
+    delete target.switching;
+    await restoreSwitchLimit(hub, target, from);
+  }
   if (type === 'ready') {
+    if (target.switching) {
+      await enqueue(hub, thread, target.name, CARRY_ON, 'app', true, { save: false, deliver: false });
+      delete target.switching;
+    }
     target.ready = true;
     target.status = 'ready';
     markIdleIfFresh(target);
@@ -619,7 +686,7 @@ async function event(hub, payload) {
     target.needs_open = true;
     target.permission_open = permission;
     const title = type === 'stuck' ? 'Session stuck at startup' : 'Permission needed';
-    const body = `${target.name} needs attention before messages can continue.`;
+    const body = `${target.name} needs attention before messages can continue.${type === 'stuck' ? (payload.note || '') : ''}`;
     target.needs_card = addCard(
       thread,
       { kind: 'needs', title, body },
@@ -643,6 +710,7 @@ async function event(hub, payload) {
     thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
   }
   await hub.save(thread);
+  if (pendingSwitch) setImmediate(() => requestSwitch(hub, thread.id, target.name, pendingSwitch.id, pendingSwitch.from, pendingSwitch.account, pendingSwitch.request).catch(() => {}));
   deliveryTargets.add(target.name);
   for (const name of deliveryTargets) await deliver(hub, thread, session(thread, name));
   return { ok: true };
@@ -651,11 +719,15 @@ async function event(hub, payload) {
 async function sessionRequest(hub, payload) {
   const thread = await hub.threadBySession(payload.calling_session);
   const caller = session(thread, payload.calling_session);
+  if (payload.action === 'leads') {
+    if (caller.role !== 'lead') throw appError(403, 'only a lead may list other leads');
+    return require('./peers.js').listLeads(hub, thread, { allProjects: payload.all_projects === true });
+  }
   if (payload.action === 'list') {
     const problems = projectToolProblems(thread.project_tools && thread.project_tools.state).map((line) => line.text);
     const leadEntry = [...thread.sessions].reverse().find((item) => item.role === 'lead');
     const listed = thread.sessions.map((item) => (item === leadEntry ? { ...publicSession(item), project_tools: { problems } } : publicSession(item)));
-    return { sessions: listed, review_families: (await settingsStore.load(hub)).review_families };
+    return { sessions: listed, review_families: await reviewFamilies(hub, thread) };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
   if (payload.action === 'start') require('./handoff.js').refuseFrozen(hub, thread);
@@ -668,10 +740,14 @@ async function sessionRequest(hub, payload) {
   if (payload.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(payload.effort)) throw appError(400, 'effort must be one of low, medium, high, xhigh, max');
   if (!payload.attempt_id) throw appError(400, 'attempt_id is required');
   const sameAttempt = (item) => item.started_by === caller.name && item.attempt_id === payload.attempt_id;
+  const finishStart = async (result) => {
+    if (caller.quiet_card) { quiet.reset(thread, caller); await hub.save(thread); }
+    return result;
+  };
   const duplicate = thread.sessions.find((item) => sameAttempt(item) && item.live);
-  if (duplicate) return { session: publicSession(duplicate), duplicate: true };
+  if (duplicate) return finishStart({ session: publicSession(duplicate), duplicate: true });
   const unanswered = thread.sessions.find((item) => sameAttempt(item) && item.unanswered_start);
-  if (unanswered) return { session: publicSession(await resumeUnanswered(hub, thread, unanswered)), duplicate: true };
+  if (unanswered) return finishStart({ session: publicSession(await resumeUnanswered(hub, thread, unanswered)), duplicate: true });
   if (payload.role === 'sub-lead' && thread.sessions.some((item) => item.role === 'sub-lead' && item.live)) {
     throw appError(409, 'a live sub-lead already exists');
   }
@@ -694,7 +770,7 @@ async function sessionRequest(hub, payload) {
     verify_ref: payload.role === 'verifier' ? thread.branch : undefined,
     ...(payload.role === 'worker' && payload.replaces ? await replacedWorker(hub, thread, payload.replaces) : {}),
   });
-  return { session: publicSession(started), ...(started.note ? { note: started.note } : {}) };
+  return finishStart({ session: publicSession(started), ...(started.note ? { note: started.note } : {}) });
 }
 
 // A replacement worker shares the old worker's worktree, so the old one must really be gone: the
@@ -833,6 +909,7 @@ async function pollDead(hub) {
           endTurn(target, target.ended_at);
           target.live = false;
           target.status = 'ended';
+          delete target.switching;
           quiet.reset(thread, target, true);
           changed = true;
           await notifyEnded(hub, thread, target);

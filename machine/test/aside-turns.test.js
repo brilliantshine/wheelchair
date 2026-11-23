@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -47,7 +49,7 @@ test('aside turns use isolated CLI commands and persist their outcomes', async (
     store.timeoutMs = 100; i = { ...base, turn_id: uuid(), prompt: 'WAIT' }; await store.start(i); assert.equal((await wait(store, i.turn_id)).error, 'took too long');
     store.timeoutMs = 5000; i = { ...base, turn_id: uuid(), prompt: 'WAIT' }; await store.start(i); await delay(150); const pid = store.get(i.turn_id).pid; await store.stop(i.turn_id); assert.equal(store.get(i.turn_id).error, 'stopped'); await delay(100); assert.throws(() => process.kill(pid, 0)); await store.ack(i.turn_id); assert.throws(() => store.get(i.turn_id), { status: 404 }); assert.throws(() => store.get(uuid()), { status: 404 });
     const expired = uuid(); store.turns[expired] = { state: 'ok', started_at: '2000-01-01T00:00:00Z' }; await store.save(); const reloaded = new AsideTurns(dir, atomic, x => x); await reloaded.load(); assert.equal(reloaded.turns[expired], undefined);
-    const service = new MachineService({ stateDir: dir }); service.sessions = { a: { name: 'a' }, b: { name: 'b', codex_thread_id: 'thread' } }; service.liveTmux = () => new Set(); service.cliStatus = () => ({}); const listed = service.status().sessions; assert.equal(listed[0].codex_thread_id, null); assert.equal(listed[1].codex_thread_id, 'thread');
+    const service = new MachineService({ win: noWsl, stateDir: dir }); service.sessions = { a: { name: 'a' }, b: { name: 'b', codex_thread_id: 'thread' } }; service.liveTmux = () => new Set(); service.cliStatus = () => ({}); const listed = service.status().sessions; assert.equal(listed[0].codex_thread_id, null); assert.equal(listed[1].codex_thread_id, 'thread');
   } finally { process.env = old; }
 });
 test('recovery kills matching and marker-only process groups before failing', async () => {
@@ -73,7 +75,7 @@ test('recovery kills real detached groups, including a marker-only process', asy
 test('hub authentication, validation and aside routes', async () => {
   const http = require('node:http');
   const dir = await makeTemp('aside-http-'); const secret = path.join(dir, 'secret'); await fsp.writeFile(secret, 'secret');
-  const service = new MachineService({ stateDir: dir }); service.config.secret_file = secret; await service.asideTurns.load();
+  const service = new MachineService({ win: noWsl, stateDir: dir }); service.config.secret_file = secret; await service.asideTurns.load();
   const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(r => server.listen(0, '127.0.0.1', r));
   const request = async (method, route, body, auth = true) => { const response = await fetch(`http://127.0.0.1:${server.address().port}${route}`, { method, headers: { 'content-type': 'application/json', ...(auth ? { 'x-wheelchair-machine-secret': 'secret' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }); return [response.status, await response.json()]; };
   try {
@@ -89,7 +91,7 @@ test('stopping an unknown turn persists a tombstone and prevents a later start',
   await fsp.mkdir(bin); await fsp.symlink(path.join(__dirname, 'fixtures/aside/cli.js'), path.join(bin, 'claude'));
   await fsp.writeFile(log, ''); await fsp.writeFile(secret, 'secret');
   const old = { ...process.env }; Object.assign(process.env, { PATH: bin + ':' + old.PATH, ASIDE_LOG: log, ASIDE_STORE: path.join(dir, 'aside-turns.json') });
-  let service = new MachineService({ stateDir: dir });
+  let service = new MachineService({ win: noWsl, stateDir: dir });
   const firstStore = service.asideTurns;
   onCleanup(() => { for (const t of Object.values(firstStore.turns)) if (t.state === 'running' && t.pid) firstStore.proc.kill(t.pid); });
   service.config.secret_file = secret; await service.asideTurns.load();
@@ -107,7 +109,7 @@ test('stopping an unknown turn persists a tombstone and prevents a later start',
     const tombstone = service.asideTurns.get(id);
     assert.deepEqual(tombstone, { input: null, state: 'failed', error: 'stopped', pid: null, pid_start: null, started_at: tombstone.started_at, finished_at: tombstone.started_at, reply: null, conversation_id: null, limit: false });
     assert.ok(!Number.isNaN(Date.parse(tombstone.started_at)));
-    service = new MachineService({ stateDir: dir });
+    service = new MachineService({ win: noWsl, stateDir: dir });
     const resumedStore = service.asideTurns;
     onCleanup(() => { for (const t of Object.values(resumedStore.turns)) if (t.state === 'running' && t.pid) resumedStore.proc.kill(t.pid); });
     service.config.secret_file = secret; await service.asideTurns.load();
@@ -145,4 +147,48 @@ test('ps process backend matches exact markers and handles failures', async () =
   store.proc = proc;
   await atomic(store.file, JSON.stringify({ [id]: { state: 'running', pid: 11, pid_start: 'old', started_at: new Date().toISOString() } }));
   await assert.doesNotReject(store.load()); assert.equal(store.get(id).error, 'the machine restarted');
+});
+
+test('Pi asides validate, fork, resume, settle and redact', async () => {
+  const dir = await makeTemp('aside-pi-'), bin = path.join(dir, 'bin'), log = path.join(dir, 'pi-log'); await fsp.mkdir(bin);
+  const cli = path.join(bin, 'pi');
+  await fsp.writeFile(cli, `#!/usr/bin/env node
+const fs=require('fs'), a=process.argv.slice(2), input=fs.readFileSync(0,'utf8'), get=k=>a[a.indexOf(k)+1];
+fs.appendFileSync(process.env.PI_TEST_LOG,JSON.stringify({a,input})+'\\n');
+const id=a.includes('--fork')?get('--session-id'):get('--session');
+const emit=x=>console.log(JSON.stringify(x));
+if(input.includes('PREHEADER')) { process.stderr.write('Error: 429 rate limit exceeded' + (input.includes('KEY') ? ' sk-or-secret' : '') + '\\n'); process.exit(1); }
+if(input.includes('SPLIT')) { emit({type:'session',id}); const b=Buffer.from(JSON.stringify({type:'message_end',message:{role:'assistant',stopReason:'stop',content:[{type:'text',text:'café'}]}})+'\\n'); const n=b.indexOf(Buffer.from('é')); process.stdout.write(b.subarray(0,n+1)); setTimeout(()=>process.stdout.write(b.subarray(n+1)),50); return; }
+if(!input.includes('MISSING')) emit({type:'session',id:input.includes('MISMATCH')?'wrong':id});
+const msg=(stopReason,text,errorMessage)=>emit({type:'message_end',message:{role:'assistant',stopReason,content:text?[{type:'text',text}]:[],errorMessage}});
+if(input.includes('RETRY')) msg('error','','429 rate limit');
+if(input.includes('ERROR')) { msg('error','','HTTP 402 credit'); process.stderr.write('sk-or-secret\\n'); }
+else if(input.includes('ABORT')) msg('aborted','partial','aborted');
+else msg('stop','answer sk-or-secret');
+`); await fsp.chmod(cli, 0o755);
+  const old = { ...process.env }; Object.assign(process.env, { PATH: bin + ':' + old.PATH, PI_TEST_LOG: log });
+  const store = new AsideTurns(dir, atomic, x => x); const base = { provider:'openrouter', mode:'fork', from:uuid(), new_id:uuid(), cwd:dir, model:'vendor/model:variant', effort:'high', prompt:'hello', account_dir:null };
+  const run = async changes => { const i = { ...base, ...changes, turn_id:uuid() }; await store.start(i); return [i, await wait(store,i.turn_id)]; };
+  try {
+    assert.throws(() => store.validate({ ...base, turn_id:uuid(), provider:'other' }), /invalid provider/);
+    assert.throws(() => store.validate({ ...base, turn_id:uuid(), model:'invalid' }), /model/);
+    assert.throws(() => store.validate({ ...base, turn_id:uuid(), new_id:'bad' }), /new_id/);
+    let [i,t] = await run({}); assert.equal(t.state,'ok'); assert.equal(t.conversation_id,i.new_id); assert.equal(t.reply,'answer [redacted key]');
+    let records = () => fs.readFileSync(log,'utf8').trim().split('\n').map(JSON.parse); let args = records().at(-1).a;
+    assert.deepEqual(args.slice(0,11), ['--provider','openrouter','--model',i.model,'--mode','json','-p','--fork',i.from,'--session-id',i.new_id]);
+    assert.equal(args[args.indexOf('--thinking')+1], 'high'); assert.equal(args[args.indexOf('--tools')+1], 'read,grep,find,ls'); assert.equal(args[args.indexOf('-e')+1],path.join(__dirname,'../adapters/pi-guard.js')); assert.ok(fs.existsSync(args[args.indexOf('-e')+1]));
+    for (const access of ['read-only','full']) { [i,t] = await run({ mode:'resume', from:base.new_id, access }); assert.equal(t.conversation_id,base.new_id); args=records().at(-1).a; assert.equal(args[args.indexOf('--session')+1],base.new_id); assert.equal(args[args.indexOf('--tools')+1],access==='full'?'read,bash,edit,write,grep,find,ls':'read,grep,find,ls'); assert.equal(args.includes('-e'),access!=='full'); }
+    [,t]=await run({prompt:'SPLIT'}); assert.equal(t.state,'ok'); assert.equal(t.reply,'café');
+    for (const prompt of ['PREHEADER','PREHEADER KEY']) { [,t]=await run({prompt}); assert.equal(t.state,'failed'); assert.match(t.error,/Error: 429 rate limit exceeded/); assert.equal(t.limit,true); assert.ok(!JSON.stringify(t).includes('sk-or-')); }
+    [,t]=await run({prompt:'ERROR'}); assert.equal(t.state,'failed'); assert.equal(t.limit,true); assert.equal(t.error,'HTTP 402 credit');
+    [,t]=await run({prompt:'RETRY'}); assert.equal(t.state,'ok'); assert.equal(t.limit,false);
+    [,t]=await run({prompt:'ABORT'}); assert.equal(t.state,'failed');
+    for (const prompt of ['MISSING','MISMATCH']) { [,t]=await run({prompt}); assert.equal(t.state,'failed'); assert.equal(t.conversation_id,null); assert.equal(t.error,'invalid Pi session header'); }
+    // stderr is used when the final assistant has no error message.
+    await fsp.writeFile(cli, (await fsp.readFile(cli,'utf8')).replace("msg('error','','HTTP 402 credit')", "msg('error','','')"));
+    [,t]=await run({prompt:'ERROR'}); assert.equal(t.error,'[redacted key]'); assert.ok(!JSON.stringify(t).includes('sk-or-'));
+    await store.writes;
+    const blockedDir = path.join(dir, 'blocked'); await fsp.mkdir(blockedDir);
+    const blocked = new AsideTurns(blockedDir,atomic,x=>x,{piProblem:async()=> 'Pi 1.5.2 or newer is needed (found 1.0.0)'}); i={...base,turn_id:uuid()}; const count=records().length; await blocked.start(i); t=await wait(blocked,i.turn_id); assert.match(t.error,/1.5.2/); assert.equal((await blocked.start(i)).status,200); assert.equal(records().length,count);
+  } finally { process.env = old; }
 });

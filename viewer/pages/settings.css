@@ -156,6 +156,7 @@
 .machines li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; }
 .machines .mname { font-family: var(--mono); font-size: 12px; }
 .mstate { font-size: 12px; color: var(--dim); }
+.mstate.note { color: var(--dim); }
 .mstate.signed_in { color: var(--good-text); }
 .mstate.signed_out, .mstate.problem { color: var(--warn); }
 .wins { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
@@ -188,6 +189,8 @@ button.danger { color: var(--bad-text); }
 .bar { flex: 1; min-width: 0; height: 12px; border-radius: 6px; background: var(--panel-2); overflow: hidden; }
 .usage-prov.amber .bar > span { background: var(--warn); }
 .usage-left { flex: 0 0 76px; text-align: right; font-size: 13px; }
+.usage-name-spend { flex: 0 0 auto; }
+.usage-spend-text { flex: 1 1 auto; min-width: 0; text-align: left; font-size: 13px; }
 .usage-line { margin: 0; font-size: 13px; }
 .usage-line.amber { color: var(--warn); }
 .usage-line.dim { color: var(--dim); }
@@ -255,3 +258,45 @@ button.danger { color: var(--bad-text); }
 .pt-warnings { margin: 4px 0 0; padding-left: 18px; }
 .pt-notes { display: flex; flex-direction: column; gap: 4px; }
 .pt a { overflow-wrap: anywhere; }
+
+/* ---- Harnesses ---- */
+.h-picker { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.h-picker select { width: auto; min-width: 140px; }
+.h-notice { margin: 0; padding: 10px 14px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--warn-line); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.h-notice p { margin: 4px 0 0; }
+.h-rows { display: flex; flex-direction: column; }
+.h-row { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--panel-2); min-width: 0; }
+.h-row:first-child { border-top: 0; }
+.h-row.off .h-name strong { color: var(--dim); }
+.h-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; }
+.h-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 14px; }
+.h-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; min-height: 34px; }
+.h-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
+.h-actions:empty { display: none; }
+.h-confirm { font-size: 13px; }
+.h-explain { margin: 0; font-size: 13px; color: var(--dim); overflow-wrap: anywhere; }
+.h-tail { margin: 0; max-height: 140px; overflow: auto; padding: 8px 10px; border-radius: 6px; background: var(--term-bg); font-family: var(--mono); font-size: 11px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.h-signin:empty { display: none; }
+.h-offline { font-size: 13px; }
+/* Lessons learned: written by agents, so tinted and labelled apart from Collin's templates. */
+.tpl-item.tpl-lessons { background: var(--accent-soft); border: 1px solid var(--accent-line); }
+.tpl-item.tpl-lessons[aria-current="true"] { background: var(--accent-chip); }
+.tpl-item.tpl-lessons { flex-wrap: wrap; }
+.tpl-item.tpl-lessons .nm { flex-shrink: 0; white-space: nowrap; overflow-wrap: normal; }
+.tpl-item .tag.agent-tag { color: var(--accent-text); white-space: normal; text-align: right; flex: 1 1 auto; min-width: 0; }
+.lessons-edit h2 { font-size: 16px; margin: 0; }
+.lesson-warning { margin: 0; }
+.lesson-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.lesson-row { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.lesson-row.removed .lesson-text { opacity: .5; text-decoration: line-through; }
+.lesson-text { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
+.lesson-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.lesson-marks { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--dim); min-width: 0; overflow-wrap: anywhere; }
+.lesson-from { color: var(--accent-text); }
+.lesson-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.lesson-stale { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; font-size: 12px; color: var(--dim); }
+.lesson-versions { list-style: none; margin: 0; padding: 0 0 0 10px; display: flex; flex-direction: column; gap: 8px; border-left: 2px solid var(--line); }
+.lesson-version-text { margin: 0; overflow-wrap: anywhere; }
+.lesson-removed h3, .lesson-waiting h3 { font-size: 14px; margin: 8px 0; }
+.lessons-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.lessons-tools button { flex: 1 1 auto; }

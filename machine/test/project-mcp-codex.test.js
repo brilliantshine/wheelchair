@@ -128,3 +128,16 @@ test('exported Codex checks share the command rules', () => {
   assert.equal(codexOverrides({ servers: { valid: { command: 'x' } } }).tooLarge, false);
   assert.equal(codexOverrides({ servers: { valid: { command: 'x'.repeat(70000) } } }).tooLarge, true);
 });
+
+
+test('Windows stdio tools pass the bridge environment on WSL', () => {
+  const { codexOverrides } = require('../adapters/codex');
+  const win = { command: '/custom/c/Windows/cmd.exe' };
+  const overrides = (entry, options) => codexOverrides({ servers: { tool: entry } }, options).args;
+  const wsl = { wsl: true, mount: '/custom' };
+  assert.ok(overrides(win, wsl).includes('mcp_servers.project_tool.env_vars=["WHEELCHAIR_WINDOWS_PROJECT","WSLENV"]'));
+  const withEnv = { ...win, env: { FOO: '${FOO}', WSLENV: '${WSLENV}', WHEELCHAIR_WINDOWS_PROJECT: '${WHEELCHAIR_WINDOWS_PROJECT}' } };
+  assert.ok(overrides(withEnv, wsl).includes('mcp_servers.project_tool.env_vars=["FOO","WSLENV","WHEELCHAIR_WINDOWS_PROJECT"]'));
+  assert.deepEqual(overrides({ command: 'node' }, wsl), overrides({ command: 'node' }, {}));
+  assert.deepEqual(overrides(win, { wsl: false, mount: '/custom' }), overrides(win, {}));
+});

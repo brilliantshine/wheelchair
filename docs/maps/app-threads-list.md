@@ -3,6 +3,8 @@
 Checked against: `7c380321f4556a08b63485203d613feeeae1f640` (origin/main)
 Files covered: `viewer/app/threads.js`, `viewer/app/routes.js`, `viewer/app/sessions.js`, `viewer/pages/threads.js`, `viewer/pages/threads.html`
 
+> Lead-chat paths rechecked against `1ee9ad1487d2a3f8b6ceda7f73cf7218657f52c2`; see [lead-chat/MAP.md](../plans/lead-chat/MAP.md). Other claims retain their historical checked commit.
+
 > The covered files changed after the checked-against commit. The lighter-server paths were rechecked against `e4117bdcacf06f2a3c73dd22d8af8d8086cb00e3`; see [lighter-server/MAP.md](../plans/lighter-server/MAP.md). Other claims below retain their historical checked-against commit.
 
 ## Flow

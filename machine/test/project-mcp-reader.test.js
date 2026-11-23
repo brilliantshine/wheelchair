@@ -92,3 +92,28 @@ test('deep nesting before or after servers does not stop duplicate detection', a
     assert.equal(result.mcp.servers.a[DUPLICATE_HEADERS], true, label);
   }
 });
+
+test('omits Windows programs outside WSL without warnings', async () => {
+  const { hasWindowsProgram } = require('../lib/project-mcp');
+  const dir = makeTempSync();
+  fs.writeFileSync(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { win: { command: '/mnt/c/Windows/cmd.EXE' }, cmd: { command: '/mnt/c/tool.cmd' }, web: { type: 'http', url: 'x' } } }));
+  const normal = await readProjectMcp(dir);
+  assert.equal(hasWindowsProgram(normal.mcp), true);
+  const result = await readProjectMcp(dir, { wsl: false });
+  assert.deepEqual(Object.keys(result.mcp.servers), ['cmd', 'web']);
+  assert.deepEqual(result.warnings, []);
+  assert.equal(hasWindowsProgram(result.mcp), false);
+  assert.equal(hasWindowsProgram(null), false);
+});
+
+test('Windows marks validate, deduplicate, and warn only on WSL kernel', async () => {
+  const dir = makeTempSync(), file = path.join(dir, '.mcp.json');
+  const mcpServers = { good: { type: 'http', url: 'http://localhost' }, sse: { type: 'sse', url: 'http://localhost' }, remote: { type: 'http', url: 'https://example.test' }, invalid: { type: 'http', url: 'http://localhost', headers: [] } };
+  fs.writeFileSync(file, JSON.stringify({ mcpServers, wheelchair: { windows: ['good', 'good', 'sse', 'remote', 'missing'] } }));
+  const result = await readProjectMcp(dir, { kernel: true });
+  assert.deepEqual(result.mcp.windows, ['good']);
+  assert.deepEqual(result.warnings.slice(-2), [{ names: ['sse'], text: `sse: "Runs on Windows" doesn't apply to SSE tools; it loads as usual` }, { names: ['remote'], text: 'remote: "Runs on Windows" only applies to an http://localhost or http://127.0.0.1 address' }]);
+  const off = await readProjectMcp(dir); assert.deepEqual(off.mcp.windows, ['good']); assert.equal(off.warnings.length, 1);
+  for (const wheelchair of [{}, { other: 1 }]) { fs.writeFileSync(file, JSON.stringify({ mcpServers: {}, wheelchair })); assert.deepEqual((await readProjectMcp(dir, { kernel: true })).warnings, []); }
+  for (const wheelchair of [null, { windows: [1] }]) { fs.writeFileSync(file, JSON.stringify({ mcpServers: {}, wheelchair })); assert.deepEqual((await readProjectMcp(dir, { kernel: true })).warnings, [{ names: [], text: '"wheelchair" in .mcp.json is not in the expected form; ignored' }]); }
+});

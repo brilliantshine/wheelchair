@@ -38,7 +38,7 @@ async function create(hub, thread, input) {
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   const provider = lead?.provider || providerOf(lead?.cli);
   if (PROVIDERS[provider]?.asideFork === false) throw appError(400, `Side conversations aren't available on ${PROVIDERS[provider].label} sessions yet`);
-  const parent = lead?.[({ claude: 'cli_session_id', gpt: 'codex_thread_id', gemini: 'agy_conversation_id' })[provider]];
+  const parent = lead?.[({ claude: 'cli_session_id', gpt: 'codex_thread_id', openrouter: 'cli_session_id', gemini: 'agy_conversation_id' })[provider]];
   if (!lead || !parent) throw appError(409, "the lead isn't ready yet");
   const standard = await model(hub, provider, 'standard'), heavy = await model(hub, provider, 'heavy');
   if (!standard && !heavy) throw appError(409, `asides need a Standard or Heavy model for ${provider} in Settings`);
@@ -59,7 +59,7 @@ async function change(hub, thread, aside, action, input) {
       const lead = [...thread.sessions].reverse().find((s) => s.role === 'lead' && s.live);
       if (!lead) throw appError(409, 'no live lead');
       const quote = aside.anchor.quote.length > 80 ? `${aside.anchor.quote.slice(0, 80)}…` : aside.anchor.quote;
-      await hub.enqueue(thread, lead.name, `${input.line}\n\n(from aside ${aside.number} on: "${quote}")`, 'collin');
+      await hub.enqueue(thread, lead.name, `${input.line}\n\n(from aside ${aside.number} on: "${quote}")`, 'user');
       aside.sent_line = input.line;
     }
     close(aside, input.outcome);

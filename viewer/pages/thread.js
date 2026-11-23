@@ -1,6 +1,7 @@
 (function () {
   'use strict';
-  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
+  const LESSON_ROLE_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers' };
+  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
   const API = '/wheelchair/api';
   const id = new URLSearchParams(location.search).get('id') || '';
   const T = API + '/threads/' + encodeURIComponent(id);
@@ -15,7 +16,7 @@
   const $ = (x) => document.getElementById(x);
   const errorEl = $('error'); const headEl = $('head'); const stubEl = $('stub-open');
   const deadEl = $('dead'); const pinnedEl = $('pinned'); const waitEl = $('lead-wait');
-  const filesEl = $('files'); const headFilesEl = $('head-files'); const chatEl = $('chat'); const queuedNote = $('queued-note');
+  const filesEl = $('files'); const headFilesEl = $('head-files'); const filesToggle = $('files-toggle'); const filesPanel = $('files-panel'); const chatEl = $('chat'); const queuedNote = $('queued-note');
   const msgEl = $('msg'); const sendBtn = $('send');
 
   let data = null;
@@ -29,6 +30,27 @@
   const PINS_KEY = 'wheelchair.pinsFolded';
   let pinsFolded = false;
   try { pinsFolded = localStorage.getItem(PINS_KEY) === '1'; } catch (e) { /* stays open */ }
+  // The thread list (left) and files panel (right) fold to a thin rail on wide screens. Like the
+  // pinned strip, a per-viewer convenience kept in this browser only.
+  const shellEl = document.querySelector('.shell');
+  for (const [btnId, cls, key, label, openGlyph, shutGlyph] of [
+    ['list-collapse', 'list-collapsed', 'wheelchair.listCollapsed', 'the thread list', '\u00ab', '\u00bb'],
+    ['side-collapse', 'side-collapsed', 'wheelchair.sideCollapsed', 'the files panel', '\u00bb', '\u00ab'],
+  ]) {
+    const btn = $(btnId);
+    const apply = (shut) => {
+      shellEl.classList.toggle(cls, shut);
+      btn.setAttribute('aria-expanded', String(!shut));
+      btn.textContent = shut ? shutGlyph : openGlyph;
+      btn.title = (shut ? 'Show ' : 'Hide ') + label; btn.setAttribute('aria-label', btn.title);
+    };
+    let shut = false; try { shut = localStorage.getItem(key) === '1'; } catch (e) { /* stays open */ }
+    apply(shut);
+    btn.addEventListener('click', () => {
+      const next = !shellEl.classList.contains(cls); apply(next);
+      try { localStorage.setItem(key, next ? '1' : '0'); } catch (e) { /* this page only */ }
+    });
+  }
   let archiveAsk = false;
   let exportAsk = false;
   let handoffState = null;
@@ -57,6 +79,21 @@
     if (disabled) b.disabled = true;
     if (onclick) b.addEventListener('click', onclick);
     return b;
+  }
+  // A done-card line whose "Start a thread about it" link shows only on hover, or on a tapped
+  // (focused) line on touch. A tap that lands where the link was still faded only reveals it:
+  // the press counts only if the link was showing when the pointer went down.
+  function threadLinkRow(card, text) {
+    const row = el('div', 'bullet'); row.tabIndex = 0;
+    row.appendChild(el('span', 'bullet-text', text));
+    let shownAtDown = false;
+    const link = button('Start a thread about it', 'link', (ev) => {
+      if (ev.detail !== 0 && !shownAtDown) return; // detail 0: keyboard activation
+      press(card, 'start-thread', text);
+    }, thread().archived);
+    row.addEventListener('pointerdown', () => { shownAtDown = getComputedStyle(link).opacity === '1'; });
+    row.appendChild(link);
+    return row;
   }
   const SVG = 'http://www.w3.org/2000/svg';
   // A fixed-path line icon, built as nodes.
@@ -228,19 +265,157 @@
     composerEl.hidden = !!t.handoff_op;
     const before = $('before-handoff'); before.hidden = !t.imported;
     const history = $('handoff-history'); history.textContent = '';
-    if (t.imported) for (const entry of t.imported.history || []) history.appendChild(el('p', '', [entry.at, entry.who === 'collin' ? 'You' : entry.who, entry.text].filter(Boolean).join(' · ')));
+    if (t.imported) for (const entry of t.imported.history || []) history.appendChild(el('p', '', [entry.at, entry.who === 'user' ? 'You' : entry.who, entry.text].filter(Boolean).join(' · ')));
+  }
+
+  // ---- "Your copy": this thread's work in Collin's own checkout of the folder ----
+  // Fetched on load, after each action and on its own button; never on the page's poll timer.
+  // While a switch runs it re-reads every 3 seconds on a timer of its own.
+  const copyEl = el('section', 'card copy-panel'); copyEl.id = 'copy'; copyEl.setAttribute('aria-label', 'Your copy');
+  // After the phone Files panel, so the panel opens right under its button.
+  $('files-panel').after(copyEl);
+  const copy = { status: null, error: '', ask: null, sending: false, waiting: false, loading: false, started: false, timer: null, seq: 0 };
+  const plural = (list, total) => {
+    const ul = el('ul', 'copy-files');
+    for (const f of list) ul.appendChild(el('li', '', f));
+    if (total > list.length) ul.appendChild(el('li', 'dim', 'and ' + (total - list.length) + ' more'));
+    return ul;
+  };
+  function copyLines(S) {
+    const out = [];
+    const title = S.active_thread_title || 'another thread';
+    const line = (text, cls) => out.push(el('p', cls || '', text));
+    if (S.state === 'mismatch') line('This folder is no longer the copy that was switched.');
+    else if (S.state === 'busy') line('A switch is running.');
+    else if (S.state === 'interrupted') {
+      line('A switch was interrupted.');
+      if (S.files && S.files.length) out.push(plural(S.files, S.files_count || S.files.length));
+      if (S.earlier_branch) line('Your copy was on ' + S.earlier_branch + ' before trying.');
+      line('Git may still be running in this folder. Check your copy at your computer, then press Done.');
+    }
+    else if (S.state === 'stale') line('You switched your copy by hand.');
+    else if (S.state === 'moved') line('Your copy moved since you tried ' + title + '.');
+    else if (S.state === 'trying-this') line("Your copy is showing this thread's merged work as of " + String(S.active_commit || '').slice(0, 7) + '.');
+    else if (S.state === 'trying-other') line('Your copy is showing another thread: ' + (S.active_thread_title || 'another thread') + '.');
+    if (S.index_lock) line((S.state === 'interrupted' ? 'Git left a lock file: ' : 'A lock file exists: ') + S.index_lock + '. At your computer, check no git is running, then delete it.');
+    if (S.refused) line(S.refused);
+    if (S.last && S.last.reason) {
+      const L = S.last;
+      if (L.outcome === 'success' || L.outcome === 'warning') {
+        // The page words what happened itself; the machine's success reason is not shown.
+        const first = L.op === 'back' ? 'Switched your copy back.'
+          : (L.thread_id === id ? 'Switched your copy to this thread.' : 'Switched your copy to another thread.');
+        line(L.outcome === 'warning' ? first + ' ' + L.reason : first, L.outcome === 'success' ? '' : 'copy-note');
+      } else {
+        line(L.reason, 'copy-note');
+      }
+      if (L.files && L.files.length) out.push(plural(L.files, L.files_count || L.files.length));
+      if (L.appeared && L.appeared.length) { line('These files appeared after switching back:'); out.push(plural(L.appeared, L.appeared_count || L.appeared.length)); }
+    }
+    return out;
+  }
+  function renderCopy() {
+    if (!data) return;
+    const t = thread(); const S = copy.status;
+    copyEl.textContent = '';
+    const head = el('div', 'copy-head');
+    head.appendChild(el('h3', '', 'Your copy'));
+    head.appendChild(button('Refresh', 'small', () => copyLoad(), copy.loading || copy.sending));
+    copyEl.appendChild(head);
+    copyEl.appendChild(el('p', 'dim copy-where', t.project + ' · ' + t.machine));
+    if (!S) copyEl.appendChild(el('p', 'dim', copy.loading ? 'Loading…' : ''));
+    else {
+      for (const n of copyLines(S)) copyEl.appendChild(n);
+    }
+    const lock = copy.sending || copy.waiting || (S && S.state === 'busy');
+    if (copy.sending || copy.waiting) copyEl.appendChild(el('p', 'copy-working', 'Switching…'));
+    if (S && !copy.ask) {
+      const actions = el('div', 'actions');
+      const st = S.state;
+      const tryOk = S.target_available && !S.refused && !t.archived && ['none', 'moved', 'trying-other'].includes(st);
+      if (tryOk) actions.appendChild(button('Try it in my copy', 'primary small', () => { copy.ask = { type: 'try' }; renderCopy(); }, lock));
+      if (S.newest && !S.refused && !t.archived) actions.appendChild(button('Get newest', 'primary small', () => { copy.ask = { type: 'try', newest: true }; renderCopy(); }, lock));
+      if (['moved', 'trying-this', 'trying-other'].includes(st)) actions.appendChild(button('Switch back', 'small', () => { copy.ask = { type: 'back' }; renderCopy(); }, lock));
+      if (st === 'mismatch' || st === 'stale') actions.appendChild(button('Dismiss', 'small', () => copyWrite({ action: 'dismiss', version: S.version }), lock));
+      if (st === 'interrupted') actions.appendChild(button('Done', 'primary small', () => copyWrite({ action: 'dismiss', version: S.version }), lock));
+      if (actions.children.length) copyEl.appendChild(actions);
+    }
+    if (S && copy.ask && copy.ask.type !== 'forget') {
+      const box = el('div', 'copy-ask'); const a = copy.ask;
+      if (a.type === 'try') {
+        box.appendChild(el('p', '', (a.newest ? 'Update ' : 'Switch ') + t.project + ' on ' + t.machine + (a.newest ? " to this thread's newest merged work?" : " to this thread's work?")));
+        box.appendChild(el('p', 'dim', "Close any app using the folder first. This brings in the thread's merged work so far; work agents have not yet merged into the thread is not included."));
+      } else {
+        box.appendChild(el('p', '', 'Switch ' + t.project + ' on ' + t.machine + ' back to what it had before?'));
+        box.appendChild(el('p', 'dim', 'Close any app using the folder first.'));
+      }
+      const row = el('div', 'actions');
+      row.appendChild(button('Confirm', 'primary small', () => { copy.ask = null; copyWrite(a.type === 'try' ? { action: 'try' } : { action: 'back', version: S.version }); }, lock));
+      row.appendChild(button('Cancel', 'small', () => { copy.ask = null; renderCopy(); }));
+      box.appendChild(row); copyEl.appendChild(box);
+    }
+    if (S && S.kept && S.kept.length) {
+      copyEl.appendChild(el('p', 'copy-kept-title', 'Saved commits'));
+      const ul = el('ul', 'copy-kept');
+      for (const k of S.kept) {
+        const li = el('li', 'copy-kept-item');
+        const info = el('div', 'copy-kept-info');
+        info.appendChild(el('span', '', k.label));
+        const flags = [k.at ? new Date(k.at).toLocaleDateString() : '', k.ref, k.missing ? 'missing' : '', k.old_identity ? 'in the copy that used to be here' : ''].filter(Boolean).join(' · ');
+        info.appendChild(el('span', 'dim copy-kept-meta', flags));
+        li.appendChild(info);
+        if (copy.ask && copy.ask.type === 'forget' && copy.ask.ref === k.ref) {
+          const row = el('div', 'actions');
+          row.appendChild(el('span', 'dim', 'Delete this saved commit?'));
+          row.appendChild(button('Confirm delete', 'danger small', () => { copy.ask = null; copyWrite({ action: 'forget', version: S.version, kept: k.ref }); }, lock));
+          row.appendChild(button('Cancel', 'small', () => { copy.ask = null; renderCopy(); }));
+          li.appendChild(row);
+        } else li.appendChild(button('Delete', 'danger small', () => { copy.ask = { type: 'forget', ref: k.ref }; renderCopy(); }, lock));
+        ul.appendChild(li);
+      }
+      copyEl.appendChild(ul);
+    }
+    if (copy.error) copyEl.appendChild(el('div', 'card-error', copy.error));
+  }
+  function copyTake(S) { if (S) copy.status = S; }
+  // fetch throws a TypeError on a network failure in every browser; show our sentence, not the browser's text.
+  function copyErrorText(e) { return e instanceof TypeError ? "Can't reach the hub." : e.message; }
+  async function copyLoad(quiet) {
+    const seq = ++copy.seq;
+    copy.loading = true; renderCopy();
+    try {
+      const res = await fetch(T + '/try');
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || out.detail || 'http ' + res.status);
+      if (seq === copy.seq) { copy.status = out; if (!quiet || copy.errorFrom === 'load') { copy.error = ''; copy.errorFrom = ''; } }
+    } catch (e) { if (seq === copy.seq) { copy.error = copyErrorText(e); copy.errorFrom = 'load'; } }
+    finally { if (seq === copy.seq) copy.loading = false; renderCopy(); }
+    copySchedule();
+  }
+  // Re-read every 3 seconds while a switch runs, then show `last`.
+  function copySchedule() {
+    clearTimeout(copy.timer); copy.timer = null;
+    const running = copy.status && copy.status.state === 'busy';
+    if (!running) { if (copy.waiting) { copy.waiting = false; renderCopy(); } return; }
+    copy.timer = setTimeout(() => copyLoad(true), 3000);
+  }
+  async function copyWrite(body) {
+    if (copy.sending) return;
+    copy.sending = true; copy.error = ''; copy.ask = null; renderCopy();
+    let reread = false;
+    try {
+      const res = await fetch(T + '/try', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || out.detail || 'http ' + res.status);
+      copyTake(out.status);
+      if (out.accepted === false) { copy.error = out.reason || 'That did not work.'; copy.errorFrom = 'write'; reread = true; }
+      else if (out.accepted === true) copy.waiting = true;
+    } catch (e) { copy.error = copyErrorText(e); copy.errorFrom = 'write'; reread = true; }
+    finally { copy.sending = false; renderCopy(); }
+    if (reread) { copy.waiting = false; await copyLoad(true); } else copySchedule();
   }
 
   // ---- the right column: this thread's files ----
-  function fileLinks(into, cls) {
-    const t = thread(); const s = slug();
-    if (!(s && (planDir() || t.archived))) return;
-    for (const f of ['MAP', 'IDEA', 'PLAN']) {
-      const a = el('a', cls, f + '.md');
-      a.href = '/wheelchair/app/doc?thread=' + encodeURIComponent(id) + '&file=' + f + '.md';
-      into.appendChild(a);
-    }
-  }
   const pictureHref = (card) => '/wheelchair/app/picture?thread=' + encodeURIComponent(id) + '&card=' + encodeURIComponent(card.id);
   const asideTitle = (a) => 'Aside: ' + String((a.anchor && a.anchor.quote) || '').slice(0, 40);
   // One entry per picture file (the latest card for it wins), then one per saved aside graph.
@@ -255,25 +430,82 @@
     }
     return out;
   }
-  function renderFiles() {
-    filesEl.textContent = '';
-    // Phones have no right column, so the plan files sit under the sticky header instead.
-    headFilesEl.textContent = '';
-    fileLinks(headFilesEl, 'btn small');
-    const pictures = pictureList();
-    for (const p of pictures) { const a = el('a', 'btn small', p.title); a.href = p.href; headFilesEl.appendChild(a); }
-    headFilesEl.hidden = !headFilesEl.children.length;
-    const list = el('div', 'file-list');
-    fileLinks(list, 'file');
-    if (pictures.length) {
-      list.appendChild(el('span', 'file dim', 'graphs/ \u00b7 ' + pictures.length + (pictures.length === 1 ? ' picture' : ' pictures')));
-      for (const p of pictures) { const a = el('a', 'file graph', p.title); a.href = p.href; list.appendChild(a); }
-    }
-    filesEl.hidden = !list.children.length;
-    if (filesEl.hidden) return;
-    filesEl.appendChild(el('h3', '', "This thread's files"));
-    filesEl.appendChild(list);
+  const docHref = (f) => '/wheelchair/app/doc?thread=' + encodeURIComponent(id) + '&file=' + encodeURIComponent(f);
+  const docDownload = (f) => T + '/doc?file=' + encodeURIComponent(f) + '&download=1';
+  const REMOVED = 'Removed when the thread was archived';
+  function humanSize(n) {
+    if (!(n >= 0)) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1000 * 1024) return Math.round(n / 1024) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
   }
+  // The `file` and `image` cards the user was sent, newest first; retracted and pre-import cards are skipped.
+  function sentList() {
+    return data.cards.filter((c) => (c.kind === 'file' || c.kind === 'image') && c.file && !c.retracted_at && sinceImport(c.created_at || c.at))
+      .map((c, i) => ({ c, i, t: Date.parse(c.created_at || c.at) || 0 }))
+      .sort((x, y) => (y.t - x.t) || (y.i - x.i)).map((x) => x.c);
+  }
+  const sentName = (c) => c.kind === 'file' ? (c.name || c.file) : String(c.file).replace(/^\d+-/, '');
+  const sentUrl = (c) => T + '/files/' + encodeURIComponent(c.file);
+  // On an archived thread only the files the machine kept (thread.kept_files) can still be opened.
+  const sentAvailable = (c) => !thread().archived || (Array.isArray(thread().kept_files) && thread().kept_files.includes(c.file));
+  const sentPreview = (c) => c.kind === 'file' && window.WCFilePreview && window.WCFilePreview.previewable(c.name || c.file, c.size);
+  function filesCount() { return ((data.documents || []).length) + pictureList().length + sentList().length; }
+  // Both the right column and the phone panel are filled by this one function.
+  function fillFiles(into) {
+    into.textContent = '';
+    const archived = thread().archived;
+    const docs = data.documents || []; const pictures = pictureList();
+    if (docs.length || pictures.length) {
+      const sec = el('div', 'files-section'); sec.appendChild(el('h3', '', 'Project documents'));
+      const list = el('div', 'file-list');
+      if (docs.length) { const all = el('a', 'file-dl docs-zip', 'Download all'); all.href = T + '/docs.zip'; list.appendChild(all); }
+      for (const f of docs) {
+        const row = el('div', 'file-row');
+        const a = el('a', 'file', f); a.href = docHref(f); row.appendChild(a);
+        const d = el('a', 'file-dl', 'Download'); d.href = docDownload(f); row.appendChild(d);
+        list.appendChild(row);
+      }
+      if (pictures.length) {
+        list.appendChild(el('span', 'file dim', 'graphs/ \u00b7 ' + pictures.length + (pictures.length === 1 ? ' picture' : ' pictures')));
+        for (const p of pictures) { const a = el('a', 'file graph', p.title); a.href = p.href; list.appendChild(a); }
+      }
+      sec.appendChild(list); into.appendChild(sec);
+    }
+    const sent = sentList();
+    if (sent.length) {
+      const sec = el('div', 'files-section'); sec.appendChild(el('h3', '', 'Sent to you'));
+      const list = el('div', 'file-list');
+      for (const c of sent) {
+        const row = el('div', 'file-row sent-row');
+        const isImage = c.kind === 'image';
+        const available = sentAvailable(c);
+        if (isImage && available) { const a = el('a', 'file', c.title); a.href = sentUrl(c); a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a); }
+        else if (available && sentPreview(c)) { const a = el('a', 'file', c.title); a.href = window.WCFilePreview.href(id, c.file); row.appendChild(a); }
+        else row.appendChild(el('span', 'file-title', c.title));
+        row.appendChild(el('span', 'file-meta dim', [sentName(c), isImage ? '' : humanSize(c.size)].filter(Boolean).join(' \u00b7 ')));
+        if (!available) row.appendChild(el('span', 'file-meta dim', REMOVED));
+        else { const d = el('a', 'file-dl', 'Download'); d.href = sentUrl(c); d.setAttribute('download', sentName(c)); row.appendChild(d); }
+        list.appendChild(row);
+      }
+      sec.appendChild(list); into.appendChild(sec);
+    }
+  }
+  function renderFiles() {
+    fillFiles(filesEl);
+    filesEl.hidden = !filesEl.children.length;
+    fillFiles(filesPanel);
+    const n = filesCount();
+    headFilesEl.hidden = n === 0;
+    filesToggle.textContent = 'Files (' + n + ')';
+    if (n === 0) setPanel(false);
+  }
+  function setPanel(open) {
+    filesPanel.hidden = !open || !filesPanel.children.length;
+    filesToggle.setAttribute('aria-expanded', String(!filesPanel.hidden));
+  }
+  filesToggle.addEventListener('click', () => setPanel(filesPanel.hidden));
+  filesPanel.addEventListener('click', (e) => { if (e.target.closest('a')) setPanel(false); });
   async function doArchive() {
     try { await post(T + '/archive'); archiveAsk = false; sigs.head = null; await poll(); }
     catch (e) { showError('Archive failed: ' + e.message); }
@@ -294,7 +526,9 @@
     if (!unopened) return;
     stubEl.textContent = '';
     stubEl.appendChild(el('h3', '', 'This thread has not started'));
-    stubEl.appendChild(el('p', '', t.context || ''));
+    const ctxP = el('p', '', t.context || '');
+    ctxP.style.whiteSpace = 'pre-line';
+    stubEl.appendChild(ctxP);
     const parent = t.parent_title || t.parent;
     if (parent) {
       // What this stub builds on: the parent thread and, when it has one, its pull request.
@@ -335,9 +569,15 @@
     if (!dead) return;
     deadEl.textContent = '';
     deadEl.appendChild(el('p', '', 'The lead has stopped.'));
+    const failed = el('p', 'dead-error'); failed.setAttribute('role', 'alert'); failed.hidden = true;
     deadEl.appendChild(button('Restart lead', 'primary', async () => {
-      try { await post(T + '/restart'); await poll(); } catch (e) { showError('Restart failed: ' + e.message); }
+      failed.hidden = true;
+      try { await post(T + '/restart'); await poll(); } catch (e) {
+        // Shown in the sticky box too: the page's error banner may be scrolled out of sight.
+        showError('Restart failed: ' + e.message); failed.textContent = 'Restart failed: ' + e.message; failed.hidden = false;
+      }
     }));
+    deadEl.appendChild(failed);
   }
 
   // ---- chat ----
@@ -419,6 +659,15 @@
         const d = el('details', 'tool'); d.appendChild(el('summary', '', it.text));
         d.appendChild(el('pre', 'tool-detail', it.detail || 'No details recorded.'));
         chatEl.appendChild(d);
+      } else if (it.type === 'peer') {
+        const c = el('div', 'ctx');
+        const line = el('span', 'peer-line');
+        const link = el('a', '', it.title || 'another thread');
+        link.href = '/wheelchair/app/thread?id=' + encodeURIComponent(it.thread);
+        line.append(it.limit ? 'Message limit reached with ' : 'Talked with ', link);
+        if (!it.limit) line.append(' · ' + it.count + (it.count === 1 ? ' message' : ' messages'));
+        c.appendChild(line);
+        chatEl.appendChild(c);
       } else if (it.type === 'context') {
         const c = el('div', 'ctx');
         if (it.context === 'stub') {
@@ -430,10 +679,10 @@
       }
     }
     cardsBefore();
-    // Pair each pending bubble with Collin's message still in the lead's queue, so it can be
+    // Pair each pending bubble with the user's message still in the lead's queue, so it can be
     // sent now. One queued before this page loaded has no pending bubble and gets its own.
     const lead = leadSession();
-    const waiting = ((lead && lead.queue) || []).filter((q) => q.source === 'collin');
+    const waiting = ((lead && lead.queue) || []).filter((q) => q.source === 'user');
     // Pending ones already delivered (not queued) come first; the queue then shows in its own
     // order, whichever tab each message was sent from.
     const left = waiting.slice();
@@ -492,7 +741,7 @@
     return row;
   }
 
-  // How many times the transcript (since any import) already shows these words from Collin.
+  // How many times the transcript (since any import) already shows these words from the user.
   function humanCount(text) {
     return data.items.filter((i) => sinceImport(i.at) && i.type === 'human' && !i.card && i.text === text).length;
   }
@@ -501,7 +750,7 @@
   async function sendNow(at) {
     sendingNow[at] = true; sigs.chat = null; render();
     const lead = leadSession();
-    const item = ((lead && lead.queue) || []).find((q) => q.source === 'collin' && q.at === at);
+    const item = ((lead && lead.queue) || []).find((q) => q.source === 'user' && q.at === at);
     const seen = item ? humanCount(item.text) : 0;   // counted before sending: the reply may lag the transcript
     try {
       const out = await post(T + '/send-now', { at });
@@ -544,7 +793,7 @@
   const copied = {};         // check card step key -> true for ~2s after a successful Copy
   async function press(card, action, value, node) {
     if (pressing[card.id]) return;
-    const once = card.kind === 'question' || card.kind === 'offer';
+    const once = card.kind === 'question' || card.kind === 'offer' || card.kind === 'reach';
     if (once) { pressing[card.id] = true; card.answered = true; sigs.chat = null; sigs.pinned = null; render(); }
     try {
       await post(T + '/cards/' + encodeURIComponent(card.id) + '/press',
@@ -554,6 +803,21 @@
     } catch (e) {
       if (once && /already answered/.test(e.message)) card.answered = true;
       else { if (once) card.answered = false; cardErrors[card.id] = e.message; }
+    } finally {
+      delete pressing[card.id];
+    }
+    sigs.chat = null; sigs.pinned = null;
+    await poll(true);
+    render();
+  }
+  async function dismissCard(card) {
+    if (pressing[card.id]) return;
+    pressing[card.id] = true;
+    try {
+      await post(T + '/cards/' + encodeURIComponent(card.id) + '/dismiss', {});
+      delete cardErrors[card.id];
+    } catch (e) {
+      cardErrors[card.id] = e.message;
     } finally {
       delete pressing[card.id];
     }
@@ -577,8 +841,13 @@
       label = ' Withdrawn \u00b7 ' + card.retracted_note;
       tag.classList.add('resolved');
     } else if (card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
-      label = ' ' + (card.resolved_note || (card.resolved_by === 'collin' ? 'Dismissed' : 'Resolved'));
+      label = ' ' + (card.resolved_note || (card.resolved_by === 'user' ? 'Dismissed' : 'Resolved'));
       tag.classList.add('resolved');
+    } else if (card.kind === 'reach' && card.allow_failed) {
+      label = ' Allow failed: ' + card.allow_failed;
+      tag.classList.add('resolved');
+    } else if (card.kind === 'reach' && card.answered_value != null) {
+      label = ' You picked ' + (card.answered_value === 'allow' ? 'Allow' : "Don't allow");
     } else if (card.kind === 'question' && card.resolved_by) {
       label = ' Answered in chat' + (card.resolved_note ? ' \u00b7 ' + card.resolved_note : '');
       tag.classList.add('resolved');
@@ -590,7 +859,7 @@
     tag.append(icon(ICON.check, 12), document.createTextNode(label));
     return tag;
   }
-  // The box under a question's options: Collin's own answer, sent as `[card <id>] answered: <text>`.
+  // The box under a question's options: the user's own answer, sent as `[card <id>] answered: <text>`.
   function ownWords(card) {
     const wrap = el('div', 'own-words');
     const ta = el('textarea');
@@ -604,7 +873,7 @@
       press(card, 'answered', text).then(() => { if (card.answered) delete answerDrafts[card.id]; });
     }, !ta.value.trim());
     ta.addEventListener('input', () => { answerDrafts[card.id] = ta.value; send.disabled = !ta.value.trim(); });
-    // A poll that redraws the chat replaces this box; keep the caret where Collin was typing.
+    // A poll that redraws the chat replaces this box; keep the caret where the user was typing.
     ta.addEventListener('focus', () => { answerFocus = card.id; });
     ta.addEventListener('blur', () => setTimeout(() => { if (ta.isConnected && answerFocus === card.id) answerFocus = null; }, 0));
     const keepCaret = () => { answerCaret[card.id] = [ta.selectionStart, ta.selectionEnd, ta.selectionDirection]; };
@@ -709,6 +978,25 @@
         if (!off) box.appendChild(ownWords(card));
         break;
       }
+      case 'reach': {
+        head(box, 'Talk to another thread', card.answered ? '' : 'warn');
+        const h = el('h3', '');
+        const seg = String(card.target_project || '').split('/').filter(Boolean).pop() || '';
+        h.append(document.createTextNode("Let this thread's lead talk to the lead of "),
+          el('strong', '', card.target_title || ''), document.createTextNode(' (' + seg + ')?'));
+        box.appendChild(h);
+        if (card.why) box.appendChild(el('div', 'fits', card.why));
+        const a = el('div', 'actions');
+        for (const [value, label] of [['allow', 'Allow'], ["don't allow", "Don't allow"]]) {
+          const pk = card.answered && card.answered_value === value && !card.allow_failed;
+          const b = button(label, (pk ? 'picked' : ''), () => press(card, 'picked', value), off);
+          b.dataset.option = value;
+          if (pk) b.prepend(icon(ICON.check, 12), document.createTextNode(' '));
+          a.appendChild(b);
+        }
+        box.appendChild(a);
+        break;
+      }
       case 'approval': {
         const objs = card.objections || [];
         const top = el('div', 'approval-head');
@@ -789,12 +1077,27 @@
           const ul = el('ul'); for (const i of card.items) ul.appendChild(el('li', '', i)); box.appendChild(ul);
         }
         // A session-level card (stuck, permission) goes straight to that session's terminal.
-        if (card.system && card.session && !card.answered) {
-          const a = el('a', 'btn primary', 'Open terminal');
-          a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
-          const actions = el('div', 'actions'); actions.appendChild(a); box.appendChild(actions);
+        // One that no live session is held on (not blocking) can also be dismissed.
+        if (card.system && !card.answered && (card.session || !card.blocking)) {
+          const actions = el('div', 'actions');
+          if (card.session) {
+            const a = el('a', 'btn primary', 'Open terminal');
+            a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
+            actions.appendChild(a);
+          }
+          if (!card.blocking) actions.appendChild(button('Dismiss', '', () => dismissCard(card), thread().archived));
+          box.appendChild(actions);
         }
-        // A card a lead posted stays until it is settled. Collin answers it with either
+        if (card.system && card.auto_merge && !card.answered) {
+          const actions = el('div', 'actions');
+          actions.appendChild(button('Dismiss', '', async () => {
+            try { await post(T + '/cards/' + encodeURIComponent(card.id) + '/dismiss', {}); delete cardErrors[card.id]; }
+            catch (e) { cardErrors[card.id] = e.message; }
+            sigs.chat = null; sigs.pinned = null; await poll(true); render();
+          }, thread().archived));
+          box.appendChild(actions);
+        }
+        // A card a lead posted stays until it is settled. The user answers it with either
         // button, and the lead always replies, so nothing closes silently.
         if (!card.system && !card.answered) {
           const actions = el('div', 'actions');
@@ -837,17 +1140,13 @@
         if (card.note) inset.appendChild(prose('dim', card.note));
         inset.appendChild(el('div', 'eyebrow', 'What you can do now'));
         for (const c of card.can_do || []) {
-          const row = el('div', 'bullet'); row.appendChild(el('span', 'bullet-text', c));
-          row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', c), thread().archived));
-          inset.appendChild(row);
+          inset.appendChild(threadLinkRow(card, c));
         }
         if ((card.left_as_is || []).length) {
           const left = el('div', 'left-as-is');
           left.appendChild(el('div', 'eyebrow', 'Left as is · ' + card.left_as_is.length + (card.left_as_is.length === 1 ? ' thing' : ' things')));
           for (const l of card.left_as_is) {
-            const row = el('div', 'bullet'); row.appendChild(el('span', 'bullet-text', l));
-            row.appendChild(button('Start a thread about it', 'link', () => press(card, 'start-thread', l), thread().archived));
-            left.appendChild(row);
+            left.appendChild(threadLinkRow(card, l));
           }
           inset.appendChild(left);
         }
@@ -915,12 +1214,23 @@
       }
       case 'image': {
         box.appendChild(el('h3', '', card.title));
-        if (thread().archived) box.appendChild(el('p', 'dim', 'Image removed when the thread was archived'));
+        if (!sentAvailable(card)) box.appendChild(el('p', 'dim', 'Image removed when the thread was archived'));
         else { const url = T + '/files/' + encodeURIComponent(card.file); const a = el('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; const img = el('img', 'card-image'); img.src = url; img.alt = card.title; a.appendChild(img); box.appendChild(a); }
         break;
       }
+      case 'file': {
+        box.appendChild(el('h3', '', card.title));
+        box.appendChild(el('p', 'dim', [card.name || card.file, humanSize(card.size)].filter(Boolean).join(' \u00b7 ')));
+        if (!sentAvailable(card)) box.appendChild(el('p', 'dim', REMOVED));
+        else {
+          if (sentPreview(card)) { const p = el('a', 'btn small', 'Preview'); p.href = window.WCFilePreview.href(id, card.file); box.appendChild(p); }
+          const d = el('a', 'btn small', 'Download'); d.href = sentUrl(card); d.setAttribute('download', card.name || card.file); box.appendChild(d); }
+        break;
+      }
       case 'stub': {
-        head(box, 'Another thread', '', card.title);
+        if (card.adds_to) {
+          head(box, card.duplicate ? 'Already a thread for this' : 'Added to another thread', '', card.target_title);
+        } else head(box, 'Another thread', '', card.title);
         box.appendChild(prose('', card.summary));
         const a = el('div', 'actions');
         const link = el('a', 'btn primary', 'Go to it');
@@ -978,10 +1288,27 @@
         }
         break;
       }
+      case 'lesson': {
+        const snap = card.snapshot || {};
+        const plural = LESSON_ROLE_PLURAL[card.for] || (card.for + 's');
+        const verb = card.action === 'remove' ? 'Removed a lesson for ' : card.action === 'replace' ? 'Updated a lesson for ' : 'Saved a lesson for ';
+        const marks = [];
+        if (snap.provider) marks.push('only on ' + (PROVIDER_LABEL[snap.provider] || snap.provider));
+        if (snap.project) marks.push('only in ' + (String(snap.project).split('/').filter(Boolean).pop() || snap.project));
+        const line = el('p', 'lesson-line');
+        line.appendChild(el('span', 'lesson-text', verb + plural + ': ' + (snap.text || '')));
+        if (card.why) line.appendChild(el('span', 'lesson-why', card.why));
+        for (const m of marks) line.appendChild(el('span', 'lesson-mark', m));
+        const link = el('a', 'lesson-link', 'Open in Settings');
+        link.href = '/wheelchair/app/settings#templates/lessons/' + encodeURIComponent(card.for);
+        line.appendChild(link);
+        box.appendChild(line);
+        break;
+      }
       default:
         return null;
     }
-    if (card.retracted_at || ['offer', 'question', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
+    if (card.retracted_at || ['offer', 'question', 'reach', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
@@ -1054,13 +1381,14 @@
   function syncStickyHeights() {
     const root = document.documentElement.style;
     root.setProperty('--head-h', headEl.offsetHeight + 'px');
+    root.setProperty('--dead-h', deadEl.offsetHeight + 'px');
     root.setProperty('--pins-h', pinnedEl.offsetHeight + 'px');
     root.setProperty('--composer-h', composerEl.offsetHeight + 'px');
   }
   syncStickyHeights();
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(syncStickyHeights);
-    for (const n of [headEl, pinnedEl, composerEl]) ro.observe(n);
+    for (const n of [headEl, deadEl, pinnedEl, composerEl]) ro.observe(n);
   } else window.addEventListener('resize', syncStickyHeights);
 
   // One line above the pinned cards while the live lead is waiting for room or rate-limited.
@@ -1074,6 +1402,7 @@
     const lead = leads().filter((s) => s.live || s.status === 'waiting').pop();
     if (!lead) return '';
     if (lead.status === 'waiting' && lead.waiting_until) {
+      if (lead.waiting_reason && lead.waiting_reason.endsWith(' is left out in Settings')) return lead.waiting_reason + '. Turn it back on under Settings → Harnesses.';
       // The provider the wait is pinned to, else the lead's, else the thread's; none set → room.
       const provider = [lead.waiting_provider, lead.provider, thread().provider].find((p) => PROVIDER_LABEL[p]);
       if (!provider) return 'Waiting for room, about ' + clock(lead.waiting_until);
@@ -1110,9 +1439,11 @@
     if (!data) return;
     const t = thread();
     renderHandoff();
+    if (!copy.started) { copy.started = true; copyLoad(); }
+    sync('copy', [t.archived, t.project, t.machine], renderCopy);
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
     sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
-    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
+    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), data.documents, t.imported && t.imported.at, data.cards.filter((c) => c.kind === 'file' || c.kind === 'image').map((c) => [c.id, c.title, c.file, c.name, c.size, c.retracted_at, c.created_at]), t.kept_files, (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported], renderDead);
@@ -1122,7 +1453,7 @@
     const leadNow = leadSession();
     // Text selected in the chat (for an aside) would vanish with a redraw, so the redraw waits
     // until the selection is gone; the selectionchange listener above calls render() then.
-    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, deferredOpen, cardErrors, declining]);
+    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, t.kept_files, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, deferredOpen, cardErrors, declining]);
     // An import moving the cutoff (or a hand-off starting) must not wait for the selection:
     // what came before the import has to leave the chat at once.
     const cutoff = JSON.stringify([t.imported && t.imported.at, Boolean(t.handed_off)]);
@@ -1135,6 +1466,7 @@
     placeIds();
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
+    syncJump();
     const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
     queuedNote.hidden = queuedTotal === 0;
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
@@ -1195,6 +1527,17 @@
   }
   $('attach').addEventListener('click', () => { if (!uploading) fileInput.click(); });
   fileInput.addEventListener('change', () => { addFiles(fileInput.files, false); fileInput.value = ''; });
+  // Enter sends and Shift+Enter starts a new line, when this browser's Settings switch is on.
+  // Unset, it is on for a mouse-and-keyboard device and off for a touch one (no Shift+Enter there).
+  function enterSends() {
+    let v = null; try { v = localStorage.getItem('enter-sends'); } catch (e) { /* default below */ }
+    if (v === '1' || v === '0') return v === '1';
+    return !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+  msgEl.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' || ev.shiftKey || ev.isComposing || ev.keyCode === 229 || !enterSends()) return;
+    ev.preventDefault(); composerEl.requestSubmit();
+  });
   msgEl.addEventListener('paste', (ev) => { if (ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
   composerEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
   composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); addFiles(ev.dataTransfer.files, false); } });
@@ -1223,6 +1566,16 @@
     } catch (e) { showError(e.message.startsWith('Upload failed:') ? e.message : 'Message not sent: ' + e.message); }
     finally { uploading = false; renderAttachments(); render(); }
   });
+
+  // A small button back to the latest message, once scrolled up more than about two screens.
+  function syncJump() {
+    const jumpEl = $('jump-bottom');
+    const fromBottom = document.body.scrollHeight - (window.innerHeight + window.scrollY);
+    jumpEl.hidden = fromBottom < window.innerHeight * 2;
+  }
+  $('jump-bottom').addEventListener('click', () => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); });
+  window.addEventListener('scroll', syncJump, { passive: true });
+  window.addEventListener('resize', syncJump);
 
   poll();
   loadAccountNames();

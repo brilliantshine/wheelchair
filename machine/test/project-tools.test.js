@@ -1,4 +1,6 @@
 'use strict';
+// Keep service instances independent of the host's WSL and interop setup.
+const noWsl = { procRoot: __dirname, etcRoot: __dirname, runRoot: __dirname };
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -99,7 +101,7 @@ test('dropped Save still runs to the end', async () => {
   const f = await fixture(), read = (await f.tools.read({ path: f.repo })).body;
   let signal, release; const started = new Promise(resolve => { signal = resolve; }), gate = new Promise(resolve => { release = resolve; });
   const runner = async (p, a, o) => { if (a.includes('fetch')) { signal(); await gate; } return f.runner(p, a, o); };
-  const service = new MachineService({ stateDir: path.join(f.root, 'state') }); service.projectTools = createProjectTools({ commandAsync: runner, stateDir: service.stateDir }); service.authorize = async () => {};
+  const service = new MachineService({ win: noWsl, stateDir: path.join(f.root, 'state') }); service.projectTools = createProjectTools({ commandAsync: runner, stateDir: service.stateDir }); service.authorize = async () => {};
   const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const req = http.request({ host: '127.0.0.1', port: server.address().port, path: '/v1/project-tools/save', method: 'POST' }); req.on('error', () => {});
@@ -179,7 +181,7 @@ test('changed default branch refuses a tool save', async () => {
 });
 async function routeServer(f) {
   const http = require('node:http'), { MachineService } = require('../service');
-  const service = new MachineService({ stateDir: path.join(f.root, 'state') }); service.projectTools = f.tools; service.authorize = async () => {};
+  const service = new MachineService({ win: noWsl, stateDir: path.join(f.root, 'state') }); service.projectTools = f.tools; service.authorize = async () => {};
   const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const post = async (action, input) => { const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/project-tools/${action}`, { method: 'POST', body: JSON.stringify(input) }); return { status: response.status, body: await response.json() }; };
   return { post, close: () => new Promise(resolve => server.close(resolve)) };
@@ -289,7 +291,7 @@ test('malformed key stores never expose values in replies or launch logs', async
       assert.equal(read.body.notice, "the key store on this machine can't be read");
       assert.equal(save.body.error, "the key store on this machine can't be read");
       assert.equal(remove.body.error, "the key store on this machine can't be read");
-      const instance = new MachineService({ stateDir: state, host: '127.0.0.1', port: 0 });
+      const instance = new MachineService({ win: noWsl, stateDir: state, host: '127.0.0.1', port: 0 });
       await instance.start({ role: 'worker', cli: 'claude', thread_id: `bad${index}`, token: `bad${index}`, worktree: f.repo, name: `wc-bad${index}-worker` });
     }
     assert.equal(logs.filter(line => line === "the key store on this machine can't be read").length, 2);
@@ -303,4 +305,25 @@ test('R7-1: compare_url encodes branch names but keeps slashes', async () => {
   const reply = await f.tools.save({ path: f.repo, token: read.token, tools: { x: { command: 'run' } }, keys: {} });
   assert.equal(reply.body.outcome, 'pr_failed');
   assert.match(reply.body.compare_url, /^https:\/\/github\.com\/owner\/name\/compare\/release%232026\.\.\.wc-tools\/[0-9a-f]+\?expand=1$/);
+});
+
+test('Windows marks read and save independently while preserving document keys', async () => {
+  const f = await fixture();
+  const doc = { extra: 1, wheelchair: { windows: ['old'], other: 2 }, mcpServers: { old: { command: 'tool' } } };
+  await fs.writeFile(path.join(f.repo, '.mcp.json'), JSON.stringify(doc)); git('-C', f.repo, 'add', '.mcp.json'); git('-C', f.repo, 'commit', '-qm', 'marks'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const tools = createProjectTools({ commandAsync: f.runner, stateDir: path.join(f.root, 'state'), wsl: () => true });
+  const read = (await tools.read({ path: f.repo })).body; assert.equal(read.wsl, true); assert.deepEqual(read.windows, ['old']);
+  assert.equal((await tools.save({ path: f.repo, token: read.token, tools: doc.mcpServers, windows: [1], keys: {} })).body.reason, 'invalid save request');
+  assert.equal((await tools.save({ path: f.repo, token: read.token, tools: doc.mcpServers, keys: {} })).body.reason, 'nothing to save');
+  assert.equal((await tools.save({ path: f.repo, token: read.token, tools: { x: { command: 'x' } }, keys: {} })).body.outcome, 'opened');
+  assert.equal((await tools.save({ path: f.repo, token: read.token, tools: doc.mcpServers, windows: [], keys: {} })).body.outcome, 'opened');
+  const branches = git('--git-dir', f.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/wc-tools/').split('\n');
+  const docs = branches.map(b => JSON.parse(git('--git-dir', f.remote, 'show', `${b}:.mcp.json`)));
+  assert.ok(docs.some(d => d.wheelchair.windows?.[0] === 'old'));
+  assert.ok(docs.some(d => d.extra === 1 && d.wheelchair.other === 2 && !('windows' in d.wheelchair)));
+  doc.wheelchair = { windows: ['old'] }; await fs.writeFile(path.join(f.repo, '.mcp.json'), JSON.stringify(doc)); git('-C', f.repo, 'add', '.mcp.json'); git('-C', f.repo, 'commit', '-qm', 'empty mark container'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const next = (await tools.read({ path: f.repo })).body; await tools.save({ path: f.repo, token: next.token, tools: doc.mcpServers, windows: [], keys: {} });
+  const latest = git('--git-dir', f.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/wc-tools/').split('\n').map(b => JSON.parse(git('--git-dir', f.remote, 'show', `${b}:.mcp.json`)));
+  assert.ok(latest.some(d => !('wheelchair' in d)));
+  git('-C', f.repo, 'remote', 'set-url', 'origin', f.remote); const keysOnly = (await tools.read({ path: f.repo })).body; assert.equal(keysOnly.wsl, true); assert.deepEqual(keysOnly.windows, []);
 });

@@ -42,17 +42,17 @@ test.describe('desktop', () => {
     await expect(page.locator('#panel h1')).toHaveText('Models and preferences');
   });
 
-  test('five sections, kept across a reload through the hash', async ({ page }) => {
+  test('eight sections, kept across a reload through the hash', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const nav = page.locator('#sections a');
-    await expect(nav).toHaveText(['Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style', 'Project tools', 'Background Customization']);
-    await nav.nth(3).click();
+    await expect(nav).toHaveText(['Harnesses', 'Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style', 'Project tools', 'Background Customization']);
+    await nav.nth(4).click();
     await expect(page).toHaveURL(/#templates$/);
     await expect(page.locator('.tpl-list h1')).toHaveText('Behavior templates');
     await page.reload();
     await expect(page.locator('.tpl-list h1')).toBeVisible();
     await expect(page.locator('#sections a[aria-current="page"]')).toHaveText('Behavior templates');
-    await nav.nth(4).click();
+    await nav.nth(5).click();
     await page.reload();
     await expect(page.locator('#panel h1')).toHaveText('Writing style');
     await expect(page.locator('.covers')).not.toContainText('Phone notifications');
@@ -147,12 +147,12 @@ test.describe('desktop', () => {
 
   test('sub-lead models and scout tiers render and save independently', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
-    for (const provider of ['Claude', 'GPT', 'Antigravity', 'Kimi Code']) {
+    for (const provider of ['Claude', 'GPT', 'Antigravity', 'Kimi Code', 'OpenRouter']) {
       await expect(page.getByLabel(`${provider} lead model`, { exact: true })).toBeVisible();
       await expect(page.getByLabel(`${provider} sub-lead model`, { exact: true })).toBeVisible();
     }
-    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(4);
-    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(4);
+    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(5);
+    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(5);
     const modelRequest = page.waitForRequest((request) => request.url().endsWith('/api/settings/models') && request.method() === 'PUT');
     await page.getByLabel('GPT sub-lead effort', { exact: true }).selectOption('high');
     expect((await modelRequest).postDataJSON()).toMatchObject({ provider: 'gpt', slot: 'sub-lead', effort: 'high' });
@@ -255,6 +255,20 @@ test.describe('desktop', () => {
     await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/tmp/proj-alpha', '/tmp/proj-beta']));
   });
 
+  test('the auto-merge switch says Saved, not applies to new sessions, and survives a reload', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    const merge = page.getByRole('radiogroup', { name: 'Merge pull requests when done' });
+    await expect(page.getByRole('radiogroup', { name: 'Delete the branch after merging' })).toHaveCount(0);
+    await merge.getByRole('radio', { name: 'On' }).click();
+    await page.getByRole('radiogroup', { name: 'Delete the branch after merging' }).getByRole('radio', { name: 'On' }).click();
+    await expect.poll(async () => (await settings(page)).auto_merge_delete_branch).toBe('on');
+    await expect(merge.getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.note').first()).toHaveText('Saved');
+    await expect.poll(async () => (await settings(page)).auto_merge).toBe('on');
+    await page.reload();
+    await expect(page.getByRole('radiogroup', { name: 'Merge pull requests when done' }).getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   test('the style saves', async ({ page }) => {
     await openPage(page, context, '/app/settings#writing');
     await page.getByRole('radio', { name: 'Thorough' }).click();
@@ -332,7 +346,7 @@ test.describe('phone', () => {
     expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(1);
     const panel = await page.locator('#panel').boundingBox();
     expect(boxes[0].bottom).toBeLessThanOrEqual(panel.y + 1);
-    for (const key of ['accounts', 'usage', 'models', 'templates', 'writing']) {
+    for (const key of ['harnesses', 'accounts', 'usage', 'models', 'templates', 'writing']) {
       await page.locator(`#sections a[data-section="${key}"]`).click();
       await expect(page.locator('#sections a[aria-current="page"]')).toHaveAttribute('data-section', key);
       await page.waitForTimeout(200);
@@ -385,12 +399,34 @@ test.describe('phone', () => {
     await noSideScroll(page);
   });
 
+  test('Your name saves and survives a reload, and a too-long name is refused with the typed value kept', async ({ page }) => {
+    await openPage(page, context, '/app/settings');
+    const row = page.locator('.row-line', { hasText: 'Your name' });
+    const input = page.getByLabel('Your name', { exact: true });
+    await expect(input).toHaveValue('');
+    await input.fill('Sam');
+    await row.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(row.getByRole('status')).toHaveText('Saved');
+    expect((await settings(page)).user_name).toBe('Sam');
+    await page.reload();
+    await expect(page.getByLabel('Your name', { exact: true })).toHaveValue('Sam');
+    await page.evaluate(() => { document.getElementById('user-name').removeAttribute('maxlength'); });
+    await page.getByLabel('Your name', { exact: true }).fill('a'.repeat(81));
+    await page.locator('.row-line', { hasText: 'Your name' }).getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.locator('.row-line', { hasText: 'Your name' }).locator('.inline-err')).toBeVisible();
+    expect((await settings(page)).user_name).toBe('Sam');
+    await page.getByLabel('Your name', { exact: true }).fill('');
+    await page.locator('.row-line', { hasText: 'Your name' }).getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.locator('.row-line', { hasText: 'Your name' }).getByRole('status')).toHaveText('Saved');
+    expect((await settings(page)).user_name).toBe('');
+  });
+
   test('the Default project folder saves, and a refusal shows under it with the typed value kept', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const input = page.getByLabel('Default project folder', { exact: true });
     await expect(input).toHaveValue('');
     await input.fill('~/projects');
-    await page.getByRole('button', { name: 'Save', exact: true }).last().click();
+    await page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('status')).toHaveText('Saved');
     expect((await settings(page)).default_project_folder).toBe('~/projects');
     await page.reload();
@@ -469,8 +505,8 @@ test('a slow upload does not undo a list picked after switching sections', async
   });
   await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\nGrace\n') });
   await sent;
-  await page.locator('#sections a').nth(4).click();
-  await page.locator('#sections a').nth(2).click();
+  await page.locator('#sections a').nth(5).click();
+  await page.locator('#sections a').nth(3).click();
   const picked = page.waitForResponse((response) => response.url().includes('/settings/preferences') && JSON.parse(response.request().postData() || '{}').lead_name_list === 'people');
   await select.selectOption('people');
   // The old page sent this straight away; the fixed one waits behind the upload.
