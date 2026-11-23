@@ -63,8 +63,10 @@ the reader's place.
 - Scroll: near the bottom (existing 80px test) the page still follows new entries. Away
   from the bottom, the top visible chat entry stays at the same screen position after an
   update. Record it and its position at the start of `render()`, before the banners and
-  pins above the chat update, and correct `scrollY` once the chat is updated. If that
-  entry is gone, use the first entry after it that survived.
+  pins above the chat update, and correct `scrollY` once the chat is updated. Record the
+  key and viewport offset of every chat entry visible at that moment; afterwards restore
+  the first of them that still exists to its own recorded offset. If none survive, leave
+  `scrollY` as it is.
 - A mockup reserves its final height when created: `mockup()` in `viewer/pages/diagram.js`
   sets the frame box's height from `aspect-ratio: width / height` (CSS) so the box never
   starts at zero and grows later. The scale transform still follows the box width.
@@ -76,7 +78,16 @@ Mockup half of an image card) and the mockup on the picture page.
 
 - A **Comment on a spot** button sits with the mockup's Open full size link. It is shown
   only while the thread composer could send (live lead, not archived, not frozen: the same
-  `canSend` test as the Send button), and hidden otherwise.
+  `canSend` test as the Send button), and hidden otherwise. That eligibility is not part
+  of any card's S1 signature: each render shows or hides the existing buttons in place.
+- An open draft (pin position, coordinates, text) is kept per mockup outside the card's
+  DOM, keyed by card id and mockup file. If the card's node is replaced while a draft is
+  open, the draft is redrawn on the new node with its text and pin intact. A draft is
+  cleared only by acceptance or Cancel; the button hiding does not close an open draft
+  (Send then reports why it can't send, as below).
+- Mockup iframes on the picture page get `scrolling="no"`, like the inline ones, so the
+  iframe always shows the mockup from its top-left at its declared size (what the
+  designer renders); the picture pane around it still scrolls.
 - Pressing it puts a transparent layer over the mockup (the iframe stays sandboxed and is
   never read). The next tap on the layer drops a visible pin there and opens a small text
   box with Send and Cancel under the mockup. Tapping elsewhere on the mockup moves the
@@ -114,7 +125,10 @@ path, and a second link **Download HTML** keeps today's HTML download.
 
 - The PNG is drawn in the browser: fetch the mockup HTML from its source URL, parse it,
   serialize it as XHTML inside an SVG `foreignObject` of exactly width x height, load
-  that SVG as an image and draw it to a canvas sized with the existing `scaleFor`. Add the
+  that SVG as an image from a `data:image/svg+xml` URL (as `graphCanvas` does; the picture
+  page's policy allows `data:` images, not blob URLs) and draw it to a canvas sized with
+  the existing `scaleFor`, filled white first (the backing the mockup iframe shows,
+  `viewer/pages/picture.css:12`). Add the
   function to `viewer/pages/picture-export.js` beside `graphCanvas` and `formCanvas`.
 - No script from the mockup runs at any point (scripts are stripped before drawing).
 - If the browser refuses (load error or a tainted canvas), the note under Download says
@@ -153,8 +167,8 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
    exact format above with the expected rounded coordinates; the button is hidden in an
    archived thread.
 4. PNG: Download on a mockup's picture page saves a PNG whose pixel size is width x height
-   times the export scale, and in which a known foreground block and the background of a fixture mockup
-   have their expected colours; Download HTML still gives HTML.
+   times the export scale, and in which a known foreground block, a set background and a spot the fixture
+   leaves unset (white) have their expected colours; Download HTML still gives HTML.
 5. True size: at 390px viewport, the screenshot view of a 1200px-wide image renders it
    1200 CSS px wide and the page scrolls sideways; Built's Open full size links to it.
 
@@ -209,6 +223,11 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | Decision 4's routing to the designer not superseded | upheld | Decision 9 |
+| mechanics | major | Eligibility change replaces the card and erases an open draft | upheld | S2: eligibility toggled outside the signature; drafts kept per mockup and redrawn on replacement |
+| mechanics | major | Full-size mockup can scroll inside its iframe, so tap coordinates drift | downgraded (minor) | Needs content taller than the declared size; fixed anyway with `scrolling="no"` on the picture iframe |
+| mechanics | minor | Scroll fallback offset unclear | upheld | S1: record every visible entry's offset; restore first survivor; else leave |
+| mechanics | minor | Intermediate SVG URL unspecified (blob URLs blocked) | upheld | S3: `data:` URL as `graphCanvas` |
+| mechanics | minor | Canvas has no white backing; test misses it | upheld | S3 fills white; Validation 4 checks an unset spot |
 
 ## Implementation Tasks
 
