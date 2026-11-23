@@ -201,7 +201,7 @@ the type is checked only when present. Unless a reader fallback is stated below,
 | `install.label` | string, the name in install messages | defaulted: `undefined` |
 | `install.node` | string, minimum Node version the recipe needs | defaulted: no Node prerequisite |
 | `install.versionArgs` | array of strings, or `null` to skip the version check | defaulted: `undefined` (passed to the version command) |
-| `install.fallbackPath` | string, where the installer looks when the CLI is not on PATH | defaulted: empty string in `install.sh`; `undefined` in the install job |
+| `install.fallbackPath` | string, where the installer looks when the CLI is not on PATH | required and non-empty when `install.lookup` is `fallback`; otherwise defaulted: empty string in `install.sh` and `undefined` in the install job |
 | `install.pathRank` | number or `null`, order the installer prepends CLI folders to the service PATH | defaulted: `null` ordering (last) |
 | `install.sensitivity` | boolean, see the checklist | defaulted (false) |
 

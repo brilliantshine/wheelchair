@@ -38,6 +38,7 @@ function validateManifest(m) {
   for (const f of ['shortName','asideParentField']) check(f,str,false);
   check('login.killTarget',v=>['pane','session','name'].includes(v),false);
   check('install.lookup',v=>['path','absolute','fallback'].includes(v));
+  if (m.install.lookup === 'fallback') check('install.fallbackPath', v => str(v) && v.length > 0);
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);
   for (const f of ['install.label','install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt']) check(f,str,false);
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
