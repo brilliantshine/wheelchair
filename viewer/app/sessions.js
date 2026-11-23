@@ -374,9 +374,7 @@ async function startSession(hub, thread, input) {
       name: session.name,
       attempt_id: session.attempt_id,
       started_by: session.started_by,
-      project_dir: thread.project,
-      project: require('node:path').basename(thread.project),
-      worktree: input.worktree,
+      ...(thread.assistant ? { assistant: true, prompt_role: 'assistant' } : { project_dir: thread.project, project: require('node:path').basename(thread.project), worktree: input.worktree }),
       from_remote_branch: input.from_remote_branch,
       branch: input.branch,
       brief: input.brief || '',
@@ -424,7 +422,7 @@ async function startSession(hub, thread, input) {
   markIdleIfFresh(session);
   if (!thread.worktree && started.worktree) {
     thread.worktree = started.worktree;
-    thread.branch = `wc/${thread.id}`;
+    if (!thread.assistant) thread.branch = `wc/${thread.id}`;
   }
   if (started.default_branch) thread.default_branch = started.default_branch;
   await hub.save(thread);
@@ -642,7 +640,7 @@ async function event(hub, payload) {
         target.switching = { id, to: account.id, at: new Date().toISOString() };
         delete target.limited_until;
         delete target.quiet_check_at;
-        pendingSwitch = { id, from, account, request: { machine: thread.machine, body: { switch_id: id, account: { id: account.id, dir: account.id === `default-${target.provider}` ? null : `~/.wheelchair/accounts/${account.id}` }, model: target.model ?? null, project: path.basename(thread.project), project_dir: thread.project } } };
+        pendingSwitch = { id, from, account, request: { machine: thread.machine, body: { switch_id: id, account: { id: account.id, dir: account.id === `default-${target.provider}` ? null : `~/.wheelchair/accounts/${account.id}` }, model: target.model ?? null, ...(thread.assistant ? { assistant: true } : { project: path.basename(thread.project), project_dir: thread.project }) } } };
       }
     }
     target.turn_ended = true;
@@ -740,6 +738,7 @@ async function sessionRequest(hub, payload) {
     return { sessions: listed, review_families: await reviewFamilies(hub, thread) };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
+  if (payload.action === 'start' && thread.assistant) throw appError(403, 'the assistant starts threads, not helpers');
   if (payload.action === 'start') require('./handoff.js').refuseFrozen(hub, thread);
   if (payload.action === 'start' && payload.round !== undefined && (payload.role !== 'reviewer' || !((typeof payload.round === 'number' && Number.isInteger(payload.round)) || (typeof payload.round === 'string' && /^[0-9]+$/.test(payload.round))) || !Number.isSafeInteger(Number(payload.round)) || Number(payload.round) < 1)) throw appError(400, '--round requires a positive integer and is only allowed for reviewers');
   if (payload.action === 'start' && payload.effort !== undefined && (caller.role !== 'sub-lead' || payload.role !== 'worker')) throw appError(400, 'effort can only be set for a worker');
