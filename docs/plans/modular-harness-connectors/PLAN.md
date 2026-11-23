@@ -126,6 +126,7 @@ Each `manifest.js` exports a plain object, no functions and no requires of other
   - `appendWhenRequested`: when a worker explicitly requests this tool and it is not in the
     order, the balancer appends it (today OpenRouter, `balancer.js:97`).
   The settings migration and balancer logic are otherwise unchanged.
+- `report.useHookText` (default true) and `stopWhenEnded` (default false): see S3.
 - `shortName`: the name used in machine messages where it differs from `displayName`
   (today Pi: "Pi"), so machine wording stays byte-identical.
 - `asideParentField`: only for tools with `capabilities.aside`; the session field holding
@@ -140,13 +141,6 @@ Each `manifest.js` exports a plain object, no functions and no requires of other
   (`:611`), sign-in kind (`:1411,1457`), membership in the review-family choices
   (`:1600-1601`, `viewer/app/routes.js:378`, `viewer/app/settings.js:323`), and plan and
   weight tables (`viewer/app/settings.js:36-40`).
-- `install` also carries `instructionsFile`: the tool's global instructions file that
-  diagram-sensitivity setup writes, relative to its home (today Claude `CLAUDE.md` under
-  `WHEELCHAIR_CLAUDE_HOME`/`~/.claude`, Codex `AGENTS.md` under
-  `WHEELCHAIR_CODEX_HOME`/`~/.codex`; others none), with its home variable and default.
-  `sensitivity/set.sh` and the sensitivity step in `machine/lib/harness-install.js:102-110`
-  read the list of such tools from `registry.json` instead of naming Claude and Codex;
-  `WHEELCHAIR_PRESENT` keeps its meaning (comma-separated cli names).
 - `install` also carries `versionArgs`: the arguments the install job uses to check the
   installed CLI's version (`--version` for all but Pi, which has none and is skipped, as
   `machine/lib/harness-install.js:116-125` does today).
@@ -226,8 +220,16 @@ and `viewer/pages/thread.js:4` (`PROVIDER_LABEL`), `viewer/app/asides.js:41`,
 `machine/lib/statusline.js` (S5), `test-support/smoke/` (S6), the installer's per-tool
 fallback paths and PATH order (S2 `install`), `machine/lib/project-tools.js:7,20-34` (`projectTools`
 capability), diagram-sensitivity setup (`sensitivity/set.sh`,
-`machine/lib/harness-install.js:102-110`; S2 `install.instructionsFile`), and named
+`machine/lib/harness-install.js:102-110`: stays as it is, see below), and named
 property dispatch such as `adapters.codex.loginEnv` (`machine/service.js:2293`) and `adapters.pi.redact`.
+
+**Diagram-sensitivity setup keeps its own tool list.** `sensitivity/set.sh` (Claude's
+`CLAUDE.md`, Codex's `AGENTS.md`, the Codex `AGENTS.override.md` refusal, two-tool messages
+and disagreement check) and the sensitivity step in `machine/lib/harness-install.js:102-110`
+(including its `install/unseen.py` hook cleanup and "the other tool" level copy) are
+unchanged and allowlisted in the guard with the tag `own-list`, like `codex/model.sh`
+(Decision 16). The guide's checklist says a tool with a global instructions file needs an
+entry there.
 
 **Shared output scrub stays shared.** Pane capture and sign-in output are scrubbed of
 OpenRouter keys for every tool today (`machine/service.js:603,1757,1763`). That scrub moves
@@ -277,7 +279,8 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   scripts stay bash 3.2 compatible.
 - Browser pages get the tool list, labels and `settings` details from the hub (Decision
   2) through a script, not a fetch: the hub serves `/wheelchair/assets/tools.js`, built
-  from the manifests (minus `install` and `models`), which sets a global the page scripts
+  from the manifests (minus `install`; `models` is included, so effort choices and model
+  name formats reach the settings page), which sets a global the page scripts
   read. The settings, threads and thread pages load it with a `<script>` tag before their
   own script, so cached renders (`viewer/pages/threads.js:75-78`) have labels at once,
   including on the first load after the update. Delete the pages' own copies
@@ -295,7 +298,10 @@ Wording users see stays byte-identical (error messages, labels, settings text).
 - New `machine/test/connectors-contract.test.js` (the machine suite runs only `machine/test/*.test.js`): every registered
   connector passes `validate` for both halves; every folder under `connectors/` that has a
   `manifest.js` is registered and every registry entry has a folder; `cli` and `provider`
-  ids are unique; `export.js --check` passes; a fake connector missing a required member, or with a flag
+  ids are unique; every manifest has every required field of S2 with the right type
+  (`cli`, `provider`, `label`, `displayName`, `capabilities`, `install` recipe, `settings`,
+  `models`, `placement`, and `hook` for hook-driven tools), and a fake manifest missing one
+  is rejected naming the field; `export.js --check` passes; a fake connector missing a required member, or with a flag
   but no member, is rejected with a message naming it; `providers.js` exports equal a
   frozen snapshot of today's values.
 - New name-check guard test: scans `machine/`, `viewer/app/`, `viewer/pages/`,
@@ -311,7 +317,7 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   entries, each tagged and with a one-line reason: `not-tool` (the word means something
   else, e.g. a model name or URL), `legacy` (one-off cleanup of retired files, e.g.
   `install.sh:61-62,138-149`), `model-script` (per-tool model code kept in `codex/model.sh`,
-  Decision 16), or `compat` (outside connectors' meaning, e.g. the graph
+  Decision 16), `own-list` (diagram-sensitivity setup, S4), or `compat` (outside connectors' meaning, e.g. the graph
   viewer's caller label `viewer/server.js:1336,1922-1935`).
 - `codex/test/` gains a round trip: with `WHEELCHAIR_REGISTRY` pointing at a copy of
   `registry.json` plus a sixth provider, `model.sh init`, `set` and a read of that
@@ -325,7 +331,8 @@ Wording users see stays byte-identical (error messages, labels, settings text).
 member with its signature and when it is called, every capability and what the app does
 without it, how turn end works (hook vs poller), and a checklist for adding a tool (folder,
 registry line, install recipe, settings details, model defaults, a discovery function in
-`codex/model.sh` if the tool can list its own models, placement data, regenerating `registry.json`, tests). Update
+`codex/model.sh` if the tool can list its own models, placement data, an entry in diagram-sensitivity setup if the tool has a global
+instructions file, regenerating `registry.json`, tests). Update
 `machine/AGENTS.md`, `viewer/AGENTS.md`, `machine/API.md` and `viewer/app/API.md` where
 they name adapter paths or list tools; `protocol/app/*.md` provider lists stay as they are
 (they describe the user-facing names, which do not change).
@@ -341,6 +348,7 @@ existing fields, `only_ai` / `--provider` values, or the live smoke scope (Decis
 bash machine/test/run.sh          # from the repository root; hook fixtures resolve paths from cwd
 (cd viewer && npm test && npm run test:browser)
 bash install/test/run.sh
+bash sensitivity/test/run.sh
 bash codex/test/run.sh
 node connectors/export.js --check
 grep -rnE "adapters/(index|claude|codex|agy|kimi|pi)" machine viewer codex install.sh test-support  # expect no hits
@@ -454,6 +462,23 @@ exit. Downgrades and declines cite evidence.
 **Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** S3 `readReport` returning `{ text, settled }` with manifest `report.useHookText`, new `projectTools` capability; S2 effort held only in `models.efforts` (`effort` flag derived), `install.instructionsFile` for diagram-sensitivity setup, `install.versionArgs`; S4 adds `project-tools.js` and sensitivity setup to the known-missing list; S5 install bullet names callers (no new probes in `install.sh`), `model.sh` derives every provider enumeration incl. `parse_pins` from the registry with `WHEELCHAIR_REGISTRY` seam; S6 guard catches call arguments and connector `require` paths and scans `sensitivity/set.sh`, new `model.sh` round-trip test; Accepted Risks: hook exit precedence (rare path).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | `tools.js` strips `models`, so the settings page loses effort choices | upheld | S5: `tools.js` excludes only `install` |
+| intent | minor | Same: browser gets no effort lists or model formats | upheld | merged with the row above |
+| mechanics | major | Registry-driven sensitivity writer can't express Codex's `AGENTS.override.md` refusal | upheld | Cut: sensitivity setup keeps its own tool list (`own-list`); `install.instructionsFile` removed |
+| intent | minor | `set.sh` needs more than `instructionsFile` (override check, two-tool messages); simpler to leave it | upheld | merged with the row above |
+| intent | minor | `harness-install.js` sensitivity step's `unseen.py` cleanup and "other tool" copy unspecified | upheld | merged with the row above |
+| mechanics | minor | Sensitivity fixture lacks the registry; suite missing from Validation | upheld | Fixture concern moot after the cut; Validation adds `bash sensitivity/test/run.sh` |
+| mechanics | minor | Contract test doesn't validate manifest data | upheld | S6: required manifest fields checked |
+| intent | minor | `report.useHookText` and `stopWhenEnded` missing from S2 with no defaults | upheld | S2 lists both with defaults |
+
+### Round 5 — 2026-11-22
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 4:** diagram-sensitivity setup (`sensitivity/set.sh`, `harness-install.js:102-110`) keeps its own tool list, allowlisted as `own-list` (S4), and `install.instructionsFile` is removed; `tools.js` now includes `models`; S2 lists `report.useHookText` and `stopWhenEnded` with defaults; S6 contract test checks required manifest fields; Validation adds the sensitivity suite; S7 checklist line for sensitivity setup.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
