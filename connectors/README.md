@@ -209,8 +209,9 @@ the type is checked only when present. Unless a default is stated below, an omit
 
 ### Settings page (`settings`)
 
-`settings.modelPattern` (string), `settings.weights` (object with finite numeric `unknown`) and `settings.plans` are required. `settings.plans` is an array of `[key, label]` pairs of non-empty strings; it must include `unknown`, and every key must exist in `settings.weights`. Everything else is defaulted: `modelPlaceholder`,
-`cliLabel`, `vendor`, `setupUrl`, `signInKind`, `modelError` (strings); `permissionMode`,
+`settings.modelPattern`, non-empty `settings.modelError`, `settings.weights` (object with finite numeric `unknown`) and `settings.plans` are required. `settings.plans` is an array of `[key, label]` pairs of non-empty strings; it must include `unknown`, and every key must exist in `settings.weights`. Everything else is defaulted: `modelPlaceholder`,
+`cliLabel`, `vendor`, `setupUrl`, `signInKind` (strings); `permissionMode`,
+`permissionName` (required when `permissionMode` is set),
 `accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices`
 (array of `[value, label]`); `reportedPlans`, `oldPlanWeights` (objects);
 `modelHeadsUp`, `reviewFamily`, `scoutAgentTool`, `monoModelNames` (booleans); `keyPrompt`
@@ -231,6 +232,11 @@ the tool. It has one of two shapes:
 A tool with no `modelOptions` gets an empty list from the settings data; the Settings page
 then shows only the slot's current model plus the "Not used" and "Other…" entries. Add it
 whenever the tool has choices to show.
+
+Custom model pins must satisfy both the provider's `models.format` and the shared pin-file
+rule `[a-z0-9][a-z0-9._/:-]*`; widening a provider format does not widen the pin-file syntax.
+Worker effort requests must be listed in `models.efforts`; a missing effort below the highest
+listed value is refused, as is a value above that highest effort.
 
 Defaults when a field is omitted (as implemented in `viewer/app/settings.js`, `viewer/app/routes.js`
 and `viewer/pages/settings.js`): boolean fields are false; `permissionChoices` is `[]` where
@@ -306,7 +312,8 @@ tag before their own script.
 3. Fill `install` (recipe, binary, lookup, `versionArgs`, `fallbackPath` and `pathRank` as needed).
 4. Fill `settings` (model pattern and placeholder, permission choices, account text, required
    `plans` and `weights`, sign-in kind, setup link). `plans` must include `unknown` and every
-   plan key must exist in `weights`. If the tool has model choices on the Settings page, add
+   plan key must exist in `weights`. Set a non-empty `modelError`; when setting `permissionMode`,
+   also set `permissionName` to the short name used in grouped Settings labels. If the tool has model choices on the Settings page, add
    `settings.modelOptions`. If the tool recovers adopted panes, give it a `recoverRank`; every
    tool needs `install.label`.
 5. Fill `models` (default pins per slot, formats, efforts). If the tool can list its own
@@ -324,7 +331,7 @@ tag before their own script.
 8. Run `node connectors/export.js` and commit the new `registry.json`.
 9. Tests: `machine/test/connectors-contract.test.js` loads both halves of every registered
    connector and checks the manifests, so a missing member or a wrong type fails by name.
-   `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). It scans whole files, so a comparison, `case`, call argument, ternary or `||`/`&&` operand, array element, object key (including shorthand) or `connectors.<id>` access is caught even when it spans several lines; comments and non-code text are masked first. Exact quoted IDs are checked at their literal positions, including shell case patterns, tests and for lists, Python membership and JavaScript backticks. The detector is pinned by a table of positive and negative snippets in that test (`detector recognizes name checks across lines`): change the detector only with a snippet in the table. It is a heuristic: escaped ids, computed values, ambiguous regex/division syntax, optional chaining (`adapters?.codex`), a dot on the next line (`adapters\n  .codex`), an id after a nested array element (`[[1], 'kimi']`), and a backtick-delimited connector `require` path can evade it, and unusual syntax can give a false hit. For a hit that is not tool dispatch, add an entry to the `allow` list in that test: `{ file, pattern, tag, reason }`, where `file` is the repository path, `pattern` is a regular expression tested against the hit's source line, `tag` is `not-tool` (also established: `compat`, `legacy`, `model-script`), and `reason` says why. Prefer moving the behaviour into the manifest over allowlisting.
+   `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). It scans whole files, so a comparison, `case`, call argument, ternary or `||`/`&&` operand, array element, object key (including shorthand) or `connectors.<id>` access is caught even when it spans several lines; comments and non-code text are masked first. Exact quoted IDs are checked at their literal positions, including shell case patterns, tests and for lists, Python membership and JavaScript backticks. The detector is pinned by a table of positive and negative snippets in that test (`detector recognizes name checks across lines`): change the detector only with a snippet in the table. It is a heuristic: escaped ids, computed values, ambiguous regex/division syntax, optional chaining (`adapters?.codex`), a dot on the next line (`adapters\n  .codex`), an id after a nested array element (`[[1], 'kimi']`), a backtick-delimited connector `require` path, shell `kimi )`, and `[[ codex == $cli ]]` can evade it, and unusual syntax can give a false hit. For a hit that is not tool dispatch, add an entry to the `allow` list in that test: `{ file, pattern, tag, reason }`, where `file` is the repository path, `pattern` is a regular expression tested against the hit's source line, `tag` is `not-tool` (also established: `compat`, `legacy`, `model-script`), and `reason` says why. Prefer moving the behaviour into the manifest over allowlisting.
    `machine/test/adapters-loaded.test.js` walks the registry. Add characterization tests
    for the tool's behaviour next to the machine and hub tests that cover the other tools. Run
    the suites listed in the root `AGENTS.md`, including `bash codex/test/run.sh` for

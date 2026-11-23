@@ -503,6 +503,7 @@ with open(sys.argv[1]) as handle:
     registry = json.load(handle)
 tool = copy.deepcopy(registry["tools"][0])
 tool["cli"] = tool["provider"] = "newtool"
+tool["models"]["format"] = "^[A-Za-z0-9][A-Za-z0-9._/:-]*$"
 registry["tools"].append(tool)
 with open(sys.argv[2], "w") as handle:
     json.dump(registry, handle)
@@ -527,6 +528,12 @@ for provider in claude gpt gemini kimi openrouter; do
   done
 done
 assert 'registry extension leaves other providers unchanged' cmp -s "$case_dir/before" "$case_dir/after"
+run_model set gpt standard gpt-override
+assert 'registry extension seeds GPT override' test "$status" -eq 0
+run_model set newtool standard Model-V2
+assert 'registry extension rejects uppercase pin with usage exit' test "$status" -eq 2
+run_model show --json
+assert 'rejected uppercase pin preserves GPT override' json_assert 'import json,sys; x=json.load(sys.stdin); assert x["malformed"] is False and x["gpt"]["standard"]["model"] == "gpt-override"'
 unset WHEELCHAIR_REGISTRY
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"

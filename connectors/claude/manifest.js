@@ -41,6 +41,7 @@ module.exports = {
     "vendor": "Anthropic",
     "setupUrl": "https://docs.claude.com/en/docs/claude-code/setup",
     "permissionMode": "permission_mode",
+    "permissionName": "Claude",
     "permissionChoices": [
       [
         "auto",

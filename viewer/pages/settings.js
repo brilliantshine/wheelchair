@@ -535,9 +535,15 @@
     const escRow = (title, key, choices) => h('div', { class: 'row-line' },
       h('div', { class: 'what' }, h('span', { text: title })),
       escalationGroup(key, title, choices));
+    const permissionNames = (mode) => {
+      const names = TOOLS.filter((t) => t.settings.permissionMode === mode).map((t) => t.settings.permissionName);
+      return names.length < 2 ? (names[0] || '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+    };
     const permissionChoices = (mode) => (TOOLS.find((t) => t.settings.permissionMode === mode) || { settings: {} }).settings.permissionChoices || [];
-    const claudeMode = modeGroup('permission_mode', 'Claude, Antigravity and Kimi permission mode', permissionChoices('permission_mode'));
-    const codexMode = modeGroup('codex_mode', 'Codex permission mode', permissionChoices('codex_mode'));
+    const permissionModeName = permissionNames('permission_mode');
+    const codexModeName = permissionNames('codex_mode');
+    const claudeMode = modeGroup('permission_mode', `${permissionModeName} permission mode`, permissionChoices('permission_mode'));
+    const codexMode = modeGroup('codex_mode', `${codexModeName} permission mode`, permissionChoices('codex_mode'));
     const asideMode = modeGroup('aside_access', 'Aside access', [['read-only', 'Read-only'], ['full', 'Full']]);
     const asideHint = data.aside_access === 'full'
       ? 'Never asks, no sandbox: an aside can read anywhere, run commands and change files.'
@@ -578,10 +584,10 @@
         h('h2', { id: 'perm', text: 'Permission mode' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Claude, Antigravity and Kimi sessions' })),
+            h('div', { class: 'what' }, h('span', { text: `${permissionModeName} sessions` })),
             claudeMode),
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Codex sessions' }), h('span', { class: 'hint', text: codexHint })),
+            h('div', { class: 'what' }, h('span', { text: `${codexModeName} sessions` }), h('span', { class: 'hint', text: codexHint })),
             codexMode),
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Asides' }), h('span', { class: 'hint', text: asideHint })),

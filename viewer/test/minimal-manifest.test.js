@@ -10,7 +10,7 @@ test('minimal manifest can be read by the settings store', () => {
   const m = structuredClone(source);
   for (const key of Object.keys(m)) if (!['cli','provider','label','displayName','typesRoleMessage','singleAccount','capabilities','install','settings','models','placement','asideParentField'].includes(key)) delete m[key];
   m.install = { command: m.install.command, binary: m.install.binary, lookup: 'path', label: m.install.label };
-  m.settings = { modelPattern: m.settings.modelPattern, weights: { unknown: 1 }, plans: [['unknown', 'Not sure']] };
+  m.settings = { modelPattern: m.settings.modelPattern, modelError: m.settings.modelError, weights: { unknown: 1 }, plans: [['unknown', 'Not sure']] };
   m.models = { pins: m.models.pins, format: m.models.format, hubPattern: m.models.hubPattern, efforts: m.models.efforts };
   m.placement = { workerRank: null };
   validateManifest(m);

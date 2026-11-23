@@ -66,6 +66,14 @@ test.describe('desktop', () => {
     await expect(page.getByLabel('Claude standard effort', { exact: true })).toHaveCount(1);
   });
 
+  test('permission labels name the tools in their groups', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    await expect(page.getByText('Claude, Antigravity and Kimi sessions', { exact: true })).toBeVisible();
+    await expect(page.getByText('Codex sessions', { exact: true })).toBeVisible();
+    await expect(page.getByRole('radiogroup', { name: 'Claude, Antigravity and Kimi permission mode', exact: true })).toBeVisible();
+    await expect(page.getByRole('radiogroup', { name: 'Codex permission mode', exact: true })).toBeVisible();
+  });
+
   test('a slashed Kimi alias saves through Other, survives a reload, and other providers refuse a slash', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
     await expect(page.locator('tr[data-provider="kimi"]')).toContainText('Kimi Code');

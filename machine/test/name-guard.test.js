@@ -1,6 +1,7 @@
 'use strict';
-// Heuristic guard: escaped tool IDs, dynamic computed values and ambiguous regex/division
-// syntax can evade detection; unusual language syntax can still yield false hits.
+// Heuristic guard: escaped tool IDs, dynamic computed values, ambiguous regex/division
+// syntax, shell `kimi )` and `[[ codex == $cli ]]` can evade detection; unusual language
+// syntax can still yield false hits.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
