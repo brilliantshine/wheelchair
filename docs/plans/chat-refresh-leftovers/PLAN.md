@@ -186,7 +186,7 @@ one; after the server closes, the timer is cleared (e.g. stub `clearInterval` or
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S1: hub chat cache keeps only parsed items (`sessionChatItems`) — tricky | `viewer/app/chat.js`, `viewer/test/app-chat.test.js`, `docs/plans/chat-refresh-leftovers/reports/T1.md` | standard, gpt-6.1-terra | wc-4bb7c88a92d9-worker | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | running |
+| T1 | S1: hub chat cache keeps only parsed items (`sessionChatItems`) — tricky | `viewer/app/chat.js`, `viewer/test/app-chat.test.js`, `docs/plans/chat-refresh-leftovers/reports/T1.md` | standard, gpt-6.1-terra | wc-4bb7c88a92d9-worker | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | done (1e0f3741) |
 | T2 | S2 + S3: last-seen written at most once a minute; machine idle-hash sweep timer | `viewer/app/hub.js`, `viewer/test/app-hub.test.js`, `machine/service.js`, `machine/test/service.test.js`, `docs/plans/chat-refresh-leftovers/reports/T2.md` | standard, gpt-6.1-terra | wc-4bb7c88a92d9-worker-2 | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | done (eb33858e) |
 
 ## Log
@@ -196,3 +196,4 @@ one; after the server closes, the timer is cleared (e.g. stub `clearInterval` or
 - 2026-11-22 — Choice: T2, machine/test/service.test.js: the timer test invokes `copyHashesTimer._onTimeout()` and wraps global `clearInterval` to see the close handler clear it.
 - 2026-11-22 — Choice: T2, viewer/test/app-hub.test.js: the throttle test builds a bare `Hub({ now, codeVersion: '' })` and stubs `hub.state.markMachineSeen` (no state dir is written).
 - 2026-11-22 — T2 accepted (band: scout): diff matches S2/S3; worker reported "none" for choices, the scout listed 3, logged above. service.test.js 130/130 and app-hub.test.js 119/119 re-run by the sub-lead; 16+ machine Windows-bridge tests (win.test.js, `wslpath` ENOENT) fail identically on the base branch, so they come from this machine's environment.
+- 2026-11-22 — T1 accepted (band: self, tricky): read the full chat.js and test diff against S1.1-10; worker's choices section says "none" and I see no undictated choice beyond the plain `sessionTranscript` path being rewritten without behaviour change. app-chat.test.js 27/27 re-run by the sub-lead. A `cli` change is covered by the same parsedKey branch as the tested `parent_title` change.
