@@ -30,6 +30,13 @@ function roundTrip(tools) {
     assert.deepEqual(shown[provider][slot], model === 'none' ? null : { model, effort: effort || null }, `${context}: show`);
   }
   run('init');
+  for (const tool of tools) for (const slot of slots) {
+    const pin = tool.models.pins[slot] || (slot === 'sub-lead' ? tool.models.pins.lead : undefined);
+    assert.ok(pin, `${tool.cli} ${slot}: missing default`);
+    context = `init default ${tool.cli} ${slot} ${JSON.stringify(pin)}`;
+    assert.equal(runExpected(pin.model === 'none' ? 3 : 0, tool.provider, slot), pin.model === 'none' ? '' : pin.model, `${context}: model`);
+    assert.equal(run('effort', tool.provider, slot), pin.effort || '', `${context}: effort`);
+  }
   for (const tool of tools) {
     const other = tools.find(t => t.provider === 'gpt' && t.provider !== tool.provider) || tools.find(t => t.provider === 'claude' && t.provider !== tool.provider);
     const sentinel = other.provider === 'gpt' ? 'gpt-roundtrip-sentinel' : 'claude-roundtrip-sentinel';
@@ -65,6 +72,7 @@ test('model round trip rejects invalid sixth connectors', { timeout: 120000 }, (
   const cases = [
     [t => { t.models.pins.light.effort = 'unlisted'; }, /malformed/i],
     [t => { t.models.efforts.push('very-high'); }, /sixth light .*very-high.*(?:malformed|exit)/i],
+    [t => { t.models.pins['sub-lead'] = { model: 'sixth-sublead-model', effort: 'high' }; }, /init default sixth sub-lead .*sixth-sublead-model/i],
     [t => { t.models.format = '[A-Za-z0-9][A-Za-z0-9._-]*'; }, /sixth light invalid model with capitals.*exit/i],
     [t => { delete t.models.pins.light; }, /(?:Traceback|KeyError).*light/s],
     [t => { t.models.pins.light.model = 'Capital'; }, /malformed/i],
