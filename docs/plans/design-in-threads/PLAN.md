@@ -35,6 +35,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Mockup frame size depends on what is being worked on: "it should depend on what you're working on" (Collin usually views wheelchair in a laptop browser) | Collin's answer; a phone app gets a phone-sized frame, a desktop web page a desktop-sized one | user |
 | 7 | Mockups show live (the HTML page itself, not a rendered picture), scaled to fit the viewer's screen; "Open full size" shows it instead of downloading | Works on every machine without a headless browser; Collin did not object to live, only to a fixed phone shape | defaulted |
 | 8 | During the build, a screenshot of each finished visible task is posted to the thread as it lands, next to its mockup, by the sub-lead directly | Collin's pick: see it take shape and steer early | user |
+| 9 | Workers compare their screenshot with the mockup and fix differences before reporting | Catch drift per task, not only at the end | review-round-1 |
+| 10 | "Agree the mockups" is an Open Question while a designer runs, so review waits for agreement | Planning gate must not close on unagreed mockups | review-round-1 |
+| 11 | Mockup changes asked during the build are applied right after it as an after-done fix in the same open pull request | The sub-lead owns the worktree during the build | review-round-1 |
 
 ## Spec
 
@@ -291,6 +294,15 @@ round where knowing it matters most.
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
+
+### Round 2 — 2026-11-22
+
+**Lanes:** see below.
+
+**Changed since Round 1:** worker self-check against the mockup and sub-lead send-back (Build and verify rules); verbatim feedback and attachments, the "Agree the mockups" gate, changes during review, changes after Start building, designer on lead restart (Lead rules); size range 200-2560 and 2 MiB file limit checked by card.js (Mockup files, mockup format); full size for each half and picture page accepting image cards, archive keeping sub-lead uploads, image section moved to cards.md and sub-lead exception (image cards); could-not-try when no capture path (verifier); remote-machine limitation noted (Not in this thread).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
