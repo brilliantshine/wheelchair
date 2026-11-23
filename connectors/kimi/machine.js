@@ -249,6 +249,7 @@ module.exports = {
   checkVersion: (service, executable) => service.checkKimiVersion(executable),
   versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('kimi'); return service.kimiVersionStatus(service.kimiVersions.get(JSON.stringify([executable, mtime])), login); },
   launchPath: service => module.exports.kimiLaunchPath.call(service),
+  launchContext: async service => ({ kimiExecutable: (await service.kimiLaunchPath()).executable }),
   checkKimiVersion(executable = resolveCli()) {
     if (!executable) return Promise.resolve();
     let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
@@ -267,13 +268,13 @@ module.exports = {
   },
   async kimiLaunchPath() {
     const executable = resolveCli();
-    if (!executable) (() => { throw new Error('Kimi Code is not installed'); })();
-    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { (() => { throw new Error('Kimi Code is not installed'); })(); }
+    if (!executable) (() => { throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); })();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { (() => { throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); })(); }
     await this.checkKimiVersion(executable);
     const entry = this.kimiVersions?.get(JSON.stringify([executable, mtime]));
-    if (!entry || entry.output === undefined) (() => { throw new Error('Kimi Code is not installed'); })();
+    if (!entry || entry.output === undefined) (() => { throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); })();
     const status = this.kimiVersionStatus(entry, { logged_in: false });
-    if (status.problem) (() => { throw new Error(status.problem); })();
+    if (status.problem) (() => { throw Object.assign(new Error(status.problem), { status: 400 }); })();
     return { executable };
   },
   kimiVersionStatus(entry, login) {
@@ -293,7 +294,7 @@ module.exports = {
   provider: 'kimi', resolveCli, readConfig, loginStatus, usageProbe,
   loginEnv: dir => ({ KIMI_CODE_HOME: home(dir) }),
   seed(dir, id) { c.seed(dir, home(), 'AGENTS.md', 'kimi', id); }, prepare() {},
-  loginCommand() { const cli = resolveCli(); if (!cli) throw new Error('Kimi Code is not installed'); return [cli, 'login', '--region', 'global']; }, loginPrompt: null,
+  loginCommand() { const cli = resolveCli(); if (!cli) throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); return [cli, 'login', '--region', 'global']; }, loginPrompt: null,
   parseLogin(pane) { const url = pane.match(/Opening browser for Kimi device login:\s*(https?:\/\/\S+)/)?.[1]; const code = pane.match(/paste the URL above and enter code:\s*(\S+)/i)?.[1]; return url && code ? { url, code, wantsCode: false } : null; },
   loginDone() { return false; },
   command(input, session, worktree, context) {

@@ -936,7 +936,7 @@ class MachineService {
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
-    const context = { resume, wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
+    const context = { resume, wsl, mount, ...(await adapters[input.cli].launchContext?.(this) || {}) };
     if (wsl && tools && mcp && connectors.manifest(input.cli).wrapProjectTools) {
       const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
       const commonDir = common.ok && common.stdout.trim() || worktree;
