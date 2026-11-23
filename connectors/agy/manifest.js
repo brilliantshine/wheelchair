@@ -117,6 +117,9 @@ module.exports = {
   "report": {
     "useHookText": true
   },
+  "wrapProjectTools": true,
+  "injectProjectKeys": false,
+  "joinPaneLines": false,
   "stopWhenEnded": false,
   "hook": {
     "payload": "stdin",

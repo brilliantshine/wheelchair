@@ -127,6 +127,9 @@
       "report": {
         "useHookText": true
       },
+      "wrapProjectTools": true,
+      "injectProjectKeys": true,
+      "joinPaneLines": false,
       "stopWhenEnded": false,
       "asideParentField": "cli_session_id",
       "hook": {
@@ -272,6 +275,9 @@
       "report": {
         "useHookText": true
       },
+      "wrapProjectTools": true,
+      "injectProjectKeys": true,
+      "joinPaneLines": false,
       "stopWhenEnded": false,
       "asideParentField": "codex_thread_id",
       "hook": {
@@ -398,6 +404,9 @@
       "report": {
         "useHookText": true
       },
+      "wrapProjectTools": true,
+      "injectProjectKeys": false,
+      "joinPaneLines": false,
       "stopWhenEnded": false,
       "hook": {
         "payload": "stdin",
@@ -509,6 +518,9 @@
       "report": {
         "useHookText": true
       },
+      "wrapProjectTools": false,
+      "injectProjectKeys": false,
+      "joinPaneLines": false,
       "stopWhenEnded": false,
       "recoverRank": 0,
       "recoverFallback": false
@@ -613,6 +625,9 @@
       "report": {
         "useHookText": false
       },
+      "wrapProjectTools": false,
+      "injectProjectKeys": false,
+      "joinPaneLines": true,
       "stopWhenEnded": true,
       "asideParentField": "cli_session_id",
       "hook": {

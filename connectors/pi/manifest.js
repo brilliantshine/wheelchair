@@ -99,6 +99,9 @@ module.exports = {
   "report": {
     "useHookText": false
   },
+  "wrapProjectTools": false,
+  "injectProjectKeys": false,
+  "joinPaneLines": true,
   "stopWhenEnded": true,
   "asideParentField": "cli_session_id",
   "hook": {

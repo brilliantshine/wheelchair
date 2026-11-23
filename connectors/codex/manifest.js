@@ -136,6 +136,9 @@ module.exports = {
   "report": {
     "useHookText": true
   },
+  "wrapProjectTools": true,
+  "injectProjectKeys": true,
+  "joinPaneLines": false,
   "stopWhenEnded": false,
   "asideParentField": "codex_thread_id",
   "hook": {

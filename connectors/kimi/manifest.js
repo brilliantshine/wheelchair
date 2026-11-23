@@ -102,6 +102,9 @@ module.exports = {
   "report": {
     "useHookText": true
   },
+  "wrapProjectTools": false,
+  "injectProjectKeys": false,
+  "joinPaneLines": false,
   "stopWhenEnded": false,
   "recoverRank": 0,
   "recoverFallback": false

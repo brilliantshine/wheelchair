@@ -599,7 +599,7 @@ class MachineService {
   // checks that match pane text read it plain.
   pane(name, color = false, history = 0) {
     const session = this.managed(name);
-    const result = this.tmux(['capture-pane', '-p', ...(session.cli === 'pi' ? ['-J'] : []), ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', `=${name}:`]);
+    const result = this.tmux(['capture-pane', '-p', ...(connectors.manifest(session.cli)?.joinPaneLines ? ['-J'] : []), ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', `=${name}:`]);
     if (!result.ok) throw Object.assign(new Error(result.stderr.trim() || 'tmux pane unavailable'), { status: 409 });
     return scrubOutput(result.stdout);
   }
@@ -939,14 +939,14 @@ class MachineService {
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
     const context = { resume, wsl, mount, ...(input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {}) };
-    if (wsl && tools && mcp && ['claude', 'codex', 'agy'].includes(input.cli)) {
+    if (wsl && tools && mcp && connectors.manifest(input.cli).wrapProjectTools) {
       const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
       const commonDir = common.ok && common.stdout.trim() || worktree;
       context.replaceEntries = wrapEntries({ servers: mcp.servers, wsl, mount,
         readyFile: path.join(this.stateDir, 'win-ready', name),
         cacheFile: (n, e) => path.join(this.stateDir, 'win-tool-lists', `${cacheKey(commonDir, n, e)}.json`) });
     }
-    if (this.win?.detected?.kernel && tools && ['claude', 'codex', 'agy'].includes(input.cli) && mcp) {
+    if (this.win?.detected?.kernel && tools && connectors.manifest(input.cli).wrapProjectTools && mcp) {
       const names = (mcp.windows || []).filter(name => Object.hasOwn(mcp.servers, name));
       if (names.length) {
         // Marked HTTP tools; wrapEntries above only replaces stdio entries, so names never collide.
@@ -973,7 +973,7 @@ class MachineService {
     const wrappedTools = loaded.some(entry => entry.wrapped);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
-    if (input.cli === 'claude' && read.dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...read.dropped];
+    adapters[input.cli].disableProjectServers?.(built, read.dropped);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     if (built.mcpConfig) {
       const file = built.mcpConfig.path;
@@ -1001,7 +1001,7 @@ class MachineService {
       await fsp.utimes(built.toolFiles.dir, now, now);
     }
     let wrapper = [];
-    if (mcp && TOOL_ROLES.has(input.role) && (input.cli === 'claude' || input.cli === 'codex') && Object.keys(keyReferences(mcp.rawServers).references).length) {
+    if (mcp && TOOL_ROLES.has(input.role) && connectors.manifest(input.cli).injectProjectKeys && Object.keys(keyReferences(mcp.rawServers).references).length) {
       try {
         const identity = await projectIdentity(worktree, commandAsync);
         const store = await readKeyStore(this.stateDir, identity);
@@ -1671,14 +1671,14 @@ class MachineService {
   }
   loginPane(account) {
     const record = this.loginRecord(account);
-    const result = this.tmux(['capture-pane', '-p', '-e', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
+    const result = this.tmux(['capture-pane', '-p', '-e', ...(connectors.manifest(record.cli)?.joinPaneLines ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
     if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
     return scrubOutput(result.stdout);
   }
   loginState(account) {
     const record = this.loginRecord(account), adapter = adapters[record.cli];
     if (record.cli === 'kimi' && record.result) return record.result;
-    const captured = this.tmux(['capture-pane', '-p', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
+    const captured = this.tmux(['capture-pane', '-p', ...(connectors.manifest(record.cli)?.joinPaneLines ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
     const pane = captured.ok ? scrubOutput(captured.stdout) : '';
     if (record.cli === 'kimi') {
       const authenticated = adapter.loginStatus(record.dir).authenticated;

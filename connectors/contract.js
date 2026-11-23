@@ -17,7 +17,7 @@
 const REQUIRED = { machine: ['command', 'firstMessage', 'readyText', 'answerPrompts', 'findTranscript', 'loginEnv', 'seed', 'loginCommand', 'parseLogin', 'loginStatus'], hub: ['parseChat', 'readReport'] };
 const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv'], versionCheck: ['checkVersion'], steps: ['readSteps'] };
 const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, machine]) => [name, { machine, hub: [] }]));
-const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'stepsReady', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'asideNewId', 'asideModel', 'asidePrepare', 'asideMessage', 'asideResult', 'asideProblem'], hub: [] };
+const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'stepsReady', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asideModel', 'asidePrepare', 'asideMessage', 'asideResult', 'asideProblem'], hub: [] };
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
   for (const member of REQUIRED[half]) if (typeof mod[member] !== 'function') fail(member);
@@ -34,7 +34,7 @@ function validateManifest(m) {
   for (const f of ['capabilities','install','settings','models','models.pins','placement']) check(f,obj);
   for (const cap of Object.keys(CAPABILITIES)) check(`capabilities.${cap}`,bool);
   check('models.efforts',v=>arr(v)&&v.every(str)); check('placement.workerRank',v=>v===null||typeof v==='number');
-  for (const f of ['hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested']) check(f,bool,false);
+  for (const f of ['wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested']) check(f,bool,false);
   for (const f of ['shortName','asideParentField']) check(f,str,false);
   check('install.lookup',v=>['path','absolute','fallback'].includes(v));
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);

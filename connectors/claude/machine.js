@@ -45,6 +45,7 @@ function parseUsage(raw, now = Date.now()) {
 const DISALLOWED_TOOLS = ['Artifact', 'Workflow', 'ScheduleWakeup', 'SendFeedback', 'ShareOnboardingGuide', 'ReportFindings', 'ListAgents', 'ArtifactComments', 'ArtifactData', 'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger', 'PushNotification', 'PublishPlugin', 'DesignSync', 'EnterWorktree', 'ExitWorktree', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'EndConversation'];
 const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
+  disableProjectServers(built, dropped) { if (dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...dropped]; },
   asideModel: /^[A-Za-z0-9._:\[\]-]+$/,
   asideNewId: true,
   asideResult(i, r) {
