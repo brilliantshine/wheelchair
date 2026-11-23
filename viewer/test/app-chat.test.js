@@ -369,13 +369,14 @@ test('GET /threads/:id/graph reads an archived thread graph from its branch, and
 });
 
 test('a failed transcript read keeps the last copy for the chat, not for a report', async () => {
-  const { sessionTranscript } = require('../app/chat.js');
+  const { sessionTranscript, sessionChatItems } = require('../app/chat.js');
   let fail = false; const routes = [];
-  const hub = { call: async (_, route) => { routes.push(route); if (fail) throw new Error('machine timeout'); return { data: '{"a":1}\n', gen: 'g', end: 8 }; } };
-  const thread = { machine: 'm' }; const session = { name: 'wc-t-lead' };
-  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), '{"a":1}\n');
+  const raw = lines([{ type: 'user', origin: { kind: 'human' }, message: { content: 'hello' } }]);
+  const hub = { call: async (_, route) => { routes.push(route); if (fail) throw new Error('machine timeout'); return { data: raw, gen: 'g', end: 8 }; } };
+  const thread = { machine: 'm' }; const session = { name: 'wc-t-lead', cli: 'claude' };
+  const first = await sessionChatItems(hub, thread, session);
   fail = true;
-  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), '{"a":1}\n');
+  assert.strictEqual(await sessionChatItems(hub, thread, session), first);
   assert.equal(await sessionTranscript(hub, thread, session), '');
   assert.equal(routes.at(-1), '/v1/sessions/wc-t-lead/transcript');
 });
@@ -394,28 +395,45 @@ test('stamped chat polls share parsed items and invalidate them when parser cont
     assert.deepEqual(second, first);
     assert.equal(parses, 1);
     assert.equal(routes[1], '/v1/sessions/lead/transcript?known=g%3A4');
+    const entry = hub.transcripts.get('m/lead');
+    assert.deepEqual(Object.keys(entry).sort(), ['end', 'gen', 'hash', 'lastRead', 'parsed', 'parsedKey', 'thread'].sort());
+    assert.equal(Object.hasOwn(entry, 'text'), false);
     thread.parent_title = 'Second';
     assert.equal((await chat.chat(hub, 't')).items[0].text, 'Started from Second');
+    assert.equal(routes[2], '/v1/sessions/lead/transcript');
     assert.equal(parses, 2);
+    thread.parent_title = 'Third';
+    hub.call = async () => { throw new Error('timeout'); };
+    assert.strictEqual(await chat.sessionChatItems(hub, thread, thread.sessions[0]), hub.transcripts.get('m/lead').parsed);
   } finally { chat.transcriptItems = original; }
 });
 
 test('old machines, missing entries, empty replies and failures follow transcript fallback rules', async () => {
-  const { sessionTranscript } = require('../app/chat.js');
-  const routes = []; let reply = { data: 'old' };
+  const chat = require('../app/chat.js');
+  const routes = []; let reply = { data: 'old' }; let parses = 0;
+  const original = chat.transcriptItems;
+  chat.transcriptItems = (...args) => { parses++; return original(...args); };
   const hub = { call: async (_, route) => { routes.push(route); if (reply instanceof Error) throw reply; return reply; } };
-  const thread = { id: 't', machine: 'm' }, session = { name: 'lead' };
-  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'old');
-  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'old');
-  assert.equal(routes[1], '/v1/sessions/lead/transcript');
-  hub.transcripts.get('m/lead').gen = 'g'; hub.transcripts.get('m/lead').end = 3;
-  hub.call = async (_, route) => { routes.push(route); if (route.includes('?')) { hub.transcripts.delete('m/lead'); return { unchanged: true, gen: 'g', end: 3 }; } return { data: 'whole', gen: 'h', end: 5 }; };
-  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'whole');
-  assert.equal(routes.at(-1), '/v1/sessions/lead/transcript');
-  hub.call = async () => ({ data: '' });
-  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'whole');
-  hub.call = async () => { throw new Error('timeout'); };
-  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), 'whole');
+  const thread = { id: 't', machine: 'm' }, session = { name: 'lead', cli: 'claude' };
+  try {
+    const first = await chat.sessionChatItems(hub, thread, session);
+    assert.strictEqual(await chat.sessionChatItems(hub, thread, session), first);
+    assert.equal(parses, 1);
+    assert.equal(routes[1], '/v1/sessions/lead/transcript');
+    hub.transcripts.get('m/lead').gen = 'g'; hub.transcripts.get('m/lead').end = 3;
+    hub.call = async (_, route) => { routes.push(route); if (route.includes('?')) { hub.transcripts.delete('m/lead'); return { unchanged: true, gen: 'g', end: 3 }; } return { data: 'whole', gen: 'h', end: 5 }; };
+    const before = routes.length;
+    const whole = await chat.sessionChatItems(hub, thread, session);
+    assert.deepEqual(routes.slice(before), ['/v1/sessions/lead/transcript?known=g%3A3', '/v1/sessions/lead/transcript']);
+    assert.equal(parses, 2);
+    hub.call = async () => ({ data: '' });
+    assert.strictEqual(await chat.sessionChatItems(hub, thread, session), whole);
+    hub.call = async () => { throw new Error('timeout'); };
+    assert.strictEqual(await chat.sessionChatItems(hub, thread, session), whole);
+    hub.transcripts.clear();
+    assert.deepEqual(await chat.sessionChatItems(hub, thread, session), []);
+    assert.match((await chat.sessionChatItems(hub, thread, { ...session, cli: 'unknown' }))[0].text, /no transcript reader/);
+  } finally { chat.transcriptItems = original; }
 });
 
 test('idle transcript pruning protects queued and active chat operations', async () => {

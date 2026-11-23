@@ -1,0 +1,26 @@
+# Map: chat refresh leftovers
+
+Checked against `6e89dfb4b0bf67e121b8ab4c3b720844ee4a74d7` (origin/main; the relevant files match this worktree). The shared flow and tests are in `docs/maps/chat-transcript-refresh.md`.
+
+```text
+chat poll -> machine copy and conditional read -> cached raw text -> parsed chat -> response
+                | success                         | idle
+                -> mark machine seen -> disk      -> timer evicts entry
+new source lines -> cached hashes -> append -> update hashes and source state
+```
+
+The cached raw text is currently necessary to reparse after `session.cli` or `thread.parent_title` changes and to serve fallback; `known` is sent based on the stamp even before the parse key is checked (`viewer/app/chat.js:329-354`, `viewer/app/chat.js:430-441`). A parsed-only cache must arrange a full read when its parse context changes, and account for failure while the old parse key differs. Strict report reads are a separate path and bypass `hub.call` (`viewer/app/chat.js:313-328`, `viewer/app/sessions.js:448`).
+
+`markMachineSeen` has one direct caller: every successful `hub.call` (`viewer/app/hub.js:110-113`, `viewer/app/hub.js:160-163`). Those calls include chat; session lifecycle, delivery and polling (`viewer/app/sessions.js:223-226`, `viewer/app/sessions.js:530`, `viewer/app/sessions.js:782-819`, `viewer/app/sessions.js:874-899`); thread/project and archive (`viewer/app/threads.js:49`, `viewer/app/threads.js:214-221`); asides and handoffs (`viewer/app/asides.js:120-130`, `viewer/app/asides.js:185-217`, `viewer/app/handoff.js:193`); views and agents (`viewer/app/views.js:160`, `viewer/app/agents.js:146`); readiness, placement and usage (`viewer/app/ready.js:22-35`, `viewer/app/balancer.js:61`, `viewer/app/usage.js:69-103`, `viewer/app/usage-poll.js:37`); settings preview and diagram sensitivity (`viewer/app/settings.js:462`, `viewer/app/diagram-sensitivity.js:19`); and project, login and terminal routes (`viewer/app/routes.js:174`, `viewer/app/routes.js:481-484`, `viewer/app/routes.js:734-748`). `machines.json` writes are serialized and atomically replaced on each such success; init restores saved `last_seen` into memory, which views use thereafter (`viewer/app/state.js:75-87`, `viewer/app/state.js:263-270`, `viewer/app/hub.js:77-80`, `viewer/app/views.js:160-165`). The named test currently expects disk and response timestamps to be equal (`viewer/test/app-hub.test.js:899-908`).
+
+D1 in the merged plan describes rebuilding hashes on every new-line copy (`docs/plans/cheap-chat-refresh/PLAN.md:130`), but current main already caches them and tests reuse, failed append, idle-on-next-copy and stop (`machine/service.js:1487-1515`, `machine/test/service.test.js:1818-1842`). Main cuts a partial kept tail before rebuilding and retries failed registry persistence (`machine/service.js:1495-1501`, `machine/service.js:1517-1523`). Idle eviction only runs when any copy begins; there is no hash sweep among the service timers (`machine/service.js:1470-1472`, `machine/service.js:453-469`, `machine/service.js:2449-2453`). Stop deletes the set, archive calls stop, but a concurrent copy can insert it again after stop (`machine/service.js:1309-1316`, `machine/service.js:1360-1376`, `machine/service.js:1513-1515`).
+
+The closed duplicate is `origin/wc/76fb8f56e690` at `e2d6c8fe8d1b414a9e0c58ec5c75ad5e70b1dbcc`; branch references below use that revision's file and line numbers:
+
+- Its chat cache holds only parsed items and sends `known=-` when the parse key changes; it expects `status: full/unchanged/unavailable` (`origin/wc/76fb8f56e690:viewer/app/chat.js:285-306`). Main omits `known` for a cold read and uses `unchanged: true` or `data`, retaining raw text (`viewer/app/chat.js:329-354`, `machine/service.js:1526-1536`). The duplicate's conditional protocol cannot be transplanted without adapting both ends.
+- Its hub throttles persisted seen times to one write per minute while updating memory every call (`origin/wc/76fb8f56e690:viewer/app/hub.js:115-125`); main writes each successful call (`viewer/app/hub.js:110-113`, `viewer/app/hub.js:160-163`).
+- Its machine has an unref'd minute timer for hash eviction, avoids keeping sets for stopped/forgotten sessions, and treats a partial kept tail as non-reusable without cutting it (`origin/wc/76fb8f56e690:machine/service.js:401-402`, `origin/wc/76fb8f56e690:machine/service.js:1202-1204`, `origin/wc/76fb8f56e690:machine/service.js:1230-1247`). Main instead cuts the tail, checks inode/size, and sweeps on copy (`machine/service.js:1470-1472`, `machine/service.js:1492-1501`). The duplicate's copier saves only on changed state; main also retries a failed save via `transcript_unsaved` (`origin/wc/76fb8f56e690:machine/service.js:1249-1252`, `machine/service.js:1517-1523`).
+
+Tests and commands: `viewer/test/app-chat.test.js:371-431`, `viewer/test/app-hub.test.js:899-908`, `machine/test/service.test.js:265`, `machine/test/service.test.js:418-436`, `machine/test/service.test.js:1790-1850`; run `node --test viewer/test/*.test.js` and `bash machine/test/run.sh`.
+
+Not checked: every duplicate worker commit independently, all parser rules, external consumers, live timing or performance, and unrelated session lifecycle paths.

@@ -904,8 +904,27 @@ test('returns every machine session and persists its last-seen time', async () =
     assert.equal(result.body[0].sessions[0].name, made.sessions[0].name);
     assert.match(result.body[0].last_seen, /^\d{4}-\d{2}-\d{2}T/);
     const machines = JSON.parse(await fs.readFile(path.join(context.state, 'machines.json'), 'utf8'));
-    assert.equal(machines.hub.last_seen, result.body[0].last_seen);
+    assert.match(machines.hub.last_seen, /^\d{4}-\d{2}-\d{2}T/);
+    assert.ok(Date.parse(machines.hub.last_seen) <= Date.parse(result.body[0].last_seen));
   });
+});
+
+test('throttles persisted last-seen times and retries a failed write', async () => {
+  let now = 0; let writes = 0; let fail = false;
+  const hub = new Hub({ now: () => now, codeVersion: '' });
+  hub.state.markMachineSeen = async () => { writes++; if (fail) { fail = false; throw new Error('write failed'); } };
+  await hub.markMachineSeen('machine', 'first');
+  now = 59_999;
+  await hub.markMachineSeen('machine', 'later');
+  assert.equal(writes, 1);
+  assert.equal(hub.machineSeen('machine'), 'later');
+  now = 60_000;
+  await hub.markMachineSeen('machine', 'boundary');
+  assert.equal(writes, 2);
+  now = 120_000; fail = true;
+  await assert.rejects(hub.markMachineSeen('machine', 'failed'), /write failed/);
+  await hub.markMachineSeen('machine', 'retry');
+  assert.equal(writes, 4);
 });
 
 test('proxies pane reads and raw terminal keys through the machine service', async () => {
