@@ -43,6 +43,7 @@ module.exports = {
     "vendor": "Kimi",
     "setupUrl": "https://code.kimi.com",
     "permissionMode": "permission_mode",
+    "permissionName": "Kimi",
     "permissionChoices": [
       [
         "auto",
