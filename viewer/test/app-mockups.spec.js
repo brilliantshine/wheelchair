@@ -69,8 +69,9 @@ test.describe('desktop pages', () => {
     const f = page.locator('#picture iframe');
     await expect(f).toHaveAttribute('sandbox', '');
     await expect(page.frameLocator('#picture iframe').locator('#proof')).toBeVisible();
-    const box = await f.boundingBox();
-    expect(Math.round(box.width)).toBe(390); expect(Math.round(box.height)).toBe(844);
+    const box = await f.boundingBox(); // the 1px border sits outside the 390x844 viewport
+    expect(Math.round(box.width)).toBe(392); expect(Math.round(box.height)).toBe(846);
+    expect(await f.evaluate((n) => [n.clientWidth, n.clientHeight])).toEqual([390, 844]);
     expect(await page.locator('#picture').evaluate((n) => n.scrollHeight > n.clientHeight)).toBe(true);
     expect(downloads).toBe(0);
     await shot(page, 'picture-page');
@@ -95,8 +96,7 @@ test.describe('desktop pages', () => {
     await expect(page).toHaveURL(new RegExp(`/app/picture\\?thread=${made.id}&card=${image.id}`));
     await expect(page.locator('#picture-title')).toHaveText('Mockup: Home screen');
     await expect(page.frameLocator('#picture iframe').locator('#proof')).toBeVisible();
-    const box = await page.locator('#picture iframe').boundingBox();
-    expect(Math.round(box.width)).toBe(390); expect(Math.round(box.height)).toBe(844);
+    expect(await page.locator('#picture iframe').evaluate((n) => [n.clientWidth, n.clientHeight])).toEqual([390, 844]);
   });
 
   test('without a plan the mockup half says so', async ({ page }) => {
@@ -128,5 +128,33 @@ test.describe('narrow', () => {
     const [a, b] = await Promise.all([halves.nth(0).boundingBox(), halves.nth(1).boundingBox()]);
     expect(b.y).toBeGreaterThan(a.y + a.height - 1); expect(Math.abs(a.x - b.x)).toBeLessThanOrEqual(2);
     await shot(page, 'image-pair-narrow');
+  });
+});
+
+test.describe('stacking threshold', () => {
+  // Resize until the image card is `target` px wide (it tracks the viewport), then report what is on screen.
+  async function atCardWidth(page, target) {
+    let vw = target + 200;
+    for (let i = 0; i < 4; i++) {
+      await page.setViewportSize({ width: vw, height: 900 });
+      const w = await page.locator('div.card-image').evaluate((n) => n.getBoundingClientRect().width);
+      if (Math.abs(w - target) < 1) break;
+      vw += Math.round(target - w);
+    }
+    const w = await page.locator('div.card-image').evaluate((n) => n.getBoundingClientRect().width);
+    const halves = page.locator('.card-image .image-half');
+    const [a, b] = await Promise.all([halves.nth(0).boundingBox(), halves.nth(1).boundingBox()]);
+    return { w, sideBySide: b.x > a.x + a.width - 1 && Math.abs(a.y - b.y) <= 2 };
+  }
+  test('Built and Mockup stay side by side at a card 600-640px wide and stack under 599px', async ({ page }) => {
+    const made = await seed(); await seedImage(made);
+    await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    await expect(page.locator('.card-image .image-half')).toHaveCount(2);
+    const wide = await atCardWidth(page, 620);
+    expect(wide.w).toBeGreaterThanOrEqual(600); expect(wide.w).toBeLessThanOrEqual(640);
+    expect(wide.sideBySide).toBe(true);
+    const narrow = await atCardWidth(page, 590);
+    expect(narrow.w).toBeLessThan(599); expect(narrow.w).toBeGreaterThan(500);
+    expect(narrow.sideBySide).toBe(false);
   });
 });

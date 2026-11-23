@@ -355,7 +355,8 @@ iframe.mockup-frame { display: block; position: absolute; top: 0; left: 0; borde
 .image-half > .mockup-box, .image-half > .image-part { align-self: stretch; }
 .image-half img.card-image { margin-top: 0; }
 .image-label { font-size: 12px; color: var(--dim); }
-@container (max-width: 599px) {
+/* 599px card width minus 35px of card padding and border (the container is the card's inner area). */
+@container (max-width: 563.98px) {
   .image-halves { grid-template-columns: minmax(0, 1fr); }
 }
 @container (max-width: 599px) {
