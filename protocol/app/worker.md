@@ -44,9 +44,9 @@ Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; 
 
 When the task changes something visible in a desktop app or game, look at it on your own invisible screen. Launch it with `node <root>/viewer/app/wc.js screen run -- <command> [args...]`, never by setting `DISPLAY` yourself (an app you start yourself is not cleaned up, and in a Codex session it dies when your command ends). Pass environment changes with `--env KEY=VALUE`, or launch `sh -c '<setup>; exec <app>'`. Look with `wc.js screen shot` and open the PNG path it prints with your image-reading tool; drive the app with `click`, `type` and `key`, list its windows with `windows`, and run `wc.js screen stop` when you are done. Point the app at temporary data, never the user's live data, and give each launch its own profile or data directory (for example Chromium's `--user-data-dir`) so it cannot hand off to another agent's copy of the same app. For visible work, put a screenshot path in your report; if capture fails, say why, but do not block the task. If the command says tools are missing on this machine, report that to the lead; do not work around it.
 
-When a screenshot would help the user see the result, take one and put its absolute path in
-your report; if capture fails, say why, but do not block the task. If the command says tools
-are missing on this machine, report that to the lead; do not work around it.
+On a WSL machine, use `node <root>/viewer/app/wc.js win <op>` to run or look at things on Windows. Your Windows copy is synced with git around each command; after editing files, run `win sync` before asking a Windows-side tool to look at them. A sync can report conflicts: text files then contain git conflict markers to resolve; binary files and files deleted on one side or renamed keep your version. The Windows side is in the ref named by the result: use `git show <ref>:<path>` to recover a file when it exists there, and `git ls-tree -r <ref>` to see what it had if a path was renamed or deleted. If a Windows-side tool failed at session start, check `win info` for `ready` and say so in your report. Windows apps appear on the user's desktop: never leave them running or try to type into them; use `win stop` when done. For Unity tests, run `win run -- <Unity.exe path> -batchmode -runTests -projectPath <copy> -testResults <copy>\Logs\wheelchair-results.xml` with no Editor open on that copy (Unity refuses a second instance). `Logs/` is ignored in Unity projects, so read results through `copy_linux` from `win info`, not the worktree. The first Unity open in a thread imports the whole project and can outlast the run limit; use `win start` and poll `win status` for it. Before reporting your task done, run `win sync` and commit what it brought back so the merge carries every Windows-side change.
+
+Store-packaged apps such as Windows 11's Notepad, Calculator and Paint hand their windows to processes Windows starts outside the bridge, so `windows`, `shot` and `stop` cannot reach them; use classic desktop programs.
 
 ## Matching a mockup
 
@@ -57,11 +57,8 @@ server per the project's rules, or `wc.js screen` for a desktop app or game. Ren
 at its size with headless Chromium and compare it with your screenshot. Fix differences in
 your parts by the verifier's bar before reporting. If the mockup cannot be rendered, still
 report the screenshot and say why comparison was not done. List each screenshot path with
-its mockup and any difference left and why.
-
-On a WSL machine, use `node <root>/viewer/app/wc.js win <op>` to run or look at things on Windows. Your Windows copy is synced with git around each command; after editing files, run `win sync` before asking a Windows-side tool to look at them. A sync can report conflicts: text files then contain git conflict markers to resolve; binary files and files deleted on one side or renamed keep your version. The Windows side is in the ref named by the result: use `git show <ref>:<path>` to recover a file when it exists there, and `git ls-tree -r <ref>` to see what it had if a path was renamed or deleted. If a Windows-side tool failed at session start, check `win info` for `ready` and say so in your report. Windows apps appear on the user's desktop: never leave them running or try to type into them; use `win stop` when done. For Unity tests, run `win run -- <Unity.exe path> -batchmode -runTests -projectPath <copy> -testResults <copy>\Logs\wheelchair-results.xml` with no Editor open on that copy (Unity refuses a second instance). `Logs/` is ignored in Unity projects, so read results through `copy_linux` from `win info`, not the worktree. The first Unity open in a thread imports the whole project and can outlast the run limit; use `win start` and poll `win status` for it. Before reporting your task done, run `win sync` and commit what it brought back so the merge carries every Windows-side change.
-
-Store-packaged apps such as Windows 11's Notepad, Calculator and Paint hand their windows to processes Windows starts outside the bridge, so `windows`, `shot` and `stop` cannot reach them; use classic desktop programs.
+its mockup and any difference left and why. A task with visible work but no mockup still
+reports a screenshot; if you cannot take one, say why. This does not block the task.
 
 ## When the plan did not settle something
 

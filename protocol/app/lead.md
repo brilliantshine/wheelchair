@@ -855,7 +855,8 @@ change. Set `depends_on_parent: true`; its summary quotes the user's words verba
 the current mockup paths on the parent branch, and describes in one line any screenshot
 that prompted the request. Describe each attachment in one line and say it may be gone once
 the parent is archived, so the stub's lead asks for it again if needed. The stub's lead
-plans from step 1 with its own mockups; this thread finishes against the agreed files.
+plans from step 1 with its own mockups. Nothing in this thread changes: the build finishes
+against the agreed mockups.
 
 ## Restarting what died
 
