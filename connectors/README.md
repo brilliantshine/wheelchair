@@ -61,7 +61,7 @@ any of these is missing or not a function. `command` and `seed` are the ones peo
 | `findTranscript` | `async findTranscript(session, accountDir)` returns a file path or `null` | Binding a session to the tool's own transcript file, and re-checking it. |
 | `loginEnv` | `loginEnv(dir)` returns an environment object | Any spawn that must use an account folder: launches, logins, usage probes, asides. `dir` may be empty for the usual account. |
 | `seed` | `seed(dir, accountId)` | Creating or reusing an account folder; links the tool's instruction file and writes `wheelchair-account.json`. |
-| `loginCommand` | `loginCommand()` returns the argv for the sign-in command | Starting a login in tmux. May throw "… is not installed". |
+| `loginCommand` | `loginCommand(dir)` returns the argv for the sign-in command; `dir` is the account directory | Starting a login in tmux. May throw "… is not installed". |
 | `parseLogin` | `parseLogin(pane)` returns `{ url, code, wantsCode }` or `null` | Each poll of a login pane, to find the sign-in link or code. |
 | `loginStatus` | `loginStatus(dir)` returns `{ logged_in }` | Status checks of an account and after a login finishes. |
 
@@ -85,7 +85,7 @@ These are called only when present; they need no flag in the manifest.
 | `loginResult` | `loginResult(record)` | A login outcome known without reading the pane. |
 | `loginState` | `loginState(record, pane, captured, { liveTmux, account, kill })` | Replace the generic login state logic (Kimi and Pi). |
 | `codeNeedsPrompt` | boolean | A login code is typed after checking the pane for the prompt (Pi). |
-| `resolveCli` | `resolveCli()` returns an executable path or `null` | Find the executable; the service refuses to start a login or session when it is missing. |
+| `resolveCli` | `resolveCli()` returns an executable path or `null` | Find the executable; the service refuses to start sign-in when it is missing. Session launch is gated by `versionCheck`. |
 | `redact` | `redact(value)` | The tool's own redaction of transcript lines, events and aside output (Pi). The shared output scrub in `common.js` applies to every tool regardless. |
 | `stylePreviewArgv` | `stylePreviewArgv(model)` returns argv | The tool that runs the writing-style preview. Required when `stylePreview: true` (one manifest at most); forbidden otherwise. |
 | `disableProjectServers` | `disableProjectServers(built, dropped)` | Record project tools that were dropped into the built launch settings. |
@@ -212,7 +212,7 @@ the type is checked only when present. Unless a default is stated below, an omit
 ### Settings page (`settings`)
 
 `settings.modelPattern`, non-empty `settings.modelError`, `settings.weights` (object with finite numeric `unknown`) and `settings.plans` are required. `settings.plans` is an array of `[key, label]` pairs of non-empty strings; it must include `unknown`, and every key must exist in `settings.weights`. Everything else is defaulted: `modelPlaceholder`,
-`cliLabel`, `vendor`, `setupUrl`, `signInKind` (strings); `permissionMode`,
+`cliLabel`, `vendor`, `setupUrl`, `signInKind`, `roleInstructionsName` (strings; the latter names tools receiving starting instructions in the prompt caption); `permissionMode`,
 `permissionName` (required when `permissionMode` is set),
 `accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices`
 (array of `[value, label]`); `reportedPlans`, `oldPlanWeights` (objects);
@@ -318,7 +318,7 @@ tag before their own script.
    also set `permissionName` to the short name used in grouped Settings labels. If the tool has model choices on the Settings page, add
    `settings.modelOptions`. If the tool recovers adopted panes, give it a `recoverRank`; every
    tool needs `install.label`.
-5. Fill `models` (default pins per slot, formats, efforts). If the tool can list its own
+5. Fill `models` (default pins for light, standard, heavy, critical and lead; sub-lead falls back to lead). Default efforts must be listed in `models.efforts`, and every effort must match `[a-z]+`. Anchor `models.format`, `models.hubPattern` and `settings.modelPattern` with `^` and `$`. If the tool can list its own
    models, add a discovery function to `codex/model.sh`; that script keeps all per-tool
    model code (Decision 16 of the connector plan) and allowlists those lines in the name-check
    guard as `model-script`.
@@ -331,7 +331,7 @@ tag before their own script.
    messages and the install job's "other tool" copy assume at most two such tools, so a third
    means changing both; `validateRegistry` fails when more than two manifests set the flag.
 8. Run `node connectors/export.js` and commit the new `registry.json`.
-9. Tests: `machine/test/connectors-contract.test.js` loads both halves of every registered
+9. Tests: `machine/test/connectors-model-roundtrip.test.js` runs the real `codex/model.sh` against every connector and checks the shared pin file round trip. `machine/test/connectors-contract.test.js` loads both halves of every registered
    connector and checks the manifests, so a missing member or a wrong type fails by name.
    `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). It scans whole files, so a comparison, `case`, call argument, ternary or `||`/`&&` operand, array element, object key (including shorthand) or `connectors.<id>` access is caught even when it spans several lines; comments and non-code text are masked first. Exact quoted IDs are checked at their literal positions, including shell case patterns, tests and for lists, Python membership and JavaScript backticks. The detector is pinned by a table of positive and negative snippets in that test (`detector recognizes name checks across lines`): change the detector only with a snippet in the table. It is a heuristic: escaped ids, computed values, ambiguous regex/division syntax, optional chaining (`adapters?.codex`), a dot on the next line (`adapters\n  .codex`), an id after a nested array element (`[[1], 'kimi']`), a backtick-delimited connector `require` path, shell `kimi )`, and `[[ codex == $cli ]]` can evade it, and unusual syntax can give a false hit. For a hit that is not tool dispatch, add an entry to the `allow` list in that test: `{ file, pattern, tag, reason }`, where `file` is the repository path, `pattern` is a regular expression tested against the hit's source line, `tag` is `not-tool` (also established: `compat`, `legacy`, `model-script`), and `reason` says why. Prefer moving the behaviour into the manifest over allowlisting.
    `machine/test/adapters-loaded.test.js` walks the registry. Add characterization tests
