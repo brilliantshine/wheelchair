@@ -29,7 +29,8 @@ const { spawnSync, spawn, execFile } = require('node:child_process');
 const { pipeline } = require('node:stream/promises');
 const { promisify } = require('node:util');
 const gitAsync = promisify(execFile);
-const adapters = require('./adapters');
+const connectors = require('../connectors');
+const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
 const { limitedUntil } = require('./lib/limits');
 const { readLines: readCodexSteps } = require('./lib/codex-steps');
 const { AsideTurns } = require('./lib/aside-turns');
@@ -1639,7 +1640,7 @@ class MachineService {
       await this.persistSessions();
     }
     if (event.type === 'usage-source') {
-      const reading = adapter.usageFrom(event.payload);
+      const reading = connectors.manifest(current.cli).capabilities.usageEvents ? adapter.usageFrom(event.payload) : null;
       if (!reading) return { ignored: true };
       reading.account = current.account || `default-${adapter.provider}`;
       current.last_reading = reading; await this.persistSessions();
@@ -2290,7 +2291,7 @@ class MachineService {
           return send(response, 200, { reading });
         } catch (error) { return send(response, 502, { error: error.message || 'usage probe failed' }); }
       }
-      if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const input = await bodyOf(request); const dir = accountDir(input.dir); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), [], dir ? { env: { ...process.env, ...adapters.codex.loginEnv(dir) } } : {}); return send(response, result.ok ? 200 : 409, result); }
+      if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const input = await bodyOf(request); const dir = accountDir(input.dir); const preflight = connectors.list().find(m => m.capabilities.preflight); const spec = connectors.machine(preflight.cli).preflightCommand(dir); const result = command(spec.file, spec.args, spec.env ? { env: spec.env } : {}); return send(response, result.ok ? 200 : 409, result); }
       if (request.method === 'POST' && url.pathname === '/v1/preview') { await this.authorize(request, 'hub'); const result = await this.preview(await bodyOf(request)); return send(response, result.status, result.body); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'aside-turns') {
         await this.authorize(request, 'hub');

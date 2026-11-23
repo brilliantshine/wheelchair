@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { makeTempSync } = require('../../test-support/run-dir');
 const { PROXY, wrapEntries, cacheKey } = require('../lib/win-tool-wrap');
-const adapters = Object.fromEntries(['claude', 'codex', 'agy'].map(name => [name, require(`../adapters/${name}`)]));
+const adapters = Object.fromEntries(['claude', 'codex', 'agy'].map(name => [name, require('../../connectors').machine(name)]));
 const mount = makeTempSync('win-tool-mount-');
 const win = path.join(mount, 'c', 'Tools', 'tool.exe');
 const servers = {

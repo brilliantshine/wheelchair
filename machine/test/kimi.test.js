@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { makeTempSync } = require('../../test-support/run-dir');
-const kimi = require('../adapters/kimi');
+const kimi = require('../../connectors/kimi/machine.js');
 const { MachineService } = require('../service');
 function fixture() {
   const dir = makeTempSync('kimi-'); fs.mkdirSync(path.join(dir, 'credentials'));
@@ -116,7 +116,7 @@ test('launch keeps model default effort and exact role message', () => {
   }
   const built = kimi.command({ model: 'kimi-code/light' }, { effort: 'max' }, '', { accountDir: dir });
   assert.deepEqual(built.argv.slice(1), ['--yolo', '--model', 'kimi-code/light']); assert.equal(built.env, undefined);
-  const agy = require('../adapters/agy');
+  const agy = require('../../connectors/agy/machine.js');
   const input = { role: 'worker', brief: 'Do it' };
   assert.equal(kimi.firstMessage(input, '/prompt', 'wc-test'), agy.firstMessage(input, '/prompt').replace('\n', '\nSession: wc-test\n'));
 });

@@ -5,8 +5,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { makeTemp } = require('../../test-support/run-dir');
 const { MachineService } = require('../service');
-const claude = require('../adapters/claude');
-const codex = require('../adapters/codex');
+const claude = require('../../connectors/claude/machine.js');
+const codex = require('../../connectors/codex/machine.js');
 
 test('resume commands preserve reviewer restrictions and Claude start identity', () => {
   const session = { name: 'wc-test', cli_session_id: 'uuid', codex_thread_id: 'thread', permission_mode: 'auto', effort: 'high', codex_mode: 'unrestricted' };

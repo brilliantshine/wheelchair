@@ -1,6 +1,6 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http');
-const pi = require('../adapters/pi'), { MachineService } = require('../service'), { makeTempSync } = require('../../test-support/run-dir');
+const pi = require('../../connectors/pi/machine.js'), { MachineService } = require('../service'), { makeTempSync } = require('../../test-support/run-dir');
 test('Pi spend counts samples, local day boundaries, numeric strings and excludes invalid rows', async () => {
   const dir = makeTempSync('pi-spend-'), folder = path.join(dir, 'sessions', 'nested'); fs.mkdirSync(folder, { recursive: true });
   const now = new Date(2026, 10, 20, 12), row = (date, cost, provider = 'openrouter') => JSON.stringify({ type: 'message', timestamp: date.toISOString(), message: { role: 'assistant', provider, usage: cost === undefined ? {} : { cost: { total: cost } } } });

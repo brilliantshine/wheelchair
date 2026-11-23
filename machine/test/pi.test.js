@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { makeTempSync } = require('../../test-support/run-dir');
-const pi = require('../adapters/pi');
+const pi = require('../../connectors/pi/machine.js');
 const { MachineService } = require('../service');
 test('Pi command writes an extension and applies reviewer and account settings', () => {
   const root = makeTempSync('pi-adapter-');
@@ -69,8 +69,19 @@ test('Pi busy input border is not ready', () => {
   assert.equal(pi.readyText({}, ready.replace('─────', '── ⠏ Working ──')), false);
 });
 
-test('Pi usageFrom returns null for any pane', () => {
-  for (const pane of ['', 'escape interrupt · ctrl+c/ctrl+d clear/exit\n─────\nopenrouter/auto • medium', '── ⠏ Working ──', 'random 100%']) assert.equal(pi.usageFrom(pane), null);
+test('Pi ignores usage-like hook events', async () => {
+  const connectors = require('../../connectors');
+  assert.equal(connectors.manifest('pi').capabilities.usageEvents, false);
+  assert.equal(Object.hasOwn(pi, 'usageFrom'), false);
+  const machine = new MachineService({ stateDir: makeTempSync('pi-usage-') });
+  const name = 'wc-test-worker';
+  machine.sessions[name] = { name, cli: 'pi', status: 'ready' };
+  const events = []; machine.emitEvent = async event => events.push(event);
+  for (const payload of ['', 'escape interrupt · ctrl+c/ctrl+d clear/exit\n─────\nopenrouter/auto • medium', '── ⠏ Working ──', 'random 100%', { rate_limits: { five_hour: { used_percentage: 100 } } }]) {
+    assert.deepEqual(await machine.hook(name, { type: 'usage-source', payload }), { ignored: true });
+    assert.equal(machine.sessions[name].last_reading, undefined);
+  }
+  assert.deepEqual(events, []);
 });
 
 test('Pi login status ignores the environment key', () => {

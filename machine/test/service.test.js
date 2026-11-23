@@ -221,7 +221,7 @@ test('Claude first-run theme picker and security notes are answered with Enter a
   for (const pane of [themePicker, securityNotes]) {
     const env = await service(await temp(), { pane }); try { await start(env); const calls = await log(env); assert.match(calls, /send-keys -t wc-t-lead Enter/); assert.doesNotMatch(calls, /send-keys -t wc-t-lead Down/); assert.notEqual(env.instance.sessions['wc-t-lead'].status, 'ready'); } finally { await env.close(); }
   }
-  const adapter = require('../adapters/claude');
+  const adapter = require('../../connectors/claude/machine.js');
   assert.equal(adapter.readyText({ permission_mode: 'bypass' }, themePicker + '⏵⏵ bypass permissions on\n❯ \n'), false);
 });
 test('session is stuck after 30 seconds then becomes ready', async () => {

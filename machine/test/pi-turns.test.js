@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const pi = require('../adapters/pi');
+const pi = require('../../connectors/pi/machine.js');
 test('Pi maps settled and tool events, redacting errors', () => {
   const event = { hook_event_name: 'agent_settled', turn: 2, entry_id: 'reply' };
   assert.deepEqual(pi.hookEvent(event), { type: 'turn-ended', turn_id: 2, entry_id: 'reply' });

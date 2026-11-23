@@ -1,11 +1,11 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const c = require('./common');
+const c = require('../common');
 const usual = () => c.home('CLAUDE_CONFIG_DIR', '.claude');
 const loginEnv = dir => dir ? { CLAUDE_CONFIG_DIR: dir } : {};
-const { run } = require('../lib/usage-probe');
-const { classify } = require('../lib/steps');
+const { run } = require('../../machine/lib/usage-probe');
+const { classify } = require('../../machine/lib/steps');
 const closedPort = 'http://127.0.0.1:9';
 function resetTime(text, now) {
   const match = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}), (\d{1,2})(?::(\d{2}))?(am|pm) \(([^)]+)\)$/.exec(text);

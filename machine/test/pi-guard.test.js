@@ -6,7 +6,7 @@ const path = require('node:path');
 const { makeTempSync } = require('../../test-support/run-dir.js');
 
 // Node 20 treats .js as CommonJS here; import the extension's source as ESM.
-const source = fs.readFileSync(path.join(__dirname, '../adapters/pi-guard.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../../connectors/pi/guard.js'), 'utf8');
 const guardPromise = import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const protocol = path.resolve(__dirname, '../../protocol');
 

@@ -6,7 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { AsideTurns } = require('../../machine/lib/aside-turns');
-const pi = require('../../machine/adapters/pi');
+const pi = require('../../connectors/pi/machine');
 // The temp folder (holding a copy of auth.json) lives in the per-process run folder, removed at exit.
 const { makeTempSync } = require('../run-dir.js');
 const auth = path.join(process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi/agent'), 'auth.json');

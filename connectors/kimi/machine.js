@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
-const c = require('./common');
+const c = require('../common');
 const home = dir => path.resolve(dir || c.home('KIMI_CODE_HOME', '.kimi-code'));
 function resolveCli() {
   const found = spawnSync('sh', ['-c', 'command -v kimi'], { encoding: 'utf8' });
@@ -181,5 +181,5 @@ module.exports = {
     }
     return false;
   },
-  async findTranscript(session, dir) { return findTranscript(session, dir); }, hookEvent() { return null; }, usageFrom() { return null; },
+  async findTranscript(session, dir) { return findTranscript(session, dir); }, hookEvent() { return null; },
 };

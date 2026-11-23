@@ -1,12 +1,12 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const c = require('./common');
+const c = require('../common');
 const usual = () => c.home('CODEX_HOME', '.codex');
 const loginEnv = dir => dir ? { CODEX_HOME: dir } : {};
-const { run } = require('../lib/usage-probe');
-const { DUPLICATE_HEADERS, serverLabel } = require('../lib/project-mcp');
-const { isWindowsProgram } = require('../lib/project-programs');
+const { run } = require('../../machine/lib/usage-probe');
+const { DUPLICATE_HEADERS, serverLabel } = require('../../machine/lib/project-mcp');
+const { isWindowsProgram } = require('../../machine/lib/project-programs');
 function parseUsage(response) {
   if (response?.error || !response?.result?.rateLimits) throw new Error('invalid Codex usage response');
   const limits = response.result.rateLimits; let five_hour = null, week = null;
@@ -102,6 +102,7 @@ function codexOverrides(mcp, { wsl = false, mount = '/mnt', replaceEntries = {} 
   return { args, tooLarge, warnings };
 }
 module.exports = {
+  preflightCommand(dir) { return { file: path.join(c.root, 'codex', 'preflight.sh'), args: [], env: dir ? { ...process.env, ...loginEnv(dir) } : undefined }; },
   provider: 'gpt', loginEnv, usual, parseUsage, codexEntryReason, codexOverrides,
   usageProbe(dir, options = {}) { return run('codex', ['app-server'], { ...options, env: { ...process.env, ...loginEnv(dir) }, parse: parseUsage, messages: [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: 'wheelchair', version: '1' } } },
