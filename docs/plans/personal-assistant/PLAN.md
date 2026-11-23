@@ -113,8 +113,9 @@ responds to width).
   button, the restart a dead-lead notice leads to) starts with no memory of earlier
   sessions. The hub's restart path, for the assistant thread, sends a `[wc:context restart]`
   context with no recent messages, cards or cross-thread history (the thread's id and title
-  only); messages still queued for the old lead move to the new one as today, since Collin
-  has not had an answer to them yet. Its own open `question` and `needs` cards are withdrawn
+  only); messages Collin typed that are still queued for the old lead move to the new one as
+  today, since Collin has not had an answer to them yet; queued card presses are dropped,
+  because the new lead never saw those cards. Its own open `question` and `needs` cards are withdrawn
   (marked retracted, note "The assistant restarted"), the way `restartLead` already closes
   open "Sessions ended" cards. The context line reads "Assistant restarted · starting
   fresh". Earlier chat stays visible on the page. A live account switch is not a restart
@@ -125,6 +126,8 @@ responds to width).
   any thread's, and it is left out of project grouping, the features page, `session leads` results
   for other leads, overlap checks and the auto-merge and PR pollers. Its open `question` and
   `needs` cards count under Needs you like any thread's.
+- **No asides**: the aside controls are hidden on the assistant thread's replies and the
+  aside route refuses the assistant thread ("no asides in the assistant thread").
 - **Thread page**: the usual thread page, `/wheelchair/app/thread?id=<assistant id>`, works as for any thread (chat, cards, composer,
   Restart when no lead is live), with title "Personal assistant", no project, branch, plan,
   PR, Agents-tree or archive controls (`mockup-thread-*`).
@@ -154,7 +157,7 @@ wait for a lead to launch.
 |---|---|
 | `projects` | The machines and project folders the New thread screen offers, from the same functions its route uses (`newThread` in `viewer/app/routes.js`), so `hub` and its hostname are one machine: `{machines:[{name, projects:[{path,name}]}]}` |
 | `threads [--archived]` | Every non-archived thread on every machine except the assistant thread (with `--archived`, archived ones too), each with the same summary fields and stage the Threads list route builds for it (reuse that code, including its remote plan refresh), plus `lead_live` and `waiting`, where `waiting` lists the open cards Needs you counts for that thread (the same kinds and test as `viewer/app/views.js`, reused, not copied) as `{id, kind, text}` (`text` is the question, title or first line) |
-| `thread <id>` | Same fields plus `cards` (every open card in full), `queued` (messages waiting for that thread's lead, as the thread page shows them) and `recent` (the last 30 chat items: the user's bubbles, lead replies and context lines, as the thread page shows them) |
+| `thread <id>` | Same fields plus `cards` (every open card in full), `queued` (the full text of every entry waiting in that thread's lead queue, whatever its source: Collin's messages, card presses and the assistant's own messages) and `recent` (the last 30 chat items: the user's bubbles, lead replies and context lines, as the thread page shows them) |
 | `start --project <path> --machine <name> --message-file <f> [--title <t>]` | Creates a thread exactly as the browser's `POST /threads` does (same project check), with the file's text as its first user message prefixed as in section 4. The thread title is
 `--title` when given, otherwise derived (as the browser does) from the text without the
 prefix. If the thread is saved but its lead fails to start, `start` prints
@@ -287,6 +290,7 @@ npm --prefix viewer run test:browser
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| If the assistant posts a `sudo` card despite its rules, the hub refuses it but the machine has already registered the request with the root helper, leaving it pending there | Rare path: needs the assistant to break its rules; nothing runs without Collin entering a password | review-round-4 |
 | Turning the assistant off while a machine fails to confirm the stop, a start reply is lost, or the hub restarts mid-change can leave a stray assistant session running | Rare path: needs a failure together with the toggle. Actions are refused once off; Restart refuses a second live lead | review-round-1 |
 
 ## Check Once Built
@@ -378,6 +382,10 @@ npm --prefix viewer run test:browser
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | Assistant's open cards survive a fresh start | upheld | §2: fresh start withdraws its open question/needs cards |
+| mechanics | major | Queued presses reach a fresh lead without their question | downgraded (minor) | The user sees the card withdrawn and repeats the choice; not silent. Fixed: §2 drops queued presses at a fresh start |
+| mechanics | minor | `queued` definition | upheld | §3: every entry in the lead queue, any source |
+| mechanics | minor | Rare path: a refused assistant sudo card leaves a helper request pending | accepted-risk | Rare path: the assistant's rules forbid sudo cards, so this needs it to break its rules; moved to Accepted Risks |
+| mechanics | minor | Asides in the assistant thread | upheld | §2: no asides there |
 
 ## Implementation Tasks
 
