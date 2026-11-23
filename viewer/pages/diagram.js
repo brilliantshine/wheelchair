@@ -72,6 +72,7 @@
   function mockup(spec, box, ctx) {
     const src = source({ format: 'mockup', plan: spec.plan, graph: spec.graph }, ctx);
     const frame = el('div', 'mockup-box');
+    frame.style.maxWidth = spec.width + 'px'; // the border marks the screen's own edge, not the card's
     const f = el('iframe', 'mockup-frame'); f.src = src; f.title = spec.title || spec.graph; f.setAttribute('sandbox', '');
     f.style.width = spec.width + 'px'; f.style.height = spec.height + 'px'; f.scrolling = 'no';
     frame.appendChild(f); box.appendChild(frame);
