@@ -812,7 +812,7 @@ class MachineService {
     if (dir) adapter.seed(dir, account.id);
     await adapter.prepare?.(dir);
     const options = startOptions(input);
-    if (input.cli === 'kimi') options.effort = null;
+    if (!connectors.manifest(input.cli).models.efforts.length) options.effort = null;
     const createdWorktree = !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
     if (reserved) this.refuseSharedWorktree(reserved, name);
@@ -868,7 +868,7 @@ class MachineService {
   }
   async switchSession(name, input) {
     const session = this.managed(name), adapter = adapters[session.cli];
-    if (!['claude', 'codex'].includes(session.cli)) die('unsupported cli');
+    if (!connectors.manifest(session.cli)?.capabilities.liveSwitch) die('unsupported cli');
     if (!input || typeof input.switch_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.switch_id) || !input.account || typeof input.account.id !== 'string' || !Object.hasOwn(input.account, 'dir') || !(input.model === null || typeof input.model === 'string') || typeof input.project !== 'string' || !input.project || path.basename(input.project) !== input.project || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir)) die('invalid switch body');
     const dir = accountDir(input.account.dir, input.account.id);
     if (!dir && input.account.id !== `default-${adapter.provider}`) die('invalid default account');
@@ -2184,13 +2184,14 @@ class MachineService {
         await this.authorize(request, 'hub');
         const root = path.join(os.homedir(), '.wheelchair', 'accounts');
         const folders = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
-        const entries = [{ account: 'default-openrouter', dir: null }];
+        const spend = connectors.list().find(m => m.capabilities.spend);
+        const entries = [{ account: `default-${spend.provider}`, dir: null }];
         for (const folder of folders) {
           if (!folder.isDirectory() || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(folder.name)) continue;
           const dir = path.join(root, folder.name);
-          try { const meta = JSON.parse(await fsp.readFile(path.join(dir, 'wheelchair-account.json'), 'utf8')); if (meta.id === folder.name && meta.cli === 'pi') entries.push({ account: meta.id, dir }); } catch {}
+          try { const meta = JSON.parse(await fsp.readFile(path.join(dir, 'wheelchair-account.json'), 'utf8')); if (meta.id === folder.name && meta.cli === spend.cli) entries.push({ account: meta.id, dir }); } catch {}
         }
-        const accounts = await Promise.all(entries.map(async ({ account, dir }) => ({ account, ...await adapters.pi.spend(dir) })));
+        const accounts = await Promise.all(entries.map(async ({ account, dir }) => ({ account, ...await adapters[spend.cli].spend(dir) })));
         return send(response, 200, { accounts });
       }
       if (request.method === 'POST' && url.pathname === '/v1/usage') {
@@ -2198,11 +2199,11 @@ class MachineService {
         const input = await bodyOf(request);
         if (!input || typeof input !== 'object' || Array.isArray(input)) die('invalid usage request');
         const { account, cli } = input;
-        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex', 'kimi'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
+        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !connectors.manifest(cli)?.capabilities.usageProbe || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
         const adapter = adapters[cli], dir = accountDir(input.dir, account);
         if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
         try {
-          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000, ...(cli === 'kimi' && this.options.kimiUsageUrl ? { url: this.options.kimiUsageUrl } : {}) });
+          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000, ...(this.options[`${cli}UsageUrl`] ? { url: this.options[`${cli}UsageUrl`] } : {}) });
           const { reached, ...windows } = parsed;
           const reading = { account, at: new Date().toISOString(), ...windows };
           if (reached) reading.limited_until = limitedUntil(reading);
