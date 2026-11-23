@@ -449,6 +449,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | minor | Version checks belong to the install job, not `install.sh`; Pi skips them | upheld | S2 `install.versionArgs`; S5 install bullet |
 | mechanics | minor | Rare path: hook exit precedence for malformed calls | accepted-risk | Accepted Risks (rare path) |
 
+### Round 4 — 2026-11-22
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 3:** S3 `readReport` returning `{ text, settled }` with manifest `report.useHookText`, new `projectTools` capability; S2 effort held only in `models.efforts` (`effort` flag derived), `install.instructionsFile` for diagram-sensitivity setup, `install.versionArgs`; S4 adds `project-tools.js` and sensitivity setup to the known-missing list; S5 install bullet names callers (no new probes in `install.sh`), `model.sh` derives every provider enumeration incl. `parse_pins` from the registry with `WHEELCHAIR_REGISTRY` seam; S6 guard catches call arguments and connector `require` paths and scans `sensitivity/set.sh`, new `model.sh` round-trip test; Accepted Risks: hook exit precedence (rare path).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
