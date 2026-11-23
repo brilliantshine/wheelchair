@@ -1,6 +1,6 @@
 ---
 slug: mockup-polish
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-23
 ---
 
@@ -41,6 +41,26 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 Four changes in the viewer, plus two short protocol lines. Background on the code is in
 `MAP.md` and `docs/maps/mockup-viewer-flow.md`.
+
+### Flow
+
+```mermaid
+flowchart TD
+  A[Poll brings a new card or lead change] --> B[Remember what's on screen]
+  B --> C[Update only changed entries; mockups with iframes stay put]
+  C --> D{Reader at the bottom?}
+  D -- yes --> E[Follow the new entry]
+  D -- no --> F[Put the remembered entry back where it was]
+  G[Tap Comment on a spot] --> H[Pin + text box over the mockup]
+  H --> I[Send: message to the lead with file and x,y]
+  I --> J{Hub accepted?}
+  J -- no --> K[Show why; keep the draft]
+  J -- yes --> L[Lead routes it by the Mockups rules]
+  M[Open full size on a mockup] --> N[Download PNG drawn in the browser]
+  N --> O{Browser refused?}
+  O -- yes --> P[Note: download HTML instead]
+  Q[Open full size on a screenshot] --> R[Picture page at true size, scrolls]
+```
 
 ### S1. The chat updates in place
 
@@ -83,7 +103,8 @@ Mockup half of an image card) and the mockup on the picture page.
 
 - A **Comment on a spot** button sits with the mockup's Open full size link. It is shown
   only while the thread composer could send (live lead, not archived, not frozen: the same
-  `canSend` test as the Send button), and hidden otherwise. That eligibility is not part
+  `canSend` test as the Send button), and otherwise hidden with `visibility: hidden` so it
+  keeps its space and showing or hiding it never moves the mockup. That eligibility is not part
   of any card's S1 signature: each render shows or hides the existing buttons in place.
 - An open draft (pin position, coordinates, text) is kept per mockup outside the card's
   DOM, keyed by card id and mockup file. If the card's node is replaced while a draft is
@@ -111,8 +132,8 @@ Mockup half of an image card) and the mockup on the picture page.
   box, pin, Send and Cancel are disabled.
 - The picture page has no live state: it checks whether the thread can take a message
   when it loads and again (re-reading `<thread>/chat`) when Send is pressed. If it can't,
-  it shows "The lead isn't running, so the comment can't be sent now" and keeps the
-  draft. Text:
+  it says why in plain words, naming the failed condition (the lead isn't running, the
+  thread is archived, or the thread is being handed off), and keeps the draft. Text:
   `Comment on mockup "<title>" (docs/plans/<plan>/graphs/<graph>.html, <width>x<height>) at x=<x>, y=<y>: <comment>`.
   An empty comment cannot be sent. On the picture page a sent comment shows "Sent to the
   thread" with a link back.
@@ -198,6 +219,8 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| The `:root` to `html` rewrite lowers specificity, so a mockup with competing `:root` and `html` rules for the same property may export different colours | Rare path: mockups don't normally set the same property on both; the HTML download stays exact | review-round-5 |
+| A body background that uses a variable declared on `body` may vanish when moved to the export root | Rare path: unusual way to write a background; the HTML download stays exact | review-round-5 |
 | A hand-off that freezes the thread while a spot comment is open leaves its Cancel disabled | Rare path: needs a hand-off mid-draft; the draft is lost, nothing else | review-round-3 |
 | The mockup PNG is tested only in Chromium and Firefox; on an iPhone (WebKit) it may fail | A failure shows the "Download HTML instead" note and the HTML link stays; D2 covers a machine-side PNG | review-round-1 |
 
@@ -291,6 +314,10 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | `:root` → `html` lowers specificity; competing rules export wrong colours | accepted-risk | Rare path: needs competing `:root` and `html` rules for one property |
+| mechanics | minor | Body background using a body-scoped variable may vanish | accepted-risk | Rare path; HTML download exact |
+| mechanics | minor | Showing/hiding the comment button can move the mockup | upheld | S2: `visibility: hidden` keeps its space |
+| mechanics | minor | Picture page always blames a stopped lead | upheld | S2: message names the failed condition |
 
 ## Implementation Tasks
 
