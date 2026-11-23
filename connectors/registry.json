@@ -417,6 +417,9 @@
       "recoverFallback": false
     },
     {
+      "login": {
+        "killTarget": "session"
+      },
       "cli": "kimi",
       "provider": "kimi",
       "label": "Kimi Code",
@@ -527,6 +530,9 @@
       "recoverFallback": false
     },
     {
+      "login": {
+        "killTarget": "pane"
+      },
       "cli": "pi",
       "provider": "openrouter",
       "label": "OpenRouter",

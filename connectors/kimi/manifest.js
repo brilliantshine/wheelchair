@@ -1,5 +1,6 @@
 'use strict';
 module.exports = {
+  "login": { "killTarget": "session" },
   "cli": "kimi",
   "provider": "kimi",
   "label": "Kimi Code",

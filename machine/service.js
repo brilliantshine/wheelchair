@@ -1660,7 +1660,8 @@ class MachineService {
     if (dir) adapter.seed(dir, account);
     await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
-    this.tmux(['kill-session', '-t', cli === 'pi' ? `=${name}:` : cli === 'kimi' ? `=${name}` : name]);
+    const killTarget = connectors.manifest(cli).login?.killTarget;
+    this.tmux(['kill-session', '-t', killTarget === 'pane' ? `=${name}:` : killTarget === 'session' ? `=${name}` : name]);
     const cmd = ['env', `PATH=${process.env.PATH || ''}`, ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
     const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
     const cwd = adapter.loginCwd?.(this.stateDir);
