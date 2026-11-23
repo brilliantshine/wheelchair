@@ -39,9 +39,9 @@ test('project tool launch warnings are specific to each CLI', async () => {
   const oldPath = process.env.PATH; process.env.PATH = `${bin}:${oldPath}`;
   const service = new MachineService({ stateDir: path.join(root, 'state'), win: { procRoot: root, etcRoot: root, runRoot: root } });
   service.config = { host: '127.0.0.1', port: 0 }; service.authorize = async () => {};
-  service.checkPiVersion = async () => {}; service.checkKimiVersion = async () => {};
+  service.checkVersion = async () => {};
   service.cliStatus = () => ({ installed: true, version: '2.0.0', problem: null });
-  service.kimiLaunchPath = async () => ({ executable: 'kimi' }); service.checkReady = async () => {};
+  service.launchPath = async () => ({ executable: 'kimi' }); service.checkReady = async () => {};
   const messages = [], oldError = console.error; console.error = (...args) => messages.push(args.join(' '));
   const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {

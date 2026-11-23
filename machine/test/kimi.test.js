@@ -57,9 +57,9 @@ test('version floor follows the resolved binary and its mtime', async () => {
   try {
     fs.writeFileSync(file, '#!/bin/sh\necho 2.6.2\n', { mode: 0o755 }); process.env.PATH = `${dir}:${old}`;
     const machine = Object.create(MachineService.prototype);
-    await machine.checkKimiVersion(); assert.match(machine.cliStatus('kimi', { logged_in: true }).problem, /found 2.6.2/);
+    await machine.checkVersion('kimi'); assert.match(machine.cliStatus('kimi', { logged_in: true }).problem, /found 2.6.2/);
     fs.writeFileSync(file, '#!/bin/sh\necho 2.6.3\n'); fs.utimesSync(file, new Date(), new Date(Date.now() + 2000));
-    await machine.checkKimiVersion(); assert.equal(machine.cliStatus('kimi', { logged_in: true }).logged_in, true);
+    await machine.checkVersion('kimi'); assert.equal(machine.cliStatus('kimi', { logged_in: true }).logged_in, true);
     assert.equal(kimi.loginCommand()[0], file); assert.equal(kimi.command({}, {}, '', { accountDir: dir }).argv[0], file);
   } finally { process.env.PATH = old; }
 });
@@ -181,11 +181,11 @@ test('version cache checks semver and invalidates when mtime changes', async () 
     process.env.PATH = `${dir}:${old}`;
     let tick = Date.now();
     const version = output => { fs.writeFileSync(file, `#!/bin/sh\necho hit >> '${count}'\necho '${output}'\n`, { mode: 0o755 }); tick += 2000; fs.utimesSync(file, tick / 1000, tick / 1000); };
-    version('2.6.2'); await machine.checkKimiVersion(); assert.equal(machine.cliStatus('kimi').problem, 'Kimi Code 2.6.3 or newer is needed (found 2.6.2)');
+    version('2.6.2'); await machine.checkVersion('kimi'); assert.equal(machine.cliStatus('kimi').problem, 'Kimi Code 2.6.3 or newer is needed (found 2.6.2)');
     machine.cliStatus('kimi'); assert.equal(fs.readFileSync(count, 'utf8').trim().split('\n').length, 1);
-    version('unknown'); await machine.checkKimiVersion(); assert.match(machine.cliStatus('kimi').problem, /found unknown/);
-    for (const v of ['2.6.3', 'kimi 2.6.3', 'kimi, version 2.10.0', '2.6.4-rc.1', '2.10.0', '2.6.3+build']) { version(v); await machine.checkKimiVersion(); assert.equal(machine.cliStatus('kimi').problem, undefined); }
-    for (const v of ['kimi 2.6.3foo', 'kimi 2.6.3.0', '2.6.3-rc.1', '2.6.2']) { version(v); await machine.checkKimiVersion(); assert.equal(machine.cliStatus('kimi').problem, `Kimi Code 2.6.3 or newer is needed (found ${v})`); }
+    version('unknown'); await machine.checkVersion('kimi'); assert.match(machine.cliStatus('kimi').problem, /found unknown/);
+    for (const v of ['2.6.3', 'kimi 2.6.3', 'kimi, version 2.10.0', '2.6.4-rc.1', '2.10.0', '2.6.3+build']) { version(v); await machine.checkVersion('kimi'); assert.equal(machine.cliStatus('kimi').problem, undefined); }
+    for (const v of ['kimi 2.6.3foo', 'kimi 2.6.3.0', '2.6.3-rc.1', '2.6.2']) { version(v); await machine.checkVersion('kimi'); assert.equal(machine.cliStatus('kimi').problem, `Kimi Code 2.6.3 or newer is needed (found ${v})`); }
     version('2.6.2'); await assert.rejects(machine.startNamed({ cli: 'kimi' }, 'wc-test-worker'), /Kimi Code 2.6.3 or newer is needed \(found 2.6.2\)/);
   } finally { process.env.PATH = old; }
 });
@@ -226,13 +226,13 @@ test('version timeout and nonzero exit make authenticated Kimi accounts ineligib
     assert.equal(kimi.loginStatus(null).logged_in, true);
     const machine = Object.create(MachineService.prototype); machine.options = { kimiVersionTimeoutMs: 100 }; machine.sessions = {}; machine.liveTmux = () => new Set();
     fs.writeFileSync(file, '#!/bin/sh\necho 2.6.3\nexec sleep 2\n', { mode: 0o755 });
-    await machine.checkKimiVersion();
+    await machine.checkVersion('kimi');
     let status = machine.status();
     assert.equal(status.kimi.problem, 'Kimi Code 2.6.3 or newer is needed (found 2.6.3)');
     let accounts = status.accounts.filter(account => account.cli === 'kimi');
     assert.ok(accounts.length > 0); assert.ok(accounts.every(account => account.logged_in === false));
     fs.writeFileSync(file, '#!/bin/sh\nexit 1\n'); fs.utimesSync(file, new Date(), new Date(Date.now() + 2000));
-    await machine.checkKimiVersion();
+    await machine.checkVersion('kimi');
     status = machine.status();
     assert.equal(status.kimi.problem, 'Kimi Code 2.6.3 or newer is needed (found no output)');
     accounts = status.accounts.filter(account => account.cli === 'kimi');
@@ -352,7 +352,7 @@ test('status lists multiple Kimi accounts and version problem suppresses account
       fs.mkdirSync(path.join(dir, 'credentials')); fs.writeFileSync(path.join(dir, 'credentials', 'dummy.json'), '{}'); fs.writeFileSync(path.join(dir, 'config.toml'), '[providers."managed:kimi-code".oauth]\nkey = "oauth/dummy"\noauth_host = "https://auth.kimi.ai"\n');
     }
     const machine = Object.create(MachineService.prototype); machine.sessions = {}; machine.liveTmux = () => new Set();
-    await machine.checkKimiVersion(); const status = machine.status(); assert.ok(status.accounts.every(entry => !('authenticated' in entry))); const entries = status.accounts.filter(a => a.cli === 'kimi');
+    await machine.checkVersion('kimi'); const status = machine.status(); assert.ok(status.accounts.every(entry => !('authenticated' in entry))); const entries = status.accounts.filter(a => a.cli === 'kimi');
     assert.equal(entries.length, 3); assert.match(status.kimi.problem, /found 2.6.2/);
     for (const entry of entries) { assert.equal(entry.logged_in, false); assert.equal(entry.problem, undefined); }
   } finally {

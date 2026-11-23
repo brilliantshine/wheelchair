@@ -80,7 +80,7 @@ exit 0
   const service = new MachineService({ stateDir: state, win: { procRoot: root, etcRoot: root, runRoot: root, forwards } });
   service.win.detected.kernel = kernel; service.win.forwardReady = () => isReady;
   service.win.runBridgeProbe = () => {}; service.authorize = async () => {};
-  service.checkKimiVersion = service.checkPiVersion = () => {}; service.cliStatus = () => ({ installed: true }); service.kimiLaunchPath = async () => ({ executable: '/fake/kimi' });
+  service.checkVersion = () => {}; service.cliStatus = () => ({ installed: true }); service.launchPath = async () => ({ executable: '/fake/kimi' });
   await service.init();
   t.after(() => {
     for (const key of ['pollTimer', 'stepsTimer', 'kimiTimer', 'trustTimer', 'agyToolsTimer', 'winTimer', 'screenTimer']) clearInterval(service[key]);

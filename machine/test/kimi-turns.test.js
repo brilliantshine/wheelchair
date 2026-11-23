@@ -29,7 +29,7 @@ test('binding rejects a role message quoted after ordinary prompt text', async (
   const row = prompt(session.name);
   row.input = [{ type: 'text', text: 'Hello ' }, { type: 'text', text: `[wc:role] Role: worker\nSession: ${session.name}\nRead …` }];
   log('quoted', [metadata, row]);
-  await machine.kimiBinding(session);
+  await machine.bindTranscript(session);
   assert.equal(session.source_transcript, undefined);
 });
 test('binding joins role message text parts before checking its session line', async () => {
@@ -37,7 +37,7 @@ test('binding joins role message text parts before checking its session line', a
   const row = prompt(session.name);
   row.input = [{ type: 'text', text: '[wc:role] Role: worker\n' }, { type: 'text', text: `Session: ${session.name}\nRead …` }];
   const file = log('split', [metadata, row]);
-  await machine.kimiBinding(session);
+  await machine.bindTranscript(session);
   assert.equal(session.source_transcript, file);
 });
 test('binding is shared and selects each session marker, ignoring subagents', async () => {
@@ -45,7 +45,7 @@ test('binding is shared and selects each session marker, ignoring subagents', as
   const other = { ...session, name: 'wc-abc-worker-2' }; machine.sessions[other.name] = other;
   log('sub', [metadata, prompt(session.name), { type: 'turn.ended', agentId: 'main', turnId: 1, reason: 'completed' }], 'other');
   const a = log('a', [metadata, prompt(session.name)]), b = log('b', [metadata, prompt(other.name)]);
-  await Promise.all([machine.kimiBinding(session), machine.pollKimiTurns()]);
+  await Promise.all([machine.bindTranscript(session), machine.pollKimiTurns()]);
   assert.equal(session.source_transcript, a); assert.equal(other.source_transcript, b); assert.deepEqual(machine.events, []);
   assert.equal((await kimi.findTranscript(session, session.account_dir)), a);
 });
@@ -106,7 +106,7 @@ test('unrelated incompatible logs are ignored and truncation stops a bound sessi
 test('spool gate holds later turns until the previous event drains', async () => {
   const { machine, session, log, metadata, prompt } = setup();
   log('good', [metadata, prompt(session.name), ...[0, 1].map(turnId => ({ type:'turn.ended', agentId:'main', turnId, reason:'completed' }))]);
-  let blocked = false; machine.kimiSpoolWaiting = async () => blocked;
+  let blocked = false; machine.spoolWaiting = async () => blocked;
   machine.hook = async (name, event) => { machine.events.push(event); blocked = true; };
   await machine.pollKimiTurns(); assert.deepEqual(machine.events.map(e => e.turn_id), [0]);
   await machine.pollKimiTurns(); assert.equal(machine.events.length, 1);
@@ -116,7 +116,7 @@ test('offset stays behind an unhandled turn when the spool drains after breaking
   const { machine, session, log, metadata, prompt } = setup();
   log('good', [metadata, prompt(session.name), ...[0, 1].map(turnId => ({ type: 'turn.ended', agentId: 'main', turnId, reason: 'completed' }))]);
   let calls = 0;
-  machine.kimiSpoolWaiting = async () => ++calls === 3;
+  machine.spoolWaiting = async () => ++calls === 3;
   await machine.pollKimiTurns();
   assert.deepEqual(machine.events.map(e => e.turn_id), [0]);
   assert.equal(session.kimi_offset || 0, 0);
@@ -125,7 +125,7 @@ test('offset stays behind an unhandled turn when the spool drains after breaking
 });
 test('copier refuses replaced or shortened Kimi logs', async () => {
   const { machine, session, log, metadata, prompt } = setup(); const file = log('good', [metadata, prompt(session.name)]);
-  await machine.kimiBinding(session); await machine.copyTranscriptNow(session, file);
+  await machine.bindTranscript(session); await machine.copyTranscriptNow(session, file);
   const copied = fs.readFileSync(session.transcript_path, 'utf8');
   fs.writeFileSync(file, '{}\n'); await machine.copyTranscriptNow(session, file);
   assert.equal(fs.readFileSync(session.transcript_path, 'utf8'), copied);
@@ -160,7 +160,7 @@ test('persisted offsets catch up after restart and a crash before saving replays
   // The event is durable but the session record can still be the pre-save version.
   fs.writeFileSync(restarted.sessionsPath, before); restarted.sessions = JSON.parse(fs.readFileSync(restarted.sessionsPath, 'utf8'));
   await restarted.spool('events', { ...events[0], session:session.name, prepared:true });
-  assert.equal(await restarted.kimiSpoolWaiting(restarted.sessions[session.name]), true);
+  assert.equal(await restarted.spoolWaiting(restarted.sessions[session.name]), true);
   for (const name of fs.readdirSync(spool)) fs.unlinkSync(path.join(spool, name));
   await restarted.pollKimiTurns(); assert.deepEqual(events.map(e => e.turn_id), [1, 1]);
 });
@@ -184,13 +184,13 @@ test('missing log requires continuous failures and delivery failures never start
 test('persistence errors after a successful log read do not start the missing clock', async () => {
   const { machine, session, log, metadata, prompt } = setup();
   log('own', [metadata, prompt(session.name), { type:'turn.ended', agentId:'main', turnId:0, reason:'completed' }]);
-  await machine.kimiBinding(session); machine.log = () => {}; machine.persistSessions = async () => { throw new Error('disk'); };
+  await machine.bindTranscript(session); machine.log = () => {}; machine.persistSessions = async () => { throw new Error('disk'); };
   await machine.pollKimiTurns(); assert.equal(session.kimi_missing_since, undefined); assert.equal(session.end_reason, undefined);
 });
 
 test('copier does not open source after fatal and ignores swapped opened file', async () => {
   const { machine, session, log, metadata, prompt } = setup();
-  const file = log('own', [metadata, prompt(session.name)]); await machine.kimiBinding(session);
+  const file = log('own', [metadata, prompt(session.name)]); await machine.bindTranscript(session);
   const oldOpen = fs.promises.open; let swapped = false;
   fs.promises.open = async (name, ...args) => { if (name === file && !swapped) { swapped = true; fs.renameSync(file, file + '.old'); fs.writeFileSync(file, '{"foreign":true}\n'); } return oldOpen(name, ...args); };
   try { assert.deepEqual((await machine.copyTranscriptNow(session, file)).lines, []); } finally { fs.promises.open = oldOpen; }
@@ -341,7 +341,7 @@ test('fatal verifier stop and archive remove created worktrees, while worker sto
 
 test('unchanged Kimi copy does not read source content or persist', async () => {
   const { machine, session, log, metadata, prompt } = setup(); const file = log('idle', [metadata, prompt(session.name)]);
-  await machine.kimiBinding(session); await machine.copyTranscriptNow(session, file);
+  await machine.bindTranscript(session); await machine.copyTranscriptNow(session, file);
   const promises = require('node:fs/promises'); const open = promises.open; const persist = machine.persistSessions;
   promises.open = async (name, ...args) => { const handle = await open(name, ...args); if (name === file) handle.read = async () => { throw new Error('source read'); }; return handle; };
   machine.persistSessions = async () => { throw new Error('registry write'); };
