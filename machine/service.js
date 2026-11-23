@@ -733,7 +733,7 @@ class MachineService {
   commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context = {}) {
     const adapter = adapters[input.cli];
     if (!adapter) die(`cli must be ${listWords(connectors.list().map(m => m.cli))}`);
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries, resume: context.resume, ...(context.launchExtras || {}) });
+    return adapter.command(input, session, worktree, { ...(context.launchExtras || {}), stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries, resume: context.resume });
   }
 
   threadWorktree(input, worktree) {
