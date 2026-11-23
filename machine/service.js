@@ -2374,8 +2374,9 @@ class MachineService {
         if (input.kind === 'approval' && agent.role === 'lead') {
           const warnings = [];
           if (this.platform === 'linux') {
-            const { missing } = screenTools();
+            const { missing, openboxInstalled } = screenTools();
             if (missing.length) warnings.push(`Screens won't work on ${os.hostname()}: missing ${missing.join(', ')}. Builds that don't use a screen are unaffected.`);
+            else if (!openboxInstalled) warnings.push(`Screens on ${os.hostname()} have no window manager, so apps that need one may misbehave. Optional: sudo apt install openbox.`);
             if (this.win.detected.kernel && agent.worktree) {
               const { mount } = this.win.detected;
               const { mcp } = await readProjectMcp(agent.worktree, { wsl: true, mount, kernel: !!this.win?.detected?.kernel });

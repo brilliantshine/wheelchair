@@ -442,3 +442,21 @@ for (const wmPath of ['missing','wrong']) test(`openbox falls back when config p
 test('exited openbox leaves screen running', async () => { const f = await fixture(); try { await enableWm(f); await f.configure({wmExit:true}); assert.equal((await f.call('start')).status,200); assert.equal((await f.call('status')).body.window_manager,null); } finally { f.service.screens.killSession(f.a.name); await f.close(); } });
 test('stopping session during openbox readiness fences the save', async () => { const f = await fixture(); try { await enableWm(f); await f.configure({wmPath:'missing'}); const start = f.call('start'); await waitForCall(f,c=>c.name==='xprop'); f.a.status='stopped'; f.service.screens.killSession(f.a.name); assert.equal((await start).status,409); assert.notEqual(JSON.parse(await fsp.readFile(path.join(f.service.screens.dir(f.a),'state.json'),'utf8')).status,'running'); } finally { await f.close(); } });
 test('disabled openbox preserves root listing and direct focus', async () => { const f = await fixture(); try { await enableWm(f); f.service.screens.allowOpenbox=false; await f.configure({showWindow:true}); await f.call('start'); await f.call('run',['--','app']); await f.call('windows'); await f.call('focus',['2097153']); assert.equal((await f.call('status')).body.window_manager,null); const calls=await f.calls(); assert(!calls.some(c=>c.name==='openbox')); assert(calls.some(c=>c.name==='xwininfo' && c.args.includes('-root'))); assert(calls.some(c=>c.name==='xdotool' && c.args[0]==='windowfocus')); } finally { f.service.screens.killSession(f.a.name); await f.close(); } });
+test('openbox not on PATH keeps today\'s window handling', async t => {
+  const f = await fixture(); try {
+    f.service.screens.allowOpenbox = true;
+    process.env.PATH = [f.bin, path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter);
+    if (screenTools().openboxInstalled) { t.skip('openbox installed on host'); return; }
+    await f.configure({ showWindow: true });
+    assert.equal((await f.call('start')).status, 200);
+    assert.equal((await f.call('status')).body.window_manager, null);
+    await f.call('run', ['--', 'app']); await f.call('focus', ['2097153']);
+    const calls = await f.calls();
+    assert(!calls.some(c => c.name === 'openbox'));
+    assert(!calls.some(c => c.name === 'systemd-run' && c.args.some(a => /-wm\.scope$/.test(a))));
+    assert(calls.some(c => c.name === 'xwininfo' && c.args.includes('-root')));
+    const runIndex = calls.findIndex(c => c.name === 'systemd-run' && c.args.some(a => /-app[0-9]+\.scope$/.test(a)));
+    const focusIndex = calls.findIndex((c, i) => i > runIndex && c.name === 'xdotool' && c.args[0] === 'windowfocus');
+    assert(runIndex >= 0 && focusIndex > runIndex);
+  } finally { f.service.screens.killSession(f.a.name); await f.close(); }
+});
