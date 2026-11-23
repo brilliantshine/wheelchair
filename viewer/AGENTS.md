@@ -31,7 +31,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, including Project tools forwarding, module composition, and the page-facing JSON contract. |
 | `app/names.js`, `agents.js` | Lead name allocation and the public agent tree and machine reachability view. |
-| `app/providers.js` | Hub provider names, CLI mappings and labels: Claude, GPT, Antigravity (`gemini`) Kimi Code (`kimi`), and OpenRouter (`openrouter`, CLI `pi`). |
+| `app/providers.js` | Hub provider names, CLI mappings and labels, built from the connector manifests in `connectors/` (the user-facing names are Claude, GPT, Antigravity, Kimi Code and OpenRouter; provider ids and CLIs are in `connectors/README.md`). |
 | `app/harnesses.js` | Harness status, placement eligibility and first-run checklist. |
 | `app/balancer.js` | Provider and account placement, constraints and waiting decisions. |
 | `app/usage-poll.js` | Idle account usage polling and machine selection. |
@@ -64,7 +64,8 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
   build predates returns `200` with the field gone. This is why the root router forbids
   checking the viewer against a server already running.
 - **The pages carry no token.** The first visit's redirect sets the remember cookie, and
-  `/wheelchair/assets/*` is served without one. Anything a page needs that is not public
+  `/wheelchair/assets/*` is served without one, including `/wheelchair/assets/tools.js`, which
+  carries the connector manifests (without `install`) to the pages. Anything a page needs that is not public
   goes through an authenticated route.
 - **The app hub owns app state and queue rules.** Browser pages may not infer session
   readiness, validate cards, or talk to a machine service directly. `server.js` applies
