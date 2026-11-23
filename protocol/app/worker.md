@@ -44,6 +44,12 @@ Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; 
 
 When the task changes something visible in a desktop app or game, look at it on your own invisible screen. Launch it with `node <root>/viewer/app/wc.js screen run -- <command> [args...]`, never by setting `DISPLAY` yourself (an app you start yourself is not cleaned up, and in a Codex session it dies when your command ends). Pass environment changes with `--env KEY=VALUE`, or launch `sh -c '<setup>; exec <app>'`. Look with `wc.js screen shot` and open the PNG path it prints with your image-reading tool; drive the app with `click`, `type` and `key`, list its windows with `windows`, and run `wc.js screen stop` when you are done. Point the app at temporary data, never the user's live data, and give each launch its own profile or data directory (for example Chromium's `--user-data-dir`) so it cannot hand off to another agent's copy of the same app. For visible work, put a screenshot path in your report; if capture fails, say why, but do not block the task. If the command says tools are missing on this machine, report that to the lead; do not work around it.
 
+When a screenshot would help the user see the result, take one and put its absolute path in
+your report; if capture fails, say why, but do not block the task. If the command says tools
+are missing on this machine, report that to the lead; do not work around it.
+
+## Matching a mockup
+
 If your brief names a mockup, build your owned parts to match its layout, content, hierarchy,
 colours, type and spacing. Other tasks' parts are not your differences. Screenshot the built
 screen at the mockup's width x height: use headless Chromium for a web page, on an isolated

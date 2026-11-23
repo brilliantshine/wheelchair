@@ -122,7 +122,8 @@ An image shown inside the thread.
 The machine copies the file into the thread's uploads folder, so the original may be
 deleted afterwards. Uploads posted by leads and sub-leads are kept on archive. The hub
 checks that the named mockup exists in the thread's plan and is at most 2 MiB.
-With `mockup`, the image and mockup appear beside each other as “Built” and “Mockup”,
+Without `mockup`, an image card shows the picture alone, as before. With `mockup`, the image
+and mockup appear beside each other as "Built" and "Mockup",
 scaled to half the card width; below 599px they stack, Built first. Each has an Open full
 size link: the image opens at true size and the mockup opens in the picture page at true size.
 

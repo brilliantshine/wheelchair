@@ -59,19 +59,20 @@ Use `node <root>/viewer/app/wc.js session start --role <role> --tier top --brief
 terms>"`, and `session stop <name>`, `session list`. The title is what the Agents screen
 shows on the agent's box. The list output is
 `{ sessions, review_families }`. The hub chooses the provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt|gemini|kimi|openrouter>`
-or `--not-provider <claude|gpt|gemini|kimi|openrouter>`; leads, sub-leads and mappers may not. The hub checks the
+or `--not-provider <claude|gpt|gemini|kimi|openrouter>`; leads, sub-leads, mappers and designers may not. The hub checks the
 rules and refuses anything else with the reason. A refusal is final: change the request
 rather than resending it.
 
 Commit with `node <root>/viewer/app/wc.js git commit --paths <a,b> --message "<message>"`;
 a commit without a message is refused.
 
-- You may start: a **mapper** (mapping session), **reviewer** sessions, a **sub-lead**
+- You may start: a **mapper** (mapping session), a **designer** (mockups during planning,
+  see the Mockups section), **reviewer** sessions, a **sub-lead**
   for your own thread, and a **verifier** (for a small fix, for a fix you make in a
   done thread, or a steps-only one after any `done`, step 10). Never a worker: the sub-lead starts those.
 - You may stop only sessions your role started in this thread, which includes sessions
-  started by an earlier lead that has since died. You stop the sub-lead, and each
-  reviewer, verifier and mapper once its `result` arrives. Reviewers and verifiers run in
+  started by an earlier lead that has since died. You stop the sub-lead, and each reviewer, verifier and mapper once its `result` arrives;
+  stop the designer when the mockups are agreed, or on restart. Reviewers and verifiers run in
   your thread's worktree (reviewers, read-only) or a throwaway copy (verifiers); you do
   not clean those up.
 - A brief restricting ports, the network or commands must exempt the session's
@@ -85,9 +86,9 @@ a commit without a message is refused.
   round or a re-verify is a new attempt). Reuse the same id only when re-running the same
   command after "hub unavailable". Before starting a sub-lead, run `session list`: the hub
   refuses a second live sub-lead, so a live one means you should not start another.
-- `--tier top`: pass it when you start a mapper, reviewer, sub-lead or verifier. The hub
+- `--tier top`: pass it when you start a mapper, designer, reviewer, sub-lead or verifier. The hub
   ignores the tier for those roles: the lead and sub-lead run on the lead model from Settings,
-  and the reviewer, verifier and mapper on the Other agents tiers there. The hub drops a
+  and the reviewer, verifier, mapper and designer on the Other agents tiers there. The hub drops a
   provider constraint it cannot meet and says so in the start output's `note`. The Ready
   check covers the thread's own CLI login; a start for a missing CLI fails at the machine with
   the reason.
@@ -828,25 +829,26 @@ by saying what you understood and what you will do first. Then take it from step
 
 ## Mockups
 
-In a feature whose idea changes something people see, start one designer after IDEA.md is
+In a feature (not a small fix) whose idea changes something people see, start one designer after IDEA.md is
 confirmed, alongside design questions. You may skip it for a trivial visible part; say so
 in a line and record a `defaulted` Decision. Brief the designer with the slug, screens,
 states, device sizes, the user's wishes and paths to IDEA.md and existing screens or styles.
 Pick sizes for the devices the thread builds.
 
-Add an Open Question “Agree the mockups” to PLAN.md when starting the designer. For each
+Add an Open Question "Agree the mockups" to PLAN.md when starting the designer. For each
 `result`, post one `mockup` diagram card per file. Pass feedback in a `message` quoting the
 user's words verbatim, including any `[attached: <path>]` paths. Planning stays open until
 the user agrees; settle the question with a Decision naming the agreed files, then stop the
-designer. List each agreed file in the Spec under “Mockups”, with path, screen/state and size;
+designer. List each agreed file in the Spec under "Mockups", with path, screen/state and size;
 record the version choice in the Decision Log.
 
 If the user requests a design change during review or after approval, before Start building
 is accepted, retract any open approval card first. In one commit set `status: planning` and
-re-add “Agree the mockups”, then start a fresh designer briefed with the current files and
+re-add "Agree the mockups", then start a fresh designer briefed with the current files and
 the user's words. Planning rules apply: no approval card exists or is posted while planning.
 Once agreed, the new files are a Spec change: set `status: ready-for-review` and list the
-change in the next round's “Changed since”.
+change in the next round's "Changed since". If Start building was already recorded when the
+user asks for a change, it is a change after Start building.
 
 After Start building is accepted, including after done, post a `stub` at once for a design
 change. Set `depends_on_parent: true`; its summary quotes the user's words verbatim, names
@@ -881,7 +883,7 @@ If you yourself died, the app starts a new lead (the Restart button) and types
 carry on from the step you find. For a done thread, the restart rules for check cards are
 in step 10 (Check it yourself). Your reply to that message is shown, so say briefly that
 you are back and where things stand. Run `session list` and `session stop` any session
-whose purpose is gone. Stop any live designer, whose results would go to the dead lead. If “Agree the mockups”
+whose purpose is gone. Stop any live designer, whose results would go to the dead lead. If "Agree the mockups"
 remains open, start a fresh designer briefed with the newest files and feedback from recent
 restart-context messages not yet reflected in a file. Then, for overlap questions (see "Overlap questions"):
 - For each overlap card with an actionable answer, no Done marker and no later overlap card for the same thread, act on it now. If status is no longer in the card window (rare), treat it as a late overlap.
@@ -889,7 +891,7 @@ restart-context messages not yet reflected in a file. Then, for overlap question
 - An open overlap card stays open and is not asked again. Facts the restart look finds about a waiting `Overlap with` Open Question update that entry before it is posted.
 - Run `session leads` once and treat any new overlap the way live discovery does: for a feature, nothing before PLAN.md exists (if IDEA.md is confirmed, create PLAN.md first, then look), an overlap card inside the window, else a late overlap; a small fix uses its own before-edits window. A planned thread also asks any `Overlap with` Open Question not yet asked (no overlap card for that thread was posted after the thread's latest overlap Decision).
 
-For a replacement sub-lead in a lighter mode, include any per-gap answer or the user’s
+For a replacement sub-lead in a lighter mode, include any per-gap answer or the user's
 choice not yet reflected in the Log in its brief. On lead restart, use `stub_summary` as
 background summary text only, never as commits to replay. Before IDEA.md exists, recover
 the mode question from cards: use a pressed choice; for a typed answer or resolution note
@@ -941,7 +943,9 @@ A restart context's `cross_thread_messages` lists recent messages you sent to an
 ## Diagrams
 
 See the `diagram` section of `cards-lead.md` for the forms and how to pick one. Show an image
-with an `image` card. The sub-lead posts build screenshots itself with `image` cards.
+with an `image` card. You may post an `image` card to show the user what an agent saw on its
+screen, using a screenshot path the agent reported. The sub-lead posts build screenshots
+itself with `image` cards.
 
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a
 picture, write the graph with `<root>/protocol/graphs.md`: its schema, where graph files
@@ -985,7 +989,7 @@ gate; each stage refuses to run out of order.
 
 ## Lessons
 
-Save a `lesson` card (see `cards.md`) for the lead, reviewers, verifiers and mappers.
+Save a `lesson` card (see `cards.md`) for the lead, reviewers, verifiers, mappers and designers.
 
 - A lesson is saved only when all hold: a mistake cost real time (an extra review round, a
   retried task, a redo, a failed check); something proved it wrong (the user corrected it,
