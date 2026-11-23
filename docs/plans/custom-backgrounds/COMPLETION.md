@@ -130,3 +130,8 @@ Final remediation validation: the two new regressions passed4/4 in both browsers
 
 
 Fresh independent remediation verification passed on4cf9349548597a09560b2c0197ce8736bb008177: six targeted Chromium/Firefox cases passed (6.1s), including both normal-use regressions and real clean-editor remote updates. Source/syntax/diff checks passed with no new normal-use gap. Report and exact command are in REMEDIATION-1.md. The final report-record commit is documentation only; the verified source/tests are unchanged.
+
+
+## Current main integration
+
+Upstream main0682593b was merged in d83cb509 with all incoming functionality retained. Background remains appended to the now-eight-section Settings UI; combined preferences retain Harnesses/onboarding/lessons/auto-merge/user-name fields. Lesson deep-links release local previews; the new sent-file shell loads shared appearance assets; Harnesses inner surfaces stay opaque. Focused post-merge Node77, appearance58, Settings70 and Harnesses/sent-file20 checks pass. Exact commands and limits are in INTEGRATION.md. No broad evolved-upstream pass is claimed, and no accepted risk was reopened. Fresh independent integration verification follows the committed merge/test expectation record.
