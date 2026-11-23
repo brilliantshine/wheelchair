@@ -1,5 +1,5 @@
 'use strict';
-const { textOf, unwrap, transcriptRows, isCodexHuman, itemAt, resetAt, toolDetail, resultText, foldResults, claudeReply, codexReply, renderTurn, isClaudeMidTurnHuman, hasPiEntry, piReport, kimiReport } = require('../hub-common');
+const { textOf, unwrap, transcriptRows, itemAt, resetAt, toolDetail, resultText, foldResults, renderTurn } = require('../hub-common');
 
 function parseAgy(raw, thread, sessionName) {
   resetAt();
