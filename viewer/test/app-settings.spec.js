@@ -226,7 +226,7 @@ test.describe('desktop', () => {
     await expect(page.locator('#full-prompt')).toContainText('Careful');
     await expect(page.locator('#full-prompt')).toContainText('Role: worker');
     await expect(page.locator('#full-prompt')).toContainText('Save your work after every step.');
-    await expect(page.locator('#full-prompt-caption')).toContainText('starting instructions');
+    await expect(page.locator('#full-prompt-caption')).toHaveText('Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it. Lessons marked for one AI or one project reach only agents on that AI or in that project.');
     await expect(page.locator('#full-prompt-caption')).toContainText('Kimi Code');
     await page.locator('#see-full').click();
     await expect(page.locator('#full-prompt-caption')).toHaveCount(1);
