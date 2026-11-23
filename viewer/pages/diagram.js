@@ -11,8 +11,8 @@
   }
   function source(card, ctx) {
     const T = API + '/threads/' + encodeURIComponent(ctx.id);
-    if (card.format === 'form' || card.format === 'html') {
-      const html = card.format === 'html';
+    if (card.format === 'form' || card.format === 'html' || card.format === 'mockup') {
+      const html = card.format !== 'form';
       const file = card.graph + (html ? '.html' : '.json');
       if (ctx.archived) return T + (html ? '/diagram-html?file=' : '/graph?file=') + encodeURIComponent(file);
       const path = ctx.worktree + '/docs/plans/' + card.plan + '/graphs/' + file;
@@ -24,7 +24,7 @@
     return '/wheelchair/?path=' + encodeURIComponent(ctx.worktree + '/docs/plans/' + card.plan + '/graphs/' + card.graph + '.json');
   }
   // The file a card draws, the key pictures are deduplicated by.
-  function fileKey(card) { return card.plan + '/' + card.graph + (card.format === 'html' ? '.html' : '.json'); }
+  function fileKey(card) { return card.plan + '/' + card.graph + (card.format === 'html' || card.format === 'mockup' ? '.html' : '.json'); }
   function drawForm(value) {
     const str = (v) => typeof v === 'string';
     const optional = (v) => v === undefined || str(v);
@@ -67,15 +67,34 @@
       target.append(el('strong', '', 'This diagram could not be drawn'), el('div', 'form-detail', e.message));
     });
   }
+  // A mockup: the screen's HTML in an iframe at its true width x height, scaled down (never up) to fit
+  // the box's width, so the whole screen shows with no inner scrolling. spec is {plan, graph, width, height, title}.
+  function mockup(spec, box, ctx) {
+    const src = source({ format: 'mockup', plan: spec.plan, graph: spec.graph }, ctx);
+    const frame = el('div', 'mockup-box');
+    const f = el('iframe', 'mockup-frame'); f.src = src; f.title = spec.title || spec.graph; f.setAttribute('sandbox', '');
+    f.style.width = spec.width + 'px'; f.style.height = spec.height + 'px'; f.scrolling = 'no';
+    frame.appendChild(f); box.appendChild(frame);
+    const fit = () => {
+      const s = Math.min(1, frame.clientWidth / spec.width);
+      if (!(s > 0)) return;
+      f.style.transform = 'scale(' + s + ')';
+      frame.style.height = (spec.height * s) + 'px';
+    };
+    fit();
+    if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(frame);
+    return frame;
+  }
   // The picture itself, as a card draws it: a form, or an iframe (html sandboxed).
   function draw(card, box, ctx, cache, frameClass) {
     const src = source(card, ctx);
     if (card.format === 'form') formInto(box, src, cache, card.id);
+    else if (card.format === 'mockup') mockup({ plan: card.plan, graph: card.graph, width: card.width, height: card.height, title: card.title }, box, ctx);
     else {
       const f = el('iframe', frameClass || 'diagram'); f.src = src; f.title = card.title;
       if (card.format === 'html') f.setAttribute('sandbox', '');
       box.appendChild(f);
     }
   }
-  window.WCDiagram = { source, fileKey, drawForm, formInto, draw };
+  window.WCDiagram = { source, fileKey, mockup, drawForm, formInto, draw };
 })();

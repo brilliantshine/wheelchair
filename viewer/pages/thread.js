@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const LESSON_ROLE_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers' };
+  const LESSON_ROLE_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers', designer: 'designers' };
   const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
   const API = '/wheelchair/api';
   const id = new URLSearchParams(location.search).get('id') || '';
@@ -1214,8 +1214,24 @@
       }
       case 'image': {
         box.appendChild(el('h3', '', card.title));
-        if (!sentAvailable(card)) box.appendChild(el('p', 'dim', 'Image removed when the thread was archived'));
-        else { const url = T + '/files/' + encodeURIComponent(card.file); const a = el('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; const img = el('img', 'card-image'); img.src = url; img.alt = card.title; a.appendChild(img); box.appendChild(a); }
+        const shot = () => {
+          const part = el('div', 'image-part');
+          if (!sentAvailable(card)) { part.appendChild(el('p', 'dim', 'Image removed when the thread was archived')); return part; }
+          const url = T + '/files/' + encodeURIComponent(card.file); const a = el('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; const img = el('img', 'card-image'); img.src = url; img.alt = card.title; a.appendChild(img); part.appendChild(a);
+          return part;
+        };
+        if (!card.mockup) { box.appendChild(shot().firstChild); break; }
+        const pair = el('div', 'image-pair');
+        const built = el('div', 'image-half'); built.appendChild(el('div', 'image-label', 'Built'));
+        const bshot = shot(); built.appendChild(bshot);
+        if (sentAvailable(card)) { const l = el('a', 'btn small', 'Open full size'); l.href = T + '/files/' + encodeURIComponent(card.file); l.target = '_blank'; l.rel = 'noopener'; built.appendChild(l); }
+        const mock = el('div', 'image-half'); mock.appendChild(el('div', 'image-label', 'Mockup'));
+        if (!thread().slug) mock.appendChild(el('p', 'dim', 'Mockup not found'));
+        else {
+          window.WCDiagram.mockup({ plan: thread().slug, graph: card.mockup.graph, width: card.mockup.width, height: card.mockup.height, title: 'Mockup: ' + card.title }, mock, { id: id, archived: thread().archived, worktree: thread().worktree });
+          const l = el('a', 'btn small', 'Open full size'); l.href = pictureHref(card); mock.appendChild(l);
+        }
+        const halves = el('div', 'image-halves'); halves.append(built, mock); pair.appendChild(halves); box.appendChild(pair);
         break;
       }
       case 'file': {
