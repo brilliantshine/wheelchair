@@ -147,3 +147,28 @@ $ diff <(providers.js from main) <(providers.js on branch)   → no output (exit
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-23
+
+Verification attempt 1 (80b45598) failed on both verifiers; gap list and judgment in `REMEDIATION-1.md`. Six gaps remediated, one rare path accepted (`model.sh` refusing a model name ending in a newline → Accepted Risks, `verification-1`).
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| G1 Settings model choices hand-written per tool | manifest `settings.modelOptions` (`fixed`, or `listedKey`/`listedShape`/`includePins`) on claude, codex, kimi; `options()` loops over the registry | `viewer/app/settings.js` `options()`; `connectors/{claude,codex,kimi}/manifest.js` | `viewer/test/model-options.test.js` (exact output today; a sixth tool appears) |
+| G2 optional fields read without defaults | defaults for `models.slotAliases` (`{}`), `models.effortError` (`effort is invalid`), plan tables (absent = none); `install.fallbackPath` required when `install.lookup` is `fallback`; `recoverRank` required with `capabilities.recover`; `install.label` required; Settings page plan select guarded | `viewer/app/routes.js`, `viewer/app/settings.js`, `viewer/pages/settings.js` (`planSelect`), `connectors/contract.js` | `viewer/test/minimal-manifest.test.js` + `viewer/test/hooks/minimal-connector.js` (connector with every optional field removed, through the model PUT route, `tools.js`, usage, placement); contract-test lines |
+| G3 hook-driven connector without `hook.payload` | `validate()` requires `hook.payload` for halves with `hookEvent`, forbids `hook` with `turnPoller` | `connectors/contract.js` `validate` | contract test |
+| G4 aside connector without its members | `aside` requires `asideArgv`, `asideResult` and a RegExp `asideModel` | `connectors/contract.js` | contract test |
+| G5 guard misses multi-line forms | detector masks string/template/regex literals and comments, then matches S6 forms across lines (either operand of `\|\|`/`&&`); pinned positive/negative snippet table; `cli must be …` message built from the registry, text pinned | `machine/test/name-guard.test.js`; `machine/service.js` (`listWords`) | name-guard test; `char-service-branches.test.js` (exact message) |
+| G7 stale docs | `machine/AGENTS.md` (steps parser path, hook rows), `viewer/app/API.md` effort per provider, guide updated for G1–G5 | those files, `connectors/README.md` | review against code (scout) |
+
+Lanes: R1 standard / gpt-6.1-terra (G5 re-briefed once after its fails-twice guardrail), R2 standard / claude-sonnet-5-5.
+
+Validation at dc1bb93f, one suite at a time:
+```
+$ bash machine/test/run.sh        → # tests 725  # pass 705  # fail 18   (the 18 known wslpath failures; no other)
+$ (cd viewer && npm test)         → # tests 916  # pass 916  # fail 0
+$ node connectors/export.js --check   → exit 0
+$ node --test machine/test/connectors-contract.test.js machine/test/name-guard.test.js   → pass 5, fail 0
+```
+
+Residual (documentation only, no effect on today's five tools): `connectors/README.md` says a tool without `settings.plans` gets no plan control; the page actually renders an empty plan select for it. It also says `settings.keyPrompt` falls back to an empty string when no tool uses key sign-in; the page code would throw in that case. Both concern a hypothetical registry and are recorded here rather than fixed.
