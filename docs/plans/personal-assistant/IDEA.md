@@ -18,7 +18,7 @@ it in a special pinned thread, and from a pop-up that opens on any page of the a
 
 Today every thread is its own conversation. To find out where things stand, or to start
 and steer work, Collin has to open each thread one by one, usually on a phone. Nothing
-looks across projects for him or carries out an instruction like "start a thread to fix X
+looks across projects for Collin or carries out an instruction like "start a thread to fix X
 in project Y" or "tell the lead on Z to hold off".
 
 ## What good looks like
