@@ -44,6 +44,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | Each tool's model-discovery code moves into `connectors/<cli>/models.py`, loaded by `model.sh` by file path | Otherwise a new tool with a new discovery method still edits `model.sh` | review-round-1 |
 | 15 | The hub loads only `manifest.js` and `hub.js`; `machine.js` is loaded only by the machine service, its libs and tests | Today the hub never loads machine code | review-round-1 |
 | 16 | Supersedes 14: `codex/model.sh` keeps all its per-tool model code (GPT pin workflow, GPT and Kimi discovery), allowlisted in the guard as `model-script`; it reads only the tool list, default pins, model formats and effort levels from `registry.json`. A new tool that can list its own models adds one discovery function there; IDEA.md's "What good looks like" now says so | Collin chose to leave model lists in the model script (Q2) | idea-change |
+| 17 | Keep reviewing after three rounds without a clean one; review budget reset | Collin pressed Keep going on the review-budget card | user |
 
 ## Spec
 
@@ -508,6 +509,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | minor | Browser and script model validators differ today | upheld | S2 `settings.modelPattern` kept separate from `models` format |
 | mechanics | minor | Required nested manifest fields unnamed | upheld | S6 lists required and defaulted fields |
 | mechanics | minor | Sensitivity checklist hides the two-tool assumptions | upheld | S7 checklist names both points; contract test caps flagged tools at two |
+
+### Round 6 — 2026-11-22
+
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 5:** S4 diagram-sensitivity: install-job trigger uses manifest `install.sensitivity` (at most two flagged tools), `sensitivity/set.sh` unchanged and out of guard scope, `own-list` tag removed; S5 `model.sh` finds `registry.json` from its real path (symlinks resolved) or `WHEELCHAIR_REGISTRY`; S2 `settings.modelPattern` separate from `models` format, `install.sensitivity` listed; S6 required vs defaulted manifest fields named; S7 checklist names sensitivity's two-tool assumptions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
