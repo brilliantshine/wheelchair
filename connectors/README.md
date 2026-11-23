@@ -216,11 +216,12 @@ the type is checked only when present. Unless a default is stated below, an omit
 `permissionName` (required when `permissionMode` is set),
 `accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices`
 (array of `[value, label]`); `reportedPlans`, `oldPlanWeights` (objects);
-`modelHeadsUp`, `reviewFamily`, `scoutAgentTool`, `monoModelNames` (booleans); `keyPrompt`
-(string); `modelOptions` (object). `modelPattern` is the browser's own model-name check and
+`modelHeadsUp`, `reviewFamily`, `monoModelNames` (booleans); `scoutHelper`, `keyPrompt`
+(strings; `keyPrompt` is required and non-empty when `signInKind` is `key`); `modelOptions` (object). `modelPattern` is the browser's own model-name check and
 differs from `models.format` and `models.hubPattern` on purpose, so each place keeps rejecting
 what it does today. `monoModelNames` controls monospace styling for model selectors; `keyPrompt`
-supplies the API-key sign-in hint, input label and placeholder.
+supplies the API-key sign-in hint, input label and placeholder. `scoutHelper` supplies the
+tool-specific helper name in scout instructions, followed by the selected model.
 
 `settings.modelOptions` says which models the Settings page offers in the model selector for
 the tool. It has one of two shapes:
@@ -243,9 +244,8 @@ listed value is refused, as is a value above that highest effort.
 Defaults when a field is omitted (as implemented in `viewer/app/settings.js`, `viewer/app/routes.js`
 and `viewer/pages/settings.js`): boolean fields are false; `permissionChoices` is `[]` where
 used; `models.slotAliases` is `{}`; `models.effortError` is `effort is invalid`; an absent
-`reportedPlans` or `oldPlanWeights` table gives the tool no entry in that table; an absent `scoutAgentTool` means the tool is not the scout provider
-(there is no special scout lookup); `keyPrompt` can fall back to the key-sign-in tool's prompt
-(or an empty string if no such tool exists). Other omitted values are `undefined` with no
+`reportedPlans` or `oldPlanWeights` table gives the tool no entry in that table; an absent `scoutHelper` means the tool adds no helper clause to scout instructions; `keyPrompt` is required for key sign-in and can fall back to the key-sign-in tool's prompt
+(or an empty string if no such tool exists) in other contexts. Other omitted values are `undefined` with no
 general fallback.
 
 ### Models (`models`)
