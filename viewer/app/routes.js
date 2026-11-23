@@ -378,7 +378,8 @@ async function handleSettings(hub, request, response, url, bits, body) {
         value.auto_merge_delete_branch = body.auto_merge_delete_branch;
       }
       if (body.review_families !== undefined) {
-        if (!['both', 'claude', 'gpt', 'gemini', 'kimi', 'openrouter'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude, gpt, gemini, kimi or openrouter');
+        const families = ['both', ...connectors.list().filter(m => m.settings.reviewFamily).map(m => m.provider)];
+        if (!families.includes(body.review_families)) throw appError(400, `review_families must be ${listWords(families)}`);
         value.review_families = body.review_families;
       }
       if (body.tool_steps !== undefined) {

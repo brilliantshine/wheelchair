@@ -2,6 +2,7 @@
 
 // Spec "Settings store", "Behavior templates", and "Writing style".
 const crypto = require('node:crypto');
+const connectors = require('../../connectors');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
@@ -320,7 +321,7 @@ function normalize(saved) {
     auto_merge: saved.auto_merge === 'on' ? 'on' : 'off',
     auto_merge_delete_branch: saved.auto_merge_delete_branch === 'on' ? 'on' : 'off',
     tool_steps: saved.tool_steps === 'hide' ? 'hide' : 'show',
-    review_families: ['both', 'claude', 'gpt', 'gemini', 'kimi', 'openrouter'].includes(saved.review_families) ? saved.review_families : 'both',
+    review_families: ['both', ...connectors.list().filter(m => m.settings.reviewFamily).map(m => m.provider)].includes(saved.review_families) ? saved.review_families : 'both',
     other_agents: { ...base.other_agents, ...(saved.other_agents || {}) },
     escalation: Object.fromEntries(Object.entries(ESCALATION_VALUES).map(([key, allowed]) => [key, allowed.includes(saved.escalation?.[key]) ? saved.escalation[key] : base.escalation[key]])),
     templates: Array.isArray(saved.templates) ? saved.templates : [],
