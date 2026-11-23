@@ -43,7 +43,7 @@ Callers never reach a half any other way than `connectors.machine(cli)` and
 
 If you find yourself wanting a `cli === 'name'` test outside `connectors/`, add a capability,
 an optional member or a manifest field with a plain name, and list it in `contract.js` and
-here. `machine/test/name-guard.test.js` scans for such tests and fails on each hit.
+here. `machine/test/name-guard.test.js` scans for such tests and fails on each hit; see "Adding a tool" for what it detects.
 
 ## Machine half (`machine.js`)
 
@@ -101,7 +101,7 @@ These are called only when present; they need no flag in the manifest.
 
 ### Capabilities and their members
 
-A capability is a boolean in `manifest.capabilities`. `validate` checks both directions: a
+A capability is a boolean in `manifest.capabilities`. `validate` checks both directions (and for `aside`, the RegExp type of `asideModel`): a
 flag set to true needs every listed member to be a function, and a flag set to false must
 have none of them. The registry validation also limits `preflight` to one tool.
 
@@ -116,7 +116,7 @@ have none of them. The registry validation also limits `preflight` to one tool.
 | `recover` | `recognizePane(text)` returns boolean | After a machine restart the service identifies adopted tmux panes by asking connectors in manifest `recoverRank` order; the first match sets the session's `cli`. A pane matching none gets the tool with `recoverFallback: true`. | The tool's panes are not recognised and fall to the fallback tool. |
 | `spend` | `spend(dir, now)` | `GET /v1/spend` reports offline spend (Pi reads OpenRouter usage logs). | No spend report. |
 | `liveSwitch` | `usual()` | A running session can be switched to another account (`POST /v1/sessions/:name/switch`); `usual()` names the folder copied from. | A switch request for the tool is refused. |
-| `aside` | `asideArgv(input, context)` returns argv | The tool can run headless aside turns. Also set manifest `asideParentField` (the session field holding the conversation id to fork from, for example `cli_session_id`). | The app never offers asides for the tool. |
+| `aside` | `asideArgv(input, context)` returns argv; `asideResult(input, result)`; `asideModel`, a RegExp (not a function) | The tool can run headless aside turns. All three are required, and `validate` rejects an `asideModel` that is not a RegExp. Also set manifest `asideParentField` (the session field holding the conversation id to fork from, for example `cli_session_id`). | The app never offers asides for the tool. |
 | `versionCheck` | `checkVersion(service, executable)`, `versionStatus(service, login)` | The service checks the installed version at launch and in status, and the hub shows the result. | No version gating. |
 | `steps` | `readSteps(state, lines, ctx)` returns step events; `stepsReady(session)` returns boolean | Both are required. The service calls `stepsReady` before polling and reading steps to check whether tailing may start (Codex needs its thread id). The service tails the tool's transcript for tool-call steps (Codex). Hook-driven step events (Claude) do not need this flag. | The tool shows no steps from tailing. |
 
@@ -142,7 +142,9 @@ The service must learn when a turn finishes. A machine half provides exactly one
   `this`) on a timer. Kimi reads its wire log and posts events itself. It usually comes with
   `bindTranscript`, `spoolWaiting` and `validTranscript`.
 
-`validate` throws `hookEvent/turnPoller` unless there is exactly one.
+`validate` throws `hookEvent/turnPoller` unless there is exactly one. Two more rules follow:
+a half with `hookEvent` requires the manifest's `hook.payload` (`stdin` or `last-arg`), and a
+`turnPoller` tool must have no `hook` field at all.
 
 The hook path is the same for every hook-driven tool. The tool's own config (or a launch
 settings file) runs `machine/hook.sh <cli> <session>`. `hook.sh` needs `WHEELCHAIR_SESSION_TOKEN`
@@ -176,7 +178,7 @@ A plain object, all values JSON. Regex fields are source strings, with a separat
 `<field>Flags` string when flags are needed. A value of `null` means the option does not
 apply. `validateManifest` in `contract.js` checks the types and throws `<cli>: <field>`.
 "Required" means validation fails without it; "defaulted" means the field may be omitted and
-the type is checked only when present. Unless a reader fallback is stated below, an omitted field is `undefined` (there is no applied default).
+the type is checked only when present. Unless a default is stated below, an omitted field is `undefined`. Readers apply the defaults named in this section; a minimal connector with every optional field omitted still loads the Settings page, routes and assets (`viewer/test/minimal-manifest.test.js`).
 
 ### Identity
 
@@ -198,7 +200,7 @@ the type is checked only when present. Unless a reader fallback is stated below,
 | `install.command` | string, the shell recipe the install job runs | required |
 | `install.binary` | string, the executable name | required |
 | `install.lookup` | `path`, `absolute` or `fallback`: how the install job finds the binary afterwards | required |
-| `install.label` | string, the name in install messages | defaulted: `undefined` |
+| `install.label` | string, the name in the install job's Node-version message | required |
 | `install.node` | string, minimum Node version the recipe needs | defaulted: no Node prerequisite |
 | `install.versionArgs` | array of strings, or `null` to skip the version check | defaulted: `undefined` (passed to the version command) |
 | `install.fallbackPath` | string, where the installer looks when the CLI is not on PATH | required and non-empty when `install.lookup` is `fallback`; otherwise defaulted: empty string in `install.sh` and `undefined` in the install job |
@@ -212,8 +214,33 @@ the type is checked only when present. Unless a reader fallback is stated below,
 `accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices` and
 `plans` (arrays of `[value, label]`); `weights`, `reportedPlans`, `oldPlanWeights` (objects);
 `modelHeadsUp`, `reviewFamily`, `scoutAgentTool`, `monoModelNames` (booleans); `keyPrompt`
-(string). `modelPattern` is the browser's own model-name check and differs from `models.format`
-and `models.hubPattern` on purpose, so each place keeps rejecting what it does today. `monoModelNames` controls monospace styling for model selectors; `keyPrompt` supplies the API-key sign-in hint, input label and placeholder. Omitted fields are `undefined`: boolean checks are false, `permissionChoices` falls back to `[]` where used, and `keyPrompt` can fall back to the key-sign-in tool's prompt (or an empty string if that tool is absent). Other values have no general fallback; in particular the settings store calls `Object.keys` on `weights`, `reportedPlans`, and `oldPlanWeights`, so omitting those objects causes an error.
+(string); `modelOptions` (object). `modelPattern` is the browser's own model-name check and
+differs from `models.format` and `models.hubPattern` on purpose, so each place keeps rejecting
+what it does today. `monoModelNames` controls monospace styling for model selectors; `keyPrompt`
+supplies the API-key sign-in hint, input label and placeholder.
+
+`settings.modelOptions` says which models the Settings page offers in the model selector for
+the tool. It has one of two shapes:
+
+- `{ fixed: [[value, label], ...] }`: a fixed list of string pairs.
+- `{ listedKey, listedShape, includePins }`: the choices come from the list the settings
+  store holds under `listedKey`; `listedShape` is `strings` (a list of model ids) or
+  `objects` (a list of model records); `includePins` (boolean, required) adds the tool's
+  `models.pins` models to that list.
+
+A tool with no `modelOptions` gets an empty list from the settings data; the Settings page
+then shows only the slot's current model plus the "Not used" and "Other…" entries. Add it
+whenever the tool has choices to show.
+
+Defaults when a field is omitted (as implemented in `viewer/app/settings.js`, `viewer/app/routes.js`
+and `viewer/pages/settings.js`): boolean fields are false; `permissionChoices` is `[]` where
+used; `models.slotAliases` is `{}`; `models.effortError` is `effort is invalid`; an absent
+`weights`, `reportedPlans` or `oldPlanWeights` table gives the tool no entry in that table
+(it does not break the settings store); an absent `plans` list gives the tool no plan control
+on the Settings page; an absent `scoutAgentTool` means the tool is not the scout provider
+(there is no special scout lookup); `keyPrompt` can fall back to the key-sign-in tool's prompt
+(or an empty string if no such tool exists). Other omitted values are `undefined` with no
+general fallback.
 
 ### Models (`models`)
 
@@ -223,8 +250,8 @@ and `models.hubPattern` on purpose, so each place keeps rejecting what it does t
 | `models.format` | string regex that `codex/model.sh` validates pins with | required |
 | `models.hubPattern` | string regex the hub checks model names with | required |
 | `models.efforts` | array of strings, may be empty (empty means the tool has no effort levels) | required |
-| `models.slotAliases` | object, alias to slot (Claude's `haiku`, `sonnet`, `opus`) | defaulted: `undefined` (the route indexes it directly) |
-| `models.effortError` | string, the hub's error text for a bad effort | defaulted: `undefined` |
+| `models.slotAliases` | object, alias to slot (Claude's `haiku`, `sonnet`, `opus`) | defaulted: `{}` (no aliases) |
+| `models.effortError` | string, the hub's error text for a bad effort | defaulted: `effort is invalid` |
 | `models.familyCommand` | boolean, the tool uses `model.sh family` | defaulted: false in boolean checks |
 | `models.bareTierSet` | boolean, the tool takes bare tier commands in `model.sh` | defaulted: false in boolean checks |
 
@@ -250,7 +277,7 @@ and `models.hubPattern` on purpose, so each place keeps rejecting what it does t
 | `asideParentField` | string | See the `aside` capability. |
 | `hook.payload`, `hook.sessionFromEnv` | see "How a turn ends" | |
 | `login.killTarget` | `pane`, `session` or `name` | What the service kills to end a login. |
-| `recoverRank` | number or `null` | Match order for the `recover` capability. |
+| `recoverRank` | number | Match order for the `recover` capability. Required (a number) when `capabilities.recover` is true, because the restart-recovery sort in `machine/service.js` uses it; otherwise optional (a number or `null`). |
 | `recoverFallback` | boolean | The tool new adopted panes fall back to. |
 | `usage.showWarning`, `usage.probeWhileLive`, `usage.tryEveryMachine`, `usage.defaultProblem` | boolean | How the hub treats usage for the tool. |
 
@@ -280,7 +307,9 @@ tag before their own script.
    order, never placement policy.
 3. Fill `install` (recipe, binary, lookup, `versionArgs`, `fallbackPath` and `pathRank` as needed).
 4. Fill `settings` (model pattern and placeholder, permission choices, account text, plans and
-   weights, sign-in kind, setup link).
+   weights, sign-in kind, setup link). If the tool has model choices on the Settings page, add
+   `settings.modelOptions`. If the tool recovers adopted panes, give it a `recoverRank`; every
+   tool needs `install.label`.
 5. Fill `models` (default pins per slot, formats, efforts). If the tool can list its own
    models, add a discovery function to `codex/model.sh`; that script keeps all per-tool
    model code (Decision 16 of the connector plan) and allowlists those lines in the name-check
@@ -296,7 +325,7 @@ tag before their own script.
 8. Run `node connectors/export.js` and commit the new `registry.json`.
 9. Tests: `machine/test/connectors-contract.test.js` loads both halves of every registered
    connector and checks the manifests, so a missing member or a wrong type fails by name.
-   `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). For a non-tool hit, add a file and line pattern to its allowlist with a reason and the `not-tool` tag; other established tags are `compat`, `legacy`, and `model-script`.
+   `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). It scans whole files, so a comparison, `case`, call argument, ternary or `||`/`&&` operand, array element, object key (including shorthand) or `connectors.<id>` access is caught even when it spans several lines; comments and non-code text are masked first. The detector is pinned by a table of positive and negative snippets in that test (`detector recognizes name checks across lines`): change the detector only with a snippet in the table. It is a heuristic: escaped ids, computed values and ambiguous regex/division syntax can evade it, and unusual syntax can give a false hit. For a hit that is not tool dispatch, add an entry to the `allow` list in that test: `{ file, pattern, tag, reason }`, where `file` is the repository path, `pattern` is a regular expression tested against the hit's source line, `tag` is `not-tool` (also established: `compat`, `legacy`, `model-script`), and `reason` says why. Prefer moving the behaviour into the manifest over allowlisting.
    `machine/test/adapters-loaded.test.js` walks the registry. Add characterization tests
    for the tool's behaviour next to the machine and hub tests that cover the other tools. Run
    the suites listed in the root `AGENTS.md`, including `bash codex/test/run.sh` for

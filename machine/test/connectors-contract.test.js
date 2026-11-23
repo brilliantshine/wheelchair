@@ -29,6 +29,8 @@ test('contract rejects missing and inconsistent members and fields', () => {
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 'pattern'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);
   const badOptions = structuredClone(manifests[0]); badOptions.settings.modelOptions = { fixed: [['a']] }; assert.throws(() => contract.validateManifest(badOptions), /settings.modelOptions/);
+  const noRank = structuredClone(manifests.find(x => x.capabilities.recover)); delete noRank.recoverRank; assert.throws(() => contract.validateManifest(noRank), /recoverRank/); noRank.recoverRank = '1'; assert.throws(() => contract.validateManifest(noRank), /recoverRank/); noRank.recoverRank = null; assert.throws(() => contract.validateManifest(noRank), /recoverRank/); noRank.capabilities.recover = false; assert.doesNotThrow(() => contract.validateManifest(noRank));
+  const noLabel = structuredClone(manifests[0]); delete noLabel.install.label; assert.throws(() => contract.validateManifest(noLabel), /install.label/); noLabel.install.label = 42; assert.throws(() => contract.validateManifest(noLabel), /install.label/);
   const badFamily = structuredClone(manifests[0]); badFamily.models.familyCommand = 'yes'; assert.throws(() => contract.validateManifest(badFamily), /models.familyCommand/);
   const badBare = structuredClone(manifests[0]); badBare.models.bareTierSet = 'yes'; assert.throws(() => contract.validateManifest(badBare), /models.bareTierSet/);
   const badScout = structuredClone(manifests[0]); badScout.settings.scoutAgentTool = 'yes'; assert.throws(() => contract.validateManifest(badScout), /settings.scoutAgentTool/);

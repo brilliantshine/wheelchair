@@ -42,13 +42,15 @@ function validateManifest(m) {
   check('install.lookup',v=>['path','absolute','fallback'].includes(v));
   if (m.install.lookup === 'fallback') check('install.fallbackPath', v => str(v) && v.length > 0);
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);
-  for (const f of ['install.label','install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt']) check(f,str,false);
+  for (const f of ['install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt']) check(f,str,false);
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
   for (const f of ['settings.modelHeadsUp','settings.reviewFamily']) check(f,bool,false);
   for (const f of ['settings.permissionChoices','settings.plans']) check(f,arr,false);
   for (const f of ['settings.weights','settings.reportedPlans','settings.oldPlanWeights','models.slotAliases','report','hook']) check(f,obj,false);
   for (const f of ['install.pathRank','recoverRank']) check(f,v=>v===null||typeof v==='number',false);
   check('recoverFallback',bool,false);
+  check('recoverRank',v=>typeof v==='number'||(!m.capabilities?.recover&&v===null),Boolean(m.capabilities?.recover));
+  check('install.label',str);
   for (const [slot, pin] of Object.entries(m.models.pins)) if (!obj(pin) || !str(pin.model) || (pin.effort !== undefined && !str(pin.effort))) throw new Error(`${m.cli}: models.pins.${slot}`);
   check('settings.modelOptions', v => obj(v) && (arr(v.fixed) && v.fixed.every(pair => arr(pair) && pair.length === 2 && pair.every(str)) || str(v.listedKey) && ['strings','objects'].includes(v.listedShape) && typeof v.includePins === 'boolean'), false);
   check('hook.payload',v=>v==='stdin'||v==='last-arg', Boolean(m.hook));
