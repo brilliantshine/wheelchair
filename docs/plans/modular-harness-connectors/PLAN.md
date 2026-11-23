@@ -419,6 +419,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | A connector exporting `turnPoller` as a non-function passes validation | Rare path: malformed member value | verification-3 |
 | `settings.permissionChoices: [null]` passes validation and breaks the Settings page | Rare path: malformed manifest data | verification-3 |
 | Name-check guard misses `kimi )` (space before the parenthesis) and `[[ codex == $cli ]]` (bare literal on the left) | Rare path: unusual spellings absent from the code | verification-5 |
+| The model round-trip test wrongly rejects a valid tool that has all five default pins unset **and** a model format the generated sample name (`<provider>-roundtrip-model`) does not fit; `model.sh` itself handles such a tool correctly | Rare path: needs two unusual manifest choices together; the outcome is a false test failure (fixed by giving the tool one default pin), never harm to the user | verification-10 |
 
 ## Check Once Built
 
@@ -696,3 +697,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-23 — Choice: R9, `EFFORTS` also exported from `connectors/contract.js` (report said none; from the scout read).
 - 2026-11-23 — Verification attempt 9 (8674a075): verifier-17 (claude) PASS, no gaps; verifier-18 (gpt) FAIL with Q1–Q3 (round-trip false failure with all defaults unset, hard-coded scout clause, optional keyPrompt for key sign-in). R10 (light). REMEDIATION-9.md.
 - 2026-11-23 — R10 accepted (band: scout): Q1–Q3 closed (Q1 fails clearly rather than skipping when no sample model fits). R10 branch viewer 919/919; merged head machine: # tests 734 # pass 714 # fail 18  (18 known wslpath failures; any extra one is a load flake that passes alone). Verification attempt 10 started (claude + gpt).
+- 2026-11-23 — Verification attempt 10 (c37b8ea0): verifier-19 (claude) PASS, no gaps (role prompts for all five tools byte-identical at base, attempt 9 and this commit); verifier-20 (gpt) FAIL with one gap: round-trip false failure for a tool with all defaults unset and a format excluding the sample name. Judged a rare path (two unusual choices together, test-only consequence) and recorded in Accepted Risks (verification-10). Merged list empty after rare-path judgment: verification passed at c37b8ea0. Rare paths accepted during verification: 6 (verification-1: 1, verification-3: 3, verification-5: 1, verification-10: 1).
