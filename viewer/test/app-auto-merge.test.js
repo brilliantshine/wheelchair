@@ -25,8 +25,8 @@ async function fixture(script = '') {
   await hub.save(thread);
   return { hub, thread, dir, log, restore: () => { process.env.PATH = old; }, calls: async () => (await fs.readFile(log, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean), run: async () => { merge.afterCheck(hub, 'one', 'check'); await merge.settled(); return hub.thread('one'); } };
 }
-const view = (status = 'CLEAN', state = 'OPEN') => JSON.stringify({ state, mergeStateStatus: status, headRefName: 'branch', baseRefName: 'main', headRefOid: head, statusCheckRollup: [] });
-const script = (status = 'CLEAN', state = 'OPEN', api = `printf '{"merged":true}'`) => `if [ "$1" = pr ]; then printf '%s' '${view(status, state)}'; else ${api || ':'}; fi`;
+const view = (status = 'CLEAN', state = 'OPEN', extra = { isCrossRepository: false }) => JSON.stringify({ state, mergeStateStatus: status, headRefName: 'branch', baseRefName: 'main', headRefOid: head, statusCheckRollup: [], ...extra });
+const script = (status = 'CLEAN', state = 'OPEN', api = `printf '{"merged":true}'`, extra) => `if [ "$1" = pr ]; then printf '%s' '${view(status, state, extra)}'; else ${api || ':'}; fi`;
 
 test('done verified validation', () => { for (const v of [true, false, undefined]) assert.equal(validate('done', (({ created_at, ...rest }) => ({ ...rest, verified: v }))(done), 'lead').ok, true); assert.equal(validate('done', (({ created_at, ...rest }) => ({ ...rest, verified: 'yes' }))(done), 'lead').ok, false); });
 test('silent gates and held gates', async () => {
@@ -222,6 +222,23 @@ test('deleting the branch after a merge follows its setting and only records a f
       if (deleted === undefined) assert.ok(!calls.some(c => c.includes('DELETE')));
       else assert.equal(calls.at(-1), 'api -X DELETE repos/o/r/git/refs/heads/branch');
       if (deleted === false) assert.ok(!result.cards.some(c => c.auto_merge));
+    } finally { f.restore(); }
+  }
+});
+
+test('branch deletion targets the repository that holds the branch', async () => {
+  const api = `case "$3" in PUT) printf '{"merged":true}';; esac`;
+  for (const [extra, expected] of [
+    [{ isCrossRepository: true, headRepositoryOwner: { login: 'me' }, headRepository: { name: 'fork' } }, 'api -X DELETE repos/me/fork/git/refs/heads/branch'],
+    [{ isCrossRepository: true }, undefined],
+    [{}, undefined],
+  ]) {
+    const f = await fixture(script('CLEAN', 'OPEN', api, extra)); try {
+      await settings.update(f.hub, v => { v.auto_merge_delete_branch = 'on'; });
+      const result = await f.run(), calls = await f.calls();
+      assert.equal(result.auto_merge_attempts[head].outcome, 'merged');
+      if (expected) assert.equal(calls.at(-1), expected);
+      else { assert.ok(!calls.some(c => c.includes('DELETE'))); assert.equal(result.auto_merge_attempts[head].branch_deleted, undefined); }
     } finally { f.restore(); }
   }
 });

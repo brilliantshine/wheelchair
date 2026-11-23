@@ -54,14 +54,17 @@ async function attempt(hub, threadId, checkCardId) {
   while (!outcome) {
     let view;
     try {
-      const result = await run('gh', ['pr', 'view', url, '--json', 'state,mergeStateStatus,headRefName,baseRefName,headRefOid,statusCheckRollup'], { timeout: 15000 });
+      const result = await run('gh', ['pr', 'view', url, '--json', 'state,mergeStateStatus,headRefName,baseRefName,headRefOid,statusCheckRollup,isCrossRepository,headRepository,headRepositoryOwner'], { timeout: 15000 });
       view = JSON.parse(result.stdout);
       if (!view || typeof view !== 'object' || Array.isArray(view)) throw new Error('invalid response');
     } catch { reason = unavailable; }
     if (view) {
       if (view.state === 'MERGED') { outcome = 'already-merged'; break; }
       if (view.state === 'CLOSED') { outcome = 'closed'; break; }
-      branch = view.headRefName;
+      // The branch lives in the head repository: the base one, or a fork's when the pull request crosses repositories.
+      const owner = view.isCrossRepository === true ? view.headRepositoryOwner?.login : view.isCrossRepository === false ? match[1] : undefined;
+      const repo = view.isCrossRepository === true ? view.headRepository?.name : view.isCrossRepository === false ? match[2] : undefined;
+      branch = typeof owner === 'string' && owner && typeof repo === 'string' && repo && typeof view.headRefName === 'string' && view.headRefName ? { owner, repo, name: view.headRefName } : undefined;
       const judged = judgePr(view, thread, done);
       if (judged.ok) {
         if (!['CLEAN', 'HAS_HOOKS'].includes(view.mergeStateStatus)) { outcome = 'not-ready'; reason = 'GitHub needs something before it can merge, such as a review'; }
@@ -87,8 +90,9 @@ async function attempt(hub, threadId, checkCardId) {
     else { outcome = 'failed'; reason = response?.message || String(stderr).split(/\r?\n/).find(line => line.trim()) || 'GitHub refused the merge'; }
   }
   // Optional: delete the merged head branch on GitHub. A failure (for example GitHub already deleted it) is only recorded.
-  if (outcome === 'merged' && typeof branch === 'string' && branch && (await settings.load(hub)).auto_merge_delete_branch === 'on') {
-    try { await run('gh', ['api', '-X', 'DELETE', `repos/${match[1]}/${match[2]}/git/refs/heads/${branch.split('/').map(encodeURIComponent).join('/')}`], { timeout: 15000 }); branchDeleted = true; }
+  // Skipped when GitHub did not say which repository holds the branch.
+  if (outcome === 'merged' && branch && (await settings.load(hub)).auto_merge_delete_branch === 'on') {
+    try { await run('gh', ['api', '-X', 'DELETE', `repos/${encodeURIComponent(branch.owner)}/${encodeURIComponent(branch.repo)}/git/refs/heads/${branch.name.split('/').map(encodeURIComponent).join('/')}`], { timeout: 15000 }); branchDeleted = true; }
     catch { branchDeleted = false; }
   }
   // Finishing: reload so a concurrent writer's cards survive.
