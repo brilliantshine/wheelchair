@@ -87,4 +87,33 @@ Focused: `npm --prefix viewer run test:browser -- app-mockups.spec.js app-pictur
 
 ## Remediation rounds
 
-None yet.
+### Remediation 1
+
+Verification attempt 1 at `484dfcac`: Claude verifier PASS; GPT verifier FAIL with 5 gaps (`REMEDIATION-1.md`). One rare path went to Accepted Risks (CLI mockup check containment); "Built Open full size" was deferred as D3 at the lead's answer. Fixed:
+
+| Gap | Fix (file:line) | Lane | Validated by |
+|-----|-----------------|------|--------------|
+| Full-size mockup viewport 2px short | `viewer/pages/picture.css:12` (`box-sizing: content-box`) | claude standard / claude-sonnet-5-5 (R1) | `viewer/test/app-mockups.spec.js` (iframe `clientWidth`/`clientHeight` exactly 390/844) |
+| Built and Mockup stacked at a 623px card | `viewer/pages/thread.css:358-359` (query 563.98px inner = 599px card) | claude standard / claude-sonnet-5-5 (R1) | `app-mockups.spec.js` (card measured 600-640px side by side; under 599px stacked) |
+| Revising designer shown finished and not nudged | `viewer/app/sessions.js:540` (a starter's message delivered to a finished designer reopens it) | gpt standard / gpt-6.1-terra (R2) | `viewer/test/app-designer-revision.test.js` (designer reopens, status keeps reply debt, result finishes; other senders and mappers unchanged) |
+
+Validation after remediation (feature branch at `cefd4240`):
+
+```text
+$ node --test viewer/test/*.test.js
+# pass 913
+# fail 1        (server.test.js "global write lock serializes concurrent writes": timing; file rerun alone twice, 50/50 pass)
+
+$ node --test --test-concurrency=4 machine/test/*.test.js     (same files as bash machine/test/run.sh)
+# pass 669
+# fail 18       (the same 18 wslpath ENOENT tests as before; a run at default concurrency hung in win-tool-proxy, as both verifiers also saw)
+
+$ npm --prefix viewer run test:browser -- app-mockups.spec.js app-pictures.spec.js app-diagrams-uploads.spec.js
+36 passed
+
+$ npm --prefix viewer run test:browser
+34 skipped, 22 did not run, 1398 passed, 2 failed (chromium app-lessons.spec.js:42 locator timeout; chromium app-send-now.spec.js:84 30 s timeout; the 22 are the rest of the serial app-lessons describe)
+$ npm --prefix viewer run test:browser -- app-lessons.spec.js app-send-now.spec.js     (twice)
+58 passed
+58 passed
+```
