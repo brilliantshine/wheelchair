@@ -229,6 +229,19 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | mechanics | minor | Intermediate SVG URL unspecified (blob URLs blocked) | upheld | S3: `data:` URL as `graphCanvas` |
 | mechanics | minor | Canvas has no white backing; test misses it | upheld | S3 fills white; Validation 4 checks an unset spot |
 
+### Round 3 — 2026-11-23
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 2:**
+- Decision 9: spot comments routed by the Mockups rules for the current stage.
+- S2: comment-button eligibility toggled outside card signatures; open drafts kept per mockup and redrawn if the card node is replaced; picture-page mockup iframe `scrolling="no"`.
+- S1: scroll restore records every visible entry's offset and restores the first survivor.
+- S3: SVG drawn via a `data:` URL; canvas filled white first. Validation 4 checks an unset spot.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
