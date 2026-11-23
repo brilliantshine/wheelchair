@@ -219,3 +219,24 @@ $ npx playwright test test/app-settings.spec.js test/app-accounts.spec.js --proj
 $ node connectors/export.js --check   → exit 0;  contract + guard tests → pass 6, fail 0
 $ providers.js output vs main     → identical
 ```
+
+### Remediation 4 — 2026-11-23
+
+Verification attempt 4 (02129f90): verifier-7 (claude-opus-5-5) PASS with no gaps; verifier-8 (gpt-6.2-sol) FAIL with five gaps, none a repeat (`REMEDIATION-4.md`).
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| K1 aside output not redacted by the service | aside stdout/stderr redacted before `asideResult`, reply/error and `prepared.error` after, with the tool's `redact` | `machine/lib/aside-turns.js` `run()` | `machine/test/aside-turns.test.js` (marker connector) |
+| K2 version-check masking keyed on `resolveCli` | keyed on `capabilities.versionCheck` | `machine/service.js` status accounts | `machine/test/remediation-r5.test.js` (login stubbed; bite-checked) |
+| K3 launcher hard-coded `kimiExecutable` | the connector's `launchContext` result is kept as `context.launchExtras` and spread **first** into `command`'s context, so it adds keys and never replaces the service's own | `machine/service.js` (launch context, `commandFor`) | `remediation-r5.test.js` (through `launchContext`; `stateDir` cannot be overridden; bite-checked); `char-service-branches.test.js:175` reads the same value from `launchExtras` |
+| K4 omitted `install.versionArgs` | defaults to `['--version']`; `null` skips | `machine/lib/harness-install.js` (`versionArgs`) | `remediation-r5.test.js` |
+| K5 default account weight | fresh default accounts use the tool's `settings.weights.unknown` | `viewer/app/settings.js:54` | `viewer/test/remediation-r5.test.js` |
+
+Lanes: R5 and R5b light / gpt-6-luna.
+
+Validation on the merged head 13d264cd:
+```
+$ bash machine/test/run.sh        → # tests 731  # pass 711  # fail 18   (the 18 known wslpath failures only; R5b branch, identical code)
+$ (cd viewer && npm test)         → # tests 918  # pass 918  # fail 0
+$ node connectors/export.js --check   → exit 0;  contract + guard tests → pass 6, fail 0
+```
