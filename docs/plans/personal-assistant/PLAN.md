@@ -131,7 +131,7 @@ unavailability like `wc.js session`; write actions never retry automatically and
 `threads`/`thread` before trying again).
 
 Every write action prints `{ok:true, result}` where `result` is exactly what the matching
-browser route sends back (for example the card after a press, or an archive still pending),
+browser route sends back (for example a press's outcome, or an archive still pending),
 never the raw hub function result, which can carry session tokens. The outcome is reported,
 not assumed. Where a row below names its own output (`start`, `message`), that row wins.
 
@@ -143,14 +143,14 @@ wait for a lead to launch.
 |---|---|
 | `projects` | The machines and project folders the New thread screen offers, from the same functions its route uses (`newThread` in `viewer/app/routes.js`), so `hub` and its hostname are one machine: `{machines:[{name, projects:[{path,name}]}]}` |
 | `threads [--archived]` | Every non-archived thread on every machine except the assistant thread (with `--archived`, archived ones too), each with the same summary fields and stage the Threads list route builds for it (reuse that code, including its remote plan refresh), plus `lead_live` and `waiting`, where `waiting` lists the open cards Needs you counts for that thread (the same kinds and test as `viewer/app/views.js`, reused, not copied) as `{id, kind, text}` (`text` is the question, title or first line) |
-| `thread <id>` | Same fields plus `cards` (every open card in full) and `recent` (the last 30 chat items: the user's bubbles, lead replies and context lines, as the thread page shows them) |
+| `thread <id>` | Same fields plus `cards` (every open card in full), `queued` (messages waiting for that thread's lead, as the thread page shows them) and `recent` (the last 30 chat items: the user's bubbles, lead replies and context lines, as the thread page shows them) |
 | `start --project <path> --machine <name> --message-file <f> [--title <t>]` | Creates a thread exactly as the browser's `POST /threads` does (same project check), with the file's text as its first user message prefixed as in section 4. The thread title is
 `--title` when given, otherwise derived (as the browser does) from the text without the
 prefix. If the thread is saved but its lead fails to start, `start` prints
 `{ok:false, error, thread, url}` naming the saved thread; the assistant tells Collin, with
 the link, and does nothing more until Collin says what to do. Prints `{ok, thread, url}` with `url` = `/wheelchair/app/thread?id=<id>` |
 | `message <thread> --text-file <f>` | Queues the text for that thread's latest live lead, prefixed as in section 4. Prints `{ok:true, queued:true}`: the text reaches the lead when its current turn ends, and the lead's reply appears in that thread's `recent`. Refused with "that thread has no live lead; restart it first" when none is live, and for archived or handed-off threads. Counts toward the existing 20-messages-per-thread-per-hour limit, keyed on the assistant thread |
-| `press <thread> <card> --action <action> [--value <text>]` | Presses a card button exactly as the browser route does (`hub.press`, same checks and refusals), recording `answered_by: "assistant"` on the card |
+| `press <thread> <card> --action <action> [--value <text>]` | Presses a card button exactly as the browser route does (`hub.press`, same checks and refusals); `sudo` cards are refused ("a root command needs you"), recording `answered_by: "assistant"` on the card |
 | `restart <thread>` | As the browser's Restart (`hub.restartLead`); refused for archived or handed-off threads |
 | `archive <thread>` | As the browser's Archive (`hub.archive`) |
 
@@ -352,6 +352,10 @@ npm --prefix viewer run test:browser
 | intent | minor | Failed launch returns no thread id | upheld | §3: `{ok:false, error, thread, url}`; assistant reports and waits |
 | intent | minor | Output formats contradict | upheld | §3: the `start`/`message` rows win |
 | intent | minor | Is the 120-second deadline enough | check-once-built | Check Once Built 1 |
+| mechanics | major | Restarted assistant can't tell a queued message from a lost one | downgraded (minor) | Worst case is a repeated message or an extra question to Collin, and §7 now asks Collin first; fixed anyway: `thread` returns `queued` |
+| mechanics | major | Failed launch returns no thread id | declined | Same as the intent finding this round, already fixed in §3 |
+| mechanics | minor | One response shape; press example wrong | upheld | §3: rows win (fixed above); example now "a press's outcome" |
+| mechanics | minor | Sudo Decline by the assistant unattributed | upheld | Cut: the assistant may not press `sudo` cards |
 
 ## Implementation Tasks
 
