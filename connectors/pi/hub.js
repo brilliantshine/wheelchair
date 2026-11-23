@@ -1,5 +1,15 @@
 'use strict';
-const { textOf, unwrap, transcriptRows, isCodexHuman, itemAt, resetAt, toolDetail, resultText, foldResults, claudeReply, codexReply, renderTurn, isClaudeMidTurnHuman, hasPiEntry, piReport, kimiReport } = require('../hub-common');
+const { textOf, unwrap, transcriptRows, itemAt, resetAt, toolDetail, resultText, foldResults, renderTurn } = require('../hub-common');
+
+function hasPiEntry(raw, entryId) {
+  return transcriptRows(raw).some((row) => row.id === entryId && row.type === 'message' && row.message?.role === 'assistant');
+}
+
+function piReport(raw, entryId) {
+  if (entryId == null) return '';
+  const row = transcriptRows(raw).find((item) => item.id === entryId && item.type === 'message' && item.message?.role === 'assistant');
+  return row ? textOf(row.message.content) : '';
+}
 
 function parsePi(raw, thread, sessionName) {
   resetAt();
