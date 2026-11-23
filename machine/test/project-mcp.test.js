@@ -8,8 +8,8 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { makeTemp } = require('../../test-support/run-dir');
 const { readProjectMcp, TOOL_ROLES } = require('../lib/project-mcp');
-const claude = require('../adapters/claude');
-const agy = require('../adapters/agy');
+const claude = require('../../connectors/claude/machine.js');
+const agy = require('../../connectors/agy/machine.js');
 const { MachineService } = require('../service');
 
 const session = { name: 'wc-test-worker', cli_session_id: 'id', permission_mode: 'auto' };

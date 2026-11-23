@@ -20,7 +20,7 @@ test('Pi aside launches with complete fork and resume argument lists', async () 
       await fs.writeFile(log, '[]'); await store.start(input);
       for (let n = 0; n < 15 && store.get(input.turn_id).state === 'running'; n++) await sleep(1000);
       assert.equal(store.get(input.turn_id).state, 'ok');
-      assert.deepEqual(JSON.parse(await fs.readFile(log, 'utf8')), ['--provider', 'openrouter', '--model', 'vendor/model', '--mode', 'json', '-p', ...(mode === 'fork' ? ['--fork', input.from, '--session-id', input.new_id] : ['--session', input.from]), '--append-system-prompt', pointer, '--no-extensions', '--thinking', 'high', '--tools', access === 'full' ? 'read,bash,edit,write,grep,find,ls' : 'read,grep,find,ls', ...(access === 'full' ? [] : ['-e', path.resolve(__dirname, '../adapters/pi-guard.js')])]);
+      assert.deepEqual(JSON.parse(await fs.readFile(log, 'utf8')), ['--provider', 'openrouter', '--model', 'vendor/model', '--mode', 'json', '-p', ...(mode === 'fork' ? ['--fork', input.from, '--session-id', input.new_id] : ['--session', input.from]), '--append-system-prompt', pointer, '--no-extensions', '--thinking', 'high', '--tools', access === 'full' ? 'read,bash,edit,write,grep,find,ls' : 'read,grep,find,ls', ...(access === 'full' ? [] : ['-e', path.resolve(__dirname, '../../connectors/pi/guard.js')])]);
       await store.writes;
     }
   } finally { if (previous.PI_ARG_LOG === undefined) delete process.env.PI_ARG_LOG; else process.env.PI_ARG_LOG = previous.PI_ARG_LOG; process.env.PATH = previous.PATH; }

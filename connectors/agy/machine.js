@@ -3,8 +3,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const c = require('./common');
-const { DUPLICATE_HEADERS, serverLabel } = require('../lib/project-mcp');
+const c = require('../common');
+const { DUPLICATE_HEADERS, serverLabel } = require('../../machine/lib/project-mcp');
 const onboarding = ['Choose your color scheme', 'Terms of Service & Data Use', 'Do you trust the contents of this project?', 'Requesting permission for:'];
 module.exports = {
   provider: 'gemini', loginEnv: () => ({}), sessionNameEnv: true,
@@ -87,7 +87,6 @@ module.exports = {
     if (session.agy_conversation_id !== event.conversation_id) return { ignored: true };
     return {};
   },
-  usageFrom() { return null; },
   loginCommand() { return ['agy']; },
   loginCwd(stateDir) { const dir = path.join(stateDir, 'agy-login'); fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); return dir; },
   loginPrompt(pane) {

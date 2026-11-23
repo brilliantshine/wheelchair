@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const adapters = Object.fromEntries(['claude', 'codex', 'agy'].map(name => [name, require(`../adapters/${name}`)]));
+const adapters = Object.fromEntries(['claude', 'codex', 'agy'].map(name => [name, require('../../connectors').machine(name)]));
 const http = url => ({ type: 'http', url });
 // The shared contract (D17, main's shape): an own-keys object; a value replaces, null withholds.
 const map = pairs => Object.assign(Object.create(null), Object.fromEntries(pairs));

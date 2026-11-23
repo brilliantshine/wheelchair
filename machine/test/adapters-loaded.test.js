@@ -2,7 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { makeTempSync } = require('../../test-support/run-dir');
-const adapters = Object.fromEntries(['claude', 'codex', 'agy', 'pi', 'kimi'].map(name => [name, require(`../adapters/${name}`)]));
+const connectors = require('../../connectors');
+const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
 const servers = {
   win: { command: '/custom/c/Tools/tool.exe' },
   linux: { type: 'stdio', command: '/usr/bin/tool' },

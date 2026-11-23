@@ -3,8 +3,9 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
-const adapters = require('../adapters');
-const root = require('../adapters/common').root;
+const connectors = require('../../connectors');
+const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
+const root = require('../../connectors/common').root;
 const last = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 const uuid = x => typeof x === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
 const linuxProc = {

@@ -3,8 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
-const { classify } = require('../lib/steps');
-const c = require('./common');
+const { classify } = require('../../machine/lib/steps');
+const c = require('../common');
 const home = dir => path.resolve(dir || path.join(os.homedir(), '.pi/agent'));
 const redact = value => String(value).replace(/sk-or-[A-Za-z0-9_-]+/g, '[redacted key]');
 function redactEvent(value) {
@@ -54,14 +54,14 @@ module.exports = {
   },
   command(input, session, worktree, context) {
     const extensionPath = path.join(context.stateDir, 'settings', `${session.name}-pi.js`);
-    const template = fs.readFileSync(path.join(__dirname, 'pi-extension.js'), 'utf8');
+    const template = fs.readFileSync(path.join(__dirname, 'extension.js'), 'utf8');
     const extension = template.replace('HOOK_PATH', JSON.stringify(path.join(c.root, 'machine/hook.sh'))).replace('SESSION_NAME', JSON.stringify(session.name));
     fs.mkdirSync(path.dirname(extensionPath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(extensionPath, extension, { mode: 0o600 });
     return { loaded: [], ...(context.tools && context.mcp?.names.length ? { warnings: [{ names: [...context.mcp.names], text: "project tools aren't supported on Pi yet; this agent runs without them" }] } : {}), argv: [resolveCli(), '--provider', 'openrouter', '--model', input.model || 'openrouter/auto', '--session-id', session.cli_session_id, '--approve', ...(session.effort ? ['--thinking', session.effort] : []), '-e', extensionPath, '--append-system-prompt', context.promptPath, ...(input.role === 'reviewer' ? ['--tools', 'read,grep,find,ls'] : [])] };
   },
   asideArgv(i, { prompt }) {
-    return [resolveCli(), '--provider', 'openrouter', '--model', i.model, '--mode', 'json', '-p', ...(i.mode === 'fork' ? ['--fork', i.from, '--session-id', i.new_id] : ['--session', i.from]), '--append-system-prompt', prompt, '--no-extensions', ...(i.effort ? ['--thinking', i.effort] : []), '--tools', i.access === 'full' ? 'read,bash,edit,write,grep,find,ls' : 'read,grep,find,ls', ...(i.access === 'full' ? [] : ['-e', path.join(__dirname, 'pi-guard.js')])];
+    return [resolveCli(), '--provider', 'openrouter', '--model', i.model, '--mode', 'json', '-p', ...(i.mode === 'fork' ? ['--fork', i.from, '--session-id', i.new_id] : ['--session', i.from]), '--append-system-prompt', prompt, '--no-extensions', ...(i.effort ? ['--thinking', i.effort] : []), '--tools', i.access === 'full' ? 'read,bash,edit,write,grep,find,ls' : 'read,grep,find,ls', ...(i.access === 'full' ? [] : ['-e', path.join(__dirname, 'guard.js')])];
   },
   firstMessage(input) { return input.brief || input.first_message || ''; },
   readyText(session, pane) {
@@ -71,7 +71,7 @@ module.exports = {
       return match && !lines.slice(index + 1).some(later => later.includes(`${match[1]} installed to `) || later.includes(`Failed to download ${match[1]}:`));
     })) return false;
     return pane.includes('escape interrupt') && pane.includes('ctrl+c/ctrl+d clear/exit') && !pane.includes('Trust project folder?') && /─{3,}/.test(pane) && /•\s*\S+/.test(pane) && !/Working\s*[─-]/.test(pane); },
-  answerPrompts() { return null; }, promptText() { return false; }, usageFrom() { return null; },
+  answerPrompts() { return null; }, promptText() { return false; },
   async findTranscript(session, dir) {
     const walk = async root => { for (const entry of await fs.promises.readdir(root, { withFileTypes: true }).catch(() => [])) { const file = path.join(root, entry.name); if (entry.isDirectory()) { const found = await walk(file); if (found) return found; } else if (entry.isFile() && entry.name.endsWith(`_${session.cli_session_id}.jsonl`)) return file; } return null; };
     return walk(path.join(home(dir), 'sessions'));

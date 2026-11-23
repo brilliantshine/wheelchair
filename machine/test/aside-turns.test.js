@@ -10,7 +10,7 @@ const crypto = require('node:crypto');
 const { AsideTurns } = require('../lib/aside-turns');
 const { MachineService } = require('../service');
 const { makeTemp, trackChild, onCleanup } = require('../../test-support/run-dir');
-const root = require('../adapters/common').root;
+const root = require('../../connectors/common').root;
 const uuid = () => crypto.randomUUID();
 const atomic = async (file, data) => { const temp = file + '.tmp'; await fsp.writeFile(temp, data); await fsp.rename(temp, file); };
 const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -176,7 +176,7 @@ else msg('stop','answer sk-or-secret');
     let [i,t] = await run({}); assert.equal(t.state,'ok'); assert.equal(t.conversation_id,i.new_id); assert.equal(t.reply,'answer [redacted key]');
     let records = () => fs.readFileSync(log,'utf8').trim().split('\n').map(JSON.parse); let args = records().at(-1).a;
     assert.deepEqual(args.slice(0,11), ['--provider','openrouter','--model',i.model,'--mode','json','-p','--fork',i.from,'--session-id',i.new_id]);
-    assert.equal(args[args.indexOf('--thinking')+1], 'high'); assert.equal(args[args.indexOf('--tools')+1], 'read,grep,find,ls'); assert.equal(args[args.indexOf('-e')+1],path.join(__dirname,'../adapters/pi-guard.js')); assert.ok(fs.existsSync(args[args.indexOf('-e')+1]));
+    assert.equal(args[args.indexOf('--thinking')+1], 'high'); assert.equal(args[args.indexOf('--tools')+1], 'read,grep,find,ls'); assert.equal(args[args.indexOf('-e')+1],path.join(__dirname,'../../connectors/pi/guard.js')); assert.ok(fs.existsSync(args[args.indexOf('-e')+1]));
     for (const access of ['read-only','full']) { [i,t] = await run({ mode:'resume', from:base.new_id, access }); assert.equal(t.conversation_id,base.new_id); args=records().at(-1).a; assert.equal(args[args.indexOf('--session')+1],base.new_id); assert.equal(args[args.indexOf('--tools')+1],access==='full'?'read,bash,edit,write,grep,find,ls':'read,grep,find,ls'); assert.equal(args.includes('-e'),access!=='full'); }
     [,t]=await run({prompt:'SPLIT'}); assert.equal(t.state,'ok'); assert.equal(t.reply,'café');
     for (const prompt of ['PREHEADER','PREHEADER KEY']) { [,t]=await run({prompt}); assert.equal(t.state,'failed'); assert.match(t.error,/Error: 429 rate limit exceeded/); assert.equal(t.limit,true); assert.ok(!JSON.stringify(t).includes('sk-or-')); }

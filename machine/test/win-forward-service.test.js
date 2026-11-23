@@ -48,7 +48,7 @@ test('status route checks only eligible tools without creating forwards', async 
 const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
-const agy = require('../adapters/agy');
+const agy = require('../../connectors/agy/machine.js');
 const { createWinForward } = require('../lib/win-forward');
 
 async function route(service, endpoint, input) {

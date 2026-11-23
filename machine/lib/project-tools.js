@@ -4,7 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { isDeepStrictEqual } = require('node:util');
 const { entryReason, checkDocumentText } = require('./project-mcp');
-const { codexEntryReason, codexOverrides } = require('../adapters/codex');
+const { codexEntryReason, codexOverrides } = require('../../connectors').machine('codex');
 const { KEY_NAME, reservedNames, isReserved, keyReferences, projectIdentity, readKeyStore, writeKeyStore } = require('./project-keys');
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const reason = r => (r.stderr || r.stdout || 'command failed').trim();

@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { makeTempSync } = require('../../test-support/run-dir');
 const { MachineService } = require('../service');
-const kimi = require('../adapters/kimi');
+const kimi = require('../../connectors/kimi/machine.js');
 function setup() {
   const root = makeTempSync('kimi-turns-');
   const machine = Object.create(MachineService.prototype);

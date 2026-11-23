@@ -55,7 +55,7 @@ test('session launcher passes only selected keys outside recorded commands', asy
   const instance = new MachineService({ win: noWsl, stateDir: state, host: '127.0.0.1', port: 0 });
   const writeFile = fs.writeFile; const modes = [];
   fs.writeFile = async (...args) => { const result = await writeFile(...args); if (String(args[0]).endsWith('.json') && String(args[0]).includes('session-env')) modes.push((await fs.stat(args[0])).mode & 0o777); return result; };
-  const agy = require('../adapters/agy'), prepare = agy.prepare; agy.prepare = () => {};
+  const agy = require('../../connectors/agy/machine.js'), prepare = agy.prepare; agy.prepare = () => {};
   try {
     for (const [role, cli, id] of [['worker', 'claude', 'one'], ['worker', 'codex', 'two'], ['reviewer', 'claude', 'three'], ['worker', 'agy', 'four']]) {
       const session = await instance.start({ role, cli, thread_id: id, token: id, worktree: repo, name: `wc-${id}-${role}` });
