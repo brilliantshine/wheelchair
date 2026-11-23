@@ -7,12 +7,12 @@
 // settings has modelPattern, modelPlaceholder, cliLabel, vendor, setupUrl,
 // permissionMode, permissionChoices, accountWarning, modelHeadsUp, signInKind,
 // reviewFamily, plans, weights, reportedPlans, oldPlanWeights, modelError,
-// familyHint and accountPolicy. models has
+// familyHint, accountPolicy and optional scoutAgentTool, monoModelNames and keyPrompt. models has
 // pins (slot -> { model, effort? }), format, efforts, hubPattern, slotAliases and
-// effortError. placement has workerRank, leadDefault, seenByDefault,
+// effortError and optional familyCommand and bareTierSet. placement has workerRank, leadDefault, seenByDefault,
 // addOnMigration and appendWhenRequested. report.useHookText, stopWhenEnded,
 // optional asideParentField, hook.payload and hook.sessionFromEnv, recoverRank
-// and recoverFallback carry the remaining dispatch data. Nullable values mean
+// recoverFallback and usage.showWarning, usage.probeWhileLive and usage.tryEveryMachine and usage.defaultProblem carry the remaining dispatch data. Nullable values mean
 // the option does not apply; omitted fields are optional.
 const REQUIRED = { machine: ['command', 'firstMessage', 'readyText', 'answerPrompts', 'findTranscript', 'loginEnv', 'seed', 'loginCommand', 'parseLogin', 'loginStatus'], hub: ['parseChat', 'readReport'] };
 const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv'], versionCheck: ['checkVersion', 'versionStatus'], steps: ['readSteps'] };
@@ -34,12 +34,12 @@ function validateManifest(m) {
   for (const f of ['capabilities','install','settings','models','models.pins','placement']) check(f,obj);
   for (const cap of Object.keys(CAPABILITIES)) check(`capabilities.${cap}`,bool);
   check('models.efforts',v=>arr(v)&&v.every(str)); check('placement.workerRank',v=>v===null||typeof v==='number');
-  for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested']) check(f,bool,false);
+  for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested','models.familyCommand','models.bareTierSet','settings.scoutAgentTool','usage.showWarning','usage.probeWhileLive','usage.tryEveryMachine','settings.monoModelNames','usage.defaultProblem']) check(f,bool,false);
   for (const f of ['shortName','asideParentField']) check(f,str,false);
   check('login.killTarget',v=>['pane','session','name'].includes(v),false);
   check('install.lookup',v=>['path','absolute','fallback'].includes(v));
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);
-  for (const f of ['install.label','install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError']) check(f,str,false);
+  for (const f of ['install.label','install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt']) check(f,str,false);
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
   for (const f of ['settings.modelHeadsUp','settings.reviewFamily']) check(f,bool,false);
   for (const f of ['settings.permissionChoices','settings.plans']) check(f,arr,false);

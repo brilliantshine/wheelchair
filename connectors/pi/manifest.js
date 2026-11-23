@@ -1,5 +1,6 @@
 'use strict';
 module.exports = {
+  "usage": { "showWarning": true },
   "login": { "killTarget": "pane" },
   "cli": "pi",
   "provider": "openrouter",
@@ -34,6 +35,8 @@ module.exports = {
     "sensitivity": false
   },
   "settings": {
+    "monoModelNames": true,
+    "keyPrompt": "Paste your OpenRouter key",
     "modelPattern": "^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$",
     "modelPlaceholder": "model-name",
     "cliLabel": "Pi",

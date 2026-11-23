@@ -33,6 +33,7 @@ module.exports = {
     "sensitivity": true
   },
   "settings": {
+    "scoutAgentTool": true,
     "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
     "modelPlaceholder": "model-name",
     "cliLabel": "Claude Code",
@@ -84,6 +85,7 @@ module.exports = {
     "accountPolicy": null
   },
   "models": {
+    "familyCommand": true,
     "pins": {
       "light": {
         "model": "claude-haiku-5-5"

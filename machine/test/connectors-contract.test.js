@@ -24,6 +24,12 @@ test('contract rejects missing and inconsistent members and fields', () => {
   const missing = structuredClone(manifests[0]); delete missing.models.format; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 'pattern'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);
+  const badFamily = structuredClone(manifests[0]); badFamily.models.familyCommand = 'yes'; assert.throws(() => contract.validateManifest(badFamily), /models.familyCommand/);
+  const badBare = structuredClone(manifests[0]); badBare.models.bareTierSet = 'yes'; assert.throws(() => contract.validateManifest(badBare), /models.bareTierSet/);
+  const badScout = structuredClone(manifests[0]); badScout.settings.scoutAgentTool = 'yes'; assert.throws(() => contract.validateManifest(badScout), /settings.scoutAgentTool/);
+  const badWarning = structuredClone(manifests[0]); badWarning.usage = { showWarning: 'yes' }; assert.throws(() => contract.validateManifest(badWarning), /usage.showWarning/);
+  for (const field of ['probeWhileLive', 'tryEveryMachine', 'defaultProblem']) { const bad = structuredClone(manifests[0]); bad.usage = { [field]: 'yes' }; assert.throws(() => contract.validateManifest(bad), new RegExp(`usage.${field}`)); }
+  const badPage = structuredClone(manifests[0]); badPage.settings.monoModelNames = 'yes'; assert.throws(() => contract.validateManifest(badPage), /settings.monoModelNames/); delete badPage.settings.monoModelNames; badPage.settings.keyPrompt = 1; assert.throws(() => contract.validateManifest(badPage), /settings.keyPrompt/);
   const badFlag = structuredClone(manifests[0]); badFlag.joinPaneLines = 'yes'; assert.throws(() => contract.validateManifest(badFlag), /joinPaneLines/);
   const badPreview = structuredClone(manifests[0]); badPreview.stylePreview = 'yes'; assert.throws(() => contract.validateManifest(badPreview), /stylePreview/);
   const previews = manifests.map(m => ({ ...m, stylePreview: true })); assert.throws(() => contract.validateRegistry(previews), /stylePreview/);

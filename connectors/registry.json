@@ -34,6 +34,7 @@
         "sensitivity": true
       },
       "settings": {
+        "scoutAgentTool": true,
         "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
         "modelPlaceholder": "model-name",
         "cliLabel": "Claude Code",
@@ -85,6 +86,7 @@
         "accountPolicy": null
       },
       "models": {
+        "familyCommand": true,
         "pins": {
           "light": {
             "model": "claude-haiku-5-5"
@@ -173,6 +175,7 @@
         "sensitivity": true
       },
       "settings": {
+        "monoModelNames": true,
         "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
         "modelPlaceholder": "model-name",
         "cliLabel": "Codex",
@@ -238,6 +241,7 @@
         "accountPolicy": null
       },
       "models": {
+        "bareTierSet": true,
         "pins": {
           "light": {
             "model": "gpt-6-luna"
@@ -320,6 +324,7 @@
         "sensitivity": false
       },
       "settings": {
+        "monoModelNames": true,
         "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
         "modelPlaceholder": "model-name",
         "cliLabel": "Antigravity CLI",
@@ -417,6 +422,11 @@
       "recoverFallback": false
     },
     {
+      "usage": {
+        "probeWhileLive": true,
+        "tryEveryMachine": true,
+        "defaultProblem": true
+      },
       "login": {
         "killTarget": "session"
       },
@@ -453,6 +463,7 @@
         "sensitivity": false
       },
       "settings": {
+        "monoModelNames": true,
         "modelPattern": "^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$",
         "modelPlaceholder": "model-name",
         "cliLabel": "Kimi CLI",
@@ -530,6 +541,9 @@
       "recoverFallback": false
     },
     {
+      "usage": {
+        "showWarning": true
+      },
       "login": {
         "killTarget": "pane"
       },
@@ -566,6 +580,8 @@
         "sensitivity": false
       },
       "settings": {
+        "monoModelNames": true,
+        "keyPrompt": "Paste your OpenRouter key",
         "modelPattern": "^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$",
         "modelPlaceholder": "model-name",
         "cliLabel": "Pi",

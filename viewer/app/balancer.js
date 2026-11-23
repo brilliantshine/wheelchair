@@ -1,5 +1,6 @@
 'use strict';
 const path = require('node:path');
+const connectors = require('../../connectors');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const settingsStore = require('./settings.js');
@@ -56,7 +57,7 @@ async function chooseSwitch(hub, thread, target) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const account = usage.rank(accounts, readings, machines, settings, machineName, now, last).find(a => a.next);
     if (!account) return null;
-    if (provider !== 'gpt') return { account };
+    if (!connectors.byProvider(provider)?.capabilities.preflight) return { account };
     const dir = account.id === `default-${provider}` ? null : `~/.wheelchair/accounts/${account.id}`;
     try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir }); return { account }; }
     catch { if (machines[machineName]) machines[machineName].accounts[account.id] = false; }
@@ -94,7 +95,7 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   }
   const available = {};
   const margin = {};
-  for (const p of provider === 'openrouter' && !order.includes(provider) ? [...order, provider] : order) {
+  for (const p of connectors.byProvider(provider)?.placement.appendWhenRequested && !order.includes(provider) ? [...order, provider] : order) {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, slot]); } catch (e) { if (e.code === 3) continue; throw e; }
     const accounts = providerAccounts(settings, threads, p);
     margin[p] = heldBack(settings, reserved, role, p, accounts, readings, now);
