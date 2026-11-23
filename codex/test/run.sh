@@ -6,6 +6,8 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 model=${MODEL_SH:-"$repo/codex/model.sh"}
 preflight=${PREFLIGHT_SH:-"$repo/codex/preflight.sh"}
 fixture=$(mktemp -d)
+# Never ask the real Antigravity CLI for its models; the agy cases below point this at a fake.
+export WHEELCHAIR_AGY=
 trap 'rm -rf "$fixture"' EXIT
 trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 passes=0
@@ -325,6 +327,22 @@ output=$(WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" WHEELCHAIR_K
 assert 'show JSON lists Kimi aliases from the Kimi config' json_assert 'import json,sys; assert json.load(sys.stdin)["kimi_visible"] == [{"value":"kimi-code/k3","label":"K3 (kimi-code/k3)"},{"value":"kimi-code/k3.1-pro","label":"kimi-code/k3.1-pro"}]'
 output=$(WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" WHEELCHAIR_KIMI_CONFIG="$case_dir/missing.toml" "$model" show --json)
 assert 'show JSON gives no Kimi aliases without a Kimi config' json_assert 'import json,sys; assert json.load(sys.stdin)["kimi_visible"] == []'
+
+# show lists Antigravity's models from `agy models`, caches them beside the pins, and keeps the cache when a listing fails.
+new_case
+fake_agy=$case_dir/agy
+printf '%s\n' '#!/bin/sh' 'echo "Fetching available models..." >&2' 'printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\nclaude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)\nBad Model\tx\nnone\tNone\ngpt-oss-120b\n"' > "$fake_agy"
+chmod +x "$fake_agy"
+output=$(WHEELCHAIR_AGY="$fake_agy" WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" "$model" show --json)
+assert 'show JSON lists Antigravity models from agy models' json_assert 'import json,sys; assert json.load(sys.stdin)["agy_visible"] == [{"value":"gemini-3.8-flash-high","label":"Gemini 3.8 Flash (High) · gemini-3.8-flash-high"},{"value":"claude-opus-4-6-thinking","label":"Claude Opus 4.6 (Thinking) · claude-opus-4-6-thinking"},{"value":"gpt-oss-120b","label":"gpt-oss-120b"}]'
+assert 'show caches the Antigravity list beside the pins' test -s "$case_dir/agy-models.json"
+printf '%s\n' '#!/bin/sh' 'exit 1' > "$fake_agy"
+python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["at"]=0; json.dump(d,open(p,"w"))' "$case_dir/agy-models.json"
+output=$(WHEELCHAIR_AGY="$fake_agy" WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" "$model" show --json)
+assert 'show keeps the stale Antigravity list when agy models fails' json_assert 'import json,sys; assert [m["value"] for m in json.load(sys.stdin)["agy_visible"]] == ["gemini-3.8-flash-high","claude-opus-4-6-thinking","gpt-oss-120b"]'
+new_case
+output=$(WHEELCHAIR_AGY="$case_dir/missing" WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" "$model" show --json)
+assert 'show gives no Antigravity models without the CLI' json_assert 'import json,sys; assert json.load(sys.stdin)["agy_visible"] == []'
 
 # Legacy behavior coverage ported to the new tier names and models-file format.
 new_case

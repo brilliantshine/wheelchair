@@ -50,7 +50,7 @@ test('Kimi through the Settings API: accounts, preferences, effort and slashed m
     const withEffort = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'kimi', slot: 'heavy', model: 'kimi-code/k3-custom', effort: 'max' } });
     assert.equal(withEffort.status, 400);
     assert.equal(withEffort.body.detail, 'Kimi Code has no effort setting');
-    const shown = JSON.parse(execFileSync(MODEL_SH, ['show', '--json'], { env: { ...process.env, WHEELCHAIR_MODELS: context.models, WHEELCHAIR_MODELS_CACHE: context.modelsCache }, encoding: 'utf8' }));
+    const shown = JSON.parse(execFileSync(MODEL_SH, ['show', '--json'], { env: { ...process.env, WHEELCHAIR_AGY: '', WHEELCHAIR_MODELS: context.models, WHEELCHAIR_MODELS_CACHE: context.modelsCache }, encoding: 'utf8' }));
     assert.deepEqual(shown.kimi.heavy, { model: 'kimi-code/k3-custom', effort: null });
     assert.equal(shown.malformed, false);
     assert.equal((await api(context, '/settings')).body.models.kimi.heavy.model, 'kimi-code/k3-custom');
