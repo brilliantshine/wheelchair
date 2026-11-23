@@ -22,9 +22,9 @@ verified-by: []
 | S2 installer optional line, only when required tools present, Linux only, exit status unchanged, bookmark last | this run | install.sh:528-533 (`elif`) | install/test/run.sh:756,768 (absent with missing tools), 771-778 (`screen_present`: hint, no warning, status 0, bookmark last), 779-787 (`screen_wm`: no `screens:`), `screen_darwin` unchanged |
 | S3 gate: `allowOpenbox` instance property default true, and `openboxInstalled` | this run | machine/lib/screen.js:40, :177 | screen.test.js:444 (`disabled openbox ...`), :445 (`openbox not on PATH ...`); fixture sets `allowOpenbox = false` at screen.test.js:64 |
 | S3 fixed rc.xml: dir 0700, file 0600, empty `<keyboard/>`, Focus+Raise Press bindings for Left/Middle/Right in Client and Frame only, no menu/Root/Execute/ShowMenu, `<application class="*"><decor>no</decor>` | this run | machine/lib/screen.js:178-182 | screen.test.js:420-437 (modes, contexts exactly `[Client, Frame]`, actions exactly 6×Focus,Raise, no Execute/ShowMenu/menu/Root, decor no) |
-| S3 spawn: `systemd-run` + `scopeArgs(screen,'wm')`, `openbox --sm-disable --config-file <rc.xml>`, env DISPLAY/XAUTHORITY + XDG_CONFIG_HOME/XDG_CONFIG_DIRS/HOME = screen dir, output to `wm.log` 0600 append, exit/error listeners | this run | machine/lib/screen.js:183-188 | screen.test.js:420-437 (args, home/xdgHome/xdgDirs equal dir, `-wm.scope` systemd-run call) |
-| S3 readiness: 5 s deadline from spawn, 100 ms poll, probe timeout `min(1000, left)`, exact `_OB_CONFIG_FILE(UTF8_STRING) = "<rc.xml>"`, not exited | this run | machine/lib/screen.js:189-193 | screen.test.js:420 (ready), :439 (missing and wrong path → not ready, start < 7 s) |
-| S3 not ready: SIGKILL child if running, stop `wm` scope immediately, log, carry on with null | this run | machine/lib/screen.js:195-198 | screen.test.js:439 (wm scope stopped via systemctl, `window_manager` null), :442 (openbox exits at once → null, screen runs) |
+| S3 spawn: `systemd-run` + `scopeArgs(screen,'wm')`, `openbox --sm-disable --config-file <rc.xml>`, env DISPLAY/XAUTHORITY + XDG_CONFIG_HOME/XDG_CONFIG_DIRS/HOME = screen dir, output to `wm.log` 0600 append, exit/error listeners | this run | machine/lib/screen.js:183-187 | screen.test.js:420-437 (args, home/xdgHome/xdgDirs equal dir, `-wm.scope` systemd-run call) |
+| S3 readiness: 5 s deadline from spawn, 100 ms poll, probe timeout `min(1000, left)`, exact `_OB_CONFIG_FILE(UTF8_STRING) = "<rc.xml>"`, not exited | this run | machine/lib/screen.js:188-193 | screen.test.js:420 (ready), :439 (missing and wrong path → not ready, start < 7 s) |
+| S3 not ready: SIGKILL child if running, stop `wm` scope immediately, log, carry on with null | this run | machine/lib/screen.js:195, :196-199 | screen.test.js:439 (wm scope stopped via systemctl, `window_manager` null), :442 (openbox exits at once → null, screen runs) |
 | S3 fence before `running` save; "screen replaced" catch branch stops `wm` scope | this run | machine/lib/screen.js:201-202, :207 | screen.test.js:443 (session stopped during readiness → 409, not saved running) |
 | S3 `load()` default, `reset()` and `start()` set `window_manager` null; `status` reports it | this run | machine/lib/screen.js:57, :62, :148, :278-280 | screen.test.js:420, :439, :442, :444, :445 (status checks) |
 | S4 `ctx.openbox` in launch and execute | this run | machine/lib/screen.js:219, :284 | screen.test.js:420 (run autofocus and windows go through openbox path) |
@@ -55,7 +55,7 @@ Run on the feature branch after both merges (commit f61fc651), on hearth.
 # fail 18
 # skipped 1
 ```
-All 18 failures are in `machine/test/win.test.js` / `win-tool-ready.test.js` (Windows bridge; `spawnSync wslpath ENOENT`, hearth has no `wslpath`). The same 18 fail on the feature branch before this build (checked at 4c8571ed's parent state: `node --test machine/test/win.test.js machine/test/win-tool-ready.test.js` → `# fail 18`). The skip is `Windows relay live # SKIP skipped: not WSL`. Every screen test passes, including:
+All 18 failures are in `machine/test/win.test.js` / `win-tool-ready.test.js` (Windows bridge; `spawnSync wslpath ENOENT`, hearth has no `wslpath`). The same 18 fail on the feature branch before this build (checked on the feature branch at ac8a0a5c, before T1: `node --test machine/test/win.test.js machine/test/win-tool-ready.test.js` → `# fail 18`). The skip is `Windows relay live # SKIP skipped: not WSL`. Every screen test passes, including:
 ```
 ok 322 - optional window manager detection requires both tools
 ok 323 - openbox starts with isolated click-only config and drives windows
@@ -75,7 +75,7 @@ PASS partially missing screen tools do not print optional window manager hint
 PASS Linux with screen tools prints optional window manager hint only
 PASS Linux with screen tools and openbox prints no screen message
 ```
-The one failure also fails on the feature branch before T2 (run alone at ac8a0a5c-era tree): the live wheelchair app on hearth writes into `~/.wheelchair` while the suite runs. It does not concern this change.
+The one failure also fails on the feature branch before T2 (run alone on the feature branch at 4c8571ed, before T2): the live wheelchair app on hearth writes into `~/.wheelchair` while the suite runs. It does not concern this change.
 
 `node --test viewer/test/*.test.js` — exit 0: `# tests 897 # pass 897 # fail 0`.
 
