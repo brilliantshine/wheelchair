@@ -6,7 +6,7 @@ const { createHash } = require('node:crypto');
 const { publicSession } = require('./sessions.js');
 
 const connectors = require('../../connectors');
-const { textOf, unwrap, stripStyleTrailer, cardBubble, hasPiEntry } = require('../../connectors/hub-common');
+const { textOf, unwrap, stripStyleTrailer, cardBubble } = require('../../connectors/hub-common');
 
 function transcriptItems(cli, raw, thread, sessionName) {
   const parser = connectors.manifest(cli) && connectors.hub(cli).parseChat;
@@ -163,4 +163,4 @@ async function chat(hub, id) {
   };
 }
 
-module.exports = { cardBubble, chat, hasPiEntry, lastAssistantText, sessionChatItems, sessionTranscript, stripStyleTrailer, textOf, transcriptItems, unwrap };
+module.exports = { cardBubble, chat, lastAssistantText, sessionChatItems, sessionTranscript, stripStyleTrailer, textOf, transcriptItems, unwrap };
