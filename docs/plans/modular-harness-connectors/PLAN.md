@@ -417,6 +417,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | Name-check guard misses unusual spellings: `adapters?.codex`, a property dot on the next line, a tool id after a nested array element, a backtick `require` path | Rare path: none appears in the code; the guard pins 32 of 33 ordinary S6 forms and lists its limits | verification-3 |
 | A connector exporting `turnPoller` as a non-function passes validation | Rare path: malformed member value | verification-3 |
 | `settings.permissionChoices: [null]` passes validation and breaks the Settings page | Rare path: malformed manifest data | verification-3 |
+| Name-check guard misses `kimi )` (space before the parenthesis) and `[[ codex == $cli ]]` (bare literal on the left) | Rare path: unusual spellings absent from the code | verification-5 |
 
 ## Check Once Built
 
@@ -679,3 +680,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-23 — R5 (worker-26) closed K1–K5 (scout read: no behaviour change for the five tools); viewer 918/918 on its branch, machine run stalled (load). Fix-up R5b (light, `--replaces`, same branch): `launchExtras` spread first in `commandFor` so a connector cannot replace the service's own context fields; the K2 test stubs the login status instead of reading the host's Claude sign-in, and checks `problem` is cleared; the K3 test goes through `launchContext`.
 - 2026-11-23 — Deviation: R5 changed one char-test assertion's lookup path (`context.kimiExecutable` → `context.launchExtras.kimiExecutable`, `char-service-branches.test.js:175`); the expected values are unchanged, because the context now nests launch extras.
 - 2026-11-23 — R5 accepted with R5b (band: scout): K1–K5 closed; launch extras cannot replace service context fields; K2/K3 tests bite. R5b branch machine 731 tests, only the 18 known failures; merged head 13d264cd viewer 918/918, export and contract/guard clean. Verification attempt 5 started (claude + gpt).
+- 2026-11-23 — Verification attempt 5 (9fba590b): verifier-9 (claude) PASS, no gaps; verifier-10 (gpt) FAIL with five future-tool gaps. One rare path (guard spellings) to Accepted Risks; four fixes L1–L4 sent as R6 (light, gpt-6-luna, every change specified). REMEDIATION-5.md.
