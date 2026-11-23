@@ -558,15 +558,15 @@ class MachineService {
       if (!parsed) continue;
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
+      const recovered = connectors.list().filter(m => m.capabilities.recover).sort((a, b) => a.recoverRank - b.recoverRank).find(m => pane.ok && adapters[m.cli].recognizePane(pane.stdout)) || connectors.list().find(m => m.recoverFallback);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
-        cli: pane.ok && ((/^\s*(?:Ask When Needed|Never Ask)\b/im.test(pane.stdout) && /^\s*context:\s*\d+%/im.test(pane.stdout)) || (() => { const lines = pane.stdout.split(/\r?\n/).map(line => line.trim()); return lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line)); })()) ? 'kimi' : pane.ok && (pane.stdout.includes('escape interrupt') && pane.stdout.includes('ctrl+c/ctrl+d clear/exit') || /openrouter\/\S+\s*•\s*\S+/.test(pane.stdout)) ? 'pi' : pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
+        cli: recovered.cli,
         worktree: where.ok ? where.stdout.trim() : '', created_worktree: false, token: '', created_at: new Date().toISOString() };
-      if (this.sessions[name].cli === 'pi') this.sessions[name].end_reason = 'Lost track of this Pi session after a machine restart; restart it';
-      if (this.sessions[name].cli === 'kimi') this.sessions[name].end_reason = 'Lost track of this Kimi Code session after a machine restart; restart it';
+      if (recovered.capabilities.restartLoss) this.sessions[name].end_reason = adapters[recovered.cli].restartLossReason();
       changed = true;
     }
     if (changed) await this.persistSessions();
-    for (const session of Object.values(this.sessions)) if (session.cli === 'pi' && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
+    for (const session of Object.values(this.sessions)) if (connectors.manifest(session.cli)?.stopWhenEnded && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
   }
   async persistSessions() { await atomicWrite(this.sessionsPath, `${JSON.stringify(this.sessions, (key, value) => key === 'transcript_unsaved' ? undefined : value)}\n`); }
   log(error) { process.stderr.write(`machine: ${error.message || error}\n`); }
@@ -1095,7 +1095,7 @@ class MachineService {
     return false;
   }
   async pollKimiTurns() {
-    for (const session of Object.values(this.sessions)) if (session.cli === 'pi' && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
+    for (const session of Object.values(this.sessions)) if (connectors.manifest(session.cli)?.stopWhenEnded && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
     if (this.kimiPolling) return;
     this.kimiPolling = true;
     try {

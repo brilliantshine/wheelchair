@@ -16,6 +16,9 @@ function redactEvent(value) {
 function resolveCli() { const result = spawnSync('sh', ['-c', 'command -v pi'], { encoding: 'utf8' }); return result.status === 0 ? result.stdout.trim() || null : null; }
 const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
+  recognizePane: text => text.includes('escape interrupt') && text.includes('ctrl+c/ctrl+d clear/exit') || /openrouter\/\S+\s*•\s*\S+/.test(text),
+  restartLossReason: () => 'Lost track of this Pi session after a machine restart; restart it',
+
   asideProblem: check => check(),
   asideModel: /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/,
   asideNewId: true,

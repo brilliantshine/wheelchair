@@ -7,6 +7,8 @@ const c = require('../common');
 const { DUPLICATE_HEADERS, serverLabel } = require('../../machine/lib/project-mcp');
 const onboarding = ['Choose your color scheme', 'Terms of Service & Data Use', 'Do you trust the contents of this project?', 'Requesting permission for:'];
 module.exports = {
+  recognizePane: text => text.includes('Antigravity CLI'),
+
   stepVocabulary: require('../codex/machine').stepVocabulary,
   provider: 'gemini', loginEnv: () => ({}), sessionNameEnv: true,
   prepare() {

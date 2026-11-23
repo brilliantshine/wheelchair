@@ -103,6 +103,8 @@ function codexOverrides(mcp, { wsl = false, mount = '/mnt', replaceEntries = {} 
 }
 const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
+  recognizePane: text => text.includes('Codex'),
+
   asideMessage: (i, prompt, message) => i.mode === 'fork' ? `${prompt}\n\n${message}` : message,
   async asidePrepare(runChild, onSpawn) {
     const list = await runChild(['codex', 'mcp', 'list', '--json'], '', onSpawn);
