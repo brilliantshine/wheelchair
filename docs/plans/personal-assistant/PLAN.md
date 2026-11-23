@@ -14,11 +14,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: Agree the mockups
-- **Context:** The pinned thread and the pop-up are new visible surfaces. A designer drafts them.
-- **Options:** agree, or ask for changes.
-- **Recommendation:** n/a.
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -44,6 +39,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Whatever the assistant does in a thread is visible there and marked as done by the assistant (its messages to a lead show as a bubble "From your assistant"; its card presses say "by your assistant"). | Collin must be able to see why a lead acted, without the assistant reporting it. | defaulted |
 | 13 | The assistant acts on threads and projects only; changing Settings (models, accounts, project tools, auto-merge) is deferred to the follow-up. | Collin picked "Threads only, for now". | user |
 | 14 | The assistant speaks only when Collin writes to it; telling Collin about changes on its own is deferred. | Collin picked "Later, not now". | user |
+| 15 | Mockups agreed: mockup-threads, mockup-thread, mockup-popup, mockup-closed and mockup-thinking, each in -phone (390x844) and -desktop (1280x800) files under graphs/ (first and only version, commit face0aff). | Collin picked "Agree them". | user |
 
 ## Spec
 
