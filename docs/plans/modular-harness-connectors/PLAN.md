@@ -590,3 +590,4 @@ Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
 
 - 2026-11-22 — Build started. Sequence: T1 → T2 → (T3 ∥ T5 ∥ T6) → T4 → T7. T4 runs after T3 because both need manifests and contract.js; T5/T6 treat manifests as read-only.
+- 2026-11-22 — Machine-suite baseline at base commit c7fc1322 (scratch copy via git archive): 689 tests, 669 pass, 18 fail, all Windows-bridge copy tests that need `wslpath` (absent on hearth): tests 654, 655, 671-684, 687, 689 (`existing copy remains waiting until a post-start reconcile completes` … `restart recovery tracks a live lead and reconciles on stop`). These are not regressions; any other machine failure counts. Listed by name in COMPLETION.md.
