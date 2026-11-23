@@ -26,6 +26,10 @@ module.exports = {
     if (event.transcript_path) { event = { ...event }; delete event.transcript_path; }
     return event;
   },
+  startupCheck(session) {
+    if (!['starting', 'stuck'].includes(session.status) || session.end_reason) return null;
+    return 'Pi exited before it was ready' + module.exports.failureNote(session);
+  },
   failureNote(session) {
     const version = session.pi_version, status = module.exports.piVersionStatus(version, { logged_in: true });
     if (!status.warning) return '';

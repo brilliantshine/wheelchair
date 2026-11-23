@@ -1717,8 +1717,9 @@ class MachineService {
   }
   piVersionNote(version) { return Object.values(adapters).find(a => a.failureNote).failureNote({ pi_version: version }); }
   async piExitedBeforeReady(session) {
-    if (session.cli !== 'pi' || !['starting', 'stuck'].includes(session.status) || session.end_reason) return;
-    session.end_reason = 'Pi exited before it was ready' + this.piVersionNote(session.pi_version);
+    const reason = adapters[session.cli]?.startupCheck?.(session);
+    if (!reason) return;
+    session.end_reason = reason;
     await this.persistSessions();
   }
   async reconcilePiExits() {
