@@ -10,7 +10,8 @@ created: 2026-11-23
 ## What we're building
 
 A personal assistant agent that manages all of Collin's projects and can run full project
-leads. (Draft: being filled in through conversation.)
+leads. It acts for Collin, based on what Collin tells it to do. (Draft: being filled in
+through conversation.)
 
 ## Why — the problem
 
