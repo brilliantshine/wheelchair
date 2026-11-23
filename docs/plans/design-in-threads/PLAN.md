@@ -16,11 +16,6 @@ get buried as this file grows.
 
 Ordered by leverage; discussed one at a time.
 
-### Q2: How does a mockup show in the thread?
-- **Context:** HTML diagrams render live in a 340px-tall box; "Open full size" downloads the HTML instead of showing it (`viewer/pages/thread.css:207`, `viewer/pages/picture.js:61-75`). A phone screen mockup does not fit.
-- **Options:** (a) render the mockup HTML to a PNG on the machine (headless browser) and post it as an image; (b) show the HTML live in a phone-shaped frame, with full size showing it rather than downloading; (c) both.
-- **Recommendation:** (b), with PNG export as a fallback.
-
 ### Q3: How do build screenshots reach the thread?
 - **Context:** Workers already screenshot visible work and pass paths up; only the lead posts image cards, so screenshots arrive only if the lead relays them (`protocol/app/worker.md:45`, `protocol/app/sub-lead.md:179`).
 - **Options:** (a) let the sub-lead post image cards directly as each visible task finishes; (b) the lead relays each one; (c) one batch per build stage.
@@ -42,6 +37,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | The agreed mockup is a file in `docs/plans/<slug>/` that the Spec points to; workers build against the file, and a visible difference from it is a gap the verifier reports | Prose paraphrase of a design is where the 20-30% loss happens | defaulted |
 | 4 | User feedback on mockups is given in chat (no tap-to-comment on the picture) | Simplest; tap-to-comment is hardening | defaulted |
 | 5 | A new design agent role drafts and revises mockups; the lead starts it during planning, briefs it, and posts what it makes | Collin's pick: mockups get a focused agent and the lead stays free to talk | user |
+| 6 | Mockup frame size depends on what is being worked on: "it should depend on what you're working on" (Collin usually views wheelchair in a laptop browser) | Collin's answer; a phone app gets a phone-sized frame, a desktop web page a desktop-sized one | user |
+| 7 | Mockups show live (the HTML page itself, not a rendered picture), scaled to fit the viewer's screen; "Open full size" shows it instead of downloading | Works on every machine without a headless browser; Collin did not object to live, only to a fixed phone shape | defaulted |
 
 ## Spec
 
@@ -60,6 +57,11 @@ A Mermaid diagram of the flow belongs here, added at approval.
 
 - A new session role, `designer`. Only a lead may start it, during planning (before `approved`). It drafts and revises mockup files on the lead's brief, commits only those files, and reports each version to the lead with a `result`. It does not talk to the user and posts no shown cards; the lead posts the mockups.
 - The lead relays the user's chat feedback to it as `message`s while it is live, and stops it when the user has agreed the mockups or planning moves on.
+
+### How a mockup shows
+
+- A mockup file declares the device size it is designed for (for example 390x844 for a phone app, 1440x900 for a desktop web page), chosen by the lead from what the thread is building.
+- The thread shows the HTML page itself at that size, scaled down to fit the card's width with the whole frame visible (no inner scrolling at card size). "Open full size" shows it at its true size (scrolling if the viewer's window is smaller), never downloads it. The existing sandbox and no-scripts rules stay.
 
 ## Deferred
 
