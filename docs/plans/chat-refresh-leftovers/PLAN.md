@@ -1,6 +1,6 @@
 ---
 slug: chat-refresh-leftovers
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-22
 ---
 
@@ -186,6 +186,8 @@ one; after the server closes, the timer is cleared (e.g. stub `clearInterval` or
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | S1: hub chat cache keeps only parsed items (`sessionChatItems`) — tricky | `viewer/app/chat.js`, `viewer/test/app-chat.test.js`, `docs/plans/chat-refresh-leftovers/reports/T1.md` | standard (resolved at start) | — | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | not started |
+| T2 | S2 + S3: last-seen written at most once a minute; machine idle-hash sweep timer | `viewer/app/hub.js`, `viewer/test/app-hub.test.js`, `machine/service.js`, `machine/test/service.test.js`, `docs/plans/chat-refresh-leftovers/reports/T2.md` | standard (resolved at start) | — | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | not started |
 
 ## Log
 
