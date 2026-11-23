@@ -753,6 +753,7 @@ args[screen_missing]=--serve
 run_case screen_missing
 expected_screen_warning="screens: warning — missing Xvfb, xauth, mcookie, ffmpeg, xdotool, xwininfo, systemd-run; agents can't use screens until they're installed (Debian: sudo apt install xvfb xauth util-linux ffmpeg xdotool x11-utils systemd)"
 assert 'Linux screen warning lists missing tools and unique packages' bash -c '[[ $1 == *"$2"* ]]' _ "${output[screen_missing]}" "$expected_screen_warning"
+assert 'missing screen tools do not print optional window manager hint' bash -c '[[ $1 != *"screens: optional"* ]]' _ "${output[screen_missing]}"
 assert 'screen warning leaves bookmark last' last_line_is "${output[screen_missing]}" 'https://fixture.tailnet.ts.net/?token=fixture'
 assert 'screen warning leaves the exit status at 0' bash -c '[[ $1 == 0 ]]' _ "${status[screen_missing]}"
 new_case screen_partial
@@ -764,14 +765,26 @@ for tool in Xvfb xauth mcookie ffmpeg; do
 done
 run_case screen_partial
 assert 'Linux screen warning names only the missing tools and their packages' bash -c '[[ $1 == *"$2"* && $3 == 0 ]]' _ "${output[screen_partial]}" "screens: warning — missing xdotool, xwininfo, systemd-run; agents can't use screens until they're installed (Debian: sudo apt install xdotool x11-utils systemd)" "${status[screen_partial]}"
+assert 'partially missing screen tools do not print optional window manager hint' bash -c '[[ $1 != *"screens: optional"* ]]' _ "${output[screen_partial]}"
 new_case screen_present
 restricted_path[screen_present]=1
+args[screen_present]=--serve
 for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl; do
   printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[screen_present]}/$tool"
   chmod +x "${shim[screen_present]}/$tool"
 done
 run_case screen_present
-assert 'Linux with screen tools prints no screen warning' bash -c '[[ $1 != *"screens:"* && $2 == 0 ]]' _ "${output[screen_present]}" "${status[screen_present]}"
+assert 'Linux with screen tools prints optional window manager hint only' bash -c '[[ $1 == *"screens: optional — no window manager; for apps that need one: sudo apt install openbox"* && $1 != *"screens: warning"* && $2 == 0 ]]' _ "${output[screen_present]}" "${status[screen_present]}"
+assert 'optional screen hint leaves bookmark last' last_line_is "${output[screen_present]}" 'https://fixture.tailnet.ts.net/?token=fixture'
+new_case screen_wm
+restricted_path[screen_wm]=1
+args[screen_wm]=--serve
+for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl openbox xprop; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[screen_wm]}/$tool"
+  chmod +x "${shim[screen_wm]}/$tool"
+done
+run_case screen_wm
+assert 'Linux with screen tools and openbox prints no screen message' bash -c '[[ $1 != *"screens:"* && $2 == 0 ]]' _ "${output[screen_wm]}" "${status[screen_wm]}"
 case_platform=Darwin
 new_case screen_darwin
 restricted_path[screen_darwin]=1

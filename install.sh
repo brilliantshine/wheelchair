@@ -528,6 +528,8 @@ if [[ $(platform) == Linux ]]; then
   if (( ${#missing_tools[@]} )); then
     names=$(printf ', %s' "${missing_tools[@]}")
     printf "screens: warning — missing %s; agents can't use screens until they're installed (Debian: sudo apt install %s)\n" "${names:2}" "${missing_packages[*]}" >&2
+  elif ! command -v openbox >/dev/null 2>&1 || ! command -v xprop >/dev/null 2>&1; then
+    printf 'screens: optional — no window manager; for apps that need one: sudo apt install openbox\n' >&2
   fi
 fi
 
