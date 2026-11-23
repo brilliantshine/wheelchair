@@ -1,0 +1,14 @@
+{
+  "form": "side-by-side",
+  "explanation": "What adding a new tool would touch under each option. Both options also need one entry in the shared tool list; the conformance test applies to both.",
+  "columns": [
+    {"title": "A: one folder per tool", "items": [
+      "connectors/newtool/ holds everything: launching, login, turn end, transcript, chat parsing, install recipe, settings details, model defaults",
+      "Add one line registering the folder",
+      "Bigger move now: every existing tool's pieces are gathered into its folder"]},
+    {"title": "B: two matching halves", "items": [
+      "machine/adapters/newtool.js for launching, login, turn end, transcript",
+      "A matching app-side file for chat parsing, settings details, model defaults",
+      "Smaller move now, but every new tool touches two places"]}
+  ]
+}
