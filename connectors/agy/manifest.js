@@ -39,6 +39,7 @@ module.exports = {
     "vendor": "Google",
     "setupUrl": "https://antigravity.google/cli",
     "permissionMode": "permission_mode",
+    "permissionName": "Antigravity",
     "permissionChoices": [
       [
         "auto",
