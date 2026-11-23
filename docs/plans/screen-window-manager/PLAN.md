@@ -178,6 +178,15 @@ On hearth with real tools, `bash machine/test/screen-live.sh` still passes. When
 
 ## Review Rounds
 
+### Round 1 — 2026-11-22
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 ## Implementation Tasks
