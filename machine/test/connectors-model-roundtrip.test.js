@@ -50,12 +50,17 @@ function roundTrip(tools) {
       read(tool.provider, slot, pin.model, pin.effort);
       read(other.provider, 'standard', sentinel, null);
     }
-    const effortSlot = slots.find(slot => tool.models.pins[slot]?.model !== 'none' && tool.models.pins[slot]);
-    const pin = tool.models.pins[effortSlot];
+    const effortSlot = slots.find(slot => tool.models.pins[slot]?.model !== 'none' && tool.models.pins[slot]) || slots.find(slot => tool.models.pins[slot]);
+    const defaultModel = tool.models.pins[effortSlot].model;
+    const effortModel = defaultModel === 'none' ? `${tool.provider}-roundtrip-model` : defaultModel;
+    if (defaultModel === 'none' && (!new RegExp(tool.models.format).test(effortModel) || !/^[a-z0-9][a-z0-9._/:-]*$/.test(effortModel))) {
+      assert.fail(`${tool.provider}: no candidate model ${effortModel} fits models.format and the pin-file rule; provide a sample model for the effort round trip`);
+    }
+    if (defaultModel === 'none') context = `${tool.provider}: effort loop uses generated sample model ${effortModel}`;
     for (const effort of tool.models.efforts) {
-      context = `${tool.provider} ${effortSlot} ${pin.model} @${effort}`;
-      run('set', tool.provider, effortSlot, pin.model, effort);
-      read(tool.provider, effortSlot, pin.model, effort);
+      context = `${tool.provider} ${effortSlot} ${effortModel} @${effort}`;
+      run('set', tool.provider, effortSlot, effortModel, effort);
+      read(tool.provider, effortSlot, effortModel, effort);
       read(other.provider, 'standard', sentinel, null);
     }
     // Exercise values accepted by a format without anchors through the write path.
@@ -88,6 +93,6 @@ test('sixth connector and none default round trip', { timeout: 120000 }, () => {
   const extra = structuredClone(connectors.list().find(t => t.provider === 'claude'));
   extra.provider = 'sixth'; extra.cli = 'sixth';
   roundTrip([...connectors.list(), extra]);
-  extra.models.pins.light = { model: 'none' };
+  for (const slot of ['light', 'standard', 'heavy', 'critical', 'lead']) extra.models.pins[slot] = { model: 'none' };
   roundTrip([...connectors.list(), extra]);
 });
