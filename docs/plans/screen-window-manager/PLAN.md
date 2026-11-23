@@ -258,7 +258,7 @@ screen works (it needs a window manager).
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | tricky — S1, S3, S4: detect openbox, start it with the fixed rc.xml and readiness wait, list/focus windows through it; fake-tool tests and live-test assertions | machine/lib/screen.js, machine/lib/screen-input.js, machine/test/screen.test.js, machine/test/screen-input.test.js, machine/test/screen-live.js, docs/plans/screen-window-manager/reports/T1.md | standard / gpt-6.1-terra | wc-dfe8d2b752bb-worker | bash machine/test/run.sh | done |
-| T2 | S2: approval card no-window-manager line and installer optional line, with tests (after T1, needs `openboxInstalled`); plus a no-openbox-on-PATH screen test | machine/service.js (approval warning block only), machine/test/screen-tools-warning.test.js, machine/test/screen.test.js (one appended test), install.sh, install/test/run.sh, docs/plans/screen-window-manager/reports/T2.md | light / gpt-6-luna | wc-dfe8d2b752bb-worker-2 | node --test machine/test/screen-tools-warning.test.js; bash install/test/run.sh | not started |
+| T2 | S2: approval card no-window-manager line and installer optional line, with tests (after T1, needs `openboxInstalled`); plus a no-openbox-on-PATH screen test | machine/service.js (approval warning block only), machine/test/screen-tools-warning.test.js, machine/test/screen.test.js (one appended test), install.sh, install/test/run.sh, docs/plans/screen-window-manager/reports/T2.md | light / gpt-6-luna | wc-dfe8d2b752bb-worker-2 | node --test machine/test/screen-tools-warning.test.js; bash install/test/run.sh | done |
 
 ## Log
 
@@ -268,3 +268,6 @@ Build accepted: approval 19163b0c-a9f9-4f9f-bde2-682b2e875286
 - 2026-11-22 — Choice: T1, screen.js readiness: the poll stops as soon as openbox exits rather than waiting out the 5 s.
 - 2026-11-22 — Choice: T1, screen-live.js: after the F11 check it presses F11 again to leave full screen before the existing checks continue.
 - 2026-11-22 — T1 accepted (band: self): diff matches S1/S3/S4; 65 screen tests pass on re-run; the 18 win*.test.js failures (no wslpath on hearth) also fail on the feature branch before T1. A no-openbox-on-PATH test is missing; added to T2.
+- 2026-11-22 — Choice: T2, screen.test.js no-openbox test: also asserts the `windowfocus` call comes after the app's `-app<n>.scope` launch (ordering by call index).
+- 2026-11-22 — Choice: T2, install/test/run.sh: `screen_present` folds hint, no-`screens: warning` and status 0 into one assert, renamed "prints optional window manager hint only"; `screen_wm` has no bookmark assertion.
+- 2026-11-22 — T2 accepted (band: scout): diff matches all five brief steps; worker's report said no choices, scout listed 2 (logged above). Its install-suite failure `real wheelchair directory is byte-identical after suite` also fails on the feature branch without T2 (the live app writes ~/.wheelchair during the run).
