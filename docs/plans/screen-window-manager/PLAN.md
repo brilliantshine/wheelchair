@@ -146,11 +146,10 @@ and `xprop`.
   tools present), prints nothing extra when openbox and xprop exist, and nothing on Darwin;
   the bookmark is still the last line.
 - With fake `openbox` (sets a flag file and sleeps) and fake `xprop` (reports
-  `_NET_SUPPORTING_WM_CHECK` and a `_NET_CLIENT_LIST`): a `wm` scope is started; `status`
+  `_OB_CONFIG_FILE` as the screen's rc.xml path, and a `_NET_CLIENT_LIST`): a `wm` scope is started; `status`
   shows `window_manager: "openbox"`; `windows` lists the client-list ids;
   `focus` calls `windowactivate` without `--sync`; a launch's autofocus uses
-  `windowactivate`. The fake `xprop` reports `_OB_CONFIG_FILE` as the screen's rc.xml
-  path.
+  `windowactivate`.
 - openbox invocation: `--sm-disable --config-file <dir>/openbox/rc.xml`, with
   `XDG_CONFIG_HOME`, `XDG_CONFIG_DIRS` and `HOME` equal to the screen directory. The file
   is `0600` in a `0700` directory, has an empty `<keyboard/>`, no `<menu>`, no `Execute`
@@ -225,6 +224,8 @@ manager).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Focus without `--sync` is asynchronous; typing right after could hit the old window | check-once-built | Check Once Built row 1 |
+| mechanics | minor | Validation still names `_NET_SUPPORTING_WM_CHECK` for the fake xprop | upheld (minor) | Wording now names `_OB_CONFIG_FILE` |
 
 ## Prior Work
 
