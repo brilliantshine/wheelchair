@@ -12,7 +12,8 @@ async function main() {
   const text = await new Promise(resolve => { let value = ''; process.stdin.on('data', chunk => { value += chunk; }); process.stdin.on('end', () => resolve(value)); });
   let raw;
   try { raw = JSON.parse(text); } catch { process.exitCode = 0; return; }
-  const adapter = require('../adapters')[kind];
+  const connectors = require('../../connectors');
+  const adapter = connectors.manifest(kind) && connectors.machine(kind);
   const event = adapter?.hookEvent(raw);
   if (!event) return;
   const config = await fs.readFile(path.join(state, 'machine.json'), 'utf8').then(JSON.parse).catch(() => ({}));

@@ -71,7 +71,10 @@ module.exports = {
       "ultra": 4
     },
     "reportedPlans": {},
-    "oldPlanWeights": {}
+    "oldPlanWeights": {},
+    "modelError": "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
+    "familyHint": null,
+    "accountPolicy": "Antigravity supports one account per machine"
   },
   "models": {
     "pins": {

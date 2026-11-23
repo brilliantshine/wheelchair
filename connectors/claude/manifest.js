@@ -76,7 +76,10 @@ module.exports = {
       "max20": 20
     },
     "reportedPlans": {},
-    "oldPlanWeights": {}
+    "oldPlanWeights": {},
+    "modelError": "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
+    "familyHint": null,
+    "accountPolicy": null
   },
   "models": {
     "pins": {

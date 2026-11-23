@@ -4,7 +4,8 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
-const adapters = require('../adapters');
+const connectors = require('../../connectors');
+const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
 const { parseOp } = require('./screen-args');
 
 // Keep in step with the screen tool list in install.sh.

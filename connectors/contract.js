@@ -6,7 +6,8 @@
 // optional node, versionArgs, optional fallbackPath, pathRank and sensitivity.
 // settings has modelPattern, modelPlaceholder, cliLabel, vendor, setupUrl,
 // permissionMode, permissionChoices, accountWarning, modelHeadsUp, signInKind,
-// reviewFamily, plans, weights, reportedPlans and oldPlanWeights. models has
+// reviewFamily, plans, weights, reportedPlans, oldPlanWeights, modelError,
+// familyHint and accountPolicy. models has
 // pins (slot -> { model, effort? }), format, efforts, hubPattern, slotAliases and
 // effortError. placement has workerRank, leadDefault, seenByDefault,
 // addOnMigration and appendWhenRequested. report.useHookText, stopWhenEnded,
@@ -36,6 +37,14 @@ function validateManifest(m) {
   for (const f of ['hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested']) check(f,bool,false);
   for (const f of ['shortName','asideParentField']) check(f,str,false);
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);
+  for (const f of ['install.label','install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError']) check(f,str,false);
+  for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
+  for (const f of ['settings.modelHeadsUp','settings.reviewFamily']) check(f,bool,false);
+  for (const f of ['settings.permissionChoices','settings.plans']) check(f,arr,false);
+  for (const f of ['settings.weights','settings.reportedPlans','settings.oldPlanWeights','models.slotAliases','report','hook']) check(f,obj,false);
+  for (const f of ['install.pathRank','recoverRank']) check(f,v=>v===null||typeof v==='number',false);
+  check('recoverFallback',bool,false);
+  for (const [slot, pin] of Object.entries(m.models.pins)) if (!obj(pin) || !str(pin.model) || (pin.effort !== undefined && !str(pin.effort))) throw new Error(`${m.cli}: models.pins.${slot}`);
   check('hook.payload',v=>v==='stdin'||v==='last-arg', Boolean(m.hook));
 }
 function validateRegistry(manifests) { manifests.forEach(validateManifest); if (manifests.filter(m=>m.capabilities.preflight).length>1) throw new Error('capabilities.preflight'); if (manifests.filter(m=>m.install.sensitivity).length>2) throw new Error('install.sensitivity'); }

@@ -53,7 +53,10 @@ module.exports = {
       "unknown": 1
     },
     "reportedPlans": {},
-    "oldPlanWeights": {}
+    "oldPlanWeights": {},
+    "modelError": "Use vendor/model with an optional :variant, up to 128 lowercase letters, digits, dots, dashes and underscores.",
+    "familyHint": "Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.",
+    "accountPolicy": null
   },
   "models": {
     "pins": {

@@ -77,7 +77,10 @@
           "max20": 20
         },
         "reportedPlans": {},
-        "oldPlanWeights": {}
+        "oldPlanWeights": {},
+        "modelError": "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
+        "familyHint": null,
+        "accountPolicy": null
       },
       "models": {
         "pins": {
@@ -223,7 +226,10 @@
           "pro": [
             6
           ]
-        }
+        },
+        "modelError": "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
+        "familyHint": null,
+        "accountPolicy": null
       },
       "models": {
         "pins": {
@@ -344,7 +350,10 @@
           "ultra": 4
         },
         "reportedPlans": {},
-        "oldPlanWeights": {}
+        "oldPlanWeights": {},
+        "modelError": "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
+        "familyHint": null,
+        "accountPolicy": "Antigravity supports one account per machine"
       },
       "models": {
         "pins": {
@@ -457,7 +466,10 @@
           "unknown": 1
         },
         "reportedPlans": {},
-        "oldPlanWeights": {}
+        "oldPlanWeights": {},
+        "modelError": "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
+        "familyHint": null,
+        "accountPolicy": null
       },
       "models": {
         "pins": {
@@ -551,7 +563,10 @@
           "unknown": 1
         },
         "reportedPlans": {},
-        "oldPlanWeights": {}
+        "oldPlanWeights": {},
+        "modelError": "Use vendor/model with an optional :variant, up to 128 lowercase letters, digits, dots, dashes and underscores.",
+        "familyHint": "Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.",
+        "accountPolicy": null
       },
       "models": {
         "pins": {

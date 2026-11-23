@@ -12,7 +12,7 @@ test('registry, manifests and connector halves satisfy the contract', () => {
   assert.deepEqual(folders, manifests.map(m => m.cli).sort());
   for (const field of ['cli', 'provider']) assert.equal(new Set(manifests.map(m => m[field])).size, manifests.length);
   contract.validateRegistry(manifests);
-  for (const m of manifests) { assert.ok(Object.isFrozen(m)); for (const half of ['machine', 'hub']) contract.validate(m, half, connectors[half](m.cli)); }
+  for (const m of manifests) { assert.deepEqual(JSON.parse(JSON.stringify(m)), m); assert.ok(Object.isFrozen(m)); for (const half of ['machine', 'hub']) contract.validate(m, half, connectors[half](m.cli)); }
   const result = spawnSync(process.execPath, ['connectors/export.js', '--check'], { cwd: path.resolve(__dirname, '../..'), encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr);
 });
 test('contract rejects missing and inconsistent members and fields', () => {
@@ -22,6 +22,7 @@ test('contract rejects missing and inconsistent members and fields', () => {
   mod.usageProbe = () => {}; m.capabilities.usageProbe = false; assert.throws(() => contract.validate(m, 'machine', mod), /usageProbe/);
   const missing = structuredClone(manifests[0]); delete missing.models.format; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
+  missing.models.format = 'pattern'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);
   const duplicated = manifests.map(m => structuredClone(m)); duplicated[0].capabilities.preflight = true; assert.throws(() => contract.validateRegistry(duplicated), /preflight/);
   duplicated[0].capabilities.preflight = false; duplicated[2].install.sensitivity = true; assert.throws(() => contract.validateRegistry(duplicated), /sensitivity/);
 });

@@ -91,7 +91,10 @@ module.exports = {
       "pro": [
         6
       ]
-    }
+    },
+    "modelError": "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
+    "familyHint": null,
+    "accountPolicy": null
   },
   "models": {
     "pins": {
