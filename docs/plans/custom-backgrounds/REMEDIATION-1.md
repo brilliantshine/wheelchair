@@ -64,3 +64,20 @@ exit 0
 Log: /tmp/backgrounds-remediation-settings-ivcCxX/output.log. Native Settings navigation, model controls, writing/template behavior, uploads and mobile layouts remain covered in both browsers.
 
 `node --check` on the changed source and both test files, and `git diff --check`, exit0. Fresh independent verification is recorded below after completion. The previously clean broad Node/browser gates remain recorded in COMPLETION.md; this bounded Settings correction does not restart unrelated suites.
+
+
+## Fresh independent verification
+
+Verifier: /root/finish_normal_use/verify_remediation (native independent agent)
+
+```text
+COMMIT: 4cf9349548597a09560b2c0197ce8736bb008177
+VERDICT: PASS
+npm --prefix viewer run test:browser -- background-readiness.spec.js background-editor.spec.js --grep 'file choice waits|unchanged saved metadata|clean editor follows shared' --output=/tmp/backgrounds-independent-remediation-OzIART/results
+6 passed (6.1s)
+exit 0
+```
+
+Log: /tmp/backgrounds-independent-remediation-OzIART/output.log. Independent source review confirms the initial metadata gate, unchanged focused-slider/image retention, and continued clean-editor updates on actual remote saves. Syntax and remediation whitespace checks pass; no normal-use gap was found. The documented compound overlap remains accepted. The verifier left the worktree clean and did not repeat broad suites.
+
+The follow-up commit recording this report changes only feature-state documents; source and tests remain at the verified correction.

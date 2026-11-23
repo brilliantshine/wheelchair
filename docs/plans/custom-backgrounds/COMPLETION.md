@@ -2,12 +2,12 @@
 slug: custom-backgrounds
 date: 2026-11-20
 implemented-by: standard gpt/gpt-6.1-terra (including xhigh completion lanes); sub-lead gpt/gpt-6.1-sol
-verified-by: []
+verified-by: ["/root/finish_normal_use/verify_remediation (native independent)"]
 ---
 
 # Completion Report — Custom image and GIF backgrounds
 
-Viewer-only implementation is complete. Initial independent verification found two normal-use readiness/focus gaps, fixed in REMEDIATION-1.md, and one accepted rare combination. Fresh independent verification evaluates the corrected commit; validation ordering is recorded below.
+Viewer-only implementation is complete. Initial independent verification found two normal-use readiness/focus gaps, fixed in REMEDIATION-1.md, and one accepted rare combination. Fresh independent verification passed on corrected commit4cf9349548597a09560b2c0197ce8736bb008177; validation ordering is recorded below.
 
 ## Spec coverage
 
@@ -127,3 +127,6 @@ Coverage: `viewer/pages/settings.js:1413`, `:1470`, `:1473`, `:1506`; `viewer/te
 
 
 Final remediation validation: the two new regressions passed4/4 in both browsers after reproducing4/4 expected red failures. All appearance cases passed56/56 (47.2s), and relevant Settings cases passed66/66 (34.1s), in separate isolated commands. Exact commands, paths and the one test-only hash-navigation readiness correction are recorded in REMEDIATION-1.md. The prior broad Node/browser gate results remain historical passing evidence, not a claim that the whole suite reran after this bounded Settings-only JS change.
+
+
+Fresh independent remediation verification passed on4cf9349548597a09560b2c0197ce8736bb008177: six targeted Chromium/Firefox cases passed (6.1s), including both normal-use regressions and real clean-editor remote updates. Source/syntax/diff checks passed with no new normal-use gap. Report and exact command are in REMEDIATION-1.md. The final report-record commit is documentation only; the verified source/tests are unchanged.
