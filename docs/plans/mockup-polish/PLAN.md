@@ -58,6 +58,8 @@ the reader's place.
   order, so iframe entries never need to move. New entries are inserted at their place;
   changed entries are replaced in place; gone entries are removed. A card's signature covers its own fields and every outside state
   its drawing reads (pinned, archived, slug, worktree, card errors, open/folded state).
+  A kept card's handlers look up the current card by id in `data` when pressed, never a
+  card object captured when the node was drawn.
 - Everything the current rebuild does after building (placeIds, aside anchors, pending
   bubble matching, the import cutoff) still works; a full rebuild stays allowed only where
   the cutoff moves (import, hand-off).
@@ -68,7 +70,8 @@ the reader's place.
   `render()`), and correct `scrollY` once the chat is updated. Record the
   key and viewport offset of every chat entry visible at that moment; afterwards restore
   the first of them that still exists to its own recorded offset. If none survive, leave
-  `scrollY` as it is.
+  `scrollY` as it is. The same capture and restore wraps a poll that only shows or clears
+  the poll error banner without calling `render()`.
 - A mockup reserves its final height when created: `mockup()` in `viewer/pages/diagram.js`
   sets the frame box's height from `aspect-ratio: width / height` (CSS) so the box never
   starts at zero and grows later. The scale transform still follows the box width.
@@ -104,7 +107,8 @@ Mockup half of an image card) and the mockup on the picture page.
 - Send keeps the pin, coordinates and text until the hub accepts the message. On a
   failure, show the error beside the box ("Comment not sent: <reason>") and keep
   everything so Send can be pressed again. Only acceptance or Cancel clears them. While
-  the request is pending, the text box, pin and Send are disabled.
+  the request is pending (including the picture page's eligibility re-check), the text
+  box, pin, Send and Cancel are disabled.
 - The picture page has no live state: it checks whether the thread can take a message
   when it loads and again (re-reading `<thread>/chat`) when Send is pressed. If it can't,
   it shows "The lead isn't running, so the comment can't be sent now" and keeps the
@@ -133,8 +137,11 @@ path, and a second link **Download HTML** keeps today's HTML download.
   the existing `scaleFor`, filled white first (the backing the mockup iframe shows,
   `viewer/pages/picture.css:12`). The `foreignObject` content is a root box of exactly
   width x height painted with the page's canvas background as a browser would show it
-  (the `html` element's background, or the `body`'s if `html` sets none), so a short
-  mockup with a body background fills the whole picture as it does in the iframe. Add the
+  (the `html` element's background, or the `body`'s if `html` sets none; a body background
+  used this way is moved to the root box, not copied), so a short mockup with a body
+  background fills the whole picture as it does in the iframe. Inside SVG, `:root` no
+  longer matches the mockup's `html`, so every `:root` in the mockup's `<style>` text is
+  rewritten to `html` before serializing (CSS variables declared on `:root` are common). Add the
   function to `viewer/pages/picture-export.js` beside `graphCanvas` and `formCanvas`.
 - No script from the mockup runs at any point (scripts are stripped before drawing).
 - If the browser refuses (load error or a tainted canvas), the note under Download says
@@ -175,7 +182,8 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 4. PNG: Download on a mockup's picture page saves a PNG whose pixel size is width x height
    times the export scale, and in which a known foreground block, a body background below the body's content
    (fixture: short content, `body` background set), and a spot in a second fixture that
-   sets no background (white) have their expected colours; Download HTML still gives HTML.
+   sets no background (white) have their expected colours; a third fixture sets its
+   colours through CSS variables on `:root` and `:root > body` and must export them; Download HTML still gives HTML.
 5. True size: at 390px viewport, the screenshot view of a 1200px-wide image renders it
    1200 CSS px wide and the page scrolls sideways; Built's Open full size links to it.
 
@@ -263,6 +271,23 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 - S2: draft disabled while Send is pending.
 - S1: scroll anchor captured before anything above the chat changes, including the poll error banner.
 - Accepted Risk: hand-off mid-draft.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | `:root` styles (CSS variables) don't match inside SVG, so PNG colours are wrong | upheld | S3: rewrite `:root` to `html`; fixture with `:root` variables |
+| mechanics | minor | Translucent body background painted twice | upheld | S3: move, not copy |
+| mechanics | minor | Banner-only poll change skips scroll restore | upheld | S1: same capture/restore wraps it |
+| mechanics | minor | Cancel enabled while Send pending | upheld | S2: Cancel disabled too |
+| mechanics | minor | Kept card handlers can hold a stale card object | upheld | S1: handlers look up the card by id |
+
+### Round 5 — 2026-11-23
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 4:**
+- S3: `:root` in mockup styles rewritten to `html` before export; body background moved (not copied) to the root box; Validation 4 adds a `:root` variables fixture.
+- S2: Cancel also disabled while Send is pending.
+- S1: banner-only poll changes also keep the scroll place; kept card handlers look up the current card by id.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
