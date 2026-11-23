@@ -33,6 +33,7 @@ module.exports = {
     "sensitivity": true
   },
   "settings": {
+    "monoModelNames": true,
     "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
     "modelPlaceholder": "model-name",
     "cliLabel": "Codex",
