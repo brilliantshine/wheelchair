@@ -1,5 +1,23 @@
 'use strict';
-const { textOf, unwrap, transcriptRows, isCodexHuman, itemAt, resetAt, toolDetail, resultText, foldResults, claudeReply, codexReply, renderTurn, isClaudeMidTurnHuman, hasPiEntry, piReport, kimiReport } = require('../hub-common');
+const { textOf, unwrap, transcriptRows, itemAt, resetAt, toolDetail, resultText, foldResults, renderTurn } = require('../hub-common');
+
+function claudeReply(turns, row, calls) {
+  if (row.type === 'user' && Array.isArray(row.message?.content) && foldResults(calls, row.message.content.filter((p) => p.type === 'tool_result').map((p) => [p.tool_use_id, p.content]))) return;
+  if (!turns.length || row.type !== 'assistant' || row.message?.role !== 'assistant') return;
+  const content = row.message.content;
+  const text = unwrap(textOf(content));
+  if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
+  for (const item of Array.isArray(content) ? content.filter((p) => p.type === 'tool_use') : []) {
+    const tool = { type: 'tool', text: item.name || 'tool call', at: itemAt(row), detail: toolDetail(item.input) };
+    turns.at(-1).replies.push(tool);
+    if (item.id) calls.set(item.id, { item: tool, input: item.input });
+  }
+}
+
+function isClaudeMidTurnHuman(row) {
+  const item = row.type === 'attachment' ? row.attachment : null;
+  return Boolean(item && item.type === 'queued_command' && item.commandMode === 'prompt' && item.origin?.kind === 'human');
+}
 
 function parseClaude(raw, thread, sessionName) {
   resetAt();
