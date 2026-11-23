@@ -14,12 +14,7 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: What may the assistant do when Collin tells it to?
-- **Context:** Today agents can only start helpers inside their own thread and message leads on the same machine; other projects need a reach approval each time (MAP.md, "Starting and steering").
-- **Options:** (a) anything Collin can do in the app, including archiving; (b) start threads, message leads, answer a lead's question card with the answer Collin gives, press Start building, restart a dead lead, but not archive; (c) only start threads and message leads.
-- **Recommendation:** (b).
-
-### Q2: Agree the mockups
+### Q1: Agree the mockups
 - **Context:** The pinned thread and the pop-up are new visible surfaces. A designer drafts them.
 - **Options:** agree, or ask for changes.
 - **Recommendation:** n/a.
@@ -45,10 +40,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | Leads' questions stay in their own threads and under Needs you, as today; the assistant mentions them in its summaries. | Nothing changes for anyone not using the assistant (IDEA Constraints). | defaulted |
 | 9 | When Collin's instruction leaves the project or machine unclear, the assistant asks in its chat before starting anything. | Avoids starting work in the wrong place. | defaulted |
 | 10 | The assistant thread is never archived or listed under a project; it restarts like a lead, rebuilding its picture of all threads from the hub. | It is permanent and project-free. | defaulted |
+| 11 | When told to, the assistant may do anything Collin can do with threads: start threads, message leads, answer leads' question cards, press Start building, restart leads, and archive threads. | Collin picked "Anything I can do". | user |
+| 12 | Whatever the assistant does in a thread is visible there and marked as done by the assistant (its messages to a lead show as a bubble "From your assistant"; its card presses say "by your assistant"). | Collin must be able to see why a lead acted, without the assistant reporting it. | defaulted |
 
 ## Spec
 
-To be written as decisions land.
+Draft; grows as decisions land.
+
+### What the assistant may do
+
+On Collin's instruction, anything Collin can do with threads in the app: start a thread in any project on any machine (with its lead, seeded with what Collin said), message any thread's lead, answer a lead's open question card, press Start building on an approval card, restart a lead, archive a thread. Every such action shows in the target thread, marked as the assistant's.
 
 ## Deferred
 
