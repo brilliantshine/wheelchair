@@ -21,3 +21,5 @@ Each successful `hub.call` updates the in-memory machine seen time and awaits a 
 Tests cover cached parsing, context changes, old machines, fallback and idle pruning (`viewer/test/app-chat.test.js:371-431`); last-seen persistence (`viewer/test/app-hub.test.js:899-908`); source shrink, partial and overlapping copies, idle/failed-save retry, crash cuts, hash reuse/failure/stop, and stamps (`machine/test/service.test.js:265`, `machine/test/service.test.js:418-436`, `machine/test/service.test.js:1790-1850`). Commands: `node --test viewer/test/*.test.js` and `bash machine/test/run.sh`.
 
 Not checked: every parser rule, all consumers outside the named files, filesystem behavior under concurrent external writers, or live performance.
+
+> Mockup-polish overlap rechecked at `25f34a4572c4beb9032f16f818b6502cc59f62bd`: see [mockup viewer flow](mockup-viewer-flow.md). Other claims retain their historical checked-against commit.

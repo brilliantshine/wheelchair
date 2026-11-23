@@ -22,3 +22,5 @@ agent runs app on screen -> screenshot path -> report -> lead image card -> thre
 ## What I did not look at
 
 Other providers' installed browser dependencies or remote machines, live phone rendering, every archived-file failure path, and every screenshot retention or upload race. No application test suite was run for this documentation-only map.
+
+> Mockup-polish overlap rechecked at `25f34a4572c4beb9032f16f818b6502cc59f62bd`: see [mockup viewer flow](mockup-viewer-flow.md). Other claims retain their historical checked-against commit.
