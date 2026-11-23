@@ -16,6 +16,11 @@ get buried as this file grows.
 
 Ordered by leverage; discussed one at a time.
 
+### Q4: What happens when Collin asks for a design change during the build?
+- **Context:** Review round 2: the after-done path loses early steering and leaves the verifier comparing against the old mockup.
+- **Options:** stop the build and redesign, then resume; or a follow-up thread after the build.
+- **Recommendation:** follow-up thread.
+
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -93,8 +98,10 @@ Three pieces:
 
 ### `image` cards beside a mockup
 
-- `image` cards gain an optional `mockup` object `{plan, graph, width, height}` naming a
-  mockup file with the same rules as a mockup diagram card. When present, the card shows the
+- `image` cards gain an optional `mockup` object `{graph, width, height}` naming a mockup
+  file of the thread's own plan (the hub uses `thread.slug`, the same plan the archived
+  reader uses, registers it as for a diagram card, and refuses `mockup` when the thread has
+  no plan), with the same rules as a mockup diagram card. When present, the card shows the
   screenshot and the mockup side by side, labelled "Built" and "Mockup", each scaled to half
   the card width; under 599px card width they stack, Built first. Each half has its own
   "Open full size": the screenshot opens as an image at true size; the mockup opens the
@@ -139,7 +146,8 @@ Rules, in a new `protocol/app/designer.md`:
   user has said they want, and paths to read (IDEA.md, the project's existing screens or
   styles where they exist, so mockups match the real app's look).
 - It writes and commits (with `wc.js git commit`, exact paths) only
-  `docs/plans/<slug>/graphs/mockup-*.html`, never overwriting an earlier version.
+  `docs/plans/<slug>/graphs/mockup-*.html`, never overwriting an earlier version. Each file
+  follows "Mockup files" above: static, at most 2 MiB, sizes from 200 to 2560.
 - Where the project already has a look (styles, components, screenshots), the mockup uses
   it: same colours, type, spacing and components. It may read the project's code to get them.
 - Before reporting, it looks at its own work when it can: renders each file at its size to a
@@ -163,9 +171,13 @@ Rules, in a new `protocol/app/designer.md`:
   PLAN.md, so status stays `planning` (the existing gate: Open Questions empty) until Collin
   agrees them. It is settled by a Decision naming the agreed files; the lead then stops the
   designer. If the lead skips the designer, it logs that as a `defaulted` Decision instead.
-- **Changes during review** (status `ready-for-review`, before approval): the lead starts a
-  fresh designer briefed with the current files and Collin's words; the new version, once
-  Collin agrees it, is a Spec change listed in the next round's "Changed since" list.
+- **Changes during review or after approval** (before Start building is accepted): the
+  lead first retracts any open approval card (as `lead.md` step 6 does for a Spec change),
+  re-adds the "Agree the mockups" Open Question, and starts a fresh designer briefed with the
+  current files and Collin's words. While that question is open, no approval card is posted,
+  even after a clean round. Once Collin agrees, the new files are a Spec change: status
+  `ready-for-review` and the change is in the next round's "Changed since" list. If Start
+  building was already recorded when he asks, it is a change after Start building.
 - **Changes after Start building:** the mockups are fixed like the rest of the Spec while
   the sub-lead owns the worktree. A change Collin asks for after seeing a build screenshot is
   answered in a line ("I'll apply it right after the build, in the same pull request"); once
@@ -190,16 +202,16 @@ Rules, in a new `protocol/app/designer.md`:
   screenshots the built screen at the mockup's `width` x `height`: a web page with headless
   Chromium (an isolated server per the project's rules); a desktop app or game with its
   invisible screen (`wc.js screen`). It then looks at its screenshot beside the mockup (rendering the mockup at its size with
-  headless Chromium, or opening the HTML's own render) and fixes any difference by the
+  headless Chromium) and fixes any difference by the
   verifier's bar below before reporting. It lists each screenshot path with the mockup it
   matches in its report, and any difference it chose to leave, with why. A task with visible work but no mockup still reports a screenshot. If it
   cannot take one, it says why; this does not block the task.
 - **Sub-lead** (`protocol/app/sub-lead.md`): briefs name the mockup files and sizes from the
-  Spec's Mockups list for each task that touches those screens. When a worker's `result`
-  arrives with screenshots, the sub-lead posts one `image` card per screenshot right away
-  (with `mockup` set when the report names one), before merging or verifying. When it
-  checks the task, a difference the worker left without a good reason is a reason to send
-  the task back, like any other mismatch with the brief. It does not relay screenshots to
+  Spec's Mockups list for each task that touches those screens. When it checks a
+  worker's `result`, a difference from the mockup the worker left without a good reason is
+  a reason to send the task back, like any other mismatch with the brief. When it accepts a
+  task whose report has screenshots, it posts one `image` card per screenshot (with `mockup`
+  set when the report names one) before merging. It does not relay screenshots to
   the lead.
 - **Verifier** (`protocol/app/verifier.md`): each Spec mockup is a Spec item. The verifier
   screenshots the built screen at the mockup's size and compares the two. A difference a user
@@ -207,7 +219,8 @@ Rules, in a new `protocol/app/designer.md`:
   different colour, size or spacing) is a gap; anti-aliasing, font rendering and sub-pixel
   differences are not. It names the screenshot paths it compared. Where no capture path
   exists (for example a desktop app on a machine without the screen tool), the comparison is
-  reported as could not try, not as a gap.
+  not a gap and does not change the verdict: it is named in the sentences after the verdict
+  ("visual comparison not tried for <mockup>: <reason>").
 
 ### Not in this thread
 
@@ -303,6 +316,17 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | A change Collin asks for after a build screenshot waits until done, so early steering is lost | user-decision | Asked Collin: change during the build vs follow-up |
+| intent | major | After-done mockup change: no new mockup, verifier treats the change as a gap | user-decision | Same fork; settled by the answer |
+| intent | minor | Screenshots posted before the sub-lead's own check | upheld | Posted when the sub-lead accepts the task, before merging |
+| intent | minor | Designer not told the 2 MiB limit | upheld | Designer rules restate the file rules |
+| intent | minor | "Opening the HTML's own render" names no step | upheld | Removed; headless Chromium only |
+| mechanics | blocking | After-build change: after-done path vs return to review conflict, baseline unclear | user-decision | Same fork; settled by the answer |
+| mechanics | major | Revision during review has no gate | upheld | Re-opens "Agree the mockups"; no approval while open |
+| mechanics | major | Approval card open while a change is asked | upheld | Retract the approval first; a recorded Start building makes it an after-build change |
+| mechanics | major | Build-time change promised only in chat, lost on restart | user-decision | Same fork; settled by the answer |
+| mechanics | minor | "Could not try" has no place in the verdict | upheld | Named after the verdict; not a gap |
+| mechanics | minor | image.mockup plan can differ from the archived plan | upheld | `plan` dropped; always the thread's own plan |
 
 ## Prior Work
 
