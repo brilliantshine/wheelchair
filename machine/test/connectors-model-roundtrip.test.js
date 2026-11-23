@@ -15,14 +15,15 @@ function roundTrip(tools) {
   const env = { ...process.env, HOME: dir, CODEX_HOME: dir, WHEELCHAIR_REGISTRY: registry,
     WHEELCHAIR_MODELS: path.join(dir, 'models'), WHEELCHAIR_MODELS_CACHE: path.join(dir, 'cache'), WHEELCHAIR_KIMI_CONFIG: path.join(dir, 'kimi.toml') };
   let context = 'init';
-  function run(...args) {
+  function runExpected(expected, ...args) {
     const result = spawnSync(path.resolve(__dirname, '../../codex/model.sh'), args, { env, encoding: 'utf8', timeout: 10000 });
-    assert.equal(result.status, 0, `${context}: ${args.join(' ')}: ${result.error || ''} ${result.stderr}`);
-    assert.doesNotMatch(result.stdout + result.stderr, /Traceback|malformed pins file|is malformed/i, `${context}: ${args.join(' ')}`);
+    assert.equal(result.status, expected, `${context}: ${args.join(' ')}: exit ${result.status}: ${result.error || ''} ${result.stderr}`);
+    assert.doesNotMatch(result.stdout + result.stderr, /Traceback|malformed pins file|is malformed/i, `${context}: ${args.join(' ')}: ${result.stderr}`);
     return result.stdout.trim();
   }
+  function run(...args) { return runExpected(0, ...args); }
   function read(provider, slot, model, effort) {
-    assert.equal(run(provider, slot), model, `${context}: model`);
+    assert.equal(runExpected(model === 'none' ? 3 : 0, provider, slot), model === 'none' ? '' : model, `${context}: model`);
     assert.equal(run('effort', provider, slot), effort || '', `${context}: effort`);
     const shown = JSON.parse(run('show', '--json'));
     assert.equal(shown.malformed, false, `${context}: malformed`);
@@ -42,11 +43,12 @@ function roundTrip(tools) {
       read(tool.provider, slot, pin.model, pin.effort);
       read(other.provider, 'standard', sentinel, null);
     }
-    const pin = tool.models.pins.light;
+    const effortSlot = slots.find(slot => tool.models.pins[slot]?.model !== 'none' && tool.models.pins[slot]);
+    const pin = tool.models.pins[effortSlot];
     for (const effort of tool.models.efforts) {
-      context = `${tool.provider} light ${pin.model} @${effort}`;
-      run('set', tool.provider, 'light', pin.model, effort);
-      read(tool.provider, 'light', pin.model, effort);
+      context = `${tool.provider} ${effortSlot} ${pin.model} @${effort}`;
+      run('set', tool.provider, effortSlot, pin.model, effort);
+      read(tool.provider, effortSlot, pin.model, effort);
       read(other.provider, 'standard', sentinel, null);
     }
     // Exercise values accepted by a format without anchors through the write path.
@@ -61,15 +63,23 @@ function roundTrip(tools) {
 test('real model pin round trip for every connector', { timeout: 120000 }, () => roundTrip(connectors.list()));
 test('model round trip rejects invalid sixth connectors', { timeout: 120000 }, () => {
   const cases = [
-    t => { t.models.pins.light.effort = 'unlisted'; },
-    t => { t.models.efforts.push('very-high'); },
-    t => { t.models.format = '[A-Za-z0-9][A-Za-z0-9._-]*'; },
-    t => { delete t.models.pins.light; },
-    t => { t.models.pins.light.model = 'Capital'; },
+    [t => { t.models.pins.light.effort = 'unlisted'; }, /malformed/i],
+    [t => { t.models.efforts.push('very-high'); }, /sixth light .*very-high.*(?:malformed|exit)/i],
+    [t => { t.models.format = '[A-Za-z0-9][A-Za-z0-9._-]*'; }, /sixth light invalid model with capitals.*exit/i],
+    [t => { delete t.models.pins.light; }, /(?:Traceback|KeyError).*light/s],
+    [t => { t.models.pins.light.model = 'Capital'; }, /malformed/i],
   ];
-  for (const mutate of cases) {
+  for (const [mutate, reason] of cases) {
     const extra = structuredClone(connectors.list().find(t => t.provider === 'claude'));
     extra.provider = 'sixth'; extra.cli = 'sixth'; mutate(extra);
-    assert.throws(() => roundTrip([...connectors.list(), extra]));
+    assert.throws(() => roundTrip([...connectors.list(), extra]), reason);
   }
+});
+
+test('sixth connector and none default round trip', { timeout: 120000 }, () => {
+  const extra = structuredClone(connectors.list().find(t => t.provider === 'claude'));
+  extra.provider = 'sixth'; extra.cli = 'sixth';
+  roundTrip([...connectors.list(), extra]);
+  extra.models.pins.light = { model: 'none' };
+  roundTrip([...connectors.list(), extra]);
 });
