@@ -46,7 +46,7 @@ async function attempt(hub, threadId, checkCardId) {
   });
   if (!context) return;
   const { thread, done, head, url } = context;
-  let outcome, reason;
+  let outcome, reason, branch, branchDeleted;
   const match = /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)$/.exec(url);
   if (!match) { outcome = 'not-ready'; reason = 'the pull request link is not a GitHub pull request'; }
   // Step 8: check GitHub until ready or the retry window expires.
@@ -61,6 +61,7 @@ async function attempt(hub, threadId, checkCardId) {
     if (view) {
       if (view.state === 'MERGED') { outcome = 'already-merged'; break; }
       if (view.state === 'CLOSED') { outcome = 'closed'; break; }
+      branch = view.headRefName;
       const judged = judgePr(view, thread, done);
       if (judged.ok) {
         if (!['CLEAN', 'HAS_HOOKS'].includes(view.mergeStateStatus)) { outcome = 'not-ready'; reason = 'GitHub needs something before it can merge, such as a review'; }
@@ -85,10 +86,15 @@ async function attempt(hub, threadId, checkCardId) {
     else if (!error && response?.merged === true) outcome = 'merged';
     else { outcome = 'failed'; reason = response?.message || String(stderr).split(/\r?\n/).find(line => line.trim()) || 'GitHub refused the merge'; }
   }
+  // Optional: delete the merged head branch on GitHub. A failure (for example GitHub already deleted it) is only recorded.
+  if (outcome === 'merged' && typeof branch === 'string' && branch && (await settings.load(hub)).auto_merge_delete_branch === 'on') {
+    try { await run('gh', ['api', '-X', 'DELETE', `repos/${match[1]}/${match[2]}/git/refs/heads/${branch.split('/').map(encodeURIComponent).join('/')}`], { timeout: 15000 }); branchDeleted = true; }
+    catch { branchDeleted = false; }
+  }
   // Finishing: reload so a concurrent writer's cards survive.
   await hub.withThread(threadId, async () => {
     const fresh = await hub.thread(threadId);
-    const record = fresh.auto_merge_attempts[head] = { ...fresh.auto_merge_attempts[head], at: new Date().toISOString(), outcome, reason };
+    const record = fresh.auto_merge_attempts[head] = { ...fresh.auto_merge_attempts[head], at: new Date().toISOString(), outcome, reason, ...(branchDeleted === undefined ? {} : { branch_deleted: branchDeleted }) };
     const latest = currentDone(fresh);
     if (['not-ready', 'failed', 'unknown'].includes(outcome) && !fresh.cards.some(c => c.kind === 'merged' && c.pr_url === url) && (!latest || latest.head === head)) record.card = notice(fresh, head, reason, outcome).id;
     await hub.save(fresh);

@@ -206,3 +206,22 @@ test('lead resolve through acceptCard refuses auto-merge needs', async () => {
     assert.equal((await f.hub.thread('one')).cards.find(c => c.id === 'notice').answered, false);
   } finally { f.restore(); }
 });
+
+test('deleting the branch after a merge follows its setting and only records a failure', async () => {
+  for (const [setting, api, outcome, deleted] of [
+    ['off', `printf '{"merged":true}'`, 'merged', undefined],
+    ['on', `case "$3" in PUT) printf '{"merged":true}';; esac`, 'merged', true],
+    ['on', `case "$3" in PUT) printf '{"merged":true}';; *) exit 1;; esac`, 'merged', false],
+    ['on', `printf '{"message":"no"}'; exit 1`, 'failed', undefined],
+  ]) {
+    const f = await fixture(script('CLEAN', 'OPEN', api)); try {
+      await settings.update(f.hub, v => { v.auto_merge_delete_branch = setting; });
+      const result = await f.run(), record = result.auto_merge_attempts[head];
+      assert.equal(record.outcome, outcome); assert.equal(record.branch_deleted, deleted);
+      const calls = await f.calls();
+      if (deleted === undefined) assert.ok(!calls.some(c => c.includes('DELETE')));
+      else assert.equal(calls.at(-1), 'api -X DELETE repos/o/r/git/refs/heads/branch');
+      if (deleted === false) assert.ok(!result.cards.some(c => c.auto_merge));
+    } finally { f.restore(); }
+  }
+});

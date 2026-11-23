@@ -45,6 +45,11 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge: 'on' } })).body.auto_merge, 'on');
     assert.equal((await api(context, '/settings')).body.auto_merge, 'on');
     assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge: 'off' } })).body.auto_merge, 'off');
+    assert.equal(initial.body.auto_merge_delete_branch, 'off');
+    assert.match(JSON.stringify((await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge_delete_branch: 'yes' } })).body), /auto_merge_delete_branch must be off or on/);
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge_delete_branch: 'on' } })).body.auto_merge_delete_branch, 'on');
+    assert.equal((await api(context, '/settings')).body.auto_merge_delete_branch, 'on');
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { auto_merge_delete_branch: 'off' } })).body.auto_merge_delete_branch, 'off');
     const all = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('All workers') });
     const project = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Project workers', '/tmp/project', 'Use the project convention.') });
     assert.equal(all.status, 201);
