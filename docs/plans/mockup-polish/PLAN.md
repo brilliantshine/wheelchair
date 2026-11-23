@@ -160,7 +160,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 ### Round 1 — 2026-11-23
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
