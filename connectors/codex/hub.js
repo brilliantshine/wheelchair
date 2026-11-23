@@ -1,5 +1,29 @@
 'use strict';
-const { textOf, unwrap, transcriptRows, isCodexHuman, itemAt, resetAt, toolDetail, resultText, foldResults, claudeReply, codexReply, renderTurn, isClaudeMidTurnHuman, hasPiEntry, piReport, kimiReport } = require('../hub-common');
+const { textOf, unwrap, transcriptRows, itemAt, resetAt, toolDetail, resultText, foldResults, renderTurn } = require('../hub-common');
+
+function isCodexHuman(row, codexTurn, text) {
+  const payload = row.payload || row;
+  const role = payload.type === 'message' ? payload.role : row.message?.role;
+  if (row.type !== 'response_item' || role !== 'user' || !codexTurn) return false;
+  return !text.startsWith('# AGENTS.md') && !text.startsWith('<environment_context>');
+}
+
+function codexReply(turns, row, calls) {
+  const payload = row.payload || row;
+  if (['function_call_output', 'custom_tool_call_output'].includes(payload.type)) { foldResults(calls, [[payload.call_id, payload.output]]); return; }
+  if (!turns.length) return;
+  const content = payload.type === 'message' ? payload.content : row.message?.content;
+  const role = payload.type === 'message' ? payload.role : row.message?.role;
+  if (row.type === 'response_item' && role === 'assistant') {
+    const text = unwrap(textOf(content));
+    if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
+  } else if (['custom_tool_call', 'function_call'].includes(payload.type)) {
+    const input = payload.arguments ?? payload.input;
+    const tool = { type: 'tool', text: payload.name || payload.function?.name || 'tool call', at: itemAt(row), detail: toolDetail(input) };
+    turns.at(-1).replies.push(tool);
+    if (payload.call_id) calls.set(payload.call_id, { item: tool, input });
+  }
+}
 
 function parseCodex(raw, thread, sessionName) {
   resetAt();
