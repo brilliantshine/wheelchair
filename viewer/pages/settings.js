@@ -1338,7 +1338,7 @@
   };
   // OpenRouter sign-in is key only: waiting, no link, and the machine wants the key pasted.
   const keyOnlySignin = (st) => st.state === 'waiting' && !st.url && st.wantsCode === true;
-  const signinHint = (st) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : TOOLS.find((t) => t.settings.signInKind === 'key').settings.keyPrompt);
+  const signinHint = (st, tool) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : (tool || TOOLS.find((t) => t.settings.signInKind === 'key')).settings.keyPrompt);
   const safeHref = (u) => (/^https?:\/\//i.test(String(u)) ? String(u) : '#');
 
   async function refreshUsage() {
@@ -1446,7 +1446,7 @@
       if (st.url || keyOnly) {
         if (!card.hadUrl) card.firstUrl = Date.now();
         card.hadUrl = true;
-        status.className = 'hint'; status.textContent = signinHint(st);
+        status.className = 'hint'; status.textContent = signinHint(st, toolOf(account.provider));
         keyInput.hidden = !keyOnly; paste.hidden = keyOnly; pasteLabel.textContent = keyOnly ? keyPrompt : 'Paste the code';
         if (keyOnly) actions.replaceChildren();
         else if (toolOf(account.provider).settings.signInKind === 'link') {
