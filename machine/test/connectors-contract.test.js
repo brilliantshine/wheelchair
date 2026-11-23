@@ -15,6 +15,12 @@ test('registry, manifests and connector halves satisfy the contract', () => {
   for (const m of manifests) { assert.deepEqual(JSON.parse(JSON.stringify(m)), m); assert.ok(Object.isFrozen(m)); for (const half of ['machine', 'hub']) contract.validate(m, half, connectors[half](m.cli)); }
   const result = spawnSync(process.execPath, ['connectors/export.js', '--check'], { cwd: path.resolve(__dirname, '../..'), encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr);
 });
+test('connector files do not require another connector folder', () => {
+  for (const m of manifests) for (const file of fs.readdirSync(path.join(__dirname, '../../connectors', m.cli)).filter(f => f.endsWith('.js'))) {
+    const source = fs.readFileSync(path.join(__dirname, '../../connectors', m.cli, file), 'utf8');
+    for (const match of source.matchAll(/require\s*\(\s*['"]\.\.\/([^/]+)\//g)) assert.equal(match[1], m.cli, `${m.cli}/${file}: ${match[0]}`);
+  }
+});
 test('contract rejects missing and inconsistent members and fields', () => {
   const m = structuredClone(manifests[0]); const mod = { ...connectors.machine(m.cli) };
   delete mod.command; assert.throws(() => contract.validate(m, 'machine', mod), /command/);

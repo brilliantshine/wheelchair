@@ -124,7 +124,7 @@ module.exports = {
   sandboxWrap: command => ['codex', 'sandbox', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '--', ...command],
   projectToolReason(name, entry) { const reason = codexEntryReason(name, entry); return reason ? `on Codex: ${reason}` : null; },
   projectToolFileWarning(servers) { return codexOverrides({ servers }).tooLarge ? 'project tools skipped on Codex: .mcp.json is too large to pass on the command line' : null; },
-  stepVocabulary: { card: ['exec_command', 'shell'], agents: ['spawn_agent', 'send_input', 'wait_agent', 'close_agent'], web: ['web_search', 'web_fetch'], files: ['apply_patch', 'view_image'], fileSubstring: true, shellDescription: [] },
+  stepVocabulary: c.stepVocabularies.codexStyle,
   preflightCommand(dir) { return { file: path.join(c.root, 'codex', 'preflight.sh'), args: [], env: dir ? { ...process.env, ...loginEnv(dir) } : undefined }; },
   provider: 'gpt', loginEnv, usual, parseUsage, codexEntryReason, codexOverrides,
   usageProbe(dir, options = {}) { return run('codex', ['app-server'], { ...options, env: { ...process.env, ...loginEnv(dir) }, parse: parseUsage, messages: [

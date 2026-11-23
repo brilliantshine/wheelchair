@@ -9,7 +9,7 @@ const onboarding = ['Choose your color scheme', 'Terms of Service & Data Use', '
 module.exports = {
   recognizePane: text => text.includes('Antigravity CLI'),
 
-  stepVocabulary: require('../codex/machine').stepVocabulary,
+  stepVocabulary: c.stepVocabularies.codexStyle,
   provider: 'gemini', loginEnv: () => ({}), sessionNameEnv: true,
   prepare() {
     const file = path.join(os.homedir(), '.gemini', 'config', 'hooks.json');

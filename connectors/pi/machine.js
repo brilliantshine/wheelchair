@@ -80,7 +80,7 @@ module.exports = {
         const limit = failed && /(?:\b(?:402|429)\b|credit|rate[ _-]?limit)/i.test(error);
         return failed ? { state: 'failed', error, limit } : { state: 'ok', reply: redact(reply), conversation_id: expected, limit: false };
   },
-  stepVocabulary: require('../codex/machine').stepVocabulary,
+  stepVocabulary: c.stepVocabularies.codexStyle,
   provider: 'openrouter', resolveCli, redact, retryStartupEnter: true,
   loginEnv: dir => dir && path.resolve(dir) !== home(null) ? { PI_CODING_AGENT_DIR: dir } : {},
   loginState(record, pane, captured, { kill }) {
@@ -157,7 +157,7 @@ module.exports = {
       if (!raw.toolCallId) return null;
       if (raw.hook_event_name === 'tool_execution_end') return { type: 'step', phase: 'end', step: { id: raw.toolCallId, ended_at: new Date().toISOString(), failed: !!raw.isError, clean: true } };
       const names = { bash: 'Bash', read: 'Read', edit: 'Edit', write: 'Write', grep: 'Grep', find: 'Glob', ls: 'LS' };
-      return { type: 'step', phase: 'start', step: { id: raw.toolCallId, ...classify(require('../claude/machine').stepVocabulary, names[raw.toolName] || raw.toolName, raw.args), started_at: new Date().toISOString() } };
+      return { type: 'step', phase: 'start', step: { id: raw.toolCallId, ...classify(c.stepVocabularies.claudeStyle, names[raw.toolName] || raw.toolName, raw.args), started_at: new Date().toISOString() } };
     }
     if (raw.hook_event_name !== 'agent_settled') return null;
     if (!raw.aborted && (raw.stopReason === 'error' || raw.entry_id == null)) return { type: 'turn-failed', error: redact(raw.errorMessage || 'Pi ended the turn without a reply') };

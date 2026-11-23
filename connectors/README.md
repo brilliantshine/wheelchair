@@ -334,3 +334,5 @@ tag before their own script.
 Behaviour that no existing member or field explains is not a reason to put a name check
 outside `connectors/`: add a capability or optional member, list it in `contract.js`, and
 document it here.
+
+Connector halves must not require another connector folder. Shared step vocabularies live in `common.js` as `stepVocabularies.claudeStyle` and `stepVocabularies.codexStyle`.

@@ -24,3 +24,5 @@ exports.loadedTools = (names, mcp, mount, replaceEntries = {}) => names.map(name
 
 
 exports.scrubOutput = text => String(text).replace(/sk-or-[A-Za-z0-9_-]+/g, '[redacted key]');
+
+exports.stepVocabularies = { claudeStyle: { card: ['Bash'], agents: ['Agent', 'Task'], web: ['WebFetch', 'WebSearch'], files: ['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'NotebookEdit', 'LS'], fileSubstring: false, shellDescription: ['Bash'] }, codexStyle: { card: ['exec_command', 'shell'], agents: ['spawn_agent', 'send_input', 'wait_agent', 'close_agent'], web: ['web_search', 'web_fetch'], files: ['apply_patch', 'view_image'], fileSubstring: true, shellDescription: [] } };

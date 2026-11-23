@@ -290,7 +290,7 @@ module.exports = {
   recognizePane(text) { const lines = text.split(/\r?\n/).map(line => line.trim()); return (/^\s*(?:Ask When Needed|Never Ask)\b/im.test(text) && /^\s*context:\s*\d+%/im.test(text)) || (lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line))); },
   restartLossReason: () => 'Lost track of this Kimi Code session after a machine restart; restart it',
 
-  stepVocabulary: require('../codex/machine').stepVocabulary,
+  stepVocabulary: c.stepVocabularies.codexStyle,
   provider: 'kimi', resolveCli, readConfig, loginStatus, usageProbe,
   loginEnv: dir => ({ KIMI_CODE_HOME: home(dir) }),
   seed(dir, id) { c.seed(dir, home(), 'AGENTS.md', 'kimi', id); }, prepare() {},
