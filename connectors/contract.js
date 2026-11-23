@@ -4,8 +4,8 @@
 // cli, provider, label, displayName, optional shortName, typesRoleMessage,
 // singleAccount, and boolean capabilities. install has command, binary, label,
 // optional node, versionArgs, optional fallbackPath, pathRank and sensitivity.
-// settings has required modelPattern, weights and plans (key/label pairs including unknown and keys present in weights), optional modelOptions (fixed pairs or listedKey, listedShape and includePins), modelPlaceholder, cliLabel, vendor, setupUrl,
-// permissionMode, permissionChoices, accountWarning, modelHeadsUp, signInKind,
+// settings has required modelPattern, modelError, weights and plans (key/label pairs including unknown and keys present in weights), optional modelOptions (fixed pairs or listedKey, listedShape and includePins), modelPlaceholder, cliLabel, vendor, setupUrl,
+// permissionMode (requires permissionName), permissionName, permissionChoices, accountWarning, modelHeadsUp, signInKind,
 // reviewFamily, plans, weights, reportedPlans, oldPlanWeights, modelError,
 // familyHint, accountPolicy and optional scoutAgentTool, monoModelNames and keyPrompt. models has
 // pins (slot -> { model, effort? }), format, efforts, hubPattern, and optional slotAliases,
@@ -34,7 +34,8 @@ function validate(manifest, half, mod) {
 function validateManifest(m) {
   function check(field, pred, required = true) { const value = field.split('.').reduce((o, k) => o?.[k], m); if ((required || value !== undefined) && !pred(value)) throw new Error(`${m?.cli || 'connector'}: ${field}`); }
   const str = v => typeof v === 'string', bool = v => typeof v === 'boolean', obj = v => !!v && typeof v === 'object' && !Array.isArray(v), arr = Array.isArray;
-  for (const f of ['cli','provider','label','displayName','install.command','install.binary','settings.modelPattern','models.format','models.hubPattern']) check(f,str);
+  for (const f of ['cli','provider','label','displayName','install.command','install.binary','settings.modelPattern','settings.modelError','models.format','models.hubPattern']) check(f,str);
+  check('settings.modelError', v => str(v) && v.length > 0);
   for (const f of ['typesRoleMessage','singleAccount']) check(f,bool);
   for (const f of ['capabilities','install','settings','models','models.pins','placement','settings.weights']) check(f,obj);
   for (const cap of Object.keys(CAPABILITIES)) check(`capabilities.${cap}`,bool);
@@ -50,6 +51,8 @@ function validateManifest(m) {
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);
   for (const f of ['install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt']) check(f,str,false);
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
+  if (m.settings.permissionMode) check('settings.permissionName', v => str(v) && v.length > 0);
+  else if ('permissionName' in m.settings) throw new Error(`${m.cli}: settings.permissionName`);
   for (const f of ['settings.modelHeadsUp','settings.reviewFamily']) check(f,bool,false);
   check('settings.permissionChoices',arr,false);
   for (const f of ['settings.reportedPlans','settings.oldPlanWeights','models.slotAliases','report','hook']) check(f,obj,false);
