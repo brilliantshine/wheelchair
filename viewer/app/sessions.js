@@ -537,6 +537,7 @@ async function deliver(hub, thread, target, { midTurn = false } = {}) {
   target.queue.shift();
   if (next.peer) require('./peer-log.js').append(thread, { at: new Date().toISOString(), ...next.peer, direction: 'received', text: next.text.slice(`[wc:from ${next.peer.session}] [thread ${next.peer.thread}: ${next.peer.title}] ${next.peer.question ? `[question ${next.peer.question}] ` : ''}`.length) });
   if (quiet.watched(target)) target.owes_reply = true;
+  if (target.role === 'designer' && target.finished && next.source === 'session' && target.started_by && next.text.startsWith(`[wc:from ${target.started_by}] `)) target.finished = false;
   delete target.awaiting_answer;
   delete target.quiet_check_at;
   if (next.quiet === 'starter') { const about = thread.sessions.find(s => s.name === next.about); if (about) about.quiet_starter_at = new Date().toISOString(); }
