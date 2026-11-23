@@ -54,7 +54,7 @@ any of these is missing or not a function. `command` and `seed` are the ones peo
 
 | Member | Signature | When the service calls it |
 |---|---|---|
-| `command` | `command(input, session, worktree, context)` returns `{ argv, loaded, settingsPath?, settings?, mcpConfig? }` | Building the launch for a new or resumed session. `context` carries `stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `kimiExecutable`, `wsl`, `mount`, `replaceEntries` and `resume`. All keys returned by `launchContext` reach `command`. |
+| `command` | `command(input, session, worktree, context)` returns `{ argv, loaded, settingsPath?, settings?, mcpConfig? }` | Building the launch for a new or resumed session. `launchContext` keys reach `command` unless the service sets that key itself; the service's values win for `stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `wsl`, `mount`, `replaceEntries` and `resume`. |
 | `firstMessage` | `firstMessage(input, promptPath, name)` returns the text typed once the tool is ready | Session start; the result becomes the session's pending first message. |
 | `readyText` | `readyText(session, pane)` returns a boolean | Each readiness poll of a starting session's tmux pane. |
 | `answerPrompts` | `answerPrompts(session, pane)` returns `{ step, keys }` or `null` | While a session is starting, to answer first-run screens (theme, trust, terms) with keystrokes. |
@@ -89,12 +89,14 @@ These are called only when present; they need no flag in the manifest.
 | `redact` | `redact(value)` | The tool's own redaction of transcript lines, events and aside output (Pi). The shared output scrub in `common.js` applies to every tool regardless. |
 | `stylePreviewArgv` | `stylePreviewArgv(model)` returns argv | The tool that runs the writing-style preview. Required when `stylePreview: true` (one manifest at most); forbidden otherwise. |
 | `disableProjectServers` | `disableProjectServers(built, dropped)` | Record project tools that were dropped into the built launch settings. |
-| `launchContext` | `async launchContext(service)` returns an object | All returned keys are passed through to `command`. |
+| `launchContext` | `async launchContext(service)` returns an object | Returned keys reach `command` except service-owned keys (`stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `wsl`, `mount`, `replaceEntries`, `resume`), whose service values override them. |
 | `launchPath` | `launchPath(service)` | Kimi's resolution of its launch executable and version. |
 | `recordLaunch` | `recordLaunch(session, status)` | Store the version check result on the session at launch (Pi). |
 | `startupCheck` | `startupCheck(session)` returns a reason or `null` | Why a session that never became ready ended, so the stop reason says more than "exited". |
 | `failureNote` | `failureNote(session)` returns text | Extra note on a "stuck" event and failed-turn messages (Pi version warning). |
-| `bindTranscript`, `spoolWaiting`, `validTranscript` | called with the service as `this` for the first two | Poll-based binding of a session to its log and checking it is still the same file (Kimi). |
+| `bindTranscript` | `bindTranscript(session)`; called as `.call(service, session)` | Poll-based binding; returns the transcript file path or `null`. |
+| `spoolWaiting` | `spoolWaiting(session)`; called as `.call(service, session)` | Poller check; returns `true` when this session has a waiting spooled event, otherwise `false`. |
+| `validTranscript` | `validTranscript(session, stat, begin)`; called directly | Returns whether the opened transcript still matches the session's recorded file and is valid to read from `begin`. |
 | `stepVocabulary` | object | Tool names grouped by kind (`card`, `agents`, `web`, `files`, plus `fileSubstring` and `shellDescription`) used to classify tool calls into steps. |
 | `asideNewId`, `asideModel`, `asidePrepare`, `asideMessage`, `asideResult`, `asideProblem` | see "Aside members" | Extra parts of an aside turn. |
 | `checkPiVersion`, `piVersionStatus`, `checkKimiVersion`, `kimiLaunchPath`, `kimiVersionStatus` | tool-specific helpers | Named in `OPTIONAL.machine` because the service reaches them through the `versionCheck` and launch members; they are the tool's own business. |
@@ -250,7 +252,7 @@ general fallback.
 
 | Field | Type | Required? |
 |---|---|---|
-| `models.pins` | object: slot to `{ model, effort? }`, the default model per slot | required |
+| `models.pins` | object: slot to `{ model, effort? }`, the default model per slot; each model must be `none` or match both `models.format` and the shared pin-file rule `[a-z0-9][a-z0-9._/:-]*` | required |
 | `models.format` | string regex that `codex/model.sh` validates pins with | required |
 | `models.hubPattern` | string regex the hub checks model names with | required |
 | `models.efforts` | array of strings, may be empty (empty means the tool has no effort levels) | required |
