@@ -128,3 +128,13 @@ Verification attempt 2 at `c2f699df`: Claude verifier PASS; GPT verifier FAIL wi
 
 Only `protocol/app/lead.md` changed since attempt 2's commit, so the code suites' results from attempt 2 stand.
 
+### Remediation 3
+
+Verification attempt 3 at `c87fe479`: Claude verifier PASS; GPT verifier FAIL with 1 gap (`REMEDIATION-3.md`): a restarted lead in a lighter mode would post a fresh approval while a design change had the plan back in planning. Fixed:
+
+| Gap | Fix (file:line) | Lane | Validated by |
+|-----|-----------------|------|--------------|
+| Restart posts a fresh approval from planning | `protocol/app/lead.md:908-911` (fresh approval only when `status:` is `approved`; none while `planning` or `ready-for-review`) | gpt light / gpt-6-luna (R4) | `node --test viewer/test/protocol-rules.test.js` → 44 pass, 0 fail; read against the gap |
+
+Only `protocol/app/lead.md` changed since attempt 3's commit, so the code suites' results from attempt 3 stand.
+

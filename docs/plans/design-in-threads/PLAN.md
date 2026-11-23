@@ -477,3 +477,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-23 — Remediation 1 done (R1, R2); COMPLETION.md has a Remediation 1 section. Starting verification attempt 2.
 - 2026-11-23 — R3 accepted (band: scout): lead.md reopen step stops the current round's live reviewers and discards their reports (round does not count); the restart rule does not restart a round while status is planning. protocol-rules 44/44.
 - 2026-11-23 — Worker reported no choices; I listed 1 from the scout: re-wrapped the tails of both lead.md paragraphs (one 94-character line, one short line).
+- 2026-11-23 — R4 accepted (band: scout): lead.md restart rule posts a fresh approval only when status is approved; none while planning or ready-for-review after a design change. protocol-rules 44/44.
+- 2026-11-23 — Worker reported no choices; I listed 1 from the scout: re-wrapped lead.md 908-912 (two lines of 95-96 characters and a short trailing line; cosmetic).
