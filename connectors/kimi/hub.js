@@ -1,5 +1,27 @@
 'use strict';
-const { textOf, unwrap, transcriptRows, isCodexHuman, itemAt, resetAt, toolDetail, resultText, foldResults, claudeReply, codexReply, renderTurn, isClaudeMidTurnHuman, hasPiEntry, piReport, kimiReport } = require('../hub-common');
+const { textOf, unwrap, transcriptRows, itemAt, resetAt, toolDetail, resultText, foldResults, renderTurn } = require('../hub-common');
+
+function kimiReport(raw, turnId) {
+  const turns = [];
+  let turn;
+  for (const row of transcriptRows(raw)) {
+    if (row.type === 'turn.prompt' && row.origin?.kind === 'user') {
+      turn = { id: row.turnId, steps: new Map() };
+      turns.push(turn);
+    } else if (row.type === 'turn.ended' && row.turnId === turn?.id && (row.agentId === undefined || row.agentId === 'main')) {
+      turn = null;
+    } else if (turn && row.type === 'context.append_loop_event') {
+      const event = row.event || {};
+      if (event.type === 'step.begin' && !turn.steps.has(event.uuid)) turn.steps.set(event.uuid, []);
+      if (event.type === 'content.part' && event.part?.type === 'text' && turn.steps.has(event.stepUuid)) {
+        turn.steps.get(event.stepUuid).push({ block: event.block, text: event.part.text || '' });
+      }
+    }
+  }
+  const selected = turnId == null ? turns.at(-1) : turns.find((item) => item.id === turnId);
+  const parts = selected && [...selected.steps.values()].filter((step) => step.length).at(-1);
+  return parts ? parts.sort((a, b) => a.block - b.block).map((part) => part.text).join('') : '';
+}
 
 function parseKimi(raw, thread, sessionName) {
   const turns = [], calls = new Map(), steps = new Map();
