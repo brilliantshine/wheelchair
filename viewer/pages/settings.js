@@ -721,9 +721,12 @@
   function promptBox() {
     if (!fullPrompt) return h('div', { id: 'full-prompt', hidden: true });
     if (fullPrompt.error) return h('p', { id: 'full-prompt', class: 'inline-err', role: 'alert', text: fullPrompt.error });
+    const joinNames = names => names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+    const instructionsNames = joinNames(TOOLS.filter(t => t.settings.roleInstructionsName).map(t => t.settings.roleInstructionsName));
+    const fileNames = joinNames(TOOLS.filter(t => t.typesRoleMessage).map(t => t.label));
     return h('div', { class: 'full-prompt-wrap' },
       h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text }),
-      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it. Lessons marked for one AI or one project reach only agents on that AI or in that project.' }));
+      h('span', { class: 'hint', id: 'full-prompt-caption', text: `${instructionsNames} gets this as its starting instructions; ${fileNames} sessions get it as a file, through a short first message that points to it. Lessons marked for one AI or one project reach only agents on that AI or in that project.` }));
   }
 
   function switchRow(title, hint, control) {
