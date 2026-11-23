@@ -121,7 +121,7 @@ label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; 
   color: var(--accent-ink); font-weight: 600; font-size: 13px; text-decoration: none; }
 .col-list #new-toggle:hover { background: var(--accent-hi); color: var(--accent-ink); }
 /* Archived: a switch at the foot of the list between your threads and only the archived ones. */
-.col-list .list-archived { position: sticky; bottom: -16px; margin: auto -12px -16px; padding: 10px 16px; min-height: 0;
+.col-list .list-archived { position: sticky; bottom: -16px; z-index: 2; margin: auto -12px -16px; padding: 10px 16px; min-height: 0;
   border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--bg); color: var(--dim);
   font-size: 13px; text-align: left; }
 .col-list .list-archived:hover { color: var(--ink); }
