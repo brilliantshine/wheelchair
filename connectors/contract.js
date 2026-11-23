@@ -8,16 +8,16 @@
 // permissionMode, permissionChoices, accountWarning, modelHeadsUp, signInKind,
 // reviewFamily, plans, weights, reportedPlans, oldPlanWeights, modelError,
 // familyHint, accountPolicy and optional scoutAgentTool, monoModelNames and keyPrompt. models has
-// pins (slot -> { model, effort? }), format, efforts, hubPattern, slotAliases and
-// effortError and optional familyCommand and bareTierSet. placement has workerRank, leadDefault, seenByDefault,
+// pins (slot -> { model, effort? }), format, efforts, hubPattern, and optional slotAliases,
+// effortError, familyCommand and bareTierSet. placement has workerRank, leadDefault, seenByDefault,
 // addOnMigration and appendWhenRequested. report.useHookText, stopWhenEnded,
 // optional asideParentField, hook.payload and hook.sessionFromEnv, recoverRank
 // recoverFallback and usage.showWarning, usage.probeWhileLive and usage.tryEveryMachine and usage.defaultProblem carry the remaining dispatch data. Nullable values mean
 // the option does not apply; omitted fields are optional.
 const REQUIRED = { machine: ['command', 'firstMessage', 'readyText', 'answerPrompts', 'findTranscript', 'loginEnv', 'seed', 'loginCommand', 'parseLogin', 'loginStatus'], hub: ['parseChat', 'readReport'] };
-const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv'], versionCheck: ['checkVersion', 'versionStatus'], steps: ['readSteps'] };
+const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv'], versionCheck: ['checkVersion', 'versionStatus'], steps: ['readSteps', 'stepsReady'] };
 const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, machine]) => [name, { machine, hub: [] }]));
-const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'stepsReady', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asideModel', 'asidePrepare', 'asideMessage', 'asideResult', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
+const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asideModel', 'asidePrepare', 'asideMessage', 'asideResult', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
   for (const member of REQUIRED[half]) if (typeof mod[member] !== 'function') fail(member);

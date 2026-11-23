@@ -458,9 +458,9 @@ class MachineService {
     await mkdir(path.join(this.stateDir, 'spool', 'events'));
     this.pollTimer = setInterval(() => this.pollReadiness().catch(error => this.log(error)), 2000);
     this.pollTimer.unref();
-    this.stepsTimer = setInterval(() => this.pollCodexSteps().catch(error => this.log(error)), 2000);
+    this.stepsTimer = setInterval(() => this.pollSteps().catch(error => this.log(error)), 2000);
     this.stepsTimer.unref();
-    this.kimiTimer = setInterval(() => this.pollKimiTurns().catch(error => this.log(error)), 1000);
+    this.kimiTimer = setInterval(() => this.pollTurns().catch(error => this.log(error)), 1000);
     this.kimiTimer.unref();
     // Trust is the one startup screen where waiting two seconds makes a newly-created
     // worktree feel stalled. Stuck sessions and open prompts remain on pollTimer.
@@ -1074,11 +1074,11 @@ class MachineService {
   }
   async bindTranscript(session) { return adapters[session.cli].bindTranscript.call(this, session); }
   async spoolWaiting(session) { return adapters[session.cli].spoolWaiting.call(this, session); }
-  async pollKimiTurns() {
+  async pollTurns() {
     for (const session of Object.values(this.sessions)) if (connectors.manifest(session.cli)?.stopWhenEnded && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
     for (const manifest of connectors.list()) if (adapters[manifest.cli].turnPoller) await adapters[manifest.cli].turnPoller.call(this, manifest.cli);
   }
-  async pollCodexSteps() {
+  async pollSteps() {
     const live = this.liveTmux();
     if (!live) return;
     await Promise.all(Object.values(this.sessions).filter(s => connectors.manifest(s.cli)?.capabilities.steps && s.status !== 'switching' && adapters[s.cli].stepsReady(s) && live.has(s.name)).map(s => this.readSteps(s)));
@@ -1130,7 +1130,7 @@ class MachineService {
     if (session.status === 'ready') return true;
     if (session.status === 'switching') return false;
     let pane;
-    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (session.active_switch && ((live && !live.has(session.name)) || Date.now() - new Date(session.relaunched_at).getTime() >= 30_000)) await this.failedResume(session); else if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
+    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (session.active_switch && ((live && !live.has(session.name)) || Date.now() - new Date(session.relaunched_at).getTime() >= 30_000)) await this.failedResume(session); else if (live && !live.has(session.name)) await this.checkStartupExit(session); return false; }
     if (session.active_switch && Date.now() - new Date(session.relaunched_at).getTime() >= 30_000) { await this.failedResume(session); return false; }
     const prompt = adapters[session.cli]?.answerPrompts(session, pane);
     if (prompt) {
@@ -1183,7 +1183,7 @@ class MachineService {
   // A permission prompt the service relayed is cleared once the pane shows the input screen again.
   async checkPrompt(session) {
     let pane;
-    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (live && !live.has(session.name)) await this.piExitedBeforeReady(session); return false; }
+    try { pane = this.pane(session.name); } catch { const live = this.liveTmux(); if (live && !live.has(session.name)) await this.checkStartupExit(session); return false; }
     if (!this.readyText(session, pane)) return false;
     session.prompt_open = false; await this.persistSessions();
     await this.emitEvent({ type: 'prompt-cleared', session: session.name, thread_id: session.thread_id });
@@ -1715,7 +1715,7 @@ class MachineService {
     for (const entry of accounts) if (statuses[entry.cli].problem && adapters[entry.cli].resolveCli) { entry.logged_in = false; delete entry.problem; }
     return { version: this.version, ...statuses, recipes: Object.fromEntries(providers.map(p => [p, !!loadRecipes()[p]])), accounts, sessions: this.sessionList() };
   }
-  async piExitedBeforeReady(session) {
+  async checkStartupExit(session) {
     const reason = adapters[session.cli]?.startupCheck?.(session);
     if (!reason) return;
     session.end_reason = reason;
@@ -1723,7 +1723,7 @@ class MachineService {
   }
   async reconcilePiExits() {
     const live = this.liveTmux();
-    if (live) for (const session of Object.values(this.sessions)) if (!live.has(session.name)) await this.piExitedBeforeReady(session);
+    if (live) for (const session of Object.values(this.sessions)) if (!live.has(session.name)) await this.checkStartupExit(session);
   }
   launchPath(cli) { return adapters[cli].launchPath(this); }
   checkVersion(cli, executable) { return adapters[cli].checkVersion(this, executable); }

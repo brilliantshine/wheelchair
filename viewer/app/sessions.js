@@ -436,7 +436,7 @@ async function startSession(hub, thread, input) {
 async function deliverReport(hub, thread, target, payload) {
   if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
   const chat = require('./chat.js');
-  let text = connectors.manifest(target.cli)?.report?.useHookText ? String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim() : '';
+  let text = connectors.manifest(target.cli)?.report?.useHookText !== false ? String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim() : '';
   if (!text) {
     const now = hub.reportNow || Date.now;
     const sleep = hub.reportSleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));

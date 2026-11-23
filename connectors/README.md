@@ -54,7 +54,7 @@ any of these is missing or not a function. `command` and `seed` are the ones peo
 
 | Member | Signature | When the service calls it |
 |---|---|---|
-| `command` | `command(input, session, worktree, context)` returns `{ argv, loaded, settingsPath?, settings?, mcpConfig? }` | Building the launch for a new or resumed session. `context` carries `stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `resume`, `wsl`, `mount` and anything `launchContext` added. |
+| `command` | `command(input, session, worktree, context)` returns `{ argv, loaded, settingsPath?, settings?, mcpConfig? }` | Building the launch for a new or resumed session. `context` carries `stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `kimiExecutable`, `wsl`, `mount`, `replaceEntries` and `resume`. Values from `launchContext` reach `command` only through these keys. |
 | `firstMessage` | `firstMessage(input, promptPath, name)` returns the text typed once the tool is ready | Session start; the result becomes the session's pending first message. |
 | `readyText` | `readyText(session, pane)` returns a boolean | Each readiness poll of a starting session's tmux pane. |
 | `answerPrompts` | `answerPrompts(session, pane)` returns `{ step, keys }` or `null` | While a session is starting, to answer first-run screens (theme, trust, terms) with keystrokes. |
@@ -89,14 +89,13 @@ These are called only when present; they need no flag in the manifest.
 | `redact` | `redact(value)` | The tool's own redaction of transcript lines, events and aside output (Pi). The shared output scrub in `common.js` applies to every tool regardless. |
 | `stylePreviewArgv` | `stylePreviewArgv(model)` returns argv | The tool that runs the writing-style preview. Only the manifest with `stylePreview: true` (one at most) needs it. |
 | `disableProjectServers` | `disableProjectServers(built, dropped)` | Record project tools that were dropped into the built launch settings. |
-| `launchContext` | `async launchContext(service)` returns an object | Extra values merged into `command`'s `context` (Kimi's executable). |
+| `launchContext` | `async launchContext(service)` returns an object | Values merged into launch context; only the keys listed for `command` are copied to it (including Kimi's executable). |
 | `launchPath` | `launchPath(service)` | Kimi's resolution of its launch executable and version. |
 | `recordLaunch` | `recordLaunch(session, status)` | Store the version check result on the session at launch (Pi). |
 | `startupCheck` | `startupCheck(session)` returns a reason or `null` | Why a session that never became ready ended, so the stop reason says more than "exited". |
 | `failureNote` | `failureNote(session)` returns text | Extra note on a "stuck" event and failed-turn messages (Pi version warning). |
 | `bindTranscript`, `spoolWaiting`, `validTranscript` | called with the service as `this` for the first two | Poll-based binding of a session to its log and checking it is still the same file (Kimi). |
 | `stepVocabulary` | object | Tool names grouped by kind (`card`, `agents`, `web`, `files`, plus `fileSubstring` and `shellDescription`) used to classify tool calls into steps. |
-| `stepsReady` | `stepsReady(session)` returns boolean | Whether step tailing may start for a session (Codex needs its thread id). Used with the `steps` capability. |
 | `asideNewId`, `asideModel`, `asidePrepare`, `asideMessage`, `asideResult`, `asideProblem` | see "Aside members" | Extra parts of an aside turn. |
 | `checkPiVersion`, `piVersionStatus`, `checkKimiVersion`, `kimiLaunchPath`, `kimiVersionStatus` | tool-specific helpers | Named in `OPTIONAL.machine` because the service reaches them through the `versionCheck` and launch members; they are the tool's own business. |
 
@@ -119,7 +118,7 @@ have none of them. The registry validation also limits `preflight` to one tool.
 | `liveSwitch` | `usual()` | A running session can be switched to another account (`POST /v1/sessions/:name/switch`); `usual()` names the folder copied from. | A switch request for the tool is refused. |
 | `aside` | `asideArgv(input, context)` returns argv | The tool can run headless aside turns. Also set manifest `asideParentField` (the session field holding the conversation id to fork from, for example `cli_session_id`). | The app never offers asides for the tool. |
 | `versionCheck` | `checkVersion(service, executable)`, `versionStatus(service, login)` | The service checks the installed version at launch and in status, and the hub shows the result. | No version gating. |
-| `steps` | `readSteps(state, lines, ctx)` returns step events | The service tails the tool's transcript for tool-call steps (Codex). Hook-driven step events (Claude) do not need this flag. | The tool shows no steps from tailing. |
+| `steps` | `readSteps(state, lines, ctx)` returns step events; `stepsReady(session)` returns boolean | Both are required. The service calls `stepsReady` before polling and reading steps to check whether tailing may start (Codex needs its thread id). The service tails the tool's transcript for tool-call steps (Codex). Hook-driven step events (Claude) do not need this flag. | The tool shows no steps from tailing. |
 
 #### Aside members
 
@@ -155,8 +154,7 @@ loads only the manifest and follows the manifest `hook` field:
 | `hook.payload` | `stdin` reads stdin to the end; `last-arg` takes the last argument and never reads stdin (a Codex-style notify). Required for a hook-driven tool. |
 | `hook.sessionFromEnv` | If true, a missing session argument falls back to `WHEELCHAIR_SESSION_NAME`, and with neither the hook exits 0. Defaults to false. |
 
-It then posts through `machine/lib/hook-post.js`, which runs the connector's `hookEvent`. An
-unknown tool exits 64. A poller tool has no `hook` field. `hook.sh` keeps its path and
+It then posts through `machine/lib/hook-post.js`, which runs the connector's `hookEvent`. `hook.sh` exits 0 without a token before invoking `hook-in.js`. Without a session it exits 0 when `sessionFromEnv` is true and 1 otherwise. A tool without a manifest or without a `hook` field exits 64. A poller tool has no `hook` field. `hook.sh` keeps its path and
 arguments because account folders and tool config files of running sessions point at it, and
 it must stay bash 3.2 compatible.
 
@@ -165,9 +163,9 @@ it must stay bash 3.2 compatible.
 | Member | Signature | When the hub calls it |
 |---|---|---|
 | `parseChat` | `parseChat(raw, thread, sessionName)` returns chat items | Rendering a session's transcript in a thread. Turns the tool's transcript text into the shared item shape; `connectors/hub-common.js` has the helpers. |
-| `readReport` | `readReport(raw, payload)` returns `{ text, settled }` | Picking the report text when a worker finishes. `settled: false` means the transcript has not caught up with the hook yet (Pi, when `payload.entry_id` is absent); the delivery loop retries on its usual schedule and stops on the first settled read. |
+| `readReport` | `readReport(raw, payload)` returns `{ text, settled }` | Picking reviewer or verifier report text on delivery, and when the hub renders a thread. `settled: false` means the transcript has not caught up with the hook yet (Pi, when the entry named by `payload.entry_id` is absent); the delivery loop retries on its usual schedule and stops on the first settled read. |
 
-Manifest `report.useHookText` (default true) says whether the delivery loop first takes the
+Optional manifest `report.useHookText` (default true) says whether the reviewer/verifier delivery loop first takes the
 report text from the hook payload; Pi sets it false. The hub never loads `machine.js`; code
 the hub needs must be in the manifest or `hub.js`. There are no optional hub members
 (`OPTIONAL.hub` and every capability's `hub` list are empty).
@@ -178,7 +176,7 @@ A plain object, all values JSON. Regex fields are source strings, with a separat
 `<field>Flags` string when flags are needed. A value of `null` means the option does not
 apply. `validateManifest` in `contract.js` checks the types and throws `<cli>: <field>`.
 "Required" means validation fails without it; "defaulted" means the field may be omitted and
-the type is checked only when present.
+the type is checked only when present. Unless a reader fallback is stated below, an omitted field is `undefined` (there is no applied default).
 
 ### Identity
 
@@ -188,7 +186,7 @@ the type is checked only when present.
 | `provider` | string, the stored provider id | required |
 | `label` | string, short name used on pages | required |
 | `displayName` | string, full name used in prose | required |
-| `shortName` | string, machine-message name when it differs from `displayName` | defaulted |
+| `shortName` | string, machine-message name when it differs from `displayName` | defaulted: `displayName` |
 | `typesRoleMessage` | boolean | required |
 | `singleAccount` | boolean | required |
 | `capabilities` | object with a boolean for every capability name | required |
@@ -200,11 +198,11 @@ the type is checked only when present.
 | `install.command` | string, the shell recipe the install job runs | required |
 | `install.binary` | string, the executable name | required |
 | `install.lookup` | `path`, `absolute` or `fallback`: how the install job finds the binary afterwards | required |
-| `install.label` | string, the name in install messages | defaulted |
-| `install.node` | string, minimum Node version the recipe needs | defaulted |
-| `install.versionArgs` | array of strings, or `null` to skip the version check | defaulted |
-| `install.fallbackPath` | string, where the installer looks when the CLI is not on PATH | defaulted |
-| `install.pathRank` | number or `null`, order the installer prepends CLI folders to the service PATH | defaulted |
+| `install.label` | string, the name in install messages | defaulted: `undefined` |
+| `install.node` | string, minimum Node version the recipe needs | defaulted: no Node prerequisite |
+| `install.versionArgs` | array of strings, or `null` to skip the version check | defaulted: `undefined` (passed to the version command) |
+| `install.fallbackPath` | string, where the installer looks when the CLI is not on PATH | defaulted: empty string in `install.sh`; `undefined` in the install job |
+| `install.pathRank` | number or `null`, order the installer prepends CLI folders to the service PATH | defaulted: `null` ordering (last) |
 | `install.sensitivity` | boolean, see the checklist | defaulted (false) |
 
 ### Settings page (`settings`)
@@ -215,8 +213,7 @@ the type is checked only when present.
 `plans` (arrays of `[value, label]`); `weights`, `reportedPlans`, `oldPlanWeights` (objects);
 `modelHeadsUp`, `reviewFamily`, `scoutAgentTool`, `monoModelNames` (booleans); `keyPrompt`
 (string). `modelPattern` is the browser's own model-name check and differs from `models.format`
-and `models.hubPattern` on purpose, so each place keeps rejecting what it does today. No code
-outside the manifests and `contract.js` reads `monoModelNames` or `keyPrompt` today.
+and `models.hubPattern` on purpose, so each place keeps rejecting what it does today. `monoModelNames` controls monospace styling for model selectors; `keyPrompt` supplies the API-key sign-in hint, input label and placeholder. Omitted fields are `undefined`: boolean checks are false, `permissionChoices` falls back to `[]` where used, and `keyPrompt` can fall back to the key-sign-in tool's prompt (or an empty string if that tool is absent). Other values have no general fallback; in particular the settings store calls `Object.keys` on `weights`, `reportedPlans`, and `oldPlanWeights`, so omitting those objects causes an error.
 
 ### Models (`models`)
 
@@ -226,20 +223,20 @@ outside the manifests and `contract.js` reads `monoModelNames` or `keyPrompt` to
 | `models.format` | string regex that `codex/model.sh` validates pins with | required |
 | `models.hubPattern` | string regex the hub checks model names with | required |
 | `models.efforts` | array of strings, may be empty (empty means the tool has no effort levels) | required |
-| `models.slotAliases` | object, alias to slot (Claude's `haiku`, `sonnet`, `opus`) | defaulted |
-| `models.effortError` | string, the hub's error text for a bad effort | defaulted |
-| `models.familyCommand` | boolean, the tool uses `model.sh family` | defaulted |
-| `models.bareTierSet` | boolean, the tool takes bare tier commands in `model.sh` | defaulted |
+| `models.slotAliases` | object, alias to slot (Claude's `haiku`, `sonnet`, `opus`) | defaulted: `undefined` (the route indexes it directly) |
+| `models.effortError` | string, the hub's error text for a bad effort | defaulted: `undefined` |
+| `models.familyCommand` | boolean, the tool uses `model.sh family` | defaulted: false in boolean checks |
+| `models.bareTierSet` | boolean, the tool takes bare tier commands in `model.sh` | defaulted: false in boolean checks |
 
 ### Placement (`placement`)
 
 | Field | Type | Meaning |
 |---|---|---|
 | `placement.workerRank` | number or `null`, required | Position in the fresh-settings default worker order; `null` leaves the tool out of it. |
-| `placement.leadDefault` | boolean, defaulted | The tool named first in the fresh lead order. |
-| `placement.seenByDefault` | boolean, defaulted | Counts as already seen when saved settings have no `worker_order_seen`. |
-| `placement.addOnMigration` | boolean, defaulted | When false, the migration does not append the tool to a saved worker order. |
-| `placement.appendWhenRequested` | boolean, defaulted | The balancer appends the tool when a worker explicitly requests it and it is not in the order. |
+| `placement.leadDefault` | boolean, defaulted: false in boolean checks | The tool named first in the fresh lead order. |
+| `placement.seenByDefault` | boolean, defaulted: false in boolean checks | Counts as already seen when saved settings have no `worker_order_seen`. |
+| `placement.addOnMigration` | boolean, defaulted: false in boolean checks | When false, the migration does not append the tool to a saved worker order. |
+| `placement.appendWhenRequested` | boolean, defaulted: false in boolean checks | The balancer appends the tool when a worker explicitly requests it and it is not in the order. |
 
 ### Behaviour flags and the rest
 
@@ -299,8 +296,8 @@ tag before their own script.
 8. Run `node connectors/export.js` and commit the new `registry.json`.
 9. Tests: `machine/test/connectors-contract.test.js` loads both halves of every registered
    connector and checks the manifests, so a missing member or a wrong type fails by name.
-   `machine/test/name-guard.test.js` fails on any tool-name literal outside `connectors/`,
-   and `machine/test/adapters-loaded.test.js` walks the registry. Add characterization tests
+   `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). For a non-tool hit, add a file and line pattern to its allowlist with a reason and the `not-tool` tag; other established tags are `compat`, `legacy`, and `model-script`.
+   `machine/test/adapters-loaded.test.js` walks the registry. Add characterization tests
    for the tool's behaviour next to the machine and hub tests that cover the other tools. Run
    the suites listed in the root `AGENTS.md`, including `bash codex/test/run.sh` for
    `model.sh` and `bash install/test/run.sh` for `install.sh`.

@@ -1422,7 +1422,7 @@ test('Codex rollout reads persist complete lines, serialize reads, and flush bef
   const start = row('a','custom_tool_call',{name:'exec',input:'tools.exec_command({cmd:"npm test"})'});
   const end = row('a','custom_tool_call_output',{output:'Script running with cell ID 1'});
   await write(file,start+'\n'+end);
-  await Promise.all([svc.pollCodexSteps(),svc.readSteps(session)]);
+  await Promise.all([svc.pollSteps(),svc.readSteps(session)]);
   assert.equal(peak,1); assert.deepEqual(seen.map(e=>e.phase),['start']); assert.equal(session.steps_offset,Buffer.byteLength(start+'\n'));
   assert.equal(svc.sessions['wc-unbound'].steps_offset,undefined);
   await fs.appendFile(file,'\n'); await svc.readSteps(session);

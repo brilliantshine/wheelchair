@@ -59,7 +59,7 @@ test('poll retries Pi fatal stops while other tools do not enter the Pi loop', a
   const m = machine(), seen = [];
   for (const cli of clis) m.sessions[`wc-${cli}-worker`] = { name: `wc-${cli}-worker`, cli, status: 'starting', end_reason: 'existing' };
   m.stopFatal = async s => { seen.push(s.cli); if (s.cli === 'pi' && seen.filter(x => x === 'pi').length === 2) s.status = 'stopped'; };
-  await m.pollKimiTurns(); await m.pollKimiTurns(); await m.pollKimiTurns();
+  await m.pollTurns(); await m.pollTurns(); await m.pollTurns();
   assert.deepEqual(seen, ['pi', 'kimi', 'pi', 'kimi', 'kimi']);
   assert.equal(m.sessions['wc-pi-worker'].end_reason, 'existing');
 });
