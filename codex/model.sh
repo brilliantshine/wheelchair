@@ -3,7 +3,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec python3 -I - "$root" "$@" <<'PY'
+exec python3 -I - "$root" "${BASH_SOURCE[0]}" "$@" <<'PY'
 import fcntl
 import json
 import os
@@ -11,49 +11,30 @@ import re
 import sys
 import tempfile
 
-PROVIDERS = ("claude", "gpt", "gemini", "kimi", "openrouter")
+with open(os.environ.get("WHEELCHAIR_REGISTRY") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[2]))), "connectors", "registry.json"), encoding="utf-8") as handle:
+    TOOLS = json.load(handle)["tools"]
+PROVIDERS = tuple(tool["provider"] for tool in TOOLS)
 SLOTS = ("light", "standard", "heavy", "critical", "lead", "sub-lead")
 WORK_TIERS = ("light", "standard", "heavy", "critical")
-DEFAULTS = {
-    "claude": {
-        "light": ("claude-haiku-5-5", None), "standard": ("claude-sonnet-5-5", None),
-        "heavy": ("claude-opus-5-5", None), "critical": ("claude-fable-5-2", None),
-        "lead": ("claude-opus-5-5", None),
-    },
-    "gpt": {
-        "light": ("gpt-6-luna", None), "standard": ("gpt-5.6-terra", None),
-        "heavy": ("gpt-6.1-sol", None), "critical": ("gpt-6-astra", None),
-        "lead": ("gpt-6.1-sol", None),
-    },
-    "gemini": {
-        "light": ("gemini-3.8-flash-low", None), "standard": ("gemini-3.8-flash-medium", None),
-        "heavy": ("gemini-3.8-flash-high", None), "critical": ("gemini-3.8-flash-high", None),
-        "lead": ("gemini-3.8-flash-high", None),
-    },
-    "kimi": {
-        "light": ("kimi-code/kimi-for-coding", None), "standard": ("kimi-code/k3", None),
-        "heavy": ("kimi-code/k3.1-pro", None), "critical": ("kimi-code/k3.1-pro", None),
-        "lead": ("kimi-code/k3.1-pro", None),
-    },
-    "openrouter": {slot: ("openrouter/auto", None) for slot in ("light", "standard", "heavy", "critical", "lead")},
-}
+DEFAULTS = {tool["provider"]: {slot: (pin["model"], pin.get("effort"))
+            for slot, pin in tool["models"]["pins"].items()} for tool in TOOLS}
+FORMATS = {tool["provider"]: re.compile(tool["models"]["format"]) for tool in TOOLS}
+EFFORTS = {tool["provider"]: set(tool["models"]["efforts"]) for tool in TOOLS}
+# model-script: GPT and Claude retain their tier aliases and discovery formats.
 ALIASES = {"luna": "light", "terra": "standard", "sol": "heavy", "astra": "critical"}
 CLAUDE_ALIASES = {"haiku": "light", "sonnet": "standard", "opus": "heavy"}
-EFFORTS = {"low", "medium", "high", "xhigh", "max"}
-GPT_EFFORTS = {"low", "medium", "high", "xhigh"}
-VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
-KIMI_VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$")
-
-OPENROUTER_VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$")
+VALUE = FORMATS["gpt"]
+KIMI_VALUE = FORMATS["kimi"]
 
 
 def value_ok(provider, model):
-    if provider == "openrouter":
-        return model == "none" or (len(model) <= 128 and OPENROUTER_VALUE.fullmatch(model) is not None)
-    return (KIMI_VALUE if provider == "kimi" else VALUE).match(model) is not None
+    return model == "none" or FORMATS[provider].fullmatch(model) is not None
+# model-script: GPT discovery and tier commands retain their existing behavior.
 MODEL = re.compile(r"^gpt-(\d+(?:\.\d+)*)-([a-z]+)$")
-USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt|gemini|kimi|openrouter> <slot> | "
-         "effort <claude|gpt|gemini|kimi|openrouter> <slot> | family claude <slot> | "
+provider_usage = "|".join(PROVIDERS)
+USAGE = (f"usage: model.sh <light|standard|heavy|critical> | <{provider_usage}> <slot> | "
+         f"effort <{provider_usage}> <slot> | family claude <slot> | "
          "set [<provider> <slot> | <tier>] <model|none> [effort] | "
          "skip <model> | init | reset | check [--json] | show --json")
 
@@ -65,6 +46,7 @@ def paths():
     return pins, cache
 
 
+# model-script: Claude tier aliases
 def slot_for(provider, name):
     if name in SLOTS:
         return name
@@ -79,6 +61,7 @@ def blank_pins():
     return {provider: {} for provider in PROVIDERS}
 
 
+# model-script: legacy GPT pin syntax
 def parse_pins(text):
     pins, skipped, seen = blank_pins(), [], set()
     for raw in text.splitlines():
@@ -92,7 +75,7 @@ def parse_pins(text):
             skipped.append(skip.group(1))
             continue
         entry = re.fullmatch(
-            r"(claude|gpt|gemini|kimi|openrouter)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._/:-]*)(?:\s+@([a-z]+))?", line)
+            r"(" + "|".join(map(re.escape, PROVIDERS)) + r")\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._/:-]*)(?:\s+@([a-z]+))?", line)
         if entry is not None:
             provider, raw_slot, model, effort = entry.groups()
             slot = slot_for(provider, raw_slot)
@@ -101,9 +84,7 @@ def parse_pins(text):
             if model == "none":
                 if effort is not None:
                     return None
-            elif effort is not None and provider == "kimi":
-                return None
-            elif effort is not None and effort not in (GPT_EFFORTS if provider == "gpt" else EFFORTS):
+            elif effort is not None and effort not in EFFORTS[provider]:
                 return None
             key = provider, slot
             if key in seen:
@@ -178,6 +159,7 @@ def locked_write(path, change):
         return change()
 
 
+# model-script: GPT model discovery and heads-up
 def model_parts(model):
     match = MODEL.match(model)
     return None if match is None else (tuple(int(part) for part in match.group(1).split(".")), match.group(2))
@@ -237,6 +219,7 @@ def listed_models(cache_path):
     return newer_first(parsed) + other
 
 
+# model-script: Kimi model discovery
 def kimi_config(text):
     """Model tables of Kimi Code's config: tomllib when present, else a plain scan (Python < 3.11)."""
     try:
@@ -280,6 +263,7 @@ def kimi_models():
     return listed
 
 
+# model-script: GPT heads-up workflow
 def heads_up_events(pin_path, cache_path):
     pins, skipped, malformed = read_pins(pin_path)
     events = []
@@ -369,6 +353,7 @@ def write_pin(path, provider, slot, model, effort):
     write(path, change)
 
 
+# model-script: GPT and Claude workflows and GPT/Kimi discovery
 def main(root, argv):
     pin_path, cache_path = paths()
     if len(argv) == 1 and (slot := slot_for("gpt", argv[0])) in WORK_TIERS:
@@ -441,12 +426,12 @@ def main(root, argv):
         if provider == "kimi" and effort is not None:
             print("Kimi Code has no effort setting", file=sys.stderr)
             sys.exit(2)
-        if provider == "gpt" and effort is not None and effort not in GPT_EFFORTS:
+        if provider == "gpt" and effort is not None and effort not in EFFORTS[provider]:
             print("GPT effort must be one of: low, medium, high, xhigh", file=sys.stderr)
             die_usage()
         if (slot is None or not value_ok(provider, model)
                 or (model == "none" and effort is not None)
-                or (effort is not None and effort not in (GPT_EFFORTS if provider == "gpt" else EFFORTS))):
+                or (effort is not None and effort not in EFFORTS[provider])):
             die_usage()
         write_pin(pin_path, provider, slot, model, effort)
         return
@@ -465,5 +450,5 @@ def main(root, argv):
     die_usage()
 
 
-main(sys.argv[1], sys.argv[2:])
+main(sys.argv[1], sys.argv[3:])
 PY

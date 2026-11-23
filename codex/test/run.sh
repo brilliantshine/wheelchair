@@ -494,5 +494,38 @@ assert 'preflight keeps exit 2 with a heads-up' bash -c '[[ $1 == 2 && $2 == *"h
 [[ $preflight_status == 2 ]] || printf 'exit-2 case got status %s, output:\n%s\n' "$preflight_status" "$preflight_output"
 wait "$stub_pid"
 
+new_case
+python3 - "$repo/connectors/registry.json" "$case_dir/registry.json" <<'PYREG'
+import copy, json, sys
+with open(sys.argv[1]) as handle:
+    registry = json.load(handle)
+tool = copy.deepcopy(registry["tools"][0])
+tool["cli"] = tool["provider"] = "newtool"
+registry["tools"].append(tool)
+with open(sys.argv[2], "w") as handle:
+    json.dump(registry, handle)
+PYREG
+export WHEELCHAIR_REGISTRY="$case_dir/registry.json"
+run_model init
+assert 'registry extension initializes' test "$status" -eq 0
+for provider in claude gpt gemini kimi openrouter; do
+  for slot in light standard heavy critical lead sub-lead; do
+    run_model "$provider" "$slot"
+    printf '%s\n' "$output" >> "$case_dir/before"
+  done
+done
+run_model set newtool standard new-model
+assert 'registry extension accepts a new provider pin' test "$status" -eq 0
+run_model newtool standard
+assert 'registry extension reads its pin' equals "$output" 'new-model'
+for provider in claude gpt gemini kimi openrouter; do
+  for slot in light standard heavy critical lead sub-lead; do
+    run_model "$provider" "$slot"
+    printf '%s\n' "$output" >> "$case_dir/after"
+  done
+done
+assert 'registry extension leaves other providers unchanged' cmp -s "$case_dir/before" "$case_dir/after"
+unset WHEELCHAIR_REGISTRY
+
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"
 (( failures == 0 ))

@@ -58,25 +58,50 @@ tailscale_cli() {
   fi
 }
 
+# Read the registry once; shell quoting keeps paths and names literal.
+registry_data=$(python3 -I - "$ROOT/connectors/registry.json" <<'PYREG'
+import json, os, shlex, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    tools = json.load(handle)["tools"]
+for name, values in (
+    ("tool_clis", [t["cli"] for t in tools]),
+    ("tool_binaries", [t["install"]["binary"] for t in tools]),
+    ("tool_fallbacks", [os.path.expanduser(t["install"].get("fallbackPath", "")) for t in tools]),
+    ("tool_sensitivity", [int(t["install"]["sensitivity"]) for t in tools]),
+    ("ranked_indices", sorted(range(len(tools)), key=lambda i: tools[i]["install"]["pathRank"])),
+):
+    print(name + "=(" + " ".join(shlex.quote(str(v)) for v in values) + ")")
+PYREG
+)
+eval "$registry_data"
+tool_present=()
+any_present=0
+for i in "${!tool_clis[@]}"; do
+  cli=${tool_clis[$i]}
+  found=0
+  # Testing seam: when set (including to empty), this replaces PATH detection.
+  if [[ ${WHEELCHAIR_PRESENT+x} ]]; then
+    case ",$WHEELCHAIR_PRESENT," in *,"$cli",*) found=1 ;; esac
+  elif command -v "${tool_binaries[$i]}" >/dev/null 2>&1 || [[ -n ${tool_fallbacks[$i]} && -x ${tool_fallbacks[$i]} ]]; then
+    found=1
+  fi
+  tool_present[$i]=$found
+  (( found )) && any_present=1
+ done
+
+# legacy: one-off cleanup of retired files
 claude_home=${WHEELCHAIR_CLAUDE_HOME:-"$HOME/.claude"}
 codex_home=${WHEELCHAIR_CODEX_HOME:-"$HOME/.codex"}
+claude_present=0
+codex_present=0
+for i in "${!tool_clis[@]}"; do
+  case ${tool_clis[$i]} in
+    claude) claude_present=${tool_present[$i]} ;;
+    codex) codex_present=${tool_present[$i]} ;;
+  esac
+done
 
-# Testing seam: when set (including to empty), this replaces PATH detection.
-if [[ ${WHEELCHAIR_PRESENT+x} ]]; then
-  case ",$WHEELCHAIR_PRESENT," in *,claude,*) claude_present=1 ;; *) claude_present=0 ;; esac
-  case ",$WHEELCHAIR_PRESENT," in *,codex,*) codex_present=1 ;; *) codex_present=0 ;; esac
-  case ",$WHEELCHAIR_PRESENT," in *,agy,*) agy_present=1 ;; *) agy_present=0 ;; esac
-  case ",$WHEELCHAIR_PRESENT," in *,kimi,*) kimi_present=1 ;; *) kimi_present=0 ;; esac
-  case ",$WHEELCHAIR_PRESENT," in *,pi,*) pi_present=1 ;; *) pi_present=0 ;; esac
-else
-  command -v claude >/dev/null 2>&1 && claude_present=1 || claude_present=0
-  command -v codex >/dev/null 2>&1 && codex_present=1 || codex_present=0
-  command -v agy >/dev/null 2>&1 && agy_present=1 || agy_present=0
-  if command -v kimi >/dev/null 2>&1 || [[ -x $HOME/.kimi-code/bin/kimi ]]; then kimi_present=1; else kimi_present=0; fi
-  if command -v pi >/dev/null 2>&1 || [[ -x $HOME/.local/bin/pi ]]; then pi_present=1; else pi_present=0; fi
-fi
-
-if (( ! claude_present && ! codex_present && ! agy_present && ! kimi_present && ! pi_present )); then
+if (( ! any_present )); then
   echo "No agent CLI yet. After install, open the app: its setup checklist installs them from Settings."
 fi
 
@@ -97,11 +122,9 @@ case $# in
   *) printf '%s: unsupported arguments: %s\n' "${0##*/}" "$*" >&2; exit 2 ;;
 esac
 
-(( claude_present )) && printf 'harness found: claude\n'
-(( codex_present )) && printf 'harness found: codex\n'
-(( agy_present )) && printf 'harness found: agy\n'
-(( kimi_present )) && printf 'harness found: kimi\n'
-(( pi_present )) && printf 'harness found: pi\n'
+for i in "${!tool_clis[@]}"; do
+  if (( tool_present[i] )); then printf 'harness found: %s\n' "${tool_clis[$i]}"; fi
+done
 if [[ $(platform) == Darwin ]]; then
   echo "sudo helper: not available on macOS; sudo cards won't work on this machine"
 elif [[ ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/etc/systemd/system/wheelchair-sudo.service || ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/usr/local/lib/wheelchair-sudo/helper.py ]]; then
@@ -123,6 +146,7 @@ remove_retired() {  # path, wrapper file, expected protocol file, symlink suffix
   echo "removed old wrapper: $path"
 }
 
+# legacy: one-off cleanup of retired files
 retired_names=(spine plan adopt plan-review implement verify graph diagram-sensitivity)
 retired_files=(spine planning adopt plan-review implementation verification graphs sensitivity)
 for i in "${!retired_names[@]}"; do
@@ -157,8 +181,10 @@ else
 fi
 
 present=''
-(( claude_present )) && present+=claude,
-(( codex_present )) && present+=codex,
+for i in "${!tool_clis[@]}"; do
+  if (( tool_present[i] && tool_sensitivity[i] )); then present+="${tool_clis[$i]},"; fi
+done
+# legacy: one-off cleanup of retired files
 python3 -I "$ROOT/install/unseen.py" "$ROOT" "$claude_home" "$codex_home" "$present" || echo "seen hook: warning — cleanup failed" >&2
 
 if "$ROOT/sensitivity/set.sh"; then
@@ -399,19 +425,19 @@ configure_service() {
   # systemd starts user services with a bare PATH, and every agent session inherits the
   # service's PATH through tmux. Give it this login's PATH, led by the CLI directories.
   service_path=$PATH
-  for cli in codex claude agy kimi pi; do
-    cli_path=$(command -v "$cli" 2>/dev/null) || {
-      if [[ $cli == kimi && -x $HOME/.kimi-code/bin/kimi ]]; then
-        cli_path=$HOME/.kimi-code/bin/kimi
-      elif [[ $cli == pi && -x $HOME/.local/bin/pi ]]; then
-        cli_path=$HOME/.local/bin/pi
-      else
-        continue
-      fi
+  for i in "${ranked_indices[@]}"; do
+    cli_path=$(command -v "${tool_binaries[$i]}" 2>/dev/null) || {
+      cli_path=${tool_fallbacks[$i]}
+      [[ -n $cli_path && -x $cli_path ]] || continue
     }
     service_path="${cli_path%/*}:$service_path"
   done
-  for dir in "$HOME/.local/bin" "$HOME/.kimi-code/bin"; do
+  # Append fallback directories in reverse rank order, preserving the existing PATH.
+  for (( rank=${#ranked_indices[@]}-1; rank>=0; rank-- )); do
+    i=${ranked_indices[$rank]}
+    fallback=${tool_fallbacks[$i]}
+    [[ -n $fallback ]] || continue
+    dir=${fallback%/*}
     case ":$service_path:" in *":$dir:"*) ;; *) service_path="$service_path:$dir" ;; esac
   done
   if [[ $(platform) == Darwin ]]; then
