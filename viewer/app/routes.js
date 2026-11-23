@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const connectors = require('../../connectors');
+const listWords = items => items.slice(0, -1).join(', ') + ' or ' + items.at(-1);
 const fs = require('node:fs/promises');
 const path = require('node:path');
 // Spec "Security" and "Views": browser and machine callback HTTP routes.
@@ -310,14 +312,14 @@ async function handleSettings(hub, request, response, url, bits, body) {
     return send(response, 200, { ...Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])), reserved_provider: await reservedLabel(hub, value) });
   }
   if (bits[1] === 'models' && request.method === 'PUT') {
-    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude, gpt, gemini, kimi or openrouter');
+    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, `provider must be ${listWords(connectors.list().map(m => m.provider))}`);
     let slot = settings.TIER_ALIASES[body.slot] || body.slot;
-    if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
+    const manifest = connectors.byProvider(body.provider);
+    slot = manifest.models.slotAliases[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead', 'sub-lead'].includes(slot)) throw appError(400, 'slot is invalid');
-    if (body.model !== null && (typeof body.model !== 'string' || !(body.provider === 'openrouter' ? /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/ : body.provider === 'kimi' ? /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/ : /^[a-z0-9][a-z0-9._-]{0,63}$/).test(body.model))) throw appError(400, 'model is invalid');
+    if (body.model !== null && (typeof body.model !== 'string' || !new RegExp(manifest.models.hubPattern).test(body.model))) throw appError(400, 'model is invalid');
     if (!PROVIDERS[body.provider].effort && body.effort !== undefined) throw appError(400, `${PROVIDERS[body.provider].label} has no effort setting`);
-    if (body.provider === 'gpt' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh'].includes(body.effort)) throw appError(400, 'effort for GPT must be one of low, medium, high, xhigh');
-    if (['claude', 'gemini', 'openrouter'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
+    if (body.effort !== undefined && !manifest.models.efforts.includes(body.effort)) throw appError(400, manifest.models.effortError);
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
@@ -327,8 +329,9 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (body.action === 'switch') {
       const tier = settings.TIER_ALIASES[body.tier] || body.tier;
       if (!['light', 'standard', 'heavy', 'critical'].includes(tier) || typeof body.model !== 'string') throw appError(400, 'tier and model are required to switch');
-      const effort = (await settings.modelCommand(hub, ['effort', 'gpt', tier])).stdout.trim();
-      args = ['set', 'gpt', tier, body.model, ...(effort ? [effort] : [])];
+      const provider = connectors.list().find(m => m.models.bareTierSet).provider;
+      const effort = (await settings.modelCommand(hub, ['effort', provider, tier])).stdout.trim();
+      args = ['set', provider, tier, body.model, ...(effort ? [effort] : [])];
     } else if (body.action === 'skip') {
       if (typeof body.model !== 'string') throw appError(400, 'model is required to skip');
       args = ['skip', body.model];

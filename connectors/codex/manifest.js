@@ -98,6 +98,7 @@ module.exports = {
     "accountPolicy": null
   },
   "models": {
+    "bareTierSet": true,
     "pins": {
       "light": {
         "model": "gpt-6-luna"
