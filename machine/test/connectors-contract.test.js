@@ -36,6 +36,11 @@ test('contract rejects missing and inconsistent members and fields', () => {
   const missing = structuredClone(manifests[0]); delete missing.models.format; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 'pattern'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);
+  const noModelError = structuredClone(manifests[0]); delete noModelError.settings.modelError; assert.throws(() => contract.validateManifest(noModelError), /settings.modelError/);
+  noModelError.settings.modelError = ''; assert.throws(() => contract.validateManifest(noModelError), /settings.modelError/);
+  const noPermissionName = structuredClone(manifests.find(m => m.settings.permissionMode)); delete noPermissionName.settings.permissionName; assert.throws(() => contract.validateManifest(noPermissionName), /settings.permissionName/);
+  noPermissionName.settings.permissionName = ''; assert.throws(() => contract.validateManifest(noPermissionName), /settings.permissionName/);
+  noPermissionName.settings.permissionName = 'Tool'; noPermissionName.settings.permissionMode = null; assert.throws(() => contract.validateManifest(noPermissionName), /settings.permissionName/);
   const noAsideField = structuredClone(manifests[0]); delete noAsideField.asideParentField; assert.throws(() => contract.validateManifest(noAsideField), /asideParentField/); noAsideField.asideParentField = 1; assert.throws(() => contract.validateManifest(noAsideField), /asideParentField/); noAsideField.capabilities.aside = false; noAsideField.asideParentField = 'id'; assert.throws(() => contract.validateManifest(noAsideField), /asideParentField/);
   const noWeights = structuredClone(manifests[0]); delete noWeights.settings.weights; assert.throws(() => contract.validateManifest(noWeights), /settings.weights/); noWeights.settings.weights = {}; assert.throws(() => contract.validateManifest(noWeights), /settings.weights.unknown/);
   const noPlans = structuredClone(manifests[0]); delete noPlans.settings.plans; assert.throws(() => contract.validateManifest(noPlans), /settings.plans/);
