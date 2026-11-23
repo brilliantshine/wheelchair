@@ -1,6 +1,6 @@
 ---
 slug: mockup-polish
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-23
 ---
 
@@ -13,10 +13,7 @@ the north star this plan serves. Goal and Constraints live there, not here.
 
 ## Open Questions
 
-### Q1: How is a mockup turned into a PNG?
-- **Context:** Mockups render in an empty-sandbox iframe under a no-scripts CSP (`viewer/pages/picture.js:75`, `viewer/app/routes.js:21-22`), so the page cannot read the mockup's document the way graph export does. Graph and form PNGs are drawn in the browser (`viewer/pages/picture-export.js`).
-- **Options:** (a) in the browser: fetch the mockup HTML and draw it to a canvas through an SVG image; no new install, but some phone browsers may refuse to save a canvas drawn this way, and fonts the mockup names but doesn't embed may differ. (b) on the machine: the server takes a real browser screenshot; exact, but needs a headless browser installed on every machine that serves threads.
-- **Recommendation:** (a).
+(none)
 
 ## Watch List
 
@@ -35,15 +32,119 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | A spot comment is sent as Collin's own message to the lead, naming the mockup file, the card, and the spot in the mockup's own pixels; the lead passes it to the designer verbatim, as the Mockups rules already require. | Press and composer routes already target the lead (`viewer/app/threads.js:411-426`, `viewer/app/routes.js:682-690`); routing straight to a designer would need a new delivery contract, and the lead must see feedback anyway (it may be a design change after agreement). | defaulted |
 | 5 | The spot is captured by a transparent layer over the mockup, not by reading the mockup's document. | The mockup iframe is sandboxed with no same-origin access; loosening that is not needed to know where Collin tapped. The designer can render its own file to see what sits there. | defaulted |
 | 6 | Built's Open full size opens the picture page with the screenshot at its natural pixel size in a scrolling area. | The picture page already does this for mockups (`viewer/pages/picture.js:61-79`); the raw file link leaves scaling to the phone. | defaulted |
+| 7 | A mockup PNG is drawn in the phone's browser (fetch the mockup HTML, draw it to a canvas), not on the machine. | Collin picked it: no new install, same as diagram PNGs. If a browser refuses, the HTML download stays and the machine route is Deferred. | user |
 
 ## Spec
 
-(Grown as decisions land.)
+Four changes in the viewer, plus two short protocol lines. Background on the code is in
+`MAP.md` and `docs/maps/mockup-viewer-flow.md`.
+
+### S1. The chat updates in place
+
+Today `render()` in `viewer/pages/thread.js` (~1467-1476) calls `renderChat()` whenever a
+signature covering every message, card, pin and lead state changes, and `renderChat()`
+(~603) empties the chat and rebuilds every node. That reloads every mockup iframe and loses
+the reader's place.
+
+- `renderChat()` reconciles instead of rebuilding. Each chat entry (message bubble, card,
+  the lead-name line, pending bubble, queued and notice rows) gets a stable key and a
+  signature of what it draws. An entry whose key and signature are unchanged keeps its
+  existing DOM node, **which is never removed or moved** (moving an iframe reloads it).
+  New entries are inserted at their place; changed entries are replaced in place; gone
+  entries are removed. A card's signature covers its own fields and every outside state
+  its drawing reads (pinned, archived, slug, worktree, card errors, open/folded state).
+- Everything the current rebuild does after building (placeIds, aside anchors, pending
+  bubble matching, the import cutoff) still works; a full rebuild stays allowed only where
+  the cutoff moves (import, hand-off).
+- Scroll: near the bottom (existing 80px test) the page still follows new entries. Away
+  from the bottom, the top visible entry stays at the same screen position after an
+  update (measure it before, correct `scrollY` after).
+- A mockup reserves its final height when created: `mockup()` in `viewer/pages/diagram.js`
+  sets the frame box's height from `aspect-ratio: width / height` (CSS) so the box never
+  starts at zero and grows later. The scale transform still follows the box width.
+
+### S2. Comment on a spot in a mockup
+
+Where: every mockup shown in a thread (a `diagram` card with `format: mockup`, and the
+Mockup half of an image card) and the mockup on the picture page.
+
+- A **Comment on a spot** button sits with the mockup's Open full size link. It is shown
+  only while the thread composer could send (live lead, not archived, not frozen: the same
+  `canSend` test as the Send button), and hidden otherwise.
+- Pressing it puts a transparent layer over the mockup (the iframe stays sandboxed and is
+  never read). The next tap on the layer drops a visible pin there and opens a small text
+  box with Send and Cancel under the mockup. Tapping elsewhere on the mockup moves the
+  pin. Cancel, or sending, removes the layer, pin and box.
+- The tap is converted to the mockup's own pixels: x and y divided by the current scale,
+  rounded, clamped to 0..width-1 and 0..height-1.
+- Send posts Collin's own message through the same path as the composer (`sendNow` in
+  `thread.js`; on the picture page, the same chat message route the composer uses), so it
+  appears as Collin's bubble and queues to the lead like any message. Text:
+  `Comment on mockup "<title>" (docs/plans/<plan>/graphs/<graph>.html, <width>x<height>) at x=<x>, y=<y>: <comment>`.
+  An empty comment cannot be sent. On the picture page a sent comment shows "Sent to the
+  thread" with a link back.
+- Protocol: `protocol/app/lead.md` Mockups gets one sentence: a spot comment is passed to
+  the designer verbatim, location included, like any feedback. `protocol/app/designer.md`
+  gets one sentence: a spot comment's x and y are in the mockup's own pixels; render the
+  file to see what sits there before changing it.
+
+### S3. Download a mockup as a PNG
+
+On the picture page for a mockup (`viewer/pages/picture.js`, the mockup branch of
+`showCard`), Download makes a PNG using the existing `offerPng` / `WCPictureExport.save`
+path, and a second link **Download HTML** keeps today's HTML download.
+
+- The PNG is drawn in the browser: fetch the mockup HTML from its source URL, parse it,
+  serialize it as XHTML inside an SVG `foreignObject` of exactly width x height, load
+  that SVG as an image and draw it to a canvas sized with the existing `scaleFor`. Add the
+  function to `viewer/pages/picture-export.js` beside `graphCanvas` and `formCanvas`.
+- No script from the mockup runs at any point (scripts are stripped before drawing).
+- If the browser refuses (load error or a tainted canvas), the note under Download says
+  "This browser could not make a PNG of this mockup. Download HTML instead." The HTML link
+  stays.
+
+### S4. Screenshots open at true size
+
+- The picture page gains a screenshot view: `picture?thread=<id>&card=<id>&view=image`.
+  It shows the image card's file at its natural pixel size (no max-width) inside the
+  picture page's scrolling area, with a Download link to the original file. A file removed
+  on archive shows the existing "Image removed when the thread was archived" text.
+- In the thread, the Built half's Open full size and the tap on any image card's picture
+  (with or without a mockup) open that view instead of the raw file URL.
+
+### Not in this plan
+
+Saving comments as pins that stay on the mockup; comments on screenshots or ordinary
+diagrams; a machine-side PNG.
+
+### Validation
+
+```bash
+node --test viewer/test/*.test.js
+npm --prefix viewer run test:browser
+```
+
+New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters):
+
+1. Chat stability: a thread with two mockup cards, scrolled to the middle; a new card and
+   a lead-state change arrive. Each mockup iframe is the same element and fired no second
+   `load`; the top visible entry moved by at most 2px. Scrolled to the bottom, the new card
+   comes into view.
+2. A mockup box has its final height before the iframe loads.
+3. Spot comment: tap at a known point on a scaled mockup; the sent message text has the
+   exact format above with the expected rounded coordinates; the button is hidden in an
+   archived thread.
+4. PNG: Download on a mockup's picture page saves a PNG whose pixel size is width x height
+   times the export scale, and whose pixels are not blank; Download HTML still gives HTML.
+5. True size: at 390px viewport, the screenshot view of a 1200px-wide image renders it
+   1200 CSS px wide and the page scrolls sideways; Built's Open full size links to it.
 
 ## Deferred
 
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
+| D1 | Earlier spot comments stay as pins on the mockup | The comment's text already says where; pins are a convenience | planning | Needs storing comments per mockup and drawing them on the overlay layer from S2 |
+| D2 | Make the mockup PNG on the machine when the phone's browser refuses | Only needed if Collin's browser refuses; HTML download still works | planning | Headless browser screenshot served from the machine; see Decision 7 |
 
 ## Accepted Risks
 
@@ -56,6 +157,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|---------------|-------|
 
 ## Review Rounds
+
+### Round 1 — 2026-11-23
+
+**Lanes:** pending.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
