@@ -60,5 +60,5 @@ function validateManifest(m) {
   check('settings.modelOptions', v => obj(v) && (arr(v.fixed) && v.fixed.every(pair => arr(pair) && pair.length === 2 && pair.every(str)) || str(v.listedKey) && ['strings','objects'].includes(v.listedShape) && typeof v.includePins === 'boolean'), false);
   check('hook.payload',v=>v==='stdin'||v==='last-arg', Boolean(m.hook));
 }
-function validateRegistry(manifests) { manifests.forEach(validateManifest); if (manifests.filter(m=>m.stylePreview).length>1) throw new Error('stylePreview'); if (manifests.filter(m=>m.capabilities.preflight).length>1) throw new Error('capabilities.preflight'); if (manifests.filter(m=>m.install.sensitivity).length>2) throw new Error('install.sensitivity'); }
+function validateRegistry(manifests) { manifests.forEach(validateManifest); if (manifests.filter(m=>m.stylePreview).length>1) throw new Error('stylePreview'); if (manifests.filter(m=>m.capabilities.preflight).length>1) throw new Error('capabilities.preflight'); if (manifests.filter(m=>m.capabilities.spend).length>1) throw new Error('capabilities.spend'); if (manifests.filter(m=>m.install.sensitivity).length>2) throw new Error('install.sensitivity'); }
 module.exports = { REQUIRED, CAPABILITIES, OPTIONAL, validate, validateManifest, validateRegistry };
