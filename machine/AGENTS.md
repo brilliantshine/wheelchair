@@ -7,7 +7,8 @@ agents own neither tmux nor the machine secret.
 | File | Role |
 |---|---|
 | `service.js` | Dependency-free Node HTTP service, session registry, tmux/git boundary, worktrees (each new one links the clone's installed `node_modules` and lists the links in git's exclude file; `from_remote_branch` builds one at an exact pushed commit), the hub-only `/v1/handoff` actions (claims, branch inspection, kill/running) and durable archive markers, readiness, transcript copies, and durable spools. |
-| `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`, `kimi.js`, `pi.js`; Pi also reads offline OpenRouter spend). |
+| `../connectors/` (see its [README](../connectors/README.md)) | Every tool's commands, login folders, hook translation and usage parsing live in `connectors/<cli>/machine.js`; the service loads them through `connectors/index.js`. |
+| `hook.sh`, `lib/hook-in.js`, `lib/hook-post.js` | CLI hook bridge: `hook.sh` execs `hook-in.js`, which follows the tool's manifest `hook` field and posts through `hook-post.js`. |
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
 | `lib/harness-recipes.js`, `lib/harness-install.js` | Harness install recipes and detached jobs, persisted state, setup and validation. |
 | `test/harness-install.test.js` | Harness install job and route coverage. |

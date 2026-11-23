@@ -10,7 +10,7 @@ Every stage reads rules from `protocol/` and writes state to `docs/plans/<slug>/
 |---|---|---|
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage |
-| Executable | `sensitivity/`, `install/`, `test-support/`, `viewer/`, `machine/`, `sudo-helper/`, `install.sh` | commands, not guidance |
+| Executable | `sensitivity/`, `install/`, `test-support/`, `connectors/`, `viewer/`, `machine/`, `sudo-helper/`, `install.sh` | commands, not guidance |
 
 The diagram-sensitivity dial is the deliberate exception: `sensitivity/set.sh` is the only writer of the region rendered from `protocol/sensitivity.md` into each present harness's global instruction file, loaded every turn in every project. That repo-owned region is overwritten on every run; other context-window rules belong in `protocol/`.
 
@@ -27,6 +27,7 @@ The root sudo helper is the other reach outside the clone and the only part that
 | `install/` | — | `guard.sh` canonical-clone guard; `unseen.py` old hook removal; `test/run.sh` installer fixtures. Temp homes and command shims only; real harness and machine state stay untouched |
 | `test-support/` | — | `run-dir.js`: every temp folder a machine or viewer test makes lives in one per-process folder, removed at exit and swept when its owner is gone; smoke and Mac CI checks |
 | `.github/workflows/macos.yml` | — | Mac CI job |
+| `connectors/` | [README.md](connectors/README.md) | per-tool connectors: manifests, machine and hub halves, registry |
 | `codex/` | [AGENTS.md](codex/AGENTS.md) | `preflight.sh` login check and model heads-up; `model.sh` GPT model pins; fixtures |
 | `docs/` | — | plans, proposals and known issues; state, not rules or contracts |
 | `machine/` | [AGENTS.md](machine/AGENTS.md) | session service, hooks, API and tests; runs as the `wheelchair-machine` user service |
