@@ -195,3 +195,27 @@ $ (cd viewer && npm test)         → # tests 916  # pass 916  # fail 0
 $ node connectors/export.js --check   → exit 0
 $ node --test machine/test/connectors-contract.test.js machine/test/name-guard.test.js   → pass 6, fail 0
 ```
+
+### Remediation 3 — 2026-11-23
+
+Verification attempt 3 (cc90bc9c): both FAIL, H1–H6 confirmed fixed. Three rare paths to Accepted Risks (`verification-3`): unusual guard spellings (`adapters?.codex`, a dot on the next line, an id after a nested array element, a backtick `require` path), a non-function `turnPoller`, `permissionChoices: [null]`. Six new gaps (none a repeat), `REMEDIATION-3.md`.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| J1 per-tool hub helpers in the shared module | `claudeReply`/`isClaudeMidTurnHuman`, `codexReply`/`isCodexHuman`, `piReport`/`hasPiEntry`, `kimiReport` moved byte-identical into their tools' `hub.js`; `hub-common.js` keeps only helpers several tools use; `chat.js` no longer re-exports `hasPiEntry` (nothing read it) | `connectors/{claude,codex,pi,kimi}/hub.js`, `connectors/hub-common.js`, `viewer/app/chat.js` | viewer suite, char tests; contract test (no cross-connector requires) |
+| J2 steps flush without `onTurnEnded` | turn end flushes steps for every `steps` tool; Codex order unchanged (`ignored` checked first) | `machine/service.js` (turn-ended handling) | `machine/test/steps-turn-end.test.js` |
+| J3 second spend tool | `validateRegistry` allows at most one `spend` tool | `connectors/contract.js` | contract test |
+| J4 key prompt | sign-in hint uses the account's own tool's `keyPrompt` (first key tool only when no account is in context); OpenRouter text unchanged | `viewer/pages/settings.js` (`signinHint`) | `viewer/test/key-prompt-provider.test.js`; `app-openrouter-signin.test.js` unchanged |
+| J5 `stylePreview` without its member | `validate()` requires `stylePreviewArgv` with the flag and refuses it without | `connectors/contract.js` | contract test |
+| J6 guide contradiction | `settings.weights`/`plans` required everywhere in the guide; J2, J3, J5 and the guard's accepted limits documented | `connectors/README.md` | scout read against `contract.js` |
+
+Lane: R4 standard / gpt-6.1-terra.
+
+Validation on the R4 branch (merged without conflicts), one suite at a time:
+```
+$ bash machine/test/run.sh        → # tests 727  # pass 707  # fail 18   (the 18 known wslpath failures only)
+$ (cd viewer && npm test)         → # tests 917  # pass 917  # fail 0
+$ npx playwright test test/app-settings.spec.js test/app-accounts.spec.js --project=chromium   → 87 passed
+$ node connectors/export.js --check   → exit 0;  contract + guard tests → pass 6, fail 0
+$ providers.js output vs main     → identical
+```
