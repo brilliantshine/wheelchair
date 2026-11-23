@@ -48,7 +48,7 @@ test('status route checks only eligible tools without creating forwards', async 
 const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
-const agy = require('../adapters/agy');
+const agy = require('../../connectors/agy/machine.js');
 const { createWinForward } = require('../lib/win-forward');
 
 async function route(service, endpoint, input) {
@@ -80,7 +80,7 @@ exit 0
   const service = new MachineService({ stateDir: state, win: { procRoot: root, etcRoot: root, runRoot: root, forwards } });
   service.win.detected.kernel = kernel; service.win.forwardReady = () => isReady;
   service.win.runBridgeProbe = () => {}; service.authorize = async () => {};
-  service.checkKimiVersion = service.checkPiVersion = () => {}; service.cliStatus = () => ({ installed: true }); service.kimiLaunchPath = async () => ({ executable: '/fake/kimi' });
+  service.checkVersion = () => {}; service.cliStatus = () => ({ installed: true }); service.launchPath = async () => ({ executable: '/fake/kimi' });
   await service.init();
   t.after(() => {
     for (const key of ['pollTimer', 'stepsTimer', 'kimiTimer', 'trustTimer', 'agyToolsTimer', 'winTimer', 'screenTimer']) clearInterval(service[key]);

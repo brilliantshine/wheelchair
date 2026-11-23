@@ -2,6 +2,7 @@
 
 // Spec "Agents start and stop sessions", "Prompts mid-run", and Edge cases.
 const crypto = require('node:crypto');
+const connectors = require('../../connectors');
 const { addCard } = require('./cards.js');
 const quiet = require('./quiet.js');
 const path = require('node:path');
@@ -114,7 +115,7 @@ async function resolveModel(hub, cli, role, requestedTier = 'top') {
 }
 
 async function resolveScout(hub, provider, tier) {
-  const args = provider === 'claude' ? ['family', 'claude', tier] : [provider, tier];
+  const args = connectors.byProvider(provider)?.models.familyCommand ? ['family', provider, tier] : [provider, tier];
   try {
     const model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), args)).stdout.trim();
     return model.length > settingsStore.MODEL_MAX ? null : model;
@@ -207,10 +208,16 @@ function newSessionName(thread, role) {
 function checkEffort(settings, role, cli, effort) {
   if (role !== 'worker' || effort === undefined) return;
   if (PROVIDERS[providerOf(cli)]?.effort === false) return;
-  if (cli === 'codex' && effort === 'max') throw appError(400, "GPT's highest effort is xhigh");
+  const manifest = connectors.manifest(cli);
+  const supported = manifest.models.efforts;
+  const highest = supported.at(-1);
   const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
+  if (!supported.includes(effort)) {
+    if (efforts.indexOf(effort) > efforts.indexOf(highest)) throw appError(400, `${manifest.label}'s highest effort is ${highest}`);
+    throw appError(400, `${manifest.label} has no ${effort} effort`);
+  }
   const ceiling = settings.escalation.max_effort;
-  const max = cli === 'codex' && ceiling === 'max' ? 'xhigh' : ceiling;
+  const max = ceiling === 'max' && !supported.includes(ceiling) ? highest : ceiling;
   if (efforts.indexOf(effort) > efforts.indexOf(max)) throw appError(400, `effort ${effort} is above the highest effort in Settings (${max})`);
 }
 
@@ -433,7 +440,7 @@ async function startSession(hub, thread, input) {
 async function deliverReport(hub, thread, target, payload) {
   if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
   const chat = require('./chat.js');
-  let text = target.cli === 'pi' ? '' : String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
+  let text = connectors.manifest(target.cli)?.report?.useHookText !== false ? String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim() : '';
   if (!text) {
     const now = hub.reportNow || Date.now;
     const sleep = hub.reportSleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
@@ -447,8 +454,9 @@ async function deliverReport(hub, thread, target, payload) {
       if (remaining <= 0) break;
       try {
         const raw = await chat.sessionTranscript(hub, thread, target, { strict: true, timeout: Math.min(attempt ? 1000 : 3000, remaining) });
-        text = chat.lastAssistantText(target.cli, raw, payload.turn_id, payload.entry_id);
-        if (!(target.cli === 'pi' && payload.entry_id && !chat.hasPiEntry(raw, payload.entry_id))) break;
+        const report = connectors.hub(target.cli).readReport(raw, payload);
+        text = report.text;
+        if (report.settled) break;
       } catch { /* retry transient read failures within the recovery budget */ }
     }
   }
@@ -627,7 +635,7 @@ async function event(hub, payload) {
     const prior = readings[target.account] || { account: target.account, machine: thread.machine, five_hour: null, week: null };
     await usage.record(hub, { ...prior, at: new Date(Math.max(Date.now(), Date.parse(prior.at) + 1 || 0)).toISOString(), limited_until: limit });
     target.limited_until = limit;
-    if (target.live && !target.switching && ['claude', 'gpt'].includes(target.provider)) {
+    if (target.live && !target.switching && connectors.byProvider(target.provider)?.capabilities.liveSwitch) {
       const selection = await chooseSwitch(hub, thread, target);
       if (selection) {
         const id = crypto.randomUUID(), from = target.account, account = selection.account;

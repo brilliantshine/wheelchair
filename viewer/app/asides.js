@@ -1,4 +1,5 @@
 'use strict';
+const connectors = require('../../connectors');
 
 const crypto = require('node:crypto');
 const path = require('node:path');
@@ -38,7 +39,7 @@ async function create(hub, thread, input) {
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   const provider = lead?.provider || providerOf(lead?.cli);
   if (PROVIDERS[provider]?.asideFork === false) throw appError(400, `Side conversations aren't available on ${PROVIDERS[provider].label} sessions yet`);
-  const parent = lead?.[({ claude: 'cli_session_id', gpt: 'codex_thread_id', openrouter: 'cli_session_id', gemini: 'agy_conversation_id' })[provider]];
+  const parent = lead?.[connectors.byProvider(provider)?.asideParentField];
   if (!lead || !parent) throw appError(409, "the lead isn't ready yet");
   const standard = await model(hub, provider, 'standard'), heavy = await model(hub, provider, 'heavy');
   if (!standard && !heavy) throw appError(409, `asides need a Standard or Heavy model for ${provider} in Settings`);

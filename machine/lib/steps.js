@@ -13,10 +13,11 @@ function keyFor(kind, target = '', verb = '', ctx = {}) {
   return `${kind}:${kind}`;
 }
 function classify(cli, toolName, input, ctx = {}) {
+  const vocab = typeof cli === 'string' ? require('../../connectors').machine(cli).stepVocabulary : cli;
   const name = String(toolName || ''), data = input && typeof input === 'object' ? input : {};
   let command = typeof input === 'string' ? input : (data.command || data.cmd || '');
   if (Array.isArray(command)) command = command.length === 3 && ['-lc', '-c'].includes(command[1]) ? command[2] : command.join(' ');
-  const card = (cli === 'claude' ? name === 'Bash' : ['exec_command', 'shell'].includes(name)) && /(?:^|[\s/])card\.js\s+(message|result)\b(?:\s+([^\s;&|]+))?/.exec(command);
+  const card = vocab.card.includes(name) && /(?:^|[\s/])card\.js\s+(message|result)\b(?:\s+([^\s;&|]+))?/.exec(command);
   let kind, label, target = '', verb = '';
   if (card) {
     kind = 'starter'; label = 'Reported back';
@@ -24,18 +25,18 @@ function classify(cli, toolName, input, ctx = {}) {
       label = 'Sent a message';
       try { const file = card[2].replace(/^['"]|['"]$/g, ''); const to = JSON.parse(fs.readFileSync(path.resolve(ctx.cwd || process.cwd(), file), 'utf8')).to; if (typeof to === 'string' && to) label = `Messaged ${to.replace(/^wc-[^-]+-/, '')}`; } catch {}
     }
-  } else if ((cli === 'claude' ? ['Agent', 'Task'] : ['spawn_agent', 'send_input', 'wait_agent', 'close_agent']).includes(name)) {
+  } else if (vocab.agents.includes(name)) {
     kind = 'helpers'; label = `Asked a helper: ${data.description || String(data.prompt || data.message || '').split(/\r?\n/)[0]}`;
-  } else if ((cli === 'claude' ? ['WebFetch', 'WebSearch'] : ['web_search', 'web_fetch']).includes(name)) {
+  } else if (vocab.web.includes(name)) {
     kind = 'web'; if (data.query) label = `Searched the web: ${data.query}`; else { let host = data.url || ''; try { host = new URL(host).host; } catch {} label = `Read ${host}`; }
-  } else if ((cli === 'claude' ? ['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'NotebookEdit', 'LS'].includes(name) : name === 'apply_patch' || name === 'view_image' || name.toLowerCase().includes('file'))) {
+  } else if ((vocab.files.includes(name) || (vocab.fileSubstring && name.toLowerCase().includes('file')))) {
     kind = 'files'; target = data.file_path || data.path || data.notebook_path || data.pattern || '';
     if (name === 'apply_patch') {
       const patch = typeof input === 'string' ? input : (data.patch || data.input || '');
       const files = [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map(m => m[1]); target = files[0] || ''; verb = 'Edited'; label = files.length > 1 ? `Edited ${files.length} files` : target ? `Edited ${path.basename(target)}` : 'Edited files';
     } else if (['Glob', 'Grep', 'LS'].includes(name)) { verb = 'Searched'; target = data.pattern || data.path || ''; label = `Searched ${target}`; }
     else { verb = ['Read', 'view_image'].includes(name) || /read/i.test(name) ? 'Read' : 'Edited'; label = `${verb} ${path.basename(target)}`; }
-  } else { kind = 'shell'; target = command || name; label = cli === 'claude' && name === 'Bash' && data.description ? data.description : command ? `Ran ${shellTarget(command)}` : `Used ${name}`; }
+  } else { kind = 'shell'; target = command || name; label = vocab.shellDescription.includes(name) && data.description ? data.description : command ? `Ran ${shellTarget(command)}` : `Used ${name}`; }
   return { kind, label: truncate(label), key: keyFor(kind, target, verb, ctx) };
 }
 module.exports = { classify, shellTarget, truncate, keyFor };

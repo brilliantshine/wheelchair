@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const LESSON_ROLE_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers', designer: 'designers' };
-  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
+  const PROVIDER_LABEL = Object.fromEntries((window.WHEELCHAIR_TOOLS || []).map((t) => [t.provider, t.label]));
   const API = '/wheelchair/api';
   const id = new URLSearchParams(location.search).get('id') || '';
   const T = API + '/threads/' + encodeURIComponent(id);

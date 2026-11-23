@@ -8,7 +8,7 @@ const fsp = fs.promises;
 const path = require('node:path');
 const { makeTemp } = require('../../test-support/run-dir');
 const { MachineService } = require('../service');
-const agy = require('../adapters/agy');
+const agy = require('../../connectors/agy/machine.js');
 
 test('project tools launch privately and stale Antigravity files are swept', async () => {
   const root = await makeTemp('project-tools-service-'), bin = path.join(root, 'bin'), state = path.join(root, 'state'), work = path.join(root, 'work'), log = path.join(root, 'commands');

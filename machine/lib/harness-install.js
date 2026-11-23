@@ -4,9 +4,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { providers, loadRecipes } = require('./harness-recipes');
+const versionArgs = install => install.versionArgs === undefined ? ['--version'] : install.versionArgs;
 const root = path.resolve(__dirname, '../..');
-const names = { claude: 'claude', gpt: 'codex', gemini: 'agy', kimi: 'kimi', openrouter: 'pi' };
-const labels = { claude: 'Claude Code', gpt: 'Codex', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'Pi (OpenRouter)' };
+const connectors = require('../../connectors');
 const dir = () => path.join(os.homedir(), '.wheelchair', 'installs');
 const file = (p, ext) => path.join(dir(), `${p}.${ext}`);
 function read(p, ext) { try { return JSON.parse(fs.readFileSync(file(p, ext), 'utf8')); } catch { return null; } }
@@ -89,18 +89,18 @@ async function job(p, started_at) {
   while (read(p, 'pid')?.pid !== process.pid) await new Promise(resolve => setTimeout(resolve, 10));
   let code = 1, recipeFailed = false;
   try {
-    const recipe = loadRecipes()[p], cli = names[p];
+    const recipe = loadRecipes()[p], manifest = connectors.byProvider(p), cli = manifest?.install.binary;
     if (!recipe) throw new Error('no recipe');
     const node = recipe.node ? await run('node', ['-e', 'process.stdout.write(process.versions.node)'], process.env, true, true) : null;
     const version = node?.status === 0 ? node.stdout.trim() : '';
     if (recipe.node && !/^\d+\.\d+\.\d+$/.test(version)) {
-      console.error(`${labels[p]} needs Node ${recipe.node} or newer; this machine has no working node on its path. Update Node, then try again.`);
+      console.error(`${manifest.install.label} needs Node ${recipe.node} or newer; this machine has no working node on its path. Update Node, then try again.`);
     } else if (recipe.node && !newer(version, recipe.node)) {
-      console.error(`${labels[p]} needs Node ${recipe.node} or newer; this machine has ${version}. Update Node, then try again.`);
+      console.error(`${manifest.install.label} needs Node ${recipe.node} or newer; this machine has ${version}. Update Node, then try again.`);
     } else {
       const installed = await run('/bin/sh', ['-c', recipe.command]); code = installed.status ?? 1; recipeFailed = code !== 0;
-      if (code === 0 && (p === 'claude' || p === 'gpt')) {
-        const home = os.homedir(), installedName = p === 'gpt' ? 'codex' : 'claude', other = p === 'gpt' ? 'claude' : 'codex';
+      if (code === 0 && manifest.install.sensitivity) {
+        const home = os.homedir(), installedName = manifest.cli, other = connectors.list().find(m => m.install.sensitivity && m.cli !== manifest.cli)?.cli || '';
         const cleanup = await run('python3', ['-I', path.join(root, 'install/unseen.py'), root, process.env.WHEELCHAIR_CLAUDE_HOME || path.join(home, '.claude'), process.env.WHEELCHAIR_CODEX_HOME || path.join(home, '.codex'), `${installedName},`]);
         code = cleanup.status ?? 1;
         if (!code) {
@@ -113,16 +113,16 @@ async function job(p, started_at) {
       }
       if (code === 0) {
         let resolved;
-        if (cli === 'pi' || cli === 'kimi') {
+        if (manifest.install.lookup !== 'path') {
           const found = await run('sh', ['-c', `command -v ${cli}`], process.env, true);
-          if (cli === 'pi') resolved = found.status === 0 ? (found.stdout.trim() || null) : null;
+          if (manifest.install.lookup === 'absolute') resolved = found.status === 0 ? (found.stdout.trim() || null) : null;
           else {
-            const candidate = found.status === 0 ? found.stdout.trim() : path.join(os.homedir(), '.kimi-code/bin/kimi');
+            const candidate = found.status === 0 ? found.stdout.trim() : manifest.install.fallbackPath.replace(/^~/, os.homedir());
             try { fs.accessSync(candidate, fs.constants.X_OK); resolved = path.resolve(candidate); } catch { resolved = null; }
           }
         } else resolved = (await run('sh', ['-c', `command -v ${cli}`], process.env, true)).status === 0 && cli;
         if (!resolved) { console.error(`Installed, but wheelchair can't find ${cli} on its path. Re-run ./install.sh from the wheelchair folder once.`); code = 1; }
-        else if (cli !== 'pi') code = (await run(resolved, ['--version'])).status ?? 1;
+        else if (versionArgs(manifest.install) !== null) code = (await run(resolved, versionArgs(manifest.install))).status ?? 1;
       }
     }
   } catch (e) { if (!reason) console.error(e.stack || e); code = 1; }
@@ -133,4 +133,4 @@ async function job(p, started_at) {
   fs.unlinkSync(file(p, 'pid'));
 }
 if (require.main === module && providers.includes(process.argv[2])) job(process.argv[2], process.argv[3]);
-module.exports = { state, start, stopJob, newer };
+module.exports = { state, start, stopJob, newer, versionArgs };

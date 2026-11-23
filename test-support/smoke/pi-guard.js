@@ -26,7 +26,7 @@ const { makeTempSync } = require('../run-dir.js');
   fs.symlinkSync(path.join(root, 'auth.json'), path.join(cwd, 'link'));
   fs.symlinkSync(path.join(cwd, 'narrow\u202fspace'), path.join(cwd, 'narrow-link'));
   process.env.HOME = home;
-  const extension = path.resolve(__dirname, '../../machine/adapters/pi-guard.js');
+  const extension = path.resolve(__dirname, '../../connectors/pi/guard.js');
   const loaded = await loadExtensions([extension], cwd);
   assert.deepEqual(loaded.errors, []);
   assert.equal(loaded.extensions.length, 1);

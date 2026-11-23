@@ -1,0 +1,116 @@
+'use strict';
+module.exports = {
+  "usage": { "probeWhileLive": true, "tryEveryMachine": true, "defaultProblem": true },
+  "login": { "killTarget": "session" },
+  "cli": "kimi",
+  "provider": "kimi",
+  "label": "Kimi Code",
+  "displayName": "Kimi Code",
+  "typesRoleMessage": true,
+  "singleAccount": false,
+  "capabilities": {
+    "usageProbe": true,
+    "usageEvents": false,
+    "preflight": false,
+    "sandbox": false,
+    "restartLoss": true,
+    "projectTools": false,
+    "recover": true,
+    "spend": false,
+    "liveSwitch": false,
+    "aside": false,
+    "versionCheck": true,
+    "steps": false
+  },
+  "install": {
+    "lookup": "fallback",
+    "command": "t=$(mktemp) && curl -fsSL https://code.kimi.com/kimi-code/install.sh -o \"$t\" && bash \"$t\"; r=$?; rm -f \"$t\"; exit $r",
+    "binary": "kimi",
+    "label": "Kimi Code",
+    "versionArgs": [
+      "--version"
+    ],
+    "fallbackPath": "~/.kimi-code/bin/kimi",
+    "pathRank": 3,
+    "sensitivity": false
+  },
+  "settings": {
+    "modelOptions": {"listedKey": "kimi_visible", "listedShape": "objects", "includePins": true},
+    "monoModelNames": true,
+    "modelPattern": "^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$",
+    "modelPlaceholder": "model-name",
+    "cliLabel": "Kimi CLI",
+    "vendor": "Kimi",
+    "setupUrl": "https://code.kimi.com",
+    "permissionMode": "permission_mode",
+    "permissionName": "Kimi",
+    "permissionChoices": [
+      [
+        "auto",
+        "Auto"
+      ],
+      [
+        "bypass",
+        "Bypass"
+      ]
+    ],
+    "accountWarning": null,
+    "modelHeadsUp": false,
+    "signInKind": "device",
+    "reviewFamily": true,
+    "plans": [
+      [
+        "unknown",
+        "Not sure"
+      ]
+    ],
+    "weights": {
+      "unknown": 1
+    },
+    "reportedPlans": {},
+    "oldPlanWeights": {},
+    "modelError": "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
+    "familyHint": null,
+    "accountPolicy": null
+  },
+  "models": {
+    "pins": {
+      "light": {
+        "model": "kimi-code/kimi-for-coding"
+      },
+      "standard": {
+        "model": "kimi-code/k3"
+      },
+      "heavy": {
+        "model": "kimi-code/k3.1-pro"
+      },
+      "critical": {
+        "model": "kimi-code/k3.1-pro"
+      },
+      "lead": {
+        "model": "kimi-code/k3.1-pro"
+      }
+    },
+    "format": "^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$",
+    "efforts": [],
+    "hubPattern": "^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$",
+    "slotAliases": {},
+    "effortError": "effort is invalid"
+  },
+  "placement": {
+    "workerRank": 3,
+    "leadDefault": false,
+    "seenByDefault": false,
+    "addOnMigration": true,
+    "appendWhenRequested": false
+  },
+  "report": {
+    "useHookText": true
+  },
+  "wrapProjectTools": false,
+  "injectProjectKeys": false,
+  "joinPaneLines": false,
+  "stopWhenEnded": false,
+  "recoverRank": 0,
+  "recoverFallback": false
+};

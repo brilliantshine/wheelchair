@@ -1,11 +1,11 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const c = require('./common');
+const c = require('../common');
 const usual = () => c.home('CLAUDE_CONFIG_DIR', '.claude');
 const loginEnv = dir => dir ? { CLAUDE_CONFIG_DIR: dir } : {};
-const { run } = require('../lib/usage-probe');
-const { classify } = require('../lib/steps');
+const { run } = require('../../machine/lib/usage-probe');
+const { classify } = require('../../machine/lib/steps');
 const closedPort = 'http://127.0.0.1:9';
 function resetTime(text, now) {
   const match = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}), (\d{1,2})(?::(\d{2}))?(am|pm) \(([^)]+)\)$/.exec(text);
@@ -43,8 +43,19 @@ function parseUsage(raw, now = Date.now()) {
   return { five_hour, week, ...([five_hour, week].some(w => w && w.used >= 100) ? { reached: true } : {}) };
 }
 const DISALLOWED_TOOLS = ['Artifact', 'Workflow', 'ScheduleWakeup', 'SendFeedback', 'ShareOnboardingGuide', 'ReportFindings', 'ListAgents', 'ArtifactComments', 'ArtifactData', 'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger', 'PushNotification', 'PublishPlugin', 'DesignSync', 'EnterWorktree', 'ExitWorktree', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'EndConversation'];
+const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
-  provider: 'claude', loginEnv, usual, parseUsage,
+  stylePreviewArgv: model => ['-p', '--model', model, '--permission-mode', 'dontAsk'],
+  disableProjectServers(built, dropped) { if (dropped?.length) built.settings.disabledMcpjsonServers = [...(built.settings.disabledMcpjsonServers || []), ...dropped]; },
+  asideModel: /^[A-Za-z0-9._:\[\]-]+$/,
+  asideNewId: true,
+  asideResult(i, r) {
+        let obj = {}; try { obj = JSON.parse(r.out); } catch {}
+        const limit = /rate_limit/i.test(JSON.stringify(obj) + r.err) || obj.api_error_status === 429;
+        return r.code === 0 && obj.is_error === false ? { state: 'ok', reply: obj.result, conversation_id: i.mode === 'fork' ? i.new_id : i.from, limit } : { state: 'failed', error: obj.result || obj.error?.message || obj.error || lastAside(r.err) || `claude exited ${r.code}`, limit };
+  },
+  stepVocabulary: c.stepVocabularies.claudeStyle,
+  loginEnv, usual, parseUsage,
   usageProbe(dir, options = {}) { return run('claude', ['-p', '/usage', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', '', '--settings', JSON.stringify({ env: { ANTHROPIC_BASE_URL: closedPort } })], { ...options, env: { ...process.env, ...loginEnv(dir), ANTHROPIC_BASE_URL: closedPort }, parse: parseUsage }); },
   asideArgv(input, context) { return ['claude', '-p', '--output-format', 'json', '--model', input.model, ...(input.effort ? ['--effort', input.effort] : []), ...(input.access === 'full' ? ['--permission-mode', 'bypassPermissions'] : ['--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob']), '--strict-mcp-config', '--system-prompt-snapshot', 'off', '--append-system-prompt', context.prompt, '--resume', input.from, ...(input.mode === 'fork' ? ['--fork-session', '--session-id', input.new_id] : [])]; },
   loginCommand() { return ['claude', 'auth', 'login']; },

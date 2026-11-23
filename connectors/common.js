@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
-exports.root = path.resolve(__dirname, '../..');
+exports.root = path.resolve(__dirname, '..');
 exports.quote = value => `'${String(value).replace(/'/g, `'\\''`)}'`;
 exports.iso = value => { const date = new Date(typeof value === 'number' ? value * 1000 : value); return value != null && !Number.isNaN(date.getTime()) ? date.toISOString() : null; };
 exports.seed = (dir, usual, instruction, cli, id) => {
@@ -19,6 +19,10 @@ exports.home = (env, fallback) => process.env[env] || path.join(os.homedir(), fa
 exports.loadedTools = (names, mcp, mount, replaceEntries = {}) => names.map(name => {
   const entry = mcp.servers[name], stdio = entry.type === undefined || entry.type === 'stdio';
   // `wrapped` means a stdio go-between; a replaced HTTP entry (a Windows forward) is not one.
-  return { name, windows: stdio && require('../lib/project-programs').isWindowsProgram(entry.command, mount || '/mnt'), wrapped: stdio && Object.hasOwn(replaceEntries || {}, name) && replaceEntries[name] != null };
+  return { name, windows: stdio && require('../machine/lib/project-programs').isWindowsProgram(entry.command, mount || '/mnt'), wrapped: stdio && Object.hasOwn(replaceEntries || {}, name) && replaceEntries[name] != null };
 });
 
+
+exports.scrubOutput = text => String(text).replace(/sk-or-[A-Za-z0-9_-]+/g, '[redacted key]');
+
+exports.stepVocabularies = { claudeStyle: { card: ['Bash'], agents: ['Agent', 'Task'], web: ['WebFetch', 'WebSearch'], files: ['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'NotebookEdit', 'LS'], fileSubstring: false, shellDescription: ['Bash'] }, codexStyle: { card: ['exec_command', 'shell'], agents: ['spawn_agent', 'send_input', 'wait_agent', 'close_agent'], web: ['web_search', 'web_fetch'], files: ['apply_patch', 'view_image'], fileSubstring: true, shellDescription: [] } };

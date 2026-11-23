@@ -1,0 +1,13 @@
+'use strict';
+const connectors = require('../../../connectors');
+const list = connectors.list, byProvider = connectors.byProvider, manifest = connectors.manifest;
+const m = structuredClone(list()[0]);
+for (const key of Object.keys(m)) if (!['cli','provider','label','displayName','typesRoleMessage','singleAccount','capabilities','install','settings','models','placement','asideParentField'].includes(key)) delete m[key];
+m.install = { command: m.install.command, binary: m.install.binary, lookup: 'path', label: m.install.label };
+m.settings = { modelPattern: m.settings.modelPattern, modelError: m.settings.modelError, weights: { unknown: 1 }, plans: [['unknown', 'Not sure']] };
+m.models = { pins: m.models.pins, format: m.models.format, hubPattern: m.models.hubPattern, efforts: m.models.efforts };
+m.placement = { workerRank: null };
+require('../../../connectors/contract').validateManifest(m);
+connectors.list = () => list().map(x => x.cli === m.cli ? m : x);
+connectors.byProvider = id => id === m.provider ? m : byProvider(id);
+connectors.manifest = cli => cli === m.cli ? m : manifest(cli);

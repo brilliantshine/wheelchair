@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { makeTempSync } = require('../../test-support/run-dir');
-const pi = require('../adapters/pi');
+const pi = require('../../connectors/pi/machine.js');
 const { MachineService } = require('../service');
 test('Pi command writes an extension and applies reviewer and account settings', () => {
   const root = makeTempSync('pi-adapter-');
@@ -69,8 +69,19 @@ test('Pi busy input border is not ready', () => {
   assert.equal(pi.readyText({}, ready.replace('─────', '── ⠏ Working ──')), false);
 });
 
-test('Pi usageFrom returns null for any pane', () => {
-  for (const pane of ['', 'escape interrupt · ctrl+c/ctrl+d clear/exit\n─────\nopenrouter/auto • medium', '── ⠏ Working ──', 'random 100%']) assert.equal(pi.usageFrom(pane), null);
+test('Pi ignores usage-like hook events', async () => {
+  const connectors = require('../../connectors');
+  assert.equal(connectors.manifest('pi').capabilities.usageEvents, false);
+  assert.equal(Object.hasOwn(pi, 'usageFrom'), false);
+  const machine = new MachineService({ stateDir: makeTempSync('pi-usage-') });
+  const name = 'wc-test-worker';
+  machine.sessions[name] = { name, cli: 'pi', status: 'ready' };
+  const events = []; machine.emitEvent = async event => events.push(event);
+  for (const payload of ['', 'escape interrupt · ctrl+c/ctrl+d clear/exit\n─────\nopenrouter/auto • medium', '── ⠏ Working ──', 'random 100%', { rate_limits: { five_hour: { used_percentage: 100 } } }]) {
+    assert.deepEqual(await machine.hook(name, { type: 'usage-source', payload }), { ignored: true });
+    assert.equal(machine.sessions[name].last_reading, undefined);
+  }
+  assert.deepEqual(events, []);
 });
 
 test('Pi login status ignores the environment key', () => {
@@ -89,7 +100,7 @@ test('registered Pi session survives restart and forwards a later settled hook',
   await original.persistSessions();
   const machine = new MachineService({ stateDir: root, host: '127.0.0.1', port: 0 });
   machine.liveTmux = () => new Set([name]); machine.tmux = () => ({ ok: true, stdout: fs.readFileSync(path.join(__dirname, '../../docs/plans/openrouter-harness/samples/screens/agent-agent.txt'), 'utf8') });
-  machine.checkKimiVersion = () => {}; machine.screens.startup = async () => {};
+  machine.checkVersion = () => {}; machine.screens.startup = async () => {};
   await machine.init();
   assert.equal(machine.sessions[name].status, 'ready'); assert.equal(machine.sessions[name].end_reason, undefined);
   const events = []; machine.emitEvent = async event => events.push(event);
@@ -113,12 +124,12 @@ test('Pi version probe gates old versions and caches by executable mtime', async
   try {
     process.env.PATH = `${dir}:${old}`;
     const machine = new MachineService({ stateDir: dir });
-    version('1.5.1'); await machine.checkPiVersion();
+    version('1.5.1'); await machine.checkVersion('pi');
     assert.equal(machine.cliStatus('pi').problem, 'Pi 1.5.2 or newer is needed (found 1.5.1)');
     await assert.rejects(machine.startNamed({ cli: 'pi' }, 'wc-test-worker'), /Pi 1.5.2 or newer/);
-    for (const v of ['1.5.2', '1.5.9']) { version(v); await machine.checkPiVersion(); assert.equal(machine.cliStatus('pi').warning, undefined); assert.equal(machine.cliStatus('pi').problem, undefined); }
-    version('1.6.0'); await machine.checkPiVersion(); assert.match(machine.cliStatus('pi').warning, /Pi 1.6.0 is newer/);
-    version(null); await machine.checkPiVersion(); assert.equal(machine.cliStatus('pi').warning, "Pi's version couldn't be read. If OpenRouter agents fail, this may be why.");
+    for (const v of ['1.5.2', '1.5.9']) { version(v); await machine.checkVersion('pi'); assert.equal(machine.cliStatus('pi').warning, undefined); assert.equal(machine.cliStatus('pi').problem, undefined); }
+    version('1.6.0'); await machine.checkVersion('pi'); assert.match(machine.cliStatus('pi').warning, /Pi 1.6.0 is newer/);
+    version(null); await machine.checkVersion('pi'); assert.equal(machine.cliStatus('pi').warning, "Pi's version couldn't be read. If OpenRouter agents fail, this may be why.");
   } finally { process.env.PATH = old; }
 });
 
@@ -159,7 +170,7 @@ test('Pi launch records tested version across restart and allows newer version',
     version('1.6.0');
     const restarted = new MachineService({ stateDir: root }); restarted.win = null;
     restarted.sessions = JSON.parse(fs.readFileSync(restarted.sessionsPath, 'utf8'));
-    await restarted.checkPiVersion(); assert.match(restarted.cliStatus('pi').warning, /1.6.0/);
+    await restarted.checkVersion('pi'); assert.match(restarted.cliStatus('pi').warning, /1.6.0/);
     const events = []; restarted.emitEvent = async e => events.push(e);
     await restarted.hook(session.name, { type: 'turn-failed', error: 'failure' }); assert.equal(events[0].error, 'failure');
     machine.createWorktree = async () => ({ worktree: root });

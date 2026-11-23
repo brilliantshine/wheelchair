@@ -4,7 +4,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { isDeepStrictEqual } = require('node:util');
 const { entryReason, checkDocumentText } = require('./project-mcp');
-const { codexEntryReason, codexOverrides } = require('../adapters/codex');
+const connectors = require('../../connectors');
+const projectConnectors = connectors.list().filter(m => m.capabilities.projectTools).map(m => connectors.machine(m.cli));
 const { KEY_NAME, reservedNames, isReserved, keyReferences, projectIdentity, readKeyStore, writeKeyStore } = require('./project-keys');
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const reason = r => (r.stderr || r.stdout || 'command failed').trim();
@@ -12,7 +13,6 @@ const keys = store => Object.keys(store.keys);
 const refused = (reason, status = 400) => ({ status, body: { outcome: 'refused', reason } });
 const changed = () => refused('changed since you opened it', 409);
 const encBranch = b => encodeURIComponent(b).replace(/%2F/gi, '/');
-const tooLarge = 'project tools skipped on Codex: .mcp.json is too large to pass on the command line';
 function repoName(url) {
   const m = /^(?:https:\/\/github\.com\/|ssh:\/\/(?:git@)?github\.com\/|git@github\.com:)([a-z0-9_.-]+)\/([a-z0-9_.-]+?)(?:\.git)?$/i.exec(url.trim());
   return m ? `${m[1]}/${m[2]}` : null;
@@ -22,7 +22,7 @@ function checksFor(servers, store) {
   for (const [name, entry] of Object.entries(servers)) {
     const skip = [], key_warnings = [], why = entryReason(name, entry);
     if (why) skip.push(why);
-    else { Object.defineProperty(valid, name, { value: entry, enumerable: true }); const codex = codexEntryReason(name, entry); if (codex) skip.push(`on Codex: ${codex}`); }
+    else { Object.defineProperty(valid, name, { value: entry, enumerable: true }); for (const connector of projectConnectors) { const reason = connector.projectToolReason(name, entry); if (reason) skip.push(reason); } }
     for (const [key, tools] of Object.entries(references)) if (tools.includes(name)) {
       if (!Object.hasOwn(store.keys, key)) key_warnings.push(`needs ${key}, not set on this machine`);
       for (const item of heldBack[key] || []) key_warnings.push(`${key} is held back: also used in ${item.field}`);
@@ -31,7 +31,7 @@ function checksFor(servers, store) {
     const held_back = Object.keys(heldBack).filter(key => heldBack[key].some(item => item.tool === name)).sort();
     Object.defineProperty(checks, name, { value: { skip, key_warnings, keys, held_back }, enumerable: true });
   }
-  return { checks, references, file_warnings: codexOverrides({ servers: valid }).tooLarge ? [tooLarge] : [] };
+  return { checks, references, file_warnings: projectConnectors.map(connector => connector.projectToolFileWarning(valid)).filter(Boolean) };
 }
 const marks = document => object(document?.wheelchair) && Array.isArray(document.wheelchair.windows) && document.wheelchair.windows.every(x => typeof x === 'string') ? document.wheelchair.windows : [];
 function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = () => crypto.randomBytes(6).toString('hex') }) {

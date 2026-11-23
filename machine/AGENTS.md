@@ -7,7 +7,8 @@ agents own neither tmux nor the machine secret.
 | File | Role |
 |---|---|
 | `service.js` | Dependency-free Node HTTP service, session registry, tmux/git boundary, worktrees (each new one links the clone's installed `node_modules` and lists the links in git's exclude file; `from_remote_branch` builds one at an exact pushed commit), the hub-only `/v1/handoff` actions (claims, branch inspection, kill/running) and durable archive markers, readiness, transcript copies, and durable spools. |
-| `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`, `kimi.js`, `pi.js`; Pi also reads offline OpenRouter spend). |
+| `../connectors/` (see its [README](../connectors/README.md)) | Every tool's commands, login folders, hook translation and usage parsing live in `connectors/<cli>/machine.js`; the service loads them through `connectors/index.js`. |
+| `hook.sh`, `lib/hook-in.js`, `lib/hook-post.js` | CLI hook bridge: `hook.sh` execs `hook-in.js`, which follows the tool's manifest `hook` field and posts through `hook-post.js`. |
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
 | `lib/harness-recipes.js`, `lib/harness-install.js` | Harness install recipes and detached jobs, persisted state, setup and validation. |
 | `test/harness-install.test.js` | Harness install job and route coverage. |
@@ -39,8 +40,8 @@ agents own neither tmux nor the machine secret.
 | `lib/env-launch.js` | Session key launcher: reads and deletes the mode-600 JSON env file, then execs the CLI; never prints values. |
 | `lib/project-programs.js` | Synchronous check that each project stdio server's program exists, for the thread's project-tools lines. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |
-| `hook.sh` | CLI hook entry point; turns Claude/Codex/Antigravity payloads into local events and spools while the service is down. |
-| `lib/hook-post.js` | Dependency-free HTTP/spool helper used by `hook.sh`. |
+| `hook.sh` | CLI hook entry point; hands every payload to `lib/hook-in.js`, which follows the tool's manifest `hook` field and turns it into a local event, spooling while the service is down. |
+| `lib/hook-post.js` | Dependency-free HTTP/spool helper used by `lib/hook-in.js`. |
 | `API.md` | The hub-to-machine and agent-to-machine route contract. |
 | `test/` | Isolated fakes and service tests; never uses a real CLI, tmux, or state directory. `fixtures/agy/` holds live captures from `agy` 1.5.9. |
 
@@ -56,4 +57,4 @@ Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`
 - A recovered session (rebuilt from a live `wc-*` tmux session) has no token and never authorizes an agent route.
 - Git subprocesses use the authenticated session's recorded worktree, never a caller path.
 
-`lib/steps.js` classifies Claude and Codex tool calls into compact activity labels and timing keys. `lib/codex-steps.js` parses Codex rollout steps and context; the service tails bound live sessions and flushes them at turn end. Claude tool hooks emit step start/end events; its statusline emits context and rate-limit events on independent throttles.
+`lib/steps.js` classifies Claude and Codex tool calls into compact activity labels and timing keys. `connectors/codex/steps.js` (the Codex connector's `readSteps`) parses Codex rollout steps and context; the service tails bound live sessions and flushes them at turn end. Claude tool hooks emit step start/end events; its statusline emits context and rate-limit events on independent throttles.

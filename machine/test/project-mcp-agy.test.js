@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const agy = require('../adapters/agy');
+const agy = require('../../connectors/agy/machine.js');
 
 function command(servers, tools = true, name = 'wc-a/b') {
   return agy.command({}, { name }, '/work', { stateDir: '/state', tools, mcp: { names: Object.keys(servers), servers } });

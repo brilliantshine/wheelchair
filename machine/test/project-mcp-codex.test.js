@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { command } = require('../adapters/codex');
+const { command } = require('../../connectors/codex/machine.js');
 
 const input = { role: 'worker', model: 'test-model' };
 const session = { name: 'wc-test', effort: 'high' };
@@ -122,7 +122,7 @@ test('skips a reader-marked duplicate header without overrides', () => {
   assert.deepEqual(result.redactions, []);
 });
 test('exported Codex checks share the command rules', () => {
-  const { codexEntryReason, codexOverrides } = require('../adapters/codex');
+  const { codexEntryReason, codexOverrides } = require('../../connectors/codex/machine.js');
   assert.equal(codexEntryReason('bad.name', { command: 'x' }), 'its name must use only letters, digits, _ and -');
   assert.equal(codexEntryReason('valid', { command: 'x' }), null);
   assert.equal(codexOverrides({ servers: { valid: { command: 'x' } } }).tooLarge, false);
@@ -131,7 +131,7 @@ test('exported Codex checks share the command rules', () => {
 
 
 test('Windows stdio tools pass the bridge environment on WSL', () => {
-  const { codexOverrides } = require('../adapters/codex');
+  const { codexOverrides } = require('../../connectors/codex/machine.js');
   const win = { command: '/custom/c/Windows/cmd.exe' };
   const overrides = (entry, options) => codexOverrides({ servers: { tool: entry } }, options).args;
   const wsl = { wsl: true, mount: '/custom' };

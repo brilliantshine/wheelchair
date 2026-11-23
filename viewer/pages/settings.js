@@ -12,11 +12,11 @@
     ['heavy', 'Heavy', 'Leading, planning, review, checking'],
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
-  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI'], ['openrouter', 'OpenRouter', 'Pi']];
-  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'], openrouter: ['low', 'medium', 'high', 'xhigh', 'max'] };
-  const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
-  const KIMI_MODEL_VALUE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/;
-  const OPENROUTER_MODEL_VALUE = /^(?=.{1,128}$)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(:[a-z0-9][a-z0-9._-]*)?$/;
+  // The tool list comes from the connector manifests (/wheelchair/assets/tools.js).
+  const TOOLS = window.WHEELCHAIR_TOOLS || [];
+  const toolOf = (provider) => TOOLS.find((t) => t.provider === provider);
+  const PROVIDERS = TOOLS.map((t) => [t.provider, t.label, t.settings.cliLabel]);
+  const EFFORTS = Object.fromEntries(TOOLS.filter((t) => t.models.efforts.length).map((t) => [t.provider, t.models.efforts]));
   const NONE = '__none';
   const OTHER = '__other';
   const ROLES = [
@@ -178,7 +178,7 @@
     const effort = cell && cell.effort ? cell.effort : '';
     const wrap = h('div', { class: 'cell' });
     const label = `${PROVIDER_NAME[provider]} ${slot} model`;
-    const select = h('select', { 'aria-label': label, class: provider === 'claude' ? '' : 'mono' },
+    const select = h('select', { 'aria-label': label, class: toolOf(provider).settings.monoModelNames ? 'mono' : '' },
       optionList(provider, current, { allowNone }).map((o) => h('option', { value: o.value, text: o.label })));
     select.value = current || NONE;
     wrap.append(select);
@@ -210,13 +210,13 @@
 
     function openOther() {
       if (wrap.querySelector('.other')) return;
-      const input = h('input', { type: 'text', 'aria-label': `${label}, other`, placeholder: 'model-name', autocomplete: 'off', spellcheck: false });
+      const input = h('input', { type: 'text', 'aria-label': `${label}, other`, placeholder: toolOf(provider).settings.modelPlaceholder, autocomplete: 'off', spellcheck: false });
       const use = h('button', { type: 'button', class: 'small', text: 'Use' });
       const row = h('div', { class: 'other' }, input, use);
       const go = () => {
         const value = input.value.trim();
-        if (!(provider === 'openrouter' ? OPENROUTER_MODEL_VALUE : provider === 'kimi' ? KIMI_MODEL_VALUE : MODEL_VALUE).test(value)) {
-          inlineErr(wrap, provider === 'openrouter' ? 'Use vendor/model with an optional :variant, up to 128 lowercase letters, digits, dots, dashes and underscores.' : 'Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.');
+        if (!new RegExp(toolOf(provider).settings.modelPattern).test(value)) {
+          inlineErr(wrap, toolOf(provider).settings.modelError);
           return;
         }
         commit(value, effort);
@@ -485,11 +485,11 @@
 
     const head = h('tr', {}, h('th', { scope: 'col', text: 'Provider' }),
       TIERS.map(([, label, desc]) => h('th', { scope: 'col' }, h('span', { class: 'tier-name', text: label }), h('span', { class: 'tier-desc', text: desc }))));
-    const body = PROVIDERS.filter(([provider]) => harnessOn(provider)).map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
-      h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli }), provider === 'openrouter' && h('span', { class: 'hint', text: 'Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.' })),
+    const body = PROVIDERS.filter(([provider]) => harnessOn(provider)).map(([provider, name, cli]) => h('tr', { class: toolOf(provider).settings.modelHeadsUp ? 'gpt' : '', 'data-provider': provider },
+      h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli }), toolOf(provider).settings.familyHint && h('span', { class: 'hint', text: toolOf(provider).settings.familyHint })),
       TIERS.map(([slot, label]) => {
         const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
-        if (provider === 'gpt') for (const item of tierItems(slot)) td.append(headsUpLine(item));
+        if (toolOf(provider).settings.modelHeadsUp) for (const item of tierItems(slot)) td.append(headsUpLine(item));
         return td;
       })));
     const table = h('table', { class: 'tiers' }, h('thead', {}, head), h('tbody', {}, body));
@@ -536,8 +536,15 @@
     const escRow = (title, key, choices) => h('div', { class: 'row-line' },
       h('div', { class: 'what' }, h('span', { text: title })),
       escalationGroup(key, title, choices));
-    const claudeMode = modeGroup('permission_mode', 'Claude, Antigravity and Kimi permission mode', [['auto', 'Auto'], ['bypass', 'Bypass']]);
-    const codexMode = modeGroup('codex_mode', 'Codex permission mode', [['sandboxed', 'Sandboxed'], ['unrestricted', 'Unrestricted']]);
+    const permissionNames = (mode) => {
+      const names = TOOLS.filter((t) => t.settings.permissionMode === mode).map((t) => t.settings.permissionName);
+      return names.length < 2 ? (names[0] || '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+    };
+    const permissionChoices = (mode) => (TOOLS.find((t) => t.settings.permissionMode === mode) || { settings: {} }).settings.permissionChoices || [];
+    const permissionModeName = permissionNames('permission_mode');
+    const codexModeName = permissionNames('codex_mode');
+    const claudeMode = modeGroup('permission_mode', `${permissionModeName} permission mode`, permissionChoices('permission_mode'));
+    const codexMode = modeGroup('codex_mode', `${codexModeName} permission mode`, permissionChoices('codex_mode'));
     const asideMode = modeGroup('aside_access', 'Aside access', [['read-only', 'Read-only'], ['full', 'Full']]);
     const asideHint = data.aside_access === 'full'
       ? 'Never asks, no sandbox: an aside can read anywhere, run commands and change files.'
@@ -578,10 +585,10 @@
         h('h2', { id: 'perm', text: 'Permission mode' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Claude, Antigravity and Kimi sessions' })),
+            h('div', { class: 'what' }, h('span', { text: `${permissionModeName} sessions` })),
             claudeMode),
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Codex sessions' }), h('span', { class: 'hint', text: codexHint })),
+            h('div', { class: 'what' }, h('span', { text: `${codexModeName} sessions` }), h('span', { class: 'hint', text: codexHint })),
             codexMode),
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Asides' }), h('span', { class: 'hint', text: asideHint })),
@@ -609,7 +616,7 @@
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
-            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code'], ['openrouter', 'OpenRouter']].filter(([v]) => v === 'both' || harnessOn(v)))),
+            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ...TOOLS.filter((t) => t.settings.reviewFamily).map((t) => [t.provider, t.label])].filter(([v]) => v === 'both' || harnessOn(v)))),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
@@ -716,9 +723,12 @@
   function promptBox() {
     if (!fullPrompt) return h('div', { id: 'full-prompt', hidden: true });
     if (fullPrompt.error) return h('p', { id: 'full-prompt', class: 'inline-err', role: 'alert', text: fullPrompt.error });
+    const joinNames = names => names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+    const instructionsNames = joinNames(TOOLS.filter(t => t.settings.roleInstructionsName).map(t => t.settings.roleInstructionsName));
+    const fileNames = joinNames(TOOLS.filter(t => t.typesRoleMessage).map(t => t.label));
     return h('div', { class: 'full-prompt-wrap' },
       h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text }),
-      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it. Lessons marked for one AI or one project reach only agents on that AI or in that project.' }));
+      h('span', { class: 'hint', id: 'full-prompt-caption', text: `${instructionsNames} gets this as its starting instructions; ${fileNames} sessions get it as a file, through a short first message that points to it. Lessons marked for one AI or one project reach only agents on that AI or in that project.` }));
   }
 
   function switchRow(title, hint, control) {
@@ -1298,17 +1308,10 @@
 
   // ---------------------------------------------------------------- Accounts, Usage, lead order
 
-  const PLAN_OPTIONS = {
-    claude: [['unknown', 'Not sure'], ['pro', 'Pro'], ['max5', 'Max 5x'], ['max20', 'Max 20x']],
-    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['prolite', 'Pro Lite'], ['pro', 'Pro'], ['promax', 'Pro Max']],
-    gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
-    kimi: [['unknown', 'Not sure']],
-    openrouter: [['unknown', 'Not sure']],
-  };
+  const PLAN_OPTIONS = Object.fromEntries(TOOLS.map((t) => [t.provider, t.settings.plans]));
   const planLabel = (provider, plan) => ((PLAN_OPTIONS[provider] || []).find((p) => p[0] === plan) || [0, plan])[1];
-  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code', openrouter: 'OpenRouter' };
+  const PROVIDER_NAME = Object.fromEntries(TOOLS.map((t) => [t.provider, t.label]));
   const WITHIN = [['soonest', 'Soonest refill first'], ['spread', 'Spread evenly'], ['one', 'Stay on one account']];
-  const CLAUDE_TERMS = "Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.";
   const SIGNIN_WAIT_MS = 30000;
   const SIGNIN_FINISH_MS = 10 * 60 * 1000;
 
@@ -1346,7 +1349,7 @@
   };
   // OpenRouter sign-in is key only: waiting, no link, and the machine wants the key pasted.
   const keyOnlySignin = (st) => st.state === 'waiting' && !st.url && st.wantsCode === true;
-  const signinHint = (st) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : 'Paste your OpenRouter key');
+  const signinHint = (st, tool) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : (tool || TOOLS.find((t) => t.settings.signInKind === 'key')).settings.keyPrompt);
   const safeHref = (u) => (/^https?:\/\//i.test(String(u)) ? String(u) : '#');
 
   async function refreshUsage() {
@@ -1401,7 +1404,8 @@
     const actions = h('div', { class: 'actions signin-actions' });
     const codeBox = h('div', { class: 'signin-code' });
     const paste = h('textarea', { rows: 2, 'aria-label': 'Paste the code from the sign-in page', placeholder: 'Paste the code here' });
-    const keyInput = h('input', { type: 'password', class: 'ctl', autocomplete: 'off', 'aria-label': 'Paste your OpenRouter key', placeholder: 'Paste your OpenRouter key', hidden: true });
+    const keyPrompt = ((toolOf(account.provider).settings.signInKind === 'key' ? toolOf(account.provider) : TOOLS.find((t) => t.settings.signInKind === 'key')) || { settings: { keyPrompt: '' } }).settings.keyPrompt;
+    const keyInput = h('input', { type: 'password', class: 'ctl', autocomplete: 'off', 'aria-label': keyPrompt, placeholder: keyPrompt, hidden: true });
     const activeField = () => (keyInput.hidden ? paste : keyInput);
     const send = h('button', { type: 'button', class: 'primary small', text: 'Send code', onclick: async () => {
       const field = activeField();
@@ -1410,7 +1414,7 @@
       try { await api(`/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}/code`, { method: 'POST', body: { code } }); field.value = ''; status.textContent = 'Code sent.'; inlineErr(codeBox, ''); }
       catch (e) {
         inlineErr(codeBox, e.message);
-        if (e.status === 409 && account.provider === 'openrouter') {
+        if (e.status === 409 && toolOf(account.provider).settings.signInKind === 'key') {
           field.value = '';
           if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine, harness) }));
         }
@@ -1453,10 +1457,10 @@
       if (st.url || keyOnly) {
         if (!card.hadUrl) card.firstUrl = Date.now();
         card.hadUrl = true;
-        status.className = 'hint'; status.textContent = signinHint(st);
-        keyInput.hidden = !keyOnly; paste.hidden = keyOnly; pasteLabel.textContent = keyOnly ? 'Paste your OpenRouter key' : 'Paste the code';
+        status.className = 'hint'; status.textContent = signinHint(st, toolOf(account.provider));
+        keyInput.hidden = !keyOnly; paste.hidden = keyOnly; pasteLabel.textContent = keyOnly ? keyPrompt : 'Paste the code';
         if (keyOnly) actions.replaceChildren();
-        else if (account.provider === 'claude' || account.provider === 'gemini') {
+        else if (toolOf(account.provider).settings.signInKind === 'link') {
           actions.replaceChildren(h('a', { class: 'btn-link primary', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: 'Open sign-in link' }));
         } else {
           actions.replaceChildren(h('a', { class: 'btn-link', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: st.url }));
@@ -1511,7 +1515,7 @@
   }
 
   function planSelect(provider, value) {
-    return h('select', { 'aria-label': 'Plan' }, PLAN_OPTIONS[provider].map(([v, l]) => h('option', { value: v, text: l, selected: v === value })));
+    return h('select', { 'aria-label': 'Plan' }, (PLAN_OPTIONS[provider] || []).map(([v, l]) => h('option', { value: v, text: l, selected: v === value })));
   }
 
   // The plan the CLI itself reported, shown beside the chosen one when they differ.
@@ -1590,7 +1594,7 @@
     } catch (e) { adding.warn = false; renderPanel(); inlineErr(document.querySelector('.add-form') || form, e.message); }
   }
 
-  function addProviders() { return Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini' && harnessOn(v)); }
+  function addProviders() { return Object.entries(PROVIDER_NAME).filter(([v]) => !toolOf(v).singleAccount && harnessOn(v)); }
 
   function addForm() {
     const offered = addProviders();
@@ -1599,8 +1603,8 @@
     const form = h('form', { class: 'box add-form', onsubmit: (ev) => {
       ev.preventDefault();
       if (!adding.name.trim()) { inlineErr(form, 'Give the account a name.'); return; }
-      const claudes = (data.accounts || []).filter((a) => a.provider === 'claude').length;
-      if (adding.provider === 'claude' && claudes >= 1 && !adding.warn) { adding.warn = true; renderPanel(); return; }
+      const same = (data.accounts || []).filter((a) => a.provider === adding.provider).length;
+      if (toolOf(adding.provider).settings.accountWarning && same >= 1 && !adding.warn) { adding.warn = true; renderPanel(); return; }
       saveAdd(form);
     } });
     const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; renderPanel(); } },
@@ -1611,7 +1615,7 @@
     plan.addEventListener('change', () => { adding.plan = plan.value; });
     form.append(h('h2', { text: 'Add account' }), h('div', { class: 'fields' }, provider, name, plan));
     if (adding.warn) {
-      form.append(h('div', { class: 'hu', role: 'alert', id: 'claude-warning' }, h('span', { class: 'msg', text: CLAUDE_TERMS }),
+      form.append(h('div', { class: 'hu', role: 'alert', id: 'claude-warning' }, h('span', { class: 'msg', text: toolOf(adding.provider).settings.accountWarning }),
         h('div', { class: 'hu-actions' },
           h('button', { type: 'button', class: 'primary small', id: 'add-anyway', text: 'Add anyway', onclick: () => saveAdd(form) }),
           h('button', { type: 'button', class: 'small', id: 'add-cancel', text: 'Cancel', onclick: () => { adding = null; renderPanel(); } }))));
@@ -1637,8 +1641,8 @@
       h('div', { id: 'signin-host' }, signCard && !signCard.harness ? signCard.el : null),
       Object.entries(PROVIDER_NAME).filter(([provider]) => harnessOn(provider)).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
         h('h2', { text: label }),
-        provider === 'gemini' && h('p', { class: 'hint', text: 'Antigravity supports one account per machine' }),
-        accountRows(provider).filter((a) => provider !== 'gemini' || a.id === 'default-gemini').map(accountCard),
+        toolOf(provider).settings.accountPolicy && h('p', { class: 'hint', text: toolOf(provider).settings.accountPolicy }),
+        accountRows(provider).filter((a) => !toolOf(provider).singleAccount || a.id === `default-${provider}`).map(accountCard),
         !(data.accounts || []).some((a) => a.id === `default-${provider}`) && restoreDefault(provider))),
       addForm());
   }
@@ -1788,13 +1792,7 @@
 
   // ---------------------------------------------------------------- Harnesses
 
-  const HARNESSES = [
-    ['claude', 'Claude Code', 'Anthropic', 'https://docs.claude.com/en/docs/claude-code/setup'],
-    ['gpt', 'Codex', 'OpenAI', 'https://github.com/openai/codex'],
-    ['gemini', 'Antigravity', 'Google', 'https://antigravity.google/cli'],
-    ['kimi', 'Kimi Code', 'Kimi', 'https://code.kimi.com'],
-    ['openrouter', 'Pi (OpenRouter)', 'Pi', 'https://www.npmjs.com/package/@earendil-works/pi-coding-agent'],
-  ];
+  const HARNESSES = TOOLS.map((t) => [t.provider, t.displayName, t.settings.vendor, t.settings.setupUrl]);
   // A switch the hub does not report counts as on (an older hub, or a fresh read still on its way).
   function harnessOn(provider) { return !data || !data.harnesses || data.harnesses[provider] !== false; }
 

@@ -2,6 +2,7 @@
 
 // Spec "Settings store", "Behavior templates", and "Writing style".
 const crypto = require('node:crypto');
+const connectors = require('../../connectors');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
@@ -34,25 +35,24 @@ const DEFAULT_STYLE = Object.freeze({
   text: "Be concise. Cut anything that makes it longer without changing the meaning.\nBuild up to technical terms and ground them, so I don't skim past something I only half get.",
 });
 
-const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, prolite: 5, pro: 10, promax: 25 }, gemini: { unknown: 1, pro: 1, ultra: 4 }, kimi: { unknown: 1 }, openrouter: { unknown: 1 } };
-// The plan id a CLI reports (Codex's rate-limit `plan_type`), mapped to our plan id.
-const REPORTED_PLANS = { gpt: { plus: 'plus', prolite: 'prolite', pro: 'pro', promax: 'promax' } };
-// Weights the app used to give a plan before the table above changed; still treated as "not set by hand".
-const OLD_PLAN_WEIGHTS = { gpt: { pro: [6] } };
+const table = field => Object.fromEntries(connectors.list().filter(m => Object.keys(m.settings[field] || {}).length).map(m => [m.provider, m.settings[field]]));
+const PLANS = table('weights');
+const REPORTED_PLANS = table('reportedPlans');
+const OLD_PLAN_WEIGHTS = table('oldPlanWeights');
 // The plan and weight an account should take from what its CLI reported, or null when it should stay as is:
 // an unrecognised report, nothing to change, or a weight the user typed in themselves.
 function reportedPlan(account, planType) {
   const reported = String(planType || '').trim().toLowerCase(), table = REPORTED_PLANS[account.provider];
   const plan = table && Object.hasOwn(table, reported) ? table[reported] : null;
   if (!plan) return null;
-  const defaults = [PLANS[account.provider][account.plan], ...(OLD_PLAN_WEIGHTS[account.provider]?.[account.plan] || [])];
+  const defaults = [PLANS[account.provider]?.[account.plan], ...(OLD_PLAN_WEIGHTS[account.provider]?.[account.plan] || [])];
   if (!defaults.includes(account.weight)) return null;
-  const weight = PLANS[account.provider][plan];
+  const weight = PLANS[account.provider]?.[plan];
   return plan === account.plan && weight === account.weight ? null : { plan, weight };
 }
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
 function defaults() {
-  return { harnesses: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, true])), onboarding_done: false, lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini', 'kimi'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true, designer: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', auto_merge: 'off', auto_merge_delete_branch: 'off', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lesson_history: {}, lesson_waiting: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
+  return { harnesses: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, true])), onboarding_done: false, lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: PLANS[provider].unknown, paused: false })), lead_order: [...connectors.list().filter(m => m.placement.leadDefault).map(m => m.provider), 'any'], worker_order: connectors.list().filter(m => m.placement.workerRank !== null).sort((a, b) => a.placement.workerRank - b.placement.workerRank).map(m => m.provider), worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true, designer: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', auto_merge: 'off', auto_merge_delete_branch: 'off', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lesson_history: {}, lesson_waiting: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -236,7 +236,8 @@ function roleLayers(settings, role, project, scout, provider, preview = false) {
   if (role === 'sub-lead') lines.push('', 'Escalation rules from Settings:', ...escalationSentences(settings.escalation));
   if (role === 'lead') lines.push('', 'The user’s writing style for everything they read (thread replies and the text of cards):', renderStyle(settings.style));
   if (scout && ['lead', 'sub-lead'].includes(role)) {
-    const clause = provider === 'claude' ? ` (Claude Code: the Agent tool with model "${scout.light}")` : '';
+    const scoutHelper = connectors.byProvider(provider)?.settings.scoutHelper;
+    const clause = scoutHelper ? ` (${scoutHelper} with model "${scout.light}")` : '';
     lines.push('', scout.light
       ? `Scout model for code reading: ${scout.light}. Questions that need more than a couple of files read go to your CLI's built-in helper on this model${clause}, asking for conclusions with file:line evidence, not file dumps.`
       : 'Scout model for code reading: none on this CLI. Read code yourself.');
@@ -260,7 +261,7 @@ function assertFits(settings) {
   const projects = new Set([undefined]);
   for (const template of settings.templates) if (template.scope !== 'all') projects.add(template.scope);
   for (const role of ROLES) for (const project of projects) {
-    if (roleLayers({ ...settings, lessons: {} }, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, 'claude').text.length > 12000) fail('the composed role instructions exceed 12000 characters');
+    if (roleLayers({ ...settings, lessons: {} }, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, connectors.list().find(m => m.settings.scoutHelper)?.provider).text.length > 12000) fail('the composed role instructions exceed 12000 characters');
   }
 }
 
@@ -270,7 +271,7 @@ function normalize(saved) {
   const accounts = [];
   const seen = new Set();
   for (const item of Array.isArray(saved.accounts) ? saved.accounts : []) {
-    if (!item || !Object.hasOwn(PROVIDERS, item.provider) || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(item.id || '') || seen.has(item.id) || (item.id.startsWith('default-') && item.id !== `default-${item.provider}`) || typeof item.name !== 'string' || !item.name.trim() || !Object.hasOwn(PLANS[item.provider], item.plan) || (item.weight !== undefined && (typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight <= 0)) || (item.paused !== undefined && typeof item.paused !== 'boolean')) continue;
+    if (!item || !Object.hasOwn(PROVIDERS, item.provider) || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(item.id || '') || seen.has(item.id) || (item.id.startsWith('default-') && item.id !== `default-${item.provider}`) || typeof item.name !== 'string' || !item.name.trim() || !Object.hasOwn(PLANS[item.provider] || {}, item.plan) || (item.weight !== undefined && (typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight <= 0)) || (item.paused !== undefined && typeof item.paused !== 'boolean')) continue;
     seen.add(item.id);
     accounts.push({ id: item.id, provider: item.provider, name: item.name, plan: item.plan, weight: item.weight ?? PLANS[item.provider][item.plan], paused: item.paused ?? false });
   }
@@ -282,8 +283,8 @@ function normalize(saved) {
     const migrated = { ...saved.held_back, designer: base.held_back.designer };
     if (validBalancing('held_back', migrated)) balancing.held_back = migrated;
   }
-  const orderSeen = Array.isArray(saved.worker_order_seen) ? saved.worker_order_seen.filter((provider) => Object.hasOwn(PROVIDERS, provider)) : ['claude', 'gpt'];
-  balancing.worker_order = [...balancing.worker_order, ...Object.keys(PROVIDERS).filter((provider) => !balancing.worker_order.includes(provider) && !orderSeen.includes(provider) && provider !== 'openrouter')];
+  const orderSeen = Array.isArray(saved.worker_order_seen) ? saved.worker_order_seen.filter((provider) => Object.hasOwn(PROVIDERS, provider)) : connectors.list().filter(m => m.placement.seenByDefault).map(m => m.provider);
+  balancing.worker_order = [...balancing.worker_order, ...Object.keys(PROVIDERS).filter((provider) => !balancing.worker_order.includes(provider) && !orderSeen.includes(provider) && connectors.byProvider(provider).placement.addOnMigration)];
   if (!validBalancing('save_for_leads', saved.save_for_leads) && typeof saved.save_claude_for_leads === 'boolean') balancing.save_for_leads = saved.save_claude_for_leads;
   const lessons = Object.fromEntries([...ROLES].map((role) => [role, []]));
   const ids = new Set();
@@ -325,7 +326,7 @@ function normalize(saved) {
     auto_merge: saved.auto_merge === 'on' ? 'on' : 'off',
     auto_merge_delete_branch: saved.auto_merge_delete_branch === 'on' ? 'on' : 'off',
     tool_steps: saved.tool_steps === 'hide' ? 'hide' : 'show',
-    review_families: ['both', 'claude', 'gpt', 'gemini', 'kimi', 'openrouter'].includes(saved.review_families) ? saved.review_families : 'both',
+    review_families: ['both', ...connectors.list().filter(m => m.settings.reviewFamily).map(m => m.provider)].includes(saved.review_families) ? saved.review_families : 'both',
     other_agents: { ...base.other_agents, ...(saved.other_agents || {}) },
     escalation: Object.fromEntries(Object.entries(ESCALATION_VALUES).map(([key, allowed]) => [key, allowed.includes(saved.escalation?.[key]) ? saved.escalation[key] : base.escalation[key]])),
     templates: Array.isArray(saved.templates) ? saved.templates : [],
@@ -432,17 +433,20 @@ async function models(hub) { return JSON.parse((await modelCommand(hub, ['show',
 async function headsUp(hub) { return JSON.parse((await modelCommand(hub, ['check', '--json'])).stdout); }
 
 function options(models) {
-  const claude = [
-    ['haiku', 'Latest Haiku'], ['sonnet', 'Latest Sonnet'], ['opus', 'Latest Opus'], ['fable', 'Latest Fable'],
-    ['claude-haiku-5-5', 'claude-haiku-5-5'], ['claude-sonnet-5-5', 'claude-sonnet-5-5'], ['claude-opus-5-5', 'claude-opus-5-5'], ['claude-fable-5-2', 'claude-fable-5-2'],
-  ].map(([value, label]) => ({ value, label }));
-  const visible = Array.isArray(models.visible) ? models.visible : [];
-  const current = Object.values(models.gpt || {}).map((cell) => cell?.model).filter(Boolean);
-  const gpt = [...new Set([...visible, ...current])].map((value) => ({ value, label: value }));
-  const kimiListed = (Array.isArray(models.kimi_visible) ? models.kimi_visible : []).filter((o) => o && typeof o.value === 'string' && typeof o.label === 'string');
-  const kimiCurrent = Object.values(models.kimi || {}).map((cell) => cell?.model).filter((value) => value && !kimiListed.some((o) => o.value === value));
-  const kimi = [...kimiListed.map(({ value, label }) => ({ value, label })), ...[...new Set(kimiCurrent)].map((value) => ({ value, label: value }))];
-  return { claude, gpt, kimi };
+  const result = {};
+  for (const manifest of connectors.list()) {
+    const spec = manifest.settings.modelOptions;
+    if (!spec) continue;
+    if (spec.fixed) { result[manifest.provider] = spec.fixed.map(([value, label]) => ({ value, label })); continue; }
+    const listed = Array.isArray(models[spec.listedKey]) ? models[spec.listedKey] : [];
+    const current = spec.includePins ? Object.values(models[manifest.provider] || {}).map(cell => cell?.model).filter(Boolean) : [];
+    if (spec.listedShape === 'strings') result[manifest.provider] = [...new Set([...listed, ...current])].map(value => ({ value, label: value }));
+    else {
+      const valid = listed.filter(o => o && typeof o.value === 'string' && typeof o.label === 'string');
+      result[manifest.provider] = [...valid.map(({ value, label }) => ({ value, label })), ...[...new Set(current.filter(value => !valid.some(o => o.value === value)))].map(value => ({ value, label: value }))];
+    }
+  }
+  return result;
 }
 
 async function describe(hub) {
@@ -461,7 +465,7 @@ async function preview(hub, style) {
   const valid = validateStyle(style);
   const rendered = renderStyle(valid);
   let model = 'claude-haiku-5-5';
-  try { model = (await modelCommand(hub, ['claude', 'light'])).stdout.trim() || model; } catch { /* none uses the fixed fallback */ }
+  try { model = (await modelCommand(hub, [connectors.list().find(m => m.stylePreview).provider, 'light'])).stdout.trim() || model; } catch { /* none uses the fixed fallback */ }
   const prompt = `Rewrite the following message under these writing instructions. Output only the rewritten message.\n\n${rendered}\n\nMessage:\n${SAMPLE}`;
   try {
     const result = await hub.call('hub', '/v1/preview', 'POST', { prompt, model }, 75000);

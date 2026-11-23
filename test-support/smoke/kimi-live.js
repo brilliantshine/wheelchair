@@ -65,7 +65,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     });
     await check('6 folder trust', async () => {
       const entry = [...captures].flatMap(([name, frames]) => frames.map(pane => ({ name, pane }))).find(x => x.pane.includes('Trust this folder?'));
-      assert(entry, 'trust screen not captured'); console.log(`TRUST PANE ${entry.name}\n${entry.pane}`); const adapter = require('../../machine/adapters/kimi'); assert(adapter.answerPrompts({}, entry.pane)); const s = await machine(entry.name); assert.equal(s.status, 'ready'); row('6 folder trust', true, JSON.stringify({ session: entry.name, answer: adapter.answerPrompts({}, entry.pane), status: s.status }));
+      assert(entry, 'trust screen not captured'); console.log(`TRUST PANE ${entry.name}\n${entry.pane}`); const adapter = require('../../connectors/kimi/machine'); assert(adapter.answerPrompts({}, entry.pane)); const s = await machine(entry.name); assert.equal(s.status, 'ready'); row('6 folder trust', true, JSON.stringify({ session: entry.name, answer: adapter.answerPrompts({}, entry.pane), status: s.status }));
     });
     await check('7 approval prompt', async () => {
       await h.callHub('/api/settings/preferences', 'PUT', { permission_mode: 'auto' });
@@ -74,11 +74,11 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       for (let i = 0; i < instructions.length && !found; i++) {
         const marker = nonce(), worker = await start('worker', `approval-${i}`, `${instructions[i]} ${marker}.`, { tier: 'standard' }); await waitBound(worker);
         const end = Date.now() + 30000;
-        while (Date.now() < end) { const s = await machine(worker); const frames = captures.get(worker) || []; const pane = frames.find(x => require('../../machine/adapters/kimi').promptText(x)); if (pane) { found = { worker, marker, pane, prompt_open: s.prompt_open }; break; } const rows = wire(s.source_transcript); if (rows.some(x => x.agentId === 'main' && x.type === 'turn.ended' && x.turnId === rows.find(y => y.agentId === 'main' && y.type === 'turn.prompt' && y.origin?.kind === 'user' && JSON.stringify(y.input).includes(marker))?.turnId)) break; await sleep(100); }
+        while (Date.now() < end) { const s = await machine(worker); const frames = captures.get(worker) || []; const pane = frames.find(x => require('../../connectors/kimi/machine').promptText(x)); if (pane) { found = { worker, marker, pane, prompt_open: s.prompt_open }; break; } const rows = wire(s.source_transcript); if (rows.some(x => x.agentId === 'main' && x.type === 'turn.ended' && x.turnId === rows.find(y => y.agentId === 'main' && y.type === 'turn.prompt' && y.origin?.kind === 'user' && JSON.stringify(y.input).includes(marker))?.turnId)) break; await sleep(100); }
         if (!found) console.log(`approval try ${i + 1}: no prompt observed session=${worker}`);
       }
       if (!found) { row('7 approval prompt', false, 'No approval prompt observed; promptText unchanged'); return; }
-      console.log(`APPROVAL PANE ${found.worker}\n${found.pane}`); assert(require('../../machine/adapters/kimi').promptText(found.pane), 'promptText does not match captured pane'); await h.waitFor(async () => (await machine(found.worker)).prompt_open, 10000); row('7 approval prompt', true, JSON.stringify(found));
+      console.log(`APPROVAL PANE ${found.worker}\n${found.pane}`); assert(require('../../connectors/kimi/machine').promptText(found.pane), 'promptText does not match captured pane'); await h.waitFor(async () => (await machine(found.worker)).prompt_open, 10000); row('7 approval prompt', true, JSON.stringify(found));
     });
   } catch (e) { row('setup', false, e.stack); }
   finally { if (captureTimer) clearInterval(captureTimer); if (h) { console.log(`sessions started ${JSON.stringify([...names])}`); const clean = await h.teardown(); console.log(`cleanup ${JSON.stringify(clean)}`); } }

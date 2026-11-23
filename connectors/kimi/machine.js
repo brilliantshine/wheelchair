@@ -1,9 +1,10 @@
 'use strict';
 const fs = require('node:fs');
+const fsp = fs.promises;
 const path = require('node:path');
 const os = require('node:os');
-const { spawnSync } = require('node:child_process');
-const c = require('./common');
+const { spawnSync, execFile } = require('node:child_process');
+const c = require('../common');
 const home = dir => path.resolve(dir || c.home('KIMI_CODE_HOME', '.kimi-code'));
 function resolveCli() {
   const found = spawnSync('sh', ['-c', 'command -v kimi'], { encoding: 'utf8' });
@@ -155,10 +156,152 @@ async function findTranscript(session, dir) {
   bindings.set(session, run);
   try { return await run; } finally { bindings.delete(session); }
 }
+const poller = {
+  async kimiBinding(session) {
+    try {
+      const had = session.source_transcript;
+      const file = await findTranscript(session, session.account_dir);
+      if (!had && file) await this.persistSessions();
+      return file;
+    } catch (error) {
+      if (!error.kimiFatal) throw error;
+      await this.fatalKimi(session, error.message); return null;
+    }
+  },
+  async kimiSpoolWaiting(session) {
+    const dir = path.join(this.stateDir, 'spool', 'events');
+    for (const file of await fsp.readdir(dir).catch(() => [])) {
+      if (!file.endsWith('.json')) continue;
+      const item = await fs.promises.readFile(path.join(dir, file), 'utf8').then(JSON.parse).catch(() => ({}));
+      if (item.session === session.name) return true;
+    }
+    return false;
+  },
+  async turnPoller(cli) {
+    if (this.kimiPolling) return;
+    this.kimiPolling = true;
+    try {
+      for (const session of Object.values(this.sessions)) {
+        if (session.cli !== cli || session.status === 'stopped') continue;
+        if (session.end_reason) { await this.stopFatal(session); continue; }
+        if (session.status !== 'ready') continue;
+        const file = await this.bindTranscript(session);
+        if (session.end_reason) continue;
+        if (!file) {
+          if (Date.now() - Date.parse(session.ready_at) >= 120000) await this.fatalKimi(session, "Couldn't find Kimi Code's log for this session");
+          continue;
+        }
+        let data, stat, handle, ioError, otherError;
+        const offset = session.kimi_offset || 0;
+        try { handle = await fsp.open(file, 'r'); } catch (error) { ioError = error; }
+        if (handle) {
+          try {
+            try { stat = await handle.stat(); } catch (error) { ioError = error; }
+            if (!ioError && stat.dev === session.kimi_log_id?.dev && stat.ino === session.kimi_log_id?.ino && stat.size >= offset) {
+              let buffer;
+              try { buffer = Buffer.alloc(stat.size - offset); } catch (error) { otherError = error; }
+              if (buffer) {
+                try { const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset); data = buffer.subarray(0, bytesRead); }
+                catch (error) { ioError = error; }
+              }
+            }
+          } finally { await handle.close().catch(error => this.log(error)); }
+        }
+        if (otherError) { this.log(otherError); continue; }
+        if (ioError) {
+          if (session.kimi_missing_since === undefined) { session.kimi_missing_since = Date.now(); await this.persistSessions(); }
+          if (Date.now() - session.kimi_missing_since >= 30000) await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced");
+          continue;
+        }
+        try {
+          if (!data) {
+            await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced"); continue;
+          }
+          if (session.kimi_missing_since !== undefined) { delete session.kimi_missing_since; await this.persistSessions(); }
+          const end = data.lastIndexOf(10);
+          if (end < 0 || await this.spoolWaiting(session)) continue;
+          const rows = data.subarray(0, end + 1).toString('utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } });
+          const turns = rows.filter(row => row?.type === 'turn.ended' && row.agentId === 'main' && Number.isInteger(row.turnId) && (session.kimi_last_turn === undefined || row.turnId > session.kimi_last_turn)).sort((a,b) => a.turnId-b.turnId);
+          let handedOffAll = true;
+          for (const row of turns) {
+            if (session.kimi_last_turn !== undefined && row.turnId <= session.kimi_last_turn) continue;
+            if (await this.spoolWaiting(session)) { handedOffAll = false; break; }
+            let event = { type: 'turn-ended', turn_id: row.turnId, transcript_path: file };
+            if (row.reason === 'cancelled') event.interrupted = true;
+            else if (row.reason === 'failed') {
+              let error = row.error, messages = [], codes = [];
+              if (typeof error === 'string') messages.push(error);
+              else for (let e = error; e && typeof e === 'object'; e = e.cause) { if (e.message) messages.push(String(e.message)); if (e.code) codes.push(String(e.code)); if (typeof e.cause === 'string') messages.push(e.cause); }
+              const message = (typeof error === 'object' && error?.code ? `[${error.code}] ` : '') + (messages.join(': ') || 'Kimi Code turn failed');
+              event = { ...event, type: codes.some(code => /rate_limit|quota/i.test(code)) || /quota|rate.?limit|429|too many requests/i.test(message) ? 'limit-hit' : 'turn-failed', error: message };
+            } else if (row.reason !== 'completed') event = { ...event, type: 'turn-failed', error: `Kimi Code turn ended (${row.reason})` };
+            await this.hook(session.name, event);
+            session.kimi_last_turn = row.turnId;
+            await this.persistSessions();
+          }
+          if (handedOffAll && !await this.spoolWaiting(session)) { session.kimi_offset = offset + end + 1; await this.persistSessions(); }
+        } catch (error) { this.log(error); }
+      }
+    } finally { this.kimiPolling = false; }
+  }
+};
 module.exports = {
-  provider: 'kimi', resolveCli, readConfig, loginStatus, usageProbe,
+  checkVersion: (service, executable) => module.exports.checkKimiVersion.call(service, executable),
+  versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('kimi'); return module.exports.kimiVersionStatus(service.kimiVersions.get(JSON.stringify([executable, mtime])), login); },
+  launchPath: service => module.exports.kimiLaunchPath.call(service),
+  launchContext: async service => ({ kimiExecutable: (await service.launchPath('kimi')).executable }),
+  checkKimiVersion(executable = resolveCli()) {
+    if (!executable) return Promise.resolve();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
+    this.kimiVersions ||= new Map();
+    const key = JSON.stringify([executable, mtime]);
+    if (!this.kimiVersions.has(key)) {
+      const entry = {};
+      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.kimiVersionTimeoutMs ?? 5000 }, (error, stdout, stderr) => {
+        entry.output = stdout.trim() || stderr.trim() || 'no output';
+        entry.failed = !!error;
+        resolve(entry);
+      }));
+      this.kimiVersions.set(key, entry);
+    }
+    return this.kimiVersions.get(key).promise;
+  },
+  async kimiLaunchPath() {
+    const executable = resolveCli();
+    if (!executable) (() => { throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); })();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { (() => { throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); })(); }
+    await module.exports.checkKimiVersion.call(this, executable);
+    const entry = this.kimiVersions?.get(JSON.stringify([executable, mtime]));
+    if (!entry || entry.output === undefined) (() => { throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); })();
+    const status = module.exports.kimiVersionStatus(entry, { logged_in: false });
+    if (status.problem) (() => { throw Object.assign(new Error(status.problem), { status: 400 }); })();
+    return { executable };
+  },
+  kimiVersionStatus(entry, login) {
+    if (!entry || entry.output === undefined) return { installed: true, logged_in: false, problem: "Checking Kimi Code's version" };
+    const output = entry.output;
+    const firstLine = output.split(/\r?\n/, 1)[0].replace(/^(?:kimi-code|kimi code|kimi)(?:\s+|,\s*)/i, '').replace(/^version\s+/i, '');
+    const match = (firstLine.split(/\s+/)[0] || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
+    const valid = !entry.failed && match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && (Number(match[3]) > 3 || Number(match[3]) === 3 && !match[4])));
+    return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
+  },
+  validTranscript: (session, stat, offset) => stat.dev === session.kimi_log_id?.dev && stat.ino === session.kimi_log_id?.ino && stat.size >= offset && !session.end_reason,
+  turnPoller: poller.turnPoller, bindTranscript: poller.kimiBinding, spoolWaiting: poller.kimiSpoolWaiting,
+  recognizePane(text) { const lines = text.split(/\r?\n/).map(line => line.trim()); return (/^\s*(?:Ask When Needed|Never Ask)\b/im.test(text) && /^\s*context:\s*\d+%/im.test(text)) || (lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line))); },
+  restartLossReason: () => 'Lost track of this Kimi Code session after a machine restart; restart it',
+
+  stepVocabulary: c.stepVocabularies.codexStyle,
+  resolveCli, readConfig, loginStatus, usageProbe,
   loginEnv: dir => ({ KIMI_CODE_HOME: home(dir) }),
   seed(dir, id) { c.seed(dir, home(), 'AGENTS.md', 'kimi', id); }, prepare() {},
+  loginResult: record => record.result,
+  loginState(record, pane, captured, { liveTmux, account }) {
+    const authenticated = module.exports.loginStatus(record.dir).authenticated;
+    const marker = pane.match(/__wc_login_exit (\d+)/);
+    if (marker) return record.result = { state: marker[1] === '0' && authenticated ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated };
+    if (!captured) { const live = liveTmux(); if (live && !live.has(`wc-login-${account}`)) return record.result = { state: 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated }; return { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: authenticated }; }
+    const parsed = module.exports.parseLogin(pane); return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: false, logged_in: authenticated };
+  },
   loginCommand() { const cli = resolveCli(); if (!cli) throw new Error('Kimi Code is not installed'); return [cli, 'login', '--region', 'global']; }, loginPrompt: null,
   parseLogin(pane) { const url = pane.match(/Opening browser for Kimi device login:\s*(https?:\/\/\S+)/)?.[1]; const code = pane.match(/paste the URL above and enter code:\s*(\S+)/i)?.[1]; return url && code ? { url, code, wantsCode: false } : null; },
   loginDone() { return false; },
@@ -181,5 +324,5 @@ module.exports = {
     }
     return false;
   },
-  async findTranscript(session, dir) { return findTranscript(session, dir); }, hookEvent() { return null; }, usageFrom() { return null; },
+  async findTranscript(session, dir) { return findTranscript(session, dir); },
 };

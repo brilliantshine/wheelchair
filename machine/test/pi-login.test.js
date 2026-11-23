@@ -1,6 +1,6 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), os = require('node:os');
-const pi = require('../adapters/pi'), { MachineService } = require('../service'), { makeTempSync } = require('../../test-support/run-dir');
+const pi = require('../../connectors/pi/machine.js'), { MachineService } = require('../service'), { makeTempSync } = require('../../test-support/run-dir');
 test('Pi sign-in command, environment and dry-run screens', () => {
   const dir = makeTempSync('pi-login-'), bin = path.join(dir, 'bin'); fs.mkdirSync(bin); fs.writeFileSync(path.join(bin, 'pi'), '#!/bin/sh\n', { mode: 0o755 });
   const old = process.env.PATH; process.env.PATH = `${bin}:${old}`;

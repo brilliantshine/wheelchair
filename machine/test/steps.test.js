@@ -6,7 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { makeTempSync } = require('../../test-support/run-dir');
 const { classify, shellTarget, truncate } = require('../lib/steps');
-const claude = require('../adapters/claude');
+const claude = require('../../connectors/claude/machine.js');
 test('classifies both CLI tool tables and labels and keys', () => {
   for (const [cli, names, kind] of [
     ['claude', ['Agent','Task'], 'helpers'], ['codex', ['spawn_agent','send_input','wait_agent','close_agent'], 'helpers'],

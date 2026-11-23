@@ -1,5 +1,5 @@
 'use strict';
-const { classify, truncate } = require('./steps');
+const { classify, truncate } = require('../../machine/lib/steps');
 
 // Read only literal arguments; never execute a rollout's script.
 function literal(raw) {

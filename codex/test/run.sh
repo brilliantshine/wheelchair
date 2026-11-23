@@ -155,6 +155,8 @@ run_model set openrouter light a/b bogus
 assert 'OpenRouter rejects unknown effort' test "$status" -eq 2
 run_model set kimi light kimi-x high
 assert 'Kimi still rejects effort' test "$status" -eq 2
+run_model set kimi standard kimi-code/k3 high
+assert 'Kimi effort refusal uses the exact label message' bash -c '[[ $1 -eq 2 && $2 == "Kimi Code has no effort setting" ]]' _ "$status" "$(cat "$stderr")"
 run_model set openrouter light none
 assert 'OpenRouter saves none' test "$status" -eq 0
 run_model openrouter light
@@ -493,6 +495,46 @@ run_preflight "$case_dir/preflight/preflight-400.sh"
 assert 'preflight keeps exit 2 with a heads-up' bash -c '[[ $1 == 2 && $2 == *"heads-up: gpt-6.2-sol"* ]]' _ "$preflight_status" "$preflight_output"
 [[ $preflight_status == 2 ]] || printf 'exit-2 case got status %s, output:\n%s\n' "$preflight_status" "$preflight_output"
 wait "$stub_pid"
+
+new_case
+python3 - "$repo/connectors/registry.json" "$case_dir/registry.json" <<'PYREG'
+import copy, json, sys
+with open(sys.argv[1]) as handle:
+    registry = json.load(handle)
+tool = copy.deepcopy(registry["tools"][0])
+tool["cli"] = tool["provider"] = "newtool"
+tool["models"]["format"] = "^[A-Za-z0-9][A-Za-z0-9._/:-]*$"
+registry["tools"].append(tool)
+with open(sys.argv[2], "w") as handle:
+    json.dump(registry, handle)
+PYREG
+export WHEELCHAIR_REGISTRY="$case_dir/registry.json"
+run_model init
+assert 'registry extension initializes' test "$status" -eq 0
+for provider in claude gpt gemini kimi openrouter; do
+  for slot in light standard heavy critical lead sub-lead; do
+    run_model "$provider" "$slot"
+    printf '%s\n' "$output" >> "$case_dir/before"
+  done
+done
+run_model set newtool standard new-model
+assert 'registry extension accepts a new provider pin' test "$status" -eq 0
+run_model newtool standard
+assert 'registry extension reads its pin' equals "$output" 'new-model'
+for provider in claude gpt gemini kimi openrouter; do
+  for slot in light standard heavy critical lead sub-lead; do
+    run_model "$provider" "$slot"
+    printf '%s\n' "$output" >> "$case_dir/after"
+  done
+done
+assert 'registry extension leaves other providers unchanged' cmp -s "$case_dir/before" "$case_dir/after"
+run_model set gpt standard gpt-override
+assert 'registry extension seeds GPT override' test "$status" -eq 0
+run_model set newtool standard Model-V2
+assert 'registry extension rejects uppercase pin with usage exit' test "$status" -eq 2
+run_model show --json
+assert 'rejected uppercase pin preserves GPT override' json_assert 'import json,sys; x=json.load(sys.stdin); assert x["malformed"] is False and x["gpt"]["standard"]["model"] == "gpt-override"'
+unset WHEELCHAIR_REGISTRY
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"
 (( failures == 0 ))
