@@ -2,6 +2,7 @@
 
 // Spec "Agents start and stop sessions", "Prompts mid-run", and Edge cases.
 const crypto = require('node:crypto');
+const connectors = require('../../connectors');
 const { addCard } = require('./cards.js');
 const quiet = require('./quiet.js');
 const path = require('node:path');
@@ -432,7 +433,7 @@ async function startSession(hub, thread, input) {
 async function deliverReport(hub, thread, target, payload) {
   if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
   const chat = require('./chat.js');
-  let text = target.cli === 'pi' ? '' : String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
+  let text = connectors.manifest(target.cli)?.report?.useHookText ? String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim() : '';
   if (!text) {
     const now = hub.reportNow || Date.now;
     const sleep = hub.reportSleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
@@ -446,8 +447,9 @@ async function deliverReport(hub, thread, target, payload) {
       if (remaining <= 0) break;
       try {
         const raw = await chat.sessionTranscript(hub, thread, target, { strict: true, timeout: Math.min(attempt ? 1000 : 3000, remaining) });
-        text = chat.lastAssistantText(target.cli, raw, payload.turn_id, payload.entry_id);
-        if (!(target.cli === 'pi' && payload.entry_id && !chat.hasPiEntry(raw, payload.entry_id))) break;
+        const report = connectors.hub(target.cli).readReport(raw, payload);
+        text = report.text;
+        if (report.settled) break;
       } catch { /* retry transient read failures within the recovery budget */ }
     }
   }
