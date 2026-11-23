@@ -115,7 +115,9 @@ Each `manifest.js` exports a plain object, no functions and no requires of other
 - `placement`: the data behind today's defaults, giving exactly today's results and
   nothing more:
   - `workerRank`: position in the fresh-settings default `worker_order`
-    (`viewer/app/settings.js:54`; today GPT before Claude).
+    (`viewer/app/settings.js:54`; today GPT before Claude), or `null` for a tool left out
+    of the default order (today OpenRouter). `null` does not affect saved orders or
+    `appendWhenRequested`.
   - `leadDefault`: true for the tool named in the fresh-settings `lead_order` before
     `'any'` (today Claude, `settings.js:36-40,54`).
   - `seenByDefault`: counts as already seen when saved settings have no
@@ -129,6 +131,12 @@ Each `manifest.js` exports a plain object, no functions and no requires of other
   The settings migration and balancer logic are otherwise unchanged.
 - `install.sensitivity` (default false): see S4, diagram-sensitivity setup.
 - `report.useHookText` (default true) and `stopWhenEnded` (default false): see S3.
+- `models.hubPattern`, `models.slotAliases`, `models.effortError`: the hub's own checks in
+  `viewer/app/routes.js:313-322`, kept as today (the model-name pattern per provider, which
+  differs from both the browser's and the script's; Claude's `haiku`/`sonnet`/`opus` slot
+  aliases; the effort error text, e.g. GPT's "effort for GPT must be one of low, medium,
+  high, xhigh" vs others' "effort is invalid"). A 65-character GPT model still passes the
+  browser and gets "model is invalid" from the hub.
 - `settings.modelPattern`: the settings page's own model-name check, kept separate from
   `models` format because the two differ today (browser `viewer/pages/settings.js:17-19`,
   e.g. `MODEL_VALUE`, `KIMI_MODEL_VALUE`, `OPENROUTER_MODEL_VALUE`; script
@@ -185,6 +193,7 @@ Optional members, each paired with a capability flag of the same meaning:
 | `sandbox` | `sandboxed(session)`: true when the session's tools run sandboxed (today Codex with `codex_mode !== 'unrestricted'`). Drives screen command wrapping (`machine/lib/screen.js:223`, via a `sandboxWrap(command)` member), Windows launch denial and status (`machine/lib/win.js:436,452,459`, `machine/lib/win-prompt.js:9`), for both new and recovered sessions | codex |
 | `restartLoss` | Two paths, both kept exactly. (1) `restartLossReason()`: the `end_reason` text given to a session newly adopted from tmux after a machine restart (`machine/service.js:552-564`; Pi "Lost track of this Pi session after a machine restart; restart it", Kimi "Lost track of this Kimi Code session after a machine restart; restart it"). Sessions that already have a recorded `end_reason` keep it. (2) Manifest flag `stopWhenEnded`: at startup and on each later poll, a non-stopped session of this tool with an `end_reason` is stopped fatally, retrying until it stops (today Pi, `:568,1097`). Kimi's sessions end on its polling path as today (`:1102`, part of `turnPoller`) | kimi, pi |
 | `projectTools` | `projectToolReason(name, entry)` returning the full skip text or null, and `projectToolFileWarning(servers)` (today Codex: `codexEntryReason`, "on Codex: …", and `codexOverrides(...).tooLarge`, `machine/lib/project-tools.js:7,20-34`). Project-tool checks run without a session, so `project-tools.js` iterates every connector with this capability | codex |
+| `recover` | `recognizePane(text)`: true when a live tmux pane adopted after a machine restart (`machine/service.js:550-564`) belongs to this tool. The service asks connectors in manifest `recoverRank` order (today's match precedence) and assigns the first match's `cli`; with no match it keeps today's fallback (the tool with manifest `recoverFallback: true`, today the one the current ternary falls back to) | tools matched today |
 | `spend` | `spend` | pi |
 | `liveSwitch` | `usual` + switch support | claude, codex |
 | `aside` | `asideArgv`, plus manifest `asideParentField` (`machine/lib/aside-turns.js:61-147`, `viewer/app/asides.js:41`). Aside replies, stderr and failure messages pass through the tool's `redact` when it has one, as Pi's do today (`aside-turns.js:80,97,138-142`) | claude, codex, pi |
@@ -228,7 +237,8 @@ and `viewer/pages/thread.js:4` (`PROVIDER_LABEL`), `viewer/app/asides.js:41`,
 fallback paths and PATH order (S2 `install`), `machine/lib/project-tools.js:7,20-34` (`projectTools`
 capability), diagram-sensitivity setup (`sensitivity/set.sh`,
 `machine/lib/harness-install.js:102-110`: stays as it is, see below), and named
-property dispatch such as `adapters.codex.loginEnv` (`machine/service.js:2293`) and `adapters.pi.redact`.
+property dispatch such as `adapters.codex.loginEnv` (`machine/service.js:2293`) and `adapters.pi.redact`, and CLI ids produced by ternaries
+in the restart recovery classifier (`machine/service.js:550-564`, `recover` capability).
 
 **Diagram-sensitivity setup.** `sensitivity/set.sh` (Claude's `CLAUDE.md`, Codex's
 `AGENTS.md`, the Codex `AGENTS.override.md` refusal, two-tool messages and disagreement
@@ -293,8 +303,8 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   scripts stay bash 3.2 compatible.
 - Browser pages get the tool list, labels and `settings` details from the hub (Decision
   2) through a script, not a fetch: the hub serves `/wheelchair/assets/tools.js`, built
-  from the manifests (minus `install`; `models` is included, so effort choices and model
-  name formats reach the settings page), which sets a global the page scripts
+  from the manifests (minus `install`; `models` is included so effort choices reach the
+  settings page, which checks model names only with `settings.modelPattern`), which sets a global the page scripts
   read. The settings, threads and thread pages load it with a `<script>` tag before their
   own script, so cached renders (`viewer/pages/threads.js:75-78`) have labels at once,
   including on the first load after the update. Delete the pages' own copies
@@ -316,7 +326,8 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   (required: `cli`, `provider`, `label`, `displayName`, `typesRoleMessage`, `singleAccount`,
   `capabilities` with a boolean for every capability, `install.command`, `install.binary`,
   `settings.modelPattern`, `models.efforts` (array, may be empty), `models.pins`,
-  `placement.workerRank`, and for hook-driven tools `hook.payload` equal to `stdin` or
+  `models.format` (the rule `model.sh` validates pins with), `models.hubPattern`,
+  `placement.workerRank` (number or `null`), and for hook-driven tools `hook.payload` equal to `stdin` or
   `last-arg`; defaulted, type-checked only when present: `hook.sessionFromEnv`,
   `report.useHookText`, `stopWhenEnded`, `install.sensitivity`, `install.versionArgs`, the
   other `placement` and `settings` fields, `shortName`, `asideParentField`), and a fake
@@ -328,8 +339,8 @@ Wording users see stays byte-identical (error messages, labels, settings text).
   and `connectors/`), and fails listing each hit. A hit is a tool's cli or provider id as:
   a string literal in a comparison (`===`, `!==`, `==`, `!=`, `case`, `includes(...)`), a
   string literal argument to any call (`machine('codex')`, `manifest('kimi')`,
-  `byProvider('gpt')`), a `require` path into a specific connector folder, an
-  element of an array literal, an object literal key, a bracket access (`x['pi']`), or a
+  `byProvider('gpt')`), a `require` path into a specific connector folder, a
+  string literal result of a ternary or `||`/`&&` expression, an element of an array literal, an object literal key, a bracket access (`x['pi']`), or a
   property access on a connector or adapter object (`adapters.codex`); in shell, a `case`
   pattern, a `[[ ... == name ]]` test or a word in a `for` list; in Python, a string in a
   comparison, tuple or list. An explicit allowlist in the test holds `file:line-pattern`
@@ -351,7 +362,9 @@ member with its signature and when it is called, every capability and what the a
 without it, how turn end works (hook vs poller), and a checklist for adding a tool (folder,
 registry line, install recipe, settings details, model defaults, a discovery function in
 `codex/model.sh` if the tool can list its own models, placement data, and, if the tool has a global instructions file, `install.sensitivity`
-plus support in `sensitivity/set.sh` (whose disagreement check and messages assume at most
+plus support in `sensitivity/set.sh` and in the install job's `install/unseen.py` call,
+which passes the Claude and Codex home folders by hand (`machine/lib/harness-install.js:104`;
+`set.sh`'s disagreement check and messages assume at most
 two tools, as does the install job's "other tool" copy; a third such tool means changing
 both), regenerating `registry.json`, tests). Update
 `machine/AGENTS.md`, `viewer/AGENTS.md`, `machine/API.md` and `viewer/app/API.md` where
@@ -518,6 +531,12 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | S5 says `models` gives the page model formats, contradicting `settings.modelPattern` | upheld | S5 wording: effort choices only |
+| intent | minor | `unseen.py` call also hard-codes Claude/Codex homes; checklist omits it | upheld | S7 checklist names it |
+| mechanics | minor | `workerRank` required but OpenRouter has no rank | upheld | S2 `workerRank` may be `null` |
+| mechanics | minor | Hub PUT model validator and effort wording unspecified | upheld | S2 `models.hubPattern`, `slotAliases`, `effortError` |
+| mechanics | minor | Manifest may omit `models.format` | upheld | S6 requires `models.format` and `models.hubPattern` |
+| mechanics | minor | Restart recovery classifier assigns CLI ids by ternary; guard misses it | upheld | S3 `recover` capability; S4 names it; S6 ternary hit form |
 
 ## Prior Work
 
