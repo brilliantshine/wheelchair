@@ -290,6 +290,21 @@ npm --prefix viewer run test:browser
 | mechanics | minor | Restart/archive not attributed | upheld | §4: restart context and `archived_by` |
 | mechanics | minor | `diagram` allowed with no plan | upheld | Removed from allowed kinds |
 
+### Round 2 — 2026-11-23
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: yes.
+
+**Changed since Round 1:**
+- §2: account switch sends `assistant: true`; machine accepts it. Off-state filter across `/threads`, `/features`, `/agents`, Needs you.
+- §2, §3, §7: canonical thread URL `/wheelchair/app/thread?id=<id>`.
+- §3: `projects` and `threads` reuse the New thread and Threads list route code; read actions retry, write actions never auto-retry; writes print the hub function's result; `message` prints `{ok, queued:true}`; `message`/`restart` refused for archived or handed-off threads; `waiting` reuses Needs you's test.
+- §4: presses delivered as `[wc:assistant] [card ...]`; restart and archive attributed.
+- §7: only Collin's own messages are instructions; restart re-checks state; `title` and `diagram` no longer allowed.
+- Accepted Risks: one row (turning off during a failure).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
