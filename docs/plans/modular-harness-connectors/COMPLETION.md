@@ -2,7 +2,13 @@
 slug: modular-harness-connectors
 date: 2026-11-22
 implemented-by: "standard / gpt-6.1-terra (T1–T4, T6, T7a, T7c; T1c–T1e at xhigh, T3d at high), light / gpt-6-luna (T6b), standard / claude-sonnet-5-5 (T5, T5b, T7b); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 10
+    lane: claude / claude-opus-5-5 (wc-dfb566cd9dd5-verifier-19)
+    checks: "standard / gpt-6.1-terra, light / gpt-6-luna, standard / claude-sonnet-5-5"
+  - round: 10
+    lane: gpt / gpt-6.2-sol (wc-dfb566cd9dd5-verifier-20)
+    checks: "standard / gpt-6.1-terra, light / gpt-6-luna, standard / claude-sonnet-5-5"
 ---
 
 # Completion Report — Make harness connectors modular
@@ -335,3 +341,7 @@ Lane: R10 light / gpt-6-luna.
 Residual names noted by verifier-17 (no tool-specific decisions, nothing to edit when adding a tool): `publicSession` strips stored `kimi_*` session fields; `fatalKimi` is a generic service method only the Kimi connector calls.
 
 Validation: R10 branch viewer 919/919; merged head machine suite with `--test-timeout=90000` (see PLAN.md Log); contract, round-trip and guard tests pass; export check exit 0; `providers.js` unchanged.
+
+### Verification attempt 10 — 2026-11-23: passed
+
+At c37b8ea0: verifier-19 (claude-opus-5-5) PASS with no gaps; verifier-20 (gpt-6.2-sol) reported one gap, judged a rare path (round-trip false failure needing a tool with all defaults unset and a format excluding the generated sample name) and recorded in PLAN.md Accepted Risks (`verification-10`). No gaps remain. Both verifiers' Spec validation runs: browser 1408 passed; viewer 918–919/919 with the one failure passing alone; machine suite only the 18 known `wslpath` failures plus load flakes that pass alone; installer 213/213 with an isolated home (the live `~/.wheelchair` assertion fails only because live sessions write there); sensitivity 67/67; codex 167/167; export check, adapter grep and `providers.js` vs `main` clean.
