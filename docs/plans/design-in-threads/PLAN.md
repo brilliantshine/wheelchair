@@ -297,7 +297,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 2 — 2026-11-22
 
-**Lanes:** see below.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 1:** worker self-check against the mockup and sub-lead send-back (Build and verify rules); verbatim feedback and attachments, the "Agree the mockups" gate, changes during review, changes after Start building, designer on lead restart (Lead rules); size range 200-2560 and 2 MiB file limit checked by card.js (Mockup files, mockup format); full size for each half and picture page accepting image cards, archive keeping sub-lead uploads, image section moved to cards.md and sub-lead exception (image cards); could-not-try when no capture path (verifier); remote-machine limitation noted (Not in this thread).
 
