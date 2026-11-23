@@ -34,7 +34,7 @@ const DEFAULT_STYLE = Object.freeze({
   text: "Be concise. Cut anything that makes it longer without changing the meaning.\nBuild up to technical terms and ground them, so I don't skim past something I only half get.",
 });
 
-const table = field => Object.fromEntries(connectors.list().filter(m => Object.keys(m.settings[field]).length).map(m => [m.provider, m.settings[field]]));
+const table = field => Object.fromEntries(connectors.list().filter(m => Object.keys(m.settings[field] || {}).length).map(m => [m.provider, m.settings[field]]));
 const PLANS = table('weights');
 const REPORTED_PLANS = table('reportedPlans');
 const OLD_PLAN_WEIGHTS = table('oldPlanWeights');
@@ -44,9 +44,9 @@ function reportedPlan(account, planType) {
   const reported = String(planType || '').trim().toLowerCase(), table = REPORTED_PLANS[account.provider];
   const plan = table && Object.hasOwn(table, reported) ? table[reported] : null;
   if (!plan) return null;
-  const defaults = [PLANS[account.provider][account.plan], ...(OLD_PLAN_WEIGHTS[account.provider]?.[account.plan] || [])];
+  const defaults = [PLANS[account.provider]?.[account.plan], ...(OLD_PLAN_WEIGHTS[account.provider]?.[account.plan] || [])];
   if (!defaults.includes(account.weight)) return null;
-  const weight = PLANS[account.provider][plan];
+  const weight = PLANS[account.provider]?.[plan];
   return plan === account.plan && weight === account.weight ? null : { plan, weight };
 }
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
@@ -259,7 +259,7 @@ function assertFits(settings) {
   const projects = new Set([undefined]);
   for (const template of settings.templates) if (template.scope !== 'all') projects.add(template.scope);
   for (const role of ROLES) for (const project of projects) {
-    if (roleLayers({ ...settings, lessons: {} }, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, connectors.list().find(m => m.settings.scoutAgentTool).provider).text.length > 12000) fail('the composed role instructions exceed 12000 characters');
+    if (roleLayers({ ...settings, lessons: {} }, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, connectors.list().find(m => m.settings.scoutAgentTool)?.provider).text.length > 12000) fail('the composed role instructions exceed 12000 characters');
   }
 }
 
@@ -269,7 +269,7 @@ function normalize(saved) {
   const accounts = [];
   const seen = new Set();
   for (const item of Array.isArray(saved.accounts) ? saved.accounts : []) {
-    if (!item || !Object.hasOwn(PROVIDERS, item.provider) || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(item.id || '') || seen.has(item.id) || (item.id.startsWith('default-') && item.id !== `default-${item.provider}`) || typeof item.name !== 'string' || !item.name.trim() || !Object.hasOwn(PLANS[item.provider], item.plan) || (item.weight !== undefined && (typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight <= 0)) || (item.paused !== undefined && typeof item.paused !== 'boolean')) continue;
+    if (!item || !Object.hasOwn(PROVIDERS, item.provider) || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(item.id || '') || seen.has(item.id) || (item.id.startsWith('default-') && item.id !== `default-${item.provider}`) || typeof item.name !== 'string' || !item.name.trim() || !Object.hasOwn(PLANS[item.provider] || {}, item.plan) || (item.weight !== undefined && (typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight <= 0)) || (item.paused !== undefined && typeof item.paused !== 'boolean')) continue;
     seen.add(item.id);
     accounts.push({ id: item.id, provider: item.provider, name: item.name, plan: item.plan, weight: item.weight ?? PLANS[item.provider][item.plan], paused: item.paused ?? false });
   }
@@ -427,17 +427,20 @@ async function models(hub) { return JSON.parse((await modelCommand(hub, ['show',
 async function headsUp(hub) { return JSON.parse((await modelCommand(hub, ['check', '--json'])).stdout); }
 
 function options(models) {
-  const claude = [
-    ['haiku', 'Latest Haiku'], ['sonnet', 'Latest Sonnet'], ['opus', 'Latest Opus'], ['fable', 'Latest Fable'],
-    ['claude-haiku-5-5', 'claude-haiku-5-5'], ['claude-sonnet-5-5', 'claude-sonnet-5-5'], ['claude-opus-5-5', 'claude-opus-5-5'], ['claude-fable-5-2', 'claude-fable-5-2'],
-  ].map(([value, label]) => ({ value, label }));
-  const visible = Array.isArray(models.visible) ? models.visible : [];
-  const current = Object.values(models.gpt || {}).map((cell) => cell?.model).filter(Boolean);
-  const gpt = [...new Set([...visible, ...current])].map((value) => ({ value, label: value }));
-  const kimiListed = (Array.isArray(models.kimi_visible) ? models.kimi_visible : []).filter((o) => o && typeof o.value === 'string' && typeof o.label === 'string');
-  const kimiCurrent = Object.values(models.kimi || {}).map((cell) => cell?.model).filter((value) => value && !kimiListed.some((o) => o.value === value));
-  const kimi = [...kimiListed.map(({ value, label }) => ({ value, label })), ...[...new Set(kimiCurrent)].map((value) => ({ value, label: value }))];
-  return { claude, gpt, kimi };
+  const result = {};
+  for (const manifest of connectors.list()) {
+    const spec = manifest.settings.modelOptions;
+    if (!spec) continue;
+    if (spec.fixed) { result[manifest.provider] = spec.fixed.map(([value, label]) => ({ value, label })); continue; }
+    const listed = Array.isArray(models[spec.listedKey]) ? models[spec.listedKey] : [];
+    const current = spec.includePins ? Object.values(models[manifest.provider] || {}).map(cell => cell?.model).filter(Boolean) : [];
+    if (spec.listedShape === 'strings') result[manifest.provider] = [...new Set([...listed, ...current])].map(value => ({ value, label: value }));
+    else {
+      const valid = listed.filter(o => o && typeof o.value === 'string' && typeof o.label === 'string');
+      result[manifest.provider] = [...valid.map(({ value, label }) => ({ value, label })), ...[...new Set(current.filter(value => !valid.some(o => o.value === value)))].map(value => ({ value, label: value }))];
+    }
+  }
+  return result;
 }
 
 async function describe(hub) {

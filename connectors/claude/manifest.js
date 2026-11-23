@@ -33,6 +33,7 @@ module.exports = {
     "sensitivity": true
   },
   "settings": {
+    "modelOptions": {"fixed": [["haiku", "Latest Haiku"], ["sonnet", "Latest Sonnet"], ["opus", "Latest Opus"], ["fable", "Latest Fable"], ["claude-haiku-5-5", "claude-haiku-5-5"], ["claude-sonnet-5-5", "claude-sonnet-5-5"], ["claude-opus-5-5", "claude-opus-5-5"], ["claude-fable-5-2", "claude-fable-5-2"]]},
     "scoutAgentTool": true,
     "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
     "modelPlaceholder": "model-name",

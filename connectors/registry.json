@@ -34,6 +34,42 @@
         "sensitivity": true
       },
       "settings": {
+        "modelOptions": {
+          "fixed": [
+            [
+              "haiku",
+              "Latest Haiku"
+            ],
+            [
+              "sonnet",
+              "Latest Sonnet"
+            ],
+            [
+              "opus",
+              "Latest Opus"
+            ],
+            [
+              "fable",
+              "Latest Fable"
+            ],
+            [
+              "claude-haiku-5-5",
+              "claude-haiku-5-5"
+            ],
+            [
+              "claude-sonnet-5-5",
+              "claude-sonnet-5-5"
+            ],
+            [
+              "claude-opus-5-5",
+              "claude-opus-5-5"
+            ],
+            [
+              "claude-fable-5-2",
+              "claude-fable-5-2"
+            ]
+          ]
+        },
         "scoutAgentTool": true,
         "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
         "modelPlaceholder": "model-name",
@@ -175,6 +211,11 @@
         "sensitivity": true
       },
       "settings": {
+        "modelOptions": {
+          "listedKey": "visible",
+          "listedShape": "strings",
+          "includePins": true
+        },
         "monoModelNames": true,
         "modelPattern": "^[a-z0-9][a-z0-9._-]*$",
         "modelPlaceholder": "model-name",
@@ -463,6 +504,11 @@
         "sensitivity": false
       },
       "settings": {
+        "modelOptions": {
+          "listedKey": "kimi_visible",
+          "listedShape": "objects",
+          "includePins": true
+        },
         "monoModelNames": true,
         "modelPattern": "^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$",
         "modelPlaceholder": "model-name",

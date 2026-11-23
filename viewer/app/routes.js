@@ -315,11 +315,11 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, `provider must be ${listWords(connectors.list().map(m => m.provider))}`);
     let slot = settings.TIER_ALIASES[body.slot] || body.slot;
     const manifest = connectors.byProvider(body.provider);
-    slot = manifest.models.slotAliases[slot] || slot;
+    slot = (manifest.models.slotAliases || {})[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead', 'sub-lead'].includes(slot)) throw appError(400, 'slot is invalid');
     if (body.model !== null && (typeof body.model !== 'string' || !new RegExp(manifest.models.hubPattern).test(body.model))) throw appError(400, 'model is invalid');
     if (!PROVIDERS[body.provider].effort && body.effort !== undefined) throw appError(400, `${PROVIDERS[body.provider].label} has no effort setting`);
-    if (body.effort !== undefined && !manifest.models.efforts.includes(body.effort)) throw appError(400, manifest.models.effortError);
+    if (body.effort !== undefined && !manifest.models.efforts.includes(body.effort)) throw appError(400, manifest.models.effortError || 'effort is invalid');
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });

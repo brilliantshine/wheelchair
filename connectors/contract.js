@@ -4,7 +4,7 @@
 // cli, provider, label, displayName, optional shortName, typesRoleMessage,
 // singleAccount, and boolean capabilities. install has command, binary, label,
 // optional node, versionArgs, optional fallbackPath, pathRank and sensitivity.
-// settings has modelPattern, modelPlaceholder, cliLabel, vendor, setupUrl,
+// settings has optional modelOptions (fixed pairs or listedKey, listedShape and includePins), modelPattern, modelPlaceholder, cliLabel, vendor, setupUrl,
 // permissionMode, permissionChoices, accountWarning, modelHeadsUp, signInKind,
 // reviewFamily, plans, weights, reportedPlans, oldPlanWeights, modelError,
 // familyHint, accountPolicy and optional scoutAgentTool, monoModelNames and keyPrompt. models has
@@ -15,15 +15,17 @@
 // recoverFallback and usage.showWarning, usage.probeWhileLive and usage.tryEveryMachine and usage.defaultProblem carry the remaining dispatch data. Nullable values mean
 // the option does not apply; omitted fields are optional.
 const REQUIRED = { machine: ['command', 'firstMessage', 'readyText', 'answerPrompts', 'findTranscript', 'loginEnv', 'seed', 'loginCommand', 'parseLogin', 'loginStatus'], hub: ['parseChat', 'readReport'] };
-const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv'], versionCheck: ['checkVersion', 'versionStatus'], steps: ['readSteps', 'stepsReady'] };
+const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv', 'asideResult', 'asideModel'], versionCheck: ['checkVersion', 'versionStatus'], steps: ['readSteps', 'stepsReady'] };
 const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, machine]) => [name, { machine, hub: [] }]));
-const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asideModel', 'asidePrepare', 'asideMessage', 'asideResult', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
+const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asidePrepare', 'asideMessage', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
   for (const member of REQUIRED[half]) if (typeof mod[member] !== 'function') fail(member);
   if (half === 'machine' && (typeof mod.hookEvent === 'function') === (typeof mod.turnPoller === 'function')) fail('hookEvent/turnPoller');
+  if (half === 'machine' && typeof mod.hookEvent === 'function' && !['stdin', 'last-arg'].includes(manifest.hook?.payload)) fail('hook.payload');
+  if (half === 'machine' && typeof mod.turnPoller === 'function' && manifest.hook !== undefined) fail('hook');
   for (const [cap, halves] of Object.entries(CAPABILITIES)) for (const member of halves[half]) {
-    if (manifest.capabilities[cap] ? typeof mod[member] !== 'function' : member in mod) fail(member);
+    if (manifest.capabilities[cap] ? (member === 'asideModel' ? !(mod[member] instanceof RegExp) : typeof mod[member] !== 'function') : member in mod) fail(member);
   }
 }
 function validateManifest(m) {
@@ -38,6 +40,7 @@ function validateManifest(m) {
   for (const f of ['shortName','asideParentField']) check(f,str,false);
   check('login.killTarget',v=>['pane','session','name'].includes(v),false);
   check('install.lookup',v=>['path','absolute','fallback'].includes(v));
+  if (m.install.lookup === 'fallback') check('install.fallbackPath', v => str(v) && v.length > 0);
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);
   for (const f of ['install.label','install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt']) check(f,str,false);
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
@@ -47,6 +50,7 @@ function validateManifest(m) {
   for (const f of ['install.pathRank','recoverRank']) check(f,v=>v===null||typeof v==='number',false);
   check('recoverFallback',bool,false);
   for (const [slot, pin] of Object.entries(m.models.pins)) if (!obj(pin) || !str(pin.model) || (pin.effort !== undefined && !str(pin.effort))) throw new Error(`${m.cli}: models.pins.${slot}`);
+  check('settings.modelOptions', v => obj(v) && (arr(v.fixed) && v.fixed.every(pair => arr(pair) && pair.length === 2 && pair.every(str)) || str(v.listedKey) && ['strings','objects'].includes(v.listedShape) && typeof v.includePins === 'boolean'), false);
   check('hook.payload',v=>v==='stdin'||v==='last-arg', Boolean(m.hook));
 }
 function validateRegistry(manifests) { manifests.forEach(validateManifest); if (manifests.filter(m=>m.stylePreview).length>1) throw new Error('stylePreview'); if (manifests.filter(m=>m.capabilities.preflight).length>1) throw new Error('capabilities.preflight'); if (manifests.filter(m=>m.install.sensitivity).length>2) throw new Error('install.sensitivity'); }
