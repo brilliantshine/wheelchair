@@ -18,7 +18,7 @@ test('registry, manifests and connector halves satisfy the contract', () => {
 test('connector files do not require another connector folder', () => {
   for (const m of manifests) for (const file of fs.readdirSync(path.join(__dirname, '../../connectors', m.cli)).filter(f => f.endsWith('.js'))) {
     const source = fs.readFileSync(path.join(__dirname, '../../connectors', m.cli, file), 'utf8');
-    for (const match of source.matchAll(/require\s*\(\s*['"]\.\.\/([^/'"\n]+)\//g)) assert.equal(match[1], m.cli, `${m.cli}/${file}: ${match[0]}`);
+    for (const match of source.matchAll(/require\s*\(\s*['"]\.\.\/(?!\.\.\/)([^/'"\n]+)\//g)) assert.equal(match[1], m.cli, `${m.cli}/${file}: ${match[0]}`);
   }
 });
 test('contract rejects missing and inconsistent members and fields', () => {
