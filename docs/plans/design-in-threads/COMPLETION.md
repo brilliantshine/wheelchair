@@ -117,3 +117,14 @@ $ npm --prefix viewer run test:browser -- app-lessons.spec.js app-send-now.spec.
 58 passed
 58 passed
 ```
+
+### Remediation 2
+
+Verification attempt 2 at `c2f699df`: Claude verifier PASS; GPT verifier FAIL with 2 gaps (`REMEDIATION-2.md`). The stacking cutoff band (598-599px card) is a rare path in Accepted Risks (verification-2). Fixed:
+
+| Gap | Fix (file:line) | Lane | Validated by |
+|-----|-----------------|------|--------------|
+| Reopening planning for a design change left the review round's reviewers live, and the restart rule would restart a round in planning | `protocol/app/lead.md:847-850` (stop live reviewers, discard reports, round does not count), `protocol/app/lead.md:918-920` (no round restart while `status:` is planning) | gpt light / gpt-6-luna (R3) | `node --test viewer/test/protocol-rules.test.js` → 44 pass, 0 fail; read against the gap |
+
+Only `protocol/app/lead.md` changed since attempt 2's commit, so the code suites' results from attempt 2 stand.
+
