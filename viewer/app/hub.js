@@ -40,6 +40,7 @@ class Hub {
     this.stateDir = this.state.dir;
     this.threadsDir = this.state.threadsDir;
     this.lastSeen = new Map();
+    this.seenSaved = new Map();
     this.threadLocks = new Map();
     this.runningHandoffOps = new Set();
     this.uploadsInFlight = new Map();
@@ -109,7 +110,14 @@ class Hub {
   machineSeen(name) { return this.lastSeen.get(name) || null; }
   async markMachineSeen(name, at = new Date().toISOString()) {
     this.lastSeen.set(name, at);
-    await this.state.markMachineSeen(name, at);
+    if (this.seenSaved.has(name) && this.now() - this.seenSaved.get(name) < 60_000) return at;
+    const reservation = this.now();
+    this.seenSaved.set(name, reservation);
+    try { await this.state.markMachineSeen(name, at); }
+    catch (error) {
+      if (this.seenSaved.get(name) === reservation) this.seenSaved.delete(name);
+      throw error;
+    }
     return at;
   }
   machine(name) { return this.state.machine(name); }

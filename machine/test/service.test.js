@@ -1844,6 +1844,26 @@ test('busy transcript copies reuse in-memory hashes and drop them when idle or s
   } finally { await env.close(); }
 });
 
+test('idle hash timer sweeps without a copy and is cleared on close', async () => {
+  const env = await service(await temp());
+  const timer = env.instance.copyHashesTimer;
+  const clear = global.clearInterval; const cleared = [];
+  try {
+    assert.ok(timer);
+    env.instance.copyHashes = new Map([
+      ['old', { used: Date.now() - 11 * 60_000 }],
+      ['fresh', { used: Date.now() }],
+    ]);
+    timer._onTimeout();
+    assert.equal(env.instance.copyHashes.has('old'), false);
+    assert.equal(env.instance.copyHashes.has('fresh'), true);
+  } finally {
+    global.clearInterval = value => { cleared.push(value); return clear(value); };
+    try { await env.close(); } finally { global.clearInterval = clear; }
+  }
+  assert.ok(cleared.includes(timer));
+});
+
 test('transcript stamps avoid all content reads on a match and detect replacement', async () => {
   const env = await service(await temp()); try {
     await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'stamp.jsonl');

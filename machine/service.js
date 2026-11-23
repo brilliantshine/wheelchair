@@ -468,6 +468,8 @@ class MachineService {
     this.trustTimer.unref();
     this.agyToolsTimer = setInterval(() => this.sweepAgyTools(), 60000);
     this.agyToolsTimer.unref();
+    this.copyHashesTimer = setInterval(() => this.sweepCopyHashes(), 60000);
+    this.copyHashesTimer.unref();
   }
   // The names of the running tmux sessions, or null when tmux could not be asked. "No server" is
   // a real empty answer; any other failure is unknown, and must not read as "every session ended".
@@ -1466,9 +1468,13 @@ class MachineService {
     settled.then(() => { if (this.copying.get(session.name) === settled) this.copying.delete(session.name); });
     return run;
   }
+  sweepCopyHashes() {
+    if (!this.copyHashes) return;
+    for (const [name, entry] of this.copyHashes) if (Date.now() - entry.used > COPY_HASHES_IDLE_MS) this.copyHashes.delete(name);
+  }
   async copyTranscriptNow(session, source) {
     this.copyHashes ??= new Map();
-    for (const [name, entry] of this.copyHashes) if (Date.now() - entry.used > COPY_HASHES_IDLE_MS) this.copyHashes.delete(name);
+    this.sweepCopyHashes();
     if (!source || (session.cli === 'kimi' && session.end_reason)) return { offset: 0, lines: [] };
     let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
     const current = session.transcript_source;
@@ -2450,7 +2456,7 @@ class MachineService {
     this.spoolTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.win.healthTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.winTimer); clearInterval(this.win.healthTimer); clearInterval(this.agyToolsTimer); clearInterval(this.copyHashesTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }
