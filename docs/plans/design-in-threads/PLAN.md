@@ -434,6 +434,10 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Card checker and hub: `mockup` diagram format, `image.mockup`, image from sub-lead, 2 MiB checks, slug discovery, archive keep list, designer card permissions | `viewer/app/card.js`, `cards.js`, `threads.js`, `views.js` (helper only), `API.md`, card/archive tests | gpt standard / gpt-6.1-terra | wc-346c5c688e9d-worker (t1-a1) | `node --test viewer/test/*.test.js` | in progress |
+| T4 | Protocol: `designer.md`, lead/cards/cards-lead/sub-lead/worker/verifier rules, PLAN template, protocol router | `protocol/**`, `viewer/test/protocol-rules.test.js` | gpt standard / gpt-6.1-terra | wc-346c5c688e9d-worker-2 (t4-a1) | `node --test viewer/test/protocol-rules.test.js` | in progress |
+| T3 | `designer` session role plumbing (after T4) | `viewer/app/sessions.js`, `balancer.js`, `settings.js`, `routes.js` (other_agents line), `quiet.js`, `viewer/pages/settings.js`, `agents.js`, `machine/service.js`, role-enumerating tests | standard | — | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | not started |
+| T2 | tricky: thread and picture page display of mockups and image-beside-mockup (after T1) | `viewer/pages/diagram.js`, `thread.js`, `thread.css`, `picture.js`, `picture.css`, `viewer/test/app-mockups.spec.js` | claude standard | — | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
