@@ -292,7 +292,7 @@ npm --prefix viewer run test:browser
 
 ### Round 2 — 2026-11-23
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:**
 - §2: account switch sends `assistant: true`; machine accepts it. Off-state filter across `/threads`, `/features`, `/agents`, Needs you.
