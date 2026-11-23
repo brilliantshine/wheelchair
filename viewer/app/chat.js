@@ -2,6 +2,7 @@
 
 // Spec "How the app reads and drives a session": transcript-to-chat assembly.
 const fs = require('node:fs/promises');
+const { createHash } = require('node:crypto');
 const { publicSession } = require('./sessions.js');
 
 function textOf(content) {
@@ -306,11 +307,8 @@ function transcriptItems(cli, raw, thread, sessionName) {
 // The machine service keeps each session's transcript copy (a Claude Stop hook or a bound
 // Codex rollout tells it where the source is), so the hub reads it from there; the hub's own
 // record never learns the path.
-// With `keepLast` (the chat page), a read that fails or times out, as when the service is busy
-// while the agent works, falls back to the last copy this hub read, so the chat never empties
-// for one poll and refills on the next. A report reader passes nothing: a stale copy could
-// hand it an earlier message as the report.
-async function sessionTranscript(hub, thread, session, { keepLast = false, strict = false, timeout = 5000 } = {}) {
+// Report reads never use the chat cache, so they cannot return a stale message.
+async function sessionTranscript(hub, thread, session, { strict = false, timeout = 5000 } = {}) {
   if (strict) {
     let timer;
     const controller = new AbortController();
@@ -326,32 +324,44 @@ async function sessionTranscript(hub, thread, session, { keepLast = false, stric
       ]);
     } finally { clearTimeout(timer); controller.abort(); }
   }
+  const route = `/v1/sessions/${encodeURIComponent(session.name)}/transcript`;
+  try {
+    const result = await hub.call(thread.machine, route, 'GET');
+    if (result?.data) return result.data;
+  } catch { /* fall back to the local file */ }
+  if (!session.transcript_path) return '';
+  return fs.readFile(session.transcript_path, 'utf8').catch(() => '');
+}
+
+async function sessionChatItems(hub, thread, session) {
   const key = `${thread.machine}/${session.name}`;
   const route = `/v1/sessions/${encodeURIComponent(session.name)}/transcript`;
-  const store = keepLast ? (hub.transcripts ??= new Map()) : null;
+  const store = hub.transcripts ??= new Map();
+  const parsedKey = session.cli + JSON.stringify([thread.parent_title]);
   const now = () => hub.now ? hub.now() : Date.now();
   try {
-    const entry = store?.get(key);
-    const known = entry?.gen ? `?known=${encodeURIComponent(`${entry.gen}:${entry.end}`)}` : '';
+    const entry = store.get(key);
+    const known = entry?.gen && entry.parsedKey === parsedKey ? `?known=${encodeURIComponent(`${entry.gen}:${entry.end}`)}` : '';
     let result = await hub.call(thread.machine, route + known, 'GET');
     if (result?.unchanged) {
-      const current = store?.get(key);
-      if (current && current.gen === result.gen && current.end === result.end) { current.lastRead = now(); return current.text; }
+      const current = store.get(key);
+      if (current && current.gen === result.gen && current.end === result.end) { current.lastRead = now(); return current.parsed; }
       result = await hub.call(thread.machine, route, 'GET');
     }
     if (result?.data) {
-      if (store) {
-        const current = store.get(key);
-        const same = current?.text === result.data;
-        store.set(key, { text: result.data, gen: result.gen, end: result.end, parsed: same ? current.parsed : undefined, parsedKey: same ? current.parsedKey : undefined, lastRead: now(), thread: thread.id });
-      }
-      return result.data;
+      const hash = createHash('sha256').update(result.data).digest('hex');
+      const current = store.get(key);
+      const parsed = current?.hash === hash && current.parsedKey === parsedKey
+        ? current.parsed : module.exports.transcriptItems(session.cli, result.data, thread, session.name);
+      store.set(key, { gen: result.gen, end: result.end, hash, parsedKey, parsed, lastRead: now(), thread: thread.id });
+      return parsed;
     }
-  } catch { /* the service may be down or the session unknown to it: fall back below */ }
-  const entry = store?.get(key);
-  if (entry) { entry.lastRead = now(); return entry.text; }
-  if (!session.transcript_path) return '';
-  return fs.readFile(session.transcript_path, 'utf8').catch(() => '');
+  } catch { /* the service may be down or the session unknown to it */ }
+  const entry = store.get(key);
+  if (entry) { entry.lastRead = now(); return entry.parsed; }
+  const text = session.transcript_path ? await fs.readFile(session.transcript_path, 'utf8').catch(() => '') : '';
+  if (text || !Object.hasOwn(PARSERS, session.cli)) return module.exports.transcriptItems(session.cli, text, thread, session.name);
+  return [];
 }
 
 // A reviewer's or verifier's report is the last assistant message of its turn.
@@ -429,16 +439,7 @@ async function chat(hub, id) {
   }
   const items = [];
   for (const session of thread.sessions.filter((item) => item.role === 'lead')) {
-    const raw = await sessionTranscript(hub, thread, session, { keepLast: true });
-    if (!raw && Object.hasOwn(PARSERS, session.cli)) continue;
-    const entry = hub.transcripts?.get(`${thread.machine}/${session.name}`);
-    const parsedKey = session.cli + JSON.stringify([thread.parent_title]);
-    let parsed = entry?.text === raw && entry.parsedKey === parsedKey ? entry.parsed : null;
-    if (!parsed) {
-      parsed = module.exports.transcriptItems(session.cli, raw, thread, session.name);
-      if (entry?.text === raw) { entry.parsed = parsed; entry.parsedKey = parsedKey; }
-    }
-    items.push(...parsed);
+    items.push(...await sessionChatItems(hub, thread, session));
   }
   // Settings "Tool steps: Hide" drops the lead's tool calls (commands, file reads) entirely.
   const { tool_steps: toolSteps } = await require('./settings.js').load(hub);
@@ -467,4 +468,4 @@ async function chat(hub, id) {
   };
 }
 
-module.exports = { cardBubble, chat, hasPiEntry, lastAssistantText, sessionTranscript, stripStyleTrailer, textOf, transcriptItems, unwrap };
+module.exports = { cardBubble, chat, hasPiEntry, lastAssistantText, sessionChatItems, sessionTranscript, stripStyleTrailer, textOf, transcriptItems, unwrap };
