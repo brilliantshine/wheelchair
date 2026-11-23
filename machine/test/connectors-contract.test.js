@@ -15,8 +15,15 @@ test('registry, manifests and connector halves satisfy the contract', () => {
   for (const m of manifests) { assert.deepEqual(JSON.parse(JSON.stringify(m)), m); assert.ok(Object.isFrozen(m)); for (const half of ['machine', 'hub']) contract.validate(m, half, connectors[half](m.cli)); }
   const result = spawnSync(process.execPath, ['connectors/export.js', '--check'], { cwd: path.resolve(__dirname, '../..'), encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr);
 });
+test('connector files do not require another connector folder', () => {
+  for (const m of manifests) for (const file of fs.readdirSync(path.join(__dirname, '../../connectors', m.cli)).filter(f => f.endsWith('.js'))) {
+    const source = fs.readFileSync(path.join(__dirname, '../../connectors', m.cli, file), 'utf8');
+    for (const match of source.matchAll(/require\s*\(\s*['"]\.\.\/(?!\.\.\/)([^/'"\n]+)\//g)) assert.equal(match[1], m.cli, `${m.cli}/${file}: ${match[0]}`);
+  }
+});
 test('contract rejects missing and inconsistent members and fields', () => {
   const m = structuredClone(manifests[0]); const mod = { ...connectors.machine(m.cli) };
+  mod.provider = m.provider; assert.throws(() => contract.validate(m, 'machine', mod), /provider/); delete mod.provider;
   delete mod.command; assert.throws(() => contract.validate(m, 'machine', mod), /command/);
   mod.command = connectors.machine(m.cli).command; delete mod.usageProbe; assert.throws(() => contract.validate(m, 'machine', mod), /usageProbe/);
   mod.usageProbe = () => {}; m.capabilities.usageProbe = false; assert.throws(() => contract.validate(m, 'machine', mod), /usageProbe/);
@@ -25,9 +32,15 @@ test('contract rejects missing and inconsistent members and fields', () => {
   for (const member of ['asideArgv', 'asideResult', 'asideModel']) { const aside = structuredClone(manifests[0]); const half = { ...connectors.machine(aside.cli) }; delete half[member]; assert.throws(() => contract.validate(aside, 'machine', half), new RegExp(member)); half[member] = member === 'asideModel' ? () => {} : /invalid/; assert.throws(() => contract.validate(aside, 'machine', half), new RegExp(member)); aside.capabilities.aside = false; for (const key of ['asideArgv', 'asideResult', 'asideModel']) delete half[key]; half[member] = member === 'asideModel' ? /x/ : () => {}; assert.throws(() => contract.validate(aside, 'machine', half), new RegExp(member)); }
   const noHook = structuredClone(manifests[0]); delete noHook.hook; assert.throws(() => contract.validate(noHook, 'machine', connectors.machine(noHook.cli)), /hook.payload/); noHook.hook = { payload: 'bad' }; assert.throws(() => contract.validate(noHook, 'machine', connectors.machine(noHook.cli)), /hook.payload/);
   const polled = structuredClone(manifests.find(x => x.cli === 'kimi')); polled.hook = { payload: 'stdin' }; assert.throws(() => contract.validate(polled, 'machine', connectors.machine(polled.cli)), /hook/);
+  for (const member of ['bindTranscript', 'spoolWaiting', 'validTranscript']) { const pollManifest = manifests.find(x => x.cli === 'kimi'); const pollHalf = { ...connectors.machine(pollManifest.cli) }; delete pollHalf[member]; assert.throws(() => contract.validate(pollManifest, 'machine', pollHalf), new RegExp(member)); const hookHalf = { ...connectors.machine(manifests[0].cli), [member]: () => {} }; assert.throws(() => contract.validate(manifests[0], 'machine', hookHalf), new RegExp(member)); }
   const missing = structuredClone(manifests[0]); delete missing.models.format; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 'pattern'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);
+  const noAsideField = structuredClone(manifests[0]); delete noAsideField.asideParentField; assert.throws(() => contract.validateManifest(noAsideField), /asideParentField/); noAsideField.asideParentField = 1; assert.throws(() => contract.validateManifest(noAsideField), /asideParentField/); noAsideField.capabilities.aside = false; noAsideField.asideParentField = 'id'; assert.throws(() => contract.validateManifest(noAsideField), /asideParentField/);
+  const noWeights = structuredClone(manifests[0]); delete noWeights.settings.weights; assert.throws(() => contract.validateManifest(noWeights), /settings.weights/); noWeights.settings.weights = {}; assert.throws(() => contract.validateManifest(noWeights), /settings.weights.unknown/);
+  const noPlans = structuredClone(manifests[0]); delete noPlans.settings.plans; assert.throws(() => contract.validateManifest(noPlans), /settings.plans/);
+  const noUnknownPlan = structuredClone(manifests[0]); noUnknownPlan.settings.plans = noUnknownPlan.settings.plans.filter(([key]) => key !== 'unknown'); assert.throws(() => contract.validateManifest(noUnknownPlan), /settings.plans/);
+  const unmatchedPlan = structuredClone(manifests[0]); unmatchedPlan.settings.plans.push(['missing', 'Missing']); assert.throws(() => contract.validateManifest(unmatchedPlan), /settings.plans/);
   const badOptions = structuredClone(manifests[0]); badOptions.settings.modelOptions = { fixed: [['a']] }; assert.throws(() => contract.validateManifest(badOptions), /settings.modelOptions/);
   const noRank = structuredClone(manifests.find(x => x.capabilities.recover)); delete noRank.recoverRank; assert.throws(() => contract.validateManifest(noRank), /recoverRank/); noRank.recoverRank = '1'; assert.throws(() => contract.validateManifest(noRank), /recoverRank/); noRank.recoverRank = null; assert.throws(() => contract.validateManifest(noRank), /recoverRank/); noRank.capabilities.recover = false; assert.doesNotThrow(() => contract.validateManifest(noRank));
   const noLabel = structuredClone(manifests[0]); delete noLabel.install.label; assert.throws(() => contract.validateManifest(noLabel), /install.label/); noLabel.install.label = 42; assert.throws(() => contract.validateManifest(noLabel), /install.label/);

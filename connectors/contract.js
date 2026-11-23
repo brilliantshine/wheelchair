@@ -4,7 +4,7 @@
 // cli, provider, label, displayName, optional shortName, typesRoleMessage,
 // singleAccount, and boolean capabilities. install has command, binary, label,
 // optional node, versionArgs, optional fallbackPath, pathRank and sensitivity.
-// settings has optional modelOptions (fixed pairs or listedKey, listedShape and includePins), modelPattern, modelPlaceholder, cliLabel, vendor, setupUrl,
+// settings has required modelPattern, weights and plans (key/label pairs including unknown and keys present in weights), optional modelOptions (fixed pairs or listedKey, listedShape and includePins), modelPlaceholder, cliLabel, vendor, setupUrl,
 // permissionMode, permissionChoices, accountWarning, modelHeadsUp, signInKind,
 // reviewFamily, plans, weights, reportedPlans, oldPlanWeights, modelError,
 // familyHint, accountPolicy and optional scoutAgentTool, monoModelNames and keyPrompt. models has
@@ -20,10 +20,12 @@ const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, mach
 const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asidePrepare', 'asideMessage', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
+  if (half === 'machine' && 'provider' in mod) fail('provider');
   for (const member of REQUIRED[half]) if (typeof mod[member] !== 'function') fail(member);
   if (half === 'machine' && (typeof mod.hookEvent === 'function') === (typeof mod.turnPoller === 'function')) fail('hookEvent/turnPoller');
   if (half === 'machine' && typeof mod.hookEvent === 'function' && !['stdin', 'last-arg'].includes(manifest.hook?.payload)) fail('hook.payload');
   if (half === 'machine' && typeof mod.turnPoller === 'function' && manifest.hook !== undefined) fail('hook');
+  if (half === 'machine') for (const member of ['bindTranscript', 'spoolWaiting', 'validTranscript']) if (typeof mod.turnPoller === 'function' ? typeof mod[member] !== 'function' : member in mod) fail(member);
   for (const [cap, halves] of Object.entries(CAPABILITIES)) for (const member of halves[half]) {
     if (manifest.capabilities[cap] ? (member === 'asideModel' ? !(mod[member] instanceof RegExp) : typeof mod[member] !== 'function') : member in mod) fail(member);
   }
@@ -33,11 +35,14 @@ function validateManifest(m) {
   const str = v => typeof v === 'string', bool = v => typeof v === 'boolean', obj = v => !!v && typeof v === 'object' && !Array.isArray(v), arr = Array.isArray;
   for (const f of ['cli','provider','label','displayName','install.command','install.binary','settings.modelPattern','models.format','models.hubPattern']) check(f,str);
   for (const f of ['typesRoleMessage','singleAccount']) check(f,bool);
-  for (const f of ['capabilities','install','settings','models','models.pins','placement']) check(f,obj);
+  for (const f of ['capabilities','install','settings','models','models.pins','placement','settings.weights']) check(f,obj);
   for (const cap of Object.keys(CAPABILITIES)) check(`capabilities.${cap}`,bool);
+  check('settings.weights.unknown', v => typeof v === 'number' && Number.isFinite(v));
+  check('settings.plans', v => arr(v) && v.every(pair => arr(pair) && pair.length === 2 && pair.every(s => str(s) && s.length > 0)) && v.some(([key]) => key === 'unknown') && v.every(([key]) => Object.hasOwn(m.settings.weights, key)));
   check('models.efforts',v=>arr(v)&&v.every(str)); check('placement.workerRank',v=>v===null||typeof v==='number');
   for (const f of ['stylePreview','wrapProjectTools','injectProjectKeys','joinPaneLines','hook.sessionFromEnv','report.useHookText','stopWhenEnded','install.sensitivity','placement.leadDefault','placement.seenByDefault','placement.addOnMigration','placement.appendWhenRequested','models.familyCommand','models.bareTierSet','settings.scoutAgentTool','usage.showWarning','usage.probeWhileLive','usage.tryEveryMachine','settings.monoModelNames','usage.defaultProblem']) check(f,bool,false);
-  for (const f of ['shortName','asideParentField']) check(f,str,false);
+  check('shortName',str,false);
+  if (m.capabilities.aside) check('asideParentField',str); else if ('asideParentField' in m) throw new Error(`${m.cli}: asideParentField`);
   check('login.killTarget',v=>['pane','session','name'].includes(v),false);
   check('install.lookup',v=>['path','absolute','fallback'].includes(v));
   if (m.install.lookup === 'fallback') check('install.fallbackPath', v => str(v) && v.length > 0);
@@ -45,8 +50,8 @@ function validateManifest(m) {
   for (const f of ['install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt']) check(f,str,false);
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
   for (const f of ['settings.modelHeadsUp','settings.reviewFamily']) check(f,bool,false);
-  for (const f of ['settings.permissionChoices','settings.plans']) check(f,arr,false);
-  for (const f of ['settings.weights','settings.reportedPlans','settings.oldPlanWeights','models.slotAliases','report','hook']) check(f,obj,false);
+  check('settings.permissionChoices',arr,false);
+  for (const f of ['settings.reportedPlans','settings.oldPlanWeights','models.slotAliases','report','hook']) check(f,obj,false);
   for (const f of ['install.pathRank','recoverRank']) check(f,v=>v===null||typeof v==='number',false);
   check('recoverFallback',bool,false);
   check('recoverRank',v=>typeof v==='number'||(!m.capabilities?.recover&&v===null),Boolean(m.capabilities?.recover));

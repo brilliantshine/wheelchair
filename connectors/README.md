@@ -139,8 +139,8 @@ The service must learn when a turn finishes. A machine half provides exactly one
   include `turn-ended` (with `transcript_path`), `turn-failed`, `limit-hit`, `prompt`,
   `step`, `usage-source` and `context`.
 - **`turnPoller(cli)`** for tools with no hook. The service calls it (with the service as
-  `this`) on a timer. Kimi reads its wire log and posts events itself. It usually comes with
-  `bindTranscript`, `spoolWaiting` and `validTranscript`.
+  `this`) on a timer. Kimi reads its wire log and posts events itself. It requires
+  `bindTranscript`, `spoolWaiting` and `validTranscript`; hook-driven tools must not export them.
 
 `validate` throws `hookEvent/turnPoller` unless there is exactly one. Two more rules follow:
 a half with `hookEvent` requires the manifest's `hook.payload` (`stdin` or `last-arg`), and a
@@ -209,10 +209,10 @@ the type is checked only when present. Unless a default is stated below, an omit
 
 ### Settings page (`settings`)
 
-`settings.modelPattern` (string) is required. Everything else is defaulted: `modelPlaceholder`,
+`settings.modelPattern` (string), `settings.weights` (object with numeric `unknown`) and `settings.plans` are required. `settings.plans` is an array of `[key, label]` pairs of non-empty strings; it must include `unknown`, and every key must exist in `settings.weights`. Everything else is defaulted: `modelPlaceholder`,
 `cliLabel`, `vendor`, `setupUrl`, `signInKind`, `modelError` (strings); `permissionMode`,
-`accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices` and
-`plans` (arrays of `[value, label]`); `weights`, `reportedPlans`, `oldPlanWeights` (objects);
+`accountWarning`, `familyHint`, `accountPolicy` (string or `null`); `permissionChoices`
+(array of `[value, label]`); `reportedPlans`, `oldPlanWeights` (objects);
 `modelHeadsUp`, `reviewFamily`, `scoutAgentTool`, `monoModelNames` (booleans); `keyPrompt`
 (string); `modelOptions` (object). `modelPattern` is the browser's own model-name check and
 differs from `models.format` and `models.hubPattern` on purpose, so each place keeps rejecting
@@ -274,7 +274,7 @@ general fallback.
 | `injectProjectKeys` | boolean | Stored project keys are injected into tool-role launches. |
 | `joinPaneLines` | boolean | Pane capture joins wrapped lines (`-J`). |
 | `report.useHookText`, `stopWhenEnded` | boolean | See above and `restartLoss`. |
-| `asideParentField` | string | See the `aside` capability. |
+| `asideParentField` | string | Required with the `aside` capability; forbidden without it. |
 | `hook.payload`, `hook.sessionFromEnv` | see "How a turn ends" | |
 | `login.killTarget` | `pane`, `session` or `name` | What the service kills to end a login. |
 | `recoverRank` | number | Match order for the `recover` capability. Required (a number) when `capabilities.recover` is true, because the restart-recovery sort in `machine/service.js` uses it; otherwise optional (a number or `null`). |
@@ -306,8 +306,9 @@ tag before their own script.
 2. Add the folder name to `names` in `connectors/index.js`. The order is only a listing
    order, never placement policy.
 3. Fill `install` (recipe, binary, lookup, `versionArgs`, `fallbackPath` and `pathRank` as needed).
-4. Fill `settings` (model pattern and placeholder, permission choices, account text, plans and
-   weights, sign-in kind, setup link). If the tool has model choices on the Settings page, add
+4. Fill `settings` (model pattern and placeholder, permission choices, account text, required
+   `plans` and `weights`, sign-in kind, setup link). `plans` must include `unknown` and every
+   plan key must exist in `weights`. If the tool has model choices on the Settings page, add
    `settings.modelOptions`. If the tool recovers adopted panes, give it a `recoverRank`; every
    tool needs `install.label`.
 5. Fill `models` (default pins per slot, formats, efforts). If the tool can list its own
@@ -325,7 +326,7 @@ tag before their own script.
 8. Run `node connectors/export.js` and commit the new `registry.json`.
 9. Tests: `machine/test/connectors-contract.test.js` loads both halves of every registered
    connector and checks the manifests, so a missing member or a wrong type fails by name.
-   `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). It scans whole files, so a comparison, `case`, call argument, ternary or `||`/`&&` operand, array element, object key (including shorthand) or `connectors.<id>` access is caught even when it spans several lines; comments and non-code text are masked first. The detector is pinned by a table of positive and negative snippets in that test (`detector recognizes name checks across lines`): change the detector only with a snippet in the table. It is a heuristic: escaped ids, computed values and ambiguous regex/division syntax can evade it, and unusual syntax can give a false hit. For a hit that is not tool dispatch, add an entry to the `allow` list in that test: `{ file, pattern, tag, reason }`, where `file` is the repository path, `pattern` is a regular expression tested against the hit's source line, `tag` is `not-tool` (also established: `compat`, `legacy`, `model-script`), and `reason` says why. Prefer moving the behaviour into the manifest over allowlisting.
+   `machine/test/name-guard.test.js` scans machine source, viewer app and page source, `viewer/server.js`, `install.sh`, and `codex/model.sh` for tool-name dispatch patterns outside `connectors/` (excluding tests). It scans whole files, so a comparison, `case`, call argument, ternary or `||`/`&&` operand, array element, object key (including shorthand) or `connectors.<id>` access is caught even when it spans several lines; comments and non-code text are masked first. Exact quoted IDs are checked at their literal positions, including shell case patterns, tests and for lists, Python membership and JavaScript backticks. The detector is pinned by a table of positive and negative snippets in that test (`detector recognizes name checks across lines`): change the detector only with a snippet in the table. It is a heuristic: escaped ids, computed values and ambiguous regex/division syntax can evade it, and unusual syntax can give a false hit. For a hit that is not tool dispatch, add an entry to the `allow` list in that test: `{ file, pattern, tag, reason }`, where `file` is the repository path, `pattern` is a regular expression tested against the hit's source line, `tag` is `not-tool` (also established: `compat`, `legacy`, `model-script`), and `reason` says why. Prefer moving the behaviour into the manifest over allowlisting.
    `machine/test/adapters-loaded.test.js` walks the registry. Add characterization tests
    for the tool's behaviour next to the machine and hub tests that cover the other tools. Run
    the suites listed in the root `AGENTS.md`, including `bash codex/test/run.sh` for
@@ -334,3 +335,7 @@ tag before their own script.
 Behaviour that no existing member or field explains is not a reason to put a name check
 outside `connectors/`: add a capability or optional member, list it in `contract.js`, and
 document it here.
+
+Connector halves must not require another connector folder. Shared step vocabularies live in `common.js` as `stepVocabularies.claudeStyle` and `stepVocabularies.codexStyle`.
+
+Machine halves must not export `provider`; the manifest is the source of provider identity.

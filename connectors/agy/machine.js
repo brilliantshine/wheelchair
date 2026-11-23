@@ -9,8 +9,8 @@ const onboarding = ['Choose your color scheme', 'Terms of Service & Data Use', '
 module.exports = {
   recognizePane: text => text.includes('Antigravity CLI'),
 
-  stepVocabulary: require('../codex/machine').stepVocabulary,
-  provider: 'gemini', loginEnv: () => ({}), sessionNameEnv: true,
+  stepVocabulary: c.stepVocabularies.codexStyle,
+  loginEnv: () => ({}), sessionNameEnv: true,
   prepare() {
     const file = path.join(os.homedir(), '.gemini', 'config', 'hooks.json');
     const wanted = { Stop: [{ type: 'command', command: `${c.quote(path.join(c.root, 'machine', 'hook.sh'))} agy` }] };
