@@ -21,13 +21,13 @@ const js = [
   new RegExp(`require\\s*\\(\\s*['\"][^'\"]*connectors/(?:${word})/`)
 ];
 const shell = new RegExp(`(?:^|[| (])(?:${word})(?:[|)]|\\s*\\]\])|\\bfor\\s+\\w+\\s+in\\s+.*\\b(?:${word})\\b`);
-const python = new RegExp(`(?:==|!=|\\bin\\b)\\s*${literal}|[[(,]\\s*${literal}\\s*[,\\])]`);
+const python = new RegExp(`(?:==|!=|\\bin\\b)\\s*${literal}|${literal}\\s*(?:==|!=|,)|[[(,]\\s*${literal}\\s*[,\\])]`);
 const allow = [
   ...['viewer/app/balancer.js', 'viewer/app/sessions.js', 'viewer/app/settings.js'].map(file => ({ file, pattern: /path\.join\(hub\.root, 'codex', 'model\.sh'\)/, tag: 'not-tool', reason: 'This is the model script directory.' })),
   { file: 'viewer/pages/settings.js', pattern: /class: toolOf\(provider\)\.settings\.modelHeadsUp \? 'gpt'/, tag: 'not-tool', reason: 'This is a CSS class.' },
-  { file: 'viewer/server.js', pattern: /(?:entry\??\.harness|body\.harness|CLAUDECODE|name ===)/, tag: 'compat', reason: 'Graph caller labels remain compatible.' },
+  { file: 'viewer/server.js', pattern: /(?:\['claude', 'codex', 'other'\]\.includes\((?:body\.harness|entry\??\.harness)\)|process\.env\.CLAUDECODE === '1' \? 'claude' : 'other'|name === 'claude' \|\| name === 'codex')/, tag: 'compat', reason: 'Graph caller labels remain compatible.' },
   { file: 'install.sh', pattern: /(?:claude|codex)\) (?:claude|codex)_present=/, tag: 'legacy', reason: 'Legacy cleanup derives these flags.' },
-  { file: 'codex/model.sh', pattern: /(?:FORMATS\[|provider ==|pins\[|cell\(pins|DEFAULTS\[|slot_for\(|read_cell\(|write_pin\(|argv\[:2\])/, tag: 'model-script', reason: 'Marked per-tool model workflows retain their existing formats.' },
+  { file: 'codex/model.sh', pattern: /(?:FORMATS\["(?:gpt|kimi)"\]|provider == "(?:claude|gpt)"|pins\["gpt"\]|cell\(pins, "gpt"|DEFAULTS\["gpt"\]|slot_for\("(?:gpt|claude)"|read_cell\(pin_path, "(?:gpt|claude)"|write_pin\(pin_path, "gpt"|argv\[:2\] == \["family", "claude"\]|key = "gpt", slot)/, tag: 'model-script', reason: 'Marked per-tool model workflows retain their existing formats.' },
   { file: 'codex/model.sh', pattern: /os\.path\.join\(root, "codex", "model\.sh"\)/, tag: 'not-tool', reason: 'This is the model script directory.' },
 ];
 function walk(dir, extensions) {
