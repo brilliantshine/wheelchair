@@ -5,6 +5,7 @@ Routes (all responses use Cache-Control: no-store):
   GET  /wheelchair/plan, /doc   -> plan data and raw Markdown
   GET  /wheelchair/docs         -> viewer/doc.html
   GET  /wheelchair/assets/*     -> page scripts (no token): doc.js, pages/*, vendor/*, fonts/<name>.woff2 (four allowlisted)
+  GET  /wheelchair/assets/tools.js -> window.WHEELCHAIR_TOOLS = the connector manifests (no install field), no token
   GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, doc, features, agents, terminal); /wheelchair/app/ redirects to threads
   GET  /wheelchair/graph        -> { hash, graph, children }
   PUT  /wheelchair/graph, /view -> { hash }
@@ -1717,6 +1718,15 @@ const FONT_FILES = {
   'inter-700': '@fontsource/inter/files/inter-latin-700-normal.woff2',
   'jetbrains-mono-400': '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2',
 };
+// The connector manifests the pages read, built once per process: `install` is left out.
+let toolsScript = null;
+function toolsAsset() {
+  if (!toolsScript) {
+    const tools = require('../connectors/index.js').list().map(({ install, ...rest }) => rest);
+    toolsScript = Buffer.from(`window.WHEELCHAIR_TOOLS = ${JSON.stringify(tools)};\n`);
+  }
+  return toolsScript;
+}
 const APP_ASSET = /^(pages|vendor)\/[a-z0-9_-]+(\/[a-z0-9_.-]+)*\.(js|css)$/;
 
 async function handleAsset(response, url) {
@@ -1724,6 +1734,10 @@ async function handleAsset(response, url) {
   if (name === 'doc.js') {
     const script = await fsp.readFile(path.join(__dirname, name));
     sendFile(response, 200, script, 'text/javascript; charset=utf-8');
+    return;
+  }
+  if (name === 'tools.js') {
+    sendFile(response, 200, toolsAsset(), 'text/javascript; charset=utf-8');
     return;
   }
   if (name.startsWith('fonts/')) {

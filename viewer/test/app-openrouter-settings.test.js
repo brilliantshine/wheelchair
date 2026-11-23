@@ -8,8 +8,10 @@ const { api, close, setup } = require('./helpers/app.js');
 const settings = require('../app/settings.js');
 
 const source = fs.readFileSync(path.join(__dirname, '../pages/settings.js'), 'utf8');
-const expression = source.match(/const OPENROUTER_MODEL_VALUE = (.*);/)[1];
-const pageRule = vm.runInNewContext(expression);
+// The page's tool data is the connector manifests, served as tools.js without `install`.
+const tools = JSON.parse(JSON.stringify(require('../../connectors').list())).map(({ install, ...rest }) => rest);
+const pi = tools.find((t) => t.provider === 'openrouter');
+const pageRule = new RegExp(pi.settings.modelPattern);
 const cases = [['a/' + 'x'.repeat(126), true], ['a/' + 'x'.repeat(127), false], ['ab', false], ['a/b/c', false], ['a/b:', false], ['a/b::c', false], ['a/b:free', true]];
 
 test('OpenRouter settings defaults, migration and page display', () => {
@@ -22,8 +24,12 @@ test('OpenRouter settings defaults, migration and page display', () => {
   const saved = settings.normalize({ worker_order: ['openrouter', 'gpt'], lead_order: ['openrouter', 'any'] });
   assert.ok(saved.worker_order.includes('openrouter')); assert.ok(saved.lead_order.includes('openrouter'));
   assert.equal(settings.normalize({ review_families: 'openrouter' }).review_families, 'openrouter');
-  assert.match(source, /\['openrouter', 'OpenRouter', 'Pi'\]/);
-  assert.ok(source.includes('Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.'));
+  assert.match(source, /const PROVIDERS = TOOLS\.map\(\(t\) => \[t\.provider, t\.label, t\.settings\.cliLabel\]\)/);
+  assert.deepEqual([pi.provider, pi.label, pi.settings.cliLabel], ['openrouter', 'OpenRouter', 'Pi']);
+  assert.ok(source.includes("text: toolOf(provider).settings.familyHint"));
+  assert.equal(pi.settings.familyHint, 'Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.');
+  assert.equal(pi.settings.modelError, 'Use vendor/model with an optional :variant, up to 128 lowercase letters, digits, dots, dashes and underscores.');
+  assert.ok(source.includes('inlineErr(wrap, toolOf(provider).settings.modelError)'));
 });
 
 test('OpenRouter model IDs agree in the page and save route', async () => {
