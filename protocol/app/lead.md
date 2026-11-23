@@ -844,8 +844,10 @@ record the version choice in the Decision Log.
 
 If the user requests a design change during review or after approval, before Start building
 is accepted, retract any open approval card first. In one commit set `status: planning` and
-re-add "Agree the mockups", then start a fresh designer briefed with the current files and
-the user's words. Planning rules apply: no approval card exists or is posted while planning.
+re-add "Agree the mockups", stop any live reviewers of the current round and discard their
+reports (that round does not count), then start a fresh designer briefed with the current
+files and the user's words. Planning rules apply: no approval card exists or is posted while
+planning.
 Once agreed, the new files are a Spec change: set `status: ready-for-review` and list the
 change in the next round's "Changed since". If Start building was already recorded when the
 user asks for a change, it is a change after Start building.
@@ -913,8 +915,10 @@ recent messages on deferred cards, identified using `card_kinds` (id to kind, in
 replaced cards), unless `Build accepted:` came first. If reviewers are still running in
 any mode, stop them, apply pending pull-backs and any requested mode change not yet in
 IDEA.md, then restart the round under the same number with fresh reviewers. Discard old
-reports; triage only the new sessions, and do not count the interrupted round. Otherwise
-apply pending changes before approval or briefing a round. In a done two-part thread,
+reports; triage only the new sessions, and do not count the interrupted round. If `status:` is
+`planning` (a design change reopened it), stop them and discard their reports, but do not
+restart the round; review starts again once the mockups are agreed. Otherwise apply pending
+changes before approval or briefing a round. In a done two-part thread,
 finish push, PR and done card first; then check for a stub whose summary starts with
 `Two-part follow-up for plan <slug>.` and post it only if rows exist and no such stub does.
 
