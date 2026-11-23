@@ -22,6 +22,8 @@ function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
   for (const member of REQUIRED[half]) if (typeof mod[member] !== 'function') fail(member);
   if (half === 'machine' && (typeof mod.hookEvent === 'function') === (typeof mod.turnPoller === 'function')) fail('hookEvent/turnPoller');
+  if (half === 'machine' && typeof mod.hookEvent === 'function' && !['stdin', 'last-arg'].includes(manifest.hook?.payload)) fail('hook.payload');
+  if (half === 'machine' && typeof mod.turnPoller === 'function' && manifest.hook !== undefined) fail('hook');
   for (const [cap, halves] of Object.entries(CAPABILITIES)) for (const member of halves[half]) {
     if (manifest.capabilities[cap] ? typeof mod[member] !== 'function' : member in mod) fail(member);
   }
