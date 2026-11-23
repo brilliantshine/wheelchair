@@ -207,10 +207,13 @@ function newSessionName(thread, role) {
 function checkEffort(settings, role, cli, effort) {
   if (role !== 'worker' || effort === undefined) return;
   if (PROVIDERS[providerOf(cli)]?.effort === false) return;
-  if (cli === 'codex' && effort === 'max') throw appError(400, "GPT's highest effort is xhigh");
+  const manifest = connectors.manifest(cli);
+  const supported = manifest.models.efforts;
+  const highest = supported.at(-1);
+  if (effort === 'max' && !supported.includes(effort)) throw appError(400, `${manifest.label}'s highest effort is ${highest}`);
   const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
   const ceiling = settings.escalation.max_effort;
-  const max = cli === 'codex' && ceiling === 'max' ? 'xhigh' : ceiling;
+  const max = ceiling === 'max' && !supported.includes(ceiling) ? highest : ceiling;
   if (efforts.indexOf(effort) > efforts.indexOf(max)) throw appError(400, `effort ${effort} is above the highest effort in Settings (${max})`);
 }
 
