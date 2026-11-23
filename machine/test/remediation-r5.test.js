@@ -11,25 +11,32 @@ test('omitted installer versionArgs defaults to --version while null skips', () 
   assert.equal(versionArgs({ versionArgs: null }), null);
 });
 
-test('commandFor forwards every launchContext key', () => {
-  const adapter = connectors.machine('claude'), previous = adapter.command;
+test('prepareLaunch forwards launchContext keys without replacing service context', async () => {
+  const adapter = connectors.machine('claude'), previousCommand = adapter.command, previousLaunchContext = adapter.launchContext;
   let received;
-  adapter.command = (_i, _s, _w, context) => { received = context; return {}; };
+  adapter.launchContext = async () => ({ marker: 1, stateDir: 'x' });
+  adapter.command = (_i, _s, _w, context) => { received = context; return { argv: ['fake'] }; };
   try {
     const service = new MachineService({ stateDir: '/tmp/r5-command-context' });
-    service.commandFor({ cli:'claude', role:'worker' }, { account_dir:null }, '/work', '/prompt', 'role', {}, { launchExtras:{ marker:1 } });
+    service.win = null;
+    await service.prepareLaunch({ cli:'claude', role:'reviewer' }, { name:'wc-r5-reviewer', cli:'claude', token:'token' }, adapter, '/work', '/prompt', 'role', false);
     assert.equal(received.marker, 1);
-  } finally { adapter.command = previous; }
+    assert.equal(received.stateDir, service.stateDir);
+  } finally { adapter.command = previousCommand; adapter.launchContext = previousLaunchContext; }
 });
 
 test('versionCheck problem masks account even without resolveCli', () => {
-  const manifest = connectors.manifest, clone = { ...manifest('claude'), capabilities:{ ...manifest('claude').capabilities, versionCheck:true } };
+  const manifest = connectors.manifest, adapter = connectors.machine('claude'), previousLoginStatus = adapter.loginStatus;
+  const clone = { ...manifest('claude'), capabilities:{ ...manifest('claude').capabilities, versionCheck:true } };
+  adapter.loginStatus = () => ({ logged_in: true, problem: 'host credentials should be masked' });
   connectors.manifest = cli => cli === 'claude' ? clone : manifest(cli);
   try {
     const service = new MachineService({ stateDir: '/tmp/r5-version-status' });
     service.cliStatus = cli => cli === 'claude' ? { problem:'version too old' } : {};
     service.sessionList = () => [];
     assert.equal(connectors.machine('claude').resolveCli, undefined);
-    assert.equal(service.status().accounts.find(a => a.cli === 'claude').logged_in, false);
-  } finally { connectors.manifest = manifest; }
+    const account = service.status().accounts.find(a => a.cli === 'claude');
+    assert.equal(account.logged_in, false);
+    assert.equal(Object.hasOwn(account, 'problem'), false);
+  } finally { connectors.manifest = manifest; adapter.loginStatus = previousLoginStatus; }
 });
