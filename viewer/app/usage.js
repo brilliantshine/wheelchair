@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const connectors = require('../../connectors');
 const { atomicWrite, readJson } = require('./state.js');
 const { PROVIDERS } = require('./providers.js');
 const settingsModule = require('./settings.js');
@@ -17,12 +18,12 @@ function effective(reading, now = Date.now()) {
   return out;
 }
 function hasRoom(account, reading, { loggedIn, leave = 10, now = Date.now() }) {
-  if (account.provider === 'openrouter') return !account.paused && loggedIn === true;
+  if (connectors.byProvider(account.provider)?.capabilities.spend) return !account.paused && loggedIn === true;
   const r = effective(reading, now);
   return !account.paused && loggedIn === true && !(r?.limited_until && Date.parse(r.limited_until) > millis(now)) && ['five_hour', 'week'].every((key) => !r?.[key] || r[key].used < 100 - leave);
 }
 function forecast(accounts, readingsById, now = Date.now()) {
-  const active = accounts.filter((a) => !a.paused && a.provider !== 'openrouter');
+  const active = accounts.filter((a) => !a.paused && !connectors.byProvider(a.provider)?.capabilities.spend);
   const capacity = active.reduce((n, a) => n + a.weight, 0);
   const withReadings = active.filter((a) => readingsById[a.id]?.week);
   const used = capacity ? active.reduce((n, a) => n + a.weight * (effective(readingsById[a.id], now)?.week?.used || 0) / 100, 0) / capacity : 0;
@@ -75,16 +76,17 @@ async function machineAccounts(hub) {
           for (const row of status.accounts) {
             logins[row.id] = Boolean(row.logged_in);
             accounts[row.id] = Boolean(logins[row.id] && status[row.cli]?.installed);
-            const text = cliProblem(row.cli) && ['kimi', 'pi'].includes(row.cli) ? cliProblem(row.cli) : (!row.logged_in && typeof row.problem === 'string' && row.problem ? row.problem : null);
+            const text = cliProblem(row.cli) && connectors.manifest(row.cli)?.capabilities.versionCheck ? cliProblem(row.cli) : (!row.logged_in && typeof row.problem === 'string' && row.problem ? row.problem : null);
             if (text) problems[row.id] = text;
           }
         } else for (const [provider, info] of Object.entries(PROVIDERS)) {
           logins[`default-${provider}`] = Boolean(status[info.cli]?.logged_in);
           accounts[`default-${provider}`] = Boolean(logins[`default-${provider}`] && status[info.cli]?.installed);
-          if (provider === 'kimi' && cliProblem('kimi')) problems['default-kimi'] = cliProblem('kimi');
+          if (connectors.manifest(info.cli)?.capabilities.versionCheck && !connectors.manifest(info.cli)?.capabilities.spend && cliProblem(info.cli)) problems[`default-${provider}`] = cliProblem(info.cli);
         }
-        const cliProblems = Object.fromEntries(['kimi', 'pi'].filter(cliProblem).map(cli => [cli, cliProblem(cli)]));
-        const cliWarnings = status.pi?.warning ? { pi: status.pi.warning } : {};
+        const checked = connectors.list().filter(m => m.capabilities.versionCheck);
+        const cliProblems = Object.fromEntries(checked.filter(m => cliProblem(m.cli)).map(m => [m.cli, cliProblem(m.cli)]));
+        const cliWarnings = Object.fromEntries(checked.filter(m => m.usage?.showWarning && status[m.cli]?.warning).map(m => [m.cli, status[m.cli].warning]));
         const harnesses = Object.fromEntries(Object.entries(PROVIDERS).map(([p, info]) => [p, { installed: Boolean(status[info.cli]?.installed), version: status[info.cli]?.version || null, recipe: status.recipes ? Boolean(status.recipes[p]) : null }]));
         return [name, { reachable: true, accounts, logins, problems, cliProblems, cliWarnings, harnesses, status }];
       } catch { return [name, { reachable: false, accounts: {}, problems: {}, cliProblems: {} }]; }
@@ -142,7 +144,8 @@ async function summary(hub, includeMachines = true, now = Date.now()) {
     const f = forecast(accounts, data.readings || {}, now);
     const below_notify = f.left !== null && f.left < settings.notify_below / 100;
     const ranked = rank(accounts, data.readings || {}, machines, settings, localName, now, data.last_chosen);
-    providers[provider] = { ...(provider === 'openrouter' && includeMachines ? { spend: await spend(hub) } : {}), label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: provider === 'openrouter' ? accounts.every((a) => a.paused) : f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : (a.provider === 'kimi' && m.cliProblems?.kimi || a.provider === 'openrouter' && m.cliProblems?.pi) ? { state: 'problem', text: m.cliProblems[a.provider === 'kimi' ? 'kimi' : 'pi'] } : m.accounts[a.id] ? (a.provider === 'openrouter' && m.cliWarnings?.pi ? { state: 'signed_in', warning: m.cliWarnings.pi } : 'signed_in') : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : a.provider === 'openrouter' && m.cliWarnings?.pi ? { state: 'signed_out', warning: m.cliWarnings.pi } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
+    const manifest = connectors.byProvider(provider), cli = manifest.cli;
+    providers[provider] = { ...(manifest.capabilities.spend && includeMachines ? { spend: await spend(hub) } : {}), label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: manifest.capabilities.spend ? accounts.every((a) => a.paused) : f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.cliProblems?.[cli] ? { state: 'problem', text: m.cliProblems[cli] } : m.accounts[a.id] ? (m.cliWarnings?.[cli] ? { state: 'signed_in', warning: m.cliWarnings[cli] } : 'signed_in') : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : m.cliWarnings?.[cli] ? { state: 'signed_out', warning: m.cliWarnings[cli] } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
   }
   return { providers, seen: data.seen || {} };
 }

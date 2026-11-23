@@ -1,5 +1,6 @@
 'use strict';
 module.exports = {
+  "usage": { "showWarning": true },
   "login": { "killTarget": "pane" },
   "cli": "pi",
   "provider": "openrouter",

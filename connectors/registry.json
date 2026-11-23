@@ -533,6 +533,9 @@
       "recoverFallback": false
     },
     {
+      "usage": {
+        "showWarning": true
+      },
       "login": {
         "killTarget": "pane"
       },
