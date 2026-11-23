@@ -50,16 +50,20 @@ the reader's place.
 - `renderChat()` reconciles instead of rebuilding. Each chat entry (message bubble, card,
   the lead-name line, pending bubble, queued and notice rows) gets a stable key and a
   signature of what it draws. An entry whose key and signature are unchanged keeps its
-  existing DOM node, **which is never removed or moved** (moving an iframe reloads it).
-  New entries are inserted at their place; changed entries are replaced in place; gone
-  entries are removed. A card's signature covers its own fields and every outside state
+  existing DOM node. **An unchanged entry that contains an iframe is never removed or
+  moved** (detaching an iframe reloads it); other unchanged entries may be moved when the
+  order changes (for example queued messages reordered by Send now). Cards are in time
+  order, so iframe entries never need to move. New entries are inserted at their place;
+  changed entries are replaced in place; gone entries are removed. A card's signature covers its own fields and every outside state
   its drawing reads (pinned, archived, slug, worktree, card errors, open/folded state).
 - Everything the current rebuild does after building (placeIds, aside anchors, pending
   bubble matching, the import cutoff) still works; a full rebuild stays allowed only where
   the cutoff moves (import, hand-off).
 - Scroll: near the bottom (existing 80px test) the page still follows new entries. Away
-  from the bottom, the top visible entry stays at the same screen position after an
-  update (measure it before, correct `scrollY` after).
+  from the bottom, the top visible chat entry stays at the same screen position after an
+  update. Record it and its position at the start of `render()`, before the banners and
+  pins above the chat update, and correct `scrollY` once the chat is updated. If that
+  entry is gone, use the first entry after it that survived.
 - A mockup reserves its final height when created: `mockup()` in `viewer/pages/diagram.js`
   sets the frame box's height from `aspect-ratio: width / height` (CSS) so the box never
   starts at zero and grows later. The scale transform still follows the box width.
@@ -78,9 +82,18 @@ Mockup half of an image card) and the mockup on the picture page.
   pin. Cancel, or sending, removes the layer, pin and box.
 - The tap is converted to the mockup's own pixels: x and y divided by the current scale,
   rounded, clamped to 0..width-1 and 0..height-1.
-- Send posts Collin's own message through the same path as the composer (`sendNow` in
-  `thread.js`; on the picture page, the same chat message route the composer uses), so it
-  appears as Collin's bubble and queues to the lead like any message. Text:
+- Send posts Collin's own message the way the composer's send handler does
+  (`POST <thread>/messages` with `{text}`, then the pending-bubble push; `thread.js`
+  ~1577-1579; share that code rather than copy it), so it appears as Collin's bubble and
+  queues to the lead like any message. `sendNow` is not involved. On the picture page it
+  is the same `POST <thread>/messages`.
+- Send keeps the pin, coordinates and text until the hub accepts the message. On a
+  failure, show the error beside the box ("Comment not sent: <reason>") and keep
+  everything so Send can be pressed again. Only acceptance or Cancel clears them.
+- The picture page has no live state: it checks whether the thread can take a message
+  when it loads and again (re-reading `<thread>/chat`) when Send is pressed. If it can't,
+  it shows "The lead isn't running, so the comment can't be sent now" and keeps the
+  draft. Text:
   `Comment on mockup "<title>" (docs/plans/<plan>/graphs/<graph>.html, <width>x<height>) at x=<x>, y=<y>: <comment>`.
   An empty comment cannot be sent. On the picture page a sent comment shows "Sent to the
   thread" with a link back.
@@ -139,7 +152,8 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
    exact format above with the expected rounded coordinates; the button is hidden in an
    archived thread.
 4. PNG: Download on a mockup's picture page saves a PNG whose pixel size is width x height
-   times the export scale, and whose pixels are not blank; Download HTML still gives HTML.
+   times the export scale, and in which a known foreground block and the background of a fixture mockup
+   have their expected colours; Download HTML still gives HTML.
 5. True size: at 390px viewport, the screenshot view of a 1200px-wide image renders it
    1200 CSS px wide and the page scrolls sideways; Built's Open full size links to it.
 
@@ -174,6 +188,13 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | intent | major | Lead sentence assumes a live designer; Mockup half comments arrive during build | downgraded (minor) | Real, but the existing Mockups rules already route feedback by stage, so a careful lead reconciles it. Rewrote the sentence to defer to those rules (S2, Decision 8) |
 | intent | minor | Decision 4 says the message names the card; the format does not | upheld | Decision 8: the versioned file path identifies it; S2 says so |
 | intent | minor | PNG untested in WebKit (iPhone) | accepted-risk | Fallback note and HTML link; D2 |
+| mechanics | blocking | S2 names `sendNow`, which re-sends a queued message, not a new one | upheld | S2 now names the composer's `POST /messages` + pending bubble, shared |
+| mechanics | blocking | Queued rows reorder (Send now), contradicting "never moved" | downgraded (major) | Real contradiction, but only a reorder case; S1 now pins only iframe entries in place |
+| mechanics | major | Spot-comment forwarding assumes a live designer during build | downgraded (minor) | Same as intent finding 1; fixed by Decision 8 |
+| mechanics | major | A failed send discards the draft and pin | upheld | S2: keep everything until accepted; show the error |
+| mechanics | minor | Picture page checks send eligibility only at load | upheld | S2: re-check on Send, keep the draft |
+| mechanics | minor | Scroll anchor measured after banners update; no fallback if it disappears | upheld | S1: record at start of render; fall back to next surviving entry |
+| mechanics | minor | PNG test passes with a blank image | upheld | Validation 4 checks known pixels |
 
 ## Implementation Tasks
 
