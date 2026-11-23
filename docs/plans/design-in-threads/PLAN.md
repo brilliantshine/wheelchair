@@ -16,11 +16,6 @@ get buried as this file grows.
 
 Ordered by leverage; discussed one at a time.
 
-### Q1: Who drafts the mockups?
-- **Context:** The lead is an expensive, busy session whose rules say it decides and briefs rather than does bulk work. A good mockup takes several drafts. Only the lead can post diagram/image cards today (`viewer/app/card.js:30-43`).
-- **Options:** (a) the lead writes mockup HTML itself; (b) a new design agent the lead starts during planning, which drafts and revises mockup files on the lead's brief while the lead keeps talking to the user and posts the results.
-- **Recommendation:** (b).
-
 ### Q2: How does a mockup show in the thread?
 - **Context:** HTML diagrams render live in a 340px-tall box; "Open full size" downloads the HTML instead of showing it (`viewer/pages/thread.css:207`, `viewer/pages/picture.js:61-75`). A phone screen mockup does not fit.
 - **Options:** (a) render the mockup HTML to a PNG on the machine (headless browser) and post it as an image; (b) show the HTML live in a phone-shaped frame, with full size showing it rather than downloading; (c) both.
@@ -46,6 +41,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 2 | No dedicated Claude Design import path; the build-follows-the-mockup part folds into the screenshot check | Collin: B can go if making designs here and seeing them early are good | user |
 | 3 | The agreed mockup is a file in `docs/plans/<slug>/` that the Spec points to; workers build against the file, and a visible difference from it is a gap the verifier reports | Prose paraphrase of a design is where the 20-30% loss happens | defaulted |
 | 4 | User feedback on mockups is given in chat (no tap-to-comment on the picture) | Simplest; tap-to-comment is hardening | defaulted |
+| 5 | A new design agent role drafts and revises mockups; the lead starts it during planning, briefs it, and posts what it makes | Collin's pick: mockups get a focused agent and the lead stays free to talk | user |
 
 ## Spec
 
@@ -53,8 +49,17 @@ The settled design, grown as decisions land. Bar: a fresh agent with no conversa
 history can implement from this section alone — behavior, boundaries, edge cases,
 non-goals, and concrete validation commands.
 
-A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
-Spec is still churning. See `protocol/diagrams.md`.
+A Mermaid diagram of the flow belongs here, added at approval.
+
+### Mockups as the source of truth
+
+- An agreed mockup is a file under `docs/plans/<slug>/` (location and format settled below). The Spec of a plan with visible work names each mockup file and which screen or state it shows, instead of describing the look in prose.
+- Workers building visible work open the mockup and build to match it. Verifiers compare the built screen with the mockup; a visible difference is a gap.
+
+### The design agent
+
+- A new session role, `designer`. Only a lead may start it, during planning (before `approved`). It drafts and revises mockup files on the lead's brief, commits only those files, and reports each version to the lead with a `result`. It does not talk to the user and posts no shown cards; the lead posts the mockups.
+- The lead relays the user's chat feedback to it as `message`s while it is live, and stops it when the user has agreed the mockups or planning moves on.
 
 ## Deferred
 
