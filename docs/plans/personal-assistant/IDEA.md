@@ -36,6 +36,8 @@ in project Y" or "tell the lead on Z to hold off".
 
 - Replacing project leads: they still plan, review and build their own threads.
 - The assistant deciding things Collin hasn't asked it to.
+- A project lead thread pinned at the top of each project: that is its own follow-up
+  thread, built on this one.
 
 ## Constraints
 
