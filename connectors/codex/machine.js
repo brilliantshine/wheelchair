@@ -117,6 +117,7 @@ module.exports = {
       return r.code === 0 && reply ? { state: 'ok', reply, conversation_id, limit } : { state: 'failed', error: error || lastAside(r.err) || `codex exited ${r.code}`, conversation_id, limit };
   },
   readSteps: require('./steps').readLines,
+  stepsReady: session => !!session.codex_thread_id,
   sandboxed: session => session.codex_mode !== 'unrestricted',
   sandboxWrap: command => ['codex', 'sandbox', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '--', ...command],
   projectToolReason(name, entry) { const reason = codexEntryReason(name, entry); return reason ? `on Codex: ${reason}` : null; },

@@ -33,7 +33,6 @@ const connectors = require('../connectors');
 const { scrubOutput } = require('../connectors/common');
 const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
 const { limitedUntil } = require('./lib/limits');
-const { readLines: readCodexSteps } = require('../connectors/codex/steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
 const { ScreenManager, screenTools } = require('./lib/screen');
@@ -1166,13 +1165,13 @@ class MachineService {
   async pollCodexSteps() {
     const live = this.liveTmux();
     if (!live) return;
-    await Promise.all(Object.values(this.sessions).filter(s => s.cli === 'codex' && s.status !== 'switching' && s.codex_thread_id && live.has(s.name)).map(s => this.readCodexSteps(s)));
+    await Promise.all(Object.values(this.sessions).filter(s => connectors.manifest(s.cli)?.capabilities.steps && s.status !== 'switching' && adapters[s.cli].stepsReady(s) && live.has(s.name)).map(s => this.readCodexSteps(s)));
   }
   async readCodexSteps(session, { spoolOnly = false, flush = false } = {}) {
     const previous = this.stepReads.get(session.name) || Promise.resolve();
     const reading = previous.catch(() => {}).then(async () => {
-      if (!session.codex_thread_id) return;
-      const file = session.source_transcript || await adapters.codex.findTranscript(session, session.account_dir);
+      if (!adapters[session.cli].stepsReady(session)) return;
+      const file = session.source_transcript || await adapters[session.cli].findTranscript(session, session.account_dir);
       if (!file) return;
       session.source_transcript = file;
       let handle;
@@ -1197,7 +1196,7 @@ class MachineService {
             } else break; // Leave an incomplete trailing line for the next read.
           } else {
             const complete = data.subarray(0, end + 1);
-            const events = readCodexSteps(state, complete.toString('utf8').split('\n'), { cwd: session.worktree });
+            const events = adapters[session.cli].readSteps(state, complete.toString('utf8').split('\n'), { cwd: session.worktree });
             for (const event of events) await this.spool('events', { ...event, session: session.name, thread_id: session.thread_id, prepared: true });
             session.steps_offset = start + end + 1; session.steps_state = state;
             await this.persistSessions();
@@ -1626,7 +1625,7 @@ class MachineService {
     if (event.type === 'turn-ended' && adapter.onTurnEnded) {
       const result = await adapter.onTurnEnded(current, event);
       if (result.ignored) return { ignored: true };
-      if (current.cli === 'codex') {
+      if (connectors.manifest(current.cli)?.capabilities.steps) {
         await this.readCodexSteps(current, { spoolOnly: spooled, flush: true });
         // The hub closes any still-running steps at the turn boundary.
         current.steps_state = { open: {}, yielded: null };

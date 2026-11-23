@@ -17,7 +17,7 @@
 const REQUIRED = { machine: ['command', 'firstMessage', 'readyText', 'answerPrompts', 'findTranscript', 'loginEnv', 'seed', 'loginCommand', 'parseLogin', 'loginStatus'], hub: ['parseChat', 'readReport'] };
 const members = { usageProbe: ['usageProbe'], usageEvents: ['usageFrom'], preflight: ['preflightCommand'], sandbox: ['sandboxed', 'sandboxWrap'], restartLoss: ['restartLossReason'], projectTools: ['projectToolReason', 'projectToolFileWarning'], recover: ['recognizePane'], spend: ['spend'], liveSwitch: ['usual'], aside: ['asideArgv'], versionCheck: ['checkVersion'], steps: ['readSteps'] };
 const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, machine]) => [name, { machine, hub: [] }]));
-const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'asideNewId', 'asideModel', 'asidePrepare', 'asideMessage', 'asideResult', 'asideProblem'], hub: [] };
+const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'stepsReady', 'asideNewId', 'asideModel', 'asidePrepare', 'asideMessage', 'asideResult', 'asideProblem'], hub: [] };
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
   for (const member of REQUIRED[half]) if (typeof mod[member] !== 'function') fail(member);
