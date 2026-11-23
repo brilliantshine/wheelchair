@@ -129,13 +129,14 @@ const SESSION_ROLES = new Set([
   'lead',
   'sub-lead',
   'mapper',
+  'designer',
   'worker',
   'reviewer',
   'verifier',
 ]);
 
 const ALLOWED_START = {
-  lead: new Set(['mapper', 'reviewer', 'sub-lead', 'verifier']),
+  lead: new Set(['mapper', 'designer', 'reviewer', 'sub-lead', 'verifier']),
   'sub-lead': new Set(['worker', 'verifier']),
 };
 
@@ -544,6 +545,8 @@ async function deliver(hub, thread, target, { midTurn = false } = {}) {
   target.queue.shift();
   if (next.peer) require('./peer-log.js').append(thread, { at: new Date().toISOString(), ...next.peer, direction: 'received', text: next.text.slice(`[wc:from ${next.peer.session}] [thread ${next.peer.thread}: ${next.peer.title}] ${next.peer.question ? `[question ${next.peer.question}] ` : ''}`.length) });
   if (quiet.watched(target)) target.owes_reply = true;
+  if (target.role === 'designer' && target.finished && next.source === 'session' && target.started_by && next.text.startsWith(`[wc:from ${target.started_by}] `)) target.finished = false;
+  delete target.awaiting_answer;
   delete target.quiet_check_at;
   if (next.quiet === 'starter') { const about = thread.sessions.find(s => s.name === next.about); if (about) about.quiet_starter_at = new Date().toISOString(); }
   if (deliveredStyleVersion !== undefined) target.style_version = deliveredStyleVersion;
@@ -769,10 +772,10 @@ async function sessionRequest(hub, payload) {
     title: payload.title,
     tier: payload.tier,
     effort: payload.effort,
-    // Spec "Branches and checkouts": the mapper, reviewers and the sub-lead run in the thread's
+    // Spec "Branches and checkouts": the mapper, designer, reviewers and the sub-lead run in the thread's
     // own worktree; a worker gets a branch cut from the thread's branch; a verifier checks the
     // thread's branch as it stands, commits not yet pushed included.
-    ...(['mapper', 'reviewer', 'sub-lead'].includes(payload.role) ? { worktree: thread.worktree, branch: thread.branch } : {}),
+    ...(['mapper', 'designer', 'reviewer', 'sub-lead'].includes(payload.role) ? { worktree: thread.worktree, branch: thread.branch } : {}),
     base: payload.role === 'worker' ? thread.branch : undefined,
     verify_ref: payload.role === 'verifier' ? thread.branch : undefined,
     ...(payload.role === 'worker' && payload.replaces ? await replacedWorker(hub, thread, payload.replaces) : {}),

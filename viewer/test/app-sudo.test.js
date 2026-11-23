@@ -131,7 +131,7 @@ test('sudo validation: the agent sends only command, does and why', () => {
 });
 
 test('sudo validation: agent-side role check refuses everyone but a lead', () => {
-  for (const role of ['worker', 'sub-lead', 'mapper']) {
+  for (const role of ['worker', 'sub-lead', 'mapper', 'designer']) {
     const result = validate('sudo', base, role);
     assert.equal(result.ok, false);
     assert.match(result.reason, /may not post sudo/);

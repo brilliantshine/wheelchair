@@ -26,6 +26,7 @@
     ['reviewer', 'Reviewer', 'Reviewers', 'reviewers', 'reviewer'],
     ['verifier', 'Checker', 'Checker', 'checkers', 'checker'],
     ['mapper', 'Mapper', 'Mapper', 'mappers', 'mapper'],
+    ['designer', 'Designer', 'Designer', 'designers', 'designer'],
   ];
   const roleInfo = (role) => ROLES.find((r) => r[0] === role) || ROLES[2];
   const SAVED = 'Saved, applies to new sessions';
@@ -619,6 +620,7 @@
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
+          otherAgentRow('designer', 'Mockups', 'Draws mockups of screens during planning'),
           otherAgentRow('scout', 'Scout', 'Reads code for leads and sub-leads and reports back'),
           otherAgentRow('scout-heavy', 'Scout for bigger changes', 'Checks worker changes of 200 to 800 lines for the sub-lead')),
         h('span', { class: 'hint', text: 'For threads in the app. Terminal commands keep their own rules.' })));
@@ -849,7 +851,7 @@
 
   // ---------------------------------------------------------------- Lessons learned (written by agents)
 
-  const LESSON_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers' };
+  const LESSON_PLURAL = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers', designer: 'designers' };
   const isLessons = (id) => typeof id === 'string' && id.startsWith('lessons:');
   const lessonList = (role) => (data.lessons && data.lessons[role]) || [];
 
@@ -1766,7 +1768,7 @@
           h('input', { type: 'checkbox', id: 'bal-save-lead', checked: !!balDraft.save_for_leads, 'aria-label': reserveLabel, onchange: (ev) => { balDraft.save_for_leads = ev.target.checked; } })),
         numField('margin', 'Keep for leads (%)', `When ${provider} is projected to have less than this left at refill, ticked roles go to another provider, or wait if there is none`, 100),
         h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: `Held back when ${provider} runs short` })),
-          h('div', { class: 'ctl' }, [['worker', 'Workers'], ['reviewer', 'Reviewers'], ['verifier', 'Verifiers'], ['mapper', 'Mappers']].map(([role, label]) =>
+          h('div', { class: 'ctl' }, [['worker', 'Workers'], ['reviewer', 'Reviewers'], ['verifier', 'Verifiers'], ['mapper', 'Mappers'], ['designer', 'Designers']].map(([role, label]) =>
             h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'bal-held-' + role, checked: balDraft.held_back[role], 'aria-label': label, onchange: (ev) => { balDraft.held_back[role] = ev.target.checked; } }), h('span', { text: label })))))),
       h('div', { class: 'actions' }, save), noteEl());
     return h('div', { class: 'models usage' },

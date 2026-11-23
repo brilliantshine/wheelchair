@@ -3,6 +3,7 @@
 // Spec "How the app reads and drives a session" and protocol/app/cards.md.
 const crypto = require('node:crypto');
 const path = require('node:path');
+const fs = require('node:fs/promises');
 const { appError } = require('./state.js');
 const { resolvable, retractable, truncateTitle, validate } = require('./card.js');
 
@@ -86,6 +87,24 @@ async function acceptCard(hub, payload) {
       const plan = path.join(thread.worktree || thread.project, 'docs', 'plans', checked.card.plan);
       await hub.registerPlan(plan);
       if ((!checked.card.format || checked.card.format === 'graph') && hub.registerGraph) await hub.registerGraph(path.join(plan, 'graphs', `${checked.card.graph}.json`));
+    }
+
+    if (checked.card.kind === 'image' && checked.card.mockup) {
+      thread.slug ||= await require('./views.js').discoverSlug(thread, hub);
+      if (!thread.slug) throw appError(422, 'this thread has no plan for a mockup');
+      const plan = path.join(thread.worktree || thread.project, 'docs', 'plans', thread.slug);
+      if (hub.registerPlan) await hub.registerPlan(plan);
+      const graphs = path.join(plan, 'graphs');
+      const file = path.join(graphs, `${checked.card.mockup.graph}.html`);
+      let realGraphs, realFile, stat;
+      try {
+        realGraphs = await fs.realpath(graphs);
+        realFile = await fs.realpath(file);
+        stat = await fs.stat(realFile);
+      } catch { throw appError(422, 'mockup file does not exist'); }
+      if (!realFile.startsWith(realGraphs + path.sep)) throw appError(422, 'mockup file must be inside the graphs directory');
+      if (!stat.isFile()) throw appError(422, 'mockup file is not a regular file');
+      if (stat.size > 2 * 1024 * 1024) throw appError(422, 'mockup file exceeds 2 MiB');
     }
 
     if (checked.card.kind === 'resolve') {
@@ -201,7 +220,13 @@ async function acceptCard(hub, payload) {
       for (const needs of thread.cards) if (needs.kind === 'needs' && needs.auto_merge === true && !needs.answered && needs.auto_merge_head !== card.head) resolveCard(needs, 'app', 'Replaced by a newer version');
     }
     if (card.kind === 'sudo') thread.sudo_index[card.request_id] = card.id;
-    if (card.kind === 'message' || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }
+    // A plain status message mid-task is not a reply the starter can act on: only a question or a result
+    // clears the debt. A finished agent answering a follow-up has nothing left to do, so any message does.
+    if ((card.kind === 'message' && (card.asks === true || session.finished === true)) || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }
+    // A live agent waiting on someone other than its starter (a worker's question to the lead) still
+    // counts as work its starter is waiting on; the next message delivered to it clears this.
+    if (card.kind === 'message' && card.asks === true && card.to !== session.started_by && session.finished !== true) session.awaiting_answer = true;
+    if (card.kind === 'result') delete session.awaiting_answer;
     if (card.kind === 'message' && !crossThread) {
       const target = hub.session(thread, card.to);
       target.queue ||= [];

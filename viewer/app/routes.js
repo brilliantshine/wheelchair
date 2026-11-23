@@ -404,7 +404,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
       }
       if (body.other_agents !== undefined) {
         if (!body.other_agents || typeof body.other_agents !== 'object' || Array.isArray(body.other_agents)) throw appError(400, 'other_agents must be an object');
-        for (const role of ['reviewer', 'verifier', 'mapper', 'scout', 'scout-heavy']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
+        for (const role of ['reviewer', 'verifier', 'mapper', 'designer', 'scout', 'scout-heavy']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
     return send(response, 200, { lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });

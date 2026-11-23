@@ -47,7 +47,7 @@ async function hubServer(status = 200, { failAfterStore = false, delay = 0, answ
     let payload = {}; try { payload = JSON.parse(body || '{}'); } catch { /* test server records malformed payloads too */ }
     if (code >= 200 && code < 300 && request.url.endsWith('/events') && !payload.thread_id) { code = 404; answer = { error: 'thread not found' }; }
     if (code >= 200 && code < 300 && request.url.endsWith('/cards')) {
-      const role = /-(lead|sub-lead|worker|mapper|reviewer|verifier)(?:-\d+)?$/.exec(payload.session || '')?.[1];
+      const role = /-(lead|sub-lead|worker|mapper|designer|reviewer|verifier)(?:-\d+)?$/.exec(payload.session || '')?.[1];
       if (!allowed[payload.kind]?.includes(role)) { code = 422; answer = { error: `${role || 'unknown'} may not post ${payload.kind || 'that card'}` }; }
       else if (payload.delivery_id && delivered.has(`${payload.thread_id}:${payload.delivery_id}`)) answer = { ok: true, duplicate: true };
       else if (payload.delivery_id) delivered.add(`${payload.thread_id}:${payload.delivery_id}`);
@@ -869,7 +869,7 @@ test('composed prompts, provider pointers, and ledger', async () => {
   const env = await service(await temp()); try {
     const root = path.resolve(__dirname, '../..');
     const names = ['Artifact','Workflow','ScheduleWakeup','SendFeedback','ShareOnboardingGuide','ReportFindings','ListAgents','ArtifactComments','ArtifactData','CronCreate','CronDelete','CronList','RemoteTrigger','PushNotification','PublishPlugin','DesignSync','EnterWorktree','ExitWorktree','EnterPlanMode','ExitPlanMode','AskUserQuestion','EndConversation'];
-    for (const role of ['lead', 'sub-lead', 'worker', 'mapper', 'reviewer', 'verifier']) {
+    for (const role of ['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier']) {
       const session = await start(env, { role, thread_id: role, role_layers: '  final layer  ' });
       const file = path.join(env.state, 'prompts', `${session.name}.md`), prompt = await fs.readFile(file, 'utf8');
       const cards = !['reviewer', 'verifier'].includes(role);
@@ -882,6 +882,7 @@ test('composed prompts, provider pointers, and ledger', async () => {
         if (cards) assert.ok(prompt.indexOf('--- realism.md ---') < prompt.indexOf('--- cards.md ---'));
       }
       assert.equal(prompt.includes('--- cards.md ---'), cards);
+      if (role === 'designer') assert.ok(prompt.includes((await fs.readFile(path.join(root, 'protocol/app/cards.md'), 'utf8')).trimEnd()));
       assert.equal(prompt.includes('--- cards-lead.md ---'), role === 'lead');
       assert.ok(prompt.endsWith('\n\nfinal layer'));
       assert.equal(flagValue(session.command, '--append-system-prompt-file'), file);
@@ -892,7 +893,7 @@ test('composed prompts, provider pointers, and ledger', async () => {
     const custom = await start(env, { thread_id: 'custom', role_prompt: 'custom prompt', role_layers: 'ignored' });
     assert.equal(await fs.readFile(path.join(env.state, 'prompts', `${custom.name}.md`), 'utf8'), 'Role: lead\ncustom prompt');
     const ledger = (await fs.readFile(path.join(env.state, 'session-ledger.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
-    assert.equal(ledger.length, 7); assert.deepEqual(Object.keys(ledger[0]), ['at','name','role','provider','model','account_dir','cli_session_id','thread_id']);
+    assert.equal(ledger.length, 8); assert.deepEqual(Object.keys(ledger[0]), ['at','name','role','provider','model','account_dir','cli_session_id','thread_id']);
     assert.equal(ledger[0].account_dir, null); assert.equal(ledger[0].provider, 'claude');
     await fs.unlink(path.join(env.state, 'session-ledger.jsonl')); await fs.mkdir(path.join(env.state, 'session-ledger.jsonl'));
     await start(env, { thread_id: 'ledger-error' });

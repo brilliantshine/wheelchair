@@ -186,9 +186,13 @@ A picture shown inside the thread.
 | `plan` | string | yes | The slug of the plan directory the picture lives in |
 | `graph` | string | yes | The file name under `docs/plans/<plan>/graphs/`, without its extension |
 | `title` | string | yes | One line saying what the picture answers |
-| `format` | string | no | `graph` (default), `form` or `html` |
+| `format` | string | no | `graph` (default), `form`, `html` or `mockup` |
+| `width`, `height` | integer | `mockup` only | Each 200–2560 CSS pixels; required for `mockup`, refused for other formats |
 
-`graph` and `form` load `graphs/<graph>.json`; `html` loads `graphs/<graph>.html`.
+`graph` and `form` load `graphs/<graph>.json`; `html` and `mockup` load `graphs/<graph>.html`. A mockup file is at most 2 MiB;
+`card.js` checks it exists under the named plan and meets that limit before posting.
+A mockup is framed at its device size and scaled down to fit the card, with no inner
+scrolling. Open full size shows it at true size in a scrolling page.
 Write the file first (see `lead.md`, "Diagrams"); the card only points at it. The card's
 link reads "Open full size", for every format including forms. It opens the app's picture
 page, which has a Back to thread link.
@@ -209,19 +213,6 @@ run, and nothing loads from the network.
 Pick a timeline for an order of events, before and after for a change, layers for a stack,
 side by side for a comparison of 2–4 things, boxes and arrows for connections, and HTML
 only when none fits.
-
-### `image`
-
-An image shown inside the thread.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `path` | string | yes | Absolute path to a PNG, JPEG, GIF or WebP on the lead's machine, at most 25 MB |
-| `title` | string | yes | One line |
-
-The machine copies the file into the thread's uploads folder, so the original may be
-deleted afterwards. Only the lead posts it: a screenshot another session took reaches
-the user when the lead posts it. Images are removed when the thread is archived.
 
 ### `file`
 

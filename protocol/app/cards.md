@@ -54,7 +54,7 @@ Rules for every card:
 | `check` | yes | lead | no |
 | `merged` | yes | app | no |
 | `diagram` | yes | lead | no |
-| `image` | yes | lead | no |
+| `image` | yes | lead, sub-lead | no |
 | `file` | yes | lead | no |
 | `stub` | yes | lead | no |
 | `sudo` | yes | lead | no |
@@ -64,7 +64,7 @@ Rules for every card:
 | `resolve` | never | lead | no |
 | `retract` | never | lead | no |
 | `message` | never | any session except reviewer and verifier | no |
-| `result` | never | worker, mapper, sub-lead | no |
+| `result` | never | worker, mapper, designer, sub-lead | no |
 
 A pinned kind sits at the top of the thread, and posting a new card of that kind replaces
 the old one in the pin (there is one offer, one idea list, one deferred list and one progress line per
@@ -73,7 +73,7 @@ approval replaces an open pinned approval. The app also posts `needs` cards of i
 permission prompt, "Sessions ended"); you never post those.
 The user can dismiss any system needs card except a "Permission needed" or "Session stuck at startup" card while its live session is still held, and the quiet card also closes when its agent’s starter messages it or the agent starts another agent.
 
-Sections for `progress`, `lesson`, `message` and `result` are below; all other kind sections are
+Sections for `progress`, `image`, `lesson`, `message` and `result` are below; all other kind sections are
 in `cards-lead.md`.
 
 ## The shown kinds
@@ -109,6 +109,24 @@ Review and verify have no segment bar; verify appends machines when non-empty. T
 label joins the label and text with " · ", adding ": choice for you" when waiting; the
 build folded label remains "Building D of T". Text wraps at phone widths.
 
+### `image`
+
+An image shown inside the thread.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | yes | Absolute path to a PNG, JPEG, GIF or WebP on the posting machine, at most 25 MB |
+| `title` | string | yes | One line |
+| `mockup` | object | no | `{graph, width, height}` naming a mockup in the thread's own plan; dimensions are integers from 200 to 2560 |
+
+The machine copies the file into the thread's uploads folder, so the original may be
+deleted afterwards. Uploads posted by leads and sub-leads are kept on archive. The hub
+checks that the named mockup exists in the thread's plan and is at most 2 MiB.
+Without `mockup`, an image card shows the picture alone, as before. With `mockup`, the image
+and mockup appear beside each other as "Built" and "Mockup",
+scaled to half the card width; below 599px they stack, Built first. Each has an Open full
+size link: the image opens at true size and the mockup opens in the picture page at true size.
+
 ### `lesson`
 
 Saves, replaces or removes one lesson for a type of agent; the card is the notice the user
@@ -117,7 +135,7 @@ sees. See your role's Lessons section for when to save one.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `action` | `add` \| `replace` \| `remove` | yes | What to do |
-| `for` | role | yes | Whose lessons: lead may save for lead, reviewer, verifier, mapper; sub-lead for sub-lead, worker; worker for worker; mapper for mapper |
+| `for` | role | yes | Whose lessons: lead may save for lead, reviewer, verifier, mapper, designer; sub-lead for sub-lead, worker; worker for worker; mapper for mapper |
 | `text` | string | `add`, `replace` | 1-300 characters, one line |
 | `lesson` | string | `replace`, `remove` | The id of the lesson, as shown in your instructions |
 | `only_ai` | string | no | `add`/`replace`: `any` or `claude`, `gpt`, `gemini`, `kimi`, `openrouter`; the lesson reaches only agents on that AI. Name the AI of the agent that made the mistake |

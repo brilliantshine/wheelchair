@@ -109,7 +109,7 @@ function buildAgents(threads, stages = {}, accounts = []) {
         const starter = leadNames.has(s.started_by) ? lead : sessions.find((item) => item.name === s.started_by);
         const lastIndex = cards.findLastIndex ? cards.findLastIndex((card) => card.session === s.name) : (() => { for (let i = cards.length - 1; i >= 0; i--) if (cards[i].session === s.name) return i; return -1; })();
         const last = cards[lastIndex];
-        if (starter && last?.kind === 'message' && (last.to === s.started_by || last.to === starter.name) && !cards.slice(lastIndex + 1).some((card) => card.kind === 'message' && (card.session === starter.name || (starter === lead && leadNames.has(card.session))) && card.to === s.name)) {
+        if (starter && last?.kind === 'message' && last.asks === true && (last.to === s.started_by || last.to === starter.name) && !cards.slice(lastIndex + 1).some((card) => card.kind === 'message' && (card.session === starter.name || (starter === lead && leadNames.has(card.session))) && card.to === s.name)) {
           waiting = { name: starter.name, label: `Waiting on the ${starter.role}` };
         } else {
           const children = node.children.filter((child) => child.live === true && child.finished !== true);

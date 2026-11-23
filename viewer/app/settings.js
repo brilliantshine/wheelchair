@@ -11,12 +11,13 @@ const { PROVIDERS } = require('./providers.js');
 const { LIST_KEYS } = require('./names.js');
 
 const execFileAsync = promisify(execFile);
-const ROLES = new Set(['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper']);
+const ROLES = new Set(['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper', 'designer']);
 const ROLE_CARD_FILES = {
   lead: ['cards.md', 'cards-lead.md'],
   'sub-lead': ['cards.md'],
   worker: ['cards.md'],
   mapper: ['cards.md'],
+  designer: ['cards.md'],
   reviewer: [],
   verifier: [],
 };
@@ -51,7 +52,7 @@ function reportedPlan(account, planType) {
 }
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
 function defaults() {
-  return { harnesses: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, true])), onboarding_done: false, lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: PLANS[provider].unknown, paused: false })), lead_order: [...connectors.list().filter(m => m.placement.leadDefault).map(m => m.provider), 'any'], worker_order: connectors.list().filter(m => m.placement.workerRank !== null).sort((a, b) => a.placement.workerRank - b.placement.workerRank).map(m => m.provider), worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', auto_merge: 'off', auto_merge_delete_branch: 'off', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lesson_history: {}, lesson_waiting: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
+  return { harnesses: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, true])), onboarding_done: false, lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: PLANS[provider].unknown, paused: false })), lead_order: [...connectors.list().filter(m => m.placement.leadDefault).map(m => m.provider), 'any'], worker_order: connectors.list().filter(m => m.placement.workerRank !== null).sort((a, b) => a.placement.workerRank - b.placement.workerRank).map(m => m.provider), worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true, designer: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', auto_merge: 'off', auto_merge_delete_branch: 'off', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lesson_history: {}, lesson_waiting: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -184,13 +185,13 @@ function lessonBlocks(settings, role, project, provider, preview = false) {
   const own = (lessons[role] || []).filter((item) => (preview || !item.provider || item.provider === provider) && ((preview && project === undefined) || !item.project || item.project === project));
   const lines = [];
   if (own.length) lines.push('', `Lessons learned by earlier ${role}s, saved by agents. Follow them unless the rules above or the user's template below say otherwise. To change one, see "Lessons" in your rules.`, ...own.map(lessonLine));
-  const keeps = role === 'lead' ? ['reviewer', 'verifier', 'mapper'] : role === 'sub-lead' ? ['worker'] : [];
+  const keeps = role === 'lead' ? ['reviewer', 'verifier', 'mapper', 'designer'] : role === 'sub-lead' ? ['worker'] : [];
   for (const target of keeps) if (lessons[target]?.length) lines.push('', `Lessons you keep for ${target}s:`, ...lessons[target].map(lessonLine));
   return lines;
 }
 
 async function applyLesson(hub, card, saver, project, thread) {
-  const allowed = { lead: ['lead', 'reviewer', 'verifier', 'mapper'], 'sub-lead': ['sub-lead', 'worker'], worker: ['worker'], mapper: ['mapper'] };
+  const allowed = { lead: ['lead', 'reviewer', 'verifier', 'mapper', 'designer'], 'sub-lead': ['sub-lead', 'worker'], worker: ['worker'], mapper: ['mapper'] };
   if (!allowed[saver]?.includes(card.for)) throw appError(422, `a ${saver} may not save lessons for ${card.for}s`);
   let result;
   await update(hub, (value) => {
@@ -278,6 +279,10 @@ function normalize(saved) {
   for (const account of base.accounts) if (!seen.has(account.id) && !retired.includes(account.id)) accounts.push(account);
   const balancing = {};
   for (const key of BALANCING) balancing[key] = validBalancing(key, saved[key]) ? saved[key] : base[key];
+  if (saved.held_back && typeof saved.held_back === 'object' && !Object.hasOwn(saved.held_back, 'designer')) {
+    const migrated = { ...saved.held_back, designer: base.held_back.designer };
+    if (validBalancing('held_back', migrated)) balancing.held_back = migrated;
+  }
   const orderSeen = Array.isArray(saved.worker_order_seen) ? saved.worker_order_seen.filter((provider) => Object.hasOwn(PROVIDERS, provider)) : connectors.list().filter(m => m.placement.seenByDefault).map(m => m.provider);
   balancing.worker_order = [...balancing.worker_order, ...Object.keys(PROVIDERS).filter((provider) => !balancing.worker_order.includes(provider) && !orderSeen.includes(provider) && connectors.byProvider(provider).placement.addOnMigration)];
   if (!validBalancing('save_for_leads', saved.save_for_leads) && typeof saved.save_claude_for_leads === 'boolean') balancing.save_for_leads = saved.save_claude_for_leads;
@@ -389,7 +394,7 @@ async function waitingAction(hub, role, wid, action) { let result; const value =
 function validBalancing(key, value) {
   if (key === 'lead_order' || key === 'worker_order') return Array.isArray(value) && value.length > 0 && new Set(value).size === value.length && value.every((v, i) => Object.hasOwn(PROVIDERS, v) || (key === 'lead_order' && v === 'any' && i === value.length - 1));
   if (key === 'held_back') {
-    const roles = ['worker', 'reviewer', 'verifier', 'mapper'];
+    const roles = ['worker', 'reviewer', 'verifier', 'mapper', 'designer'];
     return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype && Reflect.ownKeys(value).length === roles.length && roles.every((role) => Object.hasOwn(value, role) && typeof value[role] === 'boolean');
   }
   if (key === 'within') return ['soonest', 'spread', 'one'].includes(value);

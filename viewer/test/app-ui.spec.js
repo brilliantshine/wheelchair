@@ -57,6 +57,15 @@ test.describe('thread page layout', () => {
     expect(a.x + a.width).toBeLessThanOrEqual(b.x + 1);
     expect(b.x + b.width).toBeLessThanOrEqual(c.x + 1);
     expect(b.width).toBeGreaterThan(a.width);
+    // New thread sits beside the collapse arrow; folded to the rail, only the arrow shows.
+    const [nt, arrow] = await Promise.all([list.locator('#new-toggle').boundingBox(), list.locator('#list-collapse').boundingBox()]);
+    expect(Math.abs((nt.y + nt.height / 2) - (arrow.y + arrow.height / 2))).toBeLessThan(4);
+    await list.locator('#list-collapse').click();
+    await expect(list.locator('li.row', { hasText: 'Layout thread' })).toBeHidden();
+    await expect(list.locator('#new-toggle')).toBeHidden();
+    await expect(list.locator('#show-archived')).toBeHidden();
+    await list.locator('#list-collapse').click();
+    await expect(list.locator('li.row', { hasText: 'Layout thread' })).toBeVisible();
     // The "+ New thread" link opens the New thread screen, and a project from an earlier thread can be started.
     await list.locator('#new-toggle').click();
     await expect(page).toHaveURL(/\/app\/new$/);

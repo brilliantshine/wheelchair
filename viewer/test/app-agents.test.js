@@ -40,7 +40,7 @@ test('agent tree keeps finished nodes, derives states and hides briefs', () => {
     { name: 'done', role: 'verifier', started_by: 'lead', live: false, ended_at: '2026-01-01', brief: 'Verify' },
     { name: 'starting', role: 'mapper', started_by: 'lead', live: true, status: 'starting' },
   ];
-  const thread = { id: 'a', title: 'Feature', project: '/src/project', sessions, cards: [{ kind: 'message', session: 'worker', to: 'sub' }, { kind: 'result', session: 'done', summary: 'Verified' }], asides: [{ id: 'x', number: 1, status: 'open', pending: ['a'] }] };
+  const thread = { id: 'a', title: 'Feature', project: '/src/project', sessions, cards: [{ kind: 'message', session: 'worker', to: 'sub', asks: true }, { kind: 'result', session: 'done', summary: 'Verified' }], asides: [{ id: 'x', number: 1, status: 'open', pending: ['a'] }] };
   const [tree] = buildAgents([thread], { a: 'building' });
   assert.equal(tree.project, 'project'); assert.equal(tree.stage, 'building');
   assert.equal(tree.session.state, 'waiting');
@@ -73,7 +73,7 @@ test('individual states and needs-you belong to the lead', () => {
 
 test('messages only make an agent wait for its starter until the starter replies', () => {
   const sessions = [lead(), worker('sub', { role: 'sub-lead' }), worker('w', { started_by: 'sub' })];
-  const cards = [{ kind: 'message', session: 'w', to: 'sub' }];
+  const cards = [{ kind: 'message', session: 'w', to: 'sub', asks: true }];
   let t = tree(sessions, { cards });
   assert.equal(node(t.session, 'w').state, 'waiting');
   assert.deepEqual(node(t.session, 'w').waiting_on, { name: 'sub', label: 'Waiting on the sub-lead' });
@@ -81,12 +81,19 @@ test('messages only make an agent wait for its starter until the starter replies
   t = tree(sessions, { cards }); assert.equal(node(t.session, 'w').state, 'idle');
   cards.push({ kind: 'message', session: 'lead', to: 'w' });
   assert.notEqual(tree(sessions, { cards }).session.waiting_on?.name, 'w');
-  cards.push({ kind: 'message', session: 'w', to: 'lead' });
+  cards.push({ kind: 'message', session: 'w', to: 'lead', asks: true });
   assert.equal(node(tree(sessions, { cards }).session, 'w').state, 'idle');
   const old = lead({ name: 'old', live: false, created_at: '1' });
   const fresh = lead({ created_at: '2' });
   const olderChild = worker('older-child', { started_by: 'old' });
-  assert.deepEqual(node(tree([old, fresh, olderChild], { cards: [{ kind: 'message', session: 'older-child', to: 'old' }] }).session, 'older-child').waiting_on, { name: 'lead', label: 'Waiting on the lead' });
+  assert.deepEqual(node(tree([old, fresh, olderChild], { cards: [{ kind: 'message', session: 'older-child', to: 'old', asks: true }] }).session, 'older-child').waiting_on, { name: 'lead', label: 'Waiting on the lead' });
+});
+
+test('a plain status message to the starter leaves the agent idle, not waiting', () => {
+  const sessions = [lead(), worker('sub', { role: 'sub-lead' })];
+  const t = tree(sessions, { cards: [{ kind: 'message', session: 'sub', to: 'lead', text: 'Status: 3 of 7 tasks done' }] });
+  assert.equal(node(t.session, 'sub').state, 'idle');
+  assert.equal(node(t.session, 'sub').waiting_on, null);
 });
 
 test('waiting on children, asides, stage and completion', () => {

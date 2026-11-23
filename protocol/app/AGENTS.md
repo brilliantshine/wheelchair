@@ -10,13 +10,14 @@ that makes it checkable: `viewer/app/card.js` validates against it.
 |---|---|---|
 | `lead.md` | the lead of a thread | The whole lifecycle from the lead's side: small fix or offer, ideation, mapping, planning, silent review, approval and the Ready check, Start building, done, in-thread review fixes, stubs, restarts, which `status:` it writes and when |
 | `sub-lead.md` | the sub-lead the lead starts at Start building | Running the build: decompose, brief, tier rules, escalation on evidence, merging workers, verification and its two-attempts rule, resuming after a restart |
+| `designer.md` | a design session | Drafting and revising mockups for the lead |
 | `mapper.md` | a mapping session | Building or reusing `docs/maps/` and the plan's MAP.md, committing only those paths |
 | `worker.md` | a worker | Doing one briefed task inside its ownership boundary, asking the lead when the plan is silent, reporting |
 | `reviewer.md` | a plan reviewer | The two lenses, the severity ladder and the one-line finding format; read-only |
 | `verifier.md` | a verifier | Falsifying claims against the Spec or the reported problem; names the commit it checked |
 | `realism.md` | lead, sub-lead, reviewer, verifier | The realism bar: normal use vs rare path, the always-fixed list, check once built; the machine loads it into those four roles' starting instructions |
 | `aside.md` | an aside: one headless turn of a side conversation about part of a lead message | Who it is (a read-only copy of the lead's conversation), the `[wc:aside …]` message headers, the ask, simpler and draw actions, stepping up, and the one-line summary for the main thread |
-| `cards.md` | every card-posting role: lead, sub-lead, worker, mapper | Shared card rules, kinds, markers and commands |
+| `cards.md` | every card-posting role: lead, sub-lead, worker, mapper, designer | Shared card rules, kinds, markers and commands |
 | `cards-lead.md` | lead only | Lead-only card kind sections and fields |
 
 ## Boundaries

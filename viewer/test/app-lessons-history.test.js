@@ -89,7 +89,7 @@ test('history caps, removals, merge and waiting', async () => {
   const existing = [item('Existing one', { source: 'file', received_at: date, wid: 'existing-one' }), item('Existing two', { source: 'handoff', received_at: date, wid: 'existing-two' })];
   await s.update(h, (x) => { x.lesson_waiting.push(...existing); });
   const arrivals = [...s.ROLES].flatMap((role) => Array.from({length: 12}, (_, i) => item(`Incoming ${i}`, { role })));
-  counts = await s.mergeIncoming(h, arrivals, { source: 'file', known: [] }); assert.deepEqual(counts, { added: 0, skipped: 0, invalid: 0, unknown_project: 0, waiting: 72 });
+  counts = await s.mergeIncoming(h, arrivals, { source: 'file', known: [] }); assert.deepEqual(counts, { added: 0, skipped: 0, invalid: 0, unknown_project: 0, waiting: 84 });
   v = await s.load(h); assert.deepEqual(v.lesson_waiting.slice(2).map(({ role, text, saved_by, saved_at, source }) => ({ role, text, saved_by, saved_at, source })), arrivals.map((entry) => ({ ...entry, source: 'file' })));
   for (const original of existing) assert.deepEqual(v.lesson_waiting.find((entry) => entry.wid === original.wid), original);
   const w = v.lesson_waiting[0]; const beforeFullAdd = structuredClone({ lessons: v.lessons[w.role], history: v.lesson_history, waiting: v.lesson_waiting }); await assert.rejects(s.waitingAction(h, w.role, w.wid, 'add'), { status: 422 });

@@ -92,7 +92,7 @@ test('quiet sweep holds reminders during a switch and sends them afterward', asy
   assert.equal(thread.sessions[0].quiet_stage || 0, 0);
   delete thread.sessions[0].switching; await c.hub.save(thread);
   await quiet.checkQuiet(c.hub);
-  assert.match(c.submits.join(' '), /Your turn ended without a result or message card/);
+  assert.match(c.submits.join(' '), /Your turn ended without a result or a question/);
 });
 test('matching failures restore hold and unrelated callbacks are ignored', async () => {
   const c = await fixture(); const limit = future();
@@ -109,7 +109,7 @@ test('selector respects reserve and preflight retry', async () => {
   await settings.update(c.hub, s => { s.accounts.push({ id: 'third', provider: 'gpt', name: 'Third', plan: 'unknown', weight: 1, paused: false }); });
   const oldCall = c.hub.call; c.hub.call = async (...args) => { if (args[1] === '/v1/status') { const value = await oldCall(...args); value.accounts.push({ id: 'third', cli: 'codex', logged_in: true }); return value; } if (args[1] === '/v1/preflight' && args[3].dir === '~/.wheelchair/accounts/second') throw Error('preflight'); return oldCall(...args); };
   await usage.record(c.hub, { account: 'default-gpt', at: new Date().toISOString(), limited_until: future() });
-  for (const role of ['lead', 'mapper', 'reviewer']) assert.equal((await chooseSwitch(c.hub, c.thread, { provider: 'gpt', role })).account.id, 'third');
+  for (const role of ['lead', 'mapper', 'designer', 'reviewer']) assert.equal((await chooseSwitch(c.hub, c.thread, { provider: 'gpt', role })).account.id, 'third');
   const thread = await c.hub.thread(c.thread.id); thread.sessions[0].switching = { id: 'x', to: 'third', at: new Date().toISOString() }; thread.sessions[0].owes_reply = true; thread.sessions[0].role = 'worker'; thread.sessions[0].started_by = 'starter'; thread.sessions[0].turn_ended = true;
   quiet.arm(c.hub, thread.sessions[0]); assert.equal(thread.sessions[0].quiet_check_at, undefined); assert.equal(quiet.isQuiet(thread, thread.sessions[0]), false);
 });
