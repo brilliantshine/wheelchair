@@ -9,11 +9,11 @@
 <header id="app-nav" data-current="threads"></header>
 <div class="shell on-index no-side">
   <nav class="col-list" aria-label="Threads">
-    <a id="new-toggle" href="/wheelchair/app/new">+ New thread</a>
+    <div class="list-head"><a id="new-toggle" href="/wheelchair/app/new">+ New thread</a></div>
     <div id="list-error" class="error-banner" hidden></div>
-    <label class="list-opts"><input type="checkbox" id="show-archived"> Show archived</label>
     <ul id="list"></ul>
     <p id="empty" class="dim" hidden>No threads yet.</p>
+    <button type="button" id="show-archived" class="list-archived" aria-pressed="false">Archived</button>
   </nav>
   <main class="col-main">
     <div class="placeholder">

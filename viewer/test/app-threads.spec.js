@@ -160,10 +160,8 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('#list li', { hasText: 'Opened stub' }).locator('.badge')).toHaveCount(0);
       await expect(page.locator('#list li', { hasText: 'Ready stub' })).toContainText('ready');
       await expect(page.locator('#list li', { hasText: 'Gone one' })).toHaveCount(0);
-      await page.locator('#show-archived').check();
-      await expect.poll(titles).toEqual(
-        ['Fresh one', 'Gone one', 'Waiting stub', 'Ready stub', 'Opened stub',
-          'Parent work with a long name that fills the row', 'Old one']);
+      await page.locator('#show-archived').click();
+      await expect.poll(titles).toEqual(['Gone one']);
       await expect(page.locator('#list li', { hasText: 'Gone one' })).toContainText('archived');
       await expect(page.locator('#app-nav a[aria-current="page"]')).toHaveText('Threads');
       await noSideScroll(page);
