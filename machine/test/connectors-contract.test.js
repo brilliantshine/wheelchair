@@ -28,6 +28,7 @@ test('contract rejects missing and inconsistent members and fields', () => {
   const badBare = structuredClone(manifests[0]); badBare.models.bareTierSet = 'yes'; assert.throws(() => contract.validateManifest(badBare), /models.bareTierSet/);
   const badScout = structuredClone(manifests[0]); badScout.settings.scoutAgentTool = 'yes'; assert.throws(() => contract.validateManifest(badScout), /settings.scoutAgentTool/);
   const badWarning = structuredClone(manifests[0]); badWarning.usage = { showWarning: 'yes' }; assert.throws(() => contract.validateManifest(badWarning), /usage.showWarning/);
+  for (const field of ['probeWhileLive', 'tryEveryMachine']) { const bad = structuredClone(manifests[0]); bad.usage = { [field]: 'yes' }; assert.throws(() => contract.validateManifest(bad), new RegExp(`usage.${field}`)); }
   const badFlag = structuredClone(manifests[0]); badFlag.joinPaneLines = 'yes'; assert.throws(() => contract.validateManifest(badFlag), /joinPaneLines/);
   const badPreview = structuredClone(manifests[0]); badPreview.stylePreview = 'yes'; assert.throws(() => contract.validateManifest(badPreview), /stylePreview/);
   const previews = manifests.map(m => ({ ...m, stylePreview: true })); assert.throws(() => contract.validateRegistry(previews), /stylePreview/);

@@ -1,5 +1,6 @@
 'use strict';
 
+const connectors = require('../../connectors');
 const settings = require('./settings.js');
 const usage = require('./usage.js');
 const sessions = require('./sessions.js');
@@ -14,7 +15,7 @@ async function pollIdle(hub) {
   const [initial, readings] = await Promise.all([settings.load(hub), usage.readings(hub)]);
   const attempts = hub.usageAttempts ||= new Map();
   const now = Date.now();
-  const candidates = initial.accounts.filter((a) => ['claude', 'gpt', 'kimi'].includes(a.provider) && !a.paused &&
+  const candidates = initial.accounts.filter((a) => connectors.byProvider(a.provider)?.capabilities.usageProbe && !a.paused &&
     (!readings[a.id] || now - Date.parse(readings[a.id].at) >= INTERVAL) &&
     (!attempts.has(a.id) || now - attempts.get(a.id) >= INTERVAL));
   let recorded = false;
@@ -23,13 +24,13 @@ async function pollIdle(hub) {
       settings.load(hub), hub.allThreads(), usage.machineAccounts(hub), hub.machines(),
     ]);
     const account = current.accounts.find((a) => a.id === candidate.id);
-    if (!account || !['claude', 'gpt', 'kimi'].includes(account.provider) || account.paused || (account.provider !== 'kimi' && live(threads, account.id))) continue;
+    if (!account || !connectors.byProvider(account.provider)?.capabilities.usageProbe || account.paused || (!connectors.byProvider(account.provider)?.usage?.probeWhileLive && live(threads, account.id))) continue;
     const local = await hub.state.resolveMachine(machines, 'hub');
     const localName = Object.entries(machines).find(([, m]) => local && (m.name === local.name || (m.address === local.address && m.port === local.port)))?.[0] || 'hub';
     const eligible = Object.keys(states).filter((name) => states[name].reachable && states[name].accounts[account.id]).sort();
     if (eligible.includes(localName)) eligible.unshift(eligible.splice(eligible.indexOf(localName), 1)[0]);
     if (!eligible.length) continue;
-    const choices = account.provider === 'kimi' ? eligible : eligible.slice(0, 1);
+    const choices = connectors.byProvider(account.provider)?.usage?.tryEveryMachine ? eligible : eligible.slice(0, 1);
     const started = new Date().toISOString();
     attempts.set(account.id, Date.parse(started));
     for (const machine of choices) {
@@ -39,7 +40,7 @@ async function pollIdle(hub) {
           dir: account.id === `default-${account.provider}` ? null : `~/.wheelchair/accounts/${account.id}`,
         }, 35000);
         const [after, afterThreads] = await Promise.all([settings.load(hub), hub.allThreads()]);
-        if (!after.accounts.some((a) => a.id === account.id) || (account.provider !== 'kimi' && live(afterThreads, account.id))) break;
+        if (!after.accounts.some((a) => a.id === account.id) || (!connectors.byProvider(account.provider)?.usage?.probeWhileLive && live(afterThreads, account.id))) break;
         await usage.record(hub, { ...reading, at: started, machine });
         recorded = true;
         break;

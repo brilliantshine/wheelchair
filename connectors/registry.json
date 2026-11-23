@@ -420,6 +420,10 @@
       "recoverFallback": false
     },
     {
+      "usage": {
+        "probeWhileLive": true,
+        "tryEveryMachine": true
+      },
       "login": {
         "killTarget": "session"
       },
