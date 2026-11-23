@@ -111,7 +111,7 @@ Tool items are collapsed summaries; the transcript remains the authoritative det
 recent 500; older records append to `threads/<id>.sent.jsonl` in the hub state directory.
 
 Session start resolves a provider cell through `codex/model.sh`: leads use `lead`, sub-leads use `sub-lead`, reviewers,
-verifiers, and mappers use Settings' Other agents tier, and workers use their requested tier (`top` means
+verifiers, mappers and designers use Settings' Other agents tier, and workers use their requested tier (`top` means
 Heavy). The tiers are `light`, `standard`, `heavy`, and `critical`; `luna`, `terra`, `sol`, `astra` and,
 for Claude, `haiku`, `sonnet`, `opus` are accepted aliases for slots, not model names — for example
 `--tier opus` runs whatever the Heavy cell holds. Every session receives a model and its configured effort when present. A provider cell set to `none` is a 400 directing the caller to the other CLI.
@@ -125,7 +125,7 @@ Worker restart (`wc.js session start --role worker ... --replaces <session>`): t
 
 `GET /settings` includes `reserved_provider` (the provider label or null, based on accounts signed in on any machine), `review_families`, `accounts`, `lead_order`, `worker_order`, `within`, `leave`,
 `notify_below`, `save_for_leads`, `margin`, and `held_back` (an object with boolean
-`worker`, `reviewer`, `verifier`, and `mapper` keys, all defaulting to true). `POST /settings/accounts` accepts
+`worker`, `reviewer`, `verifier`, `mapper` and `designer` keys, all defaulting to true). `POST /settings/accounts` accepts
 `{provider, name, plan}`; a second Antigravity account is refused with 400; `PUT /settings/accounts/:id` accepts `{name?, plan?, weight?, paused?}`;
 `DELETE /settings/accounts/:id` removes an account, a provider's default (the CLI's own login) included; a removed default stays removed until `POST /settings/accounts/default-<provider>/restore` adds it back (400 when it is already there or Antigravity already has an account, 404 for an unknown provider). `PUT /settings/balancing`
 updates the balancing keys and returns `reserved_provider`; an old saved file’s boolean `save_claude_for_leads` carries over to `save_for_leads`. `PUT /settings/preferences` accepts `review_families` as `both`, `claude`, `gpt`, `gemini`, `kimi`, or `openrouter` and returns it. Invalid values return 400.
