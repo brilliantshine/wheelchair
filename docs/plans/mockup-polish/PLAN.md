@@ -33,6 +33,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | The spot is captured by a transparent layer over the mockup, not by reading the mockup's document. | The mockup iframe is sandboxed with no same-origin access; loosening that is not needed to know where Collin tapped. The designer can render its own file to see what sits there. | defaulted |
 | 6 | Built's Open full size opens the picture page with the screenshot at its natural pixel size in a scrolling area. | The picture page already does this for mockups (`viewer/pages/picture.js:61-79`); the raw file link leaves scaling to the phone. | defaulted |
 | 7 | A mockup PNG is drawn in the phone's browser (fetch the mockup HTML, draw it to a canvas), not on the machine. | Collin picked it: no new install, same as diagram PNGs. If a browser refuses, the HTML download stays and the machine route is Deferred. | user |
+| 8 | A spot comment's message names the mockup by file path, not by card (supersedes that part of Decision 4); the lead handles it by the existing Mockups rules for the current stage. | Round 1: a designer may not be running, and comments on a build's Mockup half are usually about the build; the versioned file path already identifies the mockup. | review-round-1 |
 
 ## Spec
 
@@ -83,10 +84,13 @@ Mockup half of an image card) and the mockup on the picture page.
   `Comment on mockup "<title>" (docs/plans/<plan>/graphs/<graph>.html, <width>x<height>) at x=<x>, y=<y>: <comment>`.
   An empty comment cannot be sent. On the picture page a sent comment shows "Sent to the
   thread" with a link back.
-- Protocol: `protocol/app/lead.md` Mockups gets one sentence: a spot comment is passed to
-  the designer verbatim, location included, like any feedback. `protocol/app/designer.md`
-  gets one sentence: a spot comment's x and y are in the mockup's own pixels; render the
-  file to see what sits there before changing it.
+- Protocol: `protocol/app/lead.md` Mockups gets one sentence: a spot comment is feedback
+  like any other, handled by the Mockups rules for the stage the thread is in; whatever
+  it is passed on to keeps its location line verbatim. `protocol/app/designer.md` gets one
+  sentence: a spot comment's x and y are in the mockup's own pixels; render the file to
+  see what sits there before changing it.
+- The file path (which carries the mockup's version) identifies the mockup; the message
+  does not name the card.
 
 ### S3. Download a mockup as a PNG
 
@@ -150,6 +154,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| The mockup PNG is tested only in Chromium and Firefox; on an iPhone (WebKit) it may fail | A failure shows the "Download HTML instead" note and the HTML link stays; D2 covers a machine-side PNG | review-round-1 |
 
 ## Check Once Built
 
@@ -166,6 +171,9 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Lead sentence assumes a live designer; Mockup half comments arrive during build | downgraded (minor) | Real, but the existing Mockups rules already route feedback by stage, so a careful lead reconciles it. Rewrote the sentence to defer to those rules (S2, Decision 8) |
+| intent | minor | Decision 4 says the message names the card; the format does not | upheld | Decision 8: the versioned file path identifies it; S2 says so |
+| intent | minor | PNG untested in WebKit (iPhone) | accepted-risk | Fallback note and HTML link; D2 |
 
 ## Implementation Tasks
 
