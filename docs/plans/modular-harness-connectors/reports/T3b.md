@@ -1644,3 +1644,1455 @@ Final machine suite, viewer suite, export check, grep and provider command were 
 ### Choices
 
 - `login.killTarget`: omitted field defaults to the bare session name, preserving existing behavior for the other connectors.
+
+
+## T3d
+
+Outcome: done. The requested `machine/service.js` grep has no hits.
+
+Changes by file:
+- `machine/service.js`: capability-based version gates and status, generic aside problem and launch context, and optional connector handling for turn events, login state and startup exits. Existing named service test seams delegate to connector methods.
+- `machine/lib/aside-turns.js`: generic problem callback keyed by connector CLI.
+- `connectors/pi/machine.js` and `connectors/kimi/machine.js`: version checking and status, plus their launch, failure, login and startup behavior.
+- `connectors/pi/manifest.js`, `connectors/kimi/manifest.js`, `connectors/registry.json`: enable and export versionCheck.
+- `connectors/contract.js`: require version status with the capability and register the optional members.
+- `machine/test/char-lib-aside.test.js`, `machine/test/aside-turns.test.js`: rename the constructor callback stub from `piProblem` to `problem`; assertions unchanged.
+
+The machine suite ran before the final one-line restoration of Kimi loginCommand's original error object; afterward, the character/contract suite and Kimi, Pi and aside suites passed. The full machine run had the 18 known Windows bridge failures and the additional tmux-buffer failure shown below; its isolated rerun passed. The first viewer run hit a port collision, leaving a test process hanging; that process was terminated and the single retry passed all 910 tests.
+
+### Choices
+
+- `machine/service.js` and the connector halves: retained existing service test seams as delegating methods, selected by the optional launch/record members, so existing callers and assertions stay intact.
+- `connectors/pi/machine.js` and `connectors/kimi/machine.js`: split version checking and synchronous cached status into `checkVersion` and `versionStatus`, retaining the existing service-owned caches.
+- `machine/lib/aside-turns.js`: pass the provider's manifest CLI into the generic callback; updated only the two constructor callback stubs.
+- `connectors/pi/machine.js`: use one `beforeTurnEvent` member for pre-completion copying, failure text, and transcript-path removal.
+- `connectors/pi/machine.js` and `connectors/kimi/machine.js`: optional `loginState` returns a handled result or null, with `loginResult` for the cached result shortcut.
+- `connectors/pi/machine.js`: `startupCheck` returns the existing end reason or null; persistence stays in the service.
+- Validation: terminated the stalled viewer test process after its port collision and reran the suite once.
+
+### Failure names from the machine suite
+
+```text
+not ok 604 - Codex and Antigravity receive private URLs
+not ok 687 - existing copy remains waiting until a post-start reconcile completes
+not ok 688 - failed readying becomes ready after a later successful sync
+not ok 704 - run timeout syncs, status syncs an exit and launch environment excludes the token
+not ok 705 - readying times out without blocking launch and does not create copies for ordinary sessions
+not ok 706 - worker merge cleanup deletes its copy and stop does not reconcile
+not ok 707 - verifier stop returns immediately and deletes after its apps stop
+not ok 708 - failed copies survive ordinary removal and archive, but verifier and merge removal delete them
+not ok 709 - archive waits for successful final sync then deletes the copy
+not ok 710 - archive removes the thread folder when the copy went with its worktree first
+not ok 711 - archive waits once for a final sync and retains a failed copy
+not ok 712 - sweep reconciles a dead lead with no apps
+not ok 713 - sweep marks dead app copies and reconciles a shared thread worktree after a worker registered
+not ok 714 - tracker close callback marks the copy used
+not ok 715 - sessions sharing a worktree share the copy and Windows tool use triggers stop sync
+not ok 716 - archive deletes copies while retaining conflict refs
+not ok 717 - cleanup removes a vanished linked worktree copy without a reconcile
+not ok 720 - launch marking causes a final reconcile after readying
+not ok 722 - restart recovery tracks a live lead and reconciles on stop
+```
+
+### Tmux flake: full-suite failure
+
+```text
+not ok 604 - Codex and Antigravity receive private URLs
+  ---
+  duration_ms: 190.75058
+  type: 'test'
+  location: '/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/win-forward-service.test.js:104:1'
+  failureType: 'testCodeFailure'
+  error: 'tmux buffer failed'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    MachineService.submit (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/service.js:1216:41)
+    MachineService.checkReady (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/service.js:1149:20)
+    async MachineService.startIn (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/service.js:864:5)
+    async MachineService.startNamed (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/service.js:823:14)
+    async MachineService.start (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/service.js:800:32)
+    async TestContext.<anonymous> (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/win-forward-service.test.js:108:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+```
+
+### Viewer first-run failure
+
+```text
+not ok 128 - --replaces is refused while the old worker still runs in tmux
+  ---
+  duration_ms: 184.390881
+  type: 'test'
+  location: '/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/viewer/test/app-ended.test.js:67:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    server exited before ready (1): Refused to use a port held by a process it cannot identify.
+    
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    ChildProcess.<anonymous> (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/viewer/test/helpers/server.js:54:14)
+    Object.onceWrapper (node:events:634:26)
+    ChildProcess.emit (node:events:531:35)
+    ChildProcess._handle.onexit (node:internal/child_process:293:12)
+  ...
+```
+
+### Initial group 3 failure (fixed before commit)
+
+```text
+not ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 28.917785
+  type: 'test'
+  location: '/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/char-service-branches.test.js:147:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - '/resolved/kimi'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '/resolved/kimi'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/char-service-branches.test.js:168:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+```
+
+### Validation output
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (group1)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 40.23038
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 71.91586
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 31.561181
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 19.171237
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 32.196341
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 11.705299
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 94.192621
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 86.193199
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 10.913137
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 54.537506
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 3.097669
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 0.68736
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9382.277768
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (group2)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 37.950588
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 65.453441
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 28.340783
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 13.511656
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 25.337927
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 11.80563
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 89.324761
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 74.931432
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 8.039378
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 54.432116
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 3.879701
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 0.867265
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9396.18438
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (group2-final)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 46.999199
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 75.942566
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 31.598866
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 13.153238
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 30.793189
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 12.539909
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 122.419351
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 94.478358
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 10.66546
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 74.896988
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 5.481946
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 1.124079
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9414.89785
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (group3)
+
+```text
+exit 1
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - '/resolved/kimi'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '/resolved/kimi'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/char-service-branches.test.js:168:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 12.268366
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 29.078233
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 13.047302
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 86.501832
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 70.51735
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 10.619631
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 50.021416
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 4.071768
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 0.845504
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 32
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9383.677954
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (group3-final)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 38.274969
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 72.293114
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 28.328992
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 13.591927
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 35.787432
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 13.608759
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 102.958803
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 88.484903
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 11.120372
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 55.966287
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 4.508938
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 0.975022
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9399.039071
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (group4)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 47.53894
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 81.292525
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 37.129536
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 16.747273
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 42.377611
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 17.097726
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 134.356933
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 97.524989
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 12.709181
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 60.282407
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 4.702228
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 1.020109
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9398.376538
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (group5)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 39.636555
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 68.57982
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 27.352061
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 11.272251
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 30.965749
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 12.415255
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 92.679628
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 67.803651
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 8.749046
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 57.46376
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 4.529296
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 0.774236
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9384.901431
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (group8)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 58.730624
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 87.755453
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 40.784343
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 17.676353
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 33.845022
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 13.957104
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 110.260134
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 105.794752
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 11.941725
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 54.666152
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 3.956425
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 0.852096
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9410.057616
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (group9)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 38.264221
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 68.575728
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 38.293387
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 14.293457
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 36.550993
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 15.42476
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 96.755802
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 100.392944
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 9.508562
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 60.037387
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 4.344119
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 1.00035
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9391.786974
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (final-char)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 45.546979
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 71.112052
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 28.158041
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 13.537555
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 33.667306
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 13.407718
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 100.466499
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 91.834509
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 8.631559
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 60.10838
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 3.906458
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 0.988738
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9408.719283
+```
+
+#### `timeout 600 bash machine/test/run.sh` (machine)
+
+```text
+exit 1
+    ensureCopy (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/lib/win-sync.js:75:9)
+    WinBridge.create (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/lib/win.js:109:11)
+    WinBridge.handle (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/lib/win.js:472:20)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/win.test.js:334:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: info reports a PowerShell startup failure and environment names are case insensitive
+ok 718 - info reports a PowerShell startup failure and environment names are case insensitive
+  ---
+  duration_ms: 1.386672
+  type: 'test'
+  ...
+# Subtest: launch and restart mark existing copies used and recover only live copies
+ok 719 - launch and restart mark existing copies used and recover only live copies
+  ---
+  duration_ms: 7.651747
+  type: 'test'
+  ...
+# Subtest: launch marking causes a final reconcile after readying
+not ok 720 - launch marking causes a final reconcile after readying
+  ---
+  duration_ms: 45.670081
+  type: 'test'
+  location: '/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/win.test.js:373:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    0 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/win.test.js:385:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: without launch marking, readying does not cause a final reconcile
+ok 721 - without launch marking, readying does not cause a final reconcile
+  ---
+  duration_ms: 59.975499
+  type: 'test'
+  ...
+# Subtest: restart recovery tracks a live lead and reconciles on stop
+not ok 722 - restart recovery tracks a live lead and reconciles on stop
+  ---
+  duration_ms: 49.297053
+  type: 'test'
+  location: '/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/win.test.js:402:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-dfb566cd9dd5-w11/machine/test/win.test.js:414:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..722
+# tests 722
+# suites 0
+# pass 701
+# fail 19
+# cancelled 0
+# skipped 2
+# todo 0
+# duration_ms 68002.406097
+```
+
+#### `node --test --test-name-pattern 'Codex and Antigravity receive private URLs' machine/test/win-forward-service.test.js` (flake)
+
+```text
+exit 0
+TAP version 13
+# machine: screen startup cleanup failed: wcscreen-4554c11fdc63.slice
+# Subtest: Codex and Antigravity receive private URLs
+ok 1 - Codex and Antigravity receive private URLs
+  ---
+  duration_ms: 98.139862
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 167.456837
+```
+
+#### `(cd viewer && npm test)` (viewer)
+
+```text
+exit 1
+ok 883 - win status passes the operation and unchanged arguments
+  ---
+  duration_ms: 67.345136
+  type: 'test'
+  ...
+# Subtest: win windows passes the operation and unchanged arguments
+ok 884 - win windows passes the operation and unchanged arguments
+  ---
+  duration_ms: 61.63644
+  type: 'test'
+  ...
+# Subtest: win shot passes the operation and unchanged arguments
+ok 885 - win shot passes the operation and unchanged arguments
+  ---
+  duration_ms: 63.366981
+  type: 'test'
+  ...
+# Subtest: win stop passes the operation and unchanged arguments
+ok 886 - win stop passes the operation and unchanged arguments
+  ---
+  duration_ms: 63.763182
+  type: 'test'
+  ...
+# Subtest: win path passes the operation and unchanged arguments
+ok 887 - win path passes the operation and unchanged arguments
+  ---
+  duration_ms: 61.758805
+  type: 'test'
+  ...
+# Subtest: win non-2xx response is reported with the wc prefix
+ok 888 - win non-2xx response is reported with the wc prefix
+  ---
+  duration_ms: 78.804928
+  type: 'test'
+  ...
+# Subtest: unknown win op fails without sending a request
+ok 889 - unknown win op fails without sending a request
+  ---
+  duration_ms: 56.461819
+  type: 'test'
+  ...
+# Subtest: winRequest rejects unknown and missing operations
+ok 890 - winRequest rejects unknown and missing operations
+  ---
+  duration_ms: 0.994409
+  type: 'test'
+  ...
+# Subtest: win info writes disk warnings to stderr and preserves JSON stdout
+ok 891 - win info writes disk warnings to stderr and preserves JSON stdout
+  ---
+  duration_ms: 63.448217
+  type: 'test'
+  ...
+# Subtest: the page eligibility regex equals the machine one
+ok 892 - the page eligibility regex equals the machine one
+  ---
+  duration_ms: 1.617403
+  type: 'test'
+  ...
+# Subtest: the page eligibility function
+ok 893 - the page eligibility function
+  ---
+  duration_ms: 0.431548
+  type: 'test'
+  ...
+# Subtest: stored ZIP has names and bytes readable by Python
+ok 894 - stored ZIP has names and bytes readable by Python
+  ---
+  duration_ms: 70.147083
+  type: 'test'
+  ...
+1..894
+# tests 910
+# suites 0
+# pass 909
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 129562.342612
+```
+
+#### `node --test machine/test/char-*.test.js machine/test/connectors-contract.test.js` (fix-char)
+
+```text
+exit 0
+ok 22 - launch version gates apply to Pi and Kimi and preserve their exact errors
+  ---
+  duration_ms: 56.541062
+  type: 'test'
+  ...
+# Subtest: preflight passes account CODEX_HOME only for a directory and maps exit status
+ok 23 - preflight passes account CODEX_HOME only for a directory and maps exit status
+  ---
+  duration_ms: 81.844145
+  type: 'test'
+  ...
+# Subtest: launch preparation selects project keys and dropped MCP settings per tool
+ok 24 - launch preparation selects project keys and dropped MCP settings per tool
+  ---
+  duration_ms: 35.637011
+  type: 'test'
+  ...
+# Subtest: transcript copy redacts Pi lines and preserves lines for the other tools
+ok 25 - transcript copy redacts Pi lines and preserves lines for the other tools
+  ---
+  duration_ms: 14.145652
+  type: 'test'
+  ...
+# Subtest: status version checks retain per-tool results and version messages
+ok 26 - status version checks retain per-tool results and version messages
+  ---
+  duration_ms: 38.310341
+  type: 'test'
+  ...
+# Subtest: login starts each tool with its own executable and working directory
+ok 27 - login starts each tool with its own executable and working directory
+  ---
+  duration_ms: 14.666774
+  type: 'test'
+  ...
+# Subtest: live switch eligibility rejects unsupported tools before validating the body
+ok 28 - live switch eligibility rejects unsupported tools before validating the body
+  ---
+  duration_ms: 118.893406
+  type: 'test'
+  ...
+# Subtest: usage endpoint allowlist and default account checks distinguish all tools
+ok 29 - usage endpoint allowlist and default account checks distinguish all tools
+  ---
+  duration_ms: 102.033835
+  type: 'test'
+  ...
+# Subtest: Unity launch guidance restricts only sandboxed Codex across all five CLIs
+ok 30 - Unity launch guidance restricts only sandboxed Codex across all five CLIs
+  ---
+  duration_ms: 19.620157
+  type: 'test'
+  ...
+# Subtest: registry, manifests and connector halves satisfy the contract
+ok 31 - registry, manifests and connector halves satisfy the contract
+  ---
+  duration_ms: 81.400614
+  type: 'test'
+  ...
+# Subtest: contract rejects missing and inconsistent members and fields
+ok 32 - contract rejects missing and inconsistent members and fields
+  ---
+  duration_ms: 4.430572
+  type: 'test'
+  ...
+# Subtest: provider snapshot remains unchanged
+ok 33 - provider snapshot remains unchanged
+  ---
+  duration_ms: 1.162531
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9409.349125
+```
+
+#### `(cd viewer && npm test)` (viewer-retry)
+
+```text
+exit 0
+ok 883 - win status passes the operation and unchanged arguments
+  ---
+  duration_ms: 72.383907
+  type: 'test'
+  ...
+# Subtest: win windows passes the operation and unchanged arguments
+ok 884 - win windows passes the operation and unchanged arguments
+  ---
+  duration_ms: 64.40601
+  type: 'test'
+  ...
+# Subtest: win shot passes the operation and unchanged arguments
+ok 885 - win shot passes the operation and unchanged arguments
+  ---
+  duration_ms: 59.77863
+  type: 'test'
+  ...
+# Subtest: win stop passes the operation and unchanged arguments
+ok 886 - win stop passes the operation and unchanged arguments
+  ---
+  duration_ms: 58.00079
+  type: 'test'
+  ...
+# Subtest: win path passes the operation and unchanged arguments
+ok 887 - win path passes the operation and unchanged arguments
+  ---
+  duration_ms: 62.036623
+  type: 'test'
+  ...
+# Subtest: win non-2xx response is reported with the wc prefix
+ok 888 - win non-2xx response is reported with the wc prefix
+  ---
+  duration_ms: 57.508514
+  type: 'test'
+  ...
+# Subtest: unknown win op fails without sending a request
+ok 889 - unknown win op fails without sending a request
+  ---
+  duration_ms: 47.768596
+  type: 'test'
+  ...
+# Subtest: winRequest rejects unknown and missing operations
+ok 890 - winRequest rejects unknown and missing operations
+  ---
+  duration_ms: 0.910327
+  type: 'test'
+  ...
+# Subtest: win info writes disk warnings to stderr and preserves JSON stdout
+ok 891 - win info writes disk warnings to stderr and preserves JSON stdout
+  ---
+  duration_ms: 64.765399
+  type: 'test'
+  ...
+# Subtest: the page eligibility regex equals the machine one
+ok 892 - the page eligibility regex equals the machine one
+  ---
+  duration_ms: 3.195431
+  type: 'test'
+  ...
+# Subtest: the page eligibility function
+ok 893 - the page eligibility function
+  ---
+  duration_ms: 0.613718
+  type: 'test'
+  ...
+# Subtest: stored ZIP has names and bytes readable by Python
+ok 894 - stored ZIP has names and bytes readable by Python
+  ---
+  duration_ms: 75.924811
+  type: 'test'
+  ...
+1..894
+# tests 910
+# suites 0
+# pass 910
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 56866.803479
+```
+
+#### `node connectors/export.js --check` (export)
+
+```text
+exit 0
+```
+
+#### `grep -nE "['\"](claude|codex|agy|kimi|pi|gpt|gemini|openrouter)['\"]|adapters\.(claude|codex|agy|kimi|pi)\b|machine\(['\"]" machine/service.js machine/lib/*.js machine/hook.sh` (grep)
+
+```text
+exit 1
+```
+
+#### `node -e "console.log(JSON.stringify(require('./viewer/app/providers')))"` (providers)
+
+```text
+exit 0
+{"PROVIDERS":{"claude":{"cli":"claude","label":"Claude","effort":true,"preflight":false,"typesRoleMessage":false,"asideFork":true,"singleAccount":false},"gpt":{"cli":"codex","label":"GPT","effort":true,"preflight":true,"typesRoleMessage":true,"asideFork":true,"singleAccount":false},"gemini":{"cli":"agy","label":"Antigravity","effort":true,"preflight":false,"typesRoleMessage":true,"asideFork":false,"singleAccount":true},"kimi":{"cli":"kimi","label":"Kimi Code","effort":false,"preflight":false,"typesRoleMessage":true,"asideFork":false,"singleAccount":false},"openrouter":{"cli":"pi","label":"OpenRouter","effort":true,"preflight":false,"typesRoleMessage":false,"asideFork":true,"singleAccount":false}},"DISPLAY_NAMES":{"claude":"Claude Code","gpt":"Codex","gemini":"Antigravity","kimi":"Kimi Code","openrouter":"Pi (OpenRouter)"}}
+```
+
+#### `node --test machine/test/kimi.test.js machine/test/pi.test.js machine/test/aside-turns.test.js` (targeted)
+
+```text
+exit 0
+ok 47 - wrapped key is joined and redacted in agent pane
+  ---
+  duration_ms: 5.808595
+  type: 'test'
+  ...
+# Subtest: Pi argv carries --thinking only when the session has an effort
+ok 48 - Pi argv carries --thinking only when the session has an effort
+  ---
+  duration_ms: 5.721097
+  type: 'test'
+  ...
+# Subtest: Pi role prompts and reviewer tools are passed in argv
+ok 49 - Pi role prompts and reviewer tools are passed in argv
+  ---
+  duration_ms: 12.109765
+  type: 'test'
+  ...
+# Subtest: Pi busy input border is not ready
+ok 50 - Pi busy input border is not ready
+  ---
+  duration_ms: 0.25519
+  type: 'test'
+  ...
+# Subtest: Pi ignores usage-like hook events
+ok 51 - Pi ignores usage-like hook events
+  ---
+  duration_ms: 4.83686
+  type: 'test'
+  ...
+# Subtest: Pi login status ignores the environment key
+ok 52 - Pi login status ignores the environment key
+  ---
+  duration_ms: 0.470092
+  type: 'test'
+  ...
+# Subtest: registered Pi session survives restart and forwards a later settled hook
+ok 53 - registered Pi session survives restart and forwards a later settled hook
+  ---
+  duration_ms: 15.495179
+  type: 'test'
+  ...
+# Subtest: Pi waits for every startup download to complete
+ok 54 - Pi waits for every startup download to complete
+  ---
+  duration_ms: 0.237737
+  type: 'test'
+  ...
+# Subtest: Pi version probe gates old versions and caches by executable mtime
+ok 55 - Pi version probe gates old versions and caches by executable mtime
+  ---
+  duration_ms: 45.892491
+  type: 'test'
+  ...
+# Subtest: Pi failure notes use the persisted launch version and startup exits have a reason
+ok 56 - Pi failure notes use the persisted launch version and startup exits have a reason
+  ---
+  duration_ms: 11.521275
+  type: 'test'
+  ...
+# Subtest: Pi launch records tested version across restart and allows newer version
+ok 57 - Pi launch records tested version across restart and allows newer version
+  ---
+  duration_ms: 59.301678
+  type: 'test'
+  ...
+# Subtest: Pi warns that project tools, including Windows-side ones, are not loaded
+ok 58 - Pi warns that project tools, including Windows-side ones, are not loaded
+  ---
+  duration_ms: 6.128719
+  type: 'test'
+  ...
+1..58
+# tests 58
+# suites 0
+# pass 58
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3795.319644
+```
+
