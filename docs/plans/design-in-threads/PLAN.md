@@ -1,6 +1,6 @@
 ---
 slug: design-in-threads
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-22
 ---
 
@@ -465,3 +465,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-23 — Choice: T2, image card: the Built half's "Open full size" shows only while the image file is still available.
 - 2026-11-23 — Choice: T2, mockup iframe: `scrolling="no"` and a white background.
 - 2026-11-23 — Choice: T2, picture page: an image card's mockup with no thread plan shows "Mockup not found."
+- 2026-11-23 — All five tasks done; full validation at d064ee6c (viewer node 911/911, browser 1420 passed, machine 18 pre-existing wslpath failures only). COMPLETION.md written; status verifying.
