@@ -11,7 +11,7 @@ const exec = promisify(execFile);
 async function slotFor(hub, role, requestedTier = 'top') {
   if (['lead', 'sub-lead'].includes(role)) return role;
   const settings = await settingsStore.load(hub);
-  if (['reviewer', 'verifier', 'mapper'].includes(role)) return settings.other_agents[role];
+  if (['reviewer', 'verifier', 'mapper', 'designer'].includes(role)) return settings.other_agents[role];
   const tier = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[requestedTier] || requestedTier;
   try { const slot = settingsStore.tier(tier, 'tier', true); return slot === 'top' ? 'heavy' : slot; }
   catch { throw appError(400, `unknown tier "${requestedTier}"; use light, standard, heavy, critical, or top`); }

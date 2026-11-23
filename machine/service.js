@@ -192,7 +192,7 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const PREVIEW_TIMEOUT_MS = 60_000;
 // A session's in-memory copy hashes are dropped when it stops or ends, or after this long without new lines.
 const COPY_HASHES_IDLE_MS = 10 * 60_000;
-const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md'], worker: ['cards.md'], mapper: ['cards.md'], reviewer: [], verifier: [] };
+const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md'], worker: ['cards.md'], mapper: ['cards.md'], designer: ['cards.md'], reviewer: [], verifier: [] };
 const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
 function composeRolePrompt(input) {
   const first = `Role: ${input.role}`;

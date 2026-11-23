@@ -19,7 +19,7 @@ test('account normalization and balancing settings survive round trip', () => {
   assert.equal(normalized.accounts.find((a) => a.id === 'other').weight, 5);
   assert.deepEqual(settings.normalize(normalized), normalized);
   const old = { ...normalized }; delete old.held_back;
-  assert.deepEqual(settings.normalize(old).held_back, { worker: true, reviewer: true, verifier: true, mapper: true });
+  assert.deepEqual(settings.normalize(old).held_back, { worker: true, reviewer: true, verifier: true, mapper: true, designer: true });
   assert.deepEqual(settings.normalize({ ...old, held_back: {} }).held_back, settings.defaults().held_back);
 });
 test('effective windows, room and forecasts', () => {
@@ -62,7 +62,7 @@ test('account and balancing routes and usage shape', async () => {
     assert.equal(add.status, 201); assert.equal(add.body.weight, 5);
     for (const body of [{ provider: 'bad', name: 'a', plan: 'pro' }, { provider: 'gpt', name: '', plan: 'pro' }, { provider: 'gpt', name: 'x', plan: 'max5' }]) assert.equal((await api(ctx, '/settings/accounts', { method: 'POST', body })).status, 400);
     for (const body of [{ name: '' }, { plan: 'plus' }, { weight: 0 }, { paused: 'yes' }]) assert.equal((await api(ctx, `/settings/accounts/${add.body.id}`, { method: 'PUT', body })).status, 400);
-    for (const body of [{ lead_order: [] }, { worker_order: [] }, { lead_order: ['any', 'claude'] }, { lead_order: ['gpt', 'gpt'] }, { worker_order: ['any'] }, { worker_order: ['bad'] }, { within: 'bad' }, { leave: -1 }, { notify_below: 101 }, { margin: '5' }, { save_claude_for_leads: 1 }, { held_back: { worker: true, reviewer: true, verifier: true } }, { held_back: { worker: true, reviewer: true, verifier: true, mapper: true, extra: true } }, { held_back: { worker: true, reviewer: 'yes', verifier: true, mapper: true } }, { held_back: [] }]) assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body })).status, 400);
+    for (const body of [{ lead_order: [] }, { worker_order: [] }, { lead_order: ['any', 'claude'] }, { lead_order: ['gpt', 'gpt'] }, { worker_order: ['any'] }, { worker_order: ['bad'] }, { within: 'bad' }, { leave: -1 }, { notify_below: 101 }, { margin: '5' }, { save_claude_for_leads: 1 }, { held_back: { worker: true, reviewer: true, verifier: true } }, { held_back: { worker: true, reviewer: true, verifier: true, mapper: true, designer: true, extra: true } }, { held_back: { worker: true, reviewer: 'yes', verifier: true, mapper: true, designer: true } }, { held_back: [] }]) assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body })).status, 400);
     assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body: { save_claude_for_leads: false } })).body.detail, 'invalid save_claude_for_leads');
     const renamed = await api(ctx, '/settings/balancing', { method: 'PUT', body: { save_for_leads: false, lead_order: ['gpt', 'any'] } });
     assert.equal(renamed.status, 200); assert.equal(renamed.body.save_for_leads, false); assert.equal(renamed.body.reserved_provider, 'GPT');
@@ -70,7 +70,7 @@ test('account and balancing routes and usage shape', async () => {
     assert.equal(preferences.body.review_families, 'gpt');
     assert.equal((await api(ctx, '/settings/preferences', { method: 'PUT', body: { review_families: 'bad' } })).body.detail, 'review_families must be both, claude, gpt, gemini, kimi or openrouter');
     const described = (await api(ctx, '/settings')).body; assert.equal(described.review_families, 'gpt'); assert.equal(described.reserved_provider, 'GPT');
-    const held = { worker: true, reviewer: false, verifier: true, mapper: true };
+    const held = { worker: true, reviewer: false, verifier: true, mapper: true, designer: false };
     const saved = await api(ctx, '/settings/balancing', { method: 'PUT', body: { held_back: held } });
     assert.equal(saved.status, 200); assert.deepEqual(saved.body.held_back, held);
     const result = await api(ctx, '/usage'); assert.equal(result.status, 200); assert.equal(result.body.providers.claude.accounts.length, 2); assert.ok(result.body.providers.gpt.accounts[0].machines.hub);

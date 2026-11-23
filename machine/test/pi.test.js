@@ -52,7 +52,7 @@ test('Pi argv carries --thinking only when the session has an effort', () => {
 });
 test('Pi role prompts and reviewer tools are passed in argv', () => {
   const root = makeTempSync('pi-roles-');
-  for (const role of ['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper']) {
+  for (const role of ['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper', 'designer']) {
     const promptPath = `/prompts/${role}`;
     const argv = pi.command({ role }, { name: 'wc-test-worker', cli_session_id: '123' }, root, { stateDir: root, promptPath }).argv;
     const prompt = argv.indexOf('--append-system-prompt');

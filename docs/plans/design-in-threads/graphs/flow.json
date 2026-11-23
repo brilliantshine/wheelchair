@@ -1,0 +1,7 @@
+{"form":"timeline","explanation":"The proposed path from first sketch to finished screen. The mockup file made during planning is what the build and the checks follow. Leaves out who exactly drafts and posts each picture; those are the open questions.",
+"events":[
+{"when":"Planning","label":"Mockups drafted in the thread","detail":"HTML mockups of the screens, shown on your phone"},
+{"when":"Planning","label":"You ask for changes in chat","detail":"New versions appear until you're happy"},
+{"when":"Approval","label":"The agreed mockup is saved with the plan","detail":"The plan points to it instead of describing it in words"},
+{"when":"Build","label":"Screenshots as each visible piece lands","detail":"Compared with the mockup; you can steer early"},
+{"when":"Verify","label":"Final check against the mockup","detail":"A visible difference is a gap to fix"}]}

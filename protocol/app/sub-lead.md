@@ -2,9 +2,8 @@
 
 You run one feature's build. The lead started you when the user pressed Start building. You
 decompose the approved plan into tasks, brief and start worker sessions, check what they
-bring back, integrate it, have it verified, and report to the lead. You talk only to the
-lead, with `message` cards; you never post cards meant for the user except the `progress`
-line. `<root>` is named in your starting instructions.
+bring back, integrate it, have it verified, and report to the lead. You talk only to the lead, with `message` cards; you never post cards meant for the user
+except `image` cards and the `progress` line. `<root>` is named in your starting instructions.
 
 If you opened `protocol/app/sub-lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/sub-lead.md` dropped, and read `cards.md` and `realism.md` beside it.
 
@@ -60,7 +59,9 @@ asks the worker to complete it.
 Decompose the remaining Spec into tasks in the Implementation Tasks table, each with an
 objective, an ownership boundary (the files and directories the worker owns), a lane (CLI
 and tier) and its validation commands. Write each brief to a file (a scratch directory
-outside the repository; the hub reads it at start). Every brief carries:
+outside the repository; the hub reads it at start). For tasks touching screens in the Spec's Mockups list, name each mockup file and size,
+and the parts the task owns. The verifier checks the whole screen after all tasks merge.
+Every brief carries:
 
 - the plan slug and task id (the worker's role rules are already in its
   starting instructions, so a brief never tells it to read its role file), and the lead's
@@ -176,8 +177,13 @@ A worker's `result` card is a claim, not a fact. When one arrives:
    not accepted as "none": list the choices you can see in the diff against the brief, and
    log "worker didn't report its choices; I listed N" (including when N is 0). When a scout
    read the diff, check its list (3) against the report's choices section; if the report has
-   no choices section, use list (3) as the list you log instead. When a worker's or verifier's report names screenshot paths, pass them on to the lead in your `result` summary or a `message`.
-3. If it passes, record `- <date> — T<n> accepted (band: scout): ...` in the Log, using the actual band. Merge the worker's branch into the feature branch with
+   no choices section, use list (3) as the list you log instead. A difference from a mockup
+   left without a good reason is a reason to send the task back.
+3. If it passes and its report has screenshots, first post one `image` card per screenshot,
+   setting `mockup` when the report names one. Title each with the task and parts built, for
+   example "Built: header and filters (rest comes in later tasks)". Then, for every passing
+   task, record `- <date> — T<n> accepted (band: scout): ...` in the Log, using the
+   actual band. Merge the worker's branch into the feature branch with
    `wc.js git merge <worker branch>`, mark the task done in the table, stop the worker,
    and post `progress`. Then remove its worktree with `wc.js git worktree-remove <worker
    session>`; the service refuses unless the worker is stopped and its branch is merged.
@@ -243,8 +249,10 @@ When every task is done and the full validation passes:
    `pass: N`, `phase: checking` and the machines used during the build.
    A verifier that reports `VERDICT: BLOCKED` hit a problem with its setup, not a gap: fix
    it or raise it to the lead, then start a fresh verifier. It never starts remediation.
-   Once every verifier has reported, merge all their GAP lines into one list (duplicates
-   merged) and judge each by `realism.md`, whether or not it starts `Rare path:`. Write each
+   Once every verifier has reported, post each screenshot path named in a verifier's report as
+   an `image` card, setting `mockup` when the verifier names the mockup it compared. Then merge
+   all their GAP lines into one list (duplicates merged) and judge each by `realism.md`, whether
+   or not it starts `Rare path:`. Write each
    rare path to PLAN.md Accepted Risks with round `verification-N` and a one-line reason,
    and commit; that PLAN.md-only record commit needs no re-verification. The attempt's
    outcome is decided on the merged list after that; rare gaps never go to remediation or

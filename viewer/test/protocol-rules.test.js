@@ -9,12 +9,12 @@ const root = path.resolve(__dirname, '../..');
 const read = role => fs.readFileSync(path.join(root, 'protocol/app', `${role}.md`), 'utf8');
 const paragraphHas = (text, ...words) => text.split(/\n\s*\n/).some(p => words.every(word => p.includes(word)));
 
-for (const role of ['worker', 'mapper', 'sub-lead', 'lead', 'cards']) {
+for (const role of ['worker', 'mapper', 'designer', 'sub-lead', 'lead', 'cards']) {
   test(`${role} permits its own commands`, () => {
     assert.ok(read(role).includes('own `wc.js` and `card.js`'));
   });
 }
-for (const role of ['worker', 'mapper', 'sub-lead']) {
+for (const role of ['worker', 'mapper', 'designer', 'sub-lead']) {
   test(`${role} reports conflicts instead of stopping silently`, () => {
     assert.ok(paragraphHas(read(role), 'blocked', 'silently'));
   });
@@ -24,15 +24,15 @@ for (const role of ['reviewer', 'verifier']) {
     assert.ok(paragraphHas(read(role), 'report', 'silently'));
   });
 }
-for (const role of ['worker', 'mapper', 'sub-lead', 'reviewer', 'verifier']) {
+for (const role of ['worker', 'mapper', 'designer', 'sub-lead', 'reviewer', 'verifier']) {
   test(`${role} waits for background work in the foreground`, () => {
     assert.ok(paragraphHas(read(role), 'background', 'foreground'));
   });
 }
 
-const roles = ['lead', 'sub-lead', 'worker', 'mapper', 'reviewer', 'verifier'];
-const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'image', 'file', 'stub', 'sudo', 'reach', 'retract', 'title'];
-const sharedKinds = ['progress', 'message', 'result', 'lesson'];
+const roles = ['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier'];
+const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'file', 'stub', 'sudo', 'reach', 'retract', 'title'];
+const sharedKinds = ['progress', 'image', 'message', 'result', 'lesson'];
 const sections = text => [...text.matchAll(/^### `([^`]+)`$/gm)].map(match => match[1]);
 
 test('each schema kind has one card section, in its intended file', () => {
@@ -119,4 +119,11 @@ test('lead.md Restarting what died resolves an unrecorded chat answer', () => {
   const m = read('lead').match(/^## Restarting what died\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
   assert.ok(m, 'section present');
   assert.ok(m[1].includes('resolved from the latest such message'));
+});
+
+test('sub-lead posts screenshots as image cards', () => {
+  const text = read('sub-lead');
+  assert.match(text, /except `image` cards/);
+  assert.match(text, /post one `image` card per screenshot/);
+  assert.ok(!text.includes('pass them on to the lead'));
 });

@@ -111,7 +111,7 @@ Tool items are collapsed summaries; the transcript remains the authoritative det
 recent 500; older records append to `threads/<id>.sent.jsonl` in the hub state directory.
 
 Session start resolves a provider cell through `codex/model.sh`: leads use `lead`, sub-leads use `sub-lead`, reviewers,
-verifiers, and mappers use Settings' Other agents tier, and workers use their requested tier (`top` means
+verifiers, mappers and designers use Settings' Other agents tier, and workers use their requested tier (`top` means
 Heavy). The tiers are `light`, `standard`, `heavy`, and `critical`; `luna`, `terra`, `sol`, `astra` and,
 for Claude, `haiku`, `sonnet`, `opus` are accepted aliases for slots, not model names — for example
 `--tier opus` runs whatever the Heavy cell holds. Every session receives a model and its configured effort when present. A provider cell set to `none` is a 400 directing the caller to the other CLI.
@@ -125,7 +125,7 @@ Worker restart (`wc.js session start --role worker ... --replaces <session>`): t
 
 `GET /settings` includes `reserved_provider` (the provider label or null, based on accounts signed in on any machine), `review_families`, `accounts`, `lead_order`, `worker_order`, `within`, `leave`,
 `notify_below`, `save_for_leads`, `margin`, and `held_back` (an object with boolean
-`worker`, `reviewer`, `verifier`, and `mapper` keys, all defaulting to true). `POST /settings/accounts` accepts
+`worker`, `reviewer`, `verifier`, `mapper` and `designer` keys, all defaulting to true). `POST /settings/accounts` accepts
 `{provider, name, plan}`; a second Antigravity account is refused with 400; `PUT /settings/accounts/:id` accepts `{name?, plan?, weight?, paused?}`;
 `DELETE /settings/accounts/:id` removes an account, a provider's default (the CLI's own login) included; a removed default stays removed until `POST /settings/accounts/default-<provider>/restore` adds it back (400 when it is already there or Antigravity already has an account, 404 for an unknown provider). `PUT /settings/balancing`
 updates the balancing keys and returns `reserved_provider`; an old saved file’s boolean `save_claude_for_leads` carries over to `save_for_leads`. `PUT /settings/preferences` accepts `review_families` as `both`, `claude`, `gpt`, `gemini`, `kimi`, or `openrouter` and returns it. Invalid values return 400.
@@ -171,10 +171,7 @@ are accepted; invalid keys, values, and non-object inputs receive 400.
 
 Threads include `lead_name`, retained until and after archive; archived threads release the name for reuse. Settings `lead_name_list` picks where names come from: `greek` (the default), `nato`, `stars` (one-word proper star names), `people` (popular US first names) or `custom`, which uses `lead_names`. A saved file from before the choice existed reads as `custom` when it has names. `lead_names` is an array of up to 1000 unique case-insensitive names, trimmed to 1–40 characters, with blank entries discarded; the Settings page fills it from an uploaded text file. `custom` with no names uses Greek letters. Sending `lead_names` without `lead_name_list` keeps the older meaning: names switch to `custom`, and an empty list switches `custom` back to `greek`. A new lead gets a random free name from the list; only when every plain name is held does it draw from "<name> 2", then "<name> 3". New session records include the resolved `model` and `effort` (which may be null). Older sessions may omit them.
 
-Diagram cards accept optional `format` (`graph`, the default, `form`, or `html`). Image
-cards are lead-only and contain `path` and `title`; stored image cards also carry `file`,
-the basename supplied by the machine. Form and HTML diagrams register their plan but do
-not enter the graph registry.
+Diagram cards accept optional `format` (`graph`, the default, `form`, `html`, or `mockup`). Mockup diagrams require integer `width` and `height` from 200 to 2560; other formats refuse them. Image cards from leads and sub-leads contain `path` and `title` and may include `mockup: {graph, width, height}` for the thread plan, with the same dimension limits. Mockup files must be regular HTML files of at most 2 MiB. Stored image cards also carry `file`, the basename supplied by the machine. Form, HTML and mockup diagrams register their plan but do not enter the graph registry. Archiving keeps file and image uploads posted by leads and sub-leads.
 
 `POST /threads/:id/uploads?name=...` streams a raw file of at most 25 MiB to the lead's
 machine and returns `201 {path}`. A lead waiting for room or starting counts as live: the hub passes `vouched=1`, so the machine does not judge the lead itself. It returns 409 for an archived thread or absent live lead,

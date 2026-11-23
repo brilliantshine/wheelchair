@@ -128,7 +128,7 @@ test('switch and balancing writes guard the expanded lead order with the exact m
 test('new leads and all ordered worker roles skip switched-off harnesses', async () => {
   const { hub } = await harnessFixture({ hub: statusFor('claude', 'gpt') });
   await settings.update(hub, s => { s.harnesses.claude = false; s.lead_order = ['claude', 'any']; s.worker_order = ['claude', 'gpt']; s.save_for_leads = false; });
-  for (const role of ['lead', 'worker', 'reviewer', 'verifier', 'mapper']) assert.equal((await choose(hub, { machine: 'hub', sessions: [] }, role, 'standard')).provider, 'gpt', role);
+  for (const role of ['lead', 'worker', 'reviewer', 'verifier', 'mapper', 'designer']) assert.equal((await choose(hub, { machine: 'hub', sessions: [] }, role, 'standard')).provider, 'gpt', role);
 });
 
 test('a switched-off review family uses the existing fallback', async () => {

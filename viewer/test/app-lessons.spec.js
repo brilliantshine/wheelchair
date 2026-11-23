@@ -9,7 +9,7 @@ const { startWorld, signIn } = require('./helpers/app-threads-world');
 
 test.describe.configure({ mode: 'serial' });
 
-const ROLES = ['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper'];
+const ROLES = ['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper', 'designer'];
 const WARNING = 'Agents keep this list up to date. Editing is not recommended; a lesson you edit is marked as yours and agents leave it alone.';
 const api = (page, route) => page.evaluate(async (r) => (await fetch('/wheelchair/api' + r)).json(), route);
 const noSideScroll = async (page) => {

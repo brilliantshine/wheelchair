@@ -49,6 +49,13 @@ Also check that the idea's non-goals were not violated, and that what IDEA.md ca
 good looks like" is actually true. For a small fix, check that it does what was asked and
 nothing else, and that nothing it touches regressed.
 
+Each Spec mockup is a Spec item. Screenshot the built screen at the mockup's size and
+compare the two; name the screenshot paths compared. A missing or extra element, wrong order
+or grouping, wrong text, or clearly different colour, size or spacing is a gap. Anti-aliasing,
+font rendering and sub-pixel differences are not gaps. If either half has no capture path,
+the comparison is not a gap and does not change the verdict. After the verdict say “visual
+comparison not tried for <mockup>: <reason>”.
+
 ## Steps only
 
 When your brief says "steps only", this section replaces "How to check" above and the

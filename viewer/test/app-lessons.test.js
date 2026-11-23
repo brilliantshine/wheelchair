@@ -114,7 +114,7 @@ test('normalization, cap, prompts and preview', async () => {
   s.lessons.reviewer = [s.lessons.worker[0]];
   assert.match(settings.fullPrompt(hub, s, 'lead', '/project'), /Lessons you keep for reviewers/);
   const oversizedLessons = settings.defaults();
-  for (const role of ['reviewer', 'verifier', 'mapper', 'lead']) {
+  for (const role of ['reviewer', 'verifier', 'mapper', 'designer', 'lead']) {
     oversizedLessons.lessons[role] = Array.from({ length: 12 }, (_, i) => ({ id: `L${String(i).padStart(6, '0')}`, text: 'x'.repeat(300), saved_by: 'agent', saved_at: new Date(0).toISOString() }));
   }
   assert.doesNotThrow(() => settings.assertFits(oversizedLessons));
@@ -125,13 +125,14 @@ test('normalization, cap, prompts and preview', async () => {
   assert.deepEqual(settings.normalize(invalidProvider).lessons.worker, []);
 });
 
-test('lead roleLayers keeps reviewer, verifier and mapper blocks', () => {
+test('lead roleLayers keeps reviewer, verifier, mapper and designer blocks', () => {
   const s = settings.defaults();
-  for (const role of ['reviewer', 'verifier', 'mapper']) s.lessons[role] = [{ id: `L${role.padEnd(6, '0').slice(0, 6)}`, text: `${role} lesson`, ...(role === 'reviewer' ? { provider: 'gpt' } : {}), saved_by: 'agent', saved_at: new Date(0).toISOString() }];
+  for (const role of ['reviewer', 'verifier', 'mapper', 'designer']) s.lessons[role] = [{ id: `L${role.padEnd(6, '0').slice(0, 6)}`, text: `${role} lesson`, ...(role === 'reviewer' ? { provider: 'gpt' } : {}), saved_by: 'agent', saved_at: new Date(0).toISOString() }];
   const text = settings.roleLayers(s, 'lead', '/project', null, 'claude').text;
   assert.match(text, /Lessons you keep for reviewers:/);
   assert.match(text, /Lessons you keep for verifiers:/);
   assert.match(text, /Lessons you keep for mappers:/);
+  assert.match(text, /Lessons you keep for designers:/);
   assert.match(text, /reviewer lesson \(only on GPT\)/);
 });
 
@@ -164,7 +165,7 @@ test('settings PUT merges edits and removals over HTTP', async () => {
 
 test('all saver and target pairs enforce the role matrix', async () => {
   const hub = await fixture();
-  const pairs = { lead: ['lead', 'reviewer', 'verifier', 'mapper'], 'sub-lead': ['sub-lead', 'worker'], worker: ['worker'], mapper: ['mapper'] };
+  const pairs = { lead: ['lead', 'reviewer', 'verifier', 'mapper', 'designer'], 'sub-lead': ['sub-lead', 'worker'], worker: ['worker'], mapper: ['mapper'], designer: [] };
   for (const [saver, targets] of Object.entries(pairs)) for (const target of settings.ROLES) {
     const operation = settings.applyLesson(hub, add({ for: target, text: `${saver} to ${target}` }), saver, '/project', 'one');
     if (targets.includes(target)) await operation;
