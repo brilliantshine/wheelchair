@@ -77,6 +77,7 @@
         "vendor": "Anthropic",
         "setupUrl": "https://docs.claude.com/en/docs/claude-code/setup",
         "permissionMode": "permission_mode",
+        "permissionName": "Claude",
         "permissionChoices": [
           [
             "auto",
@@ -223,6 +224,7 @@
         "vendor": "OpenAI",
         "setupUrl": "https://github.com/openai/codex",
         "permissionMode": "codex_mode",
+        "permissionName": "Codex",
         "permissionChoices": [
           [
             "sandboxed",
@@ -372,6 +374,7 @@
         "vendor": "Google",
         "setupUrl": "https://antigravity.google/cli",
         "permissionMode": "permission_mode",
+        "permissionName": "Antigravity",
         "permissionChoices": [
           [
             "auto",
@@ -516,6 +519,7 @@
         "vendor": "Kimi",
         "setupUrl": "https://code.kimi.com",
         "permissionMode": "permission_mode",
+        "permissionName": "Kimi",
         "permissionChoices": [
           [
             "auto",
