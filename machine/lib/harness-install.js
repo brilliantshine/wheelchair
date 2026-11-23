@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { providers, loadRecipes } = require('./harness-recipes');
+const versionArgs = install => install.versionArgs === undefined ? ['--version'] : install.versionArgs;
 const root = path.resolve(__dirname, '../..');
 const connectors = require('../../connectors');
 const dir = () => path.join(os.homedir(), '.wheelchair', 'installs');
@@ -121,7 +122,7 @@ async function job(p, started_at) {
           }
         } else resolved = (await run('sh', ['-c', `command -v ${cli}`], process.env, true)).status === 0 && cli;
         if (!resolved) { console.error(`Installed, but wheelchair can't find ${cli} on its path. Re-run ./install.sh from the wheelchair folder once.`); code = 1; }
-        else if (manifest.install.versionArgs !== null) code = (await run(resolved, manifest.install.versionArgs)).status ?? 1;
+        else if (versionArgs(manifest.install) !== null) code = (await run(resolved, versionArgs(manifest.install))).status ?? 1;
       }
     }
   } catch (e) { if (!reason) console.error(e.stack || e); code = 1; }
@@ -132,4 +133,4 @@ async function job(p, started_at) {
   fs.unlinkSync(file(p, 'pid'));
 }
 if (require.main === module && providers.includes(process.argv[2])) job(process.argv[2], process.argv[3]);
-module.exports = { state, start, stopJob, newer };
+module.exports = { state, start, stopJob, newer, versionArgs };
