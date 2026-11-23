@@ -7,7 +7,7 @@ verified-by: []
 
 # Completion Report — Custom image and GIF backgrounds
 
-Viewer-only implementation is complete. Independent verification evaluates the coverage and exact validation ordering below.
+Viewer-only implementation is complete. Initial independent verification found two normal-use readiness/focus gaps, fixed in REMEDIATION-1.md, and one accepted rare combination. Fresh independent verification evaluates the corrected commit; validation ordering is recorded below.
 
 ## Spec coverage
 
@@ -19,7 +19,7 @@ Viewer-only implementation is complete. Independent verification evaluates the c
 | Save disables edits and generation-scopes late success/error; same-section rebuild retains state | this run | viewer/pages/settings.js:1378; viewer/pages/settings.js:1446 | background-network.spec.js:181; background-network.spec.js:215 |
 | Remove invalidates decoding; previews reset35; zero opacity retains image | this run | viewer/pages/settings.js:1491 | background-editor.spec.js:60; background-editor.spec.js:126 |
 | Navigation/reload/pageshow discard local resources; no draft storage or broadcast | this run | viewer/pages/settings.js:1390; viewer/pages/settings.js:1501; viewer/pages/settings.js:1542 | background-editor.spec.js:84 |
-| Baseline loading disables slider while choose/remove remain usable | this run | viewer/pages/settings.js:1468 | background-network.spec.js:165 |
+| Initial baseline disables file choice; saved replacement loading disables slider while choose/remove remain usable | this run | viewer/pages/settings.js:1473 | background-readiness.spec.js:19; background-network.spec.js:165 |
 | Normalized metadata defaults/type/hash/opacity/revision; unrelated settings survive | this run | viewer/app/background.js:7; viewer/app/settings.js:212 | background-completion.test.js:80 |
 | Private immutable content-addressed files under stateDir; single hub writer | this run | viewer/app/background.js:17; viewer/app/background.js:63; viewer/app/API.md:214 | background.test.js:18; background-completion.test.js:80 |
 | Settings queue transaction/revision recheck; atomic pre-rename mode; commit-safe errors | this run | viewer/app/background.js:63; viewer/app/state.js:23 | background-completion.test.js:142; background-completion.test.js:157 |
@@ -43,6 +43,7 @@ Viewer-only implementation is complete. Independent verification evaluates the c
 | Isolated shared/helper and manual browser fixture state; sequential restart | this run | viewer/test/helpers/server.js:66; viewer/test/pages.spec.js:85; viewer/test/server-isolation.test.js | server-isolation.test.js; background.test.js:18 |
 | All seven Settings categories keep unboxed text/control groups opaque, with transparent outer gutters | this run | viewer/pages/background.css:28 | background-settings-surfaces.spec.js:25 (red before fix, green both browsers) |
 | Thread controls wait for own initial data; slow appearance metadata does not block Send | this run | viewer/pages/thread.html:50; viewer/pages/thread.js:1141 | background-rendering.spec.js:200 (red before fix, green both browsers) |
+| Unchanged clean polling preserves slider keyboard focus and native image identity | this run | viewer/pages/settings.js:1413; viewer/pages/settings.js:1506 | background-readiness.spec.js:45 |
 | Existing auth, graph interactions and unrelated Settings behavior | pre-existing | viewer/server.js; viewer/pages/settings.js | pre-existing architecture; full Node and both-browser suite |
 
 ## Deviations from plan
@@ -93,7 +94,7 @@ Running 52 tests using 2 workers
 exit 0
 ```
 
-Log /tmp/backgrounds-appearance-verified-oCRys4/output.log. This is exact combined coverage, not a claim that a full1126 command ran after the final CSS rule. No JS/routes/persistence changed after the clean full command.
+Log /tmp/backgrounds-appearance-verified-oCRys4/output.log. This is exact combined coverage, not a claim that a full1126 command ran after the final CSS rule. At that gate no JS/routes/persistence had changed after the clean full command; the later bounded Settings JS remediation and its targeted validation are recorded separately below.
 
 Relevant Node follow-up after the HTML correction:
 
@@ -114,8 +115,15 @@ Exact final screenshot paths are listed in reports/SCREENSHOTS.md. They include 
 
 ## Known gaps / residual risks
 
-The seven Accepted Risks in PLAN.md remain unchanged: external file loss/corruption, multiple hub writers, orphan files after crash, abnormal filesystem permissions, exhaustive browser/failure combinations, narrow metadata/cleanup read race, and repeated uncached navigation downloads. Ordinary restart/network/navigation/multiple-device behavior remains required and covered.
+The previous seven Accepted Risks in PLAN.md remain unchanged: external file loss/corruption, multiple hub writers, orphan files after crash, abnormal filesystem permissions, exhaustive browser/failure combinations, narrow metadata/cleanup read race, and repeated uncached navigation downloads. Ordinary restart/network/navigation/multiple-device behavior remains required and covered. Verification-1 additionally accepts the explicitly documented compound invalid-candidate/remote-replacement/slider overlap; it does not excuse initial loading loss or unchanged-poll focus theft.
 
 ## Remediation rounds
 
-None.
+### Remediation-1 — 2026-11-23
+
+The initial verifier on75ee3319 independently confirmed the prior gate counts and reproduced initial file-selection loss, unchanged-poll keyboard-focus loss and a compound invalid-candidate/remote-replacement/slider overlap. The lead accepted only the compound sequence as a rare risk. Initial loading now disables file choice until metadata exists; effective-state comparison suppresses unchanged clean-editor rebuilds, retaining focused controls and the native saved image. Actual saved changes still update clean editors.
+
+Coverage: `viewer/pages/settings.js:1413`, `:1470`, `:1473`, `:1506`; `viewer/test/background-readiness.spec.js:19`, `:45`. See REMEDIATION-1.md for exact red/green commands, final targeted suite and fresh independent result. No backend, storage, authentication or layout change was made in this remediation.
+
+
+Final remediation validation: the two new regressions passed4/4 in both browsers after reproducing4/4 expected red failures. All appearance cases passed56/56 (47.2s), and relevant Settings cases passed66/66 (34.1s), in separate isolated commands. Exact commands, paths and the one test-only hash-navigation readiness correction are recorded in REMEDIATION-1.md. The prior broad Node/browser gate results remain historical passing evidence, not a claim that the whole suite reran after this bounded Settings-only JS change.

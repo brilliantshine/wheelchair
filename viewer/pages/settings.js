@@ -1410,6 +1410,11 @@
   function repaintBackground(v) {
     if (section === 'background' && backgroundVisit === v) renderPanel();
   }
+  function backgroundStateKey(state) {
+    const m = state.metadata;
+    // An unchanged poll must not replace a focused clean editor's controls.
+    return JSON.stringify([m && [m.image_id, m.media_type, m.opacity, m.revision, m.image_url, m.missing_image], state.ready, state.available, state.error]);
+  }
   async function selectBackground(v, file) {
     if (!file || v.saving) return;
     cancelBackgroundCandidate(v);
@@ -1462,9 +1467,10 @@
   function renderBackground() {
     const v = ensureBackground();
     const state = bg.current(), m = state.metadata;
+    v.renderedState = backgroundStateKey(state);
     const opacity = v.dirty ? v.opacity : (m?.opacity ?? 35);
     const hasImage = v.dirty ? !!(v.image || v.imageId) : state.available;
-    const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', disabled: v.saving, 'aria-label': 'Choose background image', onchange: e => selectBackground(v, e.target.files[0]) });
+    const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', disabled: v.saving || !m, 'aria-label': 'Choose background image', onchange: e => selectBackground(v, e.target.files[0]) });
     const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', value: String(opacity), disabled: v.saving || !hasImage || (!v.dirty && !state.ready), 'aria-label': 'Visibility' });
     const value = h('span', { text: opacity + '%' });
     slider.addEventListener('input', () => {
@@ -1497,7 +1503,10 @@
         h('p', { class: 'note', role: 'status', text: v.status || (v.pending ? 'Loading image…' : (!m ? 'Loading background…' : '')) })));
   }
   if (bg) {
-    bg.subscribe(() => { if (section === 'background' && backgroundVisit && !backgroundVisit.dirty && !backgroundVisit.pending) repaintBackground(backgroundVisit); });
+    bg.subscribe(state => {
+      if (section === 'background' && backgroundVisit && !backgroundVisit.dirty && !backgroundVisit.pending
+          && backgroundVisit.renderedState !== backgroundStateKey(state)) repaintBackground(backgroundVisit);
+    });
     window.addEventListener('backgroundrestore', () => { discardBackground(); if (section === 'background') repaintBackground(ensureBackground()); });
     window.addEventListener('backgrounddispose', discardBackground);
   }

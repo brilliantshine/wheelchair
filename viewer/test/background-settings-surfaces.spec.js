@@ -42,6 +42,7 @@ test('all Settings categories keep content solid and outer gutters visible', asy
     ['background', '.background-editor > div'],
   ]) {
     await page.locator(`#sections a[data-section="${section}"]`).click();
+    await expect(page.locator(`#sections a[data-section="${section}"]`)).toHaveAttribute('aria-current', 'page');
     const surfaces = page.locator(selector);
     await expect(surfaces.first()).toBeVisible();
     for (const surface of await surfaces.all()) await opaqueBackdrop(surface);
