@@ -62,16 +62,19 @@ Three pieces:
   rules and the server's existing CSP and empty sandbox apply unchanged:
   `viewer/server.js:1690-1694`, `viewer/pages/diagram.js:70-77`).
 - Each file shows one screen in one state, laid out for one device size (`width` x `height`
-  CSS pixels). The lead picks the size from what the thread builds: for example 390x844 for a
+  CSS pixels, each from 200 to 2560, the screen tool's capture limit: `machine/lib/screen-args.js:31`). The lead picks the size from what the thread builds: for example 390x844 for a
   phone screen, 1440x900 for a desktop web page, the app's window size for a desktop app.
   Several states or sizes are several files.
+- A mockup file is at most 2 MiB (the archived-file read limit, `viewer/app/threads.js:295`).
+  `card.js` checks the file exists under the plan's `graphs/` and refuses a `mockup` card or
+  `image.mockup` whose file is larger, before posting.
 - A new version of a mockup is written as a new file (`mockup-<name>-v2.html`, ...), never
   over an old one, so older cards in the thread still show what they showed.
 
 ### The `mockup` diagram format
 
 - `diagram` cards gain `format: "mockup"`, which loads `graphs/<graph>.html` like `html`,
-  and two fields: `width` and `height`, integers from 200 to 4000, required when `format`
+  and two fields: `width` and `height`, integers from 200 to 2560, required when `format`
   is `mockup` and refused for any other format (`viewer/app/card.js` validation;
   `protocol/app/cards-lead.md` diagram section).
 - **In the thread:** the card draws a sandboxed iframe sized exactly `width` x `height`,
@@ -90,11 +93,23 @@ Three pieces:
 - `image` cards gain an optional `mockup` object `{plan, graph, width, height}` naming a
   mockup file with the same rules as a mockup diagram card. When present, the card shows the
   screenshot and the mockup side by side, labelled "Built" and "Mockup", each scaled to half
-  the card width; under 599px card width they stack, Built first. Without `mockup`, image
+  the card width; under 599px card width they stack, Built first. Each half has its own
+  "Open full size": the screenshot opens as an image at true size; the mockup opens the
+  picture page, which accepts an `image` card with `mockup` (`?card=<id>`) and draws the
+  mockup exactly as for a mockup diagram card. Without `mockup`, image
   cards behave as today.
 - `image` cards may now be posted by `lead` and `sub-lead` (`viewer/app/card.js:42`;
   `protocol/app/cards.md` kind table; `cards-lead.md` image section moves the "only the
   lead" sentence). The machine's copy-into-uploads step is unchanged.
+- Archiving keeps `image` and `file` uploads posted by sub-leads as well as leads (the keep
+  list in `viewer/app/threads.js:219-220` today keeps only lead-authored ones), so both
+  halves of a comparison still load in an archived thread.
+- The `image` card section moves from `protocol/app/cards-lead.md` to the shared
+  `protocol/app/cards.md` (which the sub-lead receives), and the kind table lists
+  `lead, sub-lead` as emitters. `protocol/app/sub-lead.md:5-7` ("never post cards meant for
+  the user except the `progress` line") gains `image` as the second exception, and its
+  screenshot relay sentence (`sub-lead.md:179`, "pass them on to the lead") is replaced by
+  the posting rule in "Build and verify rules".
 
 ### The `designer` role
 
@@ -139,10 +154,25 @@ Rules, in a new `protocol/app/designer.md`:
   starts one designer once IDEA.md is confirmed, alongside asking design questions. It may
   skip it when the visible part is trivial, saying so in a line.
 - **Showing:** for each `result`, the lead posts one `mockup` diagram card per file.
-  Collin's feedback in chat is relayed to the designer as a `message`. The lead stops the
-  designer when Collin agrees the mockups, or when status leaves `planning` (whichever is
-  first); a later change before approval starts a fresh designer briefed with the current
-  files.
+  Collin's feedback is passed to the designer as a `message` quoting his words verbatim,
+  with the paths of any files he attached (`[attached: <path>]`), not a paraphrase.
+- **Gate:** when the lead starts a designer it adds an Open Question "Agree the mockups" to
+  PLAN.md, so status stays `planning` (the existing gate: Open Questions empty) until Collin
+  agrees them. It is settled by a Decision naming the agreed files; the lead then stops the
+  designer. If the lead skips the designer, it logs that as a `defaulted` Decision instead.
+- **Changes during review** (status `ready-for-review`, before approval): the lead starts a
+  fresh designer briefed with the current files and Collin's words; the new version, once
+  Collin agrees it, is a Spec change listed in the next round's "Changed since" list.
+- **Changes after Start building:** the mockups are fixed like the rest of the Spec while
+  the sub-lead owns the worktree. A change Collin asks for after seeing a build screenshot is
+  answered in a line ("I'll apply it right after the build, in the same pull request"); once
+  the sub-lead stops and `done` is posted, the lead makes it as an after-done fix (step 9 of
+  `lead.md`: the pull request is still open, so it is fixed in place and verified). If it
+  needs parallel work, step 9's stub rule applies.
+- **Restart:** a restarted lead stops any live designer (its results would go to the dead
+  lead) and, if the "Agree the mockups" question is still open, starts a fresh one briefed
+  with the newest mockup files and any of Collin's feedback in the restart context's recent
+  messages not yet reflected in a file.
 - **Recording:** agreed mockups are listed in the Spec under a "Mockups" heading: one row per
   file with its path, the screen/state it shows and its size. Choosing which version is
   agreed is a Decision Log entry. After approval, changing a mockup is a Spec change (the plan
@@ -156,24 +186,33 @@ Rules, in a new `protocol/app/designer.md`:
   (layout, content, hierarchy, colours, type, spacing). When the task finishes, it
   screenshots the built screen at the mockup's `width` x `height`: a web page with headless
   Chromium (an isolated server per the project's rules); a desktop app or game with its
-  invisible screen (`wc.js screen`). It lists each screenshot path with the mockup it matches
-  in its report. A task with visible work but no mockup still reports a screenshot. If it
+  invisible screen (`wc.js screen`). It then looks at its screenshot beside the mockup (rendering the mockup at its size with
+  headless Chromium, or opening the HTML's own render) and fixes any difference by the
+  verifier's bar below before reporting. It lists each screenshot path with the mockup it
+  matches in its report, and any difference it chose to leave, with why. A task with visible work but no mockup still reports a screenshot. If it
   cannot take one, it says why; this does not block the task.
 - **Sub-lead** (`protocol/app/sub-lead.md`): briefs name the mockup files and sizes from the
   Spec's Mockups list for each task that touches those screens. When a worker's `result`
   arrives with screenshots, the sub-lead posts one `image` card per screenshot right away
-  (with `mockup` set when the report names one), before merging or verifying. It does not
-  relay screenshots to the lead.
+  (with `mockup` set when the report names one), before merging or verifying. When it
+  checks the task, a difference the worker left without a good reason is a reason to send
+  the task back, like any other mismatch with the brief. It does not relay screenshots to
+  the lead.
 - **Verifier** (`protocol/app/verifier.md`): each Spec mockup is a Spec item. The verifier
   screenshots the built screen at the mockup's size and compares the two. A difference a user
   would notice (missing or extra element, wrong order or grouping, wrong text, clearly
   different colour, size or spacing) is a gap; anti-aliasing, font rendering and sub-pixel
-  differences are not. It names the screenshot paths it compared.
+  differences are not. It names the screenshot paths it compared. Where no capture path
+  exists (for example a desktop app on a machine without the screen tool), the comparison is
+  reported as could not try, not as a gap.
 
 ### Not in this thread
 
 - Importing from Claude Design or other tools; clickable prototypes (IDEA.md, Not doing).
 - Tap-to-comment on a mockup (Decision 4).
+- Mockups and other diagram files for threads whose worktree is on another machine: a
+  limitation of every diagram card today, tracked by the unopened thread "Pictures from
+  threads on another computer".
 
 ### Validation
 
@@ -185,7 +224,8 @@ npm --prefix viewer run test:browser
 
 New tests at minimum: `card.js` accepts a `mockup` diagram with `width`/`height` and refuses
 them on other formats or out of range; accepts `image.mockup` and an `image` from a sub-lead,
-refuses `image` from a worker; a lead may start a `designer`, a sub-lead may not; the designer
+refuses `image` from a worker; refuses a mockup file over 2 MiB; archiving keeps a
+sub-lead's image upload; a lead may start a `designer`, a sub-lead may not; the designer
 gets `cards.md` and `designer.md` in its prompt and an Other agents tier; a browser test that
 a 390x844 mockup card shows the whole screen without inner scrolling at phone and laptop
 widths, that "Open full size" shows (not downloads) a mockup, and that an `image` with
@@ -235,6 +275,18 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | No one compares a task's screenshot with its mockup during the build | upheld | Worker compares and fixes before reporting; sub-lead sends back unexplained differences |
+| intent | minor | Lead paraphrases feedback; attachments not passed to designer | upheld | Pass words verbatim plus attachment paths |
+| intent | minor | Half-width comparison too small; no full size for the mockup half | upheld | Each half gets Open full size; picture page accepts image+mockup |
+| mechanics | blocking | Mockups fail for threads on a remote machine | declined | Same for every existing diagram card (`viewer/server.js:1673` reads the hub's own disk); tracked by the unopened thread "Pictures from threads on another computer"; noted under Not in this thread |
+| mechanics | major | Archive drops sub-lead screenshots | downgraded (minor) | Real but only affects archived history; keep list now includes sub-lead uploads |
+| mechanics | major | Live HTML has no size cap, archived read caps at 2 MiB | downgraded (minor) | Only large embedded images, only after archive; 2 MiB checked by card.js at post time |
+| mechanics | major | Planning gate can close while mockups are unagreed | upheld | "Agree the mockups" Open Question holds status at planning; review-time changes go into the next round |
+| mechanics | major | No path for mockup changes after Start building | upheld | Fixed during the build; applied as an after-done fix in the same open PR |
+| mechanics | major | Allowed sizes exceed screen capture limit; no Windows capture | downgraded (minor) | Range now 200-2560; no capture path is could-not-try, not a gap |
+| mechanics | major | Restarted lead and surviving designer | downgraded (minor) | Worst case is resent feedback; restart stops the designer and starts a fresh one |
+| mechanics | major | Designer waits forever on an OpenRouter-only machine | declined | Pre-existing for every Other-agents role (mapper, reviewer, verifier) via `worker_order` (`viewer/app/balancer.js:88`); not introduced here |
+| mechanics | minor | Image section lives in cards-lead.md, sub-lead may only post progress | upheld | Moved to cards.md; sub-lead exception updated |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
