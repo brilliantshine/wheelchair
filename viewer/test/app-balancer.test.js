@@ -25,6 +25,21 @@ test('default placement, strict and preferred constraints, and invalid flags', a
     assert.deepEqual(c.machine.calls.find((x) => x.path === '/v1/sessions' && x.body.name === worker.body.session.name).body.account, { id: 'default-gpt', dir: null });
     const invalid = await machinePost(c, '/machine/session', { calling_session: lead, action: 'start', role: 'mapper', provider: 'gpt', attempt_id: 'bad' });
     assert.equal(invalid.status, 400);
+    const setDesigner = await api(c, '/settings/preferences', { method: 'PUT', body: { other_agents: { designer: 'critical' } } });
+    assert.equal(setDesigner.body.other_agents.designer, 'critical');
+    const designer = await machinePost(c, '/machine/session', { calling_session: lead, action: 'start', role: 'designer', attempt_id: 'designer' });
+    assert.equal(designer.status, 200);
+    const call = c.machine.calls.find((x) => x.path === '/v1/sessions' && x.body.name === designer.body.session.name);
+    assert.equal(call.body.worktree, made.worktree);
+    assert.equal(call.body.branch, made.branch);
+    const model = require('node:child_process').execFileSync(path.join(__dirname, '../../codex/model.sh'), [designer.body.session.provider, 'critical'], { env: { ...process.env, WHEELCHAIR_MODELS: c.models }, encoding: 'utf8' }).trim();
+    assert.equal(call.body.model, model);
+    const denied = await machinePost(c, '/machine/session', { calling_session: sub.body.session.name, action: 'start', role: 'designer', attempt_id: 'denied' });
+    assert.equal(denied.status, 403);
+    for (const flag of ['provider', 'not_provider']) {
+      const refused = await machinePost(c, '/machine/session', { calling_session: lead, action: 'start', role: 'designer', [flag]: 'gpt', attempt_id: `bad-${flag}` });
+      assert.equal(refused.status, 400);
+    }
     const failed = await event(c, made.id, lead, 'turn-failed', { error: 'broken' });
     assert.equal(failed.status, 202);
     let current = (await api(c, `/threads/${made.id}/chat`)).body.thread;
@@ -92,7 +107,7 @@ test('placement ranks accounts and respects provider policy', async (t) => {
       const excluded = await choose(hub, { machine: 'hub' }, role, 'top', { not_provider: 'gpt' });
       assert.equal(excluded.provider, 'gpt'); assert.match(excluded.note, /gpt/);
     }
-    for (const role of ['lead', 'sub-lead', 'mapper']) for (const flag of ['provider', 'not_provider']) await assert.rejects(choose(hub, { machine: 'hub' }, role, 'top', { [flag]: 'gpt' }), { status: 400 });
+    for (const role of ['lead', 'sub-lead', 'mapper', 'designer']) for (const flag of ['provider', 'not_provider']) await assert.rejects(choose(hub, { machine: 'hub' }, role, 'top', { [flag]: 'gpt' }), { status: 400 });
     await assert.rejects(choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'gpt', not_provider: 'claude' }), { status: 400 });
   });
   await t.test('lead reserve follows signed-in lead order and margin', async () => {
@@ -151,7 +166,7 @@ test('placement ranks accounts and respects provider policy', async (t) => {
   });
   await t.test('margin skips Claude for workers but not leads', async () => {
     const hub = await fixture({ worker_order: ['claude', 'gpt'], margin: 50, save_for_leads: false }, { 'default-claude': { week: { used: 70, resets_at: future(24) } } });
-    for (const role of ['worker', 'reviewer', 'verifier', 'mapper']) assert.equal((await choose(hub, { machine: 'hub' }, role)).provider, 'gpt');
+    for (const role of ['worker', 'reviewer', 'verifier', 'mapper', 'designer']) assert.equal((await choose(hub, { machine: 'hub' }, role)).provider, 'gpt');
     await settings.update(hub, (s) => { s.held_back.reviewer = false; s.save_for_leads = false; });
     const reviewer = await choose(hub, { machine: 'hub' }, 'reviewer', 'top', { provider: 'claude' });
     assert.equal(reviewer.provider, 'claude'); assert.equal(reviewer.note, undefined);

@@ -26,7 +26,11 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     assert.ok(initial.body.accounts.some((account) => account.id === 'default-gemini'));
     assert.deepEqual(initial.body.worker_order, ['gpt', 'claude', 'gemini', 'kimi']);
     assert.ok(initial.body.accounts.some((account) => account.id === 'default-kimi'));
-    assert.deepEqual(initial.body.other_agents, { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' });
+    assert.deepEqual(initial.body.other_agents, { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' });
+    const old = settings.normalize({ other_agents: { mapper: 'heavy' }, held_back: { worker: false, reviewer: true, verifier: false, mapper: false } });
+    assert.equal(old.other_agents.designer, 'standard');
+    assert.deepEqual(old.held_back, { worker: false, reviewer: true, verifier: false, mapper: false, designer: true });
+    assert.equal(initial.body.held_back.designer, true);
     assert.equal(initial.body.permission_mode, 'auto');
     assert.equal(initial.body.codex_mode, 'sandboxed');
     assert.equal(initial.body.tool_steps, 'show');
@@ -295,7 +299,7 @@ test('escalation settings, sentences, and role layers', async () => {
   assert.deepEqual(settings.normalize({ escalation: { first: 'bad', max_tier: 'heavy' } }).escalation, { ...defaults.escalation, max_tier: 'heavy' });
   const layers = settings.roleLayers(defaults, 'sub-lead').text;
   assert.ok(layers.includes(`Escalation rules from Settings:\n${sentences.join('\n')}`));
-  for (const role of ['lead', 'worker', 'reviewer', 'verifier', 'mapper']) assert.ok(!settings.roleLayers(defaults, role).text.includes('Escalation rules from Settings:'));
+  for (const role of ['lead', 'worker', 'reviewer', 'verifier', 'mapper', 'designer']) assert.ok(!settings.roleLayers(defaults, role).text.includes('Escalation rules from Settings:'));
   await withContext(async (context) => {
     const initial = (await api(context, '/settings')).body;
     assert.deepEqual(initial.escalation, defaults.escalation);
@@ -396,7 +400,7 @@ test('scout preferences and session layers follow the selected provider', async 
     await api(context, '/settings/models', { method: 'PUT', body: { provider: 'claude', slot: 'light', model: null } });
     const none = await thread(context, { cli: 'claude', project: '/tmp/scout-none' });
     assert.match(context.machine.sessions.get(none.sessions[0].name).role_layers, /Scout model for code reading: none on this CLI\. Read code yourself\./);
-    for (const role of ['worker', 'reviewer', 'verifier', 'mapper']) assert.doesNotMatch(settings.roleLayers(settings.defaults(), role, '', { light: 'haiku', heavy: 'sonnet' }, 'claude').text, /Scout model/);
+    for (const role of ['worker', 'reviewer', 'verifier', 'mapper', 'designer']) assert.doesNotMatch(settings.roleLayers(settings.defaults(), role, '', { light: 'haiku', heavy: 'sonnet' }, 'claude').text, /Scout model/);
   });
 });
 

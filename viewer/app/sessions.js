@@ -128,13 +128,14 @@ const SESSION_ROLES = new Set([
   'lead',
   'sub-lead',
   'mapper',
+  'designer',
   'worker',
   'reviewer',
   'verifier',
 ]);
 
 const ALLOWED_START = {
-  lead: new Set(['mapper', 'reviewer', 'sub-lead', 'verifier']),
+  lead: new Set(['mapper', 'designer', 'reviewer', 'sub-lead', 'verifier']),
   'sub-lead': new Set(['worker', 'verifier']),
 };
 
@@ -762,10 +763,10 @@ async function sessionRequest(hub, payload) {
     title: payload.title,
     tier: payload.tier,
     effort: payload.effort,
-    // Spec "Branches and checkouts": the mapper, reviewers and the sub-lead run in the thread's
+    // Spec "Branches and checkouts": the mapper, designer, reviewers and the sub-lead run in the thread's
     // own worktree; a worker gets a branch cut from the thread's branch; a verifier checks the
     // thread's branch as it stands, commits not yet pushed included.
-    ...(['mapper', 'reviewer', 'sub-lead'].includes(payload.role) ? { worktree: thread.worktree, branch: thread.branch } : {}),
+    ...(['mapper', 'designer', 'reviewer', 'sub-lead'].includes(payload.role) ? { worktree: thread.worktree, branch: thread.branch } : {}),
     base: payload.role === 'worker' ? thread.branch : undefined,
     verify_ref: payload.role === 'verifier' ? thread.branch : undefined,
     ...(payload.role === 'worker' && payload.replaces ? await replacedWorker(hub, thread, payload.replaces) : {}),

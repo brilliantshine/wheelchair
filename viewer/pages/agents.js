@@ -54,7 +54,7 @@
   function agentCount(n) { return `${n} ${n === 1 ? 'agent' : 'agents'}`; }
   function counts(lead) { const c = lead.counts || {}; const parts = [agentCount(c.total || 0)]; for (const [k, label] of [['working','working'], ['waiting', lead.session?.state === 'needs-you' ? 'waiting on another agent or you' : 'waiting on another agent'], ['not_started','not started'], ['finished','finished'], ['idle','idle']]) if (c[k]) parts.push(`${c[k]} ${label}`); return parts.join(' · '); }
   const svgNS = 'http://www.w3.org/2000/svg';
-  function roleShort(role) { const short = { lead: 'L', 'sub-lead': 'SL', worker: 'W', mapper: 'M', verifier: 'V', reviewer: 'R' }; return Object.hasOwn(short, role) ? short[role] : (typeof role === 'string' && role ? role[0].toUpperCase() : 'A'); }
+  function roleShort(role) { const short = { lead: 'L', 'sub-lead': 'SL', worker: 'W', mapper: 'M', designer: 'D', verifier: 'V', reviewer: 'R' }; return Object.hasOwn(short, role) ? short[role] : (typeof role === 'string' && role ? role[0].toUpperCase() : 'A'); }
   function svg(tag, attrs = {}, text) { const n = document.createElementNS(svgNS, tag); for (const [k,v] of Object.entries(attrs)) n.setAttribute(k, v); if (text !== undefined) n.textContent = text; return n; }
   function clock(at) { const d = new Date(at); return Number.isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
   function seconds(since) { const t = Date.parse(since); return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now()-t)/1000)) : 0; }

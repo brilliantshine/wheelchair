@@ -1,6 +1,6 @@
 'use strict';
 
-const roles = new Set(['worker', 'mapper', 'sub-lead', 'reviewer', 'verifier']);
+const roles = new Set(['worker', 'mapper', 'designer', 'sub-lead', 'reviewer', 'verifier']);
 const reportRole = s => ['reviewer', 'verifier'].includes(s.role);
 const watched = s => Boolean(s.live && s.started_by && roles.has(s.role) && !(reportRole(s) && s.finished));
 const waiting = (thread, s) => thread.sessions.some(c => c.started_by === s.name && c.live && (c.owes_reply || c.awaiting_answer || c.status === 'waiting' || c.queue?.length));
