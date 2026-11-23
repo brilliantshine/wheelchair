@@ -22,3 +22,5 @@ exports.loadedTools = (names, mcp, mount, replaceEntries = {}) => names.map(name
   return { name, windows: stdio && require('../machine/lib/project-programs').isWindowsProgram(entry.command, mount || '/mnt'), wrapped: stdio && Object.hasOwn(replaceEntries || {}, name) && replaceEntries[name] != null };
 });
 
+
+exports.scrubOutput = text => String(text).replace(/sk-or-[A-Za-z0-9_-]+/g, '[redacted key]');

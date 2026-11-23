@@ -30,6 +30,7 @@ const { pipeline } = require('node:stream/promises');
 const { promisify } = require('node:util');
 const gitAsync = promisify(execFile);
 const connectors = require('../connectors');
+const { scrubOutput } = require('../connectors/common');
 const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
 const { limitedUntil } = require('./lib/limits');
 const { readLines: readCodexSteps } = require('../connectors/codex/steps');
@@ -601,7 +602,7 @@ class MachineService {
     const session = this.managed(name);
     const result = this.tmux(['capture-pane', '-p', ...(session.cli === 'pi' ? ['-J'] : []), ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', `=${name}:`]);
     if (!result.ok) throw Object.assign(new Error(result.stderr.trim() || 'tmux pane unavailable'), { status: 409 });
-    return adapters.pi.redact(result.stdout);
+    return scrubOutput(result.stdout);
   }
   sessionName(threadId, role) {
     safeName(threadId, 'thread id'); safeName(role, 'role');
@@ -1487,7 +1488,7 @@ class MachineService {
     // tail for the next read instead of copying a fragment and advancing past it.
     const newline = text.lastIndexOf('\n');
     const complete = newline < 0 ? '' : text.slice(0, newline + 1);
-    const lines = complete ? complete.slice(0, -1).split('\n').map(line => session.cli === 'pi' ? adapters.pi.redact(line) : line) : [];
+    const lines = complete ? complete.slice(0, -1).split('\n').map(line => adapters[session.cli]?.redact?.(line) ?? line) : [];
     const nextOffset = begin + Buffer.byteLength(complete);
     const target = path.join(this.stateDir, 'transcripts', session.thread_id, `${session.name}.jsonl`);
     let additions = [];
@@ -1755,13 +1756,13 @@ class MachineService {
     const record = this.loginRecord(account);
     const result = this.tmux(['capture-pane', '-p', '-e', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
     if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
-    return adapters.pi.redact(result.stdout);
+    return scrubOutput(result.stdout);
   }
   loginState(account) {
     const record = this.loginRecord(account), adapter = adapters[record.cli];
     if (record.cli === 'kimi' && record.result) return record.result;
     const captured = this.tmux(['capture-pane', '-p', ...(record.cli === 'pi' ? ['-J'] : []), '-t', `=wc-login-${account}:`]);
-    const pane = captured.ok ? adapters.pi.redact(captured.stdout) : '';
+    const pane = captured.ok ? scrubOutput(captured.stdout) : '';
     if (record.cli === 'kimi') {
       const authenticated = adapter.loginStatus(record.dir).authenticated;
       const marker = pane.match(/__wc_login_exit (\d+)/);
