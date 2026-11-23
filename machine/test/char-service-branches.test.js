@@ -111,7 +111,7 @@ test('login state responses scrub keys for every tool', async () => {
 test('launch version gates apply to Pi and Kimi and preserve their exact errors', async () => {
   for (const cli of clis) {
     const m = machine(), checked = [];
-    m.checkPiVersion = async () => checked.push('pi'); m.checkKimiVersion = async () => checked.push('kimi');
+    m.checkVersion = async cli => checked.push(cli);
     m.cliStatus = name => ({ installed: true, problem: `${name} version problem` });
     m.createWorktree = async () => { throw new Error('reached worktree'); };
     await assert.rejects(m.startNamed({ cli, role: 'lead', thread_id: 'test', token: 'x' }, `wc-${cli}-lead`), { message: cli === 'pi' || cli === 'kimi' ? `${cli} version problem` : 'reached worktree' });
@@ -122,11 +122,11 @@ test('launch version gates apply to Pi and Kimi and preserve their exact errors'
     }
   }
   const m = machine();
-  assert.equal(m.piVersionStatus('1.5.1', { logged_in: true }).problem, 'Pi 1.5.2 or newer is needed (found 1.5.1)');
-  assert.equal(m.piVersionStatus('1.6.0', { logged_in: true }).warning, 'Pi 1.6.0 is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.');
-  assert.equal(m.piVersionStatus(null, { logged_in: true }).warning, "Pi's version couldn't be read. If OpenRouter agents fail, this may be why.");
-  assert.equal(m.kimiVersionStatus(null, { logged_in: true }).problem, "Checking Kimi Code's version");
-  assert.equal(m.kimiVersionStatus({ output: 'kimi 2.6.2', failed: false }, { logged_in: true }).problem, 'Kimi Code 2.6.3 or newer is needed (found kimi 2.6.2)');
+  assert.equal(require('../../connectors/pi/machine').piVersionStatus('1.5.1', { logged_in: true }).problem, 'Pi 1.5.2 or newer is needed (found 1.5.1)');
+  assert.equal(require('../../connectors/pi/machine').piVersionStatus('1.6.0', { logged_in: true }).warning, 'Pi 1.6.0 is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.');
+  assert.equal(require('../../connectors/pi/machine').piVersionStatus(null, { logged_in: true }).warning, "Pi's version couldn't be read. If OpenRouter agents fail, this may be why.");
+  assert.equal(require('../../connectors/kimi/machine').kimiVersionStatus(null, { logged_in: true }).problem, "Checking Kimi Code's version");
+  assert.equal(require('../../connectors/kimi/machine').kimiVersionStatus({ output: 'kimi 2.6.2', failed: false }, { logged_in: true }).problem, 'Kimi Code 2.6.3 or newer is needed (found kimi 2.6.2)');
 });
 
 test('preflight passes account CODEX_HOME only for a directory and maps exit status', async () => {
@@ -156,7 +156,7 @@ test('launch preparation selects project keys and dropped MCP settings per tool'
   m.threadWorktree = () => null; m.updateProjectTools = () => {};
   const adapter = { loginEnv: () => ({}), firstMessage: () => 'initial' };
   let context;
-  m.kimiLaunchPath = async () => ({ executable: '/resolved/kimi' });
+  m.launchPath = async () => ({ executable: '/resolved/kimi' });
   m.commandFor = (input, session, worktree, prompt, rolePrompt, mcp, supplied) => {
     context = supplied;
     assert.deepEqual(Object.keys(mcp.servers), ['local']);
@@ -194,7 +194,7 @@ test('status version checks retain per-tool results and version messages', async
   const old = process.env.PATH; process.env.PATH = `${bin}:/usr/bin:/bin`;
   try {
     const m = new MachineService({ stateDir: root });
-    await m.checkPiVersion(); await m.checkKimiVersion();
+    await m.checkVersion('pi'); await m.checkVersion('kimi');
     for (const [cli, version] of [['claude', 'claude 3'], ['codex', 'codex 4'], ['agy', 'agy 5'], ['kimi', 'kimi 2.6.3'], ['pi', '1.5.2']]) assert.deepEqual(m.cliStatus(cli, { logged_in: true }), { installed: true, logged_in: true, version }, cli);
   } finally { process.env.PATH = old; }
 });

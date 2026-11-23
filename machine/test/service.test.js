@@ -1422,10 +1422,10 @@ test('Codex rollout reads persist complete lines, serialize reads, and flush bef
   const start = row('a','custom_tool_call',{name:'exec',input:'tools.exec_command({cmd:"npm test"})'});
   const end = row('a','custom_tool_call_output',{output:'Script running with cell ID 1'});
   await write(file,start+'\n'+end);
-  await Promise.all([svc.pollCodexSteps(),svc.readCodexSteps(session)]);
+  await Promise.all([svc.pollCodexSteps(),svc.readSteps(session)]);
   assert.equal(peak,1); assert.deepEqual(seen.map(e=>e.phase),['start']); assert.equal(session.steps_offset,Buffer.byteLength(start+'\n'));
   assert.equal(svc.sessions['wc-unbound'].steps_offset,undefined);
-  await fs.appendFile(file,'\n'); await svc.readCodexSteps(session);
+  await fs.appendFile(file,'\n'); await svc.readSteps(session);
   const saved=JSON.parse(await fs.readFile(svc.sessionsPath,'utf8')); assert.equal(saved['wc-test'].steps_state.yielded,'a');
   const restarted=new MachineService({ win: noWsl, stateDir:root}); restarted.sessions=saved; restarted.emitEvent=svc.emitEvent; restarted.spool=svc.spool;
   const poll=row('p','function_call',{name:'wait',arguments:'{}'}), finish=row('p','function_call_output',{output:'Script completed'});
@@ -1443,19 +1443,19 @@ test('Codex rollout reader tails bounded chunks, reads appends once, and resets 
   const row = (id,type,extra={}) => JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type,call_id:id,...extra}});
   const pair = id => row(id,'custom_tool_call',{name:'exec_command',input:{cmd:'true'}})+'\n'+row(id,'custom_tool_call_output',{output:'Script completed'})+'\n';
   await write(file,pair('one'));
-  await svc.readCodexSteps(session); const firstOffset = session.steps_offset;
+  await svc.readSteps(session); const firstOffset = session.steps_offset;
   await fs.appendFile(file,pair('two'));
-  await svc.readCodexSteps(session); assert.equal(session.steps_offset, (await fs.stat(file)).size);
+  await svc.readSteps(session); assert.equal(session.steps_offset, (await fs.stat(file)).size);
   assert.equal(session.steps_state.open.two, undefined);
-  await svc.readCodexSteps(session); assert.equal(session.steps_offset, (await fs.stat(file)).size);
+  await svc.readSteps(session); assert.equal(session.steps_offset, (await fs.stat(file)).size);
   // A full chunk without a newline is skipped, so one pathological line cannot stall the tail.
   await write(file,'x'.repeat(8 * 1024 * 1024));
   session.steps_offset = 0;
-  await svc.readCodexSteps(session); assert.equal(session.steps_offset, 8 * 1024 * 1024);
+  await svc.readSteps(session); assert.equal(session.steps_offset, 8 * 1024 * 1024);
   // Replacing the file with a shorter rollout resets the offset and parser state.
   session.steps_state = {open:{stale:{poll:false}},yielded:'stale'};
   await write(file,pair('replacement'));
-  await svc.readCodexSteps(session);
+  await svc.readSteps(session);
   assert.equal(session.steps_offset, (await fs.stat(file)).size);
   assert.deepEqual(session.steps_state, {open:{},yielded:null});
   assert.ok(firstOffset > 0);

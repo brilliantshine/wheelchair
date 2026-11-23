@@ -1072,8 +1072,8 @@ class MachineService {
     }
     return { ok: true, end_reason: session.end_reason };
   }
-  async kimiBinding(session) { return adapters[session.cli].bindTranscript.call(this, session); }
-  async kimiSpoolWaiting(session) { return adapters[session.cli].spoolWaiting.call(this, session); }
+  async bindTranscript(session) { return adapters[session.cli].bindTranscript.call(this, session); }
+  async spoolWaiting(session) { return adapters[session.cli].spoolWaiting.call(this, session); }
   async pollKimiTurns() {
     for (const session of Object.values(this.sessions)) if (connectors.manifest(session.cli)?.stopWhenEnded && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
     for (const manifest of connectors.list()) if (adapters[manifest.cli].turnPoller) await adapters[manifest.cli].turnPoller.call(this, manifest.cli);
@@ -1081,9 +1081,9 @@ class MachineService {
   async pollCodexSteps() {
     const live = this.liveTmux();
     if (!live) return;
-    await Promise.all(Object.values(this.sessions).filter(s => connectors.manifest(s.cli)?.capabilities.steps && s.status !== 'switching' && adapters[s.cli].stepsReady(s) && live.has(s.name)).map(s => this.readCodexSteps(s)));
+    await Promise.all(Object.values(this.sessions).filter(s => connectors.manifest(s.cli)?.capabilities.steps && s.status !== 'switching' && adapters[s.cli].stepsReady(s) && live.has(s.name)).map(s => this.readSteps(s)));
   }
-  async readCodexSteps(session, { spoolOnly = false, flush = false } = {}) {
+  async readSteps(session, { spoolOnly = false, flush = false } = {}) {
     const previous = this.stepReads.get(session.name) || Promise.resolve();
     const reading = previous.catch(() => {}).then(async () => {
       if (!adapters[session.cli].stepsReady(session)) return;
@@ -1468,7 +1468,7 @@ class MachineService {
       if (!kept) throw error;
       return kept;
     }
-    if (!session.source_transcript && !session.end_reason) { if (adapters[session.cli]?.bindTranscript) await this.kimiBinding(session); else session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir); }
+    if (!session.source_transcript && !session.end_reason) { if (adapters[session.cli]?.bindTranscript) await this.bindTranscript(session); else session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir); }
     return this.copyTranscript(session, session.source_transcript, async () => await this.readTranscript(session.transcript_path, offset, known) || { offset: 0, data: '' });
   }
   async spool(kind, payload) {
@@ -1538,7 +1538,7 @@ class MachineService {
       const result = await adapter.onTurnEnded(current, event);
       if (result.ignored) return { ignored: true };
       if (connectors.manifest(current.cli)?.capabilities.steps) {
-        await this.readCodexSteps(current, { spoolOnly: spooled, flush: true });
+        await this.readSteps(current, { spoolOnly: spooled, flush: true });
         // The hub closes any still-running steps at the turn boundary.
         current.steps_state = { open: {}, yielded: null };
       }
@@ -1715,7 +1715,6 @@ class MachineService {
     for (const entry of accounts) if (statuses[entry.cli].problem && adapters[entry.cli].resolveCli) { entry.logged_in = false; delete entry.problem; }
     return { version: this.version, ...statuses, recipes: Object.fromEntries(providers.map(p => [p, !!loadRecipes()[p]])), accounts, sessions: this.sessionList() };
   }
-  piVersionNote(version) { return Object.values(adapters).find(a => a.failureNote).failureNote({ pi_version: version }); }
   async piExitedBeforeReady(session) {
     const reason = adapters[session.cli]?.startupCheck?.(session);
     if (!reason) return;
@@ -1726,11 +1725,7 @@ class MachineService {
     const live = this.liveTmux();
     if (live) for (const session of Object.values(this.sessions)) if (!live.has(session.name)) await this.piExitedBeforeReady(session);
   }
-  checkPiVersion(executable) { return Object.values(adapters).find(a => a.recordLaunch).checkPiVersion.call(this, executable); }
-  piVersionStatus(version, login) { return Object.values(adapters).find(a => a.recordLaunch).piVersionStatus(version, login); }
-  checkKimiVersion(executable) { return Object.values(adapters).find(a => a.launchPath).checkKimiVersion.call(this, executable); }
-  kimiLaunchPath() { return Object.values(adapters).find(a => a.launchPath).launchPath(this); }
-  kimiVersionStatus(entry, login) { return Object.values(adapters).find(a => a.launchPath).kimiVersionStatus(entry, login); }
+  launchPath(cli) { return adapters[cli].launchPath(this); }
   checkVersion(cli, executable) { return adapters[cli].checkVersion(this, executable); }
   async versionGate(cli) {
     if (!connectors.manifest(cli).capabilities.versionCheck) return;

@@ -185,7 +185,7 @@ const poller = {
         if (session.cli !== cli || session.status === 'stopped') continue;
         if (session.end_reason) { await this.stopFatal(session); continue; }
         if (session.status !== 'ready') continue;
-        const file = await this.kimiBinding(session);
+        const file = await this.bindTranscript(session);
         if (session.end_reason) continue;
         if (!file) {
           if (Date.now() - Date.parse(session.ready_at) >= 120000) await this.fatalKimi(session, "Couldn't find Kimi Code's log for this session");
@@ -219,13 +219,13 @@ const poller = {
           }
           if (session.kimi_missing_since !== undefined) { delete session.kimi_missing_since; await this.persistSessions(); }
           const end = data.lastIndexOf(10);
-          if (end < 0 || await this.kimiSpoolWaiting(session)) continue;
+          if (end < 0 || await this.spoolWaiting(session)) continue;
           const rows = data.subarray(0, end + 1).toString('utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } });
           const turns = rows.filter(row => row?.type === 'turn.ended' && row.agentId === 'main' && Number.isInteger(row.turnId) && (session.kimi_last_turn === undefined || row.turnId > session.kimi_last_turn)).sort((a,b) => a.turnId-b.turnId);
           let handedOffAll = true;
           for (const row of turns) {
             if (session.kimi_last_turn !== undefined && row.turnId <= session.kimi_last_turn) continue;
-            if (await this.kimiSpoolWaiting(session)) { handedOffAll = false; break; }
+            if (await this.spoolWaiting(session)) { handedOffAll = false; break; }
             let event = { type: 'turn-ended', turn_id: row.turnId, transcript_path: file };
             if (row.reason === 'cancelled') event.interrupted = true;
             else if (row.reason === 'failed') {
@@ -239,17 +239,17 @@ const poller = {
             session.kimi_last_turn = row.turnId;
             await this.persistSessions();
           }
-          if (handedOffAll && !await this.kimiSpoolWaiting(session)) { session.kimi_offset = offset + end + 1; await this.persistSessions(); }
+          if (handedOffAll && !await this.spoolWaiting(session)) { session.kimi_offset = offset + end + 1; await this.persistSessions(); }
         } catch (error) { this.log(error); }
       }
     } finally { this.kimiPolling = false; }
   }
 };
 module.exports = {
-  checkVersion: (service, executable) => service.checkKimiVersion(executable),
-  versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('kimi'); return service.kimiVersionStatus(service.kimiVersions.get(JSON.stringify([executable, mtime])), login); },
+  checkVersion: (service, executable) => module.exports.checkKimiVersion.call(service, executable),
+  versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('kimi'); return module.exports.kimiVersionStatus(service.kimiVersions.get(JSON.stringify([executable, mtime])), login); },
   launchPath: service => module.exports.kimiLaunchPath.call(service),
-  launchContext: async service => ({ kimiExecutable: (await service.kimiLaunchPath()).executable }),
+  launchContext: async service => ({ kimiExecutable: (await service.launchPath('kimi')).executable }),
   checkKimiVersion(executable = resolveCli()) {
     if (!executable) return Promise.resolve();
     let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
@@ -270,10 +270,10 @@ module.exports = {
     const executable = resolveCli();
     if (!executable) (() => { throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); })();
     let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { (() => { throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); })(); }
-    await this.checkKimiVersion(executable);
+    await module.exports.checkKimiVersion.call(this, executable);
     const entry = this.kimiVersions?.get(JSON.stringify([executable, mtime]));
     if (!entry || entry.output === undefined) (() => { throw Object.assign(new Error('Kimi Code is not installed'), { status: 400 }); })();
-    const status = this.kimiVersionStatus(entry, { logged_in: false });
+    const status = module.exports.kimiVersionStatus(entry, { logged_in: false });
     if (status.problem) (() => { throw Object.assign(new Error(status.problem), { status: 400 }); })();
     return { executable };
   },
