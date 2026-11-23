@@ -280,3 +280,23 @@ $ (cd viewer && node --test --test-timeout=120000 test/*.test.js)   → # tests 
 $ bash codex/test/run.sh          → RESULT 167 passed, 0 failed
 $ node connectors/export.js --check   → exit 0;  contract + guard → pass 6, fail 0
 ```
+
+### Remediation 7 — 2026-11-23
+
+Verification attempt 7 (02dcade6): both FAIL (`REMEDIATION-7.md`). The model-pin round trip had survived two fixes (L1, M1); raised to the user, who chose to close it structurally (PLAN.md Decision Log #18).
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| N1 model-pin round trip (any route) | the real `codex/model.sh` runs for every connector against an isolated registry copy and state (`WHEELCHAIR_REGISTRY`, `WHEELCHAIR_MODELS`, temp `HOME`): `init`, a sentinel pin on another tool, every slot's default model and effort, each declared effort; read back through `model.sh <p> <slot>`, `model.sh effort …` and `show --json`; fails on any exit, traceback, malformed file or wrong value; `none` defaults expected as unset. Plus direct contract checks: every pin slot `model.sh` reads, default efforts within `models.efforts`, effort words within the pin grammar, anchored `models.format`/`hubPattern`/`settings.modelPattern` | `machine/test/connectors-model-roundtrip.test.js`; `connectors/contract.js` | five real tools pass; a sixth-tool control passes (also with a `none` default); five mutated sixth tools (unlisted default effort, `very-high`, unanchored format, missing slot, capitalised default) each fail with their named reason |
+| N2 Settings prompt caption | names built from `typesRoleMessage` labels and the new `settings.roleInstructionsName` (Claude); sentence word-for-word unchanged | `viewer/pages/settings.js`, `connectors/claude/manifest.js` | `viewer/test/app-settings.spec.js` (exact text) |
+| N3 guide | `resolveCli` gates sign-in (launch is gated by `versionCheck`); `loginCommand(dir)` documented; checklist covers N1 | `connectors/README.md` | scout read against `machine/service.js` |
+
+Lane: R8 standard / gpt-6.1-terra (round-trip test hardened once after the scout read). `codex/model.sh` unchanged.
+
+Validation on the R8 branch (merged without conflicts):
+```
+$ node --test --test-timeout=90000 machine/test/*.test.js   → # tests 733  # pass 713  # fail 18   (the 18 known wslpath failures only)
+$ (cd viewer && node --test --test-timeout=120000 test/*.test.js)   → # tests 919  # pass 919  # fail 0
+$ node --test machine/test/connectors-model-roundtrip.test.js machine/test/connectors-contract.test.js   → pass 7, fail 0
+$ node connectors/export.js --check   → exit 0;  providers.js output vs main → identical
+```
