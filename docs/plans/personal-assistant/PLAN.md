@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | The assistant thread is never archived or listed under a project; it restarts like a lead, rebuilding its picture of all threads from the hub. | It is permanent and project-free. | defaulted |
 | 11 | When told to, the assistant may do anything Collin can do with threads: start threads, message leads, answer leads' question cards, press Start building, restart leads, and archive threads. | Collin picked "Anything I can do". | user |
 | 12 | Whatever the assistant does in a thread is visible there and marked as done by the assistant (its messages to a lead show as a bubble "From your assistant"; its card presses say "by your assistant"). | Collin must be able to see why a lead acted, without the assistant reporting it. | defaulted |
+| 13 | The assistant acts on threads and projects only; changing Settings (models, accounts, project tools, auto-merge) is deferred to the follow-up. | Collin picked "Threads only, for now". | user |
 
 ## Spec
 
@@ -49,12 +50,13 @@ Draft; grows as decisions land.
 
 ### What the assistant may do
 
-On Collin's instruction, anything Collin can do with threads in the app: start a thread in any project on any machine (with its lead, seeded with what Collin said), message any thread's lead, answer a lead's open question card, press Start building on an approval card, restart a lead, archive a thread. Every such action shows in the target thread, marked as the assistant's.
+On Collin's instruction, anything Collin can do with threads in the app: start a thread in any project on any machine (with its lead, seeded with what Collin said), message any thread's lead, answer a lead's open question card, press Start building on an approval card, restart a lead, archive a thread. It does not change Settings (Deferred 1). Every such action shows in the target thread, marked as the assistant's.
 
 ## Deferred
 
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
+| 1 | The assistant changes Settings for Collin (models, accounts, project tools, auto-merge) | Settings changes are rare; threads are the everyday work | planning | Each Settings screen needs its own action for the assistant; reuse whatever action route this thread builds for thread actions |
 
 ## Accepted Risks
 
