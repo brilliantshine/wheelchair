@@ -319,3 +319,19 @@ $ (cd viewer && node --test --test-timeout=120000 test/*.test.js)   → # tests 
 $ node --test machine/test/connectors-contract.test.js machine/test/connectors-model-roundtrip.test.js machine/test/name-guard.test.js   → pass 9, fail 0
 $ bash codex/test/run.sh          → RESULT 167 passed, 0 failed;  export check → exit 0
 ```
+
+### Remediation 9 — 2026-11-23
+
+Verification attempt 9 (8674a075): verifier-17 (claude-opus-5-5) PASS with no gaps; verifier-18 (gpt-6.2-sol) FAIL with three small future-tool gaps (`REMEDIATION-9.md`).
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| Q1 round trip crashed for a tool with every default unset | the effort checks use a generated `<provider>-roundtrip-model` that must fit the tool's format and the pin-file rule (a clear failure otherwise, never a silent skip) | `machine/test/connectors-model-roundtrip.test.js` | positive case: a sixth tool with efforts and all five defaults `none` passes |
+| Q2 hard-coded scout clause | manifest text `settings.scoutHelper` (Claude: `Claude Code: the Agent tool`) replaces the `scoutAgentTool` flag; Claude's prompt text byte-identical | `viewer/app/settings.js`, `connectors/claude/manifest.js`, `connectors/contract.js` | existing prompt tests unchanged; contract-test line |
+| Q3 key sign-in without its prompt | `settings.keyPrompt` required when `settings.signInKind` is `key` | `connectors/contract.js` | contract-test line |
+
+Lane: R10 light / gpt-6-luna.
+
+Residual names noted by verifier-17 (no tool-specific decisions, nothing to edit when adding a tool): `publicSession` strips stored `kimi_*` session fields; `fatalKimi` is a generic service method only the Kimi connector calls.
+
+Validation: R10 branch viewer 919/919; merged head machine suite with `--test-timeout=90000` (see PLAN.md Log); contract, round-trip and guard tests pass; export check exit 0; `providers.js` unchanged.
