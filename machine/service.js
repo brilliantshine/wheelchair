@@ -1656,7 +1656,7 @@ class MachineService {
     if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !adapter) die('invalid account or cli');
     const dir = accountDir(input.dir, account);
     if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
-    if ((cli === 'kimi' || cli === 'pi') && !adapter.resolveCli()) throw Object.assign(new Error(cli === 'pi' ? 'Pi is not installed' : 'Kimi Code is not installed'), { status: 409 });
+    if (adapter.resolveCli && !adapter.resolveCli()) { const manifest = connectors.manifest(cli); throw Object.assign(new Error(`${manifest.shortName || manifest.displayName} is not installed`), { status: 409 }); }
     if (dir) adapter.seed(dir, account);
     await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
