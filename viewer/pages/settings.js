@@ -1504,7 +1504,7 @@
   }
 
   function planSelect(provider, value) {
-    return h('select', { 'aria-label': 'Plan' }, PLAN_OPTIONS[provider].map(([v, l]) => h('option', { value: v, text: l, selected: v === value })));
+    return h('select', { 'aria-label': 'Plan' }, (PLAN_OPTIONS[provider] || []).map(([v, l]) => h('option', { value: v, text: l, selected: v === value })));
   }
 
   // The plan the CLI itself reported, shown beside the chosen one when they differ.

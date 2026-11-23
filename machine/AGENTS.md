@@ -40,8 +40,8 @@ agents own neither tmux nor the machine secret.
 | `lib/env-launch.js` | Session key launcher: reads and deletes the mode-600 JSON env file, then execs the CLI; never prints values. |
 | `lib/project-programs.js` | Synchronous check that each project stdio server's program exists, for the thread's project-tools lines. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |
-| `hook.sh` | CLI hook entry point; turns Claude/Codex/Antigravity payloads into local events and spools while the service is down. |
-| `lib/hook-post.js` | Dependency-free HTTP/spool helper used by `hook.sh`. |
+| `hook.sh` | CLI hook entry point; hands every payload to `lib/hook-in.js`, which follows the tool's manifest `hook` field and turns it into a local event, spooling while the service is down. |
+| `lib/hook-post.js` | Dependency-free HTTP/spool helper used by `lib/hook-in.js`. |
 | `API.md` | The hub-to-machine and agent-to-machine route contract. |
 | `test/` | Isolated fakes and service tests; never uses a real CLI, tmux, or state directory. `fixtures/agy/` holds live captures from `agy` 1.5.9. |
 
@@ -57,4 +57,4 @@ Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`
 - A recovered session (rebuilt from a live `wc-*` tmux session) has no token and never authorizes an agent route.
 - Git subprocesses use the authenticated session's recorded worktree, never a caller path.
 
-`lib/steps.js` classifies Claude and Codex tool calls into compact activity labels and timing keys. `lib/codex-steps.js` parses Codex rollout steps and context; the service tails bound live sessions and flushes them at turn end. Claude tool hooks emit step start/end events; its statusline emits context and rate-limit events on independent throttles.
+`lib/steps.js` classifies Claude and Codex tool calls into compact activity labels and timing keys. `connectors/codex/steps.js` (the Codex connector's `readSteps`) parses Codex rollout steps and context; the service tails bound live sessions and flushes them at turn end. Claude tool hooks emit step start/end events; its statusline emits context and rate-limit events on independent throttles.
