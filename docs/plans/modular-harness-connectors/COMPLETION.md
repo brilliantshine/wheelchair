@@ -172,3 +172,26 @@ $ node --test machine/test/connectors-contract.test.js machine/test/name-guard.t
 ```
 
 Residual (documentation only, no effect on today's five tools): `connectors/README.md` says a tool without `settings.plans` gets no plan control; the page actually renders an empty plan select for it. It also says `settings.keyPrompt` falls back to an empty string when no tool uses key sign-in; the page code would throw in that case. Both concern a hypothetical registry and are recorded here rather than fixed.
+
+### Remediation 2 — 2026-11-23
+
+Verification attempt 2 (132c4acf) failed on both verifiers; gaps H1–H6 and judgment in `REMEDIATION-2.md` (no rare paths). H2 and H6 were second attempts on G2 and G5.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| H1 halves loaded other connectors' halves | step vocabularies are plain data in `connectors/common.js` (`stepVocabularies.claudeStyle`/`codexStyle`); no connector file requires another connector folder | `connectors/common.js`, `connectors/*/machine.js` | contract test "connector files do not require another connector folder" (lookahead pattern; bite-checked) |
+| H2 plan data | `settings.weights` required with a numeric `unknown`; `settings.plans` required (string pairs, includes `unknown`, keys present in `weights`); every server plan reader safe for a weights-only tool | `connectors/contract.js`; `viewer/app/settings.js`, `viewer/app/routes.js` | contract-test lines; `viewer/test/minimal-manifest.test.js` (create, rename, pause, reload persisted, plan edit, default restore for a minimal provider) |
+| H3 duplicate provider id | `provider` removed from machine halves; the service builds `default-<provider>` from the manifest (`defaultAccount(cli)`); `validate()` rejects a half exporting `provider` | `machine/service.js`, `connectors/*/machine.js`, `connectors/contract.js` | contract test; char tests (account ids and messages unchanged) |
+| H4 poller transcript members | `turnPoller` requires `bindTranscript`, `spoolWaiting`, `validTranscript`, and they are refused without it | `connectors/contract.js` `validate` | contract test |
+| H5 aside parent field | `asideParentField` required with `capabilities.aside`, refused without | `connectors/contract.js` | contract test |
+| H6 guard quoted forms | literal-centred detection: every literal equal to a tool id (single, double, backtick without `${}`, shell/Python quoted words) is judged by its context; quoted `case`/`[[ == ]]`/`for`, Python `in`/`not in`, backtick comparisons pinned in the snippet table | `machine/test/name-guard.test.js` | name-guard test; scout probe of every reported form (all detected, negatives clean) |
+
+Lanes: R3 standard / gpt-6.1-terra (re-briefed once: the first attempt's cross-require test pattern matched `../../`), R3c light / gpt-6-luna (`settings.plans` required).
+
+Validation at 808c3dcf, one suite at a time:
+```
+$ bash machine/test/run.sh        → # tests 726  # pass 705  # fail 19   (the 18 known wslpath failures + "interop off withholds marked tool…", tmux buffer failed, which passes alone: # pass 1 # fail 0)
+$ (cd viewer && npm test)         → # tests 916  # pass 916  # fail 0
+$ node connectors/export.js --check   → exit 0
+$ node --test machine/test/connectors-contract.test.js machine/test/name-guard.test.js   → pass 6, fail 0
+```
