@@ -51,7 +51,7 @@ function validateManifest(m) {
   check('install.lookup',v=>['path','absolute','fallback'].includes(v));
   if (m.install.lookup === 'fallback') check('install.fallbackPath', v => str(v) && v.length > 0);
   check('install.versionArgs',v=>v===null||(arr(v)&&v.every(str)),false);
-  for (const f of ['install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt']) check(f,str,false);
+  for (const f of ['install.node','install.fallbackPath','settings.modelPlaceholder','settings.cliLabel','settings.vendor','settings.setupUrl','settings.signInKind','settings.modelError','models.effortError','settings.keyPrompt','settings.roleInstructionsName']) check(f,str,false);
   for (const f of ['settings.permissionMode','settings.accountWarning','settings.familyHint','settings.accountPolicy']) check(f,v=>v===null||str(v),false);
   if (m.settings.permissionMode) check('settings.permissionName', v => str(v) && v.length > 0);
   else if ('permissionName' in m.settings) throw new Error(`${m.cli}: settings.permissionName`);
