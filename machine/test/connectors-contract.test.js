@@ -20,6 +20,7 @@ test('contract rejects missing and inconsistent members and fields', () => {
   delete mod.command; assert.throws(() => contract.validate(m, 'machine', mod), /command/);
   mod.command = connectors.machine(m.cli).command; delete mod.usageProbe; assert.throws(() => contract.validate(m, 'machine', mod), /usageProbe/);
   mod.usageProbe = () => {}; m.capabilities.usageProbe = false; assert.throws(() => contract.validate(m, 'machine', mod), /usageProbe/);
+  const turnMod = { ...connectors.machine(manifests[0].cli) }; delete turnMod.hookEvent; assert.throws(() => contract.validate(manifests[0], 'machine', turnMod), /hookEvent\/turnPoller/); turnMod.hookEvent = () => {}; turnMod.turnPoller = () => {}; assert.throws(() => contract.validate(manifests[0], 'machine', turnMod), /hookEvent\/turnPoller/);
   const missing = structuredClone(manifests[0]); delete missing.models.format; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 42; assert.throws(() => contract.validateManifest(missing), /models.format/);
   missing.models.format = 'pattern'; missing.settings.modelHeadsUp = 'yes'; assert.throws(() => contract.validateManifest(missing), /settings.modelHeadsUp/);

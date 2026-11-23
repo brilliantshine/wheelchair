@@ -1074,93 +1074,11 @@ class MachineService {
     }
     return { ok: true, end_reason: session.end_reason };
   }
-  async kimiBinding(session) {
-    try {
-      const had = session.source_transcript;
-      const file = await adapters.kimi.findTranscript(session, session.account_dir);
-      if (!had && file) await this.persistSessions();
-      return file;
-    } catch (error) {
-      if (!error.kimiFatal) throw error;
-      await this.fatalKimi(session, error.message); return null;
-    }
-  }
-  async kimiSpoolWaiting(session) {
-    const dir = path.join(this.stateDir, 'spool', 'events');
-    for (const file of await fsp.readdir(dir).catch(() => [])) {
-      if (!file.endsWith('.json')) continue;
-      const item = await readJson(path.join(dir, file), {});
-      if (item.session === session.name) return true;
-    }
-    return false;
-  }
+  async kimiBinding(session) { return adapters[session.cli].bindTranscript.call(this, session); }
+  async kimiSpoolWaiting(session) { return adapters[session.cli].spoolWaiting.call(this, session); }
   async pollKimiTurns() {
     for (const session of Object.values(this.sessions)) if (connectors.manifest(session.cli)?.stopWhenEnded && session.end_reason && session.status !== 'stopped') await this.stopFatal(session);
-    if (this.kimiPolling) return;
-    this.kimiPolling = true;
-    try {
-      for (const session of Object.values(this.sessions)) {
-        if (session.cli !== 'kimi' || session.status === 'stopped') continue;
-        if (session.end_reason) { await this.stopFatal(session); continue; }
-        if (session.status !== 'ready') continue;
-        const file = await this.kimiBinding(session);
-        if (session.end_reason) continue;
-        if (!file) {
-          if (Date.now() - Date.parse(session.ready_at) >= 120000) await this.fatalKimi(session, "Couldn't find Kimi Code's log for this session");
-          continue;
-        }
-        let data, stat, handle, ioError, otherError;
-        const offset = session.kimi_offset || 0;
-        try { handle = await fsp.open(file, 'r'); } catch (error) { ioError = error; }
-        if (handle) {
-          try {
-            try { stat = await handle.stat(); } catch (error) { ioError = error; }
-            if (!ioError && stat.dev === session.kimi_log_id?.dev && stat.ino === session.kimi_log_id?.ino && stat.size >= offset) {
-              let buffer;
-              try { buffer = Buffer.alloc(stat.size - offset); } catch (error) { otherError = error; }
-              if (buffer) {
-                try { const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset); data = buffer.subarray(0, bytesRead); }
-                catch (error) { ioError = error; }
-              }
-            }
-          } finally { await handle.close().catch(error => this.log(error)); }
-        }
-        if (otherError) { this.log(otherError); continue; }
-        if (ioError) {
-          if (session.kimi_missing_since === undefined) { session.kimi_missing_since = Date.now(); await this.persistSessions(); }
-          if (Date.now() - session.kimi_missing_since >= 30000) await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced");
-          continue;
-        }
-        try {
-          if (!data) {
-            await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced"); continue;
-          }
-          if (session.kimi_missing_since !== undefined) { delete session.kimi_missing_since; await this.persistSessions(); }
-          const end = data.lastIndexOf(10);
-          if (end < 0 || await this.kimiSpoolWaiting(session)) continue;
-          const rows = data.subarray(0, end + 1).toString('utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } });
-          const turns = rows.filter(row => row?.type === 'turn.ended' && row.agentId === 'main' && Number.isInteger(row.turnId) && (session.kimi_last_turn === undefined || row.turnId > session.kimi_last_turn)).sort((a,b) => a.turnId-b.turnId);
-          let handedOffAll = true;
-          for (const row of turns) {
-            if (session.kimi_last_turn !== undefined && row.turnId <= session.kimi_last_turn) continue;
-            if (await this.kimiSpoolWaiting(session)) { handedOffAll = false; break; }
-            let event = { type: 'turn-ended', turn_id: row.turnId, transcript_path: file };
-            if (row.reason === 'cancelled') event.interrupted = true;
-            else if (row.reason === 'failed') {
-              let error = row.error, messages = [], codes = [];
-              if (typeof error === 'string') messages.push(error);
-              else for (let e = error; e && typeof e === 'object'; e = e.cause) { if (e.message) messages.push(String(e.message)); if (e.code) codes.push(String(e.code)); if (typeof e.cause === 'string') messages.push(e.cause); }
-              const message = (typeof error === 'object' && error?.code ? `[${error.code}] ` : '') + (messages.join(': ') || 'Kimi Code turn failed');
-              event = { ...event, type: codes.some(code => /rate_limit|quota/i.test(code)) || /quota|rate.?limit|429|too many requests/i.test(message) ? 'limit-hit' : 'turn-failed', error: message };
-            } else if (row.reason !== 'completed') event = { ...event, type: 'turn-failed', error: `Kimi Code turn ended (${row.reason})` };
-            await this.hook(session.name, event);
-            session.kimi_last_turn = row.turnId;
-            await this.persistSessions();
-          }
-          if (handedOffAll && !await this.kimiSpoolWaiting(session)) { session.kimi_offset = offset + end + 1; await this.persistSessions(); }
-        } catch (error) { this.log(error); }
-      }
-    } finally { this.kimiPolling = false; }
+    for (const manifest of connectors.list()) if (adapters[manifest.cli].turnPoller) await adapters[manifest.cli].turnPoller.call(this, manifest.cli);
   }
   async pollCodexSteps() {
     const live = this.liveTmux();
@@ -1476,13 +1394,13 @@ class MachineService {
   async copyTranscriptNow(session, source) {
     this.copyHashes ??= new Map();
     this.sweepCopyHashes();
-    if (!source || (session.cli === 'kimi' && session.end_reason)) return { offset: 0, lines: [] };
-    let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
+    if (!source || (adapters[session.cli]?.turnPoller && session.end_reason)) return { offset: 0, lines: [] };
+    let stat = adapters[session.cli]?.turnPoller ? null : await fsp.stat(source);
     const current = session.transcript_source;
-    let begin = session.cli === 'kimi' ? (current?.offset || 0) : (current && (current.path !== source || stat.size < current.offset || stat.ino !== current.ino) ? 0 : (current?.offset || 0));
-    if (session.cli !== 'kimi' && current?.path === source && current.ino === stat.ino && stat.size === current.offset && session.transcript_path && !session.transcript_unsaved) return { offset: current.offset, lines: [] };
+    let begin = adapters[session.cli]?.turnPoller ? (current?.offset || 0) : (current && (current.path !== source || stat.size < current.offset || stat.ino !== current.ino) ? 0 : (current?.offset || 0));
+    if (!adapters[session.cli]?.turnPoller && current?.path === source && current.ino === stat.ino && stat.size === current.offset && session.transcript_path && !session.transcript_unsaved) return { offset: current.offset, lines: [] };
     const file = await fsp.open(source, 'r'); let text;
-    try { if (session.cli === 'kimi') { stat = await file.stat(); if (stat.dev !== session.kimi_log_id?.dev || stat.ino !== session.kimi_log_id?.ino || stat.size < begin || session.end_reason) return { offset: begin, lines: [] }; if (stat.size === begin && current?.path === source && current.ino === stat.ino && session.transcript_path && !session.transcript_unsaved) return { offset: begin, lines: [] }; } const size = stat.size - begin; const buffer = Buffer.alloc(Math.max(size, 0)); await file.read(buffer, 0, buffer.length, begin); text = buffer.toString('utf8'); } finally { await file.close(); }
+    try { if (adapters[session.cli]?.turnPoller) { stat = await file.stat(); if (!adapters[session.cli].validTranscript(session, stat, begin)) return { offset: begin, lines: [] }; if (stat.size === begin && current?.path === source && current.ino === stat.ino && session.transcript_path && !session.transcript_unsaved) return { offset: begin, lines: [] }; } const size = stat.size - begin; const buffer = Buffer.alloc(Math.max(size, 0)); await file.read(buffer, 0, buffer.length, begin); text = buffer.toString('utf8'); } finally { await file.close(); }
     // A JSONL record isn't durable until its newline arrives.  Leave an unfinished
     // tail for the next read instead of copying a fragment and advancing past it.
     const newline = text.lastIndexOf('\n');
@@ -1552,7 +1470,7 @@ class MachineService {
       if (!kept) throw error;
       return kept;
     }
-    if (!session.source_transcript && !session.end_reason) { if (session.cli === 'kimi') await this.kimiBinding(session); else session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir); }
+    if (!session.source_transcript && !session.end_reason) { if (adapters[session.cli]?.bindTranscript) await this.kimiBinding(session); else session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir); }
     return this.copyTranscript(session, session.source_transcript, async () => await this.readTranscript(session.transcript_path, offset, known) || { offset: 0, data: '' });
   }
   async spool(kind, payload) {
@@ -2441,7 +2359,7 @@ class MachineService {
           return send(response, 202, { ok: true, spooled: true, id: queued.payload.delivery_id });
         }
       }
-      if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, agent.cli === 'kimi' ? { ignored: true } : await this.hook(agent.name, input)); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, adapters[agent.cli]?.turnPoller ? { ignored: true } : await this.hook(agent.name, input)); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/win') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.win.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }

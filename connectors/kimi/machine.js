@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('node:fs');
+const fsp = fs.promises;
 const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
@@ -155,7 +156,98 @@ async function findTranscript(session, dir) {
   bindings.set(session, run);
   try { return await run; } finally { bindings.delete(session); }
 }
+const poller = {
+  async kimiBinding(session) {
+    try {
+      const had = session.source_transcript;
+      const file = await findTranscript(session, session.account_dir);
+      if (!had && file) await this.persistSessions();
+      return file;
+    } catch (error) {
+      if (!error.kimiFatal) throw error;
+      await this.fatalKimi(session, error.message); return null;
+    }
+  },
+  async kimiSpoolWaiting(session) {
+    const dir = path.join(this.stateDir, 'spool', 'events');
+    for (const file of await fsp.readdir(dir).catch(() => [])) {
+      if (!file.endsWith('.json')) continue;
+      const item = await fs.promises.readFile(path.join(dir, file), 'utf8').then(JSON.parse).catch(() => ({}));
+      if (item.session === session.name) return true;
+    }
+    return false;
+  },
+  async turnPoller(cli) {
+    if (this.kimiPolling) return;
+    this.kimiPolling = true;
+    try {
+      for (const session of Object.values(this.sessions)) {
+        if (session.cli !== cli || session.status === 'stopped') continue;
+        if (session.end_reason) { await this.stopFatal(session); continue; }
+        if (session.status !== 'ready') continue;
+        const file = await this.kimiBinding(session);
+        if (session.end_reason) continue;
+        if (!file) {
+          if (Date.now() - Date.parse(session.ready_at) >= 120000) await this.fatalKimi(session, "Couldn't find Kimi Code's log for this session");
+          continue;
+        }
+        let data, stat, handle, ioError, otherError;
+        const offset = session.kimi_offset || 0;
+        try { handle = await fsp.open(file, 'r'); } catch (error) { ioError = error; }
+        if (handle) {
+          try {
+            try { stat = await handle.stat(); } catch (error) { ioError = error; }
+            if (!ioError && stat.dev === session.kimi_log_id?.dev && stat.ino === session.kimi_log_id?.ino && stat.size >= offset) {
+              let buffer;
+              try { buffer = Buffer.alloc(stat.size - offset); } catch (error) { otherError = error; }
+              if (buffer) {
+                try { const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset); data = buffer.subarray(0, bytesRead); }
+                catch (error) { ioError = error; }
+              }
+            }
+          } finally { await handle.close().catch(error => this.log(error)); }
+        }
+        if (otherError) { this.log(otherError); continue; }
+        if (ioError) {
+          if (session.kimi_missing_since === undefined) { session.kimi_missing_since = Date.now(); await this.persistSessions(); }
+          if (Date.now() - session.kimi_missing_since >= 30000) await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced");
+          continue;
+        }
+        try {
+          if (!data) {
+            await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced"); continue;
+          }
+          if (session.kimi_missing_since !== undefined) { delete session.kimi_missing_since; await this.persistSessions(); }
+          const end = data.lastIndexOf(10);
+          if (end < 0 || await this.kimiSpoolWaiting(session)) continue;
+          const rows = data.subarray(0, end + 1).toString('utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } });
+          const turns = rows.filter(row => row?.type === 'turn.ended' && row.agentId === 'main' && Number.isInteger(row.turnId) && (session.kimi_last_turn === undefined || row.turnId > session.kimi_last_turn)).sort((a,b) => a.turnId-b.turnId);
+          let handedOffAll = true;
+          for (const row of turns) {
+            if (session.kimi_last_turn !== undefined && row.turnId <= session.kimi_last_turn) continue;
+            if (await this.kimiSpoolWaiting(session)) { handedOffAll = false; break; }
+            let event = { type: 'turn-ended', turn_id: row.turnId, transcript_path: file };
+            if (row.reason === 'cancelled') event.interrupted = true;
+            else if (row.reason === 'failed') {
+              let error = row.error, messages = [], codes = [];
+              if (typeof error === 'string') messages.push(error);
+              else for (let e = error; e && typeof e === 'object'; e = e.cause) { if (e.message) messages.push(String(e.message)); if (e.code) codes.push(String(e.code)); if (typeof e.cause === 'string') messages.push(e.cause); }
+              const message = (typeof error === 'object' && error?.code ? `[${error.code}] ` : '') + (messages.join(': ') || 'Kimi Code turn failed');
+              event = { ...event, type: codes.some(code => /rate_limit|quota/i.test(code)) || /quota|rate.?limit|429|too many requests/i.test(message) ? 'limit-hit' : 'turn-failed', error: message };
+            } else if (row.reason !== 'completed') event = { ...event, type: 'turn-failed', error: `Kimi Code turn ended (${row.reason})` };
+            await this.hook(session.name, event);
+            session.kimi_last_turn = row.turnId;
+            await this.persistSessions();
+          }
+          if (handedOffAll && !await this.kimiSpoolWaiting(session)) { session.kimi_offset = offset + end + 1; await this.persistSessions(); }
+        } catch (error) { this.log(error); }
+      }
+    } finally { this.kimiPolling = false; }
+  }
+};
 module.exports = {
+  validTranscript: (session, stat, offset) => stat.dev === session.kimi_log_id?.dev && stat.ino === session.kimi_log_id?.ino && stat.size >= offset && !session.end_reason,
+  turnPoller: poller.turnPoller, bindTranscript: poller.kimiBinding, spoolWaiting: poller.kimiSpoolWaiting,
   recognizePane(text) { const lines = text.split(/\r?\n/).map(line => line.trim()); return (/^\s*(?:Ask When Needed|Never Ask)\b/im.test(text) && /^\s*context:\s*\d+%/im.test(text)) || (lines.includes('Trust this folder?') && lines.some(line => /^(?:❯\s*)?Trust and continue$/.test(line)) && lines.some(line => /^(?:❯\s*)?Exit$/.test(line))); },
   restartLossReason: () => 'Lost track of this Kimi Code session after a machine restart; restart it',
 
@@ -185,5 +277,5 @@ module.exports = {
     }
     return false;
   },
-  async findTranscript(session, dir) { return findTranscript(session, dir); }, hookEvent() { return null; },
+  async findTranscript(session, dir) { return findTranscript(session, dir); },
 };
