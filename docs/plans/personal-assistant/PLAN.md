@@ -244,7 +244,7 @@ npm --prefix viewer run test:browser
 
 ### Round 1 — 2026-11-23
 
-**Lanes:** pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — non-claude family; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
