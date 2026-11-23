@@ -27,7 +27,7 @@ async function fixture() {
   const script = `#!/usr/bin/env node
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const name = process.env.SCREEN_TOOL || path.basename(process.argv[1]), args = process.argv.slice(2), config = JSON.parse(fs.readFileSync(process.env.SCREEN_SETTINGS));
-fs.appendFileSync(process.env.SCREEN_LOG, JSON.stringify({ name, args, display: process.env.DISPLAY, auth: process.env.XAUTHORITY, token: process.env.WHEELCHAIR_SESSION_TOKEN, lane: process.env.WHEELCHAIR_LANE, home: process.env.HOME }) + '\\n');
+fs.appendFileSync(process.env.SCREEN_LOG, JSON.stringify({ name, args, display: process.env.DISPLAY, auth: process.env.XAUTHORITY, token: process.env.WHEELCHAIR_SESSION_TOKEN, lane: process.env.WHEELCHAIR_LANE, home: process.env.HOME, xdgHome: process.env.XDG_CONFIG_HOME, xdgDirs: process.env.XDG_CONFIG_DIRS }) + '\\n');
 if (name === 'systemctl') {
   if (config.stall && args.includes(config.stall)) return setTimeout(() => {}, 5000);
   if (config.bus === false) process.exit(1);
@@ -39,7 +39,9 @@ if (name === 'systemctl') {
   if (config.launch === 'signal') process.kill(process.pid, 'SIGKILL');
   if (config.launch === 'hang') { console.error('Failed to hang'); const parent = process.ppid; return setInterval(() => { if (process.ppid !== parent) process.exit(0); }, 100); }
   process.exit(0);
-} else if (name === 'Xvfb') { setTimeout(() => { fs.writeSync(Number(args[args.indexOf('-displayfd') + 1]), '77\\n'); setTimeout(() => {}, 1200); }, config.displayDelay || 0); }
+} else if (name === 'openbox') { if (config.wmExit) process.exit(0); fs.writeFileSync(path.join(path.dirname(process.env.SCREEN_LOG), 'wm-ready'), 'ready'); setTimeout(() => {}, 30000); }
+else if (name === 'xprop') { if (args.includes('_OB_CONFIG_FILE')) { if (config.wmPath !== 'missing' && fs.existsSync(path.join(path.dirname(process.env.SCREEN_LOG), 'wm-ready'))) console.log('_OB_CONFIG_FILE(UTF8_STRING) = "' + (config.wmPath === 'wrong' ? '/wrong' : path.join(process.env.HOME, 'openbox', 'rc.xml')) + '"'); } else console.log('_NET_CLIENT_LIST(WINDOW): window id # ' + (fs.existsSync(path.join(path.dirname(process.env.SCREEN_LOG), 'window')) ? '0x200001' : '')); }
+else if (name === 'Xvfb') { setTimeout(() => { fs.writeSync(Number(args[args.indexOf('-displayfd') + 1]), '77\\n'); setTimeout(() => {}, 1200); }, config.displayDelay || 0); }
 else if (name === 'mcookie') console.log('0123456789abcdef');
 else if (name === 'app' && config.showWindow) fs.writeFileSync(path.join(path.dirname(process.env.SCREEN_LOG), 'window'), 'ready');
 else if (name === 'xwininfo') {
@@ -59,6 +61,7 @@ else if (name === 'codex') { const i = args.indexOf('--'); if (i >= 0) cp.spawnS
   await fsp.writeFile(settings, '{}'); const previous = { PATH: process.env.PATH, SCREEN_LOG: process.env.SCREEN_LOG, SCREEN_SETTINGS: process.env.SCREEN_SETTINGS, SCREEN_LOGGER: process.env.SCREEN_LOGGER };
   process.env.PATH = `${bin}:${previous.PATH}`; process.env.SCREEN_LOG = log; process.env.SCREEN_SETTINGS = settings; process.env.SCREEN_LOGGER = logger;
   const service = new MachineService({ win: noWsl, stateDir: path.join(root, 'state'), host: '127.0.0.1', port: 1 });
+  service.screens.allowOpenbox = false;
   service.config = { host: '127.0.0.1', port: 1 }; service.liveTmux = () => new Set(Object.values(service.sessions).filter(s => s.status !== 'stopped').map(s => s.name));
   function session(name, thread = 'thread', cli = 'claude') { return service.sessions[name] = { name, role: 'worker', cli, thread_id: thread, status: 'ready', token: name, worktree: root, account_dir: null }; }
   const a = session('wc-thread-worker'); const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -398,4 +401,62 @@ test('unreadable failure log uses launcher fallback reason', async () => {
     m.immediate = function(unit) { immediate.call(this, unit); fs.unlinkSync(path.join(m.dir(f.a), 'app-1.log')); };
     const result = await f.call('run', ['--', 'app']); assert.equal(result.status, 422); assert.match(result.body.error, /app did not start: systemd-run exited 1/);
   } finally { await f.close(); }
+});
+
+async function enableWm(f) {
+  for (const name of ['openbox', 'xprop']) await fsp.copyFile(path.join(f.bin, 'app'), path.join(f.bin, name));
+  f.service.screens.allowOpenbox = true;
+}
+test('optional window manager detection requires both tools', async () => {
+  const f = await fixture(); try {
+    assert.equal(screenTools(f.bin).openboxInstalled, false);
+    await fsp.copyFile(path.join(f.bin, 'app'), path.join(f.bin, 'openbox'));
+    assert.equal(screenTools(f.bin).openboxInstalled, false);
+    await fsp.copyFile(path.join(f.bin, 'app'), path.join(f.bin, 'xprop'));
+    assert.equal(screenTools(f.bin).openboxInstalled, true);
+    await fsp.unlink(path.join(f.bin, 'openbox')); assert.equal(screenTools(f.bin).openboxInstalled, false);
+  } finally { await f.close(); }
+});
+test('openbox starts with isolated click-only config and drives windows', async () => {
+  const f = await fixture(); try {
+    await enableWm(f); await f.configure({showWindow:true});
+    assert.equal((await f.call('start')).status, 200);
+    assert.equal((await f.call('status')).body.window_manager, 'openbox');
+    const dir = f.service.screens.dir(f.a), config = path.join(dir, 'openbox', 'rc.xml');
+    const xml = await fsp.readFile(config, 'utf8');
+    assert.equal((await fsp.stat(path.dirname(config))).mode & 0o777, 0o700); assert.equal((await fsp.stat(config)).mode & 0o777, 0o600);
+    assert.match(xml, /<keyboard\/>/); assert.deepEqual([...xml.matchAll(/<context name="([^"]+)"/g)].map(m => m[1]), ['Client', 'Frame']); assert.doesNotMatch(xml, /Execute|ShowMenu|<menu\b|name="Root"/); assert.match(xml, /<application class="\*"><decor>no<\/decor>/);
+    assert.deepEqual([...xml.matchAll(/<action name="([^"]+)"/g)].map(m => m[1]), Array(6).fill(['Focus','Raise']).flat());
+    const run = await f.call('run', ['--', 'app']); assert.equal(run.status, 200); assert.equal(run.body.focused.id, 0x200001);
+    assert.equal((await f.call('windows')).body.windows[0].id, 0x200001); assert.equal((await f.call('focus', ['2097153'])).status, 200);
+    const calls = await f.calls(), ob = calls.find(c => c.name === 'openbox');
+    assert.deepEqual(ob.args, ['--sm-disable','--config-file',config]); assert.equal(ob.home, dir); assert.equal(ob.xdgHome, dir); assert.equal(ob.xdgDirs, dir);
+    assert(calls.some(c => c.name === 'systemd-run' && c.args.some(a => /-wm\.scope$/.test(a))));
+    assert(calls.filter(c => c.name === 'xdotool' && c.args[0] === 'windowactivate').length >= 2);
+    assert(!calls.some(c => c.name === 'xdotool' && c.args.includes('--sync')));
+  } finally { f.service.screens.killSession(f.a.name); await f.close(); }
+});
+for (const wmPath of ['missing','wrong']) test(`openbox falls back when config path is ${wmPath}`, async () => {
+  const f = await fixture(); try { await enableWm(f); await f.configure({wmPath}); const start = Date.now(); assert.equal((await f.call('start')).status, 200); assert(Date.now()-start < 7000); assert.equal((await f.call('status')).body.window_manager, null); assert((await f.calls()).some(c => c.name === 'systemctl' && c.args.some(a => /-wm\.scope$/.test(a)))); } finally { f.service.screens.killSession(f.a.name); await f.close(); }
+});
+test('exited openbox leaves screen running', async () => { const f = await fixture(); try { await enableWm(f); await f.configure({wmExit:true}); assert.equal((await f.call('start')).status,200); assert.equal((await f.call('status')).body.window_manager,null); } finally { f.service.screens.killSession(f.a.name); await f.close(); } });
+test('stopping session during openbox readiness fences the save', async () => { const f = await fixture(); try { await enableWm(f); await f.configure({wmPath:'missing'}); const start = f.call('start'); await waitForCall(f,c=>c.name==='xprop'); f.a.status='stopped'; f.service.screens.killSession(f.a.name); assert.equal((await start).status,409); assert.notEqual(JSON.parse(await fsp.readFile(path.join(f.service.screens.dir(f.a),'state.json'),'utf8')).status,'running'); } finally { await f.close(); } });
+test('disabled openbox preserves root listing and direct focus', async () => { const f = await fixture(); try { await enableWm(f); f.service.screens.allowOpenbox=false; await f.configure({showWindow:true}); await f.call('start'); await f.call('run',['--','app']); await f.call('windows'); await f.call('focus',['2097153']); assert.equal((await f.call('status')).body.window_manager,null); const calls=await f.calls(); assert(!calls.some(c=>c.name==='openbox')); assert(calls.some(c=>c.name==='xwininfo' && c.args.includes('-root'))); assert(calls.some(c=>c.name==='xdotool' && c.args[0]==='windowfocus')); } finally { f.service.screens.killSession(f.a.name); await f.close(); } });
+test('openbox not on PATH keeps today\'s window handling', async t => {
+  const f = await fixture(); try {
+    f.service.screens.allowOpenbox = true;
+    process.env.PATH = [f.bin, path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter);
+    if (screenTools().openboxInstalled) { t.skip('openbox installed on host'); return; }
+    await f.configure({ showWindow: true });
+    assert.equal((await f.call('start')).status, 200);
+    assert.equal((await f.call('status')).body.window_manager, null);
+    await f.call('run', ['--', 'app']); await f.call('focus', ['2097153']);
+    const calls = await f.calls();
+    assert(!calls.some(c => c.name === 'openbox'));
+    assert(!calls.some(c => c.name === 'systemd-run' && c.args.some(a => /-wm\.scope$/.test(a))));
+    assert(calls.some(c => c.name === 'xwininfo' && c.args.includes('-root')));
+    const runIndex = calls.findIndex(c => c.name === 'systemd-run' && c.args.some(a => /-app[0-9]+\.scope$/.test(a)));
+    const focusIndex = calls.findIndex((c, i) => i > runIndex && c.name === 'xdotool' && c.args[0] === 'windowfocus');
+    assert(runIndex >= 0 && focusIndex > runIndex);
+  } finally { f.service.screens.killSession(f.a.name); await f.close(); }
 });

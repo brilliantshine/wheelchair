@@ -31,8 +31,8 @@ async function call(ctx, cmd, args, timeoutMs) {
 }
 async function windows(ctx, timeout, strict, deadline = Infinity) {
   const remaining = () => Math.min(timeout, Math.max(0, deadline - Date.now()));
-  const root = await call(ctx, 'xwininfo', ['-root', '-children'], remaining());
-  let ids; try { ids = parseRootChildren(root); } catch (err) { throw invalid(err); }
+  const root = ctx.openbox ? await call(ctx, 'xprop', ['-root', '_NET_CLIENT_LIST'], remaining()) : await call(ctx, 'xwininfo', ['-root', '-children'], remaining());
+  let ids; try { ids = ctx.openbox ? (root.split('#')[1]?.match(/0x[0-9a-f]+/gi) || []) : parseRootChildren(root); } catch (err) { throw invalid(err); }
   const found = [];
   for (const id of ids) {
     let output;
@@ -112,7 +112,7 @@ async function pressKeys(ctx, { hold, tokens }, { baseDeadlineMs = 10000, onRele
   if (error) throw error;
   return { ok: true };
 }
-async function focusWindow(ctx, id) { await call(ctx, 'xdotool', ['windowfocus', '--', id], 10000); return { ok: true }; }
+async function focusWindow(ctx, id) { await call(ctx, 'xdotool', [ctx.openbox ? 'windowactivate' : 'windowfocus', '--', id], 10000); return { ok: true }; }
 async function autoFocus(ctx, baseline, { pollMs = 250, waitMs = 5000, probeTimeoutMs = 1000, phaseMs = 6000, startedAt = Date.now() } = {}) {
   if (!Array.isArray(baseline)) return null;
   const start = Date.now(), deadline = startedAt + phaseMs, old = new Set(baseline);
@@ -122,7 +122,7 @@ async function autoFocus(ctx, baseline, { pollMs = 250, waitMs = 5000, probeTime
       const found = await windows(ctx, probeTimeoutMs, true, deadline);
       if (Date.now() >= deadline) return null;
       const item = found.find(w => !old.has(w.id));
-      if (item) { await call(ctx, 'xdotool', ['windowfocus', '--', item.id], Math.min(probeTimeoutMs, Math.max(0, deadline - Date.now()))); return Date.now() < deadline ? { id: item.id, name: item.name } : null; }
+      if (item) { await call(ctx, 'xdotool', [ctx.openbox ? 'windowactivate' : 'windowfocus', '--', item.id], Math.min(probeTimeoutMs, Math.max(0, deadline - Date.now()))); return Date.now() < deadline ? { id: item.id, name: item.name } : null; }
       const delay = Math.min(pollMs, start + waitMs - Date.now(), deadline - Date.now());
       if (delay <= 0) return null;
       await new Promise(resolve => setTimeout(resolve, delay));

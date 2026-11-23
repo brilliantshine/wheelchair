@@ -16,12 +16,14 @@ const close = server => new Promise(resolve => server.close(resolve));
 
 test('approval card reports missing screen tools and respects platform', async () => {
   const root = await makeTemp('screen-warning-');
-  const empty = path.join(root, 'empty'), partial = path.join(root, 'partial'), full = path.join(root, 'full');
-  await Promise.all([empty, partial, full].map(dir => fs.mkdir(dir)));
+  const empty = path.join(root, 'empty'), partial = path.join(root, 'partial'), full = path.join(root, 'full'), wm = path.join(root, 'wm');
+  await Promise.all([empty, partial, full, wm].map(dir => fs.mkdir(dir)));
   for (const name of TOOLS) {
     await fs.writeFile(path.join(full, name), '', { mode: 0o755 });
+    await fs.writeFile(path.join(wm, name), '', { mode: 0o755 });
     if (name === TOOLS[1] || name === TOOLS[6]) await fs.writeFile(path.join(partial, name), '', { mode: 0o755 });
   }
+  for (const name of ['openbox', 'xprop']) await fs.writeFile(path.join(wm, name), '', { mode: 0o755 });
   const secretFile = path.join(root, 'secret'); await fs.writeFile(secretFile, 'secret');
   const cards = [];
   const hub = http.createServer((req, res) => { let body = ''; req.on('data', chunk => { body += chunk; }); req.on('end', () => { cards.push(JSON.parse(body)); res.end('{}'); }); });
@@ -39,11 +41,14 @@ test('approval card reports missing screen tools and respects platform', async (
       assert.equal(res.status, 200); return cards.at(-1);
     };
     const warning = names => `Screens won't work on ${os.hostname()}: missing ${names.join(', ')}. Builds that don't use a screen are unaffected.`;
+    const wmWarning = `Screens on ${os.hostname()} have no window manager, so apps that need one may misbehave. Optional: sudo apt install openbox.`;
     process.env.PATH = empty; assert.deepEqual((await post()).warnings, [warning(TOOLS)]);
     process.env.PATH = partial; assert.deepEqual((await post()).warnings, [warning(TOOLS.filter(n => n !== TOOLS[1] && n !== TOOLS[6]))]);
-    process.env.PATH = full; assert.equal('warnings' in await post(), false);
+    process.env.PATH = full; assert.deepEqual((await post()).warnings, [wmWarning]);
+    process.env.PATH = wm; assert.equal('warnings' in await post(), false);
     process.env.PATH = empty; service.platform = 'darwin'; assert.equal('warnings' in await post(), false);
-    service.platform = 'linux'; process.env.PATH = full;
+    process.env.PATH = full; assert.equal('warnings' in await post(), false);
+    service.platform = 'linux'; process.env.PATH = wm;
     const worktree = path.join(root, 'work'); await fs.mkdir(worktree);
     service.sessions.lead.worktree = worktree;
     service.win.detected = { kernel: true, wsl: true, interop: true, mount: '/mnt' };
