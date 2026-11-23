@@ -62,8 +62,9 @@ the reader's place.
   the cutoff moves (import, hand-off).
 - Scroll: near the bottom (existing 80px test) the page still follows new entries. Away
   from the bottom, the top visible chat entry stays at the same screen position after an
-  update. Record it and its position at the start of `render()`, before the banners and
-  pins above the chat update, and correct `scrollY` once the chat is updated. Record the
+  update. Record it and its position before anything above the chat changes in that
+  update (the poll error banner set or cleared in the poll path, the banners and pins in
+  `render()`), and correct `scrollY` once the chat is updated. Record the
   key and viewport offset of every chat entry visible at that moment; afterwards restore
   the first of them that still exists to its own recorded offset. If none survive, leave
   `scrollY` as it is.
@@ -101,7 +102,8 @@ Mockup half of an image card) and the mockup on the picture page.
   is the same `POST <thread>/messages`.
 - Send keeps the pin, coordinates and text until the hub accepts the message. On a
   failure, show the error beside the box ("Comment not sent: <reason>") and keep
-  everything so Send can be pressed again. Only acceptance or Cancel clears them.
+  everything so Send can be pressed again. Only acceptance or Cancel clears them. While
+  the request is pending, the text box, pin and Send are disabled.
 - The picture page has no live state: it checks whether the thread can take a message
   when it loads and again (re-reading `<thread>/chat`) when Send is pressed. If it can't,
   it shows "The lead isn't running, so the comment can't be sent now" and keeps the
@@ -128,7 +130,10 @@ path, and a second link **Download HTML** keeps today's HTML download.
   that SVG as an image from a `data:image/svg+xml` URL (as `graphCanvas` does; the picture
   page's policy allows `data:` images, not blob URLs) and draw it to a canvas sized with
   the existing `scaleFor`, filled white first (the backing the mockup iframe shows,
-  `viewer/pages/picture.css:12`). Add the
+  `viewer/pages/picture.css:12`). The `foreignObject` content is a root box of exactly
+  width x height painted with the page's canvas background as a browser would show it
+  (the `html` element's background, or the `body`'s if `html` sets none), so a short
+  mockup with a body background fills the whole picture as it does in the iframe. Add the
   function to `viewer/pages/picture-export.js` beside `graphCanvas` and `formCanvas`.
 - No script from the mockup runs at any point (scripts are stripped before drawing).
 - If the browser refuses (load error or a tainted canvas), the note under Download says
@@ -167,8 +172,9 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
    exact format above with the expected rounded coordinates; the button is hidden in an
    archived thread.
 4. PNG: Download on a mockup's picture page saves a PNG whose pixel size is width x height
-   times the export scale, and in which a known foreground block, a set background and a spot the fixture
-   leaves unset (white) have their expected colours; Download HTML still gives HTML.
+   times the export scale, and in which a known foreground block, a body background below the body's content
+   (fixture: short content, `body` background set), and a spot in a second fixture that
+   sets no background (white) have their expected colours; Download HTML still gives HTML.
 5. True size: at 390px viewport, the screenshot view of a 1200px-wide image renders it
    1200 CSS px wide and the page scrolls sideways; Built's Open full size links to it.
 
@@ -183,6 +189,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A hand-off that freezes the thread while a spot comment is open leaves its Cancel disabled | Rare path: needs a hand-off mid-draft; the draft is lost, nothing else | review-round-3 |
 | The mockup PNG is tested only in Chromium and Firefox; on an iPhone (WebKit) it may fail | A failure shows the "Download HTML instead" note and the HTML link stays; D2 covers a machine-side PNG | review-round-1 |
 
 ## Check Once Built
@@ -241,6 +248,10 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | PNG loses the body background below short content | upheld | S3: root box width x height carries the canvas background; Validation 4 checks below the content |
+| mechanics | major | Draft editable while Send is pending | downgraded (minor) | Window is one request long; fixed by disabling the draft while pending |
+| mechanics | minor | Frozen-card lock blocks Cancel if a hand-off replaces a card mid-draft | accepted-risk | Rare path: a hand-off started while a comment is being written |
+| mechanics | minor | Poll error banner changes before the scroll anchor is captured | upheld | S1: capture before anything above the chat changes, poll path included |
 
 ## Implementation Tasks
 
