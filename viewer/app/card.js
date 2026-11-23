@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { PROVIDERS } = require('./providers.js');
 
 const shown = new Set([
@@ -40,18 +41,19 @@ const roles = {
   done: ['lead'],
   check: ['lead'],
   diagram: ['lead'],
-  image: ['lead'],
+  image: ['lead', 'sub-lead'],
   file: ['lead'],
   stub: ['lead'],
   sudo: ['lead'],
   title: ['lead'],
   resolve: ['lead'],
   retract: ['lead'],
-  message: ['lead', 'sub-lead', 'worker', 'mapper'],
-  result: ['worker', 'mapper', 'sub-lead'],
+  message: ['lead', 'sub-lead', 'worker', 'mapper', 'designer'],
+  result: ['worker', 'mapper', 'sub-lead', 'designer'],
 };
 
 const text = (value) => typeof value === 'string' && value.trim().length > 0;
+const dimension = (value) => Number.isInteger(value) && value >= 200 && value <= 2560;
 const line = (value) => text(value) && !/[\n\r]/.test(value);
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const array = (value, check, minimum = 0) => (
@@ -83,7 +85,7 @@ const sudoMachineFields = {
 const fields = {
   lesson: {
     action: (v) => ['add', 'replace', 'remove'].includes(v),
-    for: (v) => ['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper'].includes(v),
+    for: (v) => ['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper', 'designer'].includes(v),
     why: (v) => line(v) && !/[\v\f\u0085\u2028\u2029]/.test(v),
     text: (v) => v === undefined || (line(v) && v.length <= 300 && !/[\v\f\u0085\u2028\u2029]/.test(v)),
     lesson: (v) => v === undefined || (typeof v === 'string' && /^L[0-9a-f]{6}$/.test(v)),
@@ -164,8 +166,8 @@ const fields = {
       && (step.agent === 'matched' ? step.note === undefined
         : text(step.note) && step.note.length <= 300 && !/[\n\v\f\r\u0085\u2028\u2029]/.test(step.note)), 1) && value.length <= 6,
   },
-  diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html'].includes(value) },
-  image: { path: (value) => text(value) && path.isAbsolute(value), title: text },
+  diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html', 'mockup'].includes(value), width: (value) => value === undefined || dimension(value), height: (value) => value === undefined || dimension(value) },
+  image: { path: (value) => text(value) && path.isAbsolute(value), title: text, mockup: (value) => value === undefined || (object(value) && Object.keys(value).length === 3 && text(value.graph) && dimension(value.width) && dimension(value.height)) },
   file: { path: (value) => text(value) && path.isAbsolute(value), title: text },
   stub: {
     title: text,
@@ -213,6 +215,7 @@ function validate(kind, card, role, options = {}) {
   for (const [key, check] of Object.entries(spec)) {
     if (!check(card[key])) return { ok: false, reason: `invalid or missing field: ${key}` };
   }
+  if (kind === 'diagram' && (card.format === 'mockup' ? !dimension(card.width) || !dimension(card.height) : card.width !== undefined || card.height !== undefined)) return { ok: false, reason: 'width and height are required only for mockup diagrams' };
   if (kind === 'stub' && card.duplicate !== undefined && card.adds_to === undefined) return { ok: false, reason: 'duplicate requires adds_to' };
   if (kind === 'stub' && card.adds_to !== undefined && (card.depends_on_parent || card.commits !== undefined)) return { ok: false, reason: "an addition can't depend on this thread's unmerged work; post your own stub" };
   if (kind === 'lesson' && ((card.action !== 'remove' && card.text === undefined) || (card.action !== 'add' && card.lesson === undefined) || (card.action === 'add' && card.lesson !== undefined) || (card.action === 'remove' && (card.text !== undefined || card.only_ai !== undefined || card.only_project !== undefined)))) return { ok: false, reason: 'invalid fields for lesson action' };
@@ -316,6 +319,15 @@ async function main(argv) {
   }
   const checked = validate(kind, card);
   if (!checked.ok) throw new Error(checked.reason);
+  if (kind === 'diagram' && card.format === 'mockup') {
+    let top;
+    try { top = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { top = process.cwd(); }
+    const filePath = path.join(top, 'docs', 'plans', card.plan, 'graphs', `${card.graph}.html`);
+    let stat;
+    try { stat = fs.statSync(filePath); } catch { throw new Error('mockup file does not exist'); }
+    if (!stat.isFile()) throw new Error('mockup file is not a regular file');
+    if (stat.size > 2 * 1024 * 1024) throw new Error('mockup file exceeds 2 MiB');
+  }
   const token = process.env.WHEELCHAIR_SESSION_TOKEN;
   if (!token) throw new Error('WHEELCHAIR_SESSION_TOKEN is required');
   // The service listens on its tailnet address only, and names it in each session's environment.

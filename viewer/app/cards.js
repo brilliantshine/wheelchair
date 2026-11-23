@@ -3,6 +3,7 @@
 // Spec "How the app reads and drives a session" and protocol/app/cards.md.
 const crypto = require('node:crypto');
 const path = require('node:path');
+const fs = require('node:fs/promises');
 const { appError } = require('./state.js');
 const { resolvable, retractable, truncateTitle, validate } = require('./card.js');
 
@@ -86,6 +87,24 @@ async function acceptCard(hub, payload) {
       const plan = path.join(thread.worktree || thread.project, 'docs', 'plans', checked.card.plan);
       await hub.registerPlan(plan);
       if ((!checked.card.format || checked.card.format === 'graph') && hub.registerGraph) await hub.registerGraph(path.join(plan, 'graphs', `${checked.card.graph}.json`));
+    }
+
+    if (checked.card.kind === 'image' && checked.card.mockup) {
+      thread.slug ||= await require('./views.js').discoverSlug(thread, hub);
+      if (!thread.slug) throw appError(422, 'this thread has no plan for a mockup');
+      const plan = path.join(thread.worktree || thread.project, 'docs', 'plans', thread.slug);
+      if (hub.registerPlan) await hub.registerPlan(plan);
+      const graphs = path.join(plan, 'graphs');
+      const file = path.join(graphs, `${checked.card.mockup.graph}.html`);
+      let realGraphs, realFile, stat;
+      try {
+        realGraphs = await fs.realpath(graphs);
+        realFile = await fs.realpath(file);
+        stat = await fs.stat(realFile);
+      } catch { throw appError(422, 'mockup file does not exist'); }
+      if (!realFile.startsWith(realGraphs + path.sep)) throw appError(422, 'mockup file must be inside the graphs directory');
+      if (!stat.isFile()) throw appError(422, 'mockup file is not a regular file');
+      if (stat.size > 2 * 1024 * 1024) throw appError(422, 'mockup file exceeds 2 MiB');
     }
 
     if (checked.card.kind === 'resolve') {
