@@ -20,7 +20,7 @@ From `wc-eec6963c41b4-verifier-6` (GPT):
 | Gap | Task |
 |---|---|
 | J3, J7 | R5 |
-| J1 | waits for the user's choice |
+| J1 | R6 — the user chose option (a): reserve space under the conversation so the button floats over empty space |
 
 ---
 
@@ -45,6 +45,50 @@ cd viewer && for i in 1 2 3; do npx playwright test test/app-assistant-popup.spe
 cd viewer && npx playwright test test/app-assistant.spec.js test/app-send-now.spec.js test/app-threads.spec.js
 ```
 Report Part 2's 15+15 numbers whatever the outcome.
+
+## Rules for every task in this build
+
+- Plan: `docs/plans/personal-assistant/PLAN.md` (read the Spec sections named above, plus `IDEA.md` beside it). The lead's session is `wc-eec6963c41b4-lead`; send it a `message` card (with `asks: true`) if the plan leaves something you cannot settle.
+- Never delete files: no `rm`, no `git rm`, no `git clean`. If something should go, say so in your report.
+- Never run `./install.sh` from this worktree. Never start the viewer by hand: tests start their own isolated server with `--port` and `--cache-root` as in `viewer/test/helpers/server.js:72`.
+- Stay inside your ownership boundary. If a change outside it is unavoidable, stop and message the lead instead of making it.
+- If the same validation gate fails twice for the same reason, stop and report rather than iterating. Known pre-existing failure on the feature branch, not yours to fix: `viewer/test/app-harnesses.test.js:311` ("switching a harness off cancels its install ... without waiting", a wall-clock < 1000 ms check). Report it as pre-existing; it does not count as your gate failing.
+- Your own `wc.js` and `card.js` calls are always allowed. Commit with `node /home/collin/projects/personal/wheelchair/viewer/app/wc.js git commit -m "<msg>" --paths <exact paths>`.
+- Every test you add must fail when the behaviour it covers breaks: seed a starting state that differs from the result you assert, break the code once, watch the test fail, restore it.
+- When you shorten timers around spawned processes in tests, give each wait at least a second.
+- Write your report to `docs/plans/personal-assistant/reports/<task id>.md` and commit it: what you built with `file:line` references, the **pasted output** of every validation command (the tail with pass/fail counts is enough), and the closing section below. Then post your `result` card.
+- Closing request: List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none.
+
+---
+
+# R6 — Make room for the pop-up button on phone thread pages (plan `personal-assistant`, remediation 3, task R6)
+
+Read `docs/plans/personal-assistant/REMEDIATION-3.md` (gap J1) and the mockup `docs/plans/personal-assistant/graphs/mockup-closed-phone.html` (390x844).
+
+## The problem
+On phone thread pages (width under 900px) the closed "✦ Assistant" button has no empty space to float over. `viewer/pages/assistant-popup.js:60-63` (R4) places it 12px above the measured composer, which is exactly where the newest chat message sits: on a one-message thread it hides that message completely until the lead replies; on long threads it covers the end of the last row. Two earlier fixes failed; this one follows **the user's choice**, option (a): **make room for it.**
+
+## What to build
+On phone thread pages, while the pop-up button exists, reserve bottom space under the conversation (`#chat`, `viewer/pages/thread.html:41`) equal to the button's height plus a gap above and below it, so that at the end of the conversation the button floats over that empty space, above the composer, as in `mockup-closed-phone.html`. Keep R4's measured placement (the button sits 12px above the composer); the reserved space must be at least `button height + 24px` so the last message ends above the button. Do it in `viewer/pages/assistant-popup.css`, scoped so it only applies under 900px, only on thread pages (`.shell.on-thread`), and only while the button is on the page (e.g. `html:has(.wc-asst-float) .shell.on-thread #chat { padding-bottom: … }`); nothing changes at 900px and wider, on other pages, or with the assistant off. If CSS alone can't express it (for example, the button height must be measured), set a CSS variable from `assistant-popup.js` instead, and say so — but `assistant-popup.js` is also being edited by another worker (R5, early Send), so prefer CSS and touch the JS only for that variable.
+
+## Tests (new file `viewer/test/app-assistant-phone.spec.js`, Playwright, isolated server like the other specs)
+At 390x844, with the assistant on, scrolled to the end of the conversation, the button's bounding box overlaps **no** element in `#chat` and not `#composer`:
+- a project thread with one user message (the verifier's case: "Go ahead");
+- a project thread with 30 messages;
+- the one-message thread after a lead reply arrives (the next poll).
+Also: at 1280x800 the `#chat` padding is unchanged from the assistant-off value; with the assistant off, the phone padding is unchanged. The one-message case must fail on the current code.
+
+## Screenshots
+At 390x844: the one-message thread and the 30-message thread, closed button visible; name each path and `mockup-closed-phone.html` in your report.
+
+## Ownership boundary
+`viewer/pages/assistant-popup.css`, new `viewer/test/app-assistant-phone.spec.js`; `viewer/pages/assistant-popup.js` only for a CSS variable if CSS alone cannot do it.
+
+## Validation
+```bash
+cd viewer && for i in 1 2 3; do npx playwright test test/app-assistant-phone.spec.js --reporter=line 2>&1 | tail -1; done
+cd viewer && npx playwright test test/app-assistant-popup.spec.js test/app-assistant.spec.js test/app-threads.spec.js test/app-send-now.spec.js
+```
 
 ## Rules for every task in this build
 
