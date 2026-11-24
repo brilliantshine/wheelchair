@@ -50,7 +50,7 @@ test('a tap on a scaled mockup sends the exact message with rounded coordinates'
   await expect(page.locator('.spot-pin')).toBeVisible();
   await expect(page.locator('.spot-text')).toBeVisible();
   // Tapping elsewhere moves the pin and the new point is what gets sent.
-  const moved = await tapAt(page, 0.3, 0.8);
+  const moved = await tapAt(page, 0.3, 0.5);
   expect(moved.x).not.toBe(want.x);
   await expect(page.locator('.spot-box').getByRole('button', { name: 'Send' })).toBeDisabled(); // empty comment
   await page.locator('.spot-text').fill('Make this wider');
@@ -217,6 +217,65 @@ async function openPicture(page, made, card) {
   await page.goto(`${ctx.server.url}/app/picture?thread=${made.id}&card=${card.id}`);
   await expect(page.locator('#picture iframe')).toHaveAttribute('scrolling', 'no');
 }
+
+async function expectInside(rect, bounds) {
+  expect.soft(rect.x).toBeGreaterThanOrEqual(bounds.x - 1);
+  expect.soft(rect.y).toBeGreaterThanOrEqual(bounds.y - 1);
+  expect.soft(rect.x + rect.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+  expect.soft(rect.y + rect.height).toBeLessThanOrEqual(bounds.y + bounds.height + 1);
+}
+
+function spotControls(page) {
+  return [page.locator('.spot-text'), page.locator('.spot-box').getByRole('button', { name: 'Send' }),
+    page.locator('.spot-box').getByRole('button', { name: 'Cancel' })];
+}
+
+test('a tall thread mockup keeps the pin and comment controls visible without scrolling', async ({ page }, testInfo) => {
+  const { made } = await seed(390, 844);
+  await open(page, made);
+  await page.getByRole('button', { name: 'Comment on a spot' }).click();
+  await page.locator('.spot-layer').evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 190));
+  const layer = await page.locator('.spot-layer').boundingBox();
+  const before = await page.evaluate(() => window.scrollY);
+  await page.mouse.click(layer.x + layer.width * 0.5, layer.y + layer.height * 0.1);
+  if (process.env.R8_SCREENSHOTS && testInfo.project.name === 'chromium') {
+    await page.screenshot({ path: path.join(process.env.R8_SCREENSHOTS, 'thread.png') });
+  }
+  expect.soft(Math.abs(await page.evaluate(() => window.scrollY) - before)).toBeLessThanOrEqual(1);
+  const viewport = { x: 0, y: 0, width: 390, height: 844 };
+  await expectInside(await page.locator('.spot-pin').boundingBox(), viewport);
+  const composer = await page.locator('#composer').boundingBox();
+  for (const control of spotControls(page)) {
+    await expect(control).toBeVisible();
+    const rect = await control.boundingBox();
+    await expectInside(rect, viewport);
+    expect.soft(rect.y + rect.height).toBeLessThanOrEqual(composer.y + 1);
+  }
+  await page.locator('.spot-text').click();
+  await expect(page.locator('.spot-text')).toBeFocused();
+});
+
+test('a tall picture mockup keeps the pin and comment controls visible without scrolling', async ({ page }, testInfo) => {
+  const { made, card } = await seed(390, 844);
+  await openPicture(page, made, card);
+  await page.getByRole('button', { name: 'Comment on a spot' }).click();
+  const pane = page.locator('.picture-body');
+  const before = await pane.evaluate((el) => ({ top: el.scrollTop, left: el.scrollLeft }));
+  const layer = await page.locator('.spot-layer').boundingBox();
+  await page.mouse.click(layer.x + layer.width * 0.5, layer.y + layer.height * 0.1);
+  if (process.env.R8_SCREENSHOTS && testInfo.project.name === 'chromium') {
+    await page.screenshot({ path: path.join(process.env.R8_SCREENSHOTS, 'picture.png') });
+  }
+  const after = await pane.evaluate((el) => ({ top: el.scrollTop, left: el.scrollLeft }));
+  expect.soft(Math.abs(after.top - before.top)).toBeLessThanOrEqual(1);
+  expect.soft(Math.abs(after.left - before.left)).toBeLessThanOrEqual(1);
+  const bounds = await pane.boundingBox();
+  await expectInside(await page.locator('.spot-pin').boundingBox(), bounds);
+  for (const control of spotControls(page)) {
+    await expect(control).toBeVisible();
+    await expectInside(await control.boundingBox(), bounds);
+  }
+});
 
 test('on the picture page, a tap on the right of a wide mockup keeps the pin in view', async ({ page }) => {
   const { made, card } = await seed(1000, 600);
