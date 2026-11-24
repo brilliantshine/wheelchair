@@ -171,14 +171,13 @@ test.describe('assistant pop-up', () => {
     }
     const lines = (count) => Array.from({ length: count }, (_, i) => ['human', 'Conversation ' + i, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()]);
     for (const [name, count] of [['short', 1], ['long', 30]]) {
-      test(`closed button clears the ${name} project composer`, async ({ page, browserName }) => {
+      test(`closed button clears the ${name} project composer`, async ({ page }) => {
         await turnOn(page);
         const made = await ctx.make({ cli: 'claude' });
         await ctx.timedTranscript(made.id, lines(count));
         await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
         await expect(page.locator('#chat')).toContainText('Conversation 0');
         await clearComposer(page);
-        if (browserName === 'chromium') await page.screenshot({ path: `/tmp/r4-${name}-thread.png` });
       });
     }
     test('button follows the composer as a short thread grows', async ({ page }) => {
