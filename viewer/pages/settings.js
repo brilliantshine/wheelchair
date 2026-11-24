@@ -507,6 +507,7 @@
               data[key] = res[key];
               inlineErr(row, '');
               renderPanel();
+              if (key === 'assistant' && res.assistant_error) inlineErr(document.getElementById('assistant-setting'), res.assistant_error);
               setNote(saved, false);
             } catch (e) { inlineErr(row, e.message); setNote('', false); }
           },

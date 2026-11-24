@@ -336,13 +336,15 @@
   });
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const text = input.value.trim();
+    const draft = input.value;
+    const text = draft.trim();
     if (!text || send.disabled) return;
     sending = true; send.disabled = true;
     try {
       const seen = (data.items || []).filter((i) => i.type === 'human' && i.text === text).length;
       await post(T + '/messages', { text });
-      input.value = ''; pending.push({ text, seen }); sig = ''; showError('');
+      if (input.value === draft) input.value = '';
+      pending.push({ text, seen }); sig = ''; showError('');
       await poll(); render();
     } catch (e) { showError('Message not sent: ' + e.message); }
     finally { sending = false; send.disabled = !(data && liveLead(data)); }

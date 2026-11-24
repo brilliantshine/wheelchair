@@ -246,3 +246,36 @@ test('answered Check card attributes the assistant', async ({ page }) => {
     await expect(page.locator('.card', { hasText: 'Check this' })).toContainText('by your assistant');
   } finally { await ctx.close(); }
 });
+
+test('failed assistant start shows saved On and allows turning Off', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    await api(ctx, '/settings/balancing', { method: 'PUT', body: { lead_order: ['gpt'] } });
+    ctx.machine.preflightOk = false;
+    await signIn(page, ctx);
+    await page.goto(`${ctx.server.url}/app/settings`);
+    const row = page.locator('#assistant-setting');
+    await expect(row.getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true');
+    await row.getByRole('radio', { name: 'On' }).click();
+    await expect(row.getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'true');
+    await expect(row.locator('.inline-err')).not.toBeEmpty();
+    const request = page.waitForRequest(r => r.method() === 'PUT' && r.url().endsWith('/settings/preferences') && r.postDataJSON().assistant === 'off');
+    await row.getByRole('radio', { name: 'Off' }).click();
+    await request;
+    await expect(row.getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true');
+    expect((await status(ctx)).on).toBe(false);
+  } finally { await ctx.close(); }
+});
+
+test('assistant alone suppresses the empty threads message', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    await signIn(page, ctx);
+    await page.goto(`${ctx.server.url}/app/threads`);
+    await expect(page.getByText('No threads yet.')).toBeVisible();
+    await setAssistant(page, ctx, 'on');
+    await page.reload();
+    await expect(page.locator('.assistant-row')).toBeVisible();
+    await expect(page.getByText('No threads yet.')).toBeHidden();
+  } finally { await ctx.close(); }
+});

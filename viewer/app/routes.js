@@ -414,8 +414,12 @@ async function handleSettings(hub, request, response, url, bits, body) {
         for (const role of ['reviewer', 'verifier', 'mapper', 'designer', 'scout', 'scout-heavy']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    if (value.assistant !== before) await require('./assistant.js').change(hub, value.assistant === 'on');
-    return send(response, 200, { assistant: value.assistant, lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    let assistantError;
+    if (value.assistant !== before) {
+      try { await require('./assistant.js').change(hub, value.assistant === 'on'); }
+      catch (error) { if (!error.assistantStart) throw error; assistantError = error.message; }
+    }
+    return send(response, 200, { ...(assistantError ? { assistant_error: assistantError } : {}), assistant: value.assistant, lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));

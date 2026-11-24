@@ -26,9 +26,11 @@ async function change(hub, on) {
     if (on && !thread) {
       thread = { ...require('./threads.js').emptyThread({ project: null, machine: 'hub' }), assistant: true, title: 'Personal assistant' };
       await hub.save(thread);
-      await hub.withThread(thread.id, async () => require('./sessions.js').startSession(hub, await hub.thread(thread.id), { role: 'lead', brief: '', tier: 'top' }));
+      try { await hub.withThread(thread.id, async () => require('./sessions.js').startSession(hub, await hub.thread(thread.id), { role: 'lead', brief: '', tier: 'top' })); }
+      catch (error) { error.assistantStart = true; throw error; }
     } else if (on && thread && !thread.sessions.some((s) => s.role === 'lead' && s.live)) {
-      await hub.restartLead(thread.id);
+      try { await hub.restartLead(thread.id); }
+      catch (error) { error.assistantStart = true; throw error; }
     } else if (!on && thread) {
       await hub.withThread(thread.id, async () => {
         const current = await hub.thread(thread.id);

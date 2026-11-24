@@ -109,7 +109,7 @@
     archivedBtn.textContent = showArchived ? '\u2190 Back to threads' : 'Archived';
     listEl.textContent = '';
     emptyEl.textContent = showArchived ? 'No archived threads.' : 'No threads yet.';
-    emptyEl.hidden = shown.length > 0;
+    emptyEl.hidden = shown.length > 0 || (!!assistant && !showArchived);
     if (showArchived) listEl.appendChild(el('li', 'group-label', 'Archived'));
     if (assistant && !showArchived) listEl.appendChild(assistantRow(assistant));
     if (onboarding && !showArchived) {

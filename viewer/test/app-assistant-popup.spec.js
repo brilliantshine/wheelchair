@@ -344,3 +344,26 @@ test('poll does not allow a second send while a message is in flight', async ({ 
     expect(count).toBe(1);
   } finally { if (release) release(); await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
 });
+
+test('sending preserves a different draft typed while the request is in flight', async ({ page }) => {
+  const ctx = await startWorld();
+  let release;
+  try {
+    await signIn(page, ctx);
+    await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assistant: 'on' }) }));
+    const id = await page.evaluate(async () => (await (await fetch('/wheelchair/api/assistant')).json()).thread);
+    let received = false;
+    const held = new Promise(resolve => { release = resolve; });
+    await page.route(`**/api/threads/${id}/messages`, async route => { received = true; await held; await route.fulfill({ json: { ok: true } }); });
+    await page.goto(`${ctx.server.url}/app/threads`);
+    await page.locator('.wc-asst-float').click();
+    const input = page.getByRole('textbox', { name: 'Message the assistant' });
+    await input.fill('First message');
+    await page.getByRole('button', { name: 'Send' }).click();
+    await expect.poll(() => received).toBe(true);
+    await input.fill('Second draft');
+    release();
+    await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled();
+    await expect(input).toHaveValue('Second draft');
+  } finally { if (release) release(); await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
+});

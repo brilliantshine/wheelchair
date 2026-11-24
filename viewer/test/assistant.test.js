@@ -381,7 +381,10 @@ test('restart starts a fresh assistant after first preflight fails', async () =>
   try {
     await api(c, '/settings/balancing', { method: 'PUT', body: { lead_order: ['gpt'] } });
     c.machine.preflightOk = false;
-    await api(c, '/settings/preferences', { method: 'PUT', body: { assistant: 'on' } });
+    const response = await api(c, '/settings/preferences', { method: 'PUT', body: { assistant: 'on' } });
+    assert.equal(response.status, 200);
+    assert.equal(response.body.assistant, 'on');
+    assert.ok(response.body.assistant_error);
     const id = (await api(c, '/assistant')).body.thread;
     const file = path.join(c.state, 'threads', `${id}.json`);
     assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).sessions.length, 0);
