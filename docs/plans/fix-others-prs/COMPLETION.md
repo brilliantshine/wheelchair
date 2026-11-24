@@ -105,3 +105,19 @@ ok 3 - prompt failures precede worktree creation and permit retry
 ```
 The worker's mutation run (permit removed from the relay condition at `machine/service.js:2263`) failed the new test at the in-flight spool assertion; restored.
 
+### Remediation 2 (after verification attempt 2)
+
+- Gap "the relay test waits forever if the machine answers 503 without contacting the hub": fixed in `machine/test/service.test.js:350-353`. The wait is now bounded at 5 s, ends as soon as the machine answers, and asserts that the hub was contacted. Lane: light (gpt-6-luna).
+- Gaps "single-branch clone leaves `origin/<head>` missing" and "tag with the head branch's name": rare paths, recorded in PLAN.md Accepted Risks (verification-2). Not changed.
+
+Evidence (sub-lead, worker branch):
+```
+$ node --test --test-name-pattern "permit" machine/test/service.test.js
+ok 1 - permit is never spooled when the hub is unavailable or earlier cards are waiting
+ok 2 - permit is relayed synchronously and returns the hub's answer
+ok 3 - prompt failures precede worktree creation and permit retry
+# pass 3
+# fail 0
+```
+The worker's fault run (permit forced to 503 before the hub call) gave `not ok 1 - permit is relayed synchronously...` with "the machine must contact the hub before answering a permit card" in 360 ms; restored, it passed.
+
