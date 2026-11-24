@@ -201,3 +201,27 @@ Gaps and decision: `REMEDIATION-3.md`; Collin's choice is PLAN.md D15. The verif
   - Tests: the real-tree test gained `viewer/app/sessions.js`, `viewer/server.js` and `machine/test/fixtures/agy/transcript.jsonl` cases, and a fixture test covers additive entries.
   - `node --test test-support/test/*.test.js`: 25/25. Mutations: ignoring `additive` fails the fixture test; dropping the new entries fails the real-tree test.
 - **R6**: `protocol/app/lead.md` small-fix path waits for the full run (or coverage) before the push. `node --test viewer/test/protocol-rules.test.js`: 44/44.
+
+**Full run on 736bb799** (`bash test-support/full-run.sh <scratch>/full4`, started ~00:12, run alongside the attempt-4 verifiers with load average 27–50):
+```
+commit 736bb7999fb58955fd1db3bc1699f9bceaeb862d
+suite viewer-browser exit 1
+suite viewer-node exit 1
+suite machine exit 1
+suite test-support exit 0
+suite sensitivity exit 0
+suite codex exit 0
+suite install exit 0
+suite sudo-helper exit 0
+```
+The browser stage ran `Running 1466 tests using 6 workers`. The "lead waiting line" tests passed this time (the time of day no longer rolls into the next day).
+
+| Suite | Failure | Judgment | Evidence |
+|---|---|---|---|
+| viewer-browser | `[chromium] app-handoff.spec.js:206`, `[chromium] app-send-now.spec.js:59` | load flake | `--project chromium --repeat-each 3`: `6 passed`, exit 0. |
+| viewer-browser | `[firefox] app-threads.spec.js:555` phone and desktop, `page.waitForRequest: Test timeout of 30000ms exceeded` | on main | Main at 7b93c1ae, `--project firefox --repeat-each 5` (load ~45): 2 failed with the same `page.waitForRequest: Test timeout of 30000ms exceeded`. On the branch, `--repeat-each 3` alone: 5 passed, 1 failed. The branch changes nothing under `viewer/` except `playwright.config.js` and `app-harnesses.test.js`. |
+| viewer-node | `app-quiet.test.js:41`, `app-uploads-archive.test.js:65`, `server.test.js:457` | load flake | Alone: `app-quiet` 27/27, `app-uploads-archive` 3/3, `server` 50/50. |
+| machine | the same 18 tests as main (`win*.test.js`, `wslpath`) | on main | `comm` against main's list: all 18 present, none missing. |
+| machine | `win-tool-proxy.test.js` hung 8+ min in the whole suite (also on main) and was stopped by the sub-lead; it and `screen.test.js` "marker mode and app umask preserve service umask" (ENOENT on a temp umask file) then reported 4 extra failures | load flake / hang | Alone: `win-tool-proxy.test.js` 27/27, `screen.test.js` 46/46. |
+
+So the full run on 736bb799 passes under the lead's reading of S2. Later commits change only COMPLETION.md and PLAN.md, which the picker maps to nothing.
