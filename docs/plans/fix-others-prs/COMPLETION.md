@@ -88,3 +88,20 @@ Focused runs after each acceptance: `app-permit` + `app-reach` + `app-hub` 130/1
 - The machine does not enforce the push target (D2, deferred); the rule is protocol-only, as the own-branch rule is today.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1)
+
+- Gap "draft after push keeps the Finish wait polling": rare path, recorded in PLAN.md Accepted Risks (verification-1). Not changed.
+- Gap "machine permit test would pass if every post returned 503": fixed in `machine/test/service.test.js` by the test `permit is relayed synchronously and returns the hub's answer` (hub 200 returns the card id, one `/cards` call, nothing spooled during or after; hub 422 returns the refusal, nothing spooled). Fake hub `allowed` map gains `permit: ['lead']` (`machine/test/service.test.js:44`). Lane: light (gpt-6-luna).
+
+Evidence (sub-lead, worker branch):
+```
+$ node --test --test-name-pattern "permit" machine/test/service.test.js
+ok 1 - permit is never spooled when the hub is unavailable or earlier cards are waiting
+ok 2 - permit is relayed synchronously and returns the hub's answer
+ok 3 - prompt failures precede worktree creation and permit retry
+# pass 3
+# fail 0
+```
+The worker's mutation run (permit removed from the relay condition at `machine/service.js:2263`) failed the new test at the in-flight spool assertion; restored.
+
