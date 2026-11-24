@@ -415,6 +415,9 @@ npm --prefix viewer run test:browser
 | T6b | Assistant page composer text, preview fetch cost and text, Needs-you and preview tests, fresh screenshots | `viewer/pages/threads.js`, `thread.js`, `thread.css`, `views.css`, `viewer/test/app-assistant.spec.js` | standard / claude-sonnet-5-5 | wc-eec6963c41b4-worker-9 | `npm --prefix viewer run test:browser` | done |
 | T8 | Find and fix the new intermittent failure of `app-send-now.spec.js:84` (Enter sends) | `viewer/app/**`, `viewer/pages/**` for the fix; `viewer/test/` for a regression check | standard / claude-sonnet-5-5 | wc-eec6963c41b4-worker-10 | loop of `app-send-now.spec.js` 12/12; assistant specs | done |
 | T7 | Pop-up in `nav.js` (§5; mockups popup, closed, thinking) | `viewer/pages/nav.js`, new pop-up files, `app.css`; `viewer/test/app-assistant-popup.spec.js` | standard / claude-sonnet-5-5 | wc-eec6963c41b4-worker-7 | `npm --prefix viewer run test:browser` | done |
+| R1 | Remediation 1: G1 guard vs test fakes, G2 asides hidden from assistant reads, G3 fresh stage, G4 `recent` filter-then-slice | `viewer/app/**`, `viewer/test/assistant.test.js`, fakes in `app-hub.test.js`, `app-session-meta.test.js` | standard / gpt-6.1-terra | wc-eec6963c41b4-worker-11 | `node --test viewer/test/*.test.js` | in progress |
+| R2 | Remediation 1: G5 queued `[wc:assistant]` bubbles, G7 assistant page vs mockup, G10 preview, G11 seen marker | `viewer/pages/thread.js`, `thread.html`, `thread.css`, `threads.js`, `views.css`, `viewer/test/app-assistant.spec.js` | standard / gpt-6.1-terra (Claude asked; hub had no Claude room) | wc-eec6963c41b4-worker-12 | `npm --prefix viewer run test:browser` | in progress |
+| R3 | Remediation 1: G6 pop-up reuses the thread page's rendering, G8 phone overlap, G9 off in an open tab | `nav.js`, `assistant-popup.*`, `thread.js` (extraction), new shared renderer, `app-assistant-popup.spec.js` | standard (claude) | — | browser and viewer suites | waits for R2 |
 
 ## Log
 
