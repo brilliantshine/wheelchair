@@ -10,7 +10,8 @@ async function visible(hub, threads) {
   return threads.filter((thread) => !thread.assistant || on);
 }
 async function guard(hub, id) {
-  const thread = await hub.thread(id);
+  // A read-only snapshot: hub.thread() can save a provider migration, and this runs outside the thread's lock.
+  const thread = await hub.threadSnapshot(id);
   if (thread.assistant && !(await visible(hub, [thread])).length) throw appError(404, 'the assistant is off');
 }
 async function status(hub) {
