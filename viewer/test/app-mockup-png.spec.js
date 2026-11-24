@@ -19,6 +19,8 @@ const FIXTURES = {
   plain: '<style>body{margin:0}.b{width:50px;height:50px;background:#ff0000}</style><body><div class="b"></div></body>',
   // Colours come from CSS variables declared on :root and used under :root > body.
   vars: '<style>:root{--bg:#00ff00;--fg:#0000ff}:root > body{margin:0;background:var(--bg)}:root > body > .b{width:50px;height:50px;background:var(--fg)}</style><body><div class="b"></div></body>',
+  // Green only where the viewport is narrow, as in the mockup's own 390-wide frame.
+  narrow: '<style>body{margin:0;background:#ff0000}@media (max-width:500px){body{background:#00ff00}}</style><body></body>',
   // A script must not run: it would turn the block green.
   script: '<style>body{margin:0}.b{width:50px;height:50px;background:#ff0000}</style><body><div class="b"></div><script>document.querySelector(".b").style.background="#00ff00"</script></body>',
 };
@@ -31,8 +33,8 @@ async function seed() {
   await ctx.patch(made.id, (t) => { t.worktree = worktree; t.slug = 'dark'; });
   return made;
 }
-async function open(page, made, graph) {
-  const posted = await ctx.post(made.id, { kind: 'diagram', plan: 'dark', graph, title: 'Mockup ' + graph, format: 'mockup', width: W, height: H });
+async function open(page, made, graph, w = W, h = H) {
+  const posted = await ctx.post(made.id, { kind: 'diagram', plan: 'dark', graph, title: 'Mockup ' + graph, format: 'mockup', width: w, height: h });
   await page.goto(`${ctx.server.url}/app/picture?thread=${made.id}&card=${posted.id}`);
   await expect(page.locator('#download')).toBeVisible();
 }
@@ -94,4 +96,11 @@ test('a browser refusal leaves the note and the HTML link', async ({ page }) => 
   await page.locator('#download').click();
   await expect(page.locator('#download-note')).toHaveText('This browser could not make a PNG of this mockup. Download HTML instead.');
   await expect(page.locator('#download-html')).toBeVisible();
+});
+
+test('a responsive background is read at the mockup\'s own width', async ({ page }) => {
+  const made = await seed(); await open(page, made, 'narrow', 390, 300);
+  const r = await pixels(page, [[20, 20], [700, 500]]);
+  expect([r.w, r.h]).toEqual([780, 600]);
+  near(r.colours[0], [0, 255, 0]); near(r.colours[1], [0, 255, 0]);
 });

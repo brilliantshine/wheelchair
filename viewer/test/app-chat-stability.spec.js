@@ -108,3 +108,29 @@ test('the Built half and any image tap open the picture page in image view', asy
   await expect(built.locator('a:has(img)')).toHaveAttribute('href', want(withMock));
   await expect(page.locator('div.card-image', { hasText: 'Plain' }).locator('a:has(img)')).toHaveAttribute('href', want(plain));
 });
+
+test('an entry hidden under the sticky header is not the scroll anchor', async ({ page }) => {
+  const made = await seed();
+  const t0 = Date.now() - 600000;
+  const at = (n) => new Date(t0 + n * 1000).toISOString();
+  await ctx.patch(made.id, (t) => t.cards.push(needs('n0', 'Top note', at(0.5)), needs('n1', 'Hidden note', at(1))));
+  await mockupCard(made, 'Visible mockup', at(2));
+  for (let i = 0; i < 4; i++) await ctx.patch(made.id, (t) => t.cards.push(needs('tail' + i, 'Tail note ' + i, at(3 + i))));
+  await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+  await expect(page.locator('.card-diagram iframe')).toHaveCount(1);
+  await (await (await page.locator('.card-diagram iframe').elementHandle()).contentFrame()).waitForSelector('#proof');
+  await page.addStyleTag({ content: 'html, body { overflow-anchor: none !important; scroll-padding: 0 !important; }' });
+  // The mockup's top 1px under the header's bottom edge, so the note before it is wholly under the header.
+  const setup = await page.evaluate(() => {
+    const covered = document.getElementById('head').getBoundingClientRect().bottom;
+    const m = document.querySelector('.card-diagram').getBoundingClientRect();
+    window.scrollTo(0, window.scrollY + m.top - covered - 1);
+    const hidden = document.getElementById('card-n1').getBoundingClientRect();
+    return { covered, hiddenBottom: hidden.bottom, top: document.querySelector('.card-diagram').getBoundingClientRect().top };
+  });
+  expect(setup.hiddenBottom).toBeLessThanOrEqual(setup.covered);
+  await ctx.patch(made.id, (t) => t.cards.splice(t.cards.findIndex((c) => c.kind === 'diagram'), 0, needs('between', 'A card that lands between the hidden note and the mockup, long enough to push things well down the page when it arrives', at(1.5))));
+  await expect(page.locator('#card-between')).toHaveCount(1, { timeout: 8000 });
+  const moved = await page.evaluate(() => document.querySelector('.card-diagram').getBoundingClientRect().top);
+  expect(Math.abs(moved - setup.top)).toBeLessThanOrEqual(2);
+});

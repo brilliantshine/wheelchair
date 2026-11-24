@@ -244,3 +244,17 @@ test('the picture page says why at load when the lead is not running', async ({ 
   await expect(page.locator('#spot-note')).toContainText("the lead isn't running");
   await expect(page.locator('.spot-btn')).toHaveCSS('visibility', 'hidden');
 });
+
+test('a hand-off starting hides the button in place without redrawing the mockup', async ({ page }) => {
+  const { made } = await seed();
+  await open(page, made);
+  await expect(page.locator('.spot-btn')).toHaveCSS('visibility', 'visible');
+  await page.evaluate(() => {
+    window.__frame = document.querySelector('.card-diagram iframe'); window.__loads = 0;
+    window.__frame.addEventListener('load', () => { window.__loads += 1; });
+  });
+  await ctx.patch(made.id, (t) => { t.handoff_op = { kind: 'create', state: 'running' }; });
+  await expect(page.locator('.spot-btn')).toHaveCSS('visibility', 'hidden', { timeout: 8000 });
+  expect(await page.evaluate(() => window.__frame === document.querySelector('.card-diagram iframe'))).toBe(true);
+  expect(await page.evaluate(() => window.__loads)).toBe(0);
+});

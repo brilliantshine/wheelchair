@@ -81,11 +81,11 @@
   // The mockup's page background as a browser shows it on the canvas: the html element's, or the body's
   // when html sets none. Read from computed style in a hidden, script-free same-origin frame.
   const BG = ['background-color', 'background-image', 'background-repeat', 'background-position', 'background-size'];
-  function canvasBackground(html) {
+  function canvasBackground(html, w, h) {
     return new Promise((resolve) => {
       const f = document.createElement('iframe');
       f.setAttribute('sandbox', 'allow-same-origin'); f.setAttribute('aria-hidden', 'true');
-      f.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;height:600px;border:0;visibility:hidden';
+      f.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + (w || 800) + 'px;height:' + (h || 600) + 'px;border:0;visibility:hidden';
       const done = (v) => { f.remove(); resolve(v); };
       f.onload = () => {
         try {
@@ -116,7 +116,7 @@
     for (const s of Array.from(doc.querySelectorAll('script'))) s.remove();
     for (const n of Array.from(doc.querySelectorAll('*'))) for (const a of Array.from(n.attributes)) if (/^on/i.test(a.name)) n.removeAttribute(a.name);
     const plain = '<!doctype html>' + doc.documentElement.outerHTML;
-    const bg = await canvasBackground(plain);
+    const bg = await canvasBackground(plain, w, h);
     for (const st of Array.from(doc.querySelectorAll('style'))) st.textContent = st.textContent.replace(/:root\b/g, 'html');
     const NS = 'http://www.w3.org/1999/xhtml';
     const root = doc.createElementNS(NS, 'div');

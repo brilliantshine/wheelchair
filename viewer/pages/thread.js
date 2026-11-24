@@ -135,10 +135,13 @@
   function chatPlace() {
     const near = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     const seen = [];
+    // The sticky header, dead-lead bar and pins cover the top of the viewport: a row under them is not on screen.
+    let covered = 0;
+    for (const n of [headEl, deadEl, pinnedEl]) { if (n && !n.hidden) { const b = n.getBoundingClientRect(); if (b.height > 0) covered = Math.max(covered, b.bottom); } }
     if (!near && chatEl) for (const node of chatEl.children) {
       if (!node.dataset.key) continue;
       const r = node.getBoundingClientRect();
-      if (r.bottom > 0 && r.top < window.innerHeight) seen.push([node.dataset.key, r.top]);
+      if (r.bottom > covered && r.top < window.innerHeight) seen.push([node.dataset.key, r.top]);
     }
     return { near, seen };
   }
@@ -664,7 +667,7 @@
   function cardSig(card, pinned) {
     const t = thread();
     const latestDone = card.kind === 'check' ? [...data.cards].reverse().find((c) => c.kind === 'done' && !c.retracted_at) : null;
-    return JSON.stringify([card, pinned.has(card.id), t.archived, frozen(), slug(), t.worktree, t.branch, t.kept_files, t.imported && t.imported.at,
+    return JSON.stringify([card, pinned.has(card.id), t.archived, card.kind === 'diagram' || card.kind === 'image' ? null : frozen(), slug(), t.worktree, t.branch, t.kept_files, t.imported && t.imported.at,
       cardErrors[card.id], declining[card.id], mergedArchiveAsk[card.id], pressing[card.id], card.kind === 'idea' ? ideaOpen : card.kind === 'deferred' ? deferredOpen : null,
       card.kind === 'check' ? [(card.steps || []).map((x, i) => copied[card.id + ':' + i]), latestDone && latestDone.head] : null]);
   }
@@ -1457,7 +1460,7 @@
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
-    if (frozen()) box.querySelectorAll('button, input, textarea, select').forEach((n) => { n.disabled = true; });
+    if (frozen() && card.kind !== 'diagram' && card.kind !== 'image') box.querySelectorAll('button, input, textarea, select').forEach((n) => { n.disabled = true; });
     return box;
   }
 
