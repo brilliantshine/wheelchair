@@ -59,7 +59,7 @@ test('ready at start pipes messages and returns final exit status with stdin ope
   p.send('exit', 2); await p.wait(x => x.id === 2); assert.equal((await p.exit).code, 7);
 });
 test('timeouts, cancellation and failed state resolve stand-in calls', TEST_TIMEOUT, async () => {
-  const p = launch(); p.send('initialize', 1, { protocolVersion: 'v' }); await p.wait(x => x.id === 1); p.send('tools/list', 2); assert.deepEqual((await p.wait(x => x.id === 2)).result.tools, []);
+  const p = launch({ initMs: 5000 }); p.send('initialize', 1, { protocolVersion: 'v' }); await p.wait(x => x.id === 1); p.send('tools/list', 2); assert.deepEqual((await p.wait(x => x.id === 2)).result.tools, []);
   p.send('tools/call', 3); p.send('tools/call', 4); p.send('notifications/cancelled', undefined, { requestId: 4 }); assert.match((await p.wait(x => x.id === 3)).error.message, /not ready yet/);
   p.setReady({ state: 'failed', reason: 'disk' }); await sleep(40); p.send('tools/call', 5); assert.match((await p.wait(x => x.id === 5)).error.message, /disk/);
   p.setReady({ state: 'ready', copy: 'C:' }); await p.wait(x => x.method === 'notifications/tools/list_changed'); await sleep(30); assert.ok(!p.records().some(x => x.id === 3 || x.id === 4)); p.child.stdin.end(); await p.exit;
@@ -96,7 +96,8 @@ test('held calls fail immediately when readiness changes to failed', TEST_TIMEOU
 });
 
 test('handoff suppresses cancelled requests and duplicate initialized notifications', TEST_TIMEOUT, async () => {
-  const p = launch({ env: { DELAY: '70' } });
+  // The tool answers initialize after 1 s, so the cancellations below reliably arrive mid-handoff.
+  const p = launch({ env: { DELAY: '1000' }, holdMs: 5000, initMs: 5000 });
   p.send('initialize', 1, { protocolVersion: 'v' }); await p.wait(x => x.id === 1);
   p.send('tools/call', 2); p.setReady({ state: 'ready', copy: 'C:' });
   await waitFor(() => p.records().some(x => x.method === 'initialize'), 10000);
