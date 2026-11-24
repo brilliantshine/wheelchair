@@ -2,7 +2,37 @@
 slug: faster-verification
 date: 2026-11-23
 implemented-by: "T1 standard gpt-6.1-terra; T2 light gpt-6-luna; T3 standard gpt-6.1-terra; T4 light gpt-6-luna; T5 standard claude-sonnet-5-5; integration fixes by the sub-lead (claude-opus-5-5)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (verifier, PASS)
+    checks: gpt-6.1-terra, gpt-6-luna, claude-sonnet-5-5
+  - round: 1
+    lane: gpt-6.2-sol (verifier-2, FAIL)
+    checks: gpt-6.1-terra, gpt-6-luna, claude-sonnet-5-5
+  - round: 2
+    lane: claude-opus-5-5 (verifier-3, FAIL)
+    checks: gpt-6-luna (R1), claude-haiku-5-5 (R2)
+  - round: 2
+    lane: gpt-6.2-sol (verifier-4, FAIL)
+    checks: gpt-6-luna (R1), claude-haiku-5-5 (R2)
+  - round: 3
+    lane: claude-opus-5-5 (verifier-5, FAIL)
+    checks: gpt-6.1-terra (R3), claude-opus-5-5 sub-lead (R4)
+  - round: 3
+    lane: gpt-6.2-sol (verifier-6, FAIL)
+    checks: gpt-6.1-terra (R3), claude-opus-5-5 sub-lead (R4)
+  - round: 4
+    lane: claude-opus-5-5 (verifier-7, FAIL)
+    checks: claude-opus-5-5 sub-lead (R5, R6)
+  - round: 4
+    lane: gpt-6.2-sol (verifier-8, FAIL)
+    checks: claude-opus-5-5 sub-lead (R5, R6)
+  - round: 5
+    lane: claude-opus-5-5 (verifier-9, PASS)
+    checks: claude-opus-5-5 sub-lead (R7)
+  - round: 5
+    lane: gpt-6.2-sol (verifier-10, FAIL; one rare path accepted, one minor gap deferred)
+    checks: claude-opus-5-5 sub-lead (R7)
 ---
 
 # Completion Report — Faster verification checks
@@ -258,3 +288,7 @@ The browser stage ran `Running 1466 tests using 6 workers`, with 1431 passed, 1 
 | machine | the same 18 tests as main (`win*.test.js`, `wslpath`) | on main | `comm` against main's list: no extras, none missing. Nothing hung. |
 
 So the full run on bb3e2e3c passes under the lead's reading of S2. Later commits change only COMPLETION.md and PLAN.md, which the picker maps to nothing.
+
+### Verification 5 outcome (2026-11-24)
+
+Claude verifier PASS; GPT verifier FAIL on two gaps. The `<dir>/index.json` import is a rare path (the tree has none), recorded in Accepted Risks as verification-5. The lead.md:729 full-run phrase is deferred by the lead (PLAN.md Deferred 5). No must-fix gap remains. The full run on bb3e2e3c passes under the lead's reading (above), and every commit since changes only PLAN.md or COMPLETION.md, for which the picker selects nothing.
