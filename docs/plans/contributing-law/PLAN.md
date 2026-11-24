@@ -196,7 +196,7 @@ Protocol documents have no suite (`CONTRIBUTING.md:90-92`): read the composed pr
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Protocol text: new `repo-law.md`, lead S2, reviewer S3, verifier S5, realism S6, seven fallback lines, protocol/app router, protocol-rules tests | `protocol/app/` (named files), `viewer/test/protocol-rules.test.js` | standard, claude / claude-sonnet-5-5 | | `node --test viewer/test/protocol-rules.test.js` | not started |
+| T1 | Protocol text: new `repo-law.md`, lead S2, reviewer S3, verifier S5, realism S6, seven fallback lines, protocol/app router, protocol-rules tests | `protocol/app/` (named files), `viewer/test/protocol-rules.test.js` | standard, gpt / gpt-6.1-terra (Claude held back) | wc-5104b20caa0f-worker | `node --test viewer/test/protocol-rules.test.js` | not started |
 | T2 | Compose `repo-law.md` into seven roles (machine) and Settings preview; service and settings tests. After T1 | `machine/service.js`, `viewer/app/settings.js`, `machine/test/service.test.js`, `viewer/test/app-settings.test.js` | light, any | | `bash machine/test/run.sh`; `node --test viewer/test/app-settings.test.js` | not started |
 
 ## Log
