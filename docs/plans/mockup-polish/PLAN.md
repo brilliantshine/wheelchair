@@ -221,6 +221,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A poll that changes only the lead's name or the thread's worktree leaves the old byline or mockup URL in the chat until the next chat change | Rare path: both change rarely mid-thread, the chat trigger already ignored them before this build, and the next card redraws correctly | verification-1 |
+| A body background that uses `background-blend-mode` loses the blend in the PNG, because the moved background copies colour, image, repeat, position and size only | Rare path: blend modes on a static mockup's page background are unusual; the HTML download stays exact | verification-3 |
 | The `:root` to `html` rewrite lowers specificity, so a mockup with competing `:root` and `html` rules for the same property may export different colours | Rare path: mockups don't normally set the same property on both; the HTML download stays exact | review-round-5 |
 | A body background that uses a variable declared on `body` may vanish when moved to the export root | Rare path: unusual way to write a background; the HTML download stays exact | review-round-5 |
 | A hand-off that freezes the thread while a spot comment is open leaves its Cancel disabled | Rare path: needs a hand-off mid-draft; the draft is lost, nothing else | review-round-3 |
@@ -366,3 +367,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — Lead answered verification-2 gaps: fix 1 (Done handler live(card)) and 3 (hand-off test waits for the first load); defer 2 as D3.
 - 2026-11-23 — Choice: R2, app-chat-stability.spec.js: the load wait is written as a braced loop body with a `frame` local, fetched once for both waits.
 - 2026-11-23 — R2 accepted (band: scout): scout found no deviation; sub-lead re-ran spot-comment and chat-stability with repeat-each=2: 68 passed.
+- 2026-11-23 — Verification 3: FAIL (gpt-6.2-sol, commit 192b501e), 3 gaps; 1 judged rare (background-blend-mode) and recorded in Accepted Risks; 2 sent to the lead for defer/fix.
