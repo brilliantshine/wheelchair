@@ -481,7 +481,7 @@ Filled by Stage 3. One row per worker brief.
 | T2 | S2 full-run.sh | test-support/full-run.sh | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-2 | `bash -n`; usage and dirty-tree exit 2; stubbed loop in scratch clone | dispatched |
 | T3 | S3 browser workers | test-support/browser-workers.js, viewer/playwright.config.js, test-support/test/browser-workers.test.js | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker-3 | `node --test test-support/test/browser-workers.test.js`; worker counts a–d on one small spec | dispatched |
 | T4 | S4 flaky harness test | viewer/test/app-harnesses.test.js (one test) | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-4 | 10x loop under load; break-and-fail check | dispatched |
-| T5 | tricky — S5 role rules, AGENTS.md, CONTRIBUTING.md | protocol/app/{lead,sub-lead,verifier,worker}.md, AGENTS.md, CONTRIBUTING.md, protocol/AGENTS.md | standard, claude-sonnet-5-5 | wc-8bfbebc2e0d5-worker-5 | `node --test viewer/test/protocol-rules.test.js`; S5 coverage table | dispatched |
+| T5 | tricky — S5 role rules, AGENTS.md, CONTRIBUTING.md | protocol/app/{lead,sub-lead,verifier,worker}.md, AGENTS.md, CONTRIBUTING.md, protocol/AGENTS.md | standard, claude-sonnet-5-5 | wc-8bfbebc2e0d5-worker-5 | `node --test viewer/test/protocol-rules.test.js`; S5 coverage table | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -491,3 +491,9 @@ Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
 
 Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
+
+- 2026-11-23 — T5 accepted (band: self). Sub-lead integration edits after merge: kept `Test picker and full run` and `Full run: by the starter` on one line each (grep-able, copyable into briefs); sub-lead.md names the project's full-run command instead of wheelchair's script; verifier.md marks wheelchair-only examples as such; AGENTS.md "no protocol test suite" line moved back above the new heading; CONTRIBUTING.md full-run line also names the test-support suite.
+- 2026-11-23 — Choice: T5, lead.md: shared full-run, baseline, Covered and picker-base rules sit in one "Picker and full run" paragraph before step 1; steps point at it.
+- 2026-11-23 — Choice: T5, verifier.md: verifier runs the picker as `--base <picker base> --head <checked commit>`.
+- 2026-11-23 — Choice: T5, worker.md: rule worded "Never run the full run"; workers may run the picker on their own changes.
+- 2026-11-23 — Choice: T5, AGENTS.md: picker and full run under a new `## Test picker and full run` section right after Verification, not inside its code block.

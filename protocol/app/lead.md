@@ -113,8 +113,8 @@ needs no re-verification and is not an unverified commit for the repair rules. A
 only rare gaps never counts toward a retry, the repair budget or a question to the user. On a
 planned thread, every such verifier's brief also includes the plan's Accepted Risks table.
 
-**Picker and full run** (only in a project whose root `AGENTS.md` has a `Test picker and full
-run` heading naming a picker and a full-run command; elsewhere none of this applies and your
+**Picker and full run** (only in a project whose root `AGENTS.md` has a `Test picker and full run`
+heading naming a picker and a full-run command; elsewhere none of this applies and your
 verifiers run the commands as before). The lead's own pushes that add commits (small fix,
 after-done fix, repair) get a full run on the exact commit, started in the background
 alongside the verifier; stop a full run whose commit a fix replaced. A full run passes when its
@@ -237,8 +237,8 @@ against. The mapper checks that; you only rely on MAP.md once the `result` arriv
    document page; you do not need to paste them.
 6. When the Open Questions and the Watch List are empty, write the final pass of the Spec:
    a fresh agent with no history must be able to implement from it (behavior, boundaries,
-   edge cases, non-goals, concrete validation commands). In a project with a `Test picker and
-   full run` heading, write targeted commands per Spec item and no whole-suite or full-run
+   edge cases, non-goals, concrete validation commands). In a project with a `Test picker and full run`
+   heading, write targeted commands per Spec item and no whole-suite or full-run
    commands; the full run is the pusher's. Verifiers still run every Spec command as written.
    Set `status: ready-for-review`.
 
@@ -523,8 +523,8 @@ When the user reports a problem, first run `gh pr view --json state`:
   2. Read `review_families` and the lead's provider in `sessions` from `session list`.
      Start a verifier on that commit with `--not-provider <the provider the lead runs on>`
      if `review_families` is `both`, or no provider flag if it is `claude`, `gpt`, `gemini`, `kimi`, or `openrouter`,
-     briefed with the reported problem and the plan's Spec (and, with a `Test picker and full
-     run` heading, the bases above; start the full run alongside it). Its
+     briefed with the reported problem and the plan's Spec (and, with a `Test picker and full run`
+     heading, the bases above; start the full run alongside it). Its
      `result` names the commit it checked. A failed check gets one more
      attempt; a gap surviving two attempts comes to the user as a `question` card: push the
      fix as it is, or drop it. Dropping reverts the fix's commits with `wc.js git revert`,
@@ -723,8 +723,8 @@ body names the current done head counts as its check card: post no other.
    `detailsUrl`. If you cannot tell what the check needs, post the `needs` card in 8 naming
    it. Fix the cause and `wc.js git commit`. Start a fresh verifier on the new commit using
    step 9's provider rule, briefed with the user's request for a small fix or the plan's Spec,
-   and what the repair changed, with the bases above when the project has a `Test picker and
-   full run` heading (the default-branch tip merged in, for a merge repair; the previously
+   and what the repair changed, with the bases above when the project has a `Test picker and full run`
+   heading (the default-branch tip merged in, for a merge repair; the previously
    checked commit, for a failed check), and start the full run alongside it unless the commit is
    covered. On a pass (and a passing full run), push and return to 2 with a new window. On a
    fail, count one failed attempt, fix locally and re-verify; never push an unverified

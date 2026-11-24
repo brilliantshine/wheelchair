@@ -245,13 +245,12 @@ already run, not a whole-suite run; elsewhere run the full validation):
    In a lighter mode its brief also names the mode and includes the Deferred table. Every
    verifier brief includes the plan's Accepted Risks and Check Once Built tables.
    In an opted-in project the brief also names the **comparison commit** (the merge-base of the
-   checked commit with the default branch), the **picker base** and the line `Full run: by the
-   starter`. The picker base is the comparison commit for the first attempt; for a re-check
+   checked commit with the default branch), the **picker base** and the line `Full run: by the starter`.
+   The picker base is the comparison commit for the first attempt; for a re-check
    after remediation, the commit the previous attempt checked; for a re-check of that same
    commit, the previous picker base, with the commands that failed last time named so they are
-   re-run. Start the full run (`bash test-support/full-run.sh <log-dir>`, or the project's
-   named command) on the same commit now, in the background, with logs in a scratch
-   directory outside the repository; stop a full run whose commit a fix replaced, and repeat
+   re-run. Start the full run (the full-run command the project's `AGENTS.md` names) on the
+   same commit now, in the background, with logs in a scratch directory outside the repository; stop a full run whose commit a fix replaced, and repeat
    it on the new commit.
    Its brief gives it the PLAN.md and COMPLETION.md paths (its role rules are already in its
    starting instructions, so the brief never tells it to read its role file), and says nothing
