@@ -327,6 +327,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | T1 | S1 chat reconciled in place + scroll keep; mockup box aspect-ratio height; S4 thread links to `view=image` (tricky) | viewer/pages/thread.js, thread.css, diagram.js, viewer/test/app-chat-stability.spec.js, app-mockups.spec.js | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker | browser tests 1, 2, 5 (link half); full suites | done |
 | T2 | S3 mockup PNG in browser + Download HTML; S4 picture page `view=image` true-size view | viewer/pages/picture.js, picture-export.js, picture.css, picture.html, viewer/test/app-mockup-png.spec.js, app-screenshot-view.spec.js, app-picture-download.spec.js | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-2 | browser tests 4, 5; full suites | done |
 | T3 | S2 spot comments (thread + picture page) + lead.md/designer.md sentences; after T1, T2 | viewer/pages/thread.js, thread.css, diagram.js, picture.js, picture.css, protocol/app/lead.md, protocol/app/designer.md, new spot-comment spec | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-3 | browser test 3; full suites | done |
+| R1 | Remediation 1: scroll anchor below pinned header; frozen only in signatures of cards that draw it; PNG helper iframe sized w x h | viewer/pages/thread.js, thread.css, picture-export.js, app-chat-stability/app-spot-comment/app-mockup-png specs | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-4 | REMEDIATION-1.md scenarios; browser subset; unit suite | in progress |
 
 ## Log
 
@@ -353,3 +354,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — Choice: T3, `app-threads.spec.js` redraw-while-typing test now waits for the second card and asserts the answer box node is kept.
 - 2026-11-23 — T3 accepted (band: bigger-scout): scout found no Spec deviation; handed-off reason and picture-page pending state are untested (noted). Sub-lead re-ran spot-comment, mockups, chat-stability, picture, mockup-png, screenshot-view: 82 passed.
 - 2026-11-23 — Verification 1: FAIL (gpt-6.2-sol), 4 gaps; 1 judged rare and recorded in Accepted Risks; 3 sent to the lead for defer/fix.
+- 2026-11-23 — Lead answered verification-1 gaps: fix all three (anchor, frozen in signatures, PNG helper size); nothing deferred. REMEDIATION-1.md written; R1 dispatched.
