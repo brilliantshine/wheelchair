@@ -18,7 +18,7 @@ const { trackChild } = require('../../test-support/run-dir');
 const { test, expect } = require('@playwright/test');
 const { ROOT, makeDir, freePort } = require('./helpers/server');
 
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 // A fake `tmux` put first on a spawned process's PATH. `list-sessions -F '#S'` (server.js's
 // tmuxSessions, used to build /list) answers with FAKE_TMUX_LIST, comma-separated; `display-message
@@ -83,7 +83,7 @@ function waitForUrl(child) {
 }
 
 async function startServerEnv({ root, port, env }) {
-  const args = ['viewer/server.js', '--port', String(port), '--cache-root', root];
+  const args = ['viewer/server.js', '--port', String(port), '--cache-root', root, '--state-dir', path.join(root, 'hub-state')];
   const child = spawn(process.execPath, args, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   trackChild(child);
   let token;
@@ -176,21 +176,21 @@ async function buildWorld(prefix = 'pages-') {
 
   const runningEnv = { ...baseEnv, TMUX: 'yes', TMUX_PANE: '%1', FAKE_SESSION_NAME: 'wheelchair' };
   const openRunning = await runExec(path.join(bin, 'claude'),
-    ['viewer/server.js', '--cache-root', root, '--port', String(port), '--open', runningGraph], runningEnv);
+    ['viewer/server.js', '--cache-root', root, '--state-dir', path.join(root, 'hub-state'), '--port', String(port), '--open', runningGraph], runningEnv);
   assert.equal(openRunning.code, 0, openRunning.stderr);
 
   const endedEnv = { ...baseEnv, TMUX: 'yes', TMUX_PANE: '%1', FAKE_SESSION_NAME: 'ghost' };
-  const openEnded = await run(['--cache-root', root, '--port', String(port), '--open', endedGraph], endedEnv);
+  const openEnded = await run(['--cache-root', root, '--state-dir', path.join(root, 'hub-state'), '--port', String(port), '--open', endedGraph], endedEnv);
   assert.equal(openEnded.code, 0, openEnded.stderr);
 
   const noTmuxEnv = { ...baseEnv };
   delete noTmuxEnv.TMUX;
   delete noTmuxEnv.TMUX_PANE;
-  const openNoTmux = await run(['--cache-root', root, '--port', String(port), '--open', noTmuxGraph], noTmuxEnv);
+  const openNoTmux = await run(['--cache-root', root, '--state-dir', path.join(root, 'hub-state'), '--port', String(port), '--open', noTmuxGraph], noTmuxEnv);
   assert.equal(openNoTmux.code, 0, openNoTmux.stderr);
 
   const planEnv = { ...baseEnv, TMUX: 'yes', TMUX_PANE: '%1', FAKE_SESSION_NAME: 'wheelchair' };
-  const registerPlan = await run(['--cache-root', root, '--port', String(port), '--register-plan', planDir], planEnv);
+  const registerPlan = await run(['--cache-root', root, '--state-dir', path.join(root, 'hub-state'), '--port', String(port), '--register-plan', planDir], planEnv);
   assert.equal(registerPlan.code, 0, registerPlan.stderr);
 
   return {
@@ -247,6 +247,8 @@ test.describe('graph and document pages against a real server', () => {
     expect(response.headers()['content-security-policy']).toBe(CSP);
 
     await expect(page.locator('#content h1')).toHaveText('Demo plan');
+    await expect.poll(() => page.evaluate(() => window.wcBackground.current().metadata !== null)).toBe(true);
+    expect((await fs.stat(path.join(world.root, 'hub-state', 'backgrounds'))).isDirectory()).toBe(true);
     expect(consoleErrors).toEqual([]);
   });
 
@@ -316,9 +318,9 @@ async function buildRememberWorld() {
   delete env.TMUX_PANE;
   const server = await startServerEnv({ root, port, env });
 
-  const opened = await run(['--cache-root', root, '--port', String(port), '--open', graphPath], env);
+  const opened = await run(['--cache-root', root, '--state-dir', path.join(root, 'hub-state'), '--port', String(port), '--open', graphPath], env);
   assert.equal(opened.code, 0, opened.stderr);
-  const registered = await run(['--cache-root', root, '--port', String(port), '--register-plan', planDir], env);
+  const registered = await run(['--cache-root', root, '--state-dir', path.join(root, 'hub-state'), '--port', String(port), '--register-plan', planDir], env);
   assert.equal(registered.code, 0, registered.stderr);
 
   return {
