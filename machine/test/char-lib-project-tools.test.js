@@ -35,7 +35,7 @@ test('project tool launch warnings are specific to each CLI', async () => {
   const http = require('node:http');
   const { MachineService } = require('../service');
   const root = makeTempSync('char-project-launch-'), bin = path.join(root, 'bin'); fs.mkdirSync(bin);
-  for (const name of ['tmux', 'systemd-run']) fs.writeFileSync(path.join(bin, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  for (const name of ['tmux', 'systemd-run']) fs.writeFileSync(path.join(bin, name), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 0\n', { mode: 0o755 });
   const oldPath = process.env.PATH; process.env.PATH = `${bin}:${oldPath}`;
   const service = new MachineService({ stateDir: path.join(root, 'state'), win: { procRoot: root, etcRoot: root, runRoot: root } });
   service.config = { host: '127.0.0.1', port: 0 }; service.authorize = async () => {};
