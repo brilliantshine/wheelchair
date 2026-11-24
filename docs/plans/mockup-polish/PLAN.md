@@ -329,6 +329,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | T2 | S3 mockup PNG in browser + Download HTML; S4 picture page `view=image` true-size view | viewer/pages/picture.js, picture-export.js, picture.css, picture.html, viewer/test/app-mockup-png.spec.js, app-screenshot-view.spec.js, app-picture-download.spec.js | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-2 | browser tests 4, 5; full suites | done |
 | T3 | S2 spot comments (thread + picture page) + lead.md/designer.md sentences; after T1, T2 | viewer/pages/thread.js, thread.css, diagram.js, picture.js, picture.css, protocol/app/lead.md, protocol/app/designer.md, new spot-comment spec | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-3 | browser test 3; full suites | done |
 | R1 | Remediation 1: scroll anchor below pinned header; frozen only in signatures of cards that draw it; PNG helper iframe sized w x h | viewer/pages/thread.js, thread.css, picture-export.js, app-chat-stability/app-spot-comment/app-mockup-png specs | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-4 | REMEDIATION-1.md scenarios; browser subset; unit suite | done |
+| R2 | Remediation 2: Done card thread link uses live(card); hand-off and chat-stability tests wait for the first iframe load | viewer/pages/thread.js (one line), app-spot-comment.spec.js, app-chat-stability.spec.js | claude light / claude-haiku-5-5 | wc-c06d283728e9-worker-5 | browser subset + repeat-each=3 | in progress |
 
 ## Log
 
