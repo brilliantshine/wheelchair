@@ -267,3 +267,17 @@ npm --prefix viewer run test:browser   (one unsharded run, 17.1m)
 node --test viewer/test/*.test.js   # tests 935  # pass 933  # fail 2
   harness timing (known, on main); server.test.js "the global write lock serializes…" -> alone 50/50
 ```
+
+### Remediation 10 — 2026-11-24
+
+Verification attempt 10 (commit `130e6a93`): both verifiers reported a failed send's error line covering a pin at the box edge, judged rare (Accepted Risks, verification-10). GPT also reported an S1 gap: when a poll replaced the only visible chat entry, the anchor fell back to a row hidden behind the composer, and the page jumped 642px. The lead answered fix. Task R10 (attempt 1: gpt light / gpt-6-luna, which stopped because its test queried a nonexistent element; attempt 2: gpt light at effort xhigh / gpt-6-luna, on a rewritten brief), see `REMEDIATION-10.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S1: rows behind the sticky composer counted as on screen for the scroll anchor | `viewer/pages/thread.js:138-147` (`chatPlace` counts only rows whose top is above the composer's top edge) | `app-chat-stability.spec.js:142-170` "an entry hidden behind the composer is not the scroll anchor". The only visible card is swapped for a shorter one with a new id, and scrollY must not move. It failed on the old code at the scrollY check (733px), pasted in `reports/R10.md` |
+
+Full validation on the merged tip (sub-lead):
+```
+npm --prefix viewer run test:browser   (one unsharded run, 16.6m)   EXIT 0   1500 passed, 34 skipped
+node --test viewer/test/*.test.js   # tests 935  # pass 934  # fail 1  (the known harness timing flake, also on main)
+```
