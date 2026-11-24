@@ -334,7 +334,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | R2 | Remediation 2: Done card thread link uses live(card); hand-off and chat-stability tests wait for the first iframe load | viewer/pages/thread.js (one line), app-spot-comment.spec.js, app-chat-stability.spec.js | claude light / claude-haiku-5-5 | wc-c06d283728e9-worker-5 | browser subset + repeat-each=3 | done |
 | R3 | Remediation 3: spot draft clears and pending bubble shows right after the POST succeeds; refresh in background | viewer/pages/thread.js (spotButton send), app-spot-comment.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-6 | browser subset + repeat-each=3 | done |
 | R4 | Remediation 4: carry the mockup's html font-size onto the SVG root so rem sizes export right | viewer/pages/picture-export.js, app-mockup-png.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-7 | browser subset + repeat-each=3 | done |
-| R5 | Remediation 5: same px root font size inline on the wrapped html, so em and inherited text aren't scaled twice (second fix of the root-font-size gap) | viewer/pages/picture-export.js, app-mockup-png.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-8 | browser subset + repeat-each=3 | in progress |
+| R5 | Remediation 5: same px root font size inline on the wrapped html, so em and inherited text aren't scaled twice (second fix of the root-font-size gap) | viewer/pages/picture-export.js, app-mockup-png.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-8 | browser subset + repeat-each=3 | done |
 
 ## Log
 
@@ -382,3 +382,5 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — R4 accepted (band: scout): scout found no deviation; the report shows the rem test failing on the old exporter. Sub-lead re-ran mockup-png and picture-download: 26 passed.
 - 2026-11-24 — Verification 5 (commit 41512f55): Claude (claude-opus-5-5) and GPT (gpt-6.2-sol) verifiers both FAIL on the same gap: R4's root font size fix makes `em` sizes and inherited text 62.5% too small when the mockup sets a percentage root font size. Judged normal use; sent to the lead. Second fix attempt on the root-font-size gap.
 - 2026-11-24 — Lead answered verification-5 gap: fix (inline px font size on the wrapped html; tests for rem, em and inherited). REMEDIATION-5.md written; R5 dispatched.
+- 2026-11-24 — R5: worker reported 'none'; I listed 1 choice from the diff: `rootPx` is computed before the attribute-copy loop rather than directly above the style line (picture-export.js:125).
+- 2026-11-24 — R5 accepted (band: scout): scout found no code deviation; the report pastes a condensed diff rather than the exact one. Sub-lead re-ran mockup-png and picture-download: 28 passed.
