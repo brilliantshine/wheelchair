@@ -202,3 +202,21 @@ npm --prefix viewer run test:browser   (one unsharded run, 29.1m; the clock is n
   app-threads.spec.js:414 [chromium]    re-run --repeat-each=5 -> 20 passed
   browser.spec.js:875 [chromium]        re-run --repeat-each=5 -> 10 passed  (checks the live default cache root, which other sessions on this machine share)
 ```
+
+### Remediation 6 — 2026-11-24
+
+Verification attempt 6 (commit `ee575590`): the Claude verifier (claude-opus-5-5) passed; the GPT verifier (gpt-6.2-sol) reported 2 gaps. The lead answered fix both. Tasks R6 and R6b (gpt light / gpt-6-luna; Claude had no room, so the hub routed both to GPT), see `REMEDIATION-6.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S3: a mockup's `div` rule styled the PNG export's root box | `viewer/pages/picture-export.js:122-123` (root box is `<wc-export-root>` with an inline display/margin/padding/border reset) | `app-mockup-png.spec.js` "a mockup's div rule does not move the picture". R6b moved its fixture into normal flow. The sub-lead proved it: with the pre-R6 exporter (`af78151f~1`) it fails in both browsers (a pixel off by 255); with the current file, 2 passed |
+| S2: on the picture page, a tap on the right of a wide mockup scrolled the pane back to the left, hiding the pin | `viewer/pages/diagram.js:145-154` (saves and restores `window.scrollX` and every ancestor's `scrollLeft` around `scrollIntoView`) | `app-spot-comment.spec.js` wide-mockup test (1000x600 at 390x844). The R6 worker reports it failed on the old code |
+
+Full validation on the merged tip (sub-lead):
+```
+npm --prefix viewer run test:browser   (one unsharded run, 21.4m)
+  EXIT 1   1485 passed, 1 failed, 34 skipped
+  failed: [firefox] app-threads.spec.js:555 "approval: Start building enabled when Ready and presses; offer press": a waitForRequest timeout on the pinned offer button right after the approval press. Isolated runs: 18/20, then 40/40, then 100/100 on this branch, and 40/40 on main. The pinned area's drawing (renderPinned) is unchanged by this build. Treated as a timing flake.
+node --test viewer/test/*.test.js   (run after the browser suite; run alongside it, it hung past 10 minutes)
+  # tests 935  # pass 932  # fail 3: harness timing (known, on main), app-quiet "6 message clears debt" and app-uploads-archive "stalled upload" (load flakes that passed alone earlier: 27/27, 3/3)
+```
