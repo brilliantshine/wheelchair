@@ -39,6 +39,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | The shared law rule lives once in `protocol/app/repo-law.md`, composed by the machine into all seven roles like `realism.md`; role files carry only their role's part. Supersedes the per-role copies in the first draft. | Keeps rules in one place (`CONTRIBUTING.md:42`). | review-round-1 |
 | 13 | The verifier compares from a change base the brief names (where this thread's work started), not the default branch. | A thread taking on someone else's PR must not be blamed for its earlier commits. | review-round-1 |
 | 14 | Wheelchair's own files (`docs/plans/`, `docs/maps/`, mockups, reports) keep their role-rule formats over CONTRIBUTING.md. A small fix has no exceptions; one needing one is taken into planning. | Mockups must render in the app; a small fix has no Decision Log to record an exception. | review-round-1 |
+| 15 | Supersedes 13: the verifier's range is the merge-base of the checked commit with the default branch, up to that commit. A thread that takes on someone else's PR is checked on the whole PR. | That is the motivating case (Junjie's ROUTER.md files); it also excludes default-branch merges and needs nothing recorded. | review-round-2 |
+| 16 | Supersedes the small-fix half of 14: "push it as it is" on a CONTRIBUTING.md gap counts as Collin's exception. | He decides on the card with the rule named; logged on a planned thread. | review-round-2 |
 
 ## Spec
 
@@ -46,27 +48,26 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 A new file `protocol/app/repo-law.md` holds the whole shared rule, once:
 - **Which file is law:** the first that exists of `CONTRIBUTING.md`, `.github/CONTRIBUTING.md`, `docs/CONTRIBUTING.md` at the root of the agent's own checkout. None: the rest of this file and every role rule that refers to it is a no-op.
 - **Read it yourself** before changing or judging anything, and follow it. Not through a scout or helper.
-- **Precedence:** on the project's code, files, layout, tests and documentation, it wins over the agent's own judgement. Wheelchair's role rules win on how agents coordinate (commits through `wc.js git`, pushes, PR opening, sessions, cards) and on the format of wheelchair's own files (`docs/plans/`, `docs/maps/`, mockups and reports). An agent meeting such a clash follows its role rules and names the clash in its report or result.
-- **Exceptions:** only Collin may set a rule aside, for one planned thread, logged in PLAN.md's Decision Log as a Decision starting `CONTRIBUTING.md exception:` (source `user`). Agents honour logged exceptions and never make their own.
+- **Precedence:** on the project's code, files, layout, tests and documentation, it wins over the agent's own judgement and over any role rule. Two things are wheelchair's: how agents coordinate (commits through `wc.js git`, pushes, the mechanics of opening a PR, sessions, cards), and the format of wheelchair's own files (`docs/plans/`, `docs/maps/`, mockups, reports). There the role rules win; an agent meeting such a clash follows them and names the clash in its report or result, and a verifier does not report it as a gap. A PR's title, description and checklist follow CONTRIBUTING.md as far as `wc.js git pr` allows; what it cannot do is named in the done card's `note`.
+- **Steps-only verifier work** (Check it yourself) skips this file.
+- **Exceptions:** only Collin may set a rule aside, for one thread. On a planned thread it is logged in PLAN.md's Decision Log as a Decision starting `CONTRIBUTING.md exception:` (source `user`). His "push it as it is" answer on a gap that cites CONTRIBUTING.md is also an exception (logged the same way on a planned thread). Agents honour exceptions and never make their own.
 
 The machine composes `repo-law.md` into the starting instructions of `lead`, `sub-lead`, `worker`, `mapper`, `designer`, `reviewer` and `verifier`, the same way it adds `realism.md` (`machine/service.js:199-208`, as `--- repo-law.md ---`). Asides and any `role_prompt` override are unchanged. `protocol/app/AGENTS.md` lists the new file and its delivery. Role files do not repeat these rules; they add only their role's part below.
 
 ### S2. Lead
 While planning: the Spec must not require breaking a CONTRIBUTING.md rule unless Collin approved an exception (S1); where his wish needs one, the lead names the rule and asks. Validation commands CONTRIBUTING.md requires for the areas the Spec touches go into the Spec's validation commands; how and when they run stays as `verifier.md` and `sub-lead.md` say.
-A small fix follows CONTRIBUTING.md and has no exceptions: one that would need to break a rule is taken into planning instead. Its verifier brief lists the required commands.
-When opening a PR, the lead follows CONTRIBUTING.md's PR rules (title, description, checklist) as far as `wc.js git pr` allows; anything it cannot do is named in the done card's `note`.
-Every verifier brief the lead writes names the **change base**: the commit this thread's work started from (the commit the branch was cut from, or for a thread taking on someone else's pull request, that pull request's head when the thread took it on).
+A small fix follows CONTRIBUTING.md; one that would need Collin to set a rule aside up front is taken into planning instead. Its verifier brief lists the required commands.
 
 ### S3. Reviewer
 A Spec item requiring a break of a CONTRIBUTING.md rule not covered by a logged exception, or a required validation command missing from the Spec, is a finding citing the CONTRIBUTING.md line, rated on the usual ladder.
 
 ### S4. Sub-lead and worker
-The sub-lead copies every logged `CONTRIBUTING.md exception:` Decision that bears on a task into that worker's brief, and names the change base (S2) in every verifier brief it writes. It treats a verifier's CONTRIBUTING.md gap as must-fix (S6). A worker follows exceptions given in its brief.
+The sub-lead copies every logged `CONTRIBUTING.md exception:` Decision that bears on a task into that worker's brief. It treats a verifier's CONTRIBUTING.md gap as must-fix (S6). A worker follows exceptions given in its brief.
 
 ### S5. Verifier
-Every verifier except steps-only work adds one check: read CONTRIBUTING.md at the checked commit and check the change, from the brief's change base to the checked commit, against each of its rules the change can break. Only breaks introduced in that range count. A brief without a change base: use the merge-base with the default branch. Rules a diff cannot show (for example "open an issue first") are skipped. Logged exceptions are honoured. Each break is one line:
-`GAP: CONTRIBUTING.md:<line> — <what the change does against that rule> — <file:line evidence>`
-and makes the verdict FAIL like any gap. No CONTRIBUTING.md: no line.
+Every verifier except steps-only work adds one check: read CONTRIBUTING.md at the checked commit and check the change, from `git merge-base origin/<default branch> <checked commit>` to the checked commit, against each of its rules the change can break. That range is everything the pull request would bring in, including commits of someone else's pull request this thread took on, and excludes default-branch commits merged into it. Only breaks in that range count. Rules a diff cannot show (for example "open an issue first") are skipped. Logged exceptions are honoured. Each break is one line:
+`GAP: repo law <path of the law file>:<line> — <what the change does against that rule> — <file:line evidence>`
+and makes the verdict FAIL like any gap. A clash S1 settles for the role rules is not a gap. No CONTRIBUTING.md: no line.
 
 ### S6. realism.md
 The "Always fixed, however rare" list gains: breaking the project's CONTRIBUTING.md in this change, unless a logged exception covers it. So a CONTRIBUTING.md gap is never a rare path or deferred hardening.
@@ -75,7 +76,7 @@ The "Always fixed, however rare" list gains: breaking the project's CONTRIBUTING
 No role-file change beyond S1's delivery: they read and follow CONTRIBUTING.md through `repo-law.md`. The mapper does not copy its rules into maps. Mockup files keep their format rules (S1 precedence).
 
 ### S8. Tests
-- `viewer/test/protocol-rules.test.js`: `repo-law.md` names all three paths in order and `CONTRIBUTING.md exception:`; no role file other than `repo-law.md` names `.github/CONTRIBUTING.md` (one source); `verifier.md` contains `GAP: CONTRIBUTING.md:` and `change base`; `realism.md`'s always-fixed paragraph names CONTRIBUTING.md; `aside.md` does not mention CONTRIBUTING.md.
+- `viewer/test/protocol-rules.test.js`: `repo-law.md` names all three paths in order and `CONTRIBUTING.md exception:`; no role file other than `repo-law.md` names `.github/CONTRIBUTING.md` (one source); `verifier.md` contains `GAP: repo law ` and `merge-base`; `realism.md`'s always-fixed paragraph names CONTRIBUTING.md; `aside.md` does not mention CONTRIBUTING.md.
 - `machine/test/service.test.js`: the composed prompt contains `--- repo-law.md ---` for each of the seven roles, and not for a `role_prompt` override.
 
 ### Non-goals
@@ -129,9 +130,27 @@ Protocol documents have no suite (`CONTRIBUTING.md:90-92`): read the composed pr
 
 ### Round 2 — 2026-11-24
 
-**Lanes:** intent lens; mechanics lens; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:** the Spec was rewritten: shared rule moved to one `protocol/app/repo-law.md` composed by the machine into seven roles (S1); precedence now covers wheelchair's own files; small fixes have no exceptions; change base in verifier briefs (S2, S5); sub-lead copies exceptions into worker briefs (S4); mapper no longer copies rules (S7); tests (S8) and Validation (full set) redone. Decisions 12-14.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Change base exempts a taken-over PR's own commits, the motivating case | upheld | S5 merge-base range, Decision 15 |
+| intent | minor | PR rules stated twice | upheld | one sentence in S1 |
+| intent | minor | Precedence vs role rules on code and tests unstated | upheld | S1: wins over role rules too |
+| mechanics | blocking | Change-base diff includes merged default-branch commits | upheld | S5 merge-base range |
+| mechanics | blocking | Verifier could flag a clash S1 settles for role rules | upheld | S1 and S5: not a gap |
+| mechanics | blocking | "Push it as it is" ships a violation without an exception | downgraded (minor): Collin chooses it on a card naming the rule; nothing is lost | S1: counts as an exception, Decision 16 |
+| mechanics | major | Change base not recoverable after restart or handoff | upheld | cut: no change base, Decision 15 |
+| mechanics | minor | Steps-only still told to follow repo law | upheld | S1 steps-only line |
+| mechanics | minor | GAP cites CONTRIBUTING.md even for .github/ or docs/ | upheld | S5 GAP names the law file path |
+
+### Round 3 — 2026-11-24
+
+**Lanes:** intent lens; mechanics lens; cross-family: pending.
+
+**Changed since Round 2:** change base removed; the verifier's range is now the merge-base with the default branch (S5, Decision 15); S1 precedence also beats role rules on code and tests, clashes settled for role rules are not gaps, PR content rule moved into S1, steps-only skips repo law; "push it as it is" counts as an exception (Decision 16); GAP line names the law file path; S2 and S4 trimmed; S8 tests updated.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
