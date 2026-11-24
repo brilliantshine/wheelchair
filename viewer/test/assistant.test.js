@@ -308,3 +308,18 @@ test('assistant CLI sends the contents of message and text files', async () => {
     assert.equal(received[0].message, 'First line\nSecond line\n'); assert.equal(received[1].text, 'Different message\n');
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
+
+test('the thread guard reads without writing, so it cannot overwrite a concurrent change', async () => {
+  const { Hub } = require('../app/hub.js');
+  const assistant = require('../app/assistant.js');
+  const { makeDir } = require('./helpers/server.js');
+  const hub = new Hub({ stateDir: await makeDir('assistant-guard-') }); await hub.state.init();
+  // An older thread with a cli and a session but no provider: hub.thread() would migrate it and save.
+  const old = { ...require('../app/threads.js').emptyThread({ project: '/tmp/x', machine: 'hub' }), cli: 'claude', sessions: [{ name: 's', role: 'lead', live: true }] };
+  delete old.provider;
+  await hub.save(old);
+  const saves = []; const save = hub.state.save.bind(hub.state);
+  hub.state.save = (t) => { saves.push(t.id); return save(t); };
+  await assistant.guard(hub, old.id);
+  assert.deepEqual(saves, []);
+});
