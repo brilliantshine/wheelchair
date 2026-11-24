@@ -72,6 +72,7 @@
   function mockup(spec, box, ctx) {
     const src = source({ format: 'mockup', plan: spec.plan, graph: spec.graph }, ctx);
     const frame = el('div', 'mockup-box');
+    frame.style.aspectRatio = spec.width + ' / ' + spec.height; // final height from the first paint
     frame.style.maxWidth = spec.width + 'px'; // the border marks the screen's own edge, not the card's
     const f = el('iframe', 'mockup-frame'); f.src = src; f.title = spec.title || spec.graph; f.setAttribute('sandbox', '');
     f.style.width = spec.width + 'px'; f.style.height = spec.height + 'px'; f.scrolling = 'no';
@@ -80,11 +81,81 @@
       const s = Math.min(1, frame.clientWidth / spec.width);
       if (!(s > 0)) return;
       f.style.transform = 'scale(' + s + ')';
-      frame.style.height = (spec.height * s) + 'px';
     };
     fit();
     if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(frame);
     return frame;
+  }
+  // ---- Comment on a spot (mockups only) ----
+  // The text a spot comment is sent as. `plan` and `graph` name the mockup's file, which carries its version.
+  function spotText(spec, x, y, comment) {
+    return 'Comment on mockup "' + spec.title + '" (docs/plans/' + spec.plan + '/graphs/' + spec.graph + '.html, ' + spec.width + 'x' + spec.height
+      + ') at x=' + x + ', y=' + y + ': ' + comment;
+  }
+  // Open drafts live here, outside any card's DOM: key (card id + mockup file) -> {x, y, text, pending, error, paint}.
+  // A redrawn card binds its new node to the same draft, so a replaced node shows it intact.
+  const drafts = new Map();
+  // Adds the comment layer, pin and box to a drawn mockup. `host` is the element holding the mockup (position:relative),
+  // `after` the element the box goes under. opts: {key, send(text) -> Promise, canSend() -> bool, onSent(), inset}.
+  // Returns the "Comment on a spot" button for the caller to place beside Open full size.
+  function spot(host, after, spec, opts) {
+    let d = drafts.get(opts.key);
+    const btn = el('button', 'btn small spot-btn', 'Comment on a spot'); btn.type = 'button';
+    btn.style.visibility = opts.canSend() ? '' : 'hidden';
+    const layer = el('div', 'spot-layer'); layer.hidden = true; if (opts.inset) layer.classList.add('inset');
+    const pin = el('div', 'spot-pin'); pin.hidden = true; layer.appendChild(pin);
+    host.appendChild(layer);
+    const panel = el('div', 'spot-box'); panel.hidden = true;
+    const hint = el('p', 'dim spot-hint', 'Tap the spot on the mockup.');
+    const text = el('textarea', 'spot-text'); text.rows = 3; text.placeholder = 'Your comment on this spot'; text.setAttribute('aria-label', 'Comment on this spot');
+    const row = el('div', 'actions');
+    const send = el('button', 'btn small primary', 'Send'); send.type = 'button';
+    const cancel = el('button', 'btn small', 'Cancel'); cancel.type = 'button';
+    const err = el('span', 'spot-error'); err.setAttribute('role', 'alert');
+    row.append(send, cancel, err);
+    panel.append(hint, text, row);
+    after.after(panel);
+    function paint() {
+      const on = !!(d && d.active);
+      layer.hidden = !on; panel.hidden = !on;
+      if (!on) { pin.hidden = true; return; }
+      const placed = d.x !== null;
+      pin.hidden = !placed;
+      if (placed) { pin.style.left = (d.x / spec.width * 100) + '%'; pin.style.top = (d.y / spec.height * 100) + '%'; }
+      hint.hidden = placed; text.hidden = false; send.hidden = false;
+      if (text.value !== d.text) text.value = d.text;
+      text.disabled = d.pending || !placed; send.disabled = d.pending || !placed || !d.text.trim(); cancel.disabled = d.pending;
+      layer.classList.toggle('pending', d.pending);
+      err.textContent = d.error || '';
+    }
+    if (d) d.paint = paint;
+    btn.addEventListener('click', () => {
+      if (d && d.active) return;
+      d = { active: true, x: null, y: null, text: '', pending: false, error: '', paint }; drafts.set(opts.key, d); paint();
+    });
+    layer.addEventListener('click', (ev) => {
+      if (!d || d.pending) return;
+      const r = layer.getBoundingClientRect();
+      const s = Math.min(1, r.width / spec.width);
+      if (!(s > 0)) return;
+      const clamp = (v, max) => Math.max(0, Math.min(max - 1, Math.round(v)));
+      d.x = clamp((ev.clientX - r.left) / s, spec.width); d.y = clamp((ev.clientY - r.top) / s, spec.height); d.error = '';
+      paint();
+    });
+    text.addEventListener('input', () => { if (!d) return; d.text = text.value; send.disabled = d.pending || d.x === null || !d.text.trim(); });
+    cancel.addEventListener('click', () => { if (!d || d.pending) return; drafts.delete(opts.key); d.active = false; paint(); });
+    send.addEventListener('click', async () => {
+      const mine = d; const comment = mine && mine.text.trim();
+      if (!mine || mine.pending || !comment || mine.x === null) return;
+      mine.pending = true; mine.error = ''; mine.paint();
+      try {
+        await opts.send(spotText(spec, mine.x, mine.y, comment));
+        drafts.delete(opts.key); mine.active = false; mine.pending = false; mine.paint();
+        if (opts.onSent) opts.onSent();
+      } catch (e) { mine.pending = false; mine.error = 'Comment not sent: ' + (e && e.message ? e.message : String(e)); mine.paint(); }
+    });
+    paint();
+    return btn;
   }
   // The picture itself, as a card draws it: a form, or an iframe (html sandboxed).
   function draw(card, box, ctx, cache, frameClass) {
@@ -97,5 +168,5 @@
       box.appendChild(f);
     }
   }
-  window.WCDiagram = { source, fileKey, mockup, drawForm, formInto, draw };
+  window.WCDiagram = { source, fileKey, mockup, spot, drawForm, formInto, draw };
 })();

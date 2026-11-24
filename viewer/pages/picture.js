@@ -10,7 +10,7 @@
   const entry = params.get('entry') || '';
   const $ = (x) => document.getElementById(x);
   const messageEl = $('message'); const pictureEl = $('picture'); const titleEl = $('picture-title');
-  if (id) $('back').href = '/wheelchair/app/thread?id=' + encodeURIComponent(id);
+  if (id) { $('back').href = '/wheelchair/app/thread?id=' + encodeURIComponent(id); $('spot-back').href = $('back').href; }
   document.title = 'Picture · wheelchair';
 
   function say(text) { pictureEl.textContent = ''; messageEl.hidden = false; messageEl.textContent = text; }
@@ -32,14 +32,14 @@
   const dlEl = $('download'); const noteEl = $('download-note');
   let busy = false;
   function note(text) { noteEl.hidden = !text; noteEl.textContent = text || ''; }
-  function offerPng(name, make) {
+  function offerPng(name, make, failText) {
     dlEl.hidden = false; dlEl.href = '#'; dlEl.removeAttribute('download');
     dlEl.onclick = async (ev) => {
       ev.preventDefault();
       if (busy) return;
       busy = true; note('');
       try { await window.WCPictureExport.save(await make(), window.WCPictureExport.fileName(titleEl.textContent, name)); }
-      catch (e) { note(e.message || 'Could not make the PNG.'); }
+      catch (e) { note(failText || e.message || 'Could not make the PNG.'); }
       busy = false;
     };
   }
@@ -58,9 +58,52 @@
     });
   }
 
+  // The screenshot view: an image card's file at its natural pixel size, scrolling inside the picture area.
+  function showImage(card, thread) {
+    title(card.title || 'Screenshot');
+    const kept = !thread.archived || (Array.isArray(thread.kept_files) && thread.kept_files.includes(card.file));
+    if (!kept) return say('Image removed when the thread was archived');
+    messageEl.hidden = true;
+    const url = T() + '/files/' + encodeURIComponent(card.file);
+    const img = document.createElement('img'); img.className = 'picture-shot'; img.src = url; img.alt = card.title || '';
+    pictureEl.appendChild(img);
+    dlEl.hidden = false; dlEl.href = url; dlEl.setAttribute('download', card.name || card.file);
+  }
+
+  // Whether the thread can take a message right now, in the composer's terms; '' when it can.
+  function cantSendWhy(thread) {
+    const lead = (thread.sessions || []).some((x) => x.role === 'lead' && x.live);
+    return thread.archived ? 'the thread is archived' : (thread.handed_off || thread.handoff_op) ? 'the thread is being handed off' : !lead ? "the lead isn't running" : '';
+  }
+  // Comment on a spot, on this page: checked at load and again on Send, with no live state in between.
+  function offerSpotComment(wrap, thread, spec, cardId) {
+    const noteEl = $('spot-note'); const sentEl = $('spot-sent');
+    const why = cantSendWhy(thread);
+    if (why) { noteEl.hidden = false; noteEl.textContent = 'Comments on a spot cannot be sent: ' + why + '.'; }
+    const btn = window.WCDiagram.spot(wrap, wrap, spec, {
+      key: cardId + '|' + spec.graph, inset: true,
+      canSend: () => !why,
+      send: async (text) => {
+        let chat;
+        try { chat = await fetchJson(T() + '/chat', 'thread'); } catch (e) { throw new Error(e.message); }
+        const now = cantSendWhy(chat.thread);
+        if (now) throw new Error(now);
+        const res = await fetch(T() + '/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.detail || out.error || 'http ' + res.status);
+      },
+      onSent: () => { sentEl.hidden = false; },
+    });
+    $('picture-bar').insertBefore(btn, $('download-html'));
+  }
+
   async function showCard() {
     let chat;
     try { chat = await fetchJson(T() + '/chat', 'thread'); } catch (e) { return say(e.message); }
+    if (params.get('view') === 'image') {
+      const shot = (chat.cards || []).find((c) => c.id === cardId && c.kind === 'image' && c.file && !c.retracted_at);
+      return shot ? showImage(shot, chat.thread) : say('This picture was not found in the thread.');
+    }
     const card = (chat.cards || []).find((c) => c.id === cardId && (c.kind === 'diagram' || (c.kind === 'image' && c.mockup)));
     if (!card) return say('This picture was not found in the thread.');
     const thread = chat.thread;
@@ -73,9 +116,14 @@
       const spec = { plan: card.kind === 'image' ? thread.slug : card.plan, graph: m.graph };
       const src = window.WCDiagram.source({ format: 'mockup', plan: spec.plan, graph: spec.graph }, ctx);
       const f = document.createElement('iframe'); f.className = 'picture-mockup'; f.src = src; f.title = titleEl.textContent; f.setAttribute('sandbox', '');
-      f.style.width = m.width + 'px'; f.style.height = m.height + 'px';
-      pictureEl.appendChild(f);
-      dlEl.hidden = false; dlEl.href = src + '&download=1';
+      f.style.width = m.width + 'px'; f.style.height = m.height + 'px'; f.setAttribute('scrolling', 'no');
+      const wrap = document.createElement('div'); wrap.className = 'picture-mockup-wrap'; wrap.appendChild(f);
+      const content = document.createElement('div'); content.className = 'picture-mockup-content'; content.appendChild(wrap);
+      pictureEl.appendChild(content);
+      offerSpotComment(wrap, thread, { plan: spec.plan, graph: spec.graph, width: m.width, height: m.height, title: card.title || spec.graph }, card.id);
+      const htmlEl = $('download-html'); htmlEl.hidden = false; htmlEl.href = src + '&download=1';
+      offerPng(spec.graph, () => window.WCPictureExport.mockupCanvas(src, m.width, m.height),
+        'This browser could not make a PNG of this mockup. Download HTML instead.');
       return;
     }
     title(card.title || card.graph);

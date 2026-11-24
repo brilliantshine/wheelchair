@@ -37,3 +37,5 @@ No per-pair message counter or cap appears in the inspected acceptance and deliv
 
 - Every provider transcript parser, handoff export semantics, and all hub limits outside the inspected message path.
 - A proposed cap policy, retention policy, or implementation and its new tests.
+
+> Mockup-polish overlap rechecked at `25f34a4572c4beb9032f16f818b6502cc59f62bd`: see [mockup viewer flow](mockup-viewer-flow.md). Other claims retain their historical checked-against commit.

@@ -882,7 +882,9 @@ for (const [label, size] of SIZES) {
       await box.evaluate((n) => { n.setSelectionRange(4, 9, 'backward'); n.dispatchEvent(new KeyboardEvent('keyup')); });
       const before = await box.elementHandle();
       await ctx.post(made.id, { ...QUESTION, question: 'Another one?' });
-      await expect.poll(() => before.evaluate((n) => n.isConnected)).toBe(false);
+      // The chat now updates in place: the unchanged card keeps its node, so the textarea is never replaced.
+      await expect(page.locator('#chat .card-question')).toHaveCount(2);
+      expect(await before.evaluate((n) => n.isConnected)).toBe(true);
       await expect(box).toBeFocused();
       await expect(box).toHaveValue('keep the old name please');
       expect(await box.evaluate((n) => [n.selectionStart, n.selectionEnd, n.selectionDirection])).toEqual([4, 9, 'backward']);
