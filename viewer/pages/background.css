@@ -16,6 +16,7 @@ html.background-active body { position: relative; isolation: isolate; }
 .background-editor .box { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .background-editor .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .background-editor input[type=range] { width: 100%; }
+.background-editor .hint { overflow-wrap: anywhere; }
 .background-active :is(.bubble.assistant, .bubble.human.card, .thread-head, #composer, .ctx) { background-color: var(--bg); }
 .background-active .bubble.assistant { padding: 12px 14px; border-radius: 10px; }
 

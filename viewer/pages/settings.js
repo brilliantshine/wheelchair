@@ -1879,6 +1879,14 @@
       const next = ensureBackground(); next.status = 'Saved'; repaintBackground(next);
     } catch (error) { if (backgroundVisit === v) { v.error = error.message || 'Could not save background.'; v.saving = false; repaintBackground(v); } }
   }
+  // A draft differs from what is saved: a new file, another image, or another visibility.
+  function backgroundChanged(v) {
+    const m = bg.current().metadata;
+    if (!v.dirty) return false;
+    if (v.file || !m) return true;
+    if ((v.imageId || null) !== (m.image_id || null)) return true;
+    return !!v.imageId && v.opacity !== m.opacity; // visibility matters only with an image
+  }
   function renderBackground() {
     const v = ensureBackground();
     const state = bg.current(), m = state.metadata;
@@ -1898,7 +1906,7 @@
         if (v.image) bg.publish(v.token, v.image, v.opacity);
         else bg.publishSaved(v.token, v.opacity);
       });
-      const save = document.getElementById('background-save'); if (save) save.disabled = v.pending || v.saving;
+      const save = document.getElementById('background-save'); if (save) save.disabled = v.pending || v.saving || !backgroundChanged(v);
       const cancel = document.getElementById('background-cancel'); if (cancel) cancel.disabled = false;
     });
     return h('div', { class: 'background-editor' },
@@ -1907,7 +1915,7 @@
         v.filename && h('p', { class: 'hint', text: v.filename + ' · ' + (v.size / 1024 / 1024).toFixed(2) + ' MiB' }),
         h('label', {}, 'Visibility ', value, slider),
         h('div', { class: 'actions' },
-          h('button', { id: 'background-save', type: 'button', class: 'primary', text: 'Save', disabled: !v.dirty || v.pending || v.saving, onclick: () => saveBackground(v) }),
+          h('button', { id: 'background-save', type: 'button', class: 'primary', text: 'Save', disabled: !backgroundChanged(v) || v.pending || v.saving, onclick: () => saveBackground(v) }),
           h('button', { id: 'background-cancel', type: 'button', text: 'Cancel', disabled: !v.dirty || v.saving, onclick: () => { discardBackground(); bg.refresh(); repaintBackground(ensureBackground()); } }),
           h('button', { type: 'button', text: 'Remove background', disabled: v.saving || !m, onclick: () => {
             ++v.op; cancelBackgroundWork(v); v.pending = false; beginBackground(v); if (!v.dirty) return;
