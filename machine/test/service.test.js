@@ -924,12 +924,20 @@ test('composed prompts, provider pointers, and ledger', async () => {
       const file = path.join(env.state, 'prompts', `${session.name}.md`), prompt = await fs.readFile(file, 'utf8');
       const cards = !['reviewer', 'verifier'].includes(role);
       const realism = ['lead', 'sub-lead', 'reviewer', 'verifier'].includes(role);
+      const repoLaw = ['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier'].includes(role);
       assert.ok(prompt.startsWith(`Role: ${role}\nYour role rules${cards ? ' and card rules' : ''} are below, already loaded: do not read these files again unless this text is no longer in your context. \`<root>\` is \`${root}\`.`));
       assert.ok(prompt.includes((await fs.readFile(path.join(root, 'protocol/app', `${role}.md`), 'utf8')).trimEnd()));
       assert.equal(prompt.includes('--- realism.md ---'), realism);
       if (realism) {
         assert.ok(prompt.includes((await fs.readFile(path.join(root, 'protocol/app/realism.md'), 'utf8')).trimEnd()));
         if (cards) assert.ok(prompt.indexOf('--- realism.md ---') < prompt.indexOf('--- cards.md ---'));
+      }
+      assert.equal(prompt.includes('--- repo-law.md ---'), repoLaw);
+      if (repoLaw) {
+        assert.ok(prompt.includes((await fs.readFile(path.join(root, 'protocol/app/repo-law.md'), 'utf8')).trimEnd()));
+        const lawIndex = prompt.indexOf('--- repo-law.md ---');
+        if (realism) assert.ok(prompt.indexOf('--- realism.md ---') < lawIndex);
+        if (cards) assert.ok(lawIndex < prompt.indexOf('--- cards.md ---'));
       }
       assert.equal(prompt.includes('--- cards.md ---'), cards);
       if (role === 'designer') assert.ok(prompt.includes((await fs.readFile(path.join(root, 'protocol/app/cards.md'), 'utf8')).trimEnd()));
@@ -942,6 +950,7 @@ test('composed prompts, provider pointers, and ledger', async () => {
     }
     const custom = await start(env, { thread_id: 'custom', role_prompt: 'custom prompt', role_layers: 'ignored' });
     assert.equal(await fs.readFile(path.join(env.state, 'prompts', `${custom.name}.md`), 'utf8'), 'Role: lead\ncustom prompt');
+    assert.ok(!(await fs.readFile(path.join(env.state, 'prompts', `${custom.name}.md`), 'utf8')).includes('repo-law.md'));
     const ledger = (await fs.readFile(path.join(env.state, 'session-ledger.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.equal(ledger.length, 8); assert.deepEqual(Object.keys(ledger[0]), ['at','name','role','provider','model','account_dir','cli_session_id','thread_id']);
     assert.equal(ledger[0].account_dir, null); assert.equal(ledger[0].provider, 'claude');

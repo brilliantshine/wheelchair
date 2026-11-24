@@ -62,7 +62,7 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     const prompt = await api(context, '/settings/prompt?role=worker&project=%2Ftmp%2Fproject');
     assert.match(prompt.body.text, /^Role: worker\n/);
     assert.match(prompt.body.text, /Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context\. `<root>` is `[^`]+`\./);
-    assert.match(prompt.body.text, /\[full text of protocol\/app\/worker\.md\]\n\[full text of protocol\/app\/cards\.md\]/);
+    assert.match(prompt.body.text, /\[full text of protocol\/app\/worker\.md\]\n\[full text of protocol\/app\/repo-law\.md\]\n\[full text of protocol\/app\/cards\.md\]/);
     assert.doesNotMatch(prompt.body.text, /before responding/);
     assert.match(prompt.body.text, /Nothing below overrides the built-in rules above, except/);
     assert.match(prompt.body.text, /Project workers/);
@@ -95,7 +95,7 @@ test('settings prompt preview composes role and card rule placeholders by role',
   await withContext(async (context) => {
     const lead = (await api(context, '/settings/prompt?role=lead')).body.text;
     assert.match(lead, /^Role: lead\nYour role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context\. `<root>` is `[^`]+`\./);
-    const leadFiles = ['[full text of protocol/app/lead.md]', '[full text of protocol/app/realism.md]', '[full text of protocol/app/cards.md]', '[full text of protocol/app/cards-lead.md]'];
+    const leadFiles = ['[full text of protocol/app/lead.md]', '[full text of protocol/app/realism.md]', '[full text of protocol/app/repo-law.md]', '[full text of protocol/app/cards.md]', '[full text of protocol/app/cards-lead.md]'];
     let cursor = 0;
     for (const file of leadFiles) {
       const index = lead.indexOf(file, cursor);
@@ -107,13 +107,24 @@ test('settings prompt preview composes role and card rule placeholders by role',
     const reviewer = (await api(context, '/settings/prompt?role=reviewer')).body.text;
     assert.match(reviewer, /^Role: reviewer\nYour role rules are below, already loaded: do not read these files again unless this text is no longer in your context\. `<root>` is `[^`]+`\./);
     assert.match(reviewer, /\[full text of protocol\/app\/reviewer\.md\]/);
-    assert.match(reviewer, /\[full text of protocol\/app\/reviewer\.md\]\n\[full text of protocol\/app\/realism\.md\]/);
+    assert.match(reviewer, /\[full text of protocol\/app\/reviewer\.md\]\n\[full text of protocol\/app\/realism\.md\]\n\[full text of protocol\/app\/repo-law\.md\]/);
     assert.doesNotMatch(reviewer, /\[full text of protocol\/app\/cards(?:-lead)?\.md\]/);
 
     const worker = (await api(context, '/settings/prompt?role=worker')).body.text;
-    assert.match(worker, /\[full text of protocol\/app\/worker\.md\]\n\[full text of protocol\/app\/cards\.md\]/);
+    assert.match(worker, /\[full text of protocol\/app\/worker\.md\]\n\[full text of protocol\/app\/repo-law\.md\]\n\[full text of protocol\/app\/cards\.md\]/);
     assert.doesNotMatch(worker, /realism\.md/);
     assert.doesNotMatch(worker, /cards-lead\.md/);
+    for (const role of ['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier']) {
+      const output = (await api(context, `/settings/prompt?role=${role}`)).body.text;
+      const roleFile = `[full text of protocol/app/${role}.md]`;
+      const lawFile = '[full text of protocol/app/repo-law.md]';
+      const cards = !['reviewer', 'verifier'].includes(role);
+      const realism = ['lead', 'sub-lead', 'reviewer', 'verifier'].includes(role);
+      const lawIndex = output.indexOf(lawFile);
+      assert.ok(lawIndex > output.indexOf(roleFile), `${role} includes repo-law after role file`);
+      if (realism) assert.ok(lawIndex > output.indexOf('[full text of protocol/app/realism.md]'), `${role} includes repo-law after realism`);
+      if (cards) assert.ok(lawIndex < output.indexOf('[full text of protocol/app/cards.md]'), `${role} includes repo-law before cards`);
+    }
     for (const output of [lead, reviewer, worker]) assert.doesNotMatch(output, /before responding/);
   });
 });

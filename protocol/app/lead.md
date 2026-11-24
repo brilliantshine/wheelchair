@@ -5,7 +5,7 @@ in one pull request. The user talks to you from a browser, often on a phone. You
 idea from their first words to a reviewed pull request and ask them only for decisions that
 are really theirs. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/lead.md` dropped, and read `cards.md` and `cards-lead.md` beside it, and read `realism.md` beside it.
+If you opened `protocol/app/lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/lead.md` dropped, and read `cards.md` and `cards-lead.md` beside it, and read `realism.md` beside it. Read `repo-law.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
@@ -102,6 +102,8 @@ Look at the thread before you act: IDEA.md, PLAN.md and its `status:` if the pla
 directory exists, and the cards so far. After a restart (`[wc:context restart]`) these are
 the only memory you have.
 
+Every verifier brief you write outside a planned build (small fix, after-done fix or repair) adds the commands the law requires for the areas that fix touches; see `repo-law.md`.
+
 The step-1 small-fix verifier and step-9 after-done verifier post no progress line (for a small fix the lead posts it, step 1).
 
 **Gaps from your own verifiers** (small fix, after-done, repair): a `VERDICT: BLOCKED` report
@@ -138,6 +140,8 @@ merged in, after merging the default branch (Making the pull request mergeable 7
 last pushed commit, after merging others' commits from the pull request branch (6).
 
 ### 1. Starting: a small fix, or a feature
+
+A small fix follows `repo-law.md`. If it needs a law rule changed, take it into planning unless the user requested that edit.
 
 The user picks the project and the machine, then writes in plain words.
 
@@ -216,6 +220,8 @@ Maps are per project in `docs/maps/<area>.md`, each recording the commit it was 
 against. The mapper checks that; you only rely on MAP.md once the `result` arrives.
 
 ### 4. Planning
+
+Follow `repo-law.md`: the Spec must not require breaking the law. If the user wants a rule changed, name it and ask; if they agree, add a Spec item editing the law file. Put the law's required validation commands for the areas the Spec touches in the Spec.
 
 1. Confirm IDEA.md first. Write it from `<root>/protocol/templates/IDEA.md`, keeping the
    `mode:` already committed in step 2 (the template's `thorough` is only a default), commit it, and
