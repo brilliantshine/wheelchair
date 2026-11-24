@@ -113,15 +113,17 @@ row in the kinds table and the press forms (`picked: allow`, `picked: don't allo
 ### 2. Done gate (`viewer/app/pr-gate.js` `judgePr`)
 
 When `thread.target_pr` is set and the done card's `pr_url` equals `thread.target_pr.url`
-(exact, after trimming a trailing `/`), compare `view.headRefName` with
+exactly, compare `view.headRefName` with
 `target_pr.head_branch` instead of `thread.branch`. Every other rule is unchanged,
 including the base check against `thread.default_branch`. A done card for any other PR is
 judged exactly as today.
 
 ### 3. Auto-merge and plan discovery
 
-- A thread with `target_pr` never records a slug: `viewer/app/views.js` skips the
-  `newPlanDirectories` path (:38) and `discoverSlug` returns nothing for it. Merging a
+- A thread with `target_pr` never records a slug, on every path that records one: the
+  `newPlanDirectories` path in `viewer/app/views.js` (:38), `discoverSlug`, and the
+  remote-machine refresh (`viewer/app/remote-plan.js:24-40`, reached from `hub.js:303` and
+  `routes.js:522`) all skip it. Merging a
   collaborator's PR can add their `docs/plans/<slug>/`, which is not this thread's plan.
 
 - `viewer/app/auto-merge.js`: when the current done card's `pr_url` equals
@@ -151,21 +153,27 @@ PR's branch as in 'Fixing someone else's pull request'." Add that section:
   `don't allow` or `allow failed`, offer the replacement PR in a `question` card. Once
   allowed, the target holds for the life of the thread. After a restart, an allowed
   `permit` card in the context names the target; an open one is still waiting.
-- **Off the normal path, stop and ask.** After a restart (unless an accepted `done`
-  card's `head` equals local `HEAD`, when there is nothing to do), or
-  whenever the target PR is closed, merged, retargeted or turned into a draft, or anything
-  else this section does not cover happens: change nothing (never abort a merge, push,
+- **Off the normal path, stop and ask.** After a restart, or whenever the target PR is
+  closed, retargeted or turned into a draft, merged before this thread's `done` card at
+  a commit other than the pushed one, or anything else this section does not cover
+  happens: change nothing (never abort a merge, push,
   revert or stub on your own), and post one `question` card saying in plain words what you
   see (local work, what is on the PR, its state) with fitting options, such as carry on,
   push after a check, start a follow-up thread, or leave it. Do what Collin picks using
   the rules here and in "Making the pull request mergeable". This replaces that section's
-  step 9 and its closed and merged handling for a target PR.
+  steps 4 (merged at another commit), 5 and 9 for a target PR. Not a question: a restart
+  with an open `permit` card (keep waiting on it); a restart where an accepted `done`
+  card's `head` equals local `HEAD` and `git status --untracked-files=no` is clean (carry
+  on with step 10's restart rule only); a merge at the pushed commit (post `done` as in
+  that section's step 4); a problem reported after `done` (step 9 as usual, whose
+  `MERGED` stub uses the Stubs rule below).
 - **Bring it in:** `wc.js git fetch origin <head branch>`, then `wc.js git merge origin/<head branch>`
   (this also brings the default branch, as of the thread's start, into the PR; expected).
-  Review and fix as a small fix: commits, progress line and verifier as step 1, the
+  Resolving conflicts is the normal path: edit the files and `wc.js git commit --paths
+  <resolved files>`. Review and fix as a small fix: commits, progress line and verifier as step 1, the
   verifier briefed with the PR's title and description and Collin's request.
-- **Push:** immediately before every push, run `gh pr view <target url> --json state`.
-  `OPEN`: `wc.js git push origin HEAD:<head branch>`. Never `--force`, `--force-with-lease`
+- **Push:** immediately before every push, run `gh pr view <target url> --json state,isDraft`.
+  `OPEN` and not a draft: `wc.js git push origin HEAD:<head branch>`. Never `--force`, `--force-with-lease`
   or `+` refspecs, and never `wc.js git pr`. Anything else: stop and ask, as above. A rejected push (the author
   pushed): `wc.js git fetch origin <head branch>`, merge `origin/<head branch>`,
   re-verify unless it was a fast-forward, then push again.
@@ -313,6 +321,22 @@ exit. Downgrades and declines cite evidence.
 **Lanes:** intent (claude); mechanics (other family); cross-family: yes.
 
 **Changed since Round 3:** round 3 fixes (refusal 7 compares target claims by repository; threads with `target_pr` never record a slug; drafts stop at Look first); then Decision 13 replaced the self-recovery rules (restart before or after done, closed or merged PR, step 9 and step 4 handling for a target PR) with "stop and ask"; Push keeps only the OPEN path and the rejected-push retry; Stubs rule shortened.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Conflict resolution read as off-path | upheld | §4 Bring it in: resolving conflicts is the normal path |
+| intent | minor | A merge after done treated as off-path | upheld | §4: merge at the pushed commit and after-done reports follow the usual rules; names steps 4, 5, 9 |
+| intent | minor | Restart with an open permit, and step 10 on restart | upheld | §4: open permit keeps waiting; done-at-HEAD carries on with step 10 |
+| mechanics | major | Draft after Allow can still be pushed | downgraded (minor) | Worst case a push Collin already OK'd onto a draft; fixed: pre-push check reads `isDraft` |
+| mechanics | major | Restart with uncommitted after-done edits says nothing to do | upheld | Exception requires a clean worktree |
+| mechanics | major | Remote-machine slug discovery still records the collaborator's plan | upheld | §3 names the remote refresh too |
+| mechanics | minor | Trailing-slash normalization unreachable | upheld | Cut: exact match |
+
+### Round 5 — 2026-11-23
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 4:** slug guard covers the remote-machine refresh; done-gate URL match is exact; Off the normal path narrowed (merge at the pushed commit and after-done reports use the usual rules; open permit keeps waiting; done-at-HEAD needs a clean worktree and keeps step 10) and names the replaced steps 4, 5, 9; conflicts are the normal path; pre-push check reads `isDraft`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
