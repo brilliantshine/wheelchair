@@ -363,6 +363,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | docs graphs read via git ls-files unmapped | upheld | S1 rule 3 entry and seeding by git ls-files |
 | mechanics | minor | S5.5 vs S5.4 re-check base wording | upheld | S5.5 aligned with S5.4 |
 
+### Round 3 — 2026-11-23
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 2:** S3 only full runs (WHEELCHAIR_FULL_RUN) take the larger count; S5.0 rule 2 opted-in only and the verifier handshake; S5.2 scratch clone, same-test-same-error; S5.3 no-base sentence removed; S5.5 re-check base; S5.6 repairs vs push-as-is, "covered" definition, merge commit covered; S1 rule 3 graphs entry; summary wording; Validation S3 line.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
