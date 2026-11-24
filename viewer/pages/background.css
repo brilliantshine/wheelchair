@@ -5,7 +5,7 @@ html.background-active body { position: relative; isolation: isolate; }
 .background-active :is(.col-list, .col-side, .placeholder, .list-opts, #empty, .v-empty, #files, #content,
   .home-side, .section-head, .stage-head, .term-bar, .agents-heading, .agents-thread, .agents-count,
   .agents-finished-bar, .doc-bar, .doc-page #message, .new-screen > h1, #new-form, .new-screen .saved,
-  .pin-bar, .lead-wait, .lead-by, #export-reason, .agents-back, .agents-path-legend, .tv-view, .tool, .working, .head-files, .picture-bar, .picture-page #message) { background-color: var(--bg); }
+  .pin-bar, .lead-wait, #export-reason, .agents-back, .agents-path-legend, .tv-view, .working, .head-files, .picture-bar, .picture-page #message) { background-color: var(--bg); }
 .background-active .settings .sections { border-right: 0; }
 .background-active .settings .sections a { background-color: var(--panel); }
 .background-active .settings .sections a[aria-current="page"] { background-color: var(--panel-2); }
@@ -17,8 +17,14 @@ html.background-active body { position: relative; isolation: isolate; }
 .background-editor .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .background-editor input[type=range] { width: 100%; }
 .background-editor .hint { overflow-wrap: anywhere; }
-.background-active :is(.bubble.assistant, .bubble.human.card, .thread-head, #composer, .ctx) { background-color: var(--bg); }
+.background-active :is(.bubble.assistant, .bubble.human.card, .thread-head, #composer) { background-color: var(--bg); }
 .background-active .bubble.assistant { padding: 12px 14px; border-radius: 10px; }
+/* Small chat labels sit on a pill that hugs their text, not a bar across the column. */
+.background-active :is(.lead-by, .tool) { width: fit-content; background-color: var(--bg); padding: 2px 10px 2px 4px; border-radius: 999px; }
+.background-active .tool { padding-left: 8px; }
+/* The name's usual cap is a share of the row; a pill sized to its text needs a fixed cap instead. */
+.background-active .lead-by-name { max-width: min(420px, 55vw); }
+.background-active .ctx { color: var(--ink-2); text-shadow: 0 0 3px var(--bg), 0 0 6px var(--bg), 0 0 10px var(--bg); }
 
 /* Status remains explicit in labels; translucent content panels would expose the image. */
 .background-active :is(.v-group.empty .stage-head, .bubble.human.pending, .sent-attachments.pending,
