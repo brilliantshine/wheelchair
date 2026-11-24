@@ -103,9 +103,10 @@ test('Antigravity screens, hooks, binding and command', () => {
   assert.deepEqual(a.onTurnEnded(session, a.hookEvent(raw('stop-role.json'))), {});
   assert.deepEqual(a.onTurnEnded(session, { conversation_id: 'different' }), { ignored: true });
   const ctx = { stateDir: '/state' }, base = { name: 'wc-test', effort: 'high' };
-  const auto = a.command({ role: 'reviewer', model: 'model' }, base, '/work', ctx);
+  // Auto mode's terminal sandbox blocks card.js and wc.js, so Antigravity always runs in bypass.
+  const auto = a.command({ role: 'reviewer', model: 'model' }, { ...base, permission_mode: 'auto' }, '/work', ctx);
   assert.deepEqual(auto.settings, { trustedWorkspaces: ['/work'] });
-  assert.deepEqual(auto.argv, ['agy', '--settings', '/state/settings/wc-test.json', '--mode', 'auto', '--model', 'model', '--effort', 'high']);
+  assert.deepEqual(auto.argv, ['agy', '--settings', '/state/settings/wc-test.json', '--dangerously-skip-permissions', '--model', 'model', '--effort', 'high']);
   assert.deepEqual(a.command({}, { ...base, permission_mode: 'bypass' }, '/work', ctx).argv.slice(3, 4), ['--dangerously-skip-permissions']);
 });
 
