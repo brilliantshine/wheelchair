@@ -330,6 +330,15 @@ Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
+### Round 2 — 2026-11-23
+
+**Lanes:** (filled when reviewers start)
+
+**Changed since Round 1:** S1 rule 0 (deletions/renames), rule 2 (both components), rule 3 (docs fixtures), rule 5 wording; S2 browser first, no clean line; S3 lock only, kept choice, bound; S4 switch-on unchanged; S5.0 opt-in per project; S5.1 verifiers run Spec commands as written; S5.2 comparison via git archive; S5.4 two commits; S5.5/S5.6 stop replaced runs, push-as-is, exemptions (picker selects nothing; conflict-free default-branch merge); rollout paragraph; non-goals; Validation; IDEA Constraint wording; Accepted Risk (registration race).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
