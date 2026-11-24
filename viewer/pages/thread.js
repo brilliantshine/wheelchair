@@ -173,8 +173,8 @@
     headEl.appendChild(back);
     const block = el('div', 'title-block');
     const titleLine = el('div', 'thread-title-line');
-    titleLine.appendChild(el('h1', '', t.title || slug() || base(t.project)));
-    if (t.lead_name) {
+    titleLine.appendChild(el('h1', '', t.assistant ? 'Personal assistant' : t.title || slug() || base(t.project)));
+    if (t.lead_name && !t.assistant) {
       const newest = leads().reduce((a, b) => !a || (b.created_at || '') > (a.created_at || '') ? b : a, null);
       const chip = el(newest && newest.live ? 'a' : 'span', 'lead-chip', t.lead_name);
       if (newest && newest.live) chip.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(id);
@@ -182,23 +182,24 @@
     }
     block.appendChild(titleLine);
     const where = slug() ? base(t.project) + ' / ' + slug() : base(t.project);
-    block.appendChild(el('div', 'meta', [
+    if (t.assistant) block.appendChild(el('div', 'meta', 'Across your projects'));
+    else block.appendChild(el('div', 'meta', [
       where, lead ? 'lead' : '', PROVIDER_LABEL[t.provider] || t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
     ].filter(Boolean).join(' \u00b7 ')));
     headEl.appendChild(block);
 
     const line = el('div', 'head-actions' + (archiveAsk ? ' asking' : ''));
     if (t.stub && !t.sessions.length) line.appendChild(el('span', 'badge', 'stub'));
-    if (t.archived) line.appendChild(el('span', 'badge', 'archived'));
-    if (t.pr_url) { const pr = prLink(t.pr_url, 'btn small'); pr.prepend(icon(ICON.pr, 13)); line.appendChild(pr); }
-    if (lead && !t.archived) {
+    if (t.archived) line.appendChild(el('span', 'badge', t.archived_by === 'assistant' ? 'Archived by your assistant' : 'archived'));
+    if (t.pr_url && !t.assistant) { const pr = prLink(t.pr_url, 'btn small'); pr.prepend(icon(ICON.pr, 13)); line.appendChild(pr); }
+    if (lead && !t.archived && !t.assistant) {
       const term = el('a', 'btn small', 'Open in terminal');
       term.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(lead.name);
       line.appendChild(term);
     }
     const agents = el('a', 'btn small', 'Agents'); agents.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(id);
-    line.appendChild(agents);
-    {
+    if (!t.assistant) line.appendChild(agents);
+    if (!t.assistant) {
       const wrap = el('div', 'export-action');
       if (exportAsk) {
         wrap.append(el('span', 'dim', 'Export and hand off? This thread stops taking work here.'), button('Confirm', 'primary small', async () => { try { await download(T + '/export', 'POST'); exportAsk = false; await poll(); } catch (e) { exportAsk = false; renderHead(); showError(e.message); } }), button('Cancel', 'small', () => { exportAsk = false; renderHead(); }));
@@ -210,7 +211,7 @@
       line.appendChild(wrap);
     }
     const stubless = t.stub && !t.sessions.length;
-    if (!t.archived) {
+    if (!t.archived && !t.assistant) {
       if (!archiveAsk) {
         line.appendChild(button('Archive', 'danger small archive', () => { archiveAsk = true; sigs.head = null; renderHead(); }));
       } else {
@@ -222,7 +223,7 @@
     headEl.appendChild(line);
     const reason = $('export-reason');
     reason.textContent = t.export && t.export.reason || '';
-    reason.hidden = !!(t.archived || frozen() || !t.export || t.export.ok || !t.export.reason);
+    reason.hidden = !!(t.assistant || t.archived || frozen() || !t.export || t.export.ok || !t.export.reason);
   }
 
   async function download(url, method) {
@@ -347,6 +348,7 @@
     mountCopy();
     const t = thread(); const S = copy.status;
     copyEl.textContent = '';
+    if (t.assistant) { copyEl.hidden = true; return; }
     const head = el('div', 'copy-head');
     head.appendChild(el('h3', '', 'Your copy'));
     head.appendChild(button('Refresh', 'small', () => copyLoad(), copy.loading || copy.sending));
@@ -591,7 +593,7 @@
   }
   function renderDead() {
     const t = thread();
-    const dead = !t.archived && !frozen() && (leads().length > 0 || t.imported) && !liveLead();
+    const dead = !t.archived && !frozen() && (leads().length > 0 || t.imported || t.assistant) && !liveLead();
     deadEl.hidden = !dead;
     if (!dead) return;
     deadEl.textContent = '';
@@ -627,6 +629,17 @@
     }
   }
 
+  function pendingText(text) {
+    const assistant = text.startsWith('[wc:assistant] ');
+    const plain = assistant ? text.slice('[wc:assistant] '.length) : text;
+    const match = assistant && /^\[card [^\]]+\] (.*)$/s.exec(plain);
+    if (!match) return { text: plain, assistant, card: false };
+    const action = match[1].startsWith('sudo ran:') ? match[1].split('\n', 1)[0] : match[1]
+      .replace(/^picked:\s*/i, 'Picked ').replace(/^removed:\s*/i, 'Removed ').replace(/^talk about:\s*/i, 'Talk about: ');
+    if (!action) return { text: plain, assistant, card: false };
+    return { text: 'Your assistant: ' + action, assistant, card: true };
+  }
+
   function renderChat() {
     const items = data.items.filter((i) => sinceImport(i.at));
     chatEl.textContent = '';
@@ -640,9 +653,9 @@
     // sent, so an earlier message with the same words never stands in for it. The row that
     // clears one is its own: later bubbles with the same words count it as already seen.
     const counts = new Map();
-    for (const i of items) if (i.type === 'human' && !i.card) counts.set(i.text, (counts.get(i.text) || 0) + 1);
+    for (const i of items) if (i.type === 'human') counts.set(i.text, (counts.get(i.text) || 0) + 1);
     pending = pending.filter((p, index) => {
-      if ((counts.get(p.text) || 0) <= (p.seen || 0)) return true;
+      if ((counts.get(pendingText(p.text).text) || 0) <= (p.seen || 0)) return true;
       for (const later of pending.slice(index + 1)) if (later.text === p.text) later.seen = (later.seen || 0) + 1;
       return false;
     });
@@ -666,7 +679,7 @@
     // Who wrote the next message: the lead's first letter in a circle, then its name.
     // A sibling, not inside the bubble: asides measure offsets in the bubble's text.
     const leadBy = () => {
-      const name = thread().lead_name || 'Lead';
+      const name = thread().assistant ? 'Assistant' : thread().lead_name || 'Lead';
       const row = el('div', 'lead-by');
       row.append(el('span', 'lead-avatar', Array.from(name)[0].toUpperCase()), el('span', 'lead-by-name', name));
       return row;
@@ -675,7 +688,11 @@
       cardsBefore(Date.parse(it.at));
       if (it.type === 'human') {
         const parts = splitAttached(it.card ? '' : it.text);
-        if (it.card || parts.text) chatEl.appendChild(el('div', 'bubble human' + (it.card ? ' card' : ''), it.card ? it.text : parts.text));
+        if (it.card || parts.text) {
+          const bubble = el('div', 'bubble human' + (it.card ? ' card' : ''), it.card ? it.text : parts.text);
+          if (it.by === 'assistant') bubble.prepend(el('span', 'by-assistant', 'From your assistant'));
+          chatEl.appendChild(bubble);
+        }
         if (parts.files.length) chatEl.appendChild(attachedRow(parts.files));
       } else if (it.type === 'assistant') {
         const lead = el('div', 'bubble assistant md');
@@ -724,8 +741,10 @@
     const canSendNow = lead && lead.live && lead.ready && !lead.permission_open && !lead.needs_open
       && !(lead.limited_until && Date.parse(lead.limited_until) > Date.now()) && !thread().archived;
     for (const p of shown) {
-      const parts = splitAttached(p.text);
-      const b = el('div', 'bubble human pending', parts.text);
+      const shownText = pendingText(p.text);
+      const parts = splitAttached(shownText.text);
+      const b = el('div', 'bubble human pending' + (shownText.card ? ' card' : ''), parts.text);
+      if (shownText.assistant) b.prepend(el('span', 'by-assistant', 'From your assistant'));
       b.appendChild(el('span', 'tag', p.sent ? 'sent' : 'queued'));
       if (p.queued && canSendNow) {
         const at = p.queued.at;
@@ -770,7 +789,7 @@
 
   // How many times the transcript (since any import) already shows these words from the user.
   function humanCount(text) {
-    return data.items.filter((i) => sinceImport(i.at) && i.type === 'human' && !i.card && i.text === text).length;
+    return data.items.filter((i) => sinceImport(i.at) && i.type === 'human' && i.text === pendingText(text).text).length;
   }
 
   // Hand one queued message to the lead mid-turn instead of waiting for the turn to end.
@@ -883,6 +902,7 @@
     } else if ((card.kind === 'question' || card.kind === 'offer') && card.answered_value != null) {
       label = ' You picked ' + pickedLabel(card);
     }
+    if (card.answered_by === 'assistant') label += ' \u00b7 by your assistant';
     tag.append(icon(ICON.check, 12), document.createTextNode(label));
     return tag;
   }
@@ -1370,7 +1390,7 @@
       default:
         return null;
     }
-    if (card.retracted_at || ['offer', 'question', 'reach', 'permit', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
+    if (card.retracted_at || ['offer', 'question', 'reach', 'permit', 'approval'].includes(card.kind) || (card.kind === 'check' && card.answered_by === 'assistant') || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
@@ -1503,16 +1523,18 @@
     renderHandoff();
     // Re-read on load, on each new card (the thread may have gained commits) and when the page comes back into view.
     const lastCard = data.cards.length ? data.cards[data.cards.length - 1].id : null;
-    if (!copy.started) { copy.started = true; copy.lastCard = lastCard; copyLoad(); }
+    if (t.assistant) { /* the assistant thread has no copy panel */ }
+    else if (!copy.started) { copy.started = true; copy.lastCard = lastCard; copyLoad(); }
     else if (lastCard !== copy.lastCard) { copy.lastCard = lastCard; copyFresh(); }
     sync('copy', [t.archived, t.project, t.machine], renderCopy);
-    document.title = (t.title || slug() || base(t.project)) + ' - thread';
-    sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
+    document.body.classList.toggle('assistant-thread', !!t.assistant);
+    document.title = (t.assistant ? 'Personal assistant' : t.title || slug() || base(t.project)) + ' - thread';
+    sync('head', [t.assistant, t.archived_by, t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
     sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), data.documents, t.imported && t.imported.at, data.cards.filter((c) => c.kind === 'file' || c.kind === 'image').map((c) => [c.id, c.title, c.file, c.name, c.size, c.retracted_at, c.created_at]), t.kept_files, (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported], renderDead);
-    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.retracted_at]), ideaOpen, deferredOpen, pinsFolded, cardErrors, t.handed_off, t.handoff_op, t.imported], renderPinned);
+    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.answered_by, c.retracted_at]), ideaOpen, deferredOpen, pinsFolded, cardErrors, t.handed_off, t.handoff_op, t.imported], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     const leadNow = leadSession();
@@ -1529,7 +1551,8 @@
     if ($('working-label').textContent !== workingText) { $('working-label').textContent = workingText; workingEl.setAttribute('aria-label', workingText); }
     if (workingEl.hidden === working) { workingEl.hidden = !working; if (working && nearBottom) changed = true; }
     placeIds();
-    if (window.WCAside) window.WCAside.update(data, changed);
+    if (t.assistant) rememberSeen();
+    if (window.WCAside && !t.assistant) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     syncJump();
     const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
@@ -1537,7 +1560,18 @@
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
     const canSend = liveLead() && !t.archived && !frozen();
     msgEl.disabled = !canSend || uploading; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
-    msgEl.placeholder = canSend ? 'Message the lead' : (t.archived ? 'Archived' : 'No live lead');
+    document.querySelector('label[for=msg]').textContent = t.assistant ? 'Message the assistant' : 'Message the lead';
+    msgEl.placeholder = canSend ? (t.assistant ? 'Message the assistant' : 'Message the lead') : (t.archived ? 'Archived' : 'No live lead');
+  }
+
+  // The newest chat item this page has shown, for the pop-up's unread dot. Only moves forward.
+  function rememberSeen() {
+    const newest = [...data.items.map((i) => i.at), ...data.cards.map((c) => c.at || c.created_at)].filter((x) => Number.isFinite(Date.parse(x))).sort((a, b) => Date.parse(a) - Date.parse(b)).pop();
+    if (!newest) return;
+    try {
+      const old = Date.parse(localStorage.getItem('wc-assistant-seen'));
+      if (!(old >= Date.parse(newest))) localStorage.setItem('wc-assistant-seen', new Date(newest).toISOString());
+    } catch (e) { /* storage blocked */ }
   }
 
   let busy = false;
@@ -1577,6 +1611,7 @@
     });
   }
   function addFiles(files, pasted) {
+    if (thread().assistant) return;
     if (uploading) return;
     const errors = [];
     for (let file of files) {
@@ -1590,7 +1625,7 @@
     }
     attachmentError.textContent = errors.join(' · '); renderAttachments();
   }
-  $('attach').addEventListener('click', () => { if (!uploading) fileInput.click(); });
+  $('attach').addEventListener('click', () => { if (!uploading && !thread().assistant) fileInput.click(); });
   fileInput.addEventListener('change', () => { addFiles(fileInput.files, false); fileInput.value = ''; });
   // Enter sends and Shift+Enter starts a new line, when this browser's Settings switch is on.
   // Unset, it is on for a mouse-and-keyboard device and off for a touch one (no Shift+Enter there).
@@ -1603,9 +1638,9 @@
     if (ev.key !== 'Enter' || ev.shiftKey || ev.isComposing || ev.keyCode === 229 || !enterSends()) return;
     ev.preventDefault(); composerEl.requestSubmit();
   });
-  msgEl.addEventListener('paste', (ev) => { if (ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
+  msgEl.addEventListener('paste', (ev) => { if (data && data.thread && !data.thread.assistant && ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
   composerEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
-  composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); addFiles(ev.dataTransfer.files, false); } });
+  composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); if (data && data.thread && !data.thread.assistant) addFiles(ev.dataTransfer.files, false); } });
   composerEl.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const text = msgEl.value.trim();

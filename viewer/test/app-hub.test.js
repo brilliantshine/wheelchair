@@ -2049,12 +2049,12 @@ test('archived HTML route sends the static sandbox headers', async () => {
   threads.archivedHtml = async (_hub, id, file) => { assert.equal(id, '123'); assert.equal(file, 'picture.html'); return '<p>Archived</p>'; };
   try {
     const response = { writeHead(status, headers) { this.status = status; this.headers = headers; }, end(body) { this.body = body; } };
-    await routes.handle({}, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html'), false);
+    await routes.handle({ thread: async () => ({ id: '123' }), threadSnapshot: async () => ({ id: '123' }) }, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html'), false);
     assert.equal(response.status, 200); assert.equal(response.body, '<p>Archived</p>');
     assert.equal(response.headers['content-type'], 'text/html; charset=utf-8');
     assert.equal(response.headers['x-content-type-options'], 'nosniff');
     assert.equal(response.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox");
-    await routes.handle({}, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html&download=1'), false);
+    await routes.handle({ thread: async () => ({ id: '123' }), threadSnapshot: async () => ({ id: '123' }) }, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html&download=1'), false);
     assert.equal(response.headers['content-disposition'], 'attachment; filename="picture.html"');
     assert.match(response.body.toString(), /^<meta charset="utf-8">/);
   } finally { threads.archivedHtml = original; }

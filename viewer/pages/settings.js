@@ -507,6 +507,7 @@
               data[key] = res[key];
               inlineErr(row, '');
               renderPanel();
+              if (key === 'assistant' && res.assistant_error) inlineErr(document.getElementById('assistant-setting'), res.assistant_error);
               setNote(saved, false);
             } catch (e) { inlineErr(row, e.message); setNote('', false); }
           },
@@ -554,6 +555,10 @@
       ? 'Never asks, no sandbox: it can change anything on the machine. Reviewers stay read-only.'
       : 'Never asks: it can write only inside its worktree.';
 
+    const assistantRow = h('div', { class: 'row-line', id: 'assistant-setting' },
+      h('div', { class: 'what' }, h('span', { text: 'Personal assistant' }), h('span', { class: 'hint', text: 'An assistant that sees all your threads and acts on what you tell it.' })),
+      modeGroup('assistant', 'Personal assistant', [['off', 'Off'], ['on', 'On']], 'Saved'));
+
     return h('div', { class: 'models' },
       h('div', {},
         h('h1', { text: 'Models and preferences' }),
@@ -596,6 +601,7 @@
       h('section', { 'aria-labelledby': 'thread-view' },
         h('h2', { id: 'thread-view', text: 'Threads' }),
         h('div', { class: 'box rows' },
+          assistantRow,
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),

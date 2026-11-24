@@ -452,3 +452,17 @@ iframe.mockup-frame { display: block; position: absolute; top: 0; left: 0; borde
   body:not(.aside-open) .shell.on-thread.side-collapsed { grid-template-columns: 220px minmax(0, 1fr) 44px; }
   body:not(.aside-open) .shell.on-thread.list-collapsed.side-collapsed { grid-template-columns: 44px minmax(0, 1fr) 44px; }
 }
+
+/* The assistant's thread: no asides, and a label on what it sent to another thread's lead. */
+body.assistant-thread .aside-selection, body.assistant-thread .aside-handoff, body.assistant-thread #aside-panel { display: none !important; }
+body.assistant-thread #composer .hint { display: none; }
+.bubble.human .by-assistant { display: block; margin-bottom: 4px; font-size: 11px; color: var(--dim); }
+body.assistant-thread .col-side, body.assistant-thread #head-files, body.assistant-thread #files-panel, body.assistant-thread #attach { display: none !important; }
+@media (min-width: 900px) {
+  body.assistant-thread .shell.on-thread, body.assistant-thread .shell.on-thread.side-collapsed { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
+  body.assistant-thread .shell.on-thread.list-collapsed, body.assistant-thread .shell.on-thread.list-collapsed.side-collapsed { grid-template-columns: 44px minmax(0, 1fr); }
+}
+
+body.assistant-thread #composer .send-row { grid-template-columns: 1fr auto; grid-template-areas: "ta btn"; }
+body.assistant-thread #composer textarea { min-height: 36px; border: 0; padding: 0; }
+@media (max-width: 899px) { body.assistant-thread .col-main { min-height: calc(100dvh - var(--nav-h)); } }

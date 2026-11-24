@@ -43,7 +43,7 @@ async function listLeads(hub, callerThread, { allProjects = false } = {}) {
   const registry = await hub.state.machines();
   const leads = [];
   for (const thread of await hub.state.allThreads()) {
-    if (thread.id === callerThread.id || !reachable(hub, thread) || !(await sameMachine(hub, registry, callerThread.machine, thread.machine))) continue;
+    if (thread.assistant || thread.id === callerThread.id || !reachable(hub, thread) || !(await sameMachine(hub, registry, callerThread.machine, thread.machine))) continue;
     const sameProject = thread.project === callerThread.project;
     const isLinked = !sameProject && linked(callerThread, thread);
     const hasLead = (thread.sessions || []).some(s => s.role === 'lead');

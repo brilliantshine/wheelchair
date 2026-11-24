@@ -102,7 +102,21 @@ function renderTurn(turn, thread) {
     return [{ type: 'context', text: 'Imported from a handoff', context: 'import', at: turn.at }, ...turn.replies];
   }
   if (humanText.startsWith('[wc:context restart]')) {
-    return [{ type: 'context', text: 'Lead restarted', context: 'restart', at: turn.at }, ...turn.replies];
+    let text = 'Lead restarted';
+    try {
+      const state = JSON.parse(humanText.replace(/^\[wc:context restart\] Thread state:\n/, ''));
+      if (state?.assistant === true) text = 'Assistant restarted · starting fresh';
+      else if (state?.by === 'assistant') text = 'Lead restarted by your assistant';
+    } catch { /* Older or malformed restart contexts keep the original label. */ }
+    return [{ type: 'context', text, context: 'restart', at: turn.at }, ...turn.replies];
+  }
+  if (humanText.startsWith('[wc:assistant] ')) {
+    const text = humanText.slice('[wc:assistant] '.length);
+    const bubble = cardBubble(text);
+    const human = bubble
+      ? { type: 'human', text: `Your assistant: ${bubble}`, card: true, by: 'assistant', at: turn.at }
+      : { type: 'human', text, by: 'assistant', at: turn.at };
+    return [human, ...turn.replies];
   }
   const bubble = cardBubble(humanText);
   const human = bubble

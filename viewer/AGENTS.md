@@ -31,6 +31,8 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/documents.js` | Plan document eligibility, listing and live reads. |
 | `app/remote-plan.js` | Remote document reads and background discovery cache. |
 | `app/zip.js`, `app/html-download.js` | Stored ZIP creation and inert HTML download transformation. |
+| `app/assistant.js` | Assistant setting visibility, thread lifecycle and page status. |
+| `app/assistant-actions.js` | Personal assistant action authorization, reads and writes. |
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, including Project tools forwarding, module composition, and the page-facing JSON contract. |
 | `app/names.js`, `agents.js` | Lead name allocation and the public agent tree and machine reachability view. |
@@ -46,6 +48,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `pages/file.html`, `file.js`, `file.css` | The sent-file preview page at `/wheelchair/app/file?thread=&file=`: Markdown through `renderMarkdown` (external links only), other text in a `<pre>`, "Too big to preview" past 2 MiB; `file.js` also exposes `window.WCFilePreview.previewable(name, size)` and `.href(thread, stored)` for the thread page |
 | `pages/project-tools.js` | Settings' Project tools section: machine and project picker, tool list and form, keys list, save and remove-key calls, the Add MCP for Unity button, the Runs on Windows switch and its status line. |
 | `pages/aside.js` | Thread-page aside selection, panel, marks and list. |
+| `pages/assistant-popup.js`, `assistant-popup.css` | The assistant pop-up: floating button, sheet / side panel, assistant chat items and cards, unread dot (`wc-assistant-seen`); `nav.js` loads them only when `GET /assistant` says on, and never on the assistant thread page |
 | `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; page polls go through `window.wcPoller` (defined in `nav.js`), which pauses while the tab is hidden; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the lead sidebar, agent tree, side panel and bottom terminal panel. `term-view.js` is the terminal view (xterm, View only / Typing switch, mouse-report filter, scrollback history) that both the Agents panel and `terminal.html`/`terminal.js` mount. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
 | `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/`. The app's fonts are not here: `/wheelchair/assets/fonts/<name>.woff2` serves four allowlisted files from `node_modules/@fontsource` (`FONT_FILES` in `server.js`) |
 | `signin.html` | What a browser with no remember cookie gets before it is signed in |

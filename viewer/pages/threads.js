@@ -23,6 +23,7 @@
   let stages = {};   // thread id -> stage label, from the features data
   let waiting = {};  // thread id -> number of open cards that need you
   let onboarding = null; // GET /onboarding when show is true, else null
+  let preview = '';      // one line of the assistant's latest reply
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -83,15 +84,34 @@
     return li;
   }
 
+  // The assistant's pinned row: first in the list, outside every project group, never archivable.
+  function assistantRow(t) {
+    const li = el('li', 'row assistant-row' + (t.id === currentId ? ' current' : ''));
+    li.dataset.id = t.id;
+    const top = el('div', 'top');
+    top.appendChild(el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : 'blue')));
+    const a = el('a', 'row-link title', 'Personal assistant');
+    a.href = '/wheelchair/app/thread?id=' + encodeURIComponent(t.id);
+    if (t.id === currentId) a.setAttribute('aria-current', 'page');
+    top.appendChild(a);
+    const n = waiting[t.id] || 0;
+    if (n) top.appendChild(el('span', 'badge warn', n + ' needs you'));
+    li.appendChild(top);
+    li.appendChild(el('div', 'sub assistant-preview', preview || 'Ask it about your threads.'));
+    return li;
+  }
+
   function render() {
-    const shown = threads.filter((t) => !!t.archived === showArchived)
+    const assistant = threads.find((t) => t.assistant);
+    const shown = threads.filter((t) => !t.assistant && !!t.archived === showArchived)
       .sort((a, b) => stamp(b) - stamp(a));
     archivedBtn.setAttribute('aria-pressed', String(showArchived));
     archivedBtn.textContent = showArchived ? '\u2190 Back to threads' : 'Archived';
     listEl.textContent = '';
     emptyEl.textContent = showArchived ? 'No archived threads.' : 'No threads yet.';
-    emptyEl.hidden = shown.length > 0;
+    emptyEl.hidden = shown.length > 0 || (!!assistant && !showArchived);
     if (showArchived) listEl.appendChild(el('li', 'group-label', 'Archived'));
+    if (assistant && !showArchived) listEl.appendChild(assistantRow(assistant));
     if (onboarding && !showArchived) {
       const li = el('li', 'card onboarding'); li.id = 'onboarding';
       li.appendChild(el('h3', '', 'Set up an agent'));
@@ -162,6 +182,36 @@
     render();
   }
 
+  // One line from the assistant's newest reply: its first non-empty line, minus leading Markdown block
+  // markers and emphasis marks, cut at 90 characters.
+  const previewStyle = document.createElement('link');
+  previewStyle.rel = 'stylesheet'; previewStyle.href = '/wheelchair/assets/pages/views.css';
+  document.head.appendChild(previewStyle);
+  function previewLine(text) {
+    const line = String(text).split('\n').map((x) => x.trim()).find(Boolean) || '';
+    const plain = line.replace(/^(?:#{1,6}\s+|>\s*|[-*]\s+|\d+\.\s+)+/, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*|`/g, '').trim();
+    return plain.length > 90 ? plain.slice(0, 89) + '\u2026' : plain;
+  }
+
+  // Fetched on load and then at most once a minute, never awaited by the list; a failure keeps the last one.
+  const PREVIEW_KEY = 'wheelchair.assistantPreview';
+  let previewAt = 0;
+  let previewBusy = false;
+  try { preview = sessionStorage.getItem(PREVIEW_KEY) || ''; } catch (e) { /* none yet */ }
+  async function loadPreview(threadId) {
+    if (previewBusy || Date.now() - previewAt < 60000) return;
+    previewBusy = true; previewAt = Date.now();
+    try {
+      const res = await fetch(API + '/threads/' + encodeURIComponent(threadId) + '/chat');
+      if (!res.ok) return;
+      const body = await res.json();
+      const last = (body.items || []).filter((i) => i.type === 'assistant' && i.text).pop();
+      const next = last ? previewLine(last.text) : '';
+      try { sessionStorage.setItem(PREVIEW_KEY, next); } catch (e) { /* no cache */ }
+      if (next !== preview) { preview = next; render(); }
+    } catch (e) { /* keep the last preview */ } finally { previewBusy = false; }
+  }
+
   async function poll() {
     pollOnboarding();
     try {
@@ -173,7 +223,10 @@
       const payload = await res.json();
       const list = payload.threads || []; notices = payload.revoke_notices || [];
       errorEl.hidden = true;
+      const mine = list.find((t) => t.assistant);
+      if (!mine) preview = '';
       apply(list, features);
+      if (mine) loadPreview(mine.id);
       try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ threads: list, features })); } catch (e) { /* no cache */ }
     } catch (e) {
       errorEl.hidden = false;

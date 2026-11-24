@@ -66,19 +66,21 @@ async function createThread(hub, input) {
   const thread = emptyThread({ ...input, project: checked.path });
   // `title` names a thread whose first message comes later (the New thread screen sends it
   // after uploading attachments, which need the thread's id first).
-  const named = typeof input.message === 'string' ? input.message : input.title;
+  const named = input._assistant_title !== undefined ? input._assistant_title : typeof input.message === 'string' ? input.message : input.title;
   if (typeof named === 'string') {
     const title = truncateTitle(named.split(/\r?\n/, 1)[0], 60);
     if (title) thread.title = title;
   }
   await hub.save(thread);
   await hub.state.addProject(thread.project);
-  const lead = await hub.withThread(thread.id, async () => {
+  let lead;
+  try { lead = await hub.withThread(thread.id, async () => {
     const current = await hub.thread(thread.id);
     const started = await startSession(hub, current, { role: 'lead', cli: current.cli, brief: '', tier: 'top' });
     if (input.message) await hub.enqueue(current, started.name, input.message, 'user');
     return started;
   });
+  } catch (error) { if (input._assistant_title !== undefined) error.savedThread = thread.id; throw error; }
   Object.assign(thread, await hub.thread(thread.id));
   return thread;
 }
@@ -122,8 +124,9 @@ async function openStub(hub, id, input = {}) {
   return thread;
 }
 
-async function restartLead(hub, id) {
+async function restartLead(hub, id, by) {
   const thread = await hub.thread(id);
+  if (by === 'assistant' && thread.archived) throw appError(409, 'this thread is archived');
   require('./handoff.js').refuseFrozen(hub, thread);
   const liveLead = thread.sessions.some((session) => session.role === 'lead' && session.live);
   if (liveLead) {
@@ -135,7 +138,7 @@ async function restartLead(hub, id) {
       if (inspected.worktree_exists === false) { thread.worktree = null; await hub.save(thread); }
     } catch {}
   }
-  const state = {
+  const state = thread.assistant ? { thread: thread.id, title: "Personal assistant", assistant: true } : {
     slug: thread.slug,
     cards: thread.cards.filter((card) => !card.replaced),
     pinned: thread.pinned,
@@ -145,8 +148,9 @@ async function restartLead(hub, id) {
       .filter((message) => message.source === 'user' || message.source === 'card')
       .slice(-20),
   };
+  if (by === 'assistant') state.by = 'assistant';
   const peerMessages = (thread.peer_log || []).filter(item => ['sent', 'received'].includes(item.direction) && (!thread.imported || Date.parse(item.at) > Date.parse(thread.imported.at))).slice(-20);
-  if (peerMessages.length) state.cross_thread_messages = peerMessages;
+  if (!thread.assistant && peerMessages.length) state.cross_thread_messages = peerMessages;
   if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50) };
   const firstImport = thread.imported && !thread.sessions.some((session) => session.role === 'lead' && Object.hasOwn(session, 'first_message') && Date.parse(session.created_at) > Date.parse(thread.imported.at));
   const context = `[wc:context ${firstImport ? 'import' : 'restart'}] Thread state:\n${JSON.stringify(state)}`;
@@ -183,10 +187,13 @@ async function restartLead(hub, id) {
   // Move, not copy: each ended lead's waiting messages go to the new lead once, and an older
   // restart's context note is dropped because the fresh one below replaces it.
   const queued = endedLeads.flatMap((session) => session.queue || [])
-    .filter((message) => message.source !== 'context');
+    .filter((message) => message.source !== 'context' && (!thread.assistant || message.source !== 'card'));
   for (const session of endedLeads) {
     session.queue = [];
     delete thread.queues[session.name];
+  }
+  if (thread.assistant) for (const card of thread.cards) {
+    if (['question', 'needs'].includes(card.kind) && !card.answered && !card.retracted_at && !card.replaced) require('./cards.js').retractCard(card, 'app', 'The assistant restarted');
   }
   // The restart is the answer to every "Sessions ended" card the dead leads left open.
   for (const card of thread.cards) {
@@ -198,8 +205,9 @@ async function restartLead(hub, id) {
   return lead;
 }
 
-async function archive(hub, id) {
+async function archive(hub, id, by) {
   const thread = await hub.thread(id);
+  if (thread.assistant) throw appError(409, "the assistant can't be archived");
   if (require('./handoff.js').unfinished(hub, thread)) throw appError(409, 'Retry the unfinished import first');
   for (const aside of thread.asides || []) {
     if (aside.status === 'open') require('./asides.js').close(aside);
@@ -244,6 +252,7 @@ async function archive(hub, id) {
     return result;
   }
   thread.archived = true;
+  if (by === 'assistant') thread.archived_by = by; else delete thread.archived_by;
   thread.kept_files = Array.isArray(result.kept_uploads) ? result.kept_uploads.filter((name) => typeof name === 'string') : [];
   for (const card of thread.cards) {
     if (card.kind === 'merged' && !card.answered) require('./cards.js').resolveCard(card, 'user', 'Archived');
@@ -321,12 +330,15 @@ async function pressSudo(hub, thread, card, input) {
   return { queued: false, state: card.state };
 }
 
-async function press(hub, id, cardId, input) {
+async function press(hub, id, cardId, input, by) {
   const thread = await hub.thread(id);
   require('./handoff.js').refuseFrozen(hub, thread);
   const card = thread.cards.find((item) => item.id === cardId && !item.replaced);
   if (!card) throw appError(404, 'card not found');
   if (card.retracted_at) throw appError(422, 'this card was withdrawn');
+  if (by === 'assistant' && card.kind === 'sudo') throw appError(403, 'a root command needs you');
+  const attribute = () => { if (by === 'assistant') card.answered_by = 'assistant'; else delete card.answered_by; };
+  const prefix = by === 'assistant' ? '[wc:assistant] ' : '';
   if (card.kind === 'reach') {
     if (input.action !== 'picked' || !['allow', "don't allow"].includes(input.value)) throw appError(400, 'unknown card press');
     if (card.answered) throw appError(422, 'card is already answered');
@@ -343,10 +355,11 @@ async function press(hub, id, cardId, input) {
       }
     }
     card.answered = true;
+    attribute();
     card.answered_action = 'picked';
     card.answered_value = input.value;
     thread.user_at = new Date().toISOString();
-    await hub.enqueue(thread, lead.name, `[card ${card.id}] ${text}`, 'card');
+    await hub.enqueue(thread, lead.name, `${prefix}[card ${card.id}] ${text}`, 'card');
     return { queued: true, text };
   }
   if (card.kind === 'permit') {
@@ -363,10 +376,11 @@ async function press(hub, id, cardId, input) {
       else thread.target_pr = { url: card.pr_url, number: card.pr_number, head_branch: card.head_branch, title: card.pr_title, author: card.pr_author, card: card.id, allowed_at: new Date().toISOString() };
     }
     card.answered = true;
+    attribute();
     card.answered_action = 'picked';
     card.answered_value = input.value;
     thread.user_at = new Date().toISOString();
-    await hub.enqueue(thread, lead.name, `[card ${card.id}] ${text}`, 'card');
+    await hub.enqueue(thread, lead.name, `${prefix}[card ${card.id}] ${text}`, 'card');
     return { queued: true, text };
   }
   // A press is the user acting in the thread, so it moves the thread up the list like a message.
@@ -375,6 +389,7 @@ async function press(hub, id, cardId, input) {
     if (input.action !== 'keep') throw appError(400, 'a merged card takes keep');
     if (card.answered) throw appError(422, 'card is already answered');
     require('./cards.js').resolveCard(card, 'user', 'Kept');
+    attribute();
     await hub.save(thread);
     return { queued: false };
   }
@@ -386,10 +401,11 @@ async function press(hub, id, cardId, input) {
     const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
     if (!lead) throw appError(409, 'no live lead');
     card.answered = true;
+    attribute();
     card.answered_action = input.action;
     card.answered_value = input.value ?? null;
     const text = input.action === 'fix' ? 'fix what the check found' : 'leave it';
-    await hub.enqueue(thread, lead.name, `[card ${card.id}] ${text}`, 'card');
+    await hub.enqueue(thread, lead.name, `${prefix}[card ${card.id}] ${text}`, 'card');
     return { queued: true, text };
   }
   if (input.action === 'removed') {
@@ -442,6 +458,7 @@ async function press(hub, id, cardId, input) {
   if (!(input.action in suffixes)) throw appError(400, 'unknown card press');
   if (!(card.kind === 'approval' && input.action === 'talk') && !(card.kind === 'deferred' && input.action === 'removed')) {
     card.answered = true;
+    attribute();
     card.answered_action = input.action;
     card.answered_value = input.value ?? null;
   }
@@ -456,7 +473,7 @@ async function press(hub, id, cardId, input) {
   }
   // An answered offer leaves the pin; it stays in the conversation.
   if (card.kind === 'offer' && thread.pinned.offer?.id === card.id) delete thread.pinned.offer;
-  await hub.enqueue(thread, lead.name, `[card ${card.id}] ${suffixes[input.action]}`, 'card');
+  await hub.enqueue(thread, lead.name, `${prefix}[card ${card.id}] ${suffixes[input.action]}`, 'card');
   return { queued: true, text: suffixes[input.action] };
 }
 
@@ -489,7 +506,7 @@ function mergedPr(thread) {
 
 async function pollMerged(hub) {
   const eligible = (await hub.allThreads()).map((thread) => ({ thread, url: mergedPr(thread) }))
-    .filter(({ thread, url }) => !thread.archived && url && /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/.test(url) && thread.merge_noticed_url !== url);
+    .filter(({ thread, url }) => !thread.assistant && !thread.archived && url && /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/.test(url) && thread.merge_noticed_url !== url);
   let next = 0;
   async function worker() {
     while (next < eligible.length) {
@@ -541,6 +558,7 @@ async function pollWaiting(hub) {
 
 module.exports = {
   defaultProjectTools,
+  emptyThread,
   archive,
   archivedDocument,
   archivedGraph,

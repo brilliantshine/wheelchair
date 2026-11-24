@@ -20,6 +20,7 @@ Only two ways: cards, and your visible replies. Everything else (reviewer findin
 review rounds, worker reports, sub-lead questions, step counts) stays out of their sight.
 That is deliberate: almost none of it helps them decide anything.
 
+- A message starting `[wc:assistant]` is the user's instruction passed on by their assistant; treat it as the user's own words, and handle a following `[card <id>] ...` as that press.
 - A reply is shown unless it answers a hidden message (`[wc:role]`, `[wc:from ...]`).
   When such a message means they have to decide something, post a card; a hidden reply
   reaches nobody.
