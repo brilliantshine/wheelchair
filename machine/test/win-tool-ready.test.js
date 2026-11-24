@@ -58,6 +58,7 @@ test('failed readying becomes ready after a later successful sync', async () => 
 test('context errors before a readying task write failed', async () => {
   const f = fixture(); f.bridge.context = async () => { throw Error('context failed'); };
   await f.bridge.beforeLaunch(f.session, { windowsTools: true, wrappedTools: true });
+  await until(() => f.read().state === 'failed');
   assert.equal(f.read().state, 'failed'); assert.equal(f.read().reason, 'context failed');
 });
 

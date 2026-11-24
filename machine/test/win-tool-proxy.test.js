@@ -21,6 +21,11 @@ function cleanup() {
 afterEach(cleanup);
 after(cleanup);
 const TEST_TIMEOUT = { timeout: 20000 };
+const waitFor = async (predicate, timeout = 3000) => {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) { const value = predicate(); if (value) return value; await sleep(10); }
+  throw new Error('timed out waiting for condition');
+};
 function launch({ ready = false, env = {}, cache, command = process.execPath, args, pause = false, probeMs = 2000, preload, holdMs = 100, initMs = 200 } = {}) {
   const dir = makeTempSync('proxy-'), readyFile = path.join(dir, 'ready'), list = path.join(dir, 'cache', 'list'), record = path.join(dir, 'record');
   if (ready) fs.writeFileSync(readyFile, JSON.stringify({ state: 'ready', copy: 'C:\\copy' }));
@@ -94,7 +99,7 @@ test('handoff suppresses cancelled requests and duplicate initialized notificati
   const p = launch({ env: { DELAY: '70' } });
   p.send('initialize', 1, { protocolVersion: 'v' }); await p.wait(x => x.id === 1);
   p.send('tools/call', 2); p.setReady({ state: 'ready', copy: 'C:' });
-  while (!p.records().some(x => x.method === 'initialize')) await sleep(5);
+  await waitFor(() => p.records().some(x => x.method === 'initialize'), 10000);
   p.send('tools/call', 3); p.send('notifications/cancelled', undefined, { requestId: 2 });
   p.send('notifications/cancelled', undefined, { requestId: 3 });
   p.send('notifications/cancelled', undefined, { requestId: 99 });
@@ -153,11 +158,6 @@ test('handoff with empty list forwards held call after readiness', TEST_TIMEOUT,
   p.child.stdin.end(); await p.exit;
 });
 
-const waitFor = async (predicate, timeout = 3000) => {
-  const end = Date.now() + timeout;
-  while (Date.now() < end) { const value = predicate(); if (value) return value; await sleep(10); }
-  throw new Error('timed out waiting for condition');
-};
 const readRecords = file => { try { return fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse); } catch { return []; } };
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { if (e.code === 'ESRCH') return false; throw e; } };
 

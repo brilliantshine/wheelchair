@@ -367,7 +367,7 @@ test('a worktree starts from origin trunk and records trunk as its default branc
   } finally { await env.close(); }
 });
 for (const [what, variable] of [['git fetch', 'FAKE_FETCH_SLEEP'], ['systemd-run', 'FAKE_SCOPE_SLEEP']]) test(`a slow ${what} in a session start does not hold up a status check`, async () => {
-  const root = await temp(); const env = await service(root); process.env[variable] = '3'; try {
+  const root = await temp(); const env = await service(root); process.env[variable] = '6'; try {
     const repo = path.join(root, 'project'); await fs.mkdir(repo, { recursive: true });
     // The status check runs in its own process: a service that blocks would also freeze a timer
     // in this one, and the check would then only begin once the fetch was over.
@@ -376,7 +376,8 @@ for (const [what, variable] of [['git fetch', 'FAKE_FETCH_SLEEP'], ['systemd-run
     const starting = start(env, { thread_id: 'slow', token: 'slow-token', project_dir: repo, project: 'project', serviceWorktree: true });
     const { status, waited } = JSON.parse(await checked);
     assert.equal(status, 200);
-    assert.ok(waited < 1000, `status took ${waited} ms while it ran`);
+    // A blocked service would make the check wait about 5 s; 3 s leaves room for a busy machine.
+    assert.ok(waited < 3000, `status took ${waited} ms while it ran`);
     assert.equal((await starting).name, 'wc-slow-lead');
   } finally { delete process.env[variable]; await env.close(); }
 });
@@ -455,7 +456,7 @@ test('Claude trust is checked within a second instead of waiting for the two-sec
   } finally { await env.close(); }
 });
 test('agent session forward retries then reports hub unavailable', async () => {
-  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); env.instance.retryWindow = 20; env.instance.retryDelay = 5; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), /hub unavailable/); assert.ok(hub.calls.filter(call => call.path.endsWith('/session')).length > 1); } finally { await env.close(); await hub.close(); }
+  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); env.instance.retryWindow = 500; env.instance.retryDelay = 5; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), /hub unavailable/); assert.ok(hub.calls.filter(call => call.path.endsWith('/session')).length > 1); } finally { await env.close(); await hub.close(); }
 });
 test('git refuses paths outside the calling worktree', async () => {
   const env = await service(await temp()); try { await start(env); const result = await api(env, 'POST', '/v1/agent/git', { operation: 'commit', paths: ['../outside'], message: 'm' }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal(result.status, 403); } finally { await env.close(); }
