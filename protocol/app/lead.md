@@ -160,7 +160,8 @@ The user picks the project and the machine, then writes in plain words.
   heading, add the bases and start the full run as above). A failed check gets one more attempt; a
   gap surviving two attempts comes to the user as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). With a `Test picker and full run`
-  heading, also wait until the full run has passed for that commit (or it is covered). Then
+  heading, also wait until the full run has passed for that commit (or it is covered),
+  unless they chose to push it as it is. Then
   push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
   with `wc.js git pr`, and follow **Making the pull request mergeable** before posting
   `done`, setting `verified` as that section says. Say in your reply what changed. After the `done` card, follow step 10 (Check it
@@ -730,7 +731,7 @@ body names the current done head counts as its check card: post no other.
    and what the repair changed, with the bases above when the project has a `Test picker and full run`
    heading (the default-branch tip merged in, for a merge repair; the previously
    checked commit, for a failed check), and start the full run alongside it unless the commit is
-   covered. On a pass (and a passing full run), push and return to 2 with a new window. On a
+   covered. On a pass (and, with that heading, a passing full run), push and return to 2 with a new window. On a
    fail, count one failed attempt, fix locally and re-verify; never push an unverified
    commit or poll for it.
 8. **Budget.** A repair that fails its verifier, or whose push still ends in a failed check

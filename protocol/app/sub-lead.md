@@ -275,7 +275,7 @@ already run, not a whole-suite run; elsewhere run the full validation):
    then send the lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md,
    `commit` the
    commit verified). A full run passes when its `summary.txt` names that commit and every suite
-   exit is 0. Before sending the `result`, paste `summary.txt` (and any failures confirmed on
+   exit is 0. In an opted-in project, before sending the `result`, paste `summary.txt` (and any failures confirmed on
    main) into COMPLETION.md and commit it; that PLAN.md/COMPLETION.md-only commit stays
    covered by the full run. A full-run failure is a gap like a
    verifier's (same realism judgment, remediation and two-attempt rule), except a failure you

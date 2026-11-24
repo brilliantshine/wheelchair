@@ -68,7 +68,7 @@ try {
           let match, byImport = false;
           while ((match = imports.exec(text))) {
             const resolved = path.normalize(path.join(path.dirname(test), match[1]));
-            if (resolved === p || resolved + '.js' === p || resolved + '/index.js' === p) byImport = true;
+            if (resolved === p || resolved + '.js' === p || resolved + '.json' === p || resolved + '/index.js' === p) byImport = true;
           }
           if (byName || byImport) { mark(testSuite(test), test, byImport ? 'import' : 'basename'); mapped = covered = true; }
         }

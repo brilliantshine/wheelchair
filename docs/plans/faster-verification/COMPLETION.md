@@ -45,7 +45,7 @@ Written for a hostile reviewer: every claim checkable, no claim without evidence
 ## Routers
 
 - `AGENTS.md`: the `test-support/` row now names `pick-tests.js` with `test-map.json`, `full-run.sh` and `browser-workers.js`; new `## Test picker and full run` section (the S5.0 opt-in heading).
-- `viewer/AGENTS.md`: unchanged; `viewer/playwright.config.js` already belonged to the viewer and only changed how it picks workers.
+- `viewer/AGENTS.md`: the `playwright.config.js` row now describes the worker choice from `test-support/browser-workers.js` (up to 6 for a lone full run, 2 otherwise) instead of a fixed `workers: 2` (fixed in Remediation 4; it wrongly said "unchanged" before).
 
 ## Validation evidence
 
@@ -225,3 +225,14 @@ The browser stage ran `Running 1466 tests using 6 workers`. The "lead waiting li
 | machine | `win-tool-proxy.test.js` hung 8+ min in the whole suite (also on main) and was stopped by the sub-lead; it and `screen.test.js` "marker mode and app umask preserve service umask" (ENOENT on a temp umask file) then reported 4 extra failures | load flake / hang | Alone: `win-tool-proxy.test.js` 27/27, `screen.test.js` 46/46. |
 
 So the full run on 736bb799 passes under the lead's reading of S2. Later commits change only COMPLETION.md and PLAN.md, which the picker maps to nothing.
+
+### Remediation 4 (after verification attempt 4, 2026-11-24)
+
+Gaps: `REMEDIATION-4.md`. One commit (R7), by the sub-lead:
+- **S1 rule 2:** `test-support/pick-tests.js` import resolution also tries `<path>.json`. New fixture test "an import without an extension finds a .json file"; it fails when `.json` is removed. `node --test test-support/test/*.test.js`: 26/26.
+- **S5.0:** `protocol/app/sub-lead.md` step 4 says "In an opted-in project, before sending the `result`, paste `summary.txt`…". The `protocol/app/lead.md` repair step says "(and, with that heading, a passing full run)".
+- **S5.6:** the `protocol/app/lead.md` small-fix push waits for the full run "unless they chose to push it as it is".
+- **Router:** the `viewer/AGENTS.md` `playwright.config.js` row now describes the worker choice; the Routers section above is corrected.
+- `node --test viewer/test/protocol-rules.test.js`: 44/44.
+
+The full run for this commit runs alongside the attempt-5 verifiers; its result is appended below.

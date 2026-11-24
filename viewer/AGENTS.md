@@ -46,7 +46,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; page polls go through `window.wcPoller` (defined in `nav.js`), which pauses while the tab is hidden; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the lead sidebar, agent tree, side panel and bottom terminal panel. `term-view.js` is the terminal view (xterm, View only / Typing switch, mouse-report filter, scrollback history) that both the Agents panel and `terminal.html`/`terminal.js` mount. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
 | `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/`. The app's fonts are not here: `/wheelchair/assets/fonts/<name>.woff2` serves four allowlisted files from `node_modules/@fontsource` (`FONT_FILES` in `server.js`) |
 | `signin.html` | What a browser with no remember cookie gets before it is signed in |
-| `playwright.config.js` | The browser suite's two projects, Chromium and Firefox; `workers: 2` so concurrent runs do not saturate the machine |
+| `playwright.config.js` | The browser suite's two projects, Chromium and Firefox; workers from `test-support/browser-workers.js`: a full run (`WHEELCHAIR_FULL_RUN=1`) with no other full run live gets up to 6, every other run 2, so concurrent runs do not saturate the machine; `--workers` still overrides |
 | `test/` | The suites. See below |
 
 ## Boundaries
