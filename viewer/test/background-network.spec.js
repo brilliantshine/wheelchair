@@ -110,7 +110,9 @@ test('native candidate completion cannot replace newer candidate or Remove', asy
   await page.getByRole('button', { name: 'Remove background' }).click();
   await page.evaluate(() => window.imageHolds.shift()());
   await expect(page.locator('.background-layer')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  // Nothing was saved before, so removing the preview leaves nothing to save.
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeEnabled();
 });
 
 test('lost response after commit retains draft, conflicts on retry and Cancel loads commit', async ({ page }) => {
