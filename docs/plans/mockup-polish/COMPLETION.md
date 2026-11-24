@@ -96,3 +96,28 @@ Targeted re-runs at acceptance (sub-lead): T1 specs + app-threads subset 42 pass
 - The flash was diagnosed from source. `app-chat-stability.spec.js:27` (same iframe element, no second `load`, top entry within 2px) is the proof.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-23
+
+Verification attempt 1 (gpt-6.2-sol, commit `b44a6aac`) reported 4 gaps. One was judged a rare path and recorded in PLAN.md Accepted Risks (lead name or worktree change not redrawing the chat). The lead answered fix for the other three. Task R1 (claude standard / claude-sonnet-5-5), see `REMEDIATION-1.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S1: the scroll anchor could be a row under the sticky header, so a card inserted out of order moved the visible mockup by 193px | `viewer/pages/thread.js:138-145` (`chatPlace` records only rows below the lowest bottom of `#head`, `#dead` and `#pinned`) | `app-chat-stability.spec.js` (the new out-of-order card test) |
+| S2: a hand-off starting reloaded every mockup, because `frozen()` was in every card signature | `thread.js:670` (`cardSig`: no `frozen()` for `diagram`/`image`); `thread.js:1463` (those cards skip the frozen disabling loop, so a draft's Cancel stays usable) | `app-spot-comment.spec.js:248` |
+| S3: the PNG background was read in an 800x600 helper, so media queries exported the wrong colour | `viewer/pages/picture-export.js:84-88` (helper sized to the mockup's w x h) | `app-mockup-png.spec.js` (the new responsive-background test) |
+
+The R1 worker says each new test failed against the old code. The sub-lead re-ran chat-stability, spot-comment, mockup-png and handoff: 82 passed.
+
+Full validation on the merged tip (sub-lead):
+```
+npm --prefix viewer run test:browser -- --shard=1/3   exit 0   3 skipped  570 passed (7.6m)
+npm --prefix viewer run test:browser -- --shard=2/3   exit 0  17 skipped  435 passed (7.0m)
+npm --prefix viewer run test:browser -- --shard=3/3   exit 1  14 skipped  470 passed, 1 failed (7.3m)
+  failed: [firefox] test/run.spec.js:225 clicking a needs-you node shows its full needs text (run graph page, untouched by this build)
+  re-run alone: npm --prefix viewer run test:browser -- run.spec.js  ->  26 passed
+node --test viewer/test/*.test.js   # tests 935  # pass 933  # fail 2
+  not ok 251 - switching a harness off cancels its install... (known load flake, also fails on main)
+  not ok 527 - 6 message clears debt (viewer/test/app-quiet.test.js, untouched)
+  re-run alone: node --test viewer/test/app-quiet.test.js  ->  # pass 27 # fail 0
+```
