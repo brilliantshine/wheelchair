@@ -360,3 +360,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — Choice: R1, hand-off: diagram and image cards skip the frozen disabling loop, so an open spot draft keeps Cancel usable during a hand-off; Send is still refused by `cantSendWhy()` (thread.js `renderCard`).
 - 2026-11-23 — Choice: R1, PNG helper: falls back to 800x600 when no size is given (picture-export.js `canvasBackground`).
 - 2026-11-23 — R1 accepted (band: scout): scout confirmed the three fixes match their scenarios; report gave counts rather than pasted output, so the sub-lead re-ran chat-stability, spot-comment, mockup-png, handoff: 82 passed.
+- 2026-11-23 — Verification 2: FAIL (gpt-6.2-sol, commit 699c1a26), 3 gaps, none rare; sent to the lead for defer/fix.
