@@ -304,6 +304,7 @@ npm --prefix viewer run test:browser
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | If the assistant posts a `sudo` card despite its rules, the hub refuses it but the machine has already registered the request with the root helper, leaving it pending there | Rare path: needs the assistant to break its rules; nothing runs without Collin entering a password | review-round-4 |
+| A slow remote lead launch (two 60 s attempts) can finish after the 120 s relay deadline, so `start`/`restart` report "hub unavailable" though the lead later starts | Rare path: needs a remote machine answering near both 60 s limits; the assistant's rules make it check `threads`/`thread` before retrying, so nothing is repeated | verification-1 |
 | Turning the assistant off while a machine fails to confirm the stop, a start reply is lost, or the hub restarts mid-change can leave a stray assistant session running | Rare path: needs a failure together with the toggle. Actions are refused once off; Restart refuses a second live lead | review-round-1 |
 
 ## Check Once Built
@@ -463,3 +464,4 @@ Build accepted: approval 071c4262-8c38-4de7-aa3b-5c36df3f0ef5
 - 2026-11-23 — Full validation at `afba6dbe`: viewer unit 950 pass / 1 fail (pre-existing harness timing); machine assistant 2/2; browser 1449 passed / 1 failed (`app-send-now.spec.js:84`). That test fails about 1 in 4 runs alone on the feature branch and 0 of 4 on base `25f34a45`, so it went to T8.
 - 2026-11-23 — Choice: T8, `viewer/app/assistant.js`: the off-guard reads `hub.threadSnapshot` instead of `hub.thread` (which can save a provider migration outside the thread's lock); `hub.thread` itself unchanged (worker reported).
 - 2026-11-23 — T8 accepted (band: scout): `assistant.test.js` 14/14 re-run by me. The `app-send-now.spec.js:84` flake is pre-existing: base `25f34a45` failed 3 of 10 runs alone (Chromium); the feature branch with T8 failed 2 of 8. The guard fix stands on its own (a save outside the lock could drop a concurrent change).
+- 2026-11-23 — Verification attempt 1 at `125ffb25`: both verifiers FAIL; 12 gap lines merge into 11 distinct gaps plus 1 rare path (slow remote launch vs the 120 s relay, recorded in Accepted Risks).
