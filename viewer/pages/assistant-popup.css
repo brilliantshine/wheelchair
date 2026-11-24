@@ -1,0 +1,46 @@
+/* The assistant pop-up (assistant-popup.js). Matches the closed / popup / thinking mockups. */
+.wc-asst-float { position: fixed; right: 24px; bottom: 96px; z-index: 40; background: var(--accent); color: var(--accent-ink);
+  border: 0; border-radius: 999px; padding: 13px 17px; box-shadow: 0 4px 20px #0008; font-weight: 600; cursor: pointer; }
+.wc-asst-float:hover { background: var(--accent-hi); color: var(--accent-ink); }
+.wc-asst-unread { position: absolute; right: 2px; top: 1px; width: 12px; height: 12px; border-radius: 50%;
+  background: #d9a441; border: 2px solid var(--bg); }
+.wc-asst-float[hidden], .wc-asst-unread[hidden], .wc-asst-panel[hidden], .wc-asst-shade[hidden], .wc-asst-stopped[hidden], .wc-asst-error[hidden] { display: none !important; }
+.wc-asst-shade { display: none; }
+.wc-asst-panel { position: fixed; right: 20px; bottom: 20px; z-index: 50; width: 410px; height: 690px; max-height: calc(100vh - 40px);
+  display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px;
+  box-shadow: 0 8px 40px #000a; overflow: hidden; color: var(--ink); }
+.wc-asst-head { display: flex; align-items: center; gap: 12px; padding: 13px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.wc-asst-title { flex: 1; min-width: 0; }
+.wc-asst-title h1 { font-size: 16px; margin: 0; }
+.wc-asst-meta { font: 11px ui-monospace, monospace; color: var(--dim); margin-top: 3px; }
+.wc-asst-close { font-size: 20px; border: 0; padding: 2px 7px; }
+.wc-asst-stopped { padding: 12px 16px; background: #1a1813; border-bottom: 1px solid #5c4a24; display: flex; align-items: center; gap: 12px; }
+.wc-asst-stopped p { margin: 0; flex: 1; color: var(--ink-2); }
+.wc-asst-chat { flex: 1; overflow: auto; padding: 18px 16px; }
+.wc-asst-convo { display: flex; flex-direction: column; gap: 12px; }
+.wc-asst-human { align-self: flex-end; background: #23303f; padding: 9px 11px; border-radius: 12px 12px 4px 12px; max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.wc-asst-by { color: var(--dim); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.wc-asst-avatar { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: var(--accent-text);
+  border: 1px solid var(--accent-line); background: var(--accent-chip); font-weight: 600; }
+.wc-asst-answer { line-height: 1.55; overflow-wrap: anywhere; }
+.wc-asst-answer p { margin: 0 0 8px; }
+.wc-asst-answer ul, .wc-asst-answer ol { margin: 3px 0 10px; padding-left: 20px; }
+.wc-asst-card { border: 1px solid #5c4a24; background: #1a1813; border-radius: 10px; padding: 14px; }
+.wc-asst-card small { color: #d9a441; letter-spacing: .06em; }
+.wc-asst-card h3 { font-size: 15px; margin: 6px 0; }
+.wc-asst-card p { color: var(--ink-2); margin: 4px 0; }
+.wc-asst-opt { display: block; width: 100%; text-align: left; margin: 6px 0 0; }
+.wc-asst-work { display: flex; align-items: center; gap: 9px; color: var(--dim); font-size: 13px; }
+.wc-asst-spin { width: 18px; height: 18px; border: 2px solid var(--accent-line); border-top-color: var(--accent-text); border-radius: 50%;
+  animation: wc-asst-spin 1s linear infinite; }
+@keyframes wc-asst-spin { to { transform: rotate(360deg); } }
+.wc-asst-error, .wc-asst-error-text { color: var(--bad-text, #e08080); padding: 6px 16px; font-size: 13px; }
+.wc-asst-compose { padding: 10px 12px 14px; }
+.wc-asst-box { border: 1px solid var(--line-2); background: var(--panel); border-radius: 10px; padding: 10px; display: flex; align-items: flex-end; gap: 8px; }
+.wc-asst-input { flex: 1; min-height: 36px; max-height: 120px; resize: none; border: 0; background: transparent; font-size: 13px; }
+.wc-asst-send { background: var(--accent); color: var(--accent-ink); border: 0; font-weight: 700; }
+@media (max-width: 899px) {
+  .wc-asst-float { right: 16px; bottom: 92px; }
+  .wc-asst-shade { display: block; position: fixed; inset: 0; z-index: 45; background: #0008; }
+  .wc-asst-panel { inset: 12px 8px 8px; width: auto; height: auto; max-height: none; }
+}
