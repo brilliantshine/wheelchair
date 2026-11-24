@@ -57,7 +57,7 @@ try {
     for (const p of changed) {
       const ownTest = testSuite(p);
       if (ownTest) { if (files.has(p)) mark(ownTest, p, 'changed test'); continue; }
-      let covered = false, mapped = false;
+      let covered = false, mapped = false, mapEntry = false;
       if (!p.startsWith('docs/') && !/(^|\/)test\//.test(p)) {
         const sourceBase = path.basename(p, path.extname(p));
         for (const [test, text] of contents) {
@@ -75,7 +75,7 @@ try {
       }
       for (const entry of map) if (glob(entry.glob).test(p)) for (const target of entry.tests) {
         const suite = testSuite(target);
-        if (suite ? mark(suite, target, `map: ${entry.glob}`) : mark(target, null, `map: ${entry.glob}`)) mapped = covered = true;
+        if (suite ? mark(suite, target, `map: ${entry.glob}`) : mark(target, null, `map: ${entry.glob}`)) mapped = covered = mapEntry = true;
       }
       const fan = [];
       if (/^viewer\/test\/(helpers|fixtures)\//.test(p) || /^viewer\/(playwright\.config\.js|package(?:-lock)?\.json)$/.test(p)) fan.push('viewer-node', 'viewer-browser');
@@ -84,7 +84,10 @@ try {
       else for (const name of ['test-support', 'sensitivity', 'codex', 'install', 'sudo-helper']) if (p.startsWith(name + '/')) fan.push(name);
       if (p === 'install.sh') fan.push('install');
       if (fan.length) { whole(fan, 'shared file'); covered = true; }
-      if (!mapped && !/(^|\/)test\//.test(p) && !p.startsWith('docs/') && !p.endsWith('.md')) {
+      // Rule 6: front-end files reach browser specs only through the map; unmapped ones fall back
+      // even when a Node test imports them.
+      const frontEnd = /^viewer\/(app\/)?pages\//.test(p) || /^viewer\/.*\.(html|css)$/.test(p) || p === 'viewer/doc.js';
+      if ((!mapped || (frontEnd && !mapEntry)) && !/(^|\/)test\//.test(p) && !p.startsWith('docs/') && !p.endsWith('.md')) {
         if (p.startsWith('viewer/')) { whole(['viewer-node', 'viewer-browser'], 'viewer fallback'); covered = true; }
         else if (p.startsWith('machine/')) { whole(['machine'], 'machine fallback'); covered = true; }
       }

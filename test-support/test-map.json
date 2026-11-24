@@ -15,6 +15,7 @@
     "tests": [
       "viewer/test/app-openrouter-hub.test.js",
       "machine/test/pi-login.test.js",
+      "machine/test/pi-spend.test.js",
       "machine/test/pi.test.js"
     ]
   },

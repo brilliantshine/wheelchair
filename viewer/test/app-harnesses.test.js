@@ -299,7 +299,6 @@ test('switching a harness off cancels its install on every known machine, withou
   const { hub } = await harnessFixture({ hub: statusFor('claude', 'gpt'), other: statusFor('claude', 'gpt'), third: statusFor('claude', 'gpt') });
   const calls = [];
   let hubPending = false;
-  let hubResponseProduced = false;
   let resolveThirdCall;
   const thirdCall = new Promise(resolve => { resolveThirdCall = resolve; });
   hub.client = { passThrough: async (name, route, method) => {
@@ -319,7 +318,6 @@ test('switching a harness off cancels its install on every known machine, withou
     const off = await routed(hub, 'PUT', { path, enabled: false });
     assert.equal(off.status, 200); assert.equal(off.body.harnesses.gpt, false);
     assert.equal(hubPending, true);
-    assert.equal(hubResponseProduced, false);
     await thirdCall;
   })(), 10000, 'Harness cancellation route and machine requests');
   assert.deepEqual(calls.map(c => c[0]).sort(), ['hub', 'other', 'third']);

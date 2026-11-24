@@ -477,10 +477,10 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S1 test picker, test-map.json, tests | test-support/pick-tests.js, test-support/test-map.json, test-support/test/pick-tests.test.js | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker | `node --test test-support/test/*.test.js`; picker on HEAD~1, bad base, docs-only scratch commit | dispatched |
+| T1 | S1 test picker, test-map.json, tests | test-support/pick-tests.js, test-support/test-map.json, test-support/test/pick-tests.test.js | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker | `node --test test-support/test/*.test.js`; picker on HEAD~1, bad base, docs-only scratch commit | done |
 | T2 | S2 full-run.sh | test-support/full-run.sh | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-2 | `bash -n`; usage and dirty-tree exit 2; stubbed loop in scratch clone | done |
 | T3 | S3 browser workers | test-support/browser-workers.js, viewer/playwright.config.js, test-support/test/browser-workers.test.js | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker-3 | `node --test test-support/test/browser-workers.test.js`; worker counts a–d on one small spec | done |
-| T4 | S4 flaky harness test | viewer/test/app-harnesses.test.js (one test) | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-4 | 10x loop under load; break-and-fail check | dispatched |
+| T4 | S4 flaky harness test | viewer/test/app-harnesses.test.js (one test) | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-4 | 10x loop under load; break-and-fail check | done |
 | T5 | tricky — S5 role rules, AGENTS.md, CONTRIBUTING.md | protocol/app/{lead,sub-lead,verifier,worker}.md, AGENTS.md, CONTRIBUTING.md, protocol/AGENTS.md | standard, claude-sonnet-5-5 | wc-8bfbebc2e0d5-worker-5 | `node --test viewer/test/protocol-rules.test.js`; S5 coverage table | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -505,3 +505,9 @@ Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
 - 2026-11-23 — Choice: T3, browser-workers.js: the decision travels to Playwright's worker processes in `WHEELCHAIR_BROWSER_WORKERS`; the registry dir is created on demand; non-numeric file names in it are ignored; only ESRCH marks a file stale; other filesystem errors propagate.
 - 2026-11-23 — Choice: T3, browser-workers.js exports `liveOthers`, `register`, `unregister` and `decide` beside `chooseWorkers`; `decide()` reads `os.cpus().length`.
 - 2026-11-23 — Choice: T3, validation: `--repeat-each` on one small spec to make the worker count visible.
+- 2026-11-23 — T1 accepted (band: scout). Sub-lead fixes after merge: rule 6, an unmapped front-end file (`viewer/pages/**`, `viewer/app/pages/**`, viewer `*.html`/`*.css`, `viewer/doc.js`) now falls back to the viewer suites even when a Node test imports it; `machine/test/pi-spend.test.js` added to the OpenRouter samples map entry; three tests added (docs fixture via map alone, basename-only match, front-end fallback), each shown to fail under a mutation of its rule.
+- 2026-11-23 — Choice: T1, pick-tests.js JSON: sudo-helper is one suite entry whose `command` is an array of its two commands; whole-suite entries have `files: []`; `reason` is a comma-joined string (`import`, `basename`, `map: <glob>`, `shared file`, `viewer fallback`, `machine fallback`, `fallback`, `full run`); `changed` lists deleted paths and both sides of renames.
+- 2026-11-23 — Choice: T1, pick-tests.js: every `*.md` file and `.gitignore` select nothing unless mapped; import detection reads relative `require`/`import` specifiers only, resolving `x`, `x.js` and `x/index.js`; paths in commands are not shell-quoted (the tree has no spaces).
+- 2026-11-23 — Choice: T1, test-map.json: added `machine/test/pi.test.js` to the OpenRouter samples entry and a `connectors/** -> machine/test/connectors-contract.test.js` entry; front-end map seeded with four entries (index.html, doc.html, doc.js, pages/markdown.js), the rest fall back.
+- 2026-11-23 — T4 accepted (band: scout). Sub-lead removed a dead `hubResponseProduced` flag the worker added (never set, so its assertion was vacuous); the worker's report said "none" for choices.
+- 2026-11-23 — Choice: T4, app-harnesses.test.js: local `withTimeout` helper around an async block, label "Harness cancellation route and machine requests"; `thirdCall` resolves as soon as the third call is recorded.
