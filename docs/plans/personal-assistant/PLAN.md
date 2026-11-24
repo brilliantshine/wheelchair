@@ -302,6 +302,9 @@ npm --prefix viewer run test:browser
 | 4 | The assistant's `thread` action leaves out chat from before an imported thread's import cutoff, as the thread page does | Only imported threads, and it only adds older history | verification | Apply the thread page's `sinceImport` cutoff (`viewer/pages/thread.js:586`) to `recent` in `viewer/app/assistant-actions.js:38` |
 | 5 | The assistant thread page's composer height (70 px phone, 75 px desktop) and the desktop list-collapse button match `mockup-thread-*` (58 px, no collapse button) | Cosmetic | verification | `viewer/pages/thread.css` assistant-thread rules; the collapse button is the thread list's own |
 | 6 | The pinned assistant row keeps its blue dot beside the amber "needs you" badge, as in `mockup-threads-*` | Cosmetic | verification | `viewer/pages/threads.js:92` turns the dot amber when the row needs you |
+| 7 | A new tool step or peer-activity line in the assistant conversation lights the pop-up's unread dot | Only assistant text, context lines and cards light it today; tool and peer lines are activity, not replies | verification | `viewer/pages/assistant-popup.js:86` `newestAt` |
+| 8 | The closed pop-up button is the mockup's width (about 129 px; built about 109 px) | Cosmetic | verification | `viewer/pages/assistant-popup.css` float padding; `mockup-closed-*` |
+| 9 | The assistant thread page's desktop conversation width (820 px vs 772 px) and entry gap (18 px vs 14 px) match `mockup-thread-*` | Cosmetic; these are the thread page's shared styles | verification | `viewer/pages/thread.css:73-74`; scope any change to the assistant thread |
 
 ## Accepted Risks
 
@@ -498,3 +501,4 @@ Build accepted: approval 071c4262-8c38-4de7-aa3b-5c36df3f0ef5
 - 2026-11-23 — R4 accepted (band: scout): popup spec 30/30 three times and assistant + send-now 28/28 re-run by me. I removed a committed `/tmp/r4-*.png` screenshot write from `viewer/test/app-assistant-popup.spec.js` (spec still 30/30).
 - 2026-11-23 — Validation at `f2a4b7a8`: `TZ=UTC npm --prefix viewer run test:browser` 1470 passed, 34 skipped, 0 failed; `node --test viewer/test/*.test.js` 953/2, both pre-existing (`app-harnesses.test.js:311`, `app-quiet.test.js` "6 message clears debt").
 - 2026-11-23 — Verification attempt 3 at `f140fe7c`: both verifiers FAIL. 7 gap lines: 1 rare path (`--archived` as a press value, Accepted Risks), 6 to judge; the phone button placement (G8 → H1) has now had two fix attempts (R3, R4).
+- 2026-11-23 — Verification 3 answers from the lead: J1 (phone button placement, survived two fix attempts) is with the user; J3 fix; J7 repeat check (15x feature and base under load) and fix if this build made it worse; J4, J5, J6 deferred as hardening (Deferred 7-9, source verification).
