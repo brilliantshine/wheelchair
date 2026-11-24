@@ -333,7 +333,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | R1 | Remediation 1: scroll anchor below pinned header; frozen only in signatures of cards that draw it; PNG helper iframe sized w x h | viewer/pages/thread.js, thread.css, picture-export.js, app-chat-stability/app-spot-comment/app-mockup-png specs | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-4 | REMEDIATION-1.md scenarios; browser subset; unit suite | done |
 | R2 | Remediation 2: Done card thread link uses live(card); hand-off and chat-stability tests wait for the first iframe load | viewer/pages/thread.js (one line), app-spot-comment.spec.js, app-chat-stability.spec.js | claude light / claude-haiku-5-5 | wc-c06d283728e9-worker-5 | browser subset + repeat-each=3 | done |
 | R3 | Remediation 3: spot draft clears and pending bubble shows right after the POST succeeds; refresh in background | viewer/pages/thread.js (spotButton send), app-spot-comment.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-6 | browser subset + repeat-each=3 | done |
-| R4 | Remediation 4: carry the mockup's html font-size onto the SVG root so rem sizes export right | viewer/pages/picture-export.js, app-mockup-png.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-7 | browser subset + repeat-each=3 | in progress |
+| R4 | Remediation 4: carry the mockup's html font-size onto the SVG root so rem sizes export right | viewer/pages/picture-export.js, app-mockup-png.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-7 | browser subset + repeat-each=3 | done |
 
 ## Log
 
@@ -376,3 +376,6 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — R3 accepted (band: scout): scout confirmed the thread.js change matches the brief exactly; the report shows the test failing on the old handler. Sub-lead re-ran spot-comment and send-now: 38 passed.
 - 2026-11-23 — Verification 4 (commit b060a327): Claude verifier (claude-opus-5-5) PASS; GPT verifier (gpt-6.2-sol) FAIL with 1 gap (rem sizes wrong in the PNG when the mockup sets a root font size), judged normal use; sent to the lead for defer/fix.
 - 2026-11-23 — Lead answered verification-4 gap: fix (rem / root font size). REMEDIATION-4.md written; R4 dispatched.
+- 2026-11-23 — Choice: R4, app-mockup-png.spec.js: the rem test hardcodes export scale k = 2, as the other tests in the file do.
+- 2026-11-23 — Choice: R4, picture-export.js: `fontSize` falls back to null with `|| null` when the computed value is empty.
+- 2026-11-23 — R4 accepted (band: scout): scout found no deviation; the report shows the rem test failing on the old exporter. Sub-lead re-ran mockup-png and picture-download: 26 passed.
