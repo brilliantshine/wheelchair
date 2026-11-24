@@ -122,10 +122,9 @@
       const placed = d.x !== null;
       pin.hidden = !placed;
       if (placed) { pin.style.left = (d.x / spec.width * 100) + '%'; pin.style.top = (d.y / spec.height * 100) + '%'; }
-      hint.hidden = placed; text.hidden = !placed; send.hidden = !placed;
+      hint.hidden = placed; text.hidden = false; send.hidden = false;
       if (text.value !== d.text) text.value = d.text;
-      text.disabled = send.disabled = cancel.disabled = d.pending;
-      if (!d.pending && !d.text.trim()) send.disabled = true;
+      text.disabled = d.pending || !placed; send.disabled = d.pending || !placed || !d.text.trim(); cancel.disabled = d.pending;
       layer.classList.toggle('pending', d.pending);
       err.textContent = d.error || '';
     }
@@ -143,7 +142,7 @@
       d.x = clamp((ev.clientX - r.left) / s, spec.width); d.y = clamp((ev.clientY - r.top) / s, spec.height); d.error = '';
       paint();
     });
-    text.addEventListener('input', () => { if (!d) return; d.text = text.value; send.disabled = d.pending || !d.text.trim(); });
+    text.addEventListener('input', () => { if (!d) return; d.text = text.value; send.disabled = d.pending || d.x === null || !d.text.trim(); });
     cancel.addEventListener('click', () => { if (!d || d.pending) return; drafts.delete(opts.key); d.active = false; paint(); });
     send.addEventListener('click', async () => {
       const mine = d; const comment = mine && mine.text.trim();
