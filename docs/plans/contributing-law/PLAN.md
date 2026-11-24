@@ -20,7 +20,12 @@ get buried as this file grows.
 ### Q2: Do verifiers run the validation commands CONTRIBUTING.md asks for?
 - **Context:** Wheelchair's own CONTRIBUTING.md asks for area and full validation (`CONTRIBUTING.md:73-93`). Verifiers today run the Spec's validation commands. The "Faster verification checks" thread is working to make checks shorter.
 - **Options:** (a) yes, every command it requires for the touched areas; (b) only the Spec's commands; the lead copies CONTRIBUTING.md's required commands into the Spec while planning, so they are run once, deliberately.
-- **Recommendation:** (b). One list of commands, decided at planning, keeps check time predictable.
+- **Recommendation:** (b). One list of commands, decided at planning, keeps check time predictable. It also lines up with the faster-verification thread (8bfbebc2e0d5, Spec S5): in a project opted in to its test picker, verifiers run the Spec's commands plus picked tests and never whole suites; the full run belongs to the sub-lead or lead before a push.
+
+### Q3: Overlap with 8bfbebc2e0d5 (Faster verification checks): both edit verifier.md, sub-lead.md, lead.md, worker.md
+- **Context:** That thread is in final checks; it changes which tests verifiers run (picker plus a full run by the starter, opted in through an AGENTS.md heading) and edits wheelchair's CONTRIBUTING.md to name them. Its lead says our edits to the same role files will conflict as text; whichever merges second merges carefully.
+- **Options:** keep the plan as it is (merge carefully if second); or change it to defer to the test-picker rule explicitly in verifier.md.
+- **Recommendation:** decided with Q2.
 
 ## Watch List
 
