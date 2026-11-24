@@ -236,3 +236,25 @@ Gaps: `REMEDIATION-4.md`. One commit (R7), by the sub-lead:
 - `node --test viewer/test/protocol-rules.test.js`: 44/44.
 
 The full run for this commit runs alongside the attempt-5 verifiers; its result is appended below.
+
+**Full run on bb3e2e3c** (`bash test-support/full-run.sh <scratch>/full5`, run alongside the attempt-5 verifiers):
+```
+commit bb3e2e3c8eeb087ce47deac092d6f6c31a57dc34
+suite viewer-browser exit 1
+suite viewer-node exit 1
+suite machine exit 1
+suite test-support exit 0
+suite sensitivity exit 0
+suite codex exit 0
+suite install exit 0
+suite sudo-helper exit 0
+```
+The browser stage ran `Running 1466 tests using 6 workers`, with 1431 passed, 1 failed and 34 skipped.
+
+| Suite | Failure | Judgment | Evidence |
+|---|---|---|---|
+| viewer-browser | `[chromium] app-handoff.spec.js:228` "an import drops pending bubbles…" | load flake | `--project chromium --repeat-each 3`: `3 passed`, exit 0. |
+| viewer-node | `app-sudo.test.js` hung 9+ min in the whole suite and was stopped by the sub-lead; it then reported "the hub stores machine approval warnings" | hang / load flake | Alone: `# pass 22 / # fail 0`. |
+| machine | the same 18 tests as main (`win*.test.js`, `wslpath`) | on main | `comm` against main's list: no extras, none missing. Nothing hung. |
+
+So the full run on bb3e2e3c passes under the lead's reading of S2. Later commits change only COMPLETION.md and PLAN.md, which the picker maps to nothing.
