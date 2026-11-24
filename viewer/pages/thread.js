@@ -174,7 +174,8 @@
         const why = cantSendWhy();
         if (why) throw new Error(why);
         await sendAsUser(text);
-        sigs.chat = null; await poll(); render();
+        sigs.chat = null; render(); // the pending bubble shows now; the draft clears when this returns
+        poll();                     // refresh in the background; poll() handles its own errors
       },
     });
     return btn;

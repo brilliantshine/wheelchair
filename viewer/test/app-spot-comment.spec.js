@@ -135,6 +135,25 @@ test('a draft is disabled while sending', async ({ page }) => {
   await expect(page.locator('.spot-layer')).toBeHidden();
 });
 
+test('a spot comment clears as soon as the hub accepts it, even while the chat refresh is slow', async ({ page }) => {
+  const { made } = await seed();
+  await open(page, made);
+  await page.getByRole('button', { name: 'Comment on a spot' }).click();
+  await tapAt(page, 0.4, 0.4);
+  await page.locator('.spot-text').fill('Accepted comment');
+
+  let release; const gate = new Promise((r) => { release = r; });
+  await page.route('**/chat', async (route) => {
+    if (route.request().method() === 'GET') { await gate; await route.continue(); }
+    else await route.continue();
+  });
+  await page.locator('.spot-box').getByRole('button', { name: 'Send' }).click();
+  await expect(page.locator('.spot-pin')).toBeHidden();
+  await expect(page.locator('.spot-box')).toBeHidden();
+  await expect(page.locator('.bubble.human.pending')).toContainText('Accepted comment');
+  release();
+});
+
 test('an open draft survives a poll that replaces its card node', async ({ page }) => {
   const { made, card } = await seed();
   await open(page, made);
