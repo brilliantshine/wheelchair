@@ -1,7 +1,7 @@
 ---
 slug: mockup-polish
 date: 2026-11-23
-implemented-by: "claude standard (claude-sonnet-5-5) x3 workers; sub-lead claude-opus-5-5"
+implemented-by: "claude standard (claude-sonnet-5-5): T1-T3, R1; claude light (claude-haiku-5-5): R2; gpt light (gpt-6-luna): R3-R6b, R10; gpt standard (gpt-6.1-terra): R7-R9; sub-lead claude-opus-5-5"
 verified-by:
   - round: 1
     lane: gpt / gpt-6.2-sol
