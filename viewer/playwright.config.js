@@ -5,11 +5,12 @@
 // viewer's own suite — everything under test/ named *.spec.js, currently browser.spec.js and
 // touch.spec.js — and leave viewer/test/*.test.js (node --test's unit suite) alone.
 const { defineConfig, devices } = require('@playwright/test');
+const { decide } = require('../test-support/browser-workers');
 
-// workers: 2 caps one run at two browsers (docs/plans/lighter-server, S7); --workers on the
-// command line still overrides it.
+// Full runs alone can use up to six workers; overlapping and short runs stay capped at two.
+// --workers on the command line still overrides the cap.
 module.exports = defineConfig({
-  workers: 2,
+  workers: decide(),
   testDir: 'test',
   testMatch: '*.spec.js',
   projects: [
