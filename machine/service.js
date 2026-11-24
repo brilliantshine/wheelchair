@@ -2260,8 +2260,12 @@ class MachineService {
         const waiting = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).filter(f => f.endsWith('.json'));
         if (waiting.length && this.config.hub_url) await this.drainSpool('cards');
         const behind = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).some(f => f.endsWith('.json'));
-        if (input.kind === 'done' || input.kind === 'lesson') {
-          const unavailable = { error: input.kind === 'lesson' ? 'the app did not confirm the lesson; run the same card again in a minute (repeating it is safe)' : 'the app is unreachable; the done card was not recorded; try again in a minute' };
+        if (input.kind === 'done' || input.kind === 'lesson' || input.kind === 'permit') {
+          const unavailable = { error: ({
+            done: 'the app is unreachable; the done card was not recorded; try again in a minute',
+            lesson: 'the app did not confirm the lesson; run the same card again in a minute (repeating it is safe)',
+            permit: 'the app is unreachable; the permit card was not recorded; try again in a minute',
+          })[input.kind] };
           if (behind || !this.config.hub_url) return send(response, 503, unavailable);
           try {
             const payload = { ...input, session: agent.name, thread_id: agent.thread_id, delivery_id: input.delivery_id || crypto.randomUUID() };
