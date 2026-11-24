@@ -184,9 +184,12 @@
 
   // One line from the assistant's newest reply: its first non-empty line, minus leading Markdown block
   // markers and emphasis marks, cut at 90 characters.
+  const previewStyle = document.createElement('link');
+  previewStyle.rel = 'stylesheet'; previewStyle.href = '/wheelchair/assets/pages/views.css';
+  document.head.appendChild(previewStyle);
   function previewLine(text) {
     const line = String(text).split('\n').map((x) => x.trim()).find(Boolean) || '';
-    const plain = line.replace(/^(?:#{1,6}\s+|>\s*|[-*]\s+|\d+\.\s+)+/, '').replace(/\*\*|`/g, '').trim();
+    const plain = line.replace(/^(?:#{1,6}\s+|>\s*|[-*]\s+|\d+\.\s+)+/, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*|`/g, '').trim();
     return plain.length > 90 ? plain.slice(0, 89) + '\u2026' : plain;
   }
 
