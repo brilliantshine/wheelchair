@@ -41,7 +41,7 @@ esac
 }
 async function hubServer(status = 200, { failAfterStore = false, delay = 0, answer: initialAnswer = {} } = {}) {
   const calls = []; let current = status; const delivered = new Set();
-  const allowed = { idea: ['lead'], done: ['lead'], message: ['lead', 'sub-lead', 'worker', 'mapper'], result: ['worker', 'mapper', 'sub-lead'] };
+  const allowed = { idea: ['lead'], done: ['lead'], permit: ['lead'], message: ['lead', 'sub-lead', 'worker', 'mapper'], result: ['worker', 'mapper', 'sub-lead'] };
   const server = http.createServer((request, response) => { let body = ''; request.on('data', c => { body += c; }); request.on('end', () => {
     let code = current; let answer = initialAnswer;
     let payload = {}; try { payload = JSON.parse(body || '{}'); } catch { /* test server records malformed payloads too */ }
@@ -323,6 +323,55 @@ test('done is never spooled when the hub is unavailable or earlier cards are wai
     assert.equal((await api(offline, 'POST', '/v1/agent/cards', { kind: 'done' }, agentHeader('alpha'))).status, 503);
     assert.equal((await fs.readdir(path.join(offline.state, 'spool', 'cards'))).length, 0);
   } finally { await offline.close(); }
+});
+test('permit is never spooled when the hub is unavailable or earlier cards are waiting', async () => {
+  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env);
+    const cards = path.join(env.state, 'spool', 'cards');
+    const permit = () => api(env, 'POST', '/v1/agent/cards', { kind: 'permit' }, agentHeader('alpha'));
+    const first = await permit(); assert.equal(first.status, 503); assert.match(first.body.error, /the permit card was not recorded; try again in a minute/);
+    assert.equal((await fs.readdir(cards)).length, 0);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'idea' }, agentHeader('alpha'))).status, 202);
+    const second = await permit(); assert.equal(second.status, 503); assert.match(second.body.error, /the permit card was not recorded; try again in a minute/);
+    assert.equal((await fs.readdir(cards)).length, 1);
+  } finally { await env.close(); await hub.close(); }
+  const offline = await service(await temp()); try {
+    await start(offline);
+    const result = await api(offline, 'POST', '/v1/agent/cards', { kind: 'permit' }, agentHeader('alpha'));
+    assert.equal(result.status, 503); assert.match(result.body.error, /the permit card was not recorded; try again in a minute/);
+    assert.equal((await fs.readdir(path.join(offline.state, 'spool', 'cards'))).length, 0);
+  } finally { await offline.close(); }
+});
+test('permit is relayed synchronously and returns the hub\'s answer', async () => {
+  const hub = await hubServer(200, { answer: { id: 'permit-card-1' }, delay: 100 });
+  const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env);
+    const pending = api(env, 'POST', '/v1/agent/cards', { kind: 'permit', pr_url: 'https://github.com/o/r/pull/7', why: 'fix it' }, agentHeader('alpha'));
+    let settled = false; pending.then(() => { settled = true; }, () => { settled = true; });
+    const deadline = Date.now() + 5000;
+    while (!hub.calls.some(call => call.path.endsWith('/cards')) && !settled && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.ok(hub.calls.some(call => call.path.endsWith('/cards')), 'the machine must contact the hub before answering a permit card');
+    const cardsWhileWaiting = await fs.readdir(path.join(env.state, 'spool', 'cards')).catch(() => []);
+    assert.equal(cardsWhileWaiting.filter(file => file.endsWith('.json')).length, 0);
+    const result = await pending;
+    assert.equal(result.status, 200);
+    assert.equal(result.body.id, 'permit-card-1');
+    const cards = await fs.readdir(path.join(env.state, 'spool', 'cards')).catch(() => []);
+    assert.equal(cards.filter(file => file.endsWith('.json')).length, 0);
+    const calls = hub.calls.filter(call => call.path.endsWith('/cards'));
+    assert.equal(calls.length, 1);
+    assert.equal(JSON.parse(calls[0].body).kind, 'permit');
+  } finally { await env.close(); await hub.close(); }
+
+  const refusedHub = await hubServer(422, { answer: { error: 'that pull request is closed' } });
+  const refusedEnv = await service(await temp(), { config: { hub_url: refusedHub.url } }); try {
+    await start(refusedEnv);
+    const result = await api(refusedEnv, 'POST', '/v1/agent/cards', { kind: 'permit', pr_url: 'https://github.com/o/r/pull/7', why: 'fix it' }, agentHeader('alpha'));
+    assert.equal(result.status, 422);
+    assert.equal(result.body.error, 'that pull request is closed');
+    const cards = await fs.readdir(path.join(refusedEnv.state, 'spool', 'cards')).catch(() => []);
+    assert.equal(cards.filter(file => file.endsWith('.json')).length, 0);
+  } finally { await refusedEnv.close(); await refusedHub.close(); }
 });
 test('done waits beyond five seconds for a hub refusal', async () => {
   const hub = await hubServer(422, { delay: 6000 }); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {

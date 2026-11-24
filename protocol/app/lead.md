@@ -512,7 +512,7 @@ When the user reports a problem, first run `gh pr view --json state`:
      step 10 (Check it yourself) for that `done` card; its steps cover only what the fix
      changed.
 
-No thread ever pushes to another thread's branch. Every stub starts from the default
+No thread pushes to another thread's branch, except a target PR's branch as in "Fixing someone else's pull request". Every stub starts from the default
 branch and opens its own pull request.
 
 ### 10. Check it yourself
@@ -737,6 +737,59 @@ check `ok` in every `wc.js git` JSON result: git failures still exit 0.
   (the push, or opening the PR after a successful push) and that "Keep going" retries it;
   do not mention merging the PR. On "Keep going", redo the failed operation first,
   applying the non-fast-forward rule above, then carry on from where it failed.
+
+## Fixing someone else's pull request
+
+- **When:** Collin names an open PR (number or link) that this thread did not open and
+  asks for it to be reviewed or fixed. Only on the small-fix path (step 1), before the thread has
+  a plan directory or any commit of its own. Otherwise say it needs a new thread and
+  offer a stub naming the PR. If the fix turns out to need a plan, say so and offer a stub.
+- **Look first:** `gh pr view <n> --json url,state,isDraft,headRefName,baseRefName,isCrossRepository,author,title`
+  run in the worktree (so it resolves against `origin`; a full link must name the same
+  repository as `gh repo view --json url`). A draft: say the author must mark it ready
+  first and stop. Closed, a fork, a base other than the default branch, another
+  repository, or a head branch that equals a `branch` in `session leads`: say so plainly
+  and offer the old way (a replacement PR from this thread's own branch, as a normal small
+  fix). Make no permit card.
+- **Ask first:** post the `permit` card now, before fetching or editing anything, so the
+  chosen PR is recorded. A refusal: say why in the reply; for a draft stop there,
+  otherwise offer the old way. On
+  `don't allow` or `allow failed`, offer the replacement PR in a `question` card. Once
+  allowed, the target holds for the life of the thread. After a restart, an allowed
+  `permit` card in the context names the target; an open one is still waiting.
+- **Off the normal path, stop and ask.** After a restart, or whenever the target PR is
+  closed, retargeted or turned into a draft, merged before this thread's `done` card at
+  a commit other than the pushed one, or anything else this section does not cover
+  happens: change nothing (never abort a merge, push,
+  revert or stub on your own), and post one `question` card saying in plain words what you
+  see (local work, what is on the PR, its state) with fitting options, such as carry on,
+  push after a check, start a follow-up thread, or leave it. Do what Collin picks using
+  the rules here and in "Making the pull request mergeable". This replaces that section's
+  steps 4 (Merged, at another commit), 5 (Closed) and 9 (After a restart) for a target PR. Not a question: a restart
+  with an open `permit` card (keep waiting on it); a restart where an accepted `done`
+  card's `head` equals local `HEAD` and `git status --untracked-files=no` is clean (carry
+  on with step 10's restart rule only); a merge at the pushed commit (post `done` as in
+  that section's step 4); a problem reported after `done` (step 9, After done,
+  as usual, whose `MERGED` stub uses the Stubs rule below; its state check reads
+  `gh pr view <target url> --json state,isDraft`, and a draft is off the normal path).
+- **Bring it in:** `wc.js git fetch origin <head branch>`, then `wc.js git merge origin/<head branch>`
+  (this also brings the default branch, as of the thread's start, into the PR; expected).
+  Resolving conflicts is the normal path: edit the files and `wc.js git commit --paths
+  <resolved files>`. Review and fix as a small fix: commits, progress line and verifier as step 1, the
+  verifier briefed with the PR's title and description and Collin's request.
+- **Push:** immediately before every push, run `gh pr view <target url> --json state,isDraft`.
+  `OPEN` and not a draft: `wc.js git push origin HEAD:<head branch>`. Never `--force`, `--force-with-lease`
+  or `+` refspecs, and never `wc.js git pr`. Anything else: stop and ask, as above. A rejected push (the author
+  pushed): `wc.js git fetch origin <head branch>`, merge `origin/<head branch>`,
+  re-verify unless it was a fast-forward, then push again.
+- **Finish:** follow "Making the pull request mergeable" with `<head branch>` in place of
+  `wc/<thread-id>` everywhere and the target URL as the PR. The `done` card's `pr_url` is
+  the target URL; its `note` says it is ready for Collin or the author to merge and will
+  not merge itself. `verified` follows the usual rule.
+- **After done (step 9):** every `gh pr view` names the target URL. Fixes go to the same
+  head branch the same way.
+- **Stubs:** every stub from such a thread uses `depends_on_parent: false` and names the
+  target PR and its branch in the summary.
 
 ## Other leads on this machine
 

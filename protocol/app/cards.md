@@ -59,6 +59,7 @@ Rules for every card:
 | `stub` | yes | lead | no |
 | `sudo` | yes | lead | no |
 | `reach` | yes | lead | no |
+| `permit` | yes | lead | no |
 | `lesson` | yes | lead, sub-lead, worker, mapper | no |
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
@@ -230,6 +231,7 @@ The press forms, in full:
 - `[card <id>] start thread about: <text>`
 - `[card <id>] keep going` and `[card <id>] talk about: <needs card title>`, on your `needs` card
 - `[card <id>] picked: allow`, `picked: don't allow` and `allow failed: <reason>`, on your `reach` card
+- `[card <id>] picked: allow`, `picked: don't allow` and `allow failed: <reason>`, on your `permit` card
 - `[card <id>] sudo ran: exit <n>`, `declined`, `sudo expired`, `sudo failed: <reason>` and `talk about: sudo request`, on your `sudo` card
 
 Two consequences for a lead. Nothing you write in the reply to a `[wc:from ...]` message

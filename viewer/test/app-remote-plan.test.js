@@ -114,3 +114,25 @@ test('remote refresh saves committed status for Features', async () => {
     assert.ok(features.body.building.some(item => item.id === made.id));
   } finally { await close(ctx); }
 });
+
+test('remote refresh does not record a target PR plan, including a target set during discovery', async () => {
+  const remote = require('../app/remote-plan.js');
+  for (const initiallyTarget of [true, false]) {
+    let release, entered, saved = 0, calls = 0;
+    const started = new Promise(resolve => { entered = resolve; });
+    const pending = new Promise(resolve => { release = resolve; });
+    const snapshot = { id: 'target-' + initiallyTarget, machine: 'remote', project: '/project', slug: null, ...(initiallyTarget ? { target_pr: { url: 'target' } } : {}) };
+    let current = { ...snapshot };
+    const registry = { hub: {}, remote: {} };
+    const hub = {
+      state: { machines: async () => registry, resolveMachine: async (r, n) => r[n] },
+      client: { call: async (_m, _p, _method, input) => { calls++; if (input.action === 'discover') { entered(); await pending; return { slug: 'example' }; } return { files: ['PLAN.md'] }; } },
+      withThread: async (_id, fn) => fn(), thread: async () => current, save: async () => { saved++; },
+    };
+    remote.refresh(hub, snapshot);
+    if (!initiallyTarget) { await started; current = { ...current, target_pr: { url: 'target' } }; release(); }
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(current.slug, null); assert.equal(saved, 0);
+    if (initiallyTarget) assert.equal(calls, 0);
+  }
+});

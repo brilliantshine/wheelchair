@@ -16,6 +16,7 @@ const shown = new Set([
   'deferred',
   'question',
   'reach',
+  'permit',
   'approval',
   'progress',
   'needs',
@@ -35,6 +36,7 @@ const roles = {
   deferred: ['lead'],
   question: ['lead'],
   reach: ['lead'],
+  permit: ['lead'],
   approval: ['lead'],
   progress: ['lead', 'sub-lead'],
   needs: ['lead'],
@@ -119,6 +121,7 @@ const fields = {
     doc: (value) => value === undefined || ['MAP.md', 'IDEA.md', 'PLAN.md'].includes(value),
   },
   reach: { thread: text, why: line },
+  permit: { pr_url: text, why: line },
   approval: {
     objections: (value) => array(value, (item) => (
       object(item)
@@ -274,8 +277,8 @@ function resolvable(thread, cardId, mode) {
 function retractable(thread, cardId) {
   const target = (thread.cards || []).find((item) => item.id === cardId && !item.replaced);
   if (!target) return { ok: false, reason: 'no such card in this thread' };
-  if (!['question', 'offer', 'approval', 'needs', 'sudo', 'deferred', 'reach'].includes(target.kind)) {
-    return { ok: false, reason: 'only a question, offer, approval, needs, sudo, deferred or reach card can be retracted' };
+  if (!['question', 'offer', 'approval', 'needs', 'sudo', 'deferred', 'reach', 'permit'].includes(target.kind)) {
+    return { ok: false, reason: 'only a question, offer, approval, needs, sudo, deferred, reach or permit card can be retracted' };
   }
   if (target.kind === 'needs' && target.system) return { ok: false, reason: 'a system needs card closes itself' };
   if (target.kind !== 'sudo' && target.answered) return { ok: false, reason: 'card is already answered' };
