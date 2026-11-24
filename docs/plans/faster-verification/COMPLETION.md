@@ -168,3 +168,25 @@ Gaps and tasks: `REMEDIATION-2.md`. Lead's answers are in PLAN.md's Log.
 - **Trade-off:** a protocol-only change now picks every suite (see PLAN.md Log).
 
 The full run for this round runs alongside the attempt-3 verifiers on this commit; its summary and judgments are appended below when it ends.
+
+**Full run on 70d11cdb** (`bash test-support/full-run.sh <scratch>/full3`, started 23:25, alongside the attempt-3 verifiers):
+```
+commit 70d11cdb1dac76d240e96ec7ae1bb0455d1e8c75
+suite viewer-browser exit 1
+suite viewer-node exit 0
+suite machine exit 1
+suite test-support exit 0
+suite sensitivity exit 0
+suite codex exit 0
+suite install exit 0
+suite sudo-helper exit 0
+```
+The browser stage ran `Running 1466 tests using 6 workers`, with 1423 passed, 9 failed and 34 skipped. Nothing hung.
+
+| Suite | Failure | Judgment | Evidence |
+|---|---|---|---|
+| viewer-browser | `app-accounts.spec.js:576,584,591,599` "lead waiting line", chromium and firefox (8) | on main | Same tests and error as main at 7b93c1ae (Remediation 1 evidence): the expected `about \d`, the received `"Waiting for GPT to refill, about Tue 02:31 AM"`. |
+| viewer-browser | `[chromium] app-threads.spec.js:353 phone › message box posts and shows queued` | load flake | `--project chromium --repeat-each 3`: `6 passed`, exit 0. |
+| machine | 18 tests, the same names as main's run of `win*.test.js` (`comm` against the main list: no extras, none missing). 14 have the error `wslpath failed: Error: spawnSync wslpath ENOENT`, 1 an `ENOENT` open, and 3 multi-line errors | on main | Main comparison in Remediation 1. |
+
+So the full run on 70d11cdb passes under the lead's reading of S2. Commits after it change only COMPLETION.md and PLAN.md, which the picker maps to nothing, so they stay covered.
