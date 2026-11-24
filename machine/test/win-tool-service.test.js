@@ -15,8 +15,8 @@ function fixture() {
   for (const [src, dest] of [['powershell.exe', 'c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'], ['git.exe', 'c/tools/git.exe']]) { const p = path.join(mount, dest); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.copyFileSync(path.join(__dirname, 'fixtures/win', src), p); fs.chmodSync(p, 0o755); }
   const exe = path.join(mount, 'c/tools/tool.exe'); write(exe, '', 0o755);
   const log = path.join(root, 'tmux.log');
-  write(path.join(bin, 'tmux'), `#!/bin/sh\nif [ "$1" = new-session ]; then cat "$FAKE_READY" > "$FAKE_LOG"; exit "${'${FAKE_FAIL:-0}'}"; fi\nexit 0\n`, 0o755);
-  write(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', 0o755);
+  write(path.join(bin, 'tmux'), `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nif [ "$1" = new-session ]; then cat "$FAKE_READY" > "$FAKE_LOG"; exit "${'${FAKE_FAIL:-0}'}"; fi\nexit 0\n`, 0o755);
+  write(path.join(bin, 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', 0o755);
   const prior = { ...process.env }; Object.assign(process.env, { PATH: `${bin}:${prior.PATH}`, FAKE_LOG: log, FAKE_READY: path.join(state, 'win-ready/wc-test-worker'), WC_FAKE_MOUNT: mount, WC_FAKE_LOCALAPPDATA: 'C:\\Users\\Test', WC_FAKE_GIT_PATH: 'C:\\tools\\git.exe' });
   const worktree = path.join(root, 'work'); fs.mkdirSync(worktree);
   const git = (...args) => { const r = spawnSync('git', args, { cwd: worktree, env: { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 't@t' }, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); };

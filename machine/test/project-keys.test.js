@@ -48,9 +48,9 @@ test('session launcher passes only selected keys outside recorded commands', asy
   await fs.writeFile(path.join(repo, '.mcp.json'), JSON.stringify({ mcpServers: { local: { command: 'tool', args: ['${HOLD:-x}'], env: { KEY: '${KEY}', HOLD: '${HOLD}', HOME: '${HOME}' } } } }));
   const identity = await projectIdentity(repo, commandAsync); await writeKeyStore(state, identity, { set: { KEY: "value'quoted", HOLD: 'held-secret', HOME: 'reserved-secret', UNUSED: 'unused-secret' } });
   const log = path.join(root, 'tmux.log'), captured = path.join(root, 'captured');
-  await fs.writeFile(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-  await fs.writeFile(path.join(bin, 'tmux'), `#!/bin/sh\nif [ "$1" = new-session ]; then printf '%s\\n' "$@" >> "$FAKE_LOG"; for arg do last="$arg"; done; eval "$last"; elif [ "$1" = capture-pane ]; then printf 'auto mode on\\n❯ Ready\\n'; fi\n`, { mode: 0o755 });
-  for (const cli of ['claude', 'codex', 'agy']) await fs.writeFile(path.join(bin, cli), '#!/bin/sh\nprintf "%s|%s|%s|%s\\n" "${KEY-unset}" "${HOLD-unset}" "${UNUSED-unset}" "${HOME-unset}" >> "$CAPTURED"\n', { mode: 0o755 });
+  await fs.writeFile(path.join(bin, 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', { mode: 0o755 });
+  await fs.writeFile(path.join(bin, 'tmux'), `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nif [ "$1" = new-session ]; then printf '%s\\n' "$@" >> "$FAKE_LOG"; for arg do last="$arg"; done; eval "$last"; elif [ "$1" = capture-pane ]; then printf 'auto mode on\\n❯ Ready\\n'; fi\n`, { mode: 0o755 });
+  for (const cli of ['claude', 'codex', 'agy']) await fs.writeFile(path.join(bin, cli), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nprintf "%s|%s|%s|%s\\n" "${KEY-unset}" "${HOLD-unset}" "${UNUSED-unset}" "${HOME-unset}" >> "$CAPTURED"\n', { mode: 0o755 });
   const previous = { PATH: process.env.PATH, FAKE_LOG: process.env.FAKE_LOG, CAPTURED: process.env.CAPTURED }; Object.assign(process.env, { PATH: `${bin}:${previous.PATH}`, FAKE_LOG: log, CAPTURED: captured });
   const instance = new MachineService({ win: noWsl, stateDir: state, host: '127.0.0.1', port: 0 });
   const writeFile = fs.writeFile; const modes = [];
