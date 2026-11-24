@@ -199,12 +199,12 @@ const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md
 const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
 function composeRolePrompt(input) {
   const first = `Role: ${input.role}`;
-  if (input.role_prompt) return `${first}\n${input.role_prompt}`;
+  if (input.role_prompt && input.prompt_role !== 'assistant') return `${first}\n${input.role_prompt}`;
   const cards = ROLE_CARDS[input.role] || [];
   const header = cards.length ? 'Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context.' : 'Your role rules are below, already loaded: do not read these files again unless this text is no longer in your context.';
   const read = file => fs.readFileSync(path.join(ROOT, 'protocol', 'app', file), 'utf8').trimEnd();
-  const parts = [`${first}\n${header} \`<root>\` is \`${ROOT}\`.`, read(`${input.role}.md`)];
-  if (ROLE_REALISM.has(input.role)) parts.push(`--- realism.md ---\n${read('realism.md')}`);
+  const parts = [`${first}\n${header} \`<root>\` is \`${ROOT}\`.`, read(`${input.prompt_role === 'assistant' ? 'assistant' : input.role}.md`)];
+  if (input.prompt_role !== 'assistant' && ROLE_REALISM.has(input.role)) parts.push(`--- realism.md ---\n${read('realism.md')}`);
   for (const file of cards) parts.push(`--- ${file} ---\n${read(file)}`);
   const layers = typeof input.role_layers === 'string' ? input.role_layers.trim() : '';
   if (layers) parts.push(layers);
@@ -629,6 +629,12 @@ class MachineService {
     this.startingWorktrees.add(worktree); // released by start() once this session is recorded or failed
   }
   async createWorktree(input, sessionName) {
+    if (input.assistant === true) {
+      const worktree = path.join(this.stateDir, 'assistant');
+      if (Object.hasOwn(input, 'worktree') && (typeof input.worktree !== 'string' || path.resolve(input.worktree) !== worktree)) die('invalid start body');
+      await fsp.mkdir(worktree, { recursive: true });
+      return { worktree, defaultBranch: null, branch: null };
+    }
     if (input.worktree) {
       const worktree = path.resolve(input.worktree);
       if (input.role === 'worker' && input.branch) {
@@ -789,6 +795,8 @@ class MachineService {
   }
 
   async start(input) {
+    if (input.prompt_role === 'assistant' && (input.role !== 'lead' || input.assistant !== true)) die('invalid start body');
+    if (input.assistant === true && Object.hasOwn(input, 'worktree') && (typeof input.worktree !== 'string' || path.resolve(input.worktree) !== path.join(this.stateDir, 'assistant'))) die('invalid start body');
     for (const key of ['role', 'cli', 'thread_id', 'token']) if (!input[key]) die(`missing ${key}`);
     const name = input.name || this.sessionName(input.thread_id, input.role);
     safeName(name, 'session name');
@@ -813,7 +821,7 @@ class MachineService {
     await adapter.prepare?.(dir);
     const options = startOptions(input);
     if (!connectors.manifest(input.cli).models.efforts.length) options.effort = null;
-    const createdWorktree = !input.worktree;
+    const createdWorktree = input.assistant !== true && !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
     if (reserved) this.refuseSharedWorktree(reserved, name);
     let created = null;
@@ -835,7 +843,8 @@ class MachineService {
     const worktree = created.worktree;
     const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
-      branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
+      branch: input.assistant === true ? null : created.branch || input.branch || null, default_branch: input.assistant === true ? null : created.defaultBranch || input.default_branch || input.defaultBranch || null,
+      ...(input.assistant === true ? { assistant: true } : {}),
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     if (adapter.recordLaunch) adapter.recordLaunch(session, await this.versionGate(input.cli));
     let windowsTools;
@@ -869,7 +878,7 @@ class MachineService {
   async switchSession(name, input) {
     const session = this.managed(name), adapter = adapters[session.cli];
     if (!connectors.manifest(session.cli)?.capabilities.liveSwitch) die('unsupported cli');
-    if (!input || typeof input.switch_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.switch_id) || !input.account || typeof input.account.id !== 'string' || !Object.hasOwn(input.account, 'dir') || !(input.model === null || typeof input.model === 'string') || typeof input.project !== 'string' || !input.project || path.basename(input.project) !== input.project || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir)) die('invalid switch body');
+    if (!input || typeof input.switch_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.switch_id) || !input.account || typeof input.account.id !== 'string' || !Object.hasOwn(input.account, 'dir') || !(input.model === null || typeof input.model === 'string') || !(session.assistant === true && input.assistant === true) && (typeof input.project !== 'string' || !input.project || path.basename(input.project) !== input.project || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir))) die('invalid switch body');
     const dir = accountDir(input.account.dir, input.account.id);
     if (!dir && input.account.id !== defaultAccount(session.cli)) die('invalid default account');
     session.switches ||= {};
@@ -908,7 +917,7 @@ class MachineService {
       await this.persistSessions();
       const promptPath = path.join(this.stateDir, 'prompts', `${name}.md`);
       const rolePrompt = await fsp.readFile(promptPath, 'utf8');
-      const launchInput = { ...session, model: input.model, project: input.project, project_dir: input.project_dir };
+      const launchInput = { ...session, model: input.model, project: input.project, project_dir: session.assistant && input.assistant === true ? path.join(this.stateDir, 'assistant') : input.project_dir };
       const prepared = await this.prepareLaunch(launchInput, session, adapter, session.worktree, promptPath, rolePrompt, true);
       const result = await commandAsync('tmux', ['respawn-pane', '-k', '-t', `=${name}:`, prepared.commandText]);
       if (!result.ok) throw new Error(result.stderr.trim() || 'tmux respawn failed');
@@ -932,9 +941,9 @@ class MachineService {
   async prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, resume) {
     const name = session.name;
     const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
-    const read = await readProjectMcp(worktree, { wsl, mount, kernel: !!this.win?.detected?.kernel });
+    const read = session.assistant ? { mcp: null, warnings: [], hash: null, dropped: [] } : await readProjectMcp(worktree, { wsl, mount, kernel: !!this.win?.detected?.kernel });
     const { mcp, warnings } = read;
-    const tools = TOOL_ROLES.has(input.role);
+    const tools = TOOL_ROLES.has(input.role) && !session.assistant;
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
@@ -2289,6 +2298,17 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/win') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.win.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/assistant') {
+        const agent = await this.authorize(request, 'agent');
+        const input = await bodyOf(request);
+        if (!this.config.hub_url) return send(response, 503, { error: 'hub unavailable' });
+        let relay;
+        try { relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/assistant`, 'POST', { [HUB_HEADER]: await this.secret() }, { ...input, calling_session: agent.name }, 120000); }
+        catch { return send(response, 503, { error: 'hub unavailable' }); }
+        if (relay.status >= 502 && relay.status <= 504) return send(response, 503, { error: 'hub unavailable' });
+        response.writeHead(relay.status >= 200 && relay.status < 300 ? 200 : relay.status, { 'content-type': 'application/json; charset=utf-8' });
+        return response.end(relay.body);
+      }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
       throw Object.assign(new Error('not found'), { status: 404 });
     } catch (error) { if (!response.destroyed && !response.headersSent) send(response, error.status || 500, { ...(error.handoff ? { result: 'failed' } : {}), error: error.message || String(error) }); }
