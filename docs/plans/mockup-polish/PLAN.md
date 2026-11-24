@@ -215,6 +215,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | D1 | Earlier spot comments stay as pins on the mockup | The comment's text already says where; pins are a convenience | planning | Needs storing comments per mockup and drawing them on the overlay layer from S2 |
 | D2 | Make the mockup PNG on the machine when the phone's browser refuses | Only needed if Collin's browser refuses; HTML download still works | planning | Headless browser screenshot served from the machine; see Decision 7 |
 | D3 | Firefox PNG of a mockup that uses media queries | Only desktop Firefox drops width-based rules inside the SVG drawing; Chromium is right and the HTML download stays exact | verification | In the w x h helper frame, test each `@media` rule with `matchMedia` and unwrap the matching ones / drop the rest before serializing. Evidence: /tmp/wc-mockup-verify-WvBg2G/responsive.log (Firefox PNG button rgb(66,88,220) vs preview rgb(38,116,83)) |
+| D4 | Firefox PNG of a mockup that uses vh units | Only desktop Firefox resolves vh differently inside the SVG drawing (content pushed down and clipped); Chromium is right and the HTML download stays exact | verification | Resolve vh/vw to the mockup's w x h before serializing. Evidence: /tmp/wc-mockup-verify3-z7c4YF/firefox-viewport-download.png (vs chromium-viewport-download.png beside it) |
 
 ## Accepted Risks
 
@@ -368,3 +369,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — Choice: R2, app-chat-stability.spec.js: the load wait is written as a braced loop body with a `frame` local, fetched once for both waits.
 - 2026-11-23 — R2 accepted (band: scout): scout found no deviation; sub-lead re-ran spot-comment and chat-stability with repeat-each=2: 68 passed.
 - 2026-11-23 — Verification 3: FAIL (gpt-6.2-sol, commit 192b501e), 3 gaps; 1 judged rare (background-blend-mode) and recorded in Accepted Risks; 2 sent to the lead for defer/fix.
+- 2026-11-23 — Lead answered verification-3 gaps: fix 1 (spot draft clears right after the POST succeeds); defer 2 as D4.
