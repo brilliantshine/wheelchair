@@ -121,3 +121,27 @@ node --test viewer/test/*.test.js   # tests 935  # pass 933  # fail 2
   not ok 527 - 6 message clears debt (viewer/test/app-quiet.test.js, untouched)
   re-run alone: node --test viewer/test/app-quiet.test.js  ->  # pass 27 # fail 0
 ```
+
+### Remediation 2 — 2026-11-23
+
+Verification attempt 2 (gpt-6.2-sol, commit `699c1a26`) reported 3 gaps. The lead answered: fix 1 and 3, defer 2 (PLAN.md Deferred D3: Firefox PNG of a mockup that uses media queries). Task R2 (claude light / claude-haiku-5-5), see `REMEDIATION-2.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S1: the Done card's "Start a thread about it" handler passed the card captured at draw time | `viewer/pages/thread.js:93` (`press(live(card), 'start-thread', text)`) | code read; app-threads spec |
+| S1/S2 validation: the hand-off test counted iframe loads before the first load finished (flaky in Firefox) | `viewer/test/app-spot-comment.spec.js:252-253` and `viewer/test/app-chat-stability.spec.js:38-41` wait for `waitForLoadState('load')` before counting | the worker ran them with `--repeat-each=3` (102 passed); the sub-lead ran them with `--repeat-each=2` (68 passed) |
+
+Full validation on the merged tip (sub-lead, 21:00 PST):
+```
+npm --prefix viewer run test:browser -- --shard=N/6
+  1/6 exit 0   3 skipped 267 passed
+  2/6 exit 0             303 passed
+  3/6 exit 1  14 skipped 217 passed, 3 failed
+  4/6 exit 0   3 skipped 215 passed
+  5/6 exit 0             303 passed
+  6/6 exit 0  14 skipped 168 passed
+  total 1473 passed, 34 skipped, 3 failed
+  failed: [firefox] app-accounts.spec.js:576, :584, :591 "lead waiting line" (expects "Waiting for room, about <digit>"; got "about Tue 12:01 AM": the +3h time crosses midnight)
+  same three fail on main (canonical clone 25f34a45) at the same hour: npm --prefix viewer run test:browser -- app-accounts.spec.js -g "lead waiting line" -> 3 failed, 4 passed
+node --test viewer/test/*.test.js   # tests 935  # pass 934  # fail 1  (the known harness timing flake)
+```
