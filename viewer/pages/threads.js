@@ -23,6 +23,7 @@
   let stages = {};   // thread id -> stage label, from the features data
   let waiting = {};  // thread id -> number of open cards that need you
   let onboarding = null; // GET /onboarding when show is true, else null
+  let preview = '';      // one line of the assistant's latest reply
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -83,8 +84,26 @@
     return li;
   }
 
+  // The assistant's pinned row: first in the list, outside every project group, never archivable.
+  function assistantRow(t) {
+    const li = el('li', 'row assistant-row' + (t.id === currentId ? ' current' : ''));
+    li.dataset.id = t.id;
+    const top = el('div', 'top');
+    top.appendChild(el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : 'blue')));
+    const a = el('a', 'row-link title', 'Personal assistant');
+    a.href = '/wheelchair/app/thread?id=' + encodeURIComponent(t.id);
+    if (t.id === currentId) a.setAttribute('aria-current', 'page');
+    top.appendChild(a);
+    const n = waiting[t.id] || 0;
+    if (n) top.appendChild(el('span', 'badge warn', n + ' needs you'));
+    li.appendChild(top);
+    li.appendChild(el('div', 'sub assistant-preview', preview || 'Ask it about your threads.'));
+    return li;
+  }
+
   function render() {
-    const shown = threads.filter((t) => !!t.archived === showArchived)
+    const assistant = threads.find((t) => t.assistant);
+    const shown = threads.filter((t) => !t.assistant && !!t.archived === showArchived)
       .sort((a, b) => stamp(b) - stamp(a));
     archivedBtn.setAttribute('aria-pressed', String(showArchived));
     archivedBtn.textContent = showArchived ? '\u2190 Back to threads' : 'Archived';
@@ -92,6 +111,7 @@
     emptyEl.textContent = showArchived ? 'No archived threads.' : 'No threads yet.';
     emptyEl.hidden = shown.length > 0;
     if (showArchived) listEl.appendChild(el('li', 'group-label', 'Archived'));
+    if (assistant && !showArchived) listEl.appendChild(assistantRow(assistant));
     if (onboarding && !showArchived) {
       const li = el('li', 'card onboarding'); li.id = 'onboarding';
       li.appendChild(el('h3', '', 'Set up an agent'));
@@ -162,6 +182,18 @@
     render();
   }
 
+  // The first line of the assistant's newest reply, from its chat; a failure keeps the last one.
+  async function loadPreview(threadId) {
+    try {
+      const res = await fetch(API + '/threads/' + encodeURIComponent(threadId) + '/chat');
+      if (!res.ok) return;
+      const body = await res.json();
+      const last = (body.items || []).filter((i) => i.type === 'assistant' && i.text).pop();
+      const line = last ? String(last.text).replace(/[#*_`>\[\]]/g, '').split('\n').map((x) => x.trim()).find(Boolean) || '' : '';
+      preview = line.length > 90 ? line.slice(0, 89) + '\u2026' : line;
+    } catch (e) { /* keep the last preview */ }
+  }
+
   async function poll() {
     pollOnboarding();
     try {
@@ -173,6 +205,8 @@
       const payload = await res.json();
       const list = payload.threads || []; notices = payload.revoke_notices || [];
       errorEl.hidden = true;
+      const mine = list.find((t) => t.assistant);
+      if (mine) await loadPreview(mine.id); else preview = '';
       apply(list, features);
       try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ threads: list, features })); } catch (e) { /* no cache */ }
     } catch (e) {
