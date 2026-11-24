@@ -34,23 +34,25 @@
     "glob": "viewer/index.html",
     "tests": [
       "viewer/test/browser.spec.js",
-      "viewer/test/touch.spec.js"
+      "viewer/test/touch.spec.js",
+      "viewer/test/pages.spec.js"
     ]
   },
   {
-    "glob": "viewer/app/doc.html",
+    "glob": "viewer/doc.html",
+    "tests": [
+      "viewer/test/render.spec.js",
+      "viewer/test/pages.spec.js"
+    ]
+  },
+  {
+    "glob": "viewer/doc.js",
     "tests": [
       "viewer/test/render.spec.js"
     ]
   },
   {
-    "glob": "viewer/app/doc.js",
-    "tests": [
-      "viewer/test/render.spec.js"
-    ]
-  },
-  {
-    "glob": "viewer/app/pages/markdown.js",
+    "glob": "viewer/pages/markdown.js",
     "tests": [
       "viewer/test/render.spec.js"
     ]
