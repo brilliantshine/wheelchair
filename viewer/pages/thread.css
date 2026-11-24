@@ -453,4 +453,5 @@ iframe.mockup-frame { display: block; position: absolute; top: 0; left: 0; borde
 
 /* The assistant's thread: no asides, and a label on what it sent to another thread's lead. */
 body.assistant-thread .aside-selection, body.assistant-thread .aside-handoff, body.assistant-thread #aside-panel { display: none !important; }
+body.assistant-thread #composer .hint { display: none; }
 .bubble.human .by-assistant { display: block; margin-bottom: 4px; font-size: 11px; color: var(--dim); }

@@ -2,7 +2,9 @@
 const { test, expect } = require('@playwright/test');
 const { startWorld, signIn } = require('./helpers/app-threads-world');
 
-const { api } = require('./helpers/app');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { api, card } = require('./helpers/app');
 
 const setAssistant = (page, ctx, value) => api(ctx, '/settings/preferences', { method: 'PUT', body: { assistant: value } });
 const status = async (ctx) => (await api(ctx, '/assistant')).body;
@@ -106,5 +108,77 @@ test('Settings control turns the assistant on and off', async ({ page }) => {
     await row.getByRole('radio', { name: 'Off' }).click();
     await expect(row.getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true');
     expect((await status(ctx)).on).toBe(false);
+  } finally { await ctx.close(); }
+});
+
+async function seedAssistant(ctx, id, lines) {
+  const file = path.join(ctx.state, 'threads', `${id}.json`);
+  const t = JSON.parse(await fs.readFile(file, 'utf8'));
+  const log = path.join(ctx.state, `${id}.jsonl`);
+  const rows = [{ type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: '[wc:role] x' } }];
+  for (const [type, text, timestamp] of lines) {
+    rows.push(type === 'human'
+      ? { timestamp, type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: text } }
+      : { timestamp, type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } });
+  }
+  await fs.writeFile(log, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  await ctx.patch(id, (x) => { x.sessions[0].transcript_path = log; x.sessions[0].cli = 'claude'; });
+  return t.sessions[0];
+}
+
+test('Threads list: assistant row counts its open question, shows the first reply line, fetches the preview once', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    await ctx.make({ cli: 'claude', title: 'Usage page' });
+    await setAssistant(page, ctx, 'on');
+    const id = await assistantId(page, ctx);
+    const session = await seedAssistant(ctx, id, [
+      ['human', 'what is going on?', '2026-03-04T05:00:00.000Z'],
+      ['assistant', 'old reply', '2026-03-04T05:01:00.000Z'],
+      ['human', 'and now?', '2026-03-04T05:02:00.000Z'],
+      ['assistant', '\n## **Waiting** on `snake_case` and #12\nsecond line', '2026-03-04T05:03:00.000Z'],
+    ]);
+    const made = await card(ctx, id, session.name, { kind: 'question', fits: 'x', question: 'Which thread?', why: 'y', options: [{ id: 'a', label: 'A', consequence: 'c' }, { id: 'b', label: 'B', consequence: 'd' }], leaning: 'a' });
+    expect(made.status, JSON.stringify(made.body)).toBe(202);
+    // The pop-up also reads this chat, so count only the fetches that threads.js itself makes.
+    await page.addInitScript(() => {
+      const real = window.fetch; window.__previewFetches = 0;
+      window.fetch = function (url, ...rest) {
+        if (String(url).endsWith('/chat') && /threads\.js/.test(new Error().stack || '')) window.__previewFetches += 1;
+        return real.call(this, url, ...rest);
+      };
+    });
+    await signIn(page, ctx);
+    await page.goto(`${ctx.server.url}/app/threads`);
+    const row = page.locator('.assistant-row');
+    await expect(row.locator('.badge.warn')).toHaveText('1 needs you');
+    await expect(row.locator('.assistant-preview')).toHaveText('Waiting on snake_case and #12');
+    // The cached list paints with the cached preview on the next load.
+    await page.route('**/api/threads/*/chat', (route) => route.abort());
+    await page.reload();
+    await expect(row.locator('.assistant-preview')).toHaveText('Waiting on snake_case and #12');
+    await page.unroute('**/api/threads/*/chat');
+    await page.reload();
+    await expect(row.locator('.assistant-preview')).toHaveText('Waiting on snake_case and #12');
+    await page.waitForTimeout(11000); // two or more 5 s polls
+    expect(await page.evaluate(() => window.__previewFetches)).toBe(1);
+  } finally { await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
+});
+
+test('assistant page composer says Message the assistant and has no plan hint; other threads keep theirs', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    const other = await ctx.make({ cli: 'claude', title: 'Usage page' });
+    await setAssistant(page, ctx, 'on');
+    const id = await assistantId(page, ctx);
+    await seedAssistant(ctx, id, [['human', 'hi', '2026-03-04T05:00:00.000Z'], ['assistant', 'Hello.', '2026-03-04T05:01:00.000Z']]);
+    await signIn(page, ctx);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${ctx.server.url}/app/thread?id=${id}`);
+    await expect(page.locator('#msg')).toHaveAttribute('placeholder', 'Message the assistant');
+    await expect(page.locator('#composer .hint')).toBeHidden();
+    await page.goto(`${ctx.server.url}/app/thread?id=${other.id}`);
+    await expect(page.locator('#msg')).toHaveAttribute('placeholder', 'Message the lead');
+    await expect(page.locator('#composer .hint')).toBeVisible();
   } finally { await ctx.close(); }
 });

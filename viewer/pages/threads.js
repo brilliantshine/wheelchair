@@ -182,16 +182,31 @@
     render();
   }
 
-  // The first line of the assistant's newest reply, from its chat; a failure keeps the last one.
+  // One line from the assistant's newest reply: its first non-empty line, minus leading Markdown block
+  // markers and emphasis marks, cut at 90 characters.
+  function previewLine(text) {
+    const line = String(text).split('\n').map((x) => x.trim()).find(Boolean) || '';
+    const plain = line.replace(/^(?:#{1,6}\s+|>\s*|[-*]\s+|\d+\.\s+)+/, '').replace(/\*\*|`/g, '').trim();
+    return plain.length > 90 ? plain.slice(0, 89) + '\u2026' : plain;
+  }
+
+  // Fetched on load and then at most once a minute, never awaited by the list; a failure keeps the last one.
+  const PREVIEW_KEY = 'wheelchair.assistantPreview';
+  let previewAt = 0;
+  let previewBusy = false;
+  try { preview = sessionStorage.getItem(PREVIEW_KEY) || ''; } catch (e) { /* none yet */ }
   async function loadPreview(threadId) {
+    if (previewBusy || Date.now() - previewAt < 60000) return;
+    previewBusy = true; previewAt = Date.now();
     try {
       const res = await fetch(API + '/threads/' + encodeURIComponent(threadId) + '/chat');
       if (!res.ok) return;
       const body = await res.json();
       const last = (body.items || []).filter((i) => i.type === 'assistant' && i.text).pop();
-      const line = last ? String(last.text).replace(/[#*_`>\[\]]/g, '').split('\n').map((x) => x.trim()).find(Boolean) || '' : '';
-      preview = line.length > 90 ? line.slice(0, 89) + '\u2026' : line;
-    } catch (e) { /* keep the last preview */ }
+      const next = last ? previewLine(last.text) : '';
+      try { sessionStorage.setItem(PREVIEW_KEY, next); } catch (e) { /* no cache */ }
+      if (next !== preview) { preview = next; render(); }
+    } catch (e) { /* keep the last preview */ } finally { previewBusy = false; }
   }
 
   async function poll() {
@@ -206,8 +221,9 @@
       const list = payload.threads || []; notices = payload.revoke_notices || [];
       errorEl.hidden = true;
       const mine = list.find((t) => t.assistant);
-      if (mine) await loadPreview(mine.id); else preview = '';
+      if (!mine) preview = '';
       apply(list, features);
+      if (mine) loadPreview(mine.id);
       try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ threads: list, features })); } catch (e) { /* no cache */ }
     } catch (e) {
       errorEl.hidden = false;
