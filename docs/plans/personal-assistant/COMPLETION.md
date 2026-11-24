@@ -226,3 +226,17 @@ Attempt 4: both verifiers FAIL (`REMEDIATION-4.md`). The lead declined K5: on a 
 Validation at `fc8f4525`:
 - `TZ=UTC npm --prefix viewer run test:browser`: `34 skipped`, `1488 passed (18.7m)`, exit 0.
 - `node --test viewer/test/*.test.js` (run alone; a run alongside the browser suite stalled after 231 tests and timed out): `# tests 956`, `# pass 955`, `# fail 1` — `app-harnesses.test.js:311` (pre-existing).
+
+### Remediation 5 (after verification attempt 5 at `0813d854`)
+
+Attempt 5: Claude verifier PASS (no gaps), GPT verifier FAIL (`REMEDIATION-5.md`). One rare path (assistant restart of an imported thread before its import context) went to Accepted Risks. The lead declined L4 (the unread dot counts only what the user did not write).
+
+| Gap | Fix | Task | Evidence |
+|---|---|---|---|
+| L2 Settings shows Off after a failed first start; Off does nothing | the save answers 200 with the saved preferences and `assistant_error`; Settings shows On with the error, so Off sends the save (`viewer/app/routes.js`, `viewer/app/assistant.js`, `viewer/pages/settings.js`) | R8 | `viewer/test/assistant.test.js`; `viewer/test/app-assistant.spec.js` failed-start Settings test |
+| L1 second draft wiped by the first send | the box clears only if it still holds the sent draft (`viewer/pages/assistant-popup.js`) | R8 | `app-assistant-popup.spec.js` held-POST draft test |
+| L5 "No threads yet" beside the pinned row | empty message hidden while the assistant row shows (`viewer/pages/threads.js`) | R8 | `app-assistant.spec.js` |
+
+Validation at `68dbb6e2`:
+- `TZ=UTC npm --prefix viewer run test:browser`: `34 skipped`, `1494 passed (19.0m)`, exit 0.
+- `node --test viewer/test/*.test.js`: `tests 956`, `pass 955`, `fail 1` — `app-harnesses.test.js:311` (pre-existing). One earlier run of the same command stalled without a summary and was stopped; a stall like this was also seen before the page and remediation work, so it is not attributed to a specific change.
