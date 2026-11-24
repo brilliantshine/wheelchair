@@ -43,7 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | Superseded Decision 7's worker rule: only full runs (started by full-run.sh) may take the larger worker count, and only when no other full run is live; all other runs use 2. | Round 2: a short picked run must not hold a 10-minute full run at 2. | review-round-2 |
 | 12 | Full-run evidence carries to descendant commits the picker selects nothing for, and to a conflict-free default-branch merge whose picked check passed. Verifiers switch to picked-only mode only when the brief gives a picker base and says the starter runs the full run. | Round 2: bookkeeping commits and rollout handshake. | review-round-2 |
 | 13 | The verifier handshake has two forms (`Full run: by the starter` / `not needed: clean merge of the default branch`); with the first, verifiers skip whole suites the picker selects. Coverage carries across picker-empty descendants of any covered commit. A full-run failure confirmed on main (same test, same error) does not fail the gate. | Round 3. | review-round-3 |
-| 14 | Superseded D8 and D13's clean-merge parts: a conflict-free merge of the default branch gets a picked verifier check plus the usual full run in the background before the push; there is no clean-merge exemption. IDEA "What good looks like" and Constraint reworded. | Collin chose to simplify after three review rounds kept finding holes in the exemption. | idea-change |
+| 14 | Superseded D8's, D12's and D13's clean-merge parts: a conflict-free merge of the default branch gets a picked verifier check plus the usual full run in the background before the push; there is no clean-merge exemption. IDEA "What good looks like" and Constraint reworded. | Collin chose to simplify after three review rounds kept finding holes in the exemption. | idea-change |
 
 ## Spec
 
@@ -92,7 +92,8 @@ are never selected.
 Rules, applied to each changed path; a test file is selected once even if several rules pick
 it. **Only paths that exist at `<head>` are ever put in a command.**
 
-0. **Deletions and renames.** A rename is treated as a change to its new path. A deleted test
+0. **Deletions and renames.** A rename is treated as a change to both its old and its new
+   path (so a moved fixture still selects the tests mapped to its old path). A deleted test
    file selects nothing. A deleted non-test file is treated like a changed file of the same
    path (rules 2–5), so tests that still import it at head are found, else the fallback runs.
 1. A changed test file (`viewer/test/*.test.js`, `viewer/test/*.spec.js`,
@@ -149,7 +150,10 @@ continuing past failures. It writes `<log-dir>/summary.txt`: first line
 `commit <full sha of HEAD>`, then one line per suite `suite <name> exit <n>`. It refuses
 (exit 2) when `git status --porcelain --untracked-files=no` is not empty. It exits 0 only
 when every suite exited 0. It does not run smoke, live or `./install.sh`. A full run
-**passes** for a commit when `summary.txt` names that commit and every suite exit is 0.
+**passes** for a commit when `summary.txt` names that commit and every suite exit is 0, or
+when every failure in it was confirmed already on main (S5.5) and those failures are
+written down with the commit (COMPLETION.md for the sub-lead, the `done` card's note for the
+lead).
 
 ### S3. Browser workers when alone
 
@@ -210,7 +214,9 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    validation command as written, so older plans that list whole suites still get them.
 2. **Comparing a failure with main** (verifier.md): run only the failing test files at the
    **comparison commit** the brief names (default: `git merge-base origin/<default branch>
-   HEAD`), never the whole suite. Get that tree as its own clone in a scratch directory
+   HEAD`), never the whole suite; for a suite S1 marks "(always full)" (one runner script),
+   the suite command is the unit, and the same failure means the same failing check name
+   and message in its output. Get that tree as its own clone in a scratch directory
    outside any repository: `git clone --quiet <your checkout> <scratch>/main` then
    `git -C <scratch>/main checkout --quiet --detach <commit>` (this writes only the scratch
    clone's own metadata), and link into it the dependency folders present in your own
@@ -227,12 +233,13 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
 4. **Which commits a verifier brief names.** The comparison commit is always the merge-base of
    the checked commit with the default branch. The picker base is: the comparison commit for
    a first check of a build, small fix or after-done fix; the commit the previous attempt
-   checked, for a re-check after remediation or a failed attempt (so the picker covers only
-   the fix); the default-branch tip that was merged in, for a check after merging the default
+   checked, for a re-check after remediation, a failed attempt or a repair of a failed pull
+   request check (so the picker covers only the fix); when the commit to check is that same
+   commit (nothing changed since), the previous attempt's picker base again, and the brief
+   names the commands that failed last time so they are re-run; the default-branch tip that was merged in, for a check after merging the default
    branch (lead.md Making the pull request mergeable 7), so only this branch's own changes
    are retested on top of it; this branch's last pushed commit, for a check after merging
-   others' commits from the pull request branch (step 6 and the non-fast-forward rule),
-   which is never exempt from the full run.
+   others' commits from the pull request branch (step 6 and the non-fast-forward rule).
 5. **Sub-lead at the end of a build**: "full validation" before COMPLETION.md is replaced by
    the targeted task checks already run. When it starts verifiers it also starts the full run
    on the same commit in the background, logs in a scratch directory outside the repository.
@@ -391,9 +398,25 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 4 — 2026-11-23
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude (reviewer-7); mechanics: gpt (reviewer-8); cross-family: yes.
 
 **Changed since Round 3:** Round 3 fixes (S1 rule 4 suites; S5.0 handshake; S5.3 skip whole suites with `Full run: by the starter`; S5.4 step 6 vs 7 bases; S5.5/S5.6 baseline exception; S4 timeout; Validation S3 line), then D14: clean-merge exemption removed (S5.0 handshake single form, S5.3, S5.6 "Covered"), IDEA What good looks like and Constraint reworded.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | D12 still lists the clean-merge carry | upheld | D14 names D12 |
+| intent | minor | S5.4 "never exempt" wording stale | upheld | Phrase removed |
+| mechanics | blocking | Same-commit retry gets an empty picker diff | downgraded (major) | S5.4 keeps the previous base and re-runs failed commands |
+| mechanics | blocking | Fixture move under docs/ looks docs-only | downgraded (major) | S1 rule 0 uses both rename endpoints |
+| mechanics | major | Full run with baseline-only failures cannot establish coverage | upheld | S2 "passes" includes confirmed-and-recorded baseline failures |
+| mechanics | major | No picker base for a check-only PR repair | upheld | S5.4 covers repairs |
+| mechanics | major | Per-file comparison impossible for single-runner shell suites | upheld | S5.2 suite command is the unit, same check name and message |
+
+### Round 5 — 2026-11-23
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 4:** D14 names D12; S5.4 step-6 phrase removed; S1 rule 0 both rename endpoints; S2 "passes" with recorded baseline failures; S5.4 repair base and same-commit retry; S5.2 comparison unit for single-runner suites.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
