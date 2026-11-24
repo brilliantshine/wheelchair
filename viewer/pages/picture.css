@@ -1,7 +1,7 @@
 /* The app's full-size picture page. Tokens from app.css; form styles come from thread.css. */
 .picture-page { display: flex; flex-direction: column; min-width: 0; padding: 12px 16px;
   height: calc(100vh - var(--nav-h, 48px)); box-sizing: border-box; }
-.picture-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; min-width: 0; }
+.picture-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 10px; min-width: 0; }
 .picture-bar .back { text-decoration: none; font-size: 13px; white-space: nowrap; }
 .picture-bar h1 { margin: 0; font-size: 15px; overflow-wrap: anywhere; min-width: 0; }
 #message { margin: 24px 0; font-size: 14px; }
@@ -13,3 +13,6 @@
 #download-note { margin: 0 0 8px; font-size: 13px; }
 .picture-body .picture-mockup { display: block; box-sizing: content-box; flex: none; border: 1px solid var(--line); background: #fff; }
 .picture-body img.picture-shot { display: block; max-width: none; width: auto; height: auto; }
+.picture-body .picture-mockup-wrap { position: relative; display: block; width: max-content; flex: none; }
+#spot-note, #spot-sent { margin: 0 0 8px; font-size: 13px; }
+.picture-bar .spot-btn { flex: none; }
