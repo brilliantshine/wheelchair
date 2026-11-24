@@ -695,7 +695,7 @@
     }
   }
 
-  const CARD_KINDS = new Set(['offer', 'idea', 'deferred', 'question', 'reach', 'approval', 'progress', 'needs', 'merged', 'done', 'check', 'diagram', 'image', 'file', 'stub', 'sudo', 'lesson']);
+  const CARD_KINDS = new Set(['offer', 'idea', 'deferred', 'question', 'reach', 'approval', 'progress', 'needs', 'merged', 'done', 'check', 'diagram', 'image', 'file', 'stub', 'sudo', 'lesson', 'permit']);
   // Everything outside the card itself that its drawing reads; a change redraws just that card.
   function cardSig(card, pinned) {
     const t = thread();
@@ -1184,7 +1184,7 @@
         const a = el('div', 'actions');
         for (const [value, label] of [['allow', 'Allow'], ["don't allow", "Don't allow"]]) {
           const pk = card.answered && card.answered_value === value && !card.allow_failed;
-          const b = button(label, (pk ? 'picked' : ''), () => press(card, 'picked', value), off);
+          const b = button(label, (pk ? 'picked' : ''), () => press(live(card), 'picked', value), off);
           b.dataset.option = value;
           if (pk) b.prepend(icon(ICON.check, 12), document.createTextNode(' '));
           a.appendChild(b);
