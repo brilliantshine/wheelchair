@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Verifier briefs name a picker base and a separate comparison commit (merge-base with the default branch); the main comparison uses `git archive` into scratch. | Round 1: a retry's base is not main; verifiers cannot add git worktrees. | review-round-1 |
 | 11 | Superseded Decision 7's worker rule: only full runs (started by full-run.sh) may take the larger worker count, and only when no other full run is live; all other runs use 2. | Round 2: a short picked run must not hold a 10-minute full run at 2. | review-round-2 |
 | 12 | Full-run evidence carries to descendant commits the picker selects nothing for, and to a conflict-free default-branch merge whose picked check passed. Verifiers switch to picked-only mode only when the brief gives a picker base and says the starter runs the full run. | Round 2: bookkeeping commits and rollout handshake. | review-round-2 |
+| 13 | The verifier handshake has two forms (`Full run: by the starter` / `not needed: clean merge of the default branch`); with the first, verifiers skip whole suites the picker selects. Coverage carries across picker-empty descendants of any covered commit. A full-run failure confirmed on main (same test, same error) does not fail the gate. | Round 3. | review-round-3 |
 
 ## Spec
 
@@ -111,11 +112,13 @@ it. **Only paths that exist at `<head>` are ever put in a command.**
    may be test paths or a suite name meaning that whole suite. The builder seeds it by
    grepping the test files for every repository path they read (`git ls-files`, `readFileSync`, `path.join`
    with `__dirname`, served URLs); it need not be complete, because of rule 5.
-4. Files that fan out select their whole suite: anything under `viewer/test/helpers/` and
-   `viewer/test/fixtures/` if present, `viewer/playwright.config.js`, `viewer/package.json`,
-   `viewer/package-lock.json`, non-test files in `machine/test/`, `test-support/run-dir.js`;
-   any file under `test-support/`, `sensitivity/`, `codex/`, `install/`, `sudo-helper/`
-   selects that suite. `install.sh` selects install.
+4. Files that fan out select whole suites: anything under `viewer/test/helpers/` or
+   `viewer/test/fixtures/` (if present), `viewer/playwright.config.js`, `viewer/package.json`
+   and `viewer/package-lock.json` select viewer-node and viewer-browser; non-test files in
+   `machine/test/` select machine; `test-support/run-dir.js` selects viewer-node,
+   viewer-browser, machine and test-support (all of them use it); any other file under
+   `test-support/`, `sensitivity/`, `codex/`, `install/`, `sudo-helper/` selects that
+   directory's suite. `install.sh` selects install.
 5. **Fallback:** a changed source file under `viewer/` or `machine/` that rules 2–3 map to no
    test selects its component's whole suites (viewer: viewer-node and viewer-browser;
    machine: machine). Any other changed path outside `docs/` that no rule or map entry
@@ -179,8 +182,9 @@ In `viewer/test/app-harnesses.test.js` (the "switching a harness off … without
 around lines 298-319), keep the never-resolving, rejected and 409 machine requests. Replace
 `assert.ok(Date.now() - started < 1000)` and the first 100 ms sleep: assert the route answers
 200 **while the never-resolving request is still pending**, and wait for all three DELETEs by
-an observed event (a promise resolved when the third call arrives), with a safety timeout of
-at least 10 seconds that fails the test instead of hanging. The switch-on half (the second
+an observed event (a promise resolved when the third call arrives). One safety timeout of at
+least 10 seconds covers both the route's response and the DELETE observation, and fails the
+test instead of hanging. The switch-on half (the second
 sleep and `assert.deepEqual(calls, [])`) stays as it is. `viewer/app/routes.js` does not
 change.
 
@@ -196,9 +200,10 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    `node test-support/pick-tests.js --base <commit>` and
    `bash test-support/full-run.sh <log-dir>`. Rules 3–6 below apply only in an opted-in
    project, and rule 2 too; elsewhere today's rules stand.
-   **Handshake:** a verifier uses rules 2–3 only when its brief gives a picker base and says
-   the starter runs the full run; a brief without both gets today's behaviour. So a lead or
-   sub-lead still on older rules never gets a verifier that skips the full suite.
+   **Handshake:** a verifier uses rules 2–3 only when its brief gives a picker base and a
+   `Full run:` line, either `by the starter` or `not needed: clean merge of the default
+   branch` (S5.6); a brief without both gets today's behaviour. So a lead or sub-lead still
+   on older rules never gets a verifier that skips the full suite.
 1. **Spec validation commands** (lead.md, step 4.6): in an opted-in project the lead writes
    targeted commands per Spec item and does not list whole-suite or full-run commands as
    validation; the full run is the pusher's (5, 6). Verifiers always run every Spec
@@ -215,22 +220,28 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    different reason, is the branch's failure. Report the comparison commit.
 3. **Verifiers in an opted-in project** run the Spec's commands and the commands the picker
    prints for the **picker base** the brief names; never the full-run command, and never a
-   whole suite the picker did not select. The report names both commits and the picked
-   commands.
+   whole suite the picker did not select. When the brief says `Full run: by the starter`, a
+   whole suite the picker selects is skipped (the starter's full run covers it on the same
+   commit) and the report says so; with `not needed: clean merge`, picked whole suites run.
+   The report names both commits and the picked commands.
 4. **Which commits a verifier brief names.** The comparison commit is always the merge-base of
    the checked commit with the default branch. The picker base is: the comparison commit for
    a first check of a build, small fix or after-done fix; the commit the previous attempt
    checked, for a re-check after remediation or a failed attempt (so the picker covers only
    the fix); the default-branch tip that was merged in, for a check after merging the default
-   branch (repair or head changed, lead.md Making the pull request mergeable 6–7), so only
-   this branch's own changes are retested on top of it.
+   branch (lead.md Making the pull request mergeable 7), so only this branch's own changes
+   are retested on top of it; this branch's last pushed commit, for a check after merging
+   others' commits from the pull request branch (step 6 and the non-fast-forward rule),
+   which is never exempt from the full run.
 5. **Sub-lead at the end of a build**: "full validation" before COMPLETION.md is replaced by
    the targeted task checks already run. When it starts verifiers it also starts the full run
    on the same commit in the background, logs in a scratch directory outside the repository.
    It sends the build `result` only when the verifiers pass **and** the full run passes for
    the commit it reports, and pastes `summary.txt` into COMPLETION.md. A full-run failure is a
    gap like a verifier gap (same remediation, counting, two-attempt rule and realism
-   judgment). When a new commit replaces the one a full run is checking, stop that run first;
+   judgment), except a failure the starter confirms is already on main by S5.2's method (same
+   test, same error at the comparison commit): that does not fail the gate and is listed in
+   COMPLETION.md (or, for the lead, the `done` card's note). When a new commit replaces the one a full run is checking, stop that run first;
    after the fix, verifiers re-check with the previously checked commit as picker base, as in 4, and the full run
    repeats on the new commit.
 6. **Lead before a push that adds commits** (small fix, after-done fix, repair) runs the full
@@ -240,15 +251,17 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    attempts and Collin's existing choice (push it as it is, or drop it and revert); for a
    repair (Making the pull request mergeable 6–8) nothing unverified is pushed and the
    budget's `needs` card applies, as today.
-   **Covered:** a commit Y is covered by a passing full run on commit X when X is Y or an
-   ancestor of Y and the picker selects nothing for X..Y (so COMPLETION.md and
-   `status: done` commits stay covered). No full run is needed when:
+   The same baseline exception as 5 applies to the lead's full runs.
+   **Covered:** a commit with a passing full run is covered; so is a passed clean-merge
+   check's merge commit (below); and so is any descendant Y of a covered commit X when the
+   picker selects nothing for X..Y (so COMPLETION.md, `status: done` and Accepted Risks
+   record commits stay covered). No full run is needed when:
    - the commit to push is covered; or
    - the push is a conflict-free merge of the default branch into a covered commit
-     (Making the pull request mergeable 6–7):
+     (Making the pull request mergeable 7), with the brief's `Full run: not needed: clean
+     merge of the default branch`:
      the verifier's picked run (base = the merged default-branch tip) is its check, as
-     Collin asked. Once that check passes, the merge commit counts as covered too, so a later
-     clean merge keeps the exemption. A merge with conflicts gets the full run.
+     Collin asked. Once that check passes, the merge commit counts as covered. A merge with conflicts gets the full run.
 7. **Workers** keep running their task's commands; worker.md may point them at the picker for
    their own changes. No worker runs the full run.
 8. AGENTS.md's Verification section and CONTRIBUTING.md name the picker and the full run,
@@ -278,8 +291,9 @@ These are for this thread's verifiers, which run under the installed rules.
   installed rules a verifier may run it too.)
 - `node --test viewer/test/protocol-rules.test.js` exits 0 after the protocol edits.
 - A browser run with `WHEELCHAIR_FULL_RUN=1` and no other full run uses `min(6, floor(cpus/2))`
-  workers; a second full run started while the first runs uses 2, and a run without the
-  variable uses 2 (check each runner's reported worker count).
+  workers (at least 2); a second full run started while the first runs uses 2; a run without
+  the variable uses 2 and does not register, so a full run started while it is live still
+  gets the larger count (check each runner's reported worker count).
 
 ## Deferred
 
@@ -365,12 +379,20 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 3 — 2026-11-23
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude (reviewer-5); mechanics: gpt (reviewer-6); cross-family: yes.
 
 **Changed since Round 2:** S3 only full runs (WHEELCHAIR_FULL_RUN) take the larger count; S5.0 rule 2 opted-in only and the verifier handshake; S5.2 scratch clone, same-test-same-error; S5.3 no-base sentence removed; S5.5 re-check base; S5.6 repairs vs push-as-is, "covered" definition, merge commit covered; S1 rule 3 graphs entry; summary wording; Validation S3 line.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Whole suites picked by the verifier duplicate the parallel full run | upheld | S5.3 skip with `by the starter` |
+| intent | minor | Step 6 (PR-branch merge) cited as a default-branch merge | upheld | S5.4/S5.6 cite 7; step 6 base and not exempt |
+| mechanics | blocking | Handshake blocks the clean-merge exemption | downgraded (major) | D13; second handshake form |
+| mechanics | major | Coverage does not carry from a covered merge commit | upheld | D13; "Covered" rewritten |
+| mechanics | major | Baseline failures on main fail the full-run gate | upheld | D13; S5.5/S5.6 baseline exception |
+| mechanics | major | run-dir.js suites unnamed; browser misses | upheld | S1 rule 4 names suites |
+| mechanics | minor | S4 timeout does not cover the route await | upheld | S4 one timeout for both |
+| mechanics | minor | Validation misses ordinary-run-live case and floor | upheld | Validation line |
 
 ## Prior Work
 
