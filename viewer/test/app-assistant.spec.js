@@ -54,10 +54,11 @@ test('assistant thread page: no project controls, labels, seen marker', async ({
     await setAssistant(page, ctx, 'on');
     const id = await assistantId(page, ctx);
     const at = '2026-03-04T05:06:07.000Z';
+    const cardAt = '2026-03-04T05:07:07.000Z';
     await page.route('**/api/threads/*/chat', async (route) => {
       const response = await route.fetch(); const json = await response.json();
       json.items = [{ type: 'human', text: 'start a thread', at, by: 'assistant' }, { type: 'human', text: 'plain note', at: '2026-03-04T05:00:00.000Z' }, { type: 'assistant', text: 'Done.', at: '2026-03-04T05:06:00.000Z', id: 'm1' }];
-      json.cards = [{ id: 'q1', kind: 'question', question: 'Which?', options: [], at, answered: true, answered_by: 'assistant' }];
+      json.cards = [{ id: 'q1', kind: 'question', question: 'Which?', options: [], at: cardAt, answered: true, answered_by: 'assistant' }];
       await route.fulfill({ response, json });
     });
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -70,10 +71,17 @@ test('assistant thread page: no project controls, labels, seen marker', async ({
     await expect(page.locator('#head .badge')).toHaveCount(0);
     await expect(page.locator('#head .meta')).toHaveText('Across your projects');
     await expect(page.locator('#copy')).toBeHidden();
-    expect(await page.evaluate(() => localStorage.getItem('wc-assistant-seen'))).toBe(at);
+    expect(await page.evaluate(() => localStorage.getItem('wc-assistant-seen'))).toBe(cardAt);
+    await expect(page.locator('#attach')).toBeHidden();
+    await expect(page.locator('.col-side')).toBeHidden();
+    await expect(page.locator('#head').getByText('Open in terminal')).toHaveCount(0);
+    await expect(page.locator('#msg')).toHaveAccessibleName('Message the assistant');
     await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/thread-desktop.png` : undefined });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/thread-phone.png` : undefined });
+    await page.goto(`${ctx.server.url}/app/threads`);
+    await expect(page.locator('.wc-asst-float')).toBeVisible();
+    await expect(page.locator('.wc-asst-unread')).toBeHidden();
   } finally { await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
 });
 
@@ -136,7 +144,7 @@ test('Threads list: assistant row counts its open question, shows the first repl
       ['human', 'what is going on?', '2026-03-04T05:00:00.000Z'],
       ['assistant', 'old reply', '2026-03-04T05:01:00.000Z'],
       ['human', 'and now?', '2026-03-04T05:02:00.000Z'],
-      ['assistant', '\n## **Waiting** on `snake_case` and #12\nsecond line', '2026-03-04T05:03:00.000Z'],
+      ['assistant', '\n## **Waiting** on [snake_case](https://example.com) and #12 long long long long long long long long long long long long long long long long long long long long long long long long long \nsecond line', '2026-03-04T05:03:00.000Z'],
     ]);
     const made = await card(ctx, id, session.name, { kind: 'question', fits: 'x', question: 'Which thread?', why: 'y', options: [{ id: 'a', label: 'A', consequence: 'c' }, { id: 'b', label: 'B', consequence: 'd' }], leaning: 'a' });
     expect(made.status, JSON.stringify(made.body)).toBe(202);
@@ -152,14 +160,15 @@ test('Threads list: assistant row counts its open question, shows the first repl
     await page.goto(`${ctx.server.url}/app/threads`);
     const row = page.locator('.assistant-row');
     await expect(row.locator('.badge.warn')).toHaveText('1 needs you');
-    await expect(row.locator('.assistant-preview')).toHaveText('Waiting on snake_case and #12');
+    await expect(row.locator('.assistant-preview')).toContainText('Waiting on snake_case and #12');
+    expect(await row.locator('.assistant-preview').evaluate((el) => { const s = getComputedStyle(el); return s.whiteSpace === 'nowrap' && s.textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth; })).toBe(true);
     // The cached list paints with the cached preview on the next load.
     await page.route('**/api/threads/*/chat', (route) => route.abort());
     await page.reload();
-    await expect(row.locator('.assistant-preview')).toHaveText('Waiting on snake_case and #12');
+    await expect(row.locator('.assistant-preview')).toContainText('Waiting on snake_case and #12');
     await page.unroute('**/api/threads/*/chat');
     await page.reload();
-    await expect(row.locator('.assistant-preview')).toHaveText('Waiting on snake_case and #12');
+    await expect(row.locator('.assistant-preview')).toContainText('Waiting on snake_case and #12');
     await page.waitForTimeout(11000); // two or more 5 s polls
     expect(await page.evaluate(() => window.__previewFetches)).toBe(1);
   } finally { await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
@@ -180,5 +189,37 @@ test('assistant page composer says Message the assistant and has no plan hint; o
     await page.goto(`${ctx.server.url}/app/thread?id=${other.id}`);
     await expect(page.locator('#msg')).toHaveAttribute('placeholder', 'Message the lead');
     await expect(page.locator('#composer .hint')).toBeVisible();
+    await expect(page.locator('#attach')).toBeVisible();
+    await expect(page.locator('.col-side')).toBeVisible();
+    await expect(page.locator('#head').getByText('Open in terminal')).toBeVisible();
+    await expect(page.locator('#msg')).toHaveAccessibleName('Message the lead');
+  } finally { await ctx.close(); }
+});
+
+
+test('assistant queued messages and card presses render and reconcile after Send now', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    const made = await ctx.make({ cli: 'claude' });
+    const file = path.join(ctx.state, made.id + '.jsonl');
+    await fs.writeFile(file, '');
+    const messages = ['[wc:assistant] hello lead', '[wc:assistant] [card c1] picked: Option B'];
+    await ctx.patch(made.id, (t) => {
+      Object.assign(t.sessions[0], { transcript_path: file, cli: 'claude', ready: true, turn_ended: false, queue: messages.map((text, i) => ({ text, source: 'user', at: new Date(Date.now() + i).toISOString() })) });
+      t.queues = { [t.sessions[0].name]: t.sessions[0].queue };
+    });
+    await signIn(page, ctx);
+    await page.goto(ctx.server.url + '/app/thread?id=' + made.id);
+    await expect(page.locator('#chat .pending')).toHaveCount(2);
+    await expect(page.locator('#chat .pending').first()).toContainText('From your assistant');
+    await expect(page.locator('#chat .pending').first()).toContainText('hello lead');
+    await expect(page.locator('#chat .pending').last()).toContainText('Your assistant: Picked Option B');
+    await expect(page.locator('#chat')).not.toContainText('[wc:assistant]');
+    for (const message of messages) {
+      await page.locator('.send-now').first().click();
+      await fs.appendFile(file, JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), origin: { kind: 'human' }, message: { role: 'user', content: message } }) + '\n');
+    }
+    await expect(page.locator('#chat .pending')).toHaveCount(0);
+    await expect(page.locator('#chat .human')).toHaveCount(2);
   } finally { await ctx.close(); }
 });

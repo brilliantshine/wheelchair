@@ -192,7 +192,7 @@
     if (t.stub && !t.sessions.length) line.appendChild(el('span', 'badge', 'stub'));
     if (t.archived) line.appendChild(el('span', 'badge', t.archived_by === 'assistant' ? 'Archived by your assistant' : 'archived'));
     if (t.pr_url && !t.assistant) { const pr = prLink(t.pr_url, 'btn small'); pr.prepend(icon(ICON.pr, 13)); line.appendChild(pr); }
-    if (lead && !t.archived) {
+    if (lead && !t.archived && !t.assistant) {
       const term = el('a', 'btn small', 'Open in terminal');
       term.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(lead.name);
       line.appendChild(term);
@@ -602,6 +602,17 @@
     }
   }
 
+  function pendingText(text) {
+    const assistant = text.startsWith('[wc:assistant] ');
+    const plain = assistant ? text.slice('[wc:assistant] '.length) : text;
+    const match = assistant && /^\[card [^\]]+\] (.*)$/s.exec(plain);
+    if (!match) return { text: plain, assistant, card: false };
+    const action = match[1].startsWith('sudo ran:') ? match[1].split('\n', 1)[0] : match[1]
+      .replace(/^picked:\s*/i, 'Picked ').replace(/^removed:\s*/i, 'Removed ').replace(/^talk about:\s*/i, 'Talk about: ');
+    if (!action) return { text: plain, assistant, card: false };
+    return { text: 'Your assistant: ' + action, assistant, card: true };
+  }
+
   function renderChat() {
     const items = data.items.filter((i) => sinceImport(i.at));
     chatEl.textContent = '';
@@ -615,9 +626,9 @@
     // sent, so an earlier message with the same words never stands in for it. The row that
     // clears one is its own: later bubbles with the same words count it as already seen.
     const counts = new Map();
-    for (const i of items) if (i.type === 'human' && !i.card) counts.set(i.text, (counts.get(i.text) || 0) + 1);
+    for (const i of items) if (i.type === 'human') counts.set(i.text, (counts.get(i.text) || 0) + 1);
     pending = pending.filter((p, index) => {
-      if ((counts.get(p.text) || 0) <= (p.seen || 0)) return true;
+      if ((counts.get(pendingText(p.text).text) || 0) <= (p.seen || 0)) return true;
       for (const later of pending.slice(index + 1)) if (later.text === p.text) later.seen = (later.seen || 0) + 1;
       return false;
     });
@@ -703,8 +714,10 @@
     const canSendNow = lead && lead.live && lead.ready && !lead.permission_open && !lead.needs_open
       && !(lead.limited_until && Date.parse(lead.limited_until) > Date.now()) && !thread().archived;
     for (const p of shown) {
-      const parts = splitAttached(p.text);
-      const b = el('div', 'bubble human pending', parts.text);
+      const shownText = pendingText(p.text);
+      const parts = splitAttached(shownText.text);
+      const b = el('div', 'bubble human pending' + (shownText.card ? ' card' : ''), parts.text);
+      if (shownText.assistant) b.prepend(el('span', 'by-assistant', 'From your assistant'));
       b.appendChild(el('span', 'tag', p.sent ? 'sent' : 'queued'));
       if (p.queued && canSendNow) {
         const at = p.queued.at;
@@ -749,7 +762,7 @@
 
   // How many times the transcript (since any import) already shows these words from the user.
   function humanCount(text) {
-    return data.items.filter((i) => sinceImport(i.at) && i.type === 'human' && !i.card && i.text === text).length;
+    return data.items.filter((i) => sinceImport(i.at) && i.type === 'human' && i.text === pendingText(text).text).length;
   }
 
   // Hand one queued message to the lead mid-turn instead of waiting for the turn to end.
@@ -1497,12 +1510,13 @@
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
     const canSend = liveLead() && !t.archived && !frozen();
     msgEl.disabled = !canSend || uploading; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
+    document.querySelector('label[for=msg]').textContent = t.assistant ? 'Message the assistant' : 'Message the lead';
     msgEl.placeholder = canSend ? (t.assistant ? 'Message the assistant' : 'Message the lead') : (t.archived ? 'Archived' : 'No live lead');
   }
 
   // The newest chat item this page has shown, for the pop-up's unread dot. Only moves forward.
   function rememberSeen() {
-    const newest = data.items.map((i) => i.at).filter((x) => Number.isFinite(Date.parse(x))).sort((a, b) => Date.parse(a) - Date.parse(b)).pop();
+    const newest = [...data.items.map((i) => i.at), ...data.cards.map((c) => c.at || c.created_at)].filter((x) => Number.isFinite(Date.parse(x))).sort((a, b) => Date.parse(a) - Date.parse(b)).pop();
     if (!newest) return;
     try {
       const old = Date.parse(localStorage.getItem('wc-assistant-seen'));
@@ -1547,6 +1561,7 @@
     });
   }
   function addFiles(files, pasted) {
+    if (thread().assistant) return;
     if (uploading) return;
     const errors = [];
     for (let file of files) {
@@ -1560,7 +1575,7 @@
     }
     attachmentError.textContent = errors.join(' · '); renderAttachments();
   }
-  $('attach').addEventListener('click', () => { if (!uploading) fileInput.click(); });
+  $('attach').addEventListener('click', () => { if (!uploading && !thread().assistant) fileInput.click(); });
   fileInput.addEventListener('change', () => { addFiles(fileInput.files, false); fileInput.value = ''; });
   // Enter sends and Shift+Enter starts a new line, when this browser's Settings switch is on.
   // Unset, it is on for a mouse-and-keyboard device and off for a touch one (no Shift+Enter there).
@@ -1573,9 +1588,9 @@
     if (ev.key !== 'Enter' || ev.shiftKey || ev.isComposing || ev.keyCode === 229 || !enterSends()) return;
     ev.preventDefault(); composerEl.requestSubmit();
   });
-  msgEl.addEventListener('paste', (ev) => { if (ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
+  msgEl.addEventListener('paste', (ev) => { if (!thread().assistant && ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
   composerEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
-  composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); addFiles(ev.dataTransfer.files, false); } });
+  composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); if (!thread().assistant) addFiles(ev.dataTransfer.files, false); } });
   composerEl.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const text = msgEl.value.trim();
