@@ -20,6 +20,7 @@
   const msgEl = $('msg'); const sendBtn = $('send');
 
   let data = null;
+  let seenCutoffKey;         // the cutoff and hand-off state the chat last drew with
   let seenCutoff;            // the import cutoff the chat last drew with (undefined before the first draw)
   let pending = [];          // messages posted but not yet seen in the transcript
   let sigs = {};
@@ -121,7 +122,37 @@
     return n;
   }
   function base(p) { return String(p || '').split('/').filter(Boolean).pop() || String(p || ''); }
-  function showError(msg) { errorEl.hidden = !msg; errorEl.textContent = msg || ''; }
+  // The banner sits above the chat: showing or clearing it moves everything below, so the
+  // reader's place is recorded first and put back after (a no-op when nothing changed).
+  function showError(msg) {
+    if (errorEl.hidden === !msg && errorEl.textContent === (msg || '')) return;
+    const place = chatPlace();
+    errorEl.hidden = !msg; errorEl.textContent = msg || '';
+    restorePlace(place);
+  }
+  // Where the reader is in the chat: whether it is near the bottom, and the viewport offset of
+  // every chat entry on screen. Taken before anything above the chat changes in an update.
+  function chatPlace() {
+    const near = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+    const seen = [];
+    if (!near && chatEl) for (const node of chatEl.children) {
+      if (!node.dataset.key) continue;
+      const r = node.getBoundingClientRect();
+      if (r.bottom > 0 && r.top < window.innerHeight) seen.push([node.dataset.key, r.top]);
+    }
+    return { near, seen };
+  }
+  // Puts the first recorded entry that still exists back at its recorded offset; none left, no change.
+  function restorePlace(place) {
+    if (!place || place.near) return;
+    const nodes = new Map(); for (const n of chatEl.children) if (n.dataset.key) nodes.set(n.dataset.key, n);
+    for (const [key, top] of place.seen) {
+      const node = nodes.get(key); if (!node) continue;
+      const drift = node.getBoundingClientRect().top - top;
+      if (Math.abs(drift) >= 0.5) window.scrollBy(0, drift);
+      return;
+    }
+  }
   function safeUrl(u) { return /^https?:\/\//i.test(String(u)) ? String(u) : '#'; }
 
   async function post(path, body) {
@@ -416,6 +447,7 @@
   }
 
   // ---- the right column: this thread's files ----
+  const imageHref = (card) => pictureHref(card) + '&view=image';
   const pictureHref = (card) => '/wheelchair/app/picture?thread=' + encodeURIComponent(id) + '&card=' + encodeURIComponent(card.id);
   const asideTitle = (a) => 'Aside: ' + String((a.anchor && a.anchor.quote) || '').slice(0, 40);
   // One entry per picture file (the latest card for it wins), then one per saved aside graph.
@@ -600,15 +632,52 @@
     }
   }
 
+  const CARD_KINDS = new Set(['offer', 'idea', 'deferred', 'question', 'reach', 'approval', 'progress', 'needs', 'merged', 'done', 'check', 'diagram', 'image', 'file', 'stub', 'sudo', 'lesson']);
+  // Everything outside the card itself that its drawing reads; a change redraws just that card.
+  function cardSig(card, pinned) {
+    const t = thread();
+    const latestDone = card.kind === 'check' ? [...data.cards].reverse().find((c) => c.kind === 'done' && !c.retracted_at) : null;
+    return JSON.stringify([card, pinned.has(card.id), t.archived, frozen(), slug(), t.worktree, t.branch, t.kept_files, t.imported && t.imported.at,
+      cardErrors[card.id], declining[card.id], mergedArchiveAsk[card.id], pressing[card.id], card.kind === 'idea' ? ideaOpen : card.kind === 'deferred' ? deferredOpen : null,
+      card.kind === 'check' ? [(card.steps || []).map((x, i) => copied[card.id + ':' + i]), latestDone && latestDone.head] : null]);
+  }
+  // Brings the chat to `entries` ({key, sig, make}) without redrawing what did not change. An
+  // entry with the same key and signature keeps its node; one holding an iframe is never moved
+  // or removed (that reloads it); the rest go after whatever comes before them. Returns whether
+  // anything was added, replaced or removed.
+  function reconcile(entries) {
+    const want = new Map(entries.map((e) => [e.key, e]));
+    let changed = false;
+    const kept = new Map();
+    for (const node of [...chatEl.children]) {
+      const e = want.get(node.dataset.key);
+      if (e && node._sig === e.sig && !kept.has(e.key)) kept.set(e.key, node);
+      else { node.remove(); changed = true; }
+    }
+    let prev = null;
+    for (const e of entries) {
+      let node = kept.get(e.key);
+      if (!node) {
+        node = e.make(); node.dataset.key = e.key; node._sig = e.sig; changed = true;
+        chatEl.insertBefore(node, prev ? prev.nextSibling : chatEl.firstChild);
+      } else if (node !== (prev ? prev.nextSibling : chatEl.firstChild) && !node.querySelector('iframe')) {
+        chatEl.insertBefore(node, prev ? prev.nextSibling : chatEl.firstChild);
+      }
+      prev = node;
+    }
+    return changed;
+  }
+
   function renderChat() {
     const items = data.items.filter((i) => sinceImport(i.at));
-    chatEl.textContent = '';
     // An import that moves the cutoff makes every bubble sent before it moot (Advance needs an
     // empty queue), so this tab's pending bubbles are dropped then, transcript or not; after
-    // that, only messages since the import can match one.
+    // that, only messages since the import can match one. The same move redraws the chat whole.
     const cutoffNow = thread().imported ? thread().imported.at : null;
+    const cutoffKey = JSON.stringify([cutoffNow, Boolean(thread().handed_off)]);
     if (seenCutoff !== undefined && seenCutoff !== cutoffNow) pending = [];
-    seenCutoff = cutoffNow;
+    if (seenCutoffKey !== undefined && seenCutoffKey !== cutoffKey) chatEl.textContent = '';
+    seenCutoff = cutoffNow; seenCutoffKey = cutoffKey;
     // A pending bubble goes once the transcript has more of its words than just before it was
     // sent, so an earlier message with the same words never stands in for it. The row that
     // clears one is its own: later bubbles with the same words count it as already seen.
@@ -621,61 +690,81 @@
     });
     const cards = data.cards.filter((c) => sinceImport(c.created_at || c.at));
     const pinned = pinnedIds();
+    const entries = [];
+    const used = new Map();
+    const uniq = (base) => { const n = (used.get(base) || 0) + 1; used.set(base, n); return base + '#' + n; };
+    const leadName = () => thread().lead_name || 'Lead';
+    // Who wrote the next message: the lead's first letter in a circle, then its name.
+    // A sibling, not inside the bubble: asides measure offsets in the bubble's text.
+    const leadBy = (forKey) => entries.push({ key: 'by:' + forKey, sig: leadName(), make: () => {
+      const name = leadName();
+      const row = el('div', 'lead-by');
+      row.append(el('span', 'lead-avatar', Array.from(name)[0].toUpperCase()), el('span', 'lead-by-name', name));
+      return row;
+    } });
+    let lastAssistant = false;
+    const add = (key, sig, make) => { entries.push({ key, sig, make }); lastAssistant = false; };
     let next = 0;
     const cardsBefore = (when) => {
       while (next < cards.length) {
         const cardAt = Date.parse(cards[next].at);
         if (when !== undefined && !(cardAt < when)) break;
         const card = cards[next++];
-        const n = renderCard(card);
-        if (!n) continue;
+        if (!CARD_KINDS.has(card.kind)) continue;
         // A pinned card's chat copy keeps its ids aside; placeIds() decides which copy holds them.
-        if (pinned.has(card.id)) for (const node of [n, ...n.querySelectorAll('[id]')]) { node.dataset.chatId = node.id; node.removeAttribute('id'); }
-        const prev = chatEl.lastElementChild;
-        if (!(prev && prev.classList.contains('assistant'))) chatEl.appendChild(leadBy());
-        chatEl.appendChild(n);
+        const make = () => {
+          const n = renderCard(card);
+          if (pinned.has(card.id)) for (const node of [n, ...n.querySelectorAll('[id]')]) { node.dataset.chatId = node.id; node.removeAttribute('id'); }
+          return n;
+        };
+        if (!lastAssistant) leadBy('card:' + card.id);
+        add('card:' + card.id, cardSig(card, pinned), make);
       }
-    };
-    // Who wrote the next message: the lead's first letter in a circle, then its name.
-    // A sibling, not inside the bubble: asides measure offsets in the bubble's text.
-    const leadBy = () => {
-      const name = thread().lead_name || 'Lead';
-      const row = el('div', 'lead-by');
-      row.append(el('span', 'lead-avatar', Array.from(name)[0].toUpperCase()), el('span', 'lead-by-name', name));
-      return row;
     };
     for (const it of items) {
       cardsBefore(Date.parse(it.at));
+      const base = it.type + ':' + (it.id || '') + it.at + ':' + String(it.text || it.title || '').slice(0, 60);
       if (it.type === 'human') {
         const parts = splitAttached(it.card ? '' : it.text);
-        if (it.card || parts.text) chatEl.appendChild(el('div', 'bubble human' + (it.card ? ' card' : ''), it.card ? it.text : parts.text));
-        if (parts.files.length) chatEl.appendChild(attachedRow(parts.files));
+        if (it.card || parts.text) add(uniq(base), JSON.stringify(it), () => el('div', 'bubble human' + (it.card ? ' card' : ''), it.card ? it.text : parts.text));
+        if (parts.files.length) add(uniq(base + ':files'), JSON.stringify([parts.files, thread().archived]), () => attachedRow(parts.files));
       } else if (it.type === 'assistant') {
-        const lead = el('div', 'bubble assistant md');
-        if (it.id) lead.dataset.messageId = it.id;
-        window.WCMarkdown.render(it.text, lead);
-        chatEl.append(leadBy(), lead);
+        const key = uniq(base);
+        leadBy(key);
+        add(key, JSON.stringify(it), () => {
+          const lead = el('div', 'bubble assistant md');
+          if (it.id) lead.dataset.messageId = it.id;
+          window.WCMarkdown.render(it.text, lead);
+          return lead;
+        });
+        lastAssistant = true;
       } else if (it.type === 'tool') {
-        const d = el('details', 'tool'); d.appendChild(el('summary', '', it.text));
-        d.appendChild(el('pre', 'tool-detail', it.detail || 'No details recorded.'));
-        chatEl.appendChild(d);
+        add(uniq(base), JSON.stringify(it), () => {
+          const d = el('details', 'tool'); d.appendChild(el('summary', '', it.text));
+          d.appendChild(el('pre', 'tool-detail', it.detail || 'No details recorded.'));
+          return d;
+        });
       } else if (it.type === 'peer') {
-        const c = el('div', 'ctx');
-        const line = el('span', 'peer-line');
-        const link = el('a', '', it.title || 'another thread');
-        link.href = '/wheelchair/app/thread?id=' + encodeURIComponent(it.thread);
-        line.append(it.limit ? 'Message limit reached with ' : 'Talked with ', link);
-        if (!it.limit) line.append(' · ' + it.count + (it.count === 1 ? ' message' : ' messages'));
-        c.appendChild(line);
-        chatEl.appendChild(c);
+        add(uniq(base), JSON.stringify(it), () => {
+          const c = el('div', 'ctx');
+          const line = el('span', 'peer-line');
+          const link = el('a', '', it.title || 'another thread');
+          link.href = '/wheelchair/app/thread?id=' + encodeURIComponent(it.thread);
+          line.append(it.limit ? 'Message limit reached with ' : 'Talked with ', link);
+          if (!it.limit) line.append(' · ' + it.count + (it.count === 1 ? ' message' : ' messages'));
+          c.appendChild(line);
+          return c;
+        });
       } else if (it.type === 'context') {
-        const c = el('div', 'ctx');
-        if (it.context === 'stub') {
-          const d = el('details'); d.appendChild(el('summary', '', it.text));
-          d.appendChild(el('div', '', (thread().title ? thread().title + ': ' : '') + (thread().context || '')));
-          c.appendChild(d);
-        } else c.textContent = it.text;
-        chatEl.appendChild(c);
+        add(uniq(base), JSON.stringify([it, thread().title, thread().context]), () => {
+          const c = el('div', 'ctx');
+          if (it.context === 'stub') {
+            const d = el('details'); d.appendChild(el('summary', '', it.text));
+            d.appendChild(el('div', '', (thread().title ? thread().title + ': ' : '') + (thread().context || '')));
+            c.appendChild(d);
+          } else c.textContent = it.text;
+          return c;
+        });
       }
     }
     cardsBefore();
@@ -698,15 +787,19 @@
       && !(lead.limited_until && Date.parse(lead.limited_until) > Date.now()) && !thread().archived;
     for (const p of shown) {
       const parts = splitAttached(p.text);
-      const b = el('div', 'bubble human pending', parts.text);
-      b.appendChild(el('span', 'tag', p.sent ? 'sent' : 'queued'));
-      if (p.queued && canSendNow) {
-        const at = p.queued.at;
-        b.appendChild(button(sendingNow[at] ? 'Sending…' : 'Send now', 'send-now', () => sendNow(at), Boolean(sendingNow[at])));
-      }
-      chatEl.appendChild(b);
-      if (parts.files.length) chatEl.appendChild(attachedRow(parts.files, true));
+      const pkey = uniq('pending:' + p.text);
+      const at = p.queued && p.queued.at;
+      add(pkey, JSON.stringify([p.sent, Boolean(p.queued), at, canSendNow, at && sendingNow[at]]), () => {
+        const b = el('div', 'bubble human pending', parts.text);
+        b.appendChild(el('span', 'tag', p.sent ? 'sent' : 'queued'));
+        if (p.queued && canSendNow) {
+          b.appendChild(button(sendingNow[at] ? 'Sending…' : 'Send now', 'send-now', () => sendNow(at), Boolean(sendingNow[at])));
+        }
+        return b;
+      });
+      if (parts.files.length) add(pkey + ':files', JSON.stringify([parts.files, thread().archived]), () => attachedRow(parts.files, true));
     }
+    return reconcile(entries);
   }
 
   // A message's trailing `[attached: <path>]` lines become files shown under its bubble.
@@ -870,7 +963,7 @@
       const text = ta.value.trim();
       if (!text) return;
       send.disabled = true;
-      press(card, 'answered', text).then(() => { if (card.answered) delete answerDrafts[card.id]; });
+      press(live(card), 'answered', text).then(() => { if (live(card).answered) delete answerDrafts[card.id]; });
     }, !ta.value.trim());
     ta.addEventListener('input', () => { answerDrafts[card.id] = ta.value; send.disabled = !ta.value.trim(); });
     // A poll that redraws the chat replaces this box; keep the caret where the user was typing.
@@ -893,6 +986,8 @@
   }
   function seal() { const s = el('span', 'seal'); s.appendChild(icon(ICON.check, 14)); return s; }
 
+  // A kept card's node outlives the card object it was drawn from, so a press reads the current one.
+  const live = (c) => data.cards.find((x) => x.id === c.id) || c;
   function renderCard(card) {
     const box = el('div', 'card card-' + card.kind);
     box.id = 'card-' + card.id; box.dataset.card = card.id; box.dataset.kind = card.kind;
@@ -909,7 +1004,7 @@
         const a = el('div', 'actions');
         for (const [value, label, cls] of OFFER_CHOICES) {
           const b = button(label, cls + (card.answered && card.answered_value === value ? ' picked' : ''),
-            () => press(card, 'picked', value), off);
+            () => press(live(card), 'picked', value), off);
           if (b.classList.contains('picked')) b.prepend(icon(ICON.check, 12), document.createTextNode(' '));
           a.appendChild(b);
         }
@@ -932,7 +1027,7 @@
           const row = el('div', 'bullet'); row.dataset.bullet = b.id;
           row.appendChild(el('span', 'bullet-text', b.text));
           if (!deferred || !(card.locked || thread().archived || card.retracted_at)) {
-            const rm = button('×', 'x', () => press(card, 'removed', b.text), thread().archived);
+            const rm = button('×', 'x', () => press(live(card), 'removed', b.text), thread().archived);
             rm.setAttribute('aria-label', deferred ? 'Pull back in' : 'Remove'); rm.title = deferred ? 'Pull back in' : 'Remove';
             row.appendChild(rm);
           }
@@ -962,7 +1057,7 @@
         for (const o of card.options || []) {
           const lean = o.id === card.leaning;
           const picked = card.answered && card.answered_action !== 'answered' && card.answered_value != null && o.label === card.answered_value;
-          const b = button('', 'opt' + (lean ? ' lean' : '') + (picked ? ' picked' : ''), () => press(card, 'picked', o.label), off);
+          const b = button('', 'opt' + (lean ? ' lean' : '') + (picked ? ' picked' : ''), () => press(live(card), 'picked', o.label), off);
           b.dataset.option = o.id;
           const line = el('span', 'opt-line');
           if (picked) { line.appendChild(icon(ICON.check, 12)); line.appendChild(document.createTextNode(' ')); }
@@ -989,7 +1084,7 @@
         const a = el('div', 'actions');
         for (const [value, label] of [['allow', 'Allow'], ["don't allow", "Don't allow"]]) {
           const pk = card.answered && card.answered_value === value && !card.allow_failed;
-          const b = button(label, (pk ? 'picked' : ''), () => press(card, 'picked', value), off);
+          const b = button(label, (pk ? 'picked' : ''), () => press(live(card), 'picked', value), off);
           b.dataset.option = value;
           if (pk) b.prepend(icon(ICON.check, 12), document.createTextNode(' '));
           a.appendChild(b);
@@ -1013,16 +1108,16 @@
           row.appendChild(el('div', 'finding', '"' + o.finding + '"'));
           const why = el('div', 'why'); why.append(el('span', 'dim', 'Why I disagreed: '), document.createTextNode(o.reason));
           row.appendChild(why);
-          row.appendChild(button('Talk about this', 'small', () => press(card, 'talk', o.finding), card.retracted_at || thread().archived));
+          row.appendChild(button('Talk about this', 'small', () => press(live(card), 'talk', o.finding), card.retracted_at || thread().archived));
           box.appendChild(row);
         });
         const ready = card.ready || {};
         const r = el('div', 'ready-box');
         const a = el('div', 'actions');
-        const sb = button('Start building', 'go', () => press(card, 'start-building'), off || !ready.ok);
+        const sb = button('Start building', 'go', () => press(live(card), 'start-building'), off || !ready.ok);
         sb.id = 'start-building';
         a.appendChild(sb);
-        if (!ready.ok) a.appendChild(button('Re-check', '', () => press(card, 'recheck'), card.retracted_at || thread().archived));
+        if (!ready.ok) a.appendChild(button('Re-check', '', () => press(live(card), 'recheck'), card.retracted_at || thread().archived));
         a.appendChild(el('span', 'dim', 'Nothing is built until you press start.'));
         r.appendChild(a);
         const status = el('div', 'ready-status ' + (ready.ok ? 'ok' : 'no'));
@@ -1085,7 +1180,7 @@
             a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
             actions.appendChild(a);
           }
-          if (!card.blocking) actions.appendChild(button('Dismiss', '', () => dismissCard(card), thread().archived));
+          if (!card.blocking) actions.appendChild(button('Dismiss', '', () => dismissCard(live(card)), thread().archived));
           box.appendChild(actions);
         }
         if (card.system && card.auto_merge && !card.answered) {
@@ -1101,8 +1196,8 @@
         // button, and the lead always replies, so nothing closes silently.
         if (!card.system && !card.answered) {
           const actions = el('div', 'actions');
-          actions.appendChild(button('Keep going', 'primary', () => press(card, 'keep-going'), thread().archived));
-          actions.appendChild(button('Talk about it', '', () => press(card, 'talk', card.title), thread().archived));
+          actions.appendChild(button('Keep going', 'primary', () => press(live(card), 'keep-going'), thread().archived));
+          actions.appendChild(button('Talk about it', '', () => press(live(card), 'talk', card.title), thread().archived));
           box.appendChild(actions);
         }
         break;
@@ -1125,7 +1220,7 @@
             actions.appendChild(button('Archive', 'danger small', () => {
               mergedArchiveAsk[card.id] = true; sigs.chat = null; render();
             }));
-            actions.appendChild(button('Keep it', 'small', () => press(card, 'keep')));
+            actions.appendChild(button('Keep it', 'small', () => press(live(card), 'keep')));
           }
         }
         box.appendChild(actions);
@@ -1196,8 +1291,8 @@
           && (!cutoff || Date.parse(c.created_at || c.at) > Date.parse(cutoff)));
         if (steps.some((s) => s.agent === 'broken') && !off && curDone && curDone.head === card.head) {
           const a = el('div', 'actions');
-          a.appendChild(button('Fix it now', 'primary', () => press(card, 'fix')));
-          a.appendChild(button('Leave it', '', () => press(card, 'leave')));
+          a.appendChild(button('Fix it now', 'primary', () => press(live(card), 'fix')));
+          a.appendChild(button('Leave it', '', () => press(live(card), 'leave')));
           box.appendChild(a);
         }
         break;
@@ -1217,14 +1312,14 @@
         const shot = () => {
           const part = el('div', 'image-part');
           if (!sentAvailable(card)) { part.appendChild(el('p', 'dim', 'Image removed when the thread was archived')); return part; }
-          const url = T + '/files/' + encodeURIComponent(card.file); const a = el('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; const img = el('img', 'card-image'); img.src = url; img.alt = card.title; a.appendChild(img); part.appendChild(a);
+          const url = T + '/files/' + encodeURIComponent(card.file); const a = el('a'); a.href = imageHref(card); const img = el('img', 'card-image'); img.src = url; img.alt = card.title; a.appendChild(img); part.appendChild(a);
           return part;
         };
         if (!card.mockup) { box.appendChild(shot().firstChild); break; }
         const pair = el('div', 'image-pair');
         const built = el('div', 'image-half'); built.appendChild(el('div', 'image-label', 'Built'));
         const bshot = shot(); built.appendChild(bshot);
-        if (sentAvailable(card)) { const l = el('a', 'btn small', 'Open full size'); l.href = T + '/files/' + encodeURIComponent(card.file); l.target = '_blank'; l.rel = 'noopener'; built.appendChild(l); }
+        if (sentAvailable(card)) { const l = el('a', 'btn small', 'Open full size'); l.href = imageHref(card); built.appendChild(l); }
         const mock = el('div', 'image-half'); mock.appendChild(el('div', 'image-label', 'Mockup'));
         if (!thread().slug) mock.appendChild(el('p', 'dim', 'Mockup not found'));
         else {
@@ -1282,8 +1377,8 @@
             actions.appendChild(open);
           }
           const pending = Boolean(declining[card.id]);
-          actions.appendChild(button(pending ? 'Declining…' : 'Decline', 'danger', () => sudoPress(card, 'decline'), pending || thread().archived));
-          actions.appendChild(button('Talk about it', '', () => sudoPress(card, 'talk', 'sudo request'), pending || thread().archived));
+          actions.appendChild(button(pending ? 'Declining…' : 'Decline', 'danger', () => sudoPress(live(card), 'decline'), pending || thread().archived));
+          actions.appendChild(button('Talk about it', '', () => sudoPress(live(card), 'talk', 'sudo request'), pending || thread().archived));
           box.appendChild(actions);
         } else if (state === 'running') {
           box.appendChild(el('p', 'sudo-outcome', 'Running…'));
@@ -1453,6 +1548,8 @@
 
   function render() {
     if (!data) return;
+    // Recorded before the banners and pins above the chat change, so the chat can be put back.
+    const place = chatPlace();
     const t = thread();
     renderHandoff();
     if (!copy.started) { copy.started = true; copyLoad(); }
@@ -1464,7 +1561,7 @@
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported], renderDead);
     sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.retracted_at]), ideaOpen, deferredOpen, pinsFolded, cardErrors, t.handed_off, t.handoff_op, t.imported], renderPinned);
-    const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+    const nearBottom = place.near;
     let changed = false;
     const leadNow = leadSession();
     // Text selected in the chat (for an aside) would vanish with a redraw, so the redraw waits
@@ -1473,7 +1570,7 @@
     // An import moving the cutoff (or a hand-off starting) must not wait for the selection:
     // what came before the import has to leave the chat at once.
     const cutoff = JSON.stringify([t.imported && t.imported.at, Boolean(t.handed_off)]);
-    if (sigs.chat !== chatSig && (!selectingInChat() || sigs.chatCutoff !== cutoff)) { sigs.chat = chatSig; sigs.chatCutoff = cutoff; renderChat(); changed = true; }
+    if (sigs.chat !== chatSig && (!selectingInChat() || sigs.chatCutoff !== cutoff)) { sigs.chat = chatSig; sigs.chatCutoff = cutoff; changed = renderChat() || changed; }
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
@@ -1482,6 +1579,8 @@
     placeIds();
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
+    else restorePlace(place);
+    // (Slot for later per-render passes that touch kept card nodes, e.g. showing or hiding buttons in place.)
     syncJump();
     const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
     queuedNote.hidden = queuedTotal === 0;

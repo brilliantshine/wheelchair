@@ -91,7 +91,7 @@ test.describe('desktop pages', () => {
     const card = await page.locator('div.card-image').boundingBox();
     expect(Math.abs(a.width - b.width)).toBeLessThanOrEqual(2); expect(a.width).toBeLessThanOrEqual(card.width / 2);
     await shot(page, 'image-pair-wide');
-    await expect(halves.nth(0).getByRole('link', { name: 'Open full size' })).toHaveAttribute('target', '_blank');
+    await expect(halves.nth(0).getByRole('link', { name: 'Open full size' })).toHaveAttribute('href', new RegExp(`/app/picture\\?thread=${made.id}&card=${image.id}&view=image$`));
     await halves.nth(1).getByRole('link', { name: 'Open full size' }).click();
     await expect(page).toHaveURL(new RegExp(`/app/picture\\?thread=${made.id}&card=${image.id}`));
     await expect(page.locator('#picture-title')).toHaveText('Mockup: Home screen');
