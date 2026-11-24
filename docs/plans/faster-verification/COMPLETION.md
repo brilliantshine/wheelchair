@@ -149,3 +149,22 @@ Every failure, judged by the lead's reading of S2 (confirmed on main by S5.2, or
 | machine | `win-tool-proxy.test.js` hung 13+ min in the whole suite, stopped by the sub-lead; its "stand-in hands held calls…" and `win-tool-ready.test.js` "context errors before a readying task write failed" then failed (`Cannot read properties of undefined (reading 'ok')`) | load flake / hang (also hangs on main) | Both files alone, 3 runs: `# pass 31 / # fail 2` each time, and the 2 are main's `wslpath` failures ("existing copy remains waiting…", "failed readying becomes ready…"). Hang on main: attempt 1 evidence above. |
 
 So the full run on 381e4014 passes under the lead's reading of S2.
+
+### Remediation 2 (after verification attempt 2, 2026-11-23)
+
+Gaps and tasks: `REMEDIATION-2.md`. Lead's answers are in PLAN.md's Log.
+
+- **R3** (S1 rule 3, map completeness): `test-support/test-map.json` now has:
+  - no front-end entries (`viewer/index.html`, `doc.html`, `doc.js` and `pages/markdown.js` fall back to both viewer suites by rules 5–6);
+  - all-suite entries for `protocol/**`, `connectors/**`, `test-support/**`, `sensitivity/**`, `codex/**`, `install/**`, `sudo-helper/**` and `install.sh`;
+  - the docs fixture entries (kimi, openrouter samples, graphs) kept, each with every reader (`reports/R3.md`).
+
+  The new test `test-support/test/pick-tests.test.js` "real repository changes include readers across suites" clones the real tree and picks for `connectors/pi/guard.js`, `viewer/doc.js`, `protocol/sensitivity.md`, `install/guard.sh` and `docs/plans/kimi-code/samples/wire.jsonl`. On the old map it failed with the five misses; now `node --test test-support/test/*.test.js` gives 24/24.
+- **R4** (S5.0/S5.3, S5.5), by the sub-lead:
+  - `protocol/app/verifier.md:48-50` runs the picker command the project names (wheelchair's flags as the example).
+  - `protocol/app/sub-lead.md` step 4 pastes `summary.txt` into COMPLETION.md and commits before sending the result.
+  - `node --test viewer/test/protocol-rules.test.js` gives 44/44.
+- **Accepted Risk** (verification-2): unquoted test file names with spaces.
+- **Trade-off:** a protocol-only change now picks every suite (see PLAN.md Log).
+
+The full run for this round runs alongside the attempt-3 verifiers on this commit; its summary and judgments are appended below when it ends.
