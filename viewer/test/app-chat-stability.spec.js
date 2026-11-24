@@ -35,7 +35,11 @@ test('new cards and a lead-state change leave mockups loaded and the reader in p
   await ctx.patch(made.id, (t) => t.cards.push(needs('n3', 'Third note', at(5))));
   await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
   await expect(page.locator('.card-diagram iframe')).toHaveCount(2);
-  for (const f of await page.locator('.card-diagram iframe').elementHandles()) await (await f.contentFrame()).waitForSelector('#proof');
+  for (const f of await page.locator('.card-diagram iframe').elementHandles()) {
+    const frame = await f.contentFrame();
+    await frame.waitForSelector('#proof');
+    await frame.waitForLoadState('load');
+  }
   // Count loads from now on, and make the browser's own scroll anchoring unable to hide a missing fix.
   await page.addStyleTag({ content: 'html, body { overflow-anchor: none !important; }' });
   await page.evaluate(() => {

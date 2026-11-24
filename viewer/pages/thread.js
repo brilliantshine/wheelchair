@@ -90,7 +90,7 @@
     let shownAtDown = false;
     const link = button('Start a thread about it', 'link', (ev) => {
       if (ev.detail !== 0 && !shownAtDown) return; // detail 0: keyboard activation
-      press(card, 'start-thread', text);
+      press(live(card), 'start-thread', text);
     }, thread().archived);
     row.addEventListener('pointerdown', () => { shownAtDown = getComputedStyle(link).opacity === '1'; });
     row.appendChild(link);

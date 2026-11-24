@@ -249,6 +249,8 @@ test('a hand-off starting hides the button in place without redrawing the mockup
   const { made } = await seed();
   await open(page, made);
   await expect(page.locator('.spot-btn')).toHaveCSS('visibility', 'visible');
+  const frame = await (await page.locator('.card-diagram iframe').elementHandle()).contentFrame();
+  await frame.waitForLoadState('load');
   await page.evaluate(() => {
     window.__frame = document.querySelector('.card-diagram iframe'); window.__loads = 0;
     window.__frame.addEventListener('load', () => { window.__loads += 1; });
