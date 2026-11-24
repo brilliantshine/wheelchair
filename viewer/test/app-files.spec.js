@@ -44,7 +44,7 @@ test.describe('desktop', () => {
     const made = await seed();
     await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
     const side = page.locator('#files');
-    await expect(side.locator('h3')).toHaveText(['Project documents', 'Sent to you']);
+    await expect(side.locator(':scope > .files-section > h3')).toHaveText(['Project documents', 'Sent to you']);
     const docs = side.locator('.files-section').first();
     await expect(docs.locator('a.file')).toHaveText(['IDEA.md', 'PLAN.md', 'Flow picture']);
     await expect(docs.getByRole('link', { name: 'Download', exact: true })).toHaveCount(2);
@@ -107,7 +107,7 @@ test.describe('phone', () => {
     const panel = page.locator('#files-panel');
     await expect(panel).toBeHidden();
     await button.click();
-    await expect(panel.locator('h3')).toHaveText(['Project documents', 'Sent to you']);
+    await expect(panel.locator(':scope > .files-section > h3')).toHaveText(['Project documents', 'Sent to you']);
     await expect(panel.locator('.sent-row')).toHaveCount(3);
     // The panel opens directly under its button, with nothing (such as Your copy) between them.
     expect(await page.evaluate(() => document.getElementById('head-files').nextElementSibling.id)).toBe('files-panel');
@@ -127,8 +127,12 @@ test.describe('phone', () => {
 
   test('no files, no button', async ({ page }) => {
     const made = await ctx.make({ cli: 'claude' });
+    // A new thread: Your copy has nothing to try, so it adds no button either.
+    let gets = 0;
+    await page.route('**/api/threads/*/try', (route) => { gets += 1; return route.fulfill({ json: { version: 'v1', state: 'none', target_available: true, nothing_new: true, refused: null, kept: [], last: null } }); });
     await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
     await expect(page.locator('#head')).toBeVisible();
+    await expect.poll(() => gets).toBeGreaterThan(0);
     await expect(page.locator('#files-toggle')).toBeHidden();
   });
 });

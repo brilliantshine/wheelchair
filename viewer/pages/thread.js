@@ -275,7 +275,7 @@
   // It shows only when there is something to try or something to look at, never on a thread with nothing new.
   const copyEl = el('section', 'files-section copy-panel'); copyEl.id = 'copy'; copyEl.setAttribute('aria-label', 'Your copy');
   const wideScreen = window.matchMedia('(min-width: 900px)');
-  const copy = { status: null, error: '', ask: null, sending: false, waiting: false, loading: false, started: false, timer: null, seq: 0 };
+  const copy = { status: null, error: '', ask: null, sending: false, waiting: false, loading: false, started: false, timer: null, seq: 0, touched: false, lastCard: null };
   const plural = (list, total) => {
     const ul = el('ul', 'copy-files');
     for (const f of list) ul.appendChild(el('li', '', f));
@@ -322,8 +322,9 @@
   }
   function copyShown() {
     const S = copy.status; const t = thread();
-    if (!S) return false;
-    if (copy.sending || copy.waiting || copy.ask || copy.error) return true;
+    if (!S) return !!copy.error;
+    // After a switch from this page, keep showing what happened until the page is reloaded.
+    if (copy.touched || copy.sending || copy.waiting || copy.ask || copy.error) return true;
     if (S.state !== 'none' || copyNeedsYou() || (S.kept && S.kept.length)) return true;
     return !!S.target_available && !S.nothing_new && !S.refused && !t.archived;
   }
@@ -420,6 +421,8 @@
     finally { if (seq === copy.seq) copy.loading = false; renderCopy(); }
     copySchedule();
   }
+  function copyFresh() { if (copy.started && !copy.loading && !copy.sending && !copy.timer) copyLoad(true); }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && data) copyFresh(); });
   // Re-read every 3 seconds while a switch runs, then show `last`.
   function copySchedule() {
     clearTimeout(copy.timer); copy.timer = null;
@@ -429,7 +432,7 @@
   }
   async function copyWrite(body) {
     if (copy.sending) return;
-    copy.sending = true; copy.error = ''; copy.ask = null; renderCopy();
+    copy.sending = true; copy.touched = true; copy.error = ''; copy.ask = null; renderCopy();
     let reread = false;
     try {
       const res = await fetch(T + '/try', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -528,7 +531,7 @@
     filesPanel.hidden = !open || !filesPanel.children.length;
     filesToggle.setAttribute('aria-expanded', String(!filesPanel.hidden));
   }
-  filesToggle.addEventListener('click', () => setPanel(filesPanel.hidden));
+  filesToggle.addEventListener('click', () => { const opening = filesPanel.hidden; setPanel(opening); if (opening) copyFresh(); });
   filesPanel.addEventListener('click', (e) => { if (e.target.closest('a')) setPanel(false); });
   async function doArchive() {
     try { await post(T + '/archive'); archiveAsk = false; sigs.head = null; await poll(); }
@@ -1479,7 +1482,10 @@
     if (!data) return;
     const t = thread();
     renderHandoff();
-    if (!copy.started) { copy.started = true; copyLoad(); }
+    // Re-read on load, on each new card (the thread may have gained commits) and when the page comes back into view.
+    const lastCard = data.cards.length ? data.cards[data.cards.length - 1].id : null;
+    if (!copy.started) { copy.started = true; copy.lastCard = lastCard; copyLoad(); }
+    else if (lastCard !== copy.lastCard) { copy.lastCard = lastCard; copyFresh(); }
     sync('copy', [t.archived, t.project, t.machine], renderCopy);
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
     sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
