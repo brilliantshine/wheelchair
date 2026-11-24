@@ -34,7 +34,9 @@ working.
 1a. In a lighter mode, if `status: verifying`, read the Log before changing status. If it
    contains `Deferred and finished at the user's choice` (or the older form
    `Deferred and finished at Collin's choice`), send the done result described below and
-   do nothing else. If your brief carries that choice, save those rows with that
+   do nothing else. In an opted-in project, send that done result only once a full run has
+   passed for that commit; run it first if the Log does not show one. If your brief carries
+   that choice, save those rows with that
    Log line, commit and message the lead, then send that result without a new attempt.
    Otherwise skip steps 2 and 3: leave `verifying` in place, apply any per-gap answer in
    your brief not yet logged, and start a new verification attempt on the current
@@ -294,7 +296,9 @@ already run, not a whole-suite run; elsewhere run the full validation):
    "Fix them" sends every gap to remediation. "Defer them and finish" saves and commits
    the rows with `Deferred and finished at the user's choice` in the same commit, messages
    the lead, and sends a build `result` with outcome `done`, that commit, and a summary
-   saying the gaps were deferred at the user's choice, with no further verification.
+   saying the gaps were deferred at the user's choice, with no further verification. In an
+   opted-in project (step 3), the full run must still have passed for that commit (step 4);
+   if it has not, run it first and treat a failure as in step 4.
 
    A surviving gap takes precedence: save other deferred hardening first, then stop and
    message the lead as in step 6. After the user answers, act on their answer for that gap;
