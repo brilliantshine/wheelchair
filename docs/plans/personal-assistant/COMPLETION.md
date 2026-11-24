@@ -183,3 +183,17 @@ Validation after remediation:
 - At the merged tip after R3c: `node --test viewer/test/assistant.test.js viewer/test/assistant-render.test.js machine/test/assistant.test.js` → `# pass 22`, `# fail 0`; `npx playwright test test/app-assistant-popup.spec.js test/app-assistant.spec.js test/app-send-now.spec.js` → `50 passed`.
 
 Line references in the coverage table above predate remediation; the files named are unchanged in role.
+
+### Remediation 2 (after verification attempt 2 at `db9d1081`)
+
+Attempt 2: Claude verifier PASS, GPT verifier FAIL (`REMEDIATION-2.md`). One rare path (an assistant `lesson` card) went to Accepted Risks. The lead deferred H2, H5, H6, H7 (PLAN.md Deferred 3-6) and asked for H1, H3, H4.
+
+| Gap | Fix | Task | Evidence |
+|---|---|---|---|
+| H1 closed button over a short thread's composer (second attempt on G8) | button placed from the measured composer top under 900px, recomputed on resize, scroll, composer size and chat changes (`viewer/pages/assistant-popup.js`) | R4 | `viewer/test/app-assistant-popup.spec.js` no-overlap tests for short, long and growing threads at 390x844 |
+| H3 turning on in an open tab | `viewer/pages/nav.js` re-checks `GET /api/assistant` every 30 s while the pop-up is absent | R4 | spec test: off → on → off → on without reload |
+| H4 restart line leaves no unread dot | `newestAt` counts context items | R4 | spec test: a context line alone lights the dot |
+
+Validation at `f2a4b7a8`:
+- `TZ=UTC npm --prefix viewer run test:browser`: `34 skipped`, `1470 passed (21.8m)`, exit 0. (`TZ=UTC` because the `app-accounts.spec.js` "lead waiting line" tests fail after 9 PM Pacific on base `25f34a45` too, when the shown wait crosses midnight.)
+- `node --test viewer/test/*.test.js`: `# tests 955`, `# pass 953`, `# fail 2` — `app-harnesses.test.js:311` and `app-quiet.test.js` "6 message clears debt", both failing on base too.
