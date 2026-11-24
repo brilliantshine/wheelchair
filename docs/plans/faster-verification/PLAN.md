@@ -1,6 +1,6 @@
 ---
 slug: faster-verification
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-23
 ---
 
@@ -152,8 +152,9 @@ continuing past failures. It writes `<log-dir>/summary.txt`: first line
 when every suite exited 0. It does not run smoke, live or `./install.sh`. A full run
 **passes** for a commit when `summary.txt` names that commit and every suite exit is 0, or
 when every failure in it was confirmed already on main (S5.5) and those failures are
-written down with the commit (COMPLETION.md for the sub-lead, the `done` card's note for the
-lead).
+written down with the commit (COMPLETION.md for the sub-lead; for the lead, a
+`baseline.txt` beside `summary.txt` written before the push, repeated in the `done` card's
+note afterwards).
 
 ### S3. Browser workers when alone
 
@@ -215,8 +216,10 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
 2. **Comparing a failure with main** (verifier.md): run only the failing test files at the
    **comparison commit** the brief names (default: `git merge-base origin/<default branch>
    HEAD`), never the whole suite; for a suite S1 marks "(always full)" (one runner script),
-   the suite command is the unit, and the same failure means the same failing check name
-   and message in its output. Get that tree as its own clone in a scratch directory
+   the suite command is the unit (for sudo-helper, whichever of its two commands failed), and
+   the same failure means the same failing check name and message in its output; a failure
+   with no check name or message, or in a different command, never counts as already on
+   main. Get that tree as its own clone in a scratch directory
    outside any repository: `git clone --quiet <your checkout> <scratch>/main` then
    `git -C <scratch>/main checkout --quiet --detach <commit>` (this writes only the scratch
    clone's own metadata), and link into it the dependency folders present in your own
@@ -270,6 +273,25 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    keeping every existing command listed, and AGENTS.md gains the `Test picker and full run`
    heading of 0.
 
+### Flow
+
+```mermaid
+flowchart TD
+  A[Work committed, ready to check] --> B[Picker lists the tests that cover the change]
+  A --> C[Starter runs the full suite in the background on the same commit]
+  B --> D[Verifier runs only the picked tests and the Spec's own checks]
+  D -->|gap| E[Fix, new commit]
+  C -->|failure not already on main| E
+  E -->|re-check only what the fix touched, full run again| A
+  D -->|pass| F{Full run passed for this commit?}
+  C --> F
+  F -->|yes| G[Push]
+  H[Plan-file-only commits after a passing full run] --> G
+```
+
+The picker and full run apply only in projects whose AGENTS.md declares them (S5.0). Browser
+workers: a full run alone takes up to 6, everything else 2 (S3).
+
 ### Non-goals
 
 Speeding up individual tests other than S4; changing what tests exist or check; changing
@@ -317,6 +339,8 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Two browser runs starting within the same instant can both see no other run and both take the larger worker count | Sub-second race between two actors (realism.md rare path); worst case is extra load for one run | review-round-1 |
+| A sudo-helper installer failure is compared in a standalone scratch clone, where the installer guard behaves differently from a worktree | Rare path; the comparison then errs toward calling the failure the branch's | review-round-5 |
+| A repair after fast-forwarding to someone else's pushed head that restores old content can get an empty picker diff | Rare path: three unlikely events together; the full run before push still runs | review-round-5 |
 
 ## Check Once Built
 
@@ -414,12 +438,18 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 5 — 2026-11-23
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude (reviewer-9); mechanics: gpt (reviewer-10); cross-family: yes.
 
 **Changed since Round 4:** D14 names D12; S5.4 step-6 phrase removed; S1 rule 0 both rename endpoints; S2 "passes" with recorded baseline failures; S5.4 repair base and same-commit retry; S5.2 comparison unit for single-runner suites.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | blocking | Lead's baseline record lives in the done card, posted only after push | downgraded (minor) | S2 `baseline.txt` before push |
+| mechanics | blocking | Scratch clone makes the sudo-helper installer guard test fail on main | accepted-risk | Rare path: only matters when that suite fails on the branch and is truly baseline; the outcome errs toward treating it as the branch's |
+| mechanics | major | Repair after fast-forward to another's head restores old content: empty diff | accepted-risk | Rare path: needs a fast-forwarded foreign head, a failed check and a revert-to-old fix together |
+| mechanics | major | Deleting a test lets coverage carry from a run with more tests | declined | Removing a test cannot make the remaining tests fail and no code under test changed; a deleted file other tests import is handled by rule 0 |
+| mechanics | minor | Two-command suite and unnamed failures in the baseline match | upheld | S5.2 names the failed command; unnamed never matches |
 
 ## Prior Work
 
