@@ -242,3 +242,15 @@ test('branch deletion targets the repository that holds the branch', async () =>
     } finally { f.restore(); }
   }
 });
+
+test('target PR check does not merge, notify, or delete its branch', async () => {
+  const f = await fixture(script());
+  try {
+    await settings.update(f.hub, v => { v.auto_merge_delete_branch = 'on'; });
+    const t = await f.hub.thread('one'); t.target_pr = { url, head_branch: 'branch' }; await f.hub.save(t);
+    const result = await f.run();
+    assert.deepEqual(await f.calls(), []);
+    assert.equal(result.auto_merge_attempts, undefined);
+    assert.ok(!result.cards.some(c => c.auto_merge));
+  } finally { f.restore(); }
+});
