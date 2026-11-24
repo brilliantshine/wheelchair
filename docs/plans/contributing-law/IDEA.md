@@ -38,5 +38,3 @@ CONTRIBUTING.md names as the routers. No check caught it.
 ## Constraints
 
 - Works for every AI provider wheelchair runs (Claude, GPT, Gemini, Kimi, OpenRouter).
-- Wheelchair's own role rules stay in charge of how agents work together; CONTRIBUTING.md
-  governs the project's code and files.
