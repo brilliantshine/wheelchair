@@ -250,3 +250,20 @@ npm --prefix viewer run test:browser   (one unsharded run, 22.1m)
   failed: [firefox] app-project-tools.spec.js:1182 (not touched by this build): re-run --repeat-each=5 -> 10 passed
 node --test viewer/test/*.test.js   # tests 935  # pass 933  # fail 2  (harness timing, known on main; app-quiet "6 message clears debt", load flake, alone 27/27 earlier)
 ```
+
+### Remediation 9 — 2026-11-24
+
+Verification attempt 9 (commit `60551a82`): both verifiers reported that the open box could cover the pin. It grew after the tap, and on the newest card it overlaid most of a short mockup. GPT's second item (a short mockup's box sits just under it) was judged by the sub-lead, and confirmed by the lead, to meet Decision 11. The lead answered fix. Task R9 (gpt standard / gpt-6.1-terra; Claude had no room, so the hub routed it to GPT), see `REMEDIATION-9.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S2 (Decision 11): the box grew after the tap and could cover the pin | `viewer/pages/diagram.js` `spot()`/`paint()`: while a comment is open, the text box and Send are always shown, disabled until a pin is placed; the hint shows only before the pin. The box only ever shrinks after the tap, so taps can't land under it | `app-spot-comment.spec.js`: newest short mockup in the thread, and a low tap on a tall mockup (thread and picture page). They assert the box didn't grow upward, `elementFromPoint` at the pin's centre isn't the box, and nothing scrolled. Pre-fix failures are pasted in `reports/R9.md`. The scroll-clear test passed on the old code too: no spacer is needed, because the sticky box keeps its own space under the mockup. Screenshots: `/tmp/wc-r9-14/thread-short.png`, `/tmp/wc-r9-14/picture-low.png` |
+
+Full validation on the merged tip (sub-lead):
+```
+npm --prefix viewer run test:browser   (one unsharded run, 17.1m)
+  EXIT 1   1497 passed, 1 failed, 34 skipped
+  failed: [chromium] app-send-now.spec.js:84 (known 30s load timeout; 20/20 alone here and on main, see Remediation 4)
+node --test viewer/test/*.test.js   # tests 935  # pass 933  # fail 2
+  harness timing (known, on main); server.test.js "the global write lock serializes…" -> alone 50/50
+```
