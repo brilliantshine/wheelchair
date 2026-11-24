@@ -151,7 +151,8 @@ PR's branch as in 'Fixing someone else's pull request'." Add that section:
   `don't allow` or `allow failed`, offer the replacement PR in a `question` card. Once
   allowed, the target holds for the life of the thread. After a restart, an allowed
   `permit` card in the context names the target; an open one is still waiting.
-- **Off the normal path, stop and ask.** After a restart (before or after `done`), or
+- **Off the normal path, stop and ask.** After a restart (unless an accepted `done`
+  card's `head` equals local `HEAD`, when there is nothing to do), or
   whenever the target PR is closed, merged, retargeted or turned into a draft, or anything
   else this section does not cover happens: change nothing (never abort a merge, push,
   revert or stub on your own), and post one `question` card saying in plain words what you
