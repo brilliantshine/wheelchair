@@ -12,15 +12,15 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | File | Role |
 |---|---|
 | `server.js` | The whole server, with no runtime dependencies: routes, token and remember-cookie auth, graph validation, the layout pass, the app-hub glue, the agent-write contract, the lock and registry kept under the cache root. Its header comment is the route and error-code list |
-| `app/state.js` | Hub-state paths, atomic JSON writes, and thread persistence. `allThreads()` and `threadSnapshot(id)` serve shared, deep-frozen records from a stat-checked cache; code that mutates or saves reads with `thread(id)` (or clones the one record). |
+| `app/state.js` | Hub-state paths, atomic JSON writes, per-file transaction queues, and thread persistence. `allThreads()` and `threadSnapshot(id)` serve shared, deep-frozen records from a stat-checked cache; code that mutates or saves reads with `thread(id)` (or clones the one record). |
 | `app/machine-client.js` | The authenticated client for machine-service routes, including JSON status and body pass-through. |
 | `app/cards.js`, `card.js` | Hub card handling, including hidden `resolve` and `retract` cards, and the agent-side card validator/CLI. |
 | `app/peer-log.js` | Peer message limits, log retention and held-queue cleanup. |
 | `app/peers.js` | Same-machine peer and linked-thread discovery and lead summaries. |
-| `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js screen`, the invisible-screen commands). |
+| `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js git`, the git writes, and `wc.js screen`, the invisible-screen commands). |
 | `app/quiet.js` | The quiet-turn detector: who owes a report, the reminders to an agent and its starter, and the system `needs` card, run on the queue retry timer. |
 | `app/auto-merge.js` | The opt-in auto-merge run after a `check` card is accepted: gates, GitHub readiness re-check, the exact-head REST merge, the attempt record per head and the "Not merged automatically" `needs` card. |
-| `app/background.js` | Shared appearance metadata, bounded authenticated image requests, immutable image storage and queued cleanup; one hub writer per state directory. |
+| `app/background.js` | Shared appearance metadata, bounded authenticated image requests, immutable image storage, revision checks and cleanup, both through the settings file queue; one hub writer per state directory. |
 | `pages/background-format.js` | Pure bounded image-container validation and GIF loop normalization shared by hub and local previews. |
 | `pages/background.js`, `pages/background.css` | Saved appearance renderer, token-scoped local preview ownership, Settings editor and opaque content surfaces; signed-in top-level pages only. |
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
@@ -50,6 +50,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/`. The app's fonts are not here: `/wheelchair/assets/fonts/<name>.woff2` serves four allowlisted files from `node_modules/@fontsource` (`FONT_FILES` in `server.js`) |
 | `signin.html` | What a browser with no remember cookie gets before it is signed in |
 | `playwright.config.js` | The browser suite's two projects, Chromium and Firefox; workers from `test-support/browser-workers.js`: a full run (`WHEELCHAIR_FULL_RUN=1`) with no other full run live gets up to 6, every other run 2, so concurrent runs do not saturate the machine; `--workers` still overrides |
+| `package.json` | Viewer dependencies (Playwright, the Inter and JetBrains Mono fonts) and the `test` and `test:browser` commands |
 | `test/` | The suites. See below |
 
 ## Boundaries

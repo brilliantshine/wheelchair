@@ -29,7 +29,7 @@ The root sudo helper is the other reach outside the clone and the only part that
 | `.github/workflows/macos.yml` | — | Mac CI job |
 | `connectors/` | [README.md](connectors/README.md) | per-tool connectors: manifests, machine and hub halves, registry |
 | `codex/` | [AGENTS.md](codex/AGENTS.md) | `preflight.sh` login check and model heads-up; `model.sh` GPT model pins; fixtures |
-| `docs/` | — | plans, proposals and known issues; state, not rules or contracts |
+| `docs/` | — | plans, maps, proposals and known issues; state, not rules or contracts |
 | `machine/` | [AGENTS.md](machine/AGENTS.md) | session service, hooks, API and tests; runs as the `wheelchair-machine` user service |
 | `sudo-helper/` | [AGENTS.md](sudo-helper/AGENTS.md) | root sudo helper, run page, installer and tests |
 | `viewer/` | [AGENTS.md](viewer/AGENTS.md) | viewer, server, hub app, pages, vendor and tests; runs as the `wheelchair-viewer` user service |
