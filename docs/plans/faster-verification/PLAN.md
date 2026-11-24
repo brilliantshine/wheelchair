@@ -343,6 +343,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | A sudo-helper installer failure is compared in a standalone scratch clone, where the installer guard behaves differently from a worktree | Rare path; the comparison then errs toward calling the failure the branch's | review-round-5 |
 | A repair after fast-forwarding to someone else's pushed head that restores old content can get an empty picker diff | Rare path: three unlikely events together; the full run before push still runs | review-round-5 |
 | full-run.sh exits 0 without a summary when `summary.txt` cannot be written (e.g. a directory already sits at that path) | Rare path: needs a log dir someone filled with a directory named summary.txt; a missing summary never passes the gate anyway | verification-1 |
+| A test file name with spaces is printed unquoted, so the picker's command splits it | Rare path: the tree has no such names and the test naming convention has none; the full run still runs every file | verification-2 |
 
 ## Check Once Built
 
