@@ -24,6 +24,7 @@ const FIXTURES = {
   // A script must not run: it would turn the block green.
   script: '<style>body{margin:0}.b{width:50px;height:50px;background:#ff0000}</style><body><div class="b"></div><script>document.querySelector(".b").style.background="#00ff00"</script></body>',
   rem: '<style>html{font-size:62.5%;background:#fff}body{margin:0}.b{position:absolute;left:0;top:0;width:10rem;height:3rem;background:rgb(0, 128, 0)}</style><body><div class="b"></div></body>',
+  divrule: '<style>html{background:#fff}body{margin:0}div{padding:24px}.b{position:absolute;left:0;top:0;width:120px;height:40px;padding:0;background:rgb(0, 128, 0)}</style><body><div class="b"></div></body>',
   em: '<style>html{font-size:62.5%;background:#fff}body{margin:0}.r{position:absolute;left:0;top:0;width:10rem;height:3rem;background:rgb(0, 128, 0)}.e{position:absolute;left:0;top:50px;width:10em;height:3em;background:rgb(0, 0, 255)}</style><body><div class="r"></div><div><div class="e"></div></div></body>',
 };
 
@@ -111,6 +112,13 @@ test('rem sizes follow the mockup\'s root font size', async ({ page }) => {
   const made = await seed(); await open(page, made, 'rem');
   const k = 2;
   const r = await pixels(page, [[95 * k, 25 * k], [110 * k, 25 * k], [50 * k, 40 * k]]);
+  near(r.colours[0], [0, 128, 0]); near(r.colours[1], [255, 255, 255]); near(r.colours[2], [255, 255, 255]);
+});
+
+test('a mockup\'s div rule does not move the picture', async ({ page }) => {
+  const made = await seed(); await open(page, made, 'divrule');
+  const k = 2;
+  const r = await pixels(page, [[100 * k, 10 * k], [130 * k, 10 * k], [100 * k, 50 * k]]);
   near(r.colours[0], [0, 128, 0]); near(r.colours[1], [255, 255, 255]); near(r.colours[2], [255, 255, 255]);
 });
 

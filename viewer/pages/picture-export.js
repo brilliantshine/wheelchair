@@ -119,8 +119,8 @@
     const page = await readMockupPage(plain, w, h); const bg = page.bg;
     for (const st of Array.from(doc.querySelectorAll('style'))) st.textContent = st.textContent.replace(/:root\b/g, 'html');
     const NS = 'http://www.w3.org/1999/xhtml';
-    const root = doc.createElementNS(NS, 'div');
-    root.setAttribute('style', 'box-sizing:border-box;width:' + w + 'px;height:' + h + 'px;overflow:hidden;' + (bg ? bg.list.map(([p, v]) => p + ':' + v).join(';') : ''));
+    const root = doc.createElementNS(NS, 'wc-export-root');
+    root.setAttribute('style', 'display:block;margin:0;padding:0;border:0;box-sizing:border-box;width:' + w + 'px;height:' + h + 'px;overflow:hidden;' + (bg ? bg.list.map(([p, v]) => p + ':' + v).join(';') : ''));
     const wrap = doc.createElementNS(NS, 'html');
     const rootPx = /^[\d.]+px$/.test(page.fontSize || '') ? page.fontSize : null;
     for (const a of Array.from(doc.documentElement.attributes)) wrap.setAttribute(a.name, a.value);
