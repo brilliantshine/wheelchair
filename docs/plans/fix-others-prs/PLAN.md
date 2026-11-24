@@ -15,10 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: Should the app auto-merge someone else's pull request after the fix?
-- **Context:** Auto-merge merges a thread's PR once every done card is `verified` (`viewer/app/auto-merge.js:19-43`), and may delete the head branch. The author may still be working on it.
-- **Options:** (a) Never auto-merge it; the done card says it's ready and Collin or the author merges. (b) Same as own PRs.
-- **Recommendation:** (a).
 
 ## Watch List
 
@@ -44,6 +40,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | The thread never opens its own PR when it is fixing someone else's; its done card points at the target PR | IDEA: no replacement PR | defaulted |
 | 5 | The thread does not post reviews or comments on GitHub; review findings stay in the thread | Keeps scope to fixing; can be added later | defaulted |
 | 6 | A thread takes on someone else's PR when Collin names it in chat ("fix PR #173"); no new start screen. A picker is deferred | Collin's pick; matches how Junjie's thread worked | user |
+| 7 | The app never auto-merges a PR the thread did not open; the done card says it is fixed and ready, and Collin or the author merges | Collin's pick: it is the author's PR and they may still be working | user |
 
 ## Spec
 
