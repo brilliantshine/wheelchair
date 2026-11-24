@@ -399,6 +399,7 @@ Filled by Stage 3. One row per worker brief.
 | T3 | Done gate, auto-merge skip, slug guard (local and remote), Needs-you entry | viewer/app/pr-gate.js, auto-merge.js, views.js, remote-plan.js and their tests | standard (gpt-6.1-terra) | wc-426aa645964b-worker-3 | `node --test viewer/test/*.test.js` | done |
 | T4 | Protocol docs: lead.md line and new section, cards-lead.md permit section, cards.md rows and presses, protocol-rules leadKinds | protocol/app/lead.md, cards-lead.md, cards.md, viewer/test/protocol-rules.test.js | standard (claude-sonnet-5-5) | wc-426aa645964b-worker-4 | `node --test viewer/test/protocol-rules.test.js` | done |
 | R1-1 | Remediation 1: machine test that permit is relayed synchronously (hub 200 returns id, 422 returns refusal, nothing spooled) | machine/test/service.test.js | light (gpt-6-luna) | wc-426aa645964b-worker-5 | `node --test machine/test/service.test.js` | done |
+| R2-1 | Remediation 2: bound the wait in the permit relay test so a 503-without-hub regression fails instead of hanging | machine/test/service.test.js | light (gpt-6-luna) | wc-426aa645964b-worker-6 | `node --test machine/test/service.test.js` | running |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
