@@ -484,3 +484,5 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+
+Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
