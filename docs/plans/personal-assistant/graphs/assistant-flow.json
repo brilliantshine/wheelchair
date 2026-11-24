@@ -1,0 +1,5 @@
+{"form":"layers","explanation":"The proposed shape: you talk to one assistant, it reads every thread through the hub and acts on threads for you. Leads keep doing their own planning and building. Leaves out exactly which actions it may take (still to decide) and what the screens look like (mockups coming).","layers":[
+{"label":"You","detail":"Chat in the pinned assistant thread, or the pop-up on any page. Same conversation."},
+{"label":"Personal assistant","detail":"Runs on the hub machine. Knows where every thread stands. Does what you tell it."},
+{"label":"Hub","detail":"Holds every project and thread on every machine. Starts threads and delivers messages."},
+{"label":"Project threads and their leads","detail":"Plan, review and build as today. Their questions still show under Needs you."}]}

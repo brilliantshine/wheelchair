@@ -57,7 +57,7 @@ else if (name === 'codex') { const i = args.indexOf('--'); if (i >= 0) cp.spawnS
 `;
   for (const name of ['systemctl', 'tmux', 'git', 'Xvfb', 'mcookie', 'xauth', 'ffmpeg', 'xdotool', 'xwininfo', 'codex', 'app']) await fsp.writeFile(path.join(bin, name), script, { mode: 0o755 });
   const logger = path.join(bin, 'scope-log'); await fsp.writeFile(logger, script, { mode: 0o755 });
-  await fsp.writeFile(path.join(bin, 'systemd-run'), '#!/bin/sh\nSCREEN_TOOL=systemd-run node "$SCREEN_LOGGER" "$@"\nstatus=$?\n[ "$status" = 137 ] && kill -KILL $$\n[ "$status" = 0 ] || exit "$status"\n[ "$1" = --version ] && exit 0\nwhile [ "$1" != -- ] && [ "$#" -gt 0 ]; do shift; done\n[ "$#" -gt 0 ] || exit 1\nshift\nexec "$@"\n', { mode: 0o755 });
+  await fsp.writeFile(path.join(bin, 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nSCREEN_TOOL=systemd-run node "$SCREEN_LOGGER" "$@"\nstatus=$?\n[ "$status" = 137 ] && kill -KILL $$\n[ "$status" = 0 ] || exit "$status"\n[ "$1" = --version ] && exit 0\nwhile [ "$1" != -- ] && [ "$#" -gt 0 ]; do shift; done\n[ "$#" -gt 0 ] || exit 1\nshift\nexec "$@"\n', { mode: 0o755 });
   await fsp.writeFile(settings, '{}'); const previous = { PATH: process.env.PATH, SCREEN_LOG: process.env.SCREEN_LOG, SCREEN_SETTINGS: process.env.SCREEN_SETTINGS, SCREEN_LOGGER: process.env.SCREEN_LOGGER };
   process.env.PATH = `${bin}:${previous.PATH}`; process.env.SCREEN_LOG = log; process.env.SCREEN_SETTINGS = settings; process.env.SCREEN_LOGGER = logger;
   const service = new MachineService({ win: noWsl, stateDir: path.join(root, 'state'), host: '127.0.0.1', port: 1 });

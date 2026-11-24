@@ -98,6 +98,7 @@ function currentDone(thread) {
 async function acceptCard(hub, payload) {
   const result = await hub.updateThread(payload.thread_id, async (thread) => {
     const session = hub.session(thread, payload.session);
+    if (thread.assistant && ['title', 'diagram', 'offer', 'idea', 'deferred', 'approval', 'progress', 'done', 'check', 'stub', 'sudo', 'reach'].includes(payload.kind)) throw appError(422, `the assistant doesn't post ${payload.kind}`);
     require('./handoff.js').refuseFrozen(hub, thread);
     if (thread.archived) throw appError(409, 'thread is archived');
     thread.delivered_ids ||= [];

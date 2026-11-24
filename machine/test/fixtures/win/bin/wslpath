@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stand-in for WSL's wslpath, put on PATH by win.test.js only when the real one is missing
+# (plain Linux). The fake powershell.exe and git.exe run on Linux, so a Linux path is what
+# they need: print the path unchanged.
+[ "$#" -eq 2 ] || { echo "usage: wslpath -w|-u <path>" >&2; exit 1; }
+printf '%s\n' "$2"

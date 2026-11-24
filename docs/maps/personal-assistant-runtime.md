@@ -1,0 +1,36 @@
+# Map: cross-project assistant runtime
+
+Checked against: `25f34a4572c4beb9032f16f818b6502cc59f62bd` (origin/main); the covered paths have no diff from this checkout's HEAD `e44af6f10b03095c91469de095ea568eece1d68e`. Files covered: `viewer/app/threads.js`, `viewer/app/state.js`, `viewer/app/routes.js`, `viewer/app/views.js`, `viewer/app/chat.js`, `viewer/app/sessions.js`, `viewer/app/wc.js`, `viewer/app/peers.js`, `viewer/app/peer-log.js`, `viewer/app/cards.js`, `viewer/app/card.js`, `viewer/app/hub.js`, `viewer/app/settings.js`, `viewer/app/balancer.js`, `viewer/pages/threads.js`, `viewer/pages/thread.js`, `viewer/pages/settings.js`, `machine/service.js`, `connectors/codex/machine.js`, `protocol/app/cards.md`, `protocol/app/lead.md`, `protocol/app/mapper.md`, `codex/model.sh`.
+
+```text
+user creates thread -> project check -> thread saved -> lead started -> user message queued
+hub threads + cards -> list, Needs you and thread chat
+lead -> session discovery / message -> same-machine lead -> queue -> machine submit
+settings + role rules -> placement and prompt -> machine worktree + CLI session
+```
+
+## Threads and delivery
+
+A new thread requires a project checked on its chosen machine; the hub saves a thread record and project, starts a lead and queues any initial message (`viewer/app/threads.js:21-40,45-83`). State stores thread JSON under `threads/` and projects in `projects.json`; `allThreads` reads the records across the hub (`viewer/app/state.js:64-70,108-112,194-200,253-260`). A lead's stub card creates a child on the parent's project and machine; opening it starts a lead with stub context, unless it must wait for its parent (`viewer/app/cards.js:200-216`; `viewer/app/threads.js:93-122`). Restart refuses a live lead, packages cards, recent user messages and peer history, reuses the worktree and moves queued messages to the replacement (`viewer/app/threads.js:125-152,176-198`).
+
+The Threads page polls lean thread summaries and features, showing stage and Needs you (`viewer/pages/threads.js:81-90,138-177`; `viewer/app/routes.js:511-544`). Features aggregate non-archived threads and open question, needs, approval, merged and reach cards (`viewer/app/views.js:20-52,140-150`). The thread page polls chat and posts its composer text; the route chooses the latest live lead or returns 409 (`viewer/pages/thread.js:1498-1504,1571-1581`; `viewer/app/routes.js:682-690`). Queue delivery waits for a live, ready, unheld session and normally for turn end; it removes a message only after machine submit succeeds (`viewer/app/sessions.js:498-546`).
+
+## Sessions and placement
+
+`wc.js session` sends start, stop, list and leads through the local agent endpoint; start requires role, brief file and attempt ID, ignores `--cli`, and retries hub unavailability (`viewer/app/wc.js:71-97,153-164`; `machine/service.js:2292`). The hub finds the caller's thread; list is that thread's sessions, leads is lead-only, and start is constrained by role (`viewer/app/sessions.js:128-141,729-781`). A lead may start mapper, designer, reviewer, sub-lead or verifier; a sub-lead may start worker or verifier. Stop is limited to the starter, a replacement of the starter's role, or a lead stopping a non-lead descendant (`viewer/app/sessions.js:138-141,813-821`). Attempts deduplicate live or unanswered starts; only one live sub-lead is allowed (`viewer/app/sessions.js:748-763`).
+
+Placement maps leads and sub-leads to their own model slots, other named roles to configured tiers, workers to requested tiers; a worker's ceiling is checked first (`viewer/app/balancer.js:12-18`; `viewer/app/sessions.js:272-283`). Lead provider order, thread provider affinity for lead/sub-lead, enabled harnesses, signed-in accounts, model availability and usage all affect selection; unavailable placement can wait (`viewer/app/balancer.js:67-103`; `viewer/app/sessions.js:283-299`). The hub passes project, token, role, model, brief, worktree and role layers to the machine (`viewer/app/sessions.js:325-339,368-393`). The machine joins duplicate starts, writes a composed role prompt, creates or reuses a worktree, launches the connector in tmux and persists the session (`machine/service.js:791-825,834-862`).
+
+## Cross-thread traffic
+
+Only a lead can call `session leads`; even `--all-projects` lists only reachable threads on the same machine. Unlinked other-project entries reveal identity and project, while same-project or linked entries also reveal stage, ideas, progress, branch and PR; same-project unopened stubs are included (`viewer/app/wc.js:71-75`; `viewer/app/sessions.js:729-735`; `viewer/app/peers.js:6-15,42-65`). Thus this API does not provide all-machine state or full state of unlinked projects.
+
+A lead message to another thread must name a recorded lead, remain on the same machine and, for a different project, have a link (`viewer/app/cards.js:175-194`). A lead can request a link with a reach card; the user allowing it stores the target ID, and links work in either direction (`viewer/app/cards.js:163-170`; `viewer/app/threads.js:330-349`; `viewer/app/peers.js:13,17-27`). The hub routes to the latest live lead or holds the message for the latest ended lead; restart moves its queue (`viewer/app/hub.js:208-224`; `viewer/app/threads.js:182-197`). Twenty messages to one thread within an hour pause that pair until the user writes in the sending thread; the peer log retains 200 entries (`viewer/app/cards.js:184-194`; `viewer/app/peer-log.js:2-4`).
+
+## Cards, roles and settings
+
+`card.js` validates kind, fields and values, then posts with the session token; the machine authenticates the agent and the hub validates again using its recorded role (`viewer/app/card.js:202-220,311-321,331-336`; `machine/service.js:2221-2224`; `viewer/app/cards.js:58-71`). Card permissions are enumerated in `viewer/app/card.js:29-51`: only leads post most user-facing kinds including reach and stub; lead/sub-lead can post progress and image; message is allowed to lead, sub-lead, worker, mapper and designer; result to worker, mapper, sub-lead and designer. Same-thread message queues for the target; result queues to its starter (`viewer/app/cards.js:230-243`).
+
+The hub's role allowlist and start policy, Settings roles, template and lesson handling, card permissions and machine prompt card-file mapping are separate registrations (`viewer/app/sessions.js:128-141`; `viewer/app/settings.js:14-24,183-194,223-257`; `viewer/app/card.js:29-51`; `machine/service.js:198-211`). The machine reads `protocol/app/<role>.md`, appends role-specific card files and optional realism rules and hub role layers; connector launch determines how instructions reach the agent, for example Codex gets a first message pointing to the prompt file (`machine/service.js:198-211,821-825,1042`; `connectors/codex/machine.js:172`). Model settings are stored via `codex/model.sh`; Settings validates and writes provider/slot cells, and other-agent role tiers are separately enumerated (`viewer/app/settings.js:428-432`; `viewer/app/routes.js:314-325,405-410`; `viewer/pages/settings.js:23-24`; `viewer/app/balancer.js:12-18`).
+
+Not checked: every connector's prompt transport, handoff/import details, full card schemas and every settings UI control, or authorization beyond the paths cited here.

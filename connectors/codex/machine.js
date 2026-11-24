@@ -158,7 +158,8 @@ module.exports = {
     const trust = `projects={${JSON.stringify(worktree)}={trust_level="trusted"}}`;
     const notify = `notify=[${JSON.stringify(path.join(c.root, 'machine', 'hook.sh'))},"codex",${JSON.stringify(session.name)}]`;
     const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
-    const argv = ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
+    // No startup update menu: it waits for a keypress no one sends (the tmux pane is unattended).
+    const argv = ['codex', ...access, '-c', notify, '-c', trust, '-c', 'check_for_update_on_startup=false', ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
     const projectStart = argv.length;
     const { args, warnings, tooLarge } = codexOverrides(context?.tools ? context.mcp : null, context);
     argv.push(...args);
