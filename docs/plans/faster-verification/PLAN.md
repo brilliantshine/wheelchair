@@ -40,6 +40,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | A conflict-free merge of the default branch into work whose full run passed gets the picker's targeted run, not a full run; the Constraint is worded to match. | Collin's original ask (idea 3, also IDEA What good looks like); round 1 found the Spec contradicting it. | review-round-1 |
 | 9 | The picker and full-run rules are opt-in per project through a `Test picker and full run` heading in the project's AGENTS.md; other projects keep today's flow. | Role rules serve every project; round 1. | review-round-1 |
 | 10 | Verifier briefs name a picker base and a separate comparison commit (merge-base with the default branch); the main comparison uses `git archive` into scratch. | Round 1: a retry's base is not main; verifiers cannot add git worktrees. | review-round-1 |
+| 11 | Superseded Decision 7's worker rule: only full runs (started by full-run.sh) may take the larger worker count, and only when no other full run is live; all other runs use 2. | Round 2: a short picked run must not hold a 10-minute full run at 2. | review-round-2 |
+| 12 | Full-run evidence carries to descendant commits the picker selects nothing for, and to a conflict-free default-branch merge whose picked check passed. Verifiers switch to picked-only mode only when the brief gives a picker base and says the starter runs the full run. | Round 2: bookkeeping commits and rollout handshake. | review-round-2 |
 
 ## Spec
 
@@ -51,10 +53,10 @@ Verifiers run whatever validation commands the Spec and brief name, which are us
 whole suites, and often re-run them on main to compare failures (MAP.md, Verification flow).
 After this change, in a project that declares a test picker and a full run (S5.0; this
 repository does): verifiers run only the tests the picker selects for the change they check
-(S1); the one full run happens once per pushed commit, by the session about to push or hand
-off (S2, S5); browser runs use more workers when alone (S3); the flaky harness assertion stops
-measuring load (S4). Projects that declare neither keep today's flow, except that failures are
-compared with main per file (S5.2).
+(S1); one full run covers each pushed commit (with the S5.6 exemptions), done by the session
+about to push or hand off (S2, S5); full browser runs use more workers when no other full run
+is going (S3); the flaky harness assertion stops measuring load (S4). Projects that declare
+neither keep today's flow.
 
 Rollout: this thread is built and checked under the installed rules, which run this Spec's
 validation commands as written. The new rules take effect for threads started after the pull
@@ -104,9 +106,10 @@ it. **Only paths that exist at `<head>` are ever put in a command.**
    `viewer/test/app-settings.test.js`, `machine/test/aside-turns.test.js`,
    `machine/test/service.test.js`, `machine/test/char-lib-argv.test.js`), and fixtures under
    `docs/` read by tests (for example `docs/plans/openrouter-harness/samples/**`, read by
-   `viewer/test/app-openrouter-hub.test.js` and `machine/test/pi-login.test.js`). `tests`
+   `viewer/test/app-openrouter-hub.test.js` and `machine/test/pi-login.test.js`, and
+   `docs/plans/*/graphs/**`, which `viewer/test/browser.spec.js` finds with `git ls-files`). `tests`
    may be test paths or a suite name meaning that whole suite. The builder seeds it by
-   grepping the test files for every repository path they read (`readFileSync`, `path.join`
+   grepping the test files for every repository path they read (`git ls-files`, `readFileSync`, `path.join`
    with `__dirname`, served URLs); it need not be complete, because of rule 5.
 4. Files that fan out select their whole suite: anything under `viewer/test/helpers/` and
    `viewer/test/fixtures/` if present, `viewer/playwright.config.js`, `viewer/package.json`,
@@ -147,19 +150,22 @@ when every suite exited 0. It does not run smoke, live or `./install.sh`. A full
 ### S3. Browser workers when alone
 
 `viewer/playwright.config.js` chooses workers through `test-support/browser-workers.js`,
-which exports a pure `chooseWorkers({ others, cpus })` and the registration handling:
+which exports a pure `chooseWorkers({ full, othersFull, cpus })` and the registration handling:
 
 - The decision is made once, in the Playwright runner's main process, and passed to its
   worker processes (for example through an environment variable set on first load), so
   worker processes re-loading the config neither register nor decide again.
+- A run is **full** when started by `full-run.sh`, which sets `WHEELCHAIR_FULL_RUN=1`; any
+  other run (a picked run, a worker's run) is not.
 - A machine-wide directory `wheelchair-browser-tests` under `os.tmpdir()` holds one file per
-  running browser run, named by its process id. Files whose process is gone are ignored and
-  removed. The run adds its own file and removes it at exit.
-- `chooseWorkers`: no other live registered run → `min(6, floor(cpus / 2))`, at least 2;
-  otherwise 2. There is no load-average check (a run's own earlier suites would defeat it).
-- The choice is made at start and kept: a run that started alone keeps its workers when
-  another starts later; the later run uses 2. So the browser load is at most 6 + 2 per
-  further run, instead of 2 per run.
+  running full browser run, named by its process id. Files whose process is gone are ignored
+  and removed. A full run adds its own file and removes it at exit.
+- `chooseWorkers`: a full run with no other live full run registered →
+  `min(6, floor(cpus / 2))`, at least 2; every other case → 2. There is no load-average check
+  (a run's own earlier suites would defeat it). Picked runs are short, so they keep 2, and a
+  short run never holds a full run down.
+- The choice is made at start and kept. So the browser load is at most one larger full run
+  plus 2 per other run.
 - Runs that do not register (checkouts without this change) are not seen; they use their
   own cap of 2.
 - `--workers` on the command line still overrides, as today. Node test concurrency is
@@ -189,23 +195,28 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    summary that names the commit and passes as S2 defines). Wheelchair's `AGENTS.md` names
    `node test-support/pick-tests.js --base <commit>` and
    `bash test-support/full-run.sh <log-dir>`. Rules 3–6 below apply only in an opted-in
-   project; elsewhere today's rules stand. Rules 1, 2 (comparing with main per file) and
-   the targeted-command habit apply everywhere.
+   project, and rule 2 too; elsewhere today's rules stand.
+   **Handshake:** a verifier uses rules 2–3 only when its brief gives a picker base and says
+   the starter runs the full run; a brief without both gets today's behaviour. So a lead or
+   sub-lead still on older rules never gets a verifier that skips the full suite.
 1. **Spec validation commands** (lead.md, step 4.6): in an opted-in project the lead writes
    targeted commands per Spec item and does not list whole-suite or full-run commands as
    validation; the full run is the pusher's (5, 6). Verifiers always run every Spec
    validation command as written, so older plans that list whole suites still get them.
 2. **Comparing a failure with main** (verifier.md): run only the failing test files at the
    **comparison commit** the brief names (default: `git merge-base origin/<default branch>
-   HEAD`), never the whole suite. Get that tree read-only with
-   `git archive <commit> | tar -x -C <scratch>/main` (no git writes), and link into it the
-   dependency folders present in your own checkout (for this repository `viewer/node_modules`
-   and any top-level `node_modules`). A failing test file that does not exist at the
-   comparison commit is the branch's failure. Report the comparison commit.
+   HEAD`), never the whole suite. Get that tree as its own clone in a scratch directory
+   outside any repository: `git clone --quiet <your checkout> <scratch>/main` then
+   `git -C <scratch>/main checkout --quiet --detach <commit>` (this writes only the scratch
+   clone's own metadata), and link into it the dependency folders present in your own
+   checkout (for this repository `viewer/node_modules` and any top-level `node_modules`). A
+   failure counts as already on main only when the same test fails there with the same
+   error; a test file that does not exist at the comparison commit, or fails there for a
+   different reason, is the branch's failure. Report the comparison commit.
 3. **Verifiers in an opted-in project** run the Spec's commands and the commands the picker
    prints for the **picker base** the brief names; never the full-run command, and never a
    whole suite the picker did not select. The report names both commits and the picked
-   commands. A brief with no picker base uses the comparison commit.
+   commands.
 4. **Which commits a verifier brief names.** The comparison commit is always the merge-base of
    the checked commit with the default branch. The picker base is: the comparison commit for
    a first check of a build, small fix or after-done fix; the commit the previous attempt
@@ -220,21 +231,24 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    the commit it reports, and pastes `summary.txt` into COMPLETION.md. A full-run failure is a
    gap like a verifier gap (same remediation, counting, two-attempt rule and realism
    judgment). When a new commit replaces the one a full run is checking, stop that run first;
-   after the fix, verifiers re-check from the previous picker base as in 4 and the full run
+   after the fix, verifiers re-check with the previously checked commit as picker base, as in 4, and the full run
    repeats on the new commit.
 6. **Lead before a push that adds commits** (small fix, after-done fix, repair) runs the full
    run on the exact commit, in the background alongside its verifier, stopping any full run
-   whose commit was replaced. A full-run failure is a failed check under the existing rules:
-   it counts toward the retry and budget rules, and after two failed attempts Collin's
-   existing choice (push it as it is, or drop it and revert) covers it the same way.
-   No full run is needed when:
-   - the picker selects nothing for the diff from the last commit with a passing full run
-     to the commit to push (for example the `status: done` commit after the sub-lead's
-     passing run); or
-   - the push is a conflict-free merge of the default branch into a commit whose full run
-     passed (lead.md Making the pull request mergeable 6–7 and the non-fast-forward rule):
+   whose commit was replaced. A full-run failure is a failed check under the rule that
+   already governs that push: for a small fix or after-done fix it counts toward the two
+   attempts and Collin's existing choice (push it as it is, or drop it and revert); for a
+   repair (Making the pull request mergeable 6–8) nothing unverified is pushed and the
+   budget's `needs` card applies, as today.
+   **Covered:** a commit Y is covered by a passing full run on commit X when X is Y or an
+   ancestor of Y and the picker selects nothing for X..Y (so COMPLETION.md and
+   `status: done` commits stay covered). No full run is needed when:
+   - the commit to push is covered; or
+   - the push is a conflict-free merge of the default branch into a covered commit
+     (Making the pull request mergeable 6–7):
      the verifier's picked run (base = the merged default-branch tip) is its check, as
-     Collin asked. A merge with conflicts gets the full run.
+     Collin asked. Once that check passes, the merge commit counts as covered too, so a later
+     clean merge keeps the exemption. A merge with conflicts gets the full run.
 7. **Workers** keep running their task's commands; worker.md may point them at the picker for
    their own changes. No worker runs the full run.
 8. AGENTS.md's Verification section and CONTRIBUTING.md name the picker and the full run,
@@ -263,8 +277,9 @@ These are for this thread's verifiers, which run under the installed rules.
   lists all eight suites with exit 0. (For this thread the sub-lead runs it; under the
   installed rules a verifier may run it too.)
 - `node --test viewer/test/protocol-rules.test.js` exits 0 after the protocol edits.
-- One browser run alone uses `min(6, floor(cpus/2))` workers; a second run started while the
-  first runs uses 2 (check each runner's reported worker count).
+- A browser run with `WHEELCHAIR_FULL_RUN=1` and no other full run uses `min(6, floor(cpus/2))`
+  workers; a second full run started while the first runs uses 2, and a run without the
+  variable uses 2 (check each runner's reported worker count).
 
 ## Deferred
 
@@ -332,12 +347,21 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 2 — 2026-11-23
 
-**Lanes:** (filled when reviewers start)
+**Lanes:** intent: claude (reviewer-3); mechanics: gpt (reviewer-4); cross-family: yes.
 
 **Changed since Round 1:** S1 rule 0 (deletions/renames), rule 2 (both components), rule 3 (docs fixtures), rule 5 wording; S2 browser first, no clean line; S3 lock only, kept choice, bound; S4 switch-on unchanged; S5.0 opt-in per project; S5.1 verifiers run Spec commands as written; S5.2 comparison via git archive; S5.4 two commits; S5.5/S5.6 stop replaced runs, push-as-is, exemptions (picker selects nothing; conflict-free default-branch merge); rollout paragraph; non-goals; Validation; IDEA Constraint wording; Accepted Risk (registration race).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | A short picked run starting first holds the full run at 2 workers | upheld | D11; S3 full-run priority |
+| intent | minor | Per-file main comparison applied to every project; "same failure" undefined | upheld | S5.0 rule 2 opted-in only; S5.2 same test, same error |
+| intent | minor | Summary says full run per pushed commit, ignoring exemptions | upheld | Wording fixed |
+| mechanics | blocking | git archive copy lacks git metadata for git-using tests | downgraded (major) | S5.2 scratch clone at the comparison commit |
+| mechanics | blocking | Full-run evidence lost across bookkeeping commits and clean merges | downgraded (major) | D12; "covered" definition; merge commit covered |
+| mechanics | blocking | Push-as-is choice wrongly extended to repairs | downgraded (major) | S5.6 repairs keep no-unverified-push and needs card |
+| mechanics | major | No rollout handshake between old leads and new verifiers | upheld | D12; S5.0 handshake |
+| mechanics | major | docs graphs read via git ls-files unmapped | upheld | S1 rule 3 entry and seeding by git ls-files |
+| mechanics | minor | S5.5 vs S5.4 re-check base wording | upheld | S5.5 aligned with S5.4 |
 
 ## Prior Work
 
