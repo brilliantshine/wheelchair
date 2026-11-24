@@ -145,3 +145,23 @@ npm --prefix viewer run test:browser -- --shard=N/6
   same three fail on main (canonical clone 25f34a45) at the same hour: npm --prefix viewer run test:browser -- app-accounts.spec.js -g "lead waiting line" -> 3 failed, 4 passed
 node --test viewer/test/*.test.js   # tests 935  # pass 934  # fail 1  (the known harness timing flake)
 ```
+
+### Remediation 3 — 2026-11-23
+
+Verification attempt 3 (gpt-6.2-sol, commit `192b501e`) reported 3 gaps. One was judged a rare path and recorded in PLAN.md Accepted Risks (`background-blend-mode` lost in the PNG). The lead answered: fix 1, defer 2 (PLAN.md Deferred D4: Firefox PNG of a mockup that uses vh units). Task R3 (gpt light / gpt-6-luna; Claude had no room, so the hub routed it to GPT), see `REMEDIATION-3.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S2: a spot comment stayed locked after the hub accepted it until the chat refresh finished | `viewer/pages/thread.js:176-178` (`spotButton` send: after the POST, `sigs.chat = null; render();` then `poll()` without awaiting) | `app-spot-comment.spec.js` "clears as soon as the hub accepts it" holds the chat GET. It failed on the old handler in both browsers (pasted in `reports/R3.md`) |
+
+Full validation on the merged tip (sub-lead):
+```
+node --test viewer/test/*.test.js   # tests 935  # pass 934  # fail 1  (the known harness timing flake, also on main)
+npm --prefix viewer run test:browser   (one unsharded run, 23.8m)
+  EXIT 1   1438 passed, 10 failed, 34 skipped, 30 did not run
+  failed, all reproduced as pre-existing or load-only:
+    app-accounts.spec.js:576, :584, :591, :599 "lead waiting line" x chromium+firefox (8): the +3h time crosses midnight; the same tests fail on main at this hour
+    app-handoff.spec.js:206 [chromium]: re-run alone with --repeat-each=4 -> 8 passed, and 8 passed on main
+    app-settings.spec.js:99 [firefox]: its serial group's failure withheld the 30 "did not run"; re-run of the whole file alone -> 72 passed (verifier 3 also reproduced this failure on main)
+app-send-now.spec.js:59 "a regular composer send already shown by a poll…" fails about 1 in 72 here and on main (--repeat-each=6: 71 passed 1 failed on both)
+```
