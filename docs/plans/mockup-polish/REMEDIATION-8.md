@@ -50,3 +50,7 @@ Paste the exact `git diff` of your commit.
 If the same check fails twice, stop and report rather than iterating.
 
 List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none.
+
+## Attempt 2
+
+Attempt 1 hit its fails-twice guardrail on the thread case. Cause: `.card-diagram.card-diagram { overflow: hidden }` (thread.css:202) makes the card the sticky box's scroll container. Attempt 2's brief gives exact changes: delete the scrollIntoView block; make `.spot-box` sticky at `bottom: calc(var(--composer-h) + 8px)` with `z-index: 3` and a background; change that card rule to `overflow: clip`; add `bottom: 0` to the picture page's sticky box. Effort is raised one step (xhigh).
