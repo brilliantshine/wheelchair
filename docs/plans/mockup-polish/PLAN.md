@@ -219,6 +219,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A poll that changes only the lead's name or the thread's worktree leaves the old byline or mockup URL in the chat until the next chat change | Rare path: both change rarely mid-thread, the chat trigger already ignored them before this build, and the next card redraws correctly | verification-1 |
 | The `:root` to `html` rewrite lowers specificity, so a mockup with competing `:root` and `html` rules for the same property may export different colours | Rare path: mockups don't normally set the same property on both; the HTML download stays exact | review-round-5 |
 | A body background that uses a variable declared on `body` may vanish when moved to the export root | Rare path: unusual way to write a background; the HTML download stays exact | review-round-5 |
 | A hand-off that freezes the thread while a spot comment is open leaves its Cancel disabled | Rare path: needs a hand-off mid-draft; the draft is lost, nothing else | review-round-3 |
@@ -351,3 +352,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — Choice: T3, picture bar `flex-wrap: wrap` so the added button doesn't push Download off a phone screen; layer has a dashed outline; taps are click events.
 - 2026-11-23 — Choice: T3, `app-threads.spec.js` redraw-while-typing test now waits for the second card and asserts the answer box node is kept.
 - 2026-11-23 — T3 accepted (band: bigger-scout): scout found no Spec deviation; handed-off reason and picture-page pending state are untested (noted). Sub-lead re-ran spot-comment, mockups, chat-stability, picture, mockup-png, screenshot-view: 82 passed.
+- 2026-11-23 — Verification 1: FAIL (gpt-6.2-sol), 4 gaps; 1 judged rare and recorded in Accepted Risks; 3 sent to the lead for defer/fix.
