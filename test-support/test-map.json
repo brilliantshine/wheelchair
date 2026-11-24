@@ -123,5 +123,47 @@
       "install",
       "sudo-helper"
     ]
+  },
+  {
+    "glob": "viewer/server.js",
+    "tests": [
+      "viewer-node",
+      "viewer-browser"
+    ]
+  },
+  {
+    "glob": "machine/**",
+    "additive": true,
+    "tests": [
+      "machine/test/name-guard.test.js"
+    ]
+  },
+  {
+    "glob": "viewer/app/**",
+    "additive": true,
+    "tests": [
+      "machine/test/name-guard.test.js"
+    ]
+  },
+  {
+    "glob": "viewer/pages/**",
+    "additive": true,
+    "tests": [
+      "machine/test/name-guard.test.js"
+    ]
+  },
+  {
+    "glob": "viewer/server.js",
+    "additive": true,
+    "tests": [
+      "machine/test/name-guard.test.js"
+    ]
+  },
+  {
+    "glob": "machine/test/fixtures/**",
+    "additive": true,
+    "tests": [
+      "viewer/test/app-chat.test.js"
+    ]
   }
 ]

@@ -50,7 +50,10 @@ test('real repository changes include readers across suites', () => {
     ['viewer/doc.js', [['viewer-node', 'viewer/test/routes.test.js'], ['viewer-browser']]],
     ['protocol/sensitivity.md', [['sensitivity']]],
     ['install/guard.sh', [['install'], ['sensitivity'], ['sudo-helper']]],
-    ['docs/plans/kimi-code/samples/wire.jsonl', [['viewer-node', 'viewer/test/app-kimi-hub.test.js']]]
+    ['docs/plans/kimi-code/samples/wire.jsonl', [['viewer-node', 'viewer/test/app-kimi-hub.test.js']]],
+    ['viewer/app/sessions.js', [['machine', 'machine/test/name-guard.test.js']]],
+    ['viewer/server.js', [['viewer-node', 'viewer/test/routes.test.js'], ['viewer-browser'], ['machine', 'machine/test/name-guard.test.js']]],
+    ['machine/test/fixtures/agy/transcript.jsonl', [['viewer-node', 'viewer/test/app-chat.test.js']]]
   ];
   const missing = [];
   for (const [file, expected] of cases) {
@@ -66,3 +69,4 @@ test('real repository changes include readers across suites', () => {
   }
   assert.deepEqual(missing, []);
 });
+test('an additive map entry adds its reader without turning off the fallback', () => { const f = fixture(); f.write('test-support/test-map.json', JSON.stringify([{ glob: 'machine/**', additive: true, tests: ['viewer/test/foo.test.js'] }])); f.git('add', '.'); f.git('commit', '-qm', 'map'); f.write('machine/other.js', 'x'); const r = f.pick(); assert.deepEqual(names(r), ['viewer-node', 'machine']); assert.deepEqual(r.suites[0].files, ['viewer/test/foo.test.js']); assert.equal(r.suites[1].command, 'bash machine/test/run.sh'); });

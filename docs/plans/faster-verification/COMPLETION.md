@@ -190,3 +190,14 @@ The browser stage ran `Running 1466 tests using 6 workers`, with 1423 passed, 9 
 | machine | 18 tests, the same names as main's run of `win*.test.js` (`comm` against the main list: no extras, none missing). 14 have the error `wslpath failed: Error: spawnSync wslpath ENOENT`, 1 an `ENOENT` open, and 3 multi-line errors | on main | Main comparison in Remediation 1. |
 
 So the full run on 70d11cdb passes under the lead's reading of S2. Commits after it change only COMPLETION.md and PLAN.md, which the picker maps to nothing, so they stay covered.
+
+### Remediation 3 (after verification attempt 3, 2026-11-24)
+
+Gaps and decision: `REMEDIATION-3.md`; Collin's choice is PLAN.md D15. The verification-3 row in Accepted Risks covers further picker misses of the same kind.
+
+- **R5**:
+  - `test-support/pick-tests.js` (map loop): an entry with `"additive": true` adds its tests but does not count as mapping, so rules 5–6 still fall back.
+  - `test-support/test-map.json` gains additive name-guard entries (`machine/**`, `viewer/app/**`, `viewer/pages/**`, `viewer/server.js`), `viewer/server.js` → both viewer suites, and additive `machine/test/fixtures/**` → `viewer/test/app-chat.test.js`.
+  - Tests: the real-tree test gained `viewer/app/sessions.js`, `viewer/server.js` and `machine/test/fixtures/agy/transcript.jsonl` cases, and a fixture test covers additive entries.
+  - `node --test test-support/test/*.test.js`: 25/25. Mutations: ignoring `additive` fails the fixture test; dropping the new entries fails the real-tree test.
+- **R6**: `protocol/app/lead.md` small-fix path waits for the full run (or coverage) before the push. `node --test viewer/test/protocol-rules.test.js`: 44/44.

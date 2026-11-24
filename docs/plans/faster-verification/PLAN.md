@@ -44,6 +44,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Full-run evidence carries to descendant commits the picker selects nothing for, and to a conflict-free default-branch merge whose picked check passed. Verifiers switch to picked-only mode only when the brief gives a picker base and says the starter runs the full run. | Round 2: bookkeeping commits and rollout handshake. | review-round-2 |
 | 13 | The verifier handshake has two forms (`Full run: by the starter` / `not needed: clean merge of the default branch`); with the first, verifiers skip whole suites the picker selects. Coverage carries across picker-empty descendants of any covered commit. A full-run failure confirmed on main (same test, same error) does not fail the gate. | Round 3. | review-round-3 |
 | 14 | Superseded D8's, D12's and D13's clean-merge parts: a conflict-free merge of the default branch gets a picked verifier check plus the usual full run in the background before the push; there is no clean-merge exemption. IDEA "What good looks like" and Constraint reworded. | Collin chose to simplify after three review rounds kept finding holes in the exemption. | idea-change |
+| 15 | The picker's misses of readers it can't see (a file launched by path, a directory walk, a fixture copied by another component) are an Accepted Risk; the known cases are mapped (name-guard, `viewer/server.js`, `machine/test/fixtures/**`), and the full run before every push is the safety net. Map entries may be `additive` (they add a reader without turning off the fallback). | The gap survived two fix attempts (R1, R3); no hand-kept list stays complete. Collin picked "Map known cases, accept the rest". | user |
 
 ## Spec
 
@@ -344,6 +345,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | A repair after fast-forwarding to someone else's pushed head that restores old content can get an empty picker diff | Rare path: three unlikely events together; the full run before push still runs | review-round-5 |
 | full-run.sh exits 0 without a summary when `summary.txt` cannot be written (e.g. a directory already sits at that path) | Rare path: needs a log dir someone filled with a directory named summary.txt; a missing summary never passes the gate anyway | verification-1 |
 | A test file name with spaces is printed unquoted, so the picker's command splits it | Rare path: the tree has no such names and the test naming convention has none; the full run still runs every file | verification-2 |
+| The picker can miss tests that read a changed file in ways it can't see: a file launched by path, a directory walk, a fixture copied by another component. Known cases are mapped; others may surface later | Collin's decision (D15): the full run before every push still runs every suite, so a miss shows up before anything is pushed. Further misses of this kind are this risk, not gaps | verification-3 |
 
 ## Check Once Built
 
@@ -489,6 +491,8 @@ Filled by Stage 3. One row per worker brief.
 | R2 | Remediation 1, gaps S5.1/S5.3, S5.5, S5.6 wording | protocol/app/{verifier,sub-lead,lead}.md | light, claude-haiku-5-5 | wc-8bfbebc2e0d5-worker-7 | protocol-rules test | done |
 | R3 | Remediation 2, map completeness audit + real-tree sample test | test-support/test-map.json, test-support/test/pick-tests.test.js (add only) | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker-8 | JSON parses; test-support suite; reader table | done |
 | R4 | Remediation 2, verifier.md picker flags; sub-lead.md summary before result | protocol/app/{verifier,sub-lead}.md | sub-lead (claude-opus-5-5) | — | protocol-rules test | done |
+| R5 | Remediation 3: map name-guard, viewer/server.js and machine fixture readers; `additive` map entries; tests | test-support/pick-tests.js, test-support/test-map.json, test-support/test/pick-tests.test.js | sub-lead (claude-opus-5-5) | — | test-support suite; mutation checks | done |
+| R6 | Remediation 3: lead.md small-fix push waits for the full run | protocol/app/lead.md | sub-lead (claude-opus-5-5) | — | protocol-rules test | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -533,3 +537,5 @@ Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
 - 2026-11-23 — Trade-off from R3: a protocol-only change now picks every suite, so the picker saves no time on protocol edits, which are common in this repository. That follows the lead's "when unsure, fall back" bar. Narrowing it needs a proven reader list (possible follow-up).
 - 2026-11-23 — Choice: R3, test-map.json: shared-script directories and `install.sh` select all suites, not named subsets; R3, pick-tests.test.js: the real-tree test copies the working map into a baseline commit in its clone, and checks reader files only when a suite is narrowed.
 - 2026-11-23 — Verification 3 on 70d11cdb (Claude FAIL, GPT FAIL). The picker missing non-import readers (name-guard directory walk, viewer/server.js launched by path, machine fixtures read by a viewer test) survived two fix attempts (R1, R3): treated as a plan defect and sent to the lead for Collin with options. Small gap: lead.md small-fix push does not wait for the full run. Full run on 70d11cdb passes under the lead's reading (COMPLETION.md).
+- 2026-11-24 — Collin's decision on the picker gap (D15): map the known cases, accept the rest. The sub-lead made R5 and R6 itself. The `additive` flag was needed because any map entry turns off rule 5's fallback, so a plain `machine/** -> name-guard` entry would have made unmapped machine changes pick only name-guard. Additive entries: name-guard for `machine/**`, `viewer/app/**`, `viewer/pages/**` and `viewer/server.js`; `machine/test/fixtures/** -> viewer/test/app-chat.test.js`. A plain entry sends `viewer/server.js` to both viewer suites whole. Each new test fails when its rule is broken.
+- 2026-11-24 — Choice: R5, pick-tests.js: `"additive": true` on a map entry (Spec rule 3 extension); it adds tests and never counts as mapping for rules 5–6.

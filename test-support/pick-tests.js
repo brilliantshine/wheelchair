@@ -75,7 +75,9 @@ try {
       }
       for (const entry of map) if (glob(entry.glob).test(p)) for (const target of entry.tests) {
         const suite = testSuite(target);
-        if (suite ? mark(suite, target, `map: ${entry.glob}`) : mark(target, null, `map: ${entry.glob}`)) mapped = covered = mapEntry = true;
+        const marked = suite ? mark(suite, target, `map: ${entry.glob}`) : mark(target, null, `map: ${entry.glob}`);
+        // An additive entry adds a reader the other rules can't see; it never stands in for the fallback.
+        if (marked && !entry.additive) mapped = covered = mapEntry = true;
       }
       const fan = [];
       if (/^viewer\/test\/(helpers|fixtures)\//.test(p) || /^viewer\/(playwright\.config\.js|package(?:-lock)?\.json)$/.test(p)) fan.push('viewer-node', 'viewer-browser');

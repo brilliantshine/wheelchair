@@ -159,7 +159,9 @@ The user picks the project and the machine, then writes in plain words.
   its `result` names the commit it checked (in a project with a `Test picker and full run`
   heading, add the bases and start the full run as above). A failed check gets one more attempt; a
   gap surviving two attempts comes to the user as a `question` card (push the fix as it is,
-  or drop it, which you do with `wc.js git revert`). Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
+  or drop it, which you do with `wc.js git revert`). With a `Test picker and full run`
+  heading, also wait until the full run has passed for that commit (or it is covered). Then
+  push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
   with `wc.js git pr`, and follow **Making the pull request mergeable** before posting
   `done`, setting `verified` as that section says. Say in your reply what changed. After the `done` card, follow step 10 (Check it
   yourself).
