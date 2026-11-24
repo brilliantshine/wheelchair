@@ -1497,7 +1497,7 @@
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
     const canSend = liveLead() && !t.archived && !frozen();
     msgEl.disabled = !canSend || uploading; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
-    msgEl.placeholder = canSend ? 'Message the lead' : (t.archived ? 'Archived' : 'No live lead');
+    msgEl.placeholder = canSend ? (t.assistant ? 'Message the assistant' : 'Message the lead') : (t.archived ? 'Archived' : 'No live lead');
   }
 
   // The newest chat item this page has shown, for the pop-up's unread dot. Only moves forward.
