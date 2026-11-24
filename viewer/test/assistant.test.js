@@ -171,3 +171,140 @@ test('assistant command retries reads but not writes and reports failures as JSO
     const invalid = await run('message'); assert.equal(invalid.code, 0); assert.equal(JSON.parse(invalid.stdout).ok, false);
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
+
+async function assistantFixture() {
+  const c = await setup();
+  await api(c, '/settings/preferences', { method: 'PUT', body: { assistant: 'on' } });
+  const id = (await api(c, '/assistant')).body.thread;
+  const name = (await api(c, `/threads/${id}/chat`)).body.thread.sessions[0].name;
+  return { c, id, call: (body) => machinePost(c, '/machine/assistant', { calling_session: name, ...body }) };
+}
+
+async function editThread(c, id, edit) {
+  const file = path.join(c.state, 'threads', `${id}.json`);
+  const value = JSON.parse(await fs.readFile(file, 'utf8'));
+  edit(value);
+  await fs.writeFile(file, JSON.stringify(value));
+}
+
+test('browser thread creation ignores the private assistant title', async () => {
+  const c = await setup();
+  try {
+    const made = await thread(c, { message: 'Browser title', _assistant_title: 'Injected title' });
+    assert.equal(made.title, 'Browser title');
+  } finally { await close(c); }
+});
+
+test('threads lists both registered machines and includes archives only on request', async () => {
+  const { c, id, call } = await assistantFixture();
+  try {
+    const file = path.join(c.state, 'machines.json');
+    const machines = JSON.parse(await fs.readFile(file, 'utf8'));
+    machines.second = { ...machines.hub, name: 'second' };
+    await fs.writeFile(file, JSON.stringify(machines));
+    const local = await thread(c), remote = await thread(c, { machine: 'second' }), archived = await thread(c);
+    await editThread(c, archived.id, (t) => { t.archived = true; });
+    const normal = (await call({ action: 'threads' })).body.threads;
+    assert.ok(normal.some((t) => t.id === local.id && t.machine === 'hub'));
+    assert.ok(normal.some((t) => t.id === remote.id && t.machine === 'second'));
+    assert.ok(!normal.some((t) => t.id === archived.id || t.id === id));
+    const all = (await call({ action: 'threads', archived: true })).body.threads;
+    assert.ok(all.some((t) => t.id === archived.id));
+    assert.ok(!all.some((t) => t.id === id));
+  } finally { await close(c); }
+});
+
+test('start reports the saved thread and URL when lead launch fails', async () => {
+  const { c, call } = await assistantFixture();
+  try {
+    c.machine.startOk = false;
+    const result = (await call({ action: 'start', project: '/tmp/project', machine: 'hub', message: 'Saved before failure' })).body;
+    assert.equal(result.ok, false); assert.match(result.error, /start refused/);
+    assert.ok(result.thread); assert.equal(result.url, `/wheelchair/app/thread?id=${result.thread}`);
+    assert.equal((await api(c, `/threads/${result.thread}/chat`)).body.thread.title, 'Saved before failure');
+  } finally { await close(c); }
+});
+
+test('assistant press attribution is cleared by a later browser press on the same idea', async () => {
+  const { c, call } = await assistantFixture();
+  try {
+    const t = await thread(c);
+    const idea = await card(c, t.id, t.sessions[0].name, { kind: 'idea', bullets: [{ id: 'a', text: 'First' }] });
+    assert.equal((await call({ action: 'press', thread: t.id, card: idea.body.id, press_action: 'picked', value: 'First' })).body.ok, true);
+    let cards = (await api(c, `/threads/${t.id}/chat`)).body.cards;
+    assert.equal(cards.find((x) => x.id === idea.body.id).answered_by, 'assistant');
+    const response = await api(c, `/threads/${t.id}/cards/${idea.body.id}/press`, { method: 'POST', body: { action: 'picked', value: 'First' } });
+    assert.equal(response.status, 202);
+    cards = (await api(c, `/threads/${t.id}/chat`)).body.cards;
+    assert.equal(Object.hasOwn(cards.find((x) => x.id === idea.body.id), 'answered_by'), false);
+  } finally { await close(c); }
+});
+
+test('approval recheck refreshes Ready without attributing an answer', async () => {
+  const { c, call } = await assistantFixture();
+  try {
+    const t = await thread(c);
+    await editThread(c, t.id, (v) => v.cards.push({ id: 'refresh', kind: 'approval', answered: false, ready: { ok: false, missing: ['stale'] } }));
+    const result = await call({ action: 'press', thread: t.id, card: 'refresh', press_action: 'recheck' });
+    assert.equal(result.body.ok, true); assert.equal(result.body.result.queued, false);
+    const refreshed = (await api(c, `/threads/${t.id}/chat`)).body.cards.find((x) => x.id === 'refresh');
+    assert.notDeepEqual(refreshed.ready, { ok: false, missing: ['stale'] });
+    assert.equal(refreshed.answered, false); assert.equal(Object.hasOwn(refreshed, 'answered_by'), false);
+  } finally { await close(c); }
+});
+
+test('press and archive results do not expose session tokens', async () => {
+  const { c, call } = await assistantFixture();
+  try {
+    const t = await thread(c); const token = 'sensitive-session-token-123';
+    await editThread(c, t.id, (v) => { v.sessions[0].token = token; v.cards.push({ id: 'token-card', kind: 'idea', bullets: [] }); });
+    const pressed = await call({ action: 'press', thread: t.id, card: 'token-card', press_action: 'picked', value: 'yes' });
+    assert.equal(pressed.body.ok, true); assert.ok(!JSON.stringify(pressed.body).includes(token));
+    const archived = await call({ action: 'archive', thread: t.id });
+    assert.equal(archived.body.ok, true); assert.ok(!JSON.stringify(archived.body).includes(token));
+  } finally { await close(c); }
+});
+
+test('message and restart refuse archived threads and restart refuses handed-off threads', async () => {
+  const { c, call } = await assistantFixture();
+  try {
+    const t = await thread(c);
+    await editThread(c, t.id, (v) => { v.archived = true; });
+    for (const action of ['message', 'restart']) assert.match((await call({ action, thread: t.id, text: 'hello' })).body.error, /archived/);
+    await editThread(c, t.id, (v) => { v.archived = false; v.handed_off = { at: new Date().toISOString() }; });
+    assert.match((await call({ action: 'restart', thread: t.id })).body.error, /handed off/);
+  } finally { await close(c); }
+});
+
+test('every assistant action refuses the assistant thread as a target', async () => {
+  const { c, id, call } = await assistantFixture();
+  try {
+    for (const action of ['projects', 'threads', 'thread', 'start', 'message', 'press', 'restart', 'archive']) {
+      const response = await call({ action, thread: id, project: '/tmp/project', machine: 'hub', message: 'hello', text: 'hello', card: 'x', press_action: 'picked', value: 'yes' });
+      assert.equal(response.status, 403, action); assert.match(response.body.error, /assistant thread cannot be a target/, action);
+    }
+  } finally { await close(c); }
+});
+
+test('assistant CLI sends the contents of message and text files', async () => {
+  const http = require('node:http'); const { spawn } = require('node:child_process');
+  const received = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    received.push(JSON.parse(Buffer.concat(chunks).toString()));
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { makeDir } = require('./helpers/server.js'); const dir = await makeDir('assistant-files-');
+  const file = path.join(dir, 'message.txt'); await fs.writeFile(file, 'First line\nSecond line\n');
+  const run = (...args) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [path.join(__dirname, '../app/wc.js'), 'assistant', ...args], { env: { ...process.env, WHEELCHAIR_SESSION_TOKEN: 'test', WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}` } });
+    let out = ''; child.stdout.on('data', (x) => { out += x; }); child.on('error', reject); child.on('close', (code) => resolve({ code, out }));
+  });
+  try {
+    assert.equal((await run('start', '--project', '/tmp/project', '--machine', 'hub', '--message-file', file)).code, 0);
+    await fs.writeFile(file, 'Different message\n');
+    assert.equal((await run('message', 'target', '--text-file', file)).code, 0);
+    assert.equal(received[0].message, 'First line\nSecond line\n'); assert.equal(received[1].text, 'Different message\n');
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+});
