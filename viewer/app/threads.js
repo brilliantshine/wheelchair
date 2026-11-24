@@ -349,6 +349,26 @@ async function press(hub, id, cardId, input) {
     await hub.enqueue(thread, lead.name, `[card ${card.id}] ${text}`, 'card');
     return { queued: true, text };
   }
+  if (card.kind === 'permit') {
+    if (input.action !== 'picked' || !['allow', "don't allow"].includes(input.value)) throw appError(400, 'unknown card press');
+    if (card.answered) throw appError(422, 'card is already answered');
+    const lead = require('./peers.js').latestLiveLead(thread);
+    if (!lead) throw appError(409, 'no live lead');
+    let text = `picked: ${input.value}`;
+    if (input.value === 'allow') {
+      const others = await hub.allThreads();
+      // No await from here to the assignment: the checks and the claim are one step.
+      const reason = require('./cards.js').permitConflict(thread, others, card.pr_url, card.head_branch);
+      if (reason) { card.allow_failed = reason; text = `allow failed: ${reason}`; }
+      else thread.target_pr = { url: card.pr_url, number: card.pr_number, head_branch: card.head_branch, title: card.pr_title, author: card.pr_author, card: card.id, allowed_at: new Date().toISOString() };
+    }
+    card.answered = true;
+    card.answered_action = 'picked';
+    card.answered_value = input.value;
+    thread.user_at = new Date().toISOString();
+    await hub.enqueue(thread, lead.name, `[card ${card.id}] ${text}`, 'card');
+    return { queued: true, text };
+  }
   // A press is the user acting in the thread, so it moves the thread up the list like a message.
   thread.user_at = new Date().toISOString();
   if (card.kind === 'merged') {
