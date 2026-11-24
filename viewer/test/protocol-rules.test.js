@@ -31,7 +31,7 @@ for (const role of ['worker', 'mapper', 'designer', 'sub-lead', 'reviewer', 'ver
 }
 
 const roles = ['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier'];
-const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'file', 'stub', 'sudo', 'reach', 'retract', 'title'];
+const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'file', 'stub', 'sudo', 'reach', 'permit', 'retract', 'title'];
 const sharedKinds = ['progress', 'image', 'message', 'result', 'lesson'];
 const sections = text => [...text.matchAll(/^### `([^`]+)`$/gm)].map(match => match[1]);
 
@@ -55,11 +55,31 @@ for (const role of roles) {
     const text = read(role);
     const fallback = text.split('\n').find(line => line.startsWith(`If you opened \`protocol/app/${role}.md\` itself by its path`));
     assert.ok(fallback && fallback.includes(`/protocol/app/${role}.md`) && fallback.includes('dropped'));
+    assert.ok(fallback.includes('`repo-law.md`'));
     assert.equal(fallback.includes('read `cards.md`'), !['reviewer', 'verifier'].includes(role));
     assert.equal(fallback.includes('`cards-lead.md`'), role === 'lead');
     assert.equal(fallback.includes('`realism.md`'), ['lead', 'sub-lead', 'reviewer', 'verifier'].includes(role));
   });
 }
+
+test('repo law paths are ordered and kept in one file', () => {
+  const text = read('repo-law');
+  const paths = ['`CONTRIBUTING.md`', '`.github/CONTRIBUTING.md`', '`docs/CONTRIBUTING.md`'];
+  const positions = paths.map(name => text.indexOf(name));
+  assert.ok(positions[0] >= 0 && positions[0] < positions[1] && positions[1] < positions[2]);
+  for (const file of fs.readdirSync(path.join(root, 'protocol/app'))) {
+    if (file !== 'repo-law.md' && file.endsWith('.md')) assert.ok(!fs.readFileSync(path.join(root, 'protocol/app', file), 'utf8').includes('.github/CONTRIBUTING.md'), file);
+  }
+});
+test('verifier reports repo law gaps from the merge-base', () => {
+  assert.ok(read('verifier').includes('GAP: repo law '));
+  assert.ok(read('verifier').includes('merge-base'));
+});
+test('repo law breaks are always fixed and asides do not read it', () => {
+  const always = read('realism').split('\n\n').find(p => p.includes('**Always fixed, however rare**'));
+  assert.ok(always && always.includes('CONTRIBUTING.md'));
+  assert.ok(!read('aside').includes('CONTRIBUTING.md'));
+});
 
 test('sub-lead uses the binding sizing command and no-scout fallback', () => {
   const text = read('sub-lead');

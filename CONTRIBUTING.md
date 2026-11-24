@@ -72,8 +72,10 @@ The Mac CI job is `.github/workflows/macos.yml`. Its end-to-end check is
 
 ## Validation
 
-Run the checks for the area you changed, then run the full set before handing off a
-cross-cutting change:
+Run the checks for the area you changed (`node test-support/pick-tests.js --base <commit>`
+prints the commands that cover your change), then run the full set before handing off a
+cross-cutting change. `bash test-support/full-run.sh <log-dir>` runs the whole set below
+except `./install.sh`, plus `node --test test-support/test/*.test.js`, and writes `<log-dir>/summary.txt`:
 
 ```bash
 bash sensitivity/test/run.sh

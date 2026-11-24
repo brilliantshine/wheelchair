@@ -44,6 +44,8 @@ function send(response, status, body) {
 async function handle(hub, request, response, url, machineAuthenticated) {
   const suffix = url.pathname.slice('/wheelchair/api/'.length);
   const bits = suffix.split('/').filter(Boolean);
+  if (bits[0] === 'settings' && bits[1] === 'background') return require('./background.js').handle(hub, request, response, url, bits, send);
+  if (bits[0] === 'threads' && bits[1] && bits[1] !== 'import' && ['GET', 'POST'].includes(request.method)) await require('./assistant.js').guard(hub, bits[1]);
   if (request.method === 'POST' && bits[0] === 'threads' && bits[1] && bits[2] === 'uploads' && bits.length === 3) return upload(hub, request, response, url, bits[1]);
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'threads' && bits[1] === 'import') {
     const limit = 10 * 1024 * 1024;
@@ -95,6 +97,7 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   }
   if (bits[0] === 'handoff-revokes' && bits[1] === 'dismiss' && request.method === 'POST') return send(response, 200, await require('./handoff-ops.js').dismiss(hub, body));
   if (bits[0] === 'threads') return handleThreads(hub, request, response, url, bits, body);
+  if (bits[0] === 'assistant' && bits.length === 1 && request.method === 'GET') return send(response, 200, await require('./assistant.js').status(hub));
   if (bits[0] === 'features' && request.method === 'GET') {
     return send(response, 200, await hub.features());
   }
@@ -183,7 +186,7 @@ async function newThread(hub, machine) {
   const matching = [];
   for (const thread of await hub.allThreads()) {
     const entry = thread.machine === machine ? known : await hub.state.resolveMachine(machines, thread.machine);
-    if (entry === known) matching.push(thread);
+    if (!thread.assistant && entry === known) matching.push(thread);
   }
   matching.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)));
   result.previous = [...new Set(matching.map((thread) => thread.project))];
@@ -342,6 +345,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
     return send(response, 200, { models: await settings.models(hub), heads_up: await settings.headsUp(hub) });
   }
   if (bits[1] === 'preferences' && request.method === 'PUT') {
+    const before = (await settings.load(hub)).assistant;
     const value = await settings.update(hub, (value) => {
       if (body.lead_names !== undefined) {
         if (!Array.isArray(body.lead_names) || body.lead_names.some((name) => typeof name !== 'string')) throw appError(400, 'lead_names must be an array of names');
@@ -368,6 +372,10 @@ async function handleSettings(hub, request, response, url, bits, body) {
       if (body.aside_access !== undefined) {
         if (!['read-only', 'full'].includes(body.aside_access)) throw appError(400, 'aside_access must be read-only or full');
         value.aside_access = body.aside_access;
+      }
+      if (body.assistant !== undefined) {
+        if (!['off', 'on'].includes(body.assistant)) throw appError(400, 'assistant must be off or on');
+        value.assistant = body.assistant;
       }
       if (body.auto_merge !== undefined) {
         if (!['off', 'on'].includes(body.auto_merge)) throw appError(400, 'auto_merge must be off or on');
@@ -407,7 +415,12 @@ async function handleSettings(hub, request, response, url, bits, body) {
         for (const role of ['reviewer', 'verifier', 'mapper', 'designer', 'scout', 'scout-heavy']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    let assistantError;
+    if (value.assistant !== before) {
+      try { await require('./assistant.js').change(hub, value.assistant === 'on'); }
+      catch (error) { if (!error.assistantStart) throw error; assistantError = error.message; }
+    }
+    return send(response, 200, { ...(assistantError ? { assistant_error: assistantError } : {}), assistant: value.assistant, lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));
@@ -502,15 +515,19 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
   if (bits[1] === 'sudo-outcome' && request.method === 'POST') {
     return send(response, 200, await require('./cards.js').sudoOutcome(hub, body));
   }
+  if (bits[1] === 'assistant' && request.method === 'POST') {
+    try { return send(response, 200, await require('./assistant-actions.js').dispatch(hub, body)); }
+    catch (error) { if (!error.status) throw error; return send(response, error.status, { error: error.message }); }
+  }
   if (bits[1] === 'session' && request.method === 'POST') {
     return send(response, 200, await hub.sessionRequest(body));
   }
   throw appError(404, 'route not found');
 }
 
-async function handleThreads(hub, request, response, url, bits, body) {
-  if (bits.length === 1 && request.method === 'GET') {
-    const listed = await hub.allThreads();
+
+async function listThreads(hub, lean = true) {
+    const listed = await require('./assistant.js').visible(hub, await hub.allThreads());
     const all = await Promise.all(listed.map((thread) => hub.withThread(thread.id, async () => {
       let current = await hub.readSnapshot(thread.id);
       if (await discoverSlug(current, hub)) {
@@ -522,8 +539,8 @@ async function handleThreads(hub, request, response, url, bits, body) {
     for (const thread of all) require('./remote-plan.js').refresh(hub, thread);
     // `?view=list` is what the pages poll: each thread's summary without its history
     // (cards, sent messages, briefs), which is most of the bytes and none of the list.
-    const lean = url.searchParams.get('view') === 'list';
-    const threads = all.map((thread) => {
+
+    return all.map((thread) => {
       if (!lean) return { ...thread, handed_off: thread.handed_off || null, sessions: thread.sessions.map(publicSession) };
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
@@ -536,11 +553,17 @@ async function handleThreads(hub, request, response, url, bits, body) {
           : progress.stage === 'verify' ? (progress.phase === 'clean' ? 'verified' : 'verifying') : null;
       return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, progress_stage: progressStage, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
+}
+
+async function handleThreads(hub, request, response, url, bits, body) {
+  if (bits.length === 1 && request.method === 'GET') {
+    const threads = await listThreads(hub, url.searchParams.get('view') === 'list');
     const revoke_notices = (await require('./handoff-ops.js').revokes(hub)).filter((entry) => entry.last_result === 'failed').map((entry) => ({ thread_id: entry.thread_id, sha: entry.sha, text: `Couldn't take back a cancelled pick-up on ${entry.repository || entry.project} ${entry.branch}: ${entry.error}` }));
     return send(response, 200, { threads, revoke_notices });
   }
   if (bits.length === 1 && request.method === 'POST') {
-    const thread = await hub.createThread(body);
+    const { _assistant_title, ...browserInput } = body;
+    const thread = await hub.createThread(browserInput);
     return send(response, 201, { ...thread, sessions: thread.sessions.map(publicSession) });
   }
   if (!bits[1]) throw appError(404, 'route not found');
@@ -603,6 +626,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const lock = bits.length === 3 && request.method === 'POST' ? hub.withChatThread.bind(hub) : hub.withThread.bind(hub);
     const result = await lock(id, async () => {
       const thread = await hub.thread(id);
+      if (thread.assistant) throw appError(403, 'no asides in the assistant thread');
       if (request.method !== 'GET') require('./handoff.js').refuseFrozen(hub, thread);
       if (request.method !== 'GET' && thread.archived) throw appError(409, 'this thread is archived');
       if (bits.length === 3 && request.method === 'POST') return { status: 201, body: asides.brief(await asides.create(hub, thread, body)) };
@@ -768,4 +792,4 @@ async function handleSessions(hub, request, response, bits, body) {
   throw appError(404, 'route not found');
 }
 
-module.exports = { handle, readBody, send, HTML_HEADERS, UPLOAD_LIMIT };
+module.exports = { handle, readBody, send, newThread, listThreads, HTML_HEADERS, UPLOAD_LIMIT };

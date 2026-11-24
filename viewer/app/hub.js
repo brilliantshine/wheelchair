@@ -58,6 +58,7 @@ class Hub {
 
   async init() {
     await this.state.init();
+    await require('./background.js').sweep(this);
     await handoff.sweepFiles(this);
     for (const listed of await this.allThreads()) {
       const thread = structuredClone(listed);
@@ -227,11 +228,11 @@ class Hub {
   threadBySession(name) { return threads.threadBySession(this, name); }
   createStub(parent, card) { return threads.createStub(this, parent, card); }
   openStub(id, input) { return this.withThread(id, () => threads.openStub(this, id, input)); }
-  restartLead(id) { return this.withThread(id, () => threads.restartLead(this, id)); }
-  archive(id) { return this.withThread(id, () => threads.archive(this, id)); }
+  restartLead(id, by) { return this.withThread(id, () => threads.restartLead(this, id, by)); }
+  archive(id, by) { return this.withThread(id, () => threads.archive(this, id, by)); }
   archivedDocument(id, file) { return threads.archivedDocument(this, id, file); }
   dismiss(id, cardId) { return this.withThread(id, () => threads.dismiss(this, id, cardId)); }
-  press(id, cardId, input) { return this.withThread(id, () => threads.press(this, id, cardId, input)); }
+  press(id, cardId, input, by) { return this.withThread(id, () => threads.press(this, id, cardId, input, by)); }
   pollWaiting() { return threads.pollWaiting(this); }
   pollMerged() {
     if (this.mergePolling) return Promise.resolve();

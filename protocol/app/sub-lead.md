@@ -5,7 +5,7 @@ decompose the approved plan into tasks, brief and start worker sessions, check w
 bring back, integrate it, have it verified, and report to the lead. You talk only to the lead, with `message` cards; you never post cards meant for the user
 except `image` cards and the `progress` line. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/sub-lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/sub-lead.md` dropped, and read `cards.md` and `realism.md` beside it.
+If you opened `protocol/app/sub-lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/sub-lead.md` dropped, and read `cards.md` and `realism.md` beside it. Read `repo-law.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
@@ -34,8 +34,10 @@ working.
 1a. In a lighter mode, if `status: verifying`, read the Log before changing status. If it
    contains `Deferred and finished at the user's choice` (or the older form
    `Deferred and finished at Collin's choice`), send the done result described below and
-   do nothing else. If your brief carries that choice, save those rows with that
-   Log line, commit and message the lead, then send that result without a new attempt.
+   do nothing else (in an opted-in project, the full run must first have passed for that
+   commit: run it if the Log does not show one). If your brief carries that choice, save
+   those rows with that Log line, commit and message the lead, then send that result
+   without a new attempt (the same full-run condition applies).
    Otherwise skip steps 2 and 3: leave `verifying` in place, apply any per-gap answer in
    your brief not yet logged, and start a new verification attempt on the current
    committed tip.
@@ -223,7 +225,9 @@ and the step you propose, then wait for the answer.
 
 ## Finishing and verifying
 
-When every task is done and the full validation passes:
+When every task is done and the task checks have passed (in a project whose root `AGENTS.md`
+has a `Test picker and full run` heading, the project is opted in and the checks are the ones
+already run, not a whole-suite run; elsewhere run the full validation):
 
 1. Write `docs/plans/<slug>/COMPLETION.md` from `<root>/protocol/templates/COMPLETION.md`:
    spec-item-by-item coverage with `file:line` references and each item's origin (`this
@@ -242,6 +246,14 @@ When every task is done and the full validation passes:
    stop the second verifier at once.
    In a lighter mode its brief also names the mode and includes the Deferred table. Every
    verifier brief includes the plan's Accepted Risks and Check Once Built tables.
+   In an opted-in project the brief also names the **comparison commit** (the merge-base of the
+   checked commit with the default branch), the **picker base** and the line `Full run: by the starter`.
+   The picker base is the comparison commit for the first attempt; for a re-check
+   after remediation, the commit the previous attempt checked; for a re-check of that same
+   commit, the previous picker base, with the commands that failed last time named so they are
+   re-run. Start the full run (the full-run command the project's `AGENTS.md` names) on the
+   same commit now, in the background, with logs in a scratch directory outside the repository; stop a full run whose commit a fix replaced, and repeat
+   it on the new commit.
    Its brief gives it the PLAN.md and COMPLETION.md paths (its role rules are already in its
    starting instructions, so the brief never tells it to read its role file), and says nothing
    of this conversation. Its report arrives as a `result`; stop it
@@ -258,10 +270,17 @@ When every task is done and the full validation passes:
    outcome is decided on the merged list after that; rare gaps never go to remediation or
    count toward the two-attempt rule. When you cannot tell,
    `message` the lead with `asks: true` and decide the attempt's outcome after the answer.
-4. **PASS**: once the merged list is empty after rare-path judgment, post `phase: clean`,
+4. **PASS**: once the merged list is empty after rare-path judgment, and in an opted-in
+   project the full run has passed for the commit you report, post `phase: clean`,
    then send the lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md,
    `commit` the
-   commit verified).
+   commit verified). A full run passes when its `summary.txt` names that commit and every suite
+   exit is 0. In an opted-in project, before sending the `result`, paste `summary.txt` (and any failures confirmed on
+   main) into COMPLETION.md and commit it; that PLAN.md/COMPLETION.md-only commit stays
+   covered by the full run. A full-run failure is a gap like a
+   verifier's (same realism judgment, remediation and two-attempt rule), except a failure you
+   confirm is already on main by the verifier's method (same test, same error at the
+   comparison commit): that does not fail the gate and is listed in COMPLETION.md.
 4a. In a lighter mode, when the merged list is non-empty after rare-path judgment and before
    remediation, send the lead one `message` with `asks: true` listing every gap, each
    marked `hardening` or `must-fix`, any surviving two fix attempts, and the evidence.
@@ -279,7 +298,9 @@ When every task is done and the full validation passes:
    "Fix them" sends every gap to remediation. "Defer them and finish" saves and commits
    the rows with `Deferred and finished at the user's choice` in the same commit, messages
    the lead, and sends a build `result` with outcome `done`, that commit, and a summary
-   saying the gaps were deferred at the user's choice, with no further verification.
+   saying the gaps were deferred at the user's choice, with no further verification. In an
+   opted-in project (step 3), the full run must still have passed for that commit (step 4);
+   if it has not, run it first and treat a failure as in step 4.
 
    A surviving gap takes precedence: save other deferred hardening first, then stop and
    message the lead as in step 6. After the user answers, act on their answer for that gap;

@@ -171,7 +171,7 @@ test('/wheelchair/docs has CSP while a graph page keeps the index page header-fr
     };
     const docs = await fetchPage(`/docs?plan=${encodeURIComponent(plan)}`);
     const index = await fetchPage(`/?path=${encodeURIComponent(graph)}`);
-    const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+    const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     assert.equal(docs.status, 200); assert.equal(index.status, 200);
     assert.equal(docs.headers.get('content-security-policy'), csp);
     assert.equal(index.headers.get('content-security-policy'), null); assert.match(index.body, /graph viewer/i);
@@ -362,7 +362,7 @@ test('page responses renew the Lax cookie while JSON responses do not, and anony
   try {
     const cookie = await remember(ctx); const page = await raw(ctx, '/app/threads', { headers: { cookie } });
     assert.match(page.headers.get('set-cookie'), /SameSite=Lax/); const list = await raw(ctx, `/list?token=${ctx.token}`); assert.equal(list.headers.get('set-cookie'), null);
-    const anonymous = await raw(ctx, '/'); assert.equal(anonymous.status, 401); assert.match(anonymous.body, /Open your bookmark link once/); assert.match(anonymous.body, /<code>node viewer\/server\.js --url<\/code>/); assert.equal(anonymous.headers.get('content-security-policy'), "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    const anonymous = await raw(ctx, '/'); assert.equal(anonymous.status, 401); assert.match(anonymous.body, /Open your bookmark link once/); assert.match(anonymous.body, /<code>node viewer\/server\.js --url<\/code>/); assert.equal(anonymous.headers.get('content-security-policy'), "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     assert.equal((await raw(ctx, '/list')).status, 401);
   } finally { await ctx.stop(); }
 });

@@ -5,7 +5,7 @@
 // copy of its own beyond the unsaved editor drafts.
 (() => {
   const API = '/wheelchair/api';
-  const SECTIONS = [['harnesses', 'Harnesses'], ['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools']];
+  const SECTIONS = [['harnesses', 'Harnesses'], ['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools'], ['background', 'Background Customization']];
   const TIERS = [
     ['light', 'Light', 'Spelled-out changes, few files'],
     ['standard', 'Standard', 'Most building'],
@@ -507,6 +507,7 @@
               data[key] = res[key];
               inlineErr(row, '');
               renderPanel();
+              if (key === 'assistant' && res.assistant_error) inlineErr(document.getElementById('assistant-setting'), res.assistant_error);
               setNote(saved, false);
             } catch (e) { inlineErr(row, e.message); setNote('', false); }
           },
@@ -554,6 +555,10 @@
       ? 'Never asks, no sandbox: it can change anything on the machine. Reviewers stay read-only.'
       : 'Never asks: it can write only inside its worktree.';
 
+    const assistantRow = h('div', { class: 'row-line', id: 'assistant-setting' },
+      h('div', { class: 'what' }, h('span', { text: 'Personal assistant' }), h('span', { class: 'hint', text: 'An assistant that sees all your threads and acts on what you tell it.' })),
+      modeGroup('assistant', 'Personal assistant', [['off', 'Off'], ['on', 'On']], 'Saved'));
+
     return h('div', { class: 'models' },
       h('div', {},
         h('h1', { text: 'Models and preferences' }),
@@ -596,6 +601,7 @@
       h('section', { 'aria-labelledby': 'thread-view' },
         h('h2', { id: 'thread-view', text: 'Threads' }),
         h('div', { class: 'box rows' },
+          assistantRow,
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
@@ -1790,6 +1796,150 @@
     return row;
   }
 
+  // Background state belongs to a section visit, not to its replaceable DOM.
+  let backgroundVisit = null;
+  let backgroundGeneration = 0;
+  const bg = window.wcBackground;
+  function cancelBackgroundCandidate(v) {
+    if (v.pendingImage) { v.pendingImage.src = ''; v.pendingImage = null; }
+    if (v.pendingUrl) { URL.revokeObjectURL(v.pendingUrl); v.pendingUrl = null; }
+  }
+  function cancelBackgroundWork(v) {
+    if (v.frame != null) { cancelAnimationFrame(v.frame); v.frame = null; }
+    cancelBackgroundCandidate(v);
+  }
+  function discardBackground() {
+    const visit = backgroundVisit;
+    backgroundVisit = null; backgroundGeneration++;
+    if (!visit) return;
+    visit.op++;
+    cancelBackgroundWork(visit);
+    if (visit.token) bg.release(visit.token);
+    if (visit.url) URL.revokeObjectURL(visit.url);
+  }
+  function ensureBackground() {
+    if (!backgroundVisit) backgroundVisit = { generation: ++backgroundGeneration, dirty: false, op: 0, pending: false, saving: false, error: '', status: '', url: null };
+    return backgroundVisit;
+  }
+  function beginBackground(v) {
+    if (v.dirty) return;
+    const m = bg.current().metadata;
+    if (!m) return;
+    v.dirty = true; v.revision = m.revision; v.imageId = m.image_id;
+    v.opacity = m.opacity; v.image = null; v.token = bg.acquire();
+  }
+  function repaintBackground(v) {
+    if (section === 'background' && backgroundVisit === v) renderPanel();
+  }
+  function backgroundStateKey(state) {
+    const m = state.metadata;
+    // An unchanged poll must not replace a focused clean editor's controls.
+    return JSON.stringify([m && [m.image_id, m.media_type, m.opacity, m.revision, m.image_url, m.missing_image], state.ready, state.available, state.error]);
+  }
+  async function selectBackground(v, file) {
+    if (!file || v.saving) return;
+    cancelBackgroundCandidate(v);
+    const op = ++v.op; v.pending = true; v.error = ''; repaintBackground(v);
+    let url;
+    try {
+      if (file.size > 25 * 1024 * 1024) { const error = new Error(); error.status = 413; throw error; }
+      const original = new Uint8Array(await file.arrayBuffer());
+      if (backgroundVisit !== v || op !== v.op) return;
+      const normalized = window.wcBackgroundFormat.normalize(original);
+      url = URL.createObjectURL(new Blob([normalized.bytes], { type: normalized.mediaType }));
+      const image = new Image();
+      v.pendingUrl = url; v.pendingImage = image;
+      await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('Could not decode this image.')); image.src = url; });
+      if (backgroundVisit !== v || op !== v.op) return;
+      v.pendingUrl = null; v.pendingImage = null;
+      beginBackground(v);
+      if (!v.dirty) { const error = new Error(); error.status = 503; throw error; }
+      const previous = v.url;
+      v.url = url; url = null; v.image = image; v.file = original; v.mediaType = normalized.mediaType;
+      v.filename = file.name; v.size = file.size; v.imageId = null; v.status = '';
+      bg.publish(v.token, v.image, v.opacity);
+      if (previous) URL.revokeObjectURL(previous);
+    } catch (error) {
+      if (backgroundVisit === v && op === v.op) v.error = error.status === 413 ? 'Choose an image no larger than 25 MiB.'
+        : error.status === 415 ? 'Choose a PNG, JPG, WEBP, or GIF image.'
+          : error.status === 503 ? 'Background settings are unavailable. Please try again.' : 'Could not open this image. Choose another file.';
+    }
+    finally {
+      if (url) URL.revokeObjectURL(url);
+      if (backgroundVisit === v && op === v.op) { v.pendingUrl = null; v.pendingImage = null; v.pending = false; repaintBackground(v); }
+    }
+  }
+  async function saveBackground(v) {
+    if (!v.dirty || v.pending || v.saving) return;
+    v.saving = true; v.error = ''; v.status = ''; repaintBackground(v);
+    try {
+      let response;
+      if (v.file) response = await fetch(API + '/settings/background/upload?revision=' + v.revision + '&opacity=' + v.opacity, { method: 'POST', headers: { 'content-type': v.mediaType }, body: v.file });
+      else response = await fetch(API + '/settings/background', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: v.revision, image_id: v.imageId, opacity: v.opacity }) });
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 409) void bg.accept(body);
+      if (!response.ok) { const e = new Error(response.status === 409 ? 'The background changed elsewhere. Choose Cancel to load the saved version.' : 'Could not save the background. Please try again.'); throw e; }
+      void bg.accept(body);
+      if (backgroundVisit !== v) return;
+      discardBackground();
+      const next = ensureBackground(); next.status = 'Saved'; repaintBackground(next);
+    } catch (error) { if (backgroundVisit === v) { v.error = error.message || 'Could not save background.'; v.saving = false; repaintBackground(v); } }
+  }
+  // A draft differs from what is saved: a new file, another image, or another visibility.
+  function backgroundChanged(v) {
+    const m = bg.current().metadata;
+    if (!v.dirty) return false;
+    if (v.file || !m) return true;
+    if ((v.imageId || null) !== (m.image_id || null)) return true;
+    return !!v.imageId && v.opacity !== m.opacity; // visibility matters only with an image
+  }
+  function renderBackground() {
+    const v = ensureBackground();
+    const state = bg.current(), m = state.metadata;
+    v.renderedState = backgroundStateKey(state);
+    const opacity = v.dirty ? v.opacity : (m?.opacity ?? 35);
+    const hasImage = v.dirty ? !!(v.image || v.imageId) : state.available;
+    const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', disabled: v.saving || !m, 'aria-label': 'Choose background image', onchange: e => selectBackground(v, e.target.files[0]) });
+    const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', value: String(opacity), disabled: v.saving || !hasImage || (!v.dirty && !state.ready), 'aria-label': 'Visibility' });
+    const value = h('span', { text: opacity + '%' });
+    slider.addEventListener('input', () => {
+      beginBackground(v); if (!v.dirty) return;
+      v.opacity = Number(slider.value); v.status = ''; value.textContent = v.opacity + '%';
+      if (v.frame != null) cancelAnimationFrame(v.frame);
+      v.frame = requestAnimationFrame(() => {
+        v.frame = null;
+        if (backgroundVisit !== v || !v.dirty) return;
+        if (v.image) bg.publish(v.token, v.image, v.opacity);
+        else bg.publishSaved(v.token, v.opacity);
+      });
+      const save = document.getElementById('background-save'); if (save) save.disabled = v.pending || v.saving || !backgroundChanged(v);
+      const cancel = document.getElementById('background-cancel'); if (cancel) cancel.disabled = false;
+    });
+    return h('div', { class: 'background-editor' },
+      h('div', {}, h('h1', { text: 'Background Customization' }), h('p', { class: 'lede', text: 'Previews stay on this page. Save applies your background across devices.' })),
+      h('div', { class: 'box' }, h('label', {}, 'Choose an image', input),
+        v.filename && h('p', { class: 'hint', text: v.filename + ' · ' + (v.size / 1024 / 1024).toFixed(2) + ' MiB' }),
+        h('label', {}, 'Visibility ', value, slider),
+        h('div', { class: 'actions' },
+          h('button', { id: 'background-save', type: 'button', class: 'primary', text: 'Save', disabled: !backgroundChanged(v) || v.pending || v.saving, onclick: () => saveBackground(v) }),
+          h('button', { id: 'background-cancel', type: 'button', text: 'Cancel', disabled: !v.dirty || v.saving, onclick: () => { discardBackground(); bg.refresh(); repaintBackground(ensureBackground()); } }),
+          h('button', { type: 'button', text: 'Remove background', disabled: v.saving || !m, onclick: () => {
+            ++v.op; cancelBackgroundWork(v); v.pending = false; beginBackground(v); if (!v.dirty) return;
+            const old = v.url; v.url = null; v.image = null; v.file = null; v.imageId = null; v.filename = ''; v.opacity = 35; v.error = ''; v.status = '';
+            bg.publish(v.token, null, 35); if (old) URL.revokeObjectURL(old); repaintBackground(v);
+          } })),
+        (v.error || state.error) && h('p', { class: 'inline-err', role: 'alert', text: v.error || state.error }),
+        h('p', { class: 'note', role: 'status', text: v.status || (v.pending ? 'Loading image…' : (!m ? 'Loading background…' : '')) })));
+  }
+  if (bg) {
+    bg.subscribe(state => {
+      if (section === 'background' && backgroundVisit && !backgroundVisit.dirty && !backgroundVisit.pending
+          && backgroundVisit.renderedState !== backgroundStateKey(state)) repaintBackground(backgroundVisit);
+    });
+    window.addEventListener('backgroundrestore', () => { discardBackground(); if (section === 'background') repaintBackground(ensureBackground()); });
+    window.addEventListener('backgrounddispose', discardBackground);
+  }
+
   // ---------------------------------------------------------------- Harnesses
 
   const HARNESSES = TOOLS.map((t) => [t.provider, t.displayName, t.settings.vendor, t.settings.setupUrl]);
@@ -2068,11 +2218,17 @@
 
   function renderSections() {
     const nav = document.getElementById('sections');
+    const changed = nav.dataset.section !== section;
+    const scroll = nav.scrollLeft;
+    nav.dataset.section = section;
     nav.replaceChildren(...SECTIONS.map(([key, label]) => {
       const a = h('a', { href: '#' + key, text: label, 'data-section': key });
       if (key === section) a.setAttribute('aria-current', 'page');
       return a;
     }));
+    if (changed && matchMedia('(max-width: 640px)').matches) {
+      nav.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    } else nav.scrollLeft = scroll;
   }
 
   let projectToolsHost = null;
@@ -2083,7 +2239,7 @@
 
   function renderPanel() {
     if (!data) return;
-    const view = section === 'tools' ? renderProjectTools()
+    const view = section === 'background' && bg ? renderBackground() : section === 'tools' ? renderProjectTools()
       : section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
       : section === 'harnesses' ? renderHarnesses()
       : section === 'accounts' ? renderAccounts() : section === 'usage' ? renderUsage() : renderModels();
@@ -2097,12 +2253,12 @@
     const key = location.hash.replace(/^#/, '');
     const lessonRole = (/^templates\/lessons\/([a-z-]+)$/.exec(key) || [])[1];
     if (lessonRole && LESSON_PLURAL[lessonRole]) {
-      if (section !== 'templates') { section = 'templates'; setNote('', false); styleNote = ''; diagram = null; }
+      if (section !== 'templates') { if (section === 'background') discardBackground(); section = 'templates'; setNote('', false); styleNote = ''; diagram = null; }
       if (selected !== 'lessons:' + lessonRole) select('lessons:' + lessonRole);
       return;
     }
     const next = SECTIONS.some(([k]) => k === key) ? key : 'models';
-    if (next !== section) { section = next; setNote('', false); styleNote = ''; diagram = null; }
+    if (next !== section) { if (section === 'background') discardBackground(); section = next; setNote('', false); styleNote = ''; diagram = null; }
   }
 
   window.addEventListener('hashchange', () => { readHash(); renderPanel(); syncSection(); });

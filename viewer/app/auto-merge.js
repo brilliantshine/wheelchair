@@ -21,10 +21,11 @@ async function attempt(hub, threadId, checkCardId) {
   await hub.withThread(threadId, async () => {
     const thread = await hub.thread(threadId);
     // Gates 1–4: silently stop when the setting, head, attempt or check disallows it.
-    if ((await settings.load(hub)).auto_merge !== 'on') return;
+    if (thread.assistant || (await settings.load(hub)).auto_merge !== 'on') return;
     const check = thread.cards.find(c => c.id === checkCardId && c.kind === 'check');
     const done = currentDone(thread);
     if (!check || !done || check.head !== done.head) return;
+    if (thread.target_pr && done.pr_url === thread.target_pr.url) return;
     const head = done.head;
     if (thread.auto_merge_attempts?.[head]) return;
     if (check.steps.some(s => s.agent === 'broken')) return;

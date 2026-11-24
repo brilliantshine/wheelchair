@@ -2049,12 +2049,12 @@ test('archived HTML route sends the static sandbox headers', async () => {
   threads.archivedHtml = async (_hub, id, file) => { assert.equal(id, '123'); assert.equal(file, 'picture.html'); return '<p>Archived</p>'; };
   try {
     const response = { writeHead(status, headers) { this.status = status; this.headers = headers; }, end(body) { this.body = body; } };
-    await routes.handle({}, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html'), false);
+    await routes.handle({ thread: async () => ({ id: '123' }), threadSnapshot: async () => ({ id: '123' }) }, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html'), false);
     assert.equal(response.status, 200); assert.equal(response.body, '<p>Archived</p>');
     assert.equal(response.headers['content-type'], 'text/html; charset=utf-8');
     assert.equal(response.headers['x-content-type-options'], 'nosniff');
     assert.equal(response.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox");
-    await routes.handle({}, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html&download=1'), false);
+    await routes.handle({ thread: async () => ({ id: '123' }), threadSnapshot: async () => ({ id: '123' }) }, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html&download=1'), false);
     assert.equal(response.headers['content-disposition'], 'attachment; filename="picture.html"');
     assert.match(response.body.toString(), /^<meta charset="utf-8">/);
   } finally { threads.archivedHtml = original; }
@@ -2103,7 +2103,7 @@ test('retract validates targets, removes pins and refuses stale presses', async 
   assert.equal(validate('retract', { card: 'x', note: 'one\ntwo' }, 'lead').ok, false);
   assert.equal(validate('retract', { card: 'x', note: 'No longer needed' }, 'worker').ok, false);
   const targets = { cards: [{ id: 'x', kind: 'idea' }, { id: 's', kind: 'needs', system: true }, { id: 'a', kind: 'question', answered: true }, { id: 'r', kind: 'offer', replaced: true }] };
-  for (const [id, reason] of [['x', 'only a question, offer, approval, needs, sudo, deferred or reach card can be retracted'], ['s', 'a system needs card closes itself'], ['a', 'card is already answered'], ['r', 'no such card in this thread']]) assert.equal(retractable(targets, id).reason, reason);
+  for (const [id, reason] of [['x', 'only a question, offer, approval, needs, sudo, deferred, reach or permit card can be retracted'], ['s', 'a system needs card closes itself'], ['a', 'card is already answered'], ['r', 'no such card in this thread']]) assert.equal(retractable(targets, id).reason, reason);
   await withContext(async (context) => {
     const made = await thread(context); const other = await thread(context); const lead = made.sessions[0].name;
     const foreign = await openNeed(context, other);

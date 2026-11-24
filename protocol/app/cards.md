@@ -59,6 +59,7 @@ Rules for every card:
 | `stub` | yes | lead | no |
 | `sudo` | yes | lead | no |
 | `reach` | yes | lead | no |
+| `permit` | yes | lead | no |
 | `lesson` | yes | lead, sub-lead, worker, mapper | no |
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
@@ -210,6 +211,7 @@ app uses to hide traffic the user did not write:
 | `[wc:context restart]` | Context for a lead that replaces a dead one: the plan and the cards so far | hidden, your reply **shown**, with "Lead restarted" in its place |
 | `[wc:context import]` | Context for a lead continuing an imported thread | hidden, your reply **shown**, with "Imported from a handoff" in its place |
 | `[wc:context switch]` | Tells an agent its conversation was moved to another account after a usage limit, and to carry on | hidden with no line in its place, your reply **shown** |
+| `[wc:assistant]` | The user's instruction passed on by their assistant, or a card press | a bubble "From your assistant", or "Your assistant: <press>" for a press; your reply shown |
 | `[card <id>] ...` | The user pressed a button on card `<id>` | a short bubble from them ("Picked B"), and your reply is shown |
 | a final `[wc:style]` block, after a blank line at the END of a message | The user's writing style, delivered to a lead, replacing any earlier style | stripped from the user's bubble |
 | anything else | The user's own words, typed in the app, the browser terminal or over `tmux attach` | their bubble, and your reply is shown |
@@ -230,6 +232,7 @@ The press forms, in full:
 - `[card <id>] start thread about: <text>`
 - `[card <id>] keep going` and `[card <id>] talk about: <needs card title>`, on your `needs` card
 - `[card <id>] picked: allow`, `picked: don't allow` and `allow failed: <reason>`, on your `reach` card
+- `[card <id>] picked: allow`, `picked: don't allow` and `allow failed: <reason>`, on your `permit` card
 - `[card <id>] sudo ran: exit <n>`, `declined`, `sudo expired`, `sudo failed: <reason>` and `talk about: sudo request`, on your `sudo` card
 
 Two consequences for a lead. Nothing you write in the reply to a `[wc:from ...]` message

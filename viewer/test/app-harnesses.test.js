@@ -298,18 +298,28 @@ test('install passthrough accepts DELETE and refuses POST while the harness is s
 test('switching a harness off cancels its install on every known machine, without waiting', async () => {
   const { hub } = await harnessFixture({ hub: statusFor('claude', 'gpt'), other: statusFor('claude', 'gpt'), third: statusFor('claude', 'gpt') });
   const calls = [];
+  let hubPending = false;
+  let resolveThirdCall;
+  const thirdCall = new Promise(resolve => { resolveThirdCall = resolve; });
   hub.client = { passThrough: async (name, route, method) => {
     calls.push([name, route, method]);
+    if (calls.length === 3) resolveThirdCall();
     if (name === 'other') throw Error('offline');
     if (name === 'third') return { status: 409, body: { error: 'not installing' } };
+    hubPending = true;
     return new Promise(() => {});
   } };
   const path = 'http://localhost/wheelchair/api/settings/harnesses/gpt';
-  const started = Date.now();
-  const off = await routed(hub, 'PUT', { path, enabled: false });
-  assert.equal(off.status, 200); assert.equal(off.body.harnesses.gpt, false);
-  assert.ok(Date.now() - started < 1000);
-  await new Promise(resolve => setTimeout(resolve, 100));
+  const withTimeout = (promise, ms, label) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms} ms`)), ms);
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+  await withTimeout((async () => {
+    const off = await routed(hub, 'PUT', { path, enabled: false });
+    assert.equal(off.status, 200); assert.equal(off.body.harnesses.gpt, false);
+    assert.equal(hubPending, true);
+    await thirdCall;
+  })(), 10000, 'Harness cancellation route and machine requests');
   assert.deepEqual(calls.map(c => c[0]).sort(), ['hub', 'other', 'third']);
   assert.ok(calls.every(c => c[1] === '/v1/harnesses/gpt/install' && c[2] === 'DELETE'));
   calls.length = 0;

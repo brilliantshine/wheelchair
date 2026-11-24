@@ -57,7 +57,7 @@ test('both providers copy the conversation and respawn the existing pane', async
   const oldPath = process.env.PATH, oldClaude = process.env.CLAUDE_CONFIG_DIR, oldCodex = process.env.CODEX_HOME;
   t.after(() => { process.env.PATH = oldPath; for (const [key, value] of [['CLAUDE_CONFIG_DIR', oldClaude], ['CODEX_HOME', oldCodex]]) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
   const bin = path.join(root, 'bin'); await fs.mkdir(bin); const log = path.join(root, 'tmux.log');
-  await fs.writeFile(path.join(bin, 'tmux'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\n`, { mode: 0o755 }); process.env.PATH = `${bin}:${oldPath}`;
+  await fs.writeFile(path.join(bin, 'tmux'), `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nprintf '%s\\n' "$*" >> '${log}'\n`, { mode: 0o755 }); process.env.PATH = `${bin}:${oldPath}`;
   for (const [cli, relative, id] of [['claude', 'projects/key/uuid.jsonl', 'uuid'], ['codex', 'sessions/2026/11/22/rollout-x-thread.jsonl', 'thread']]) {
     const from = path.join(root, `${cli}-old`), to = path.join(root, `${cli}-new`), state = path.join(root, `${cli}-state`);
     process.env[cli === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME'] = from;

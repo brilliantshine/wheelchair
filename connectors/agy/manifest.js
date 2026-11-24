@@ -39,18 +39,8 @@ module.exports = {
     "cliLabel": "Antigravity CLI",
     "vendor": "Google",
     "setupUrl": "https://antigravity.google/cli",
-    "permissionMode": "permission_mode",
-    "permissionName": "Antigravity",
-    "permissionChoices": [
-      [
-        "auto",
-        "Auto"
-      ],
-      [
-        "bypass",
-        "Bypass"
-      ]
-    ],
+    "permissionMode": null,
+    "permissionChoices": [],
     "accountWarning": null,
     "modelHeadsUp": false,
     "signInKind": "link",

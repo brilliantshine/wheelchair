@@ -120,7 +120,7 @@ test('Pi waits for every startup download to complete', () => {
 test('Pi version probe gates old versions and caches by executable mtime', async () => {
   const dir = makeTempSync('pi-version-'), file = path.join(dir, 'pi'), old = process.env.PATH;
   let tick = Date.now();
-  const version = value => { fs.writeFileSync(file, `#!/bin/sh\n${value ? `echo ${value}` : 'exit 1'}\n`, { mode: 0o755 }); tick += 2000; fs.utimesSync(file, tick / 1000, tick / 1000); };
+  const version = value => { fs.writeFileSync(file, `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\n${value ? `echo ${value}` : 'exit 1'}\n`, { mode: 0o755 }); tick += 2000; fs.utimesSync(file, tick / 1000, tick / 1000); };
   try {
     process.env.PATH = `${dir}:${old}`;
     const machine = new MachineService({ stateDir: dir });
@@ -155,10 +155,10 @@ test('Pi failure notes use the persisted launch version and startup exits have a
 test('Pi launch records tested version across restart and allows newer version', async () => {
   const root = makeTempSync('pi-launch-version-'), bin = path.join(root, 'bin'), file = path.join(bin, 'pi'), old = process.env.PATH;
   fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'tmux'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'tmux'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 0\n', { mode: 0o755 });
   let tick = Date.now();
-  const version = value => { fs.writeFileSync(file, `#!/bin/sh\necho ${value}\n`, { mode: 0o755 }); tick += 2000; fs.utimesSync(file, tick / 1000, tick / 1000); };
+  const version = value => { fs.writeFileSync(file, `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho ${value}\n`, { mode: 0o755 }); tick += 2000; fs.utimesSync(file, tick / 1000, tick / 1000); };
   try {
     process.env.PATH = `${bin}:/usr/bin:/bin`;
     const machine = new MachineService({ stateDir: root }); machine.win = null;

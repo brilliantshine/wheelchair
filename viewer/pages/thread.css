@@ -405,7 +405,9 @@ iframe.mockup-frame { display: block; position: absolute; top: 0; left: 0; borde
 .card-check .check-broken { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 6px 8px; }
 
 /* "Your copy" panel */
-.copy-panel { margin: 0 0 12px; min-width: 0; overflow-wrap: anywhere; }
+.copy-panel { min-width: 0; overflow-wrap: anywhere; }
+.copy-panel .copy-head h3 { margin-bottom: 0; }
+#files-toggle.needs-you { color: var(--warn); border-color: var(--warn-line); }
 .copy-panel .copy-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .copy-panel .copy-where { font-size: 12px; margin-top: 2px; }
 .copy-panel p { margin: 6px 0 0; font-size: 13px; }
@@ -463,3 +465,17 @@ iframe.mockup-frame { display: block; position: absolute; top: 0; left: 0; borde
 .spot-box .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .spot-error { color: var(--bad, #c62828); font-size: 13px; }
 .spot-btn { white-space: nowrap; }
+
+/* The assistant's thread: no asides, and a label on what it sent to another thread's lead. */
+body.assistant-thread .aside-selection, body.assistant-thread .aside-handoff, body.assistant-thread #aside-panel { display: none !important; }
+body.assistant-thread #composer .hint { display: none; }
+.bubble.human .by-assistant { display: block; margin-bottom: 4px; font-size: 11px; color: var(--dim); }
+body.assistant-thread .col-side, body.assistant-thread #head-files, body.assistant-thread #files-panel, body.assistant-thread #attach { display: none !important; }
+@media (min-width: 900px) {
+  body.assistant-thread .shell.on-thread, body.assistant-thread .shell.on-thread.side-collapsed { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
+  body.assistant-thread .shell.on-thread.list-collapsed, body.assistant-thread .shell.on-thread.list-collapsed.side-collapsed { grid-template-columns: 44px minmax(0, 1fr); }
+}
+
+body.assistant-thread #composer .send-row { grid-template-columns: 1fr auto; grid-template-areas: "ta btn"; }
+body.assistant-thread #composer textarea { min-height: 36px; border: 0; padding: 0; }
+@media (max-width: 899px) { body.assistant-thread .col-main { min-height: calc(100dvh - var(--nav-h)); } }

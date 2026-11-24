@@ -97,6 +97,23 @@ function sessionRequest(operation, tail) {
   };
 }
 
+function assistantRequest(operation, tail) {
+  if (!['projects', 'threads', 'thread', 'start', 'message', 'press', 'restart', 'archive'].includes(operation)) throw new Error('unsupported assistant action');
+  const args = tail.filter((x) => x !== '--archived');
+  const parsed = flags(args);
+  const body = { action: operation };
+  if (operation === 'threads') body.archived = tail.includes('--archived');
+  if (['thread', 'message', 'press', 'restart', 'archive'].includes(operation)) { if (!parsed._[0]) throw new Error('thread is required'); body.thread = parsed._[0]; }
+  if (operation === 'start') {
+    if (!parsed.project || !parsed.machine || !parsed['message-file']) throw new Error('start requires --project --machine --message-file');
+    Object.assign(body, { project: parsed.project, machine: parsed.machine, message: fs.readFileSync(parsed['message-file'], 'utf8') });
+    if (parsed.title !== undefined) body.title = parsed.title;
+  }
+  if (operation === 'message') { if (!parsed['text-file']) throw new Error('message requires --text-file'); body.text = fs.readFileSync(parsed['text-file'], 'utf8'); }
+  if (operation === 'press') { if (!parsed._[1] || !parsed.action) throw new Error('press requires a card and --action'); Object.assign(body, { card: parsed._[1], press_action: parsed.action, value: parsed.value }); }
+  return { path: '/assistant', body };
+}
+
 function screenRequest(operation, tail) {
   if (!['start', 'run', 'shot', 'windows', 'move', 'click', 'drag', 'type', 'key', 'focus', 'stop', 'status'].includes(operation)) {
     throw new Error('unsupported screen operation');
@@ -176,6 +193,8 @@ async function main(argv) {
   const base = process.env.WHEELCHAIR_MACHINE_URL || `${origin}/v1/agent`;
   const input = group === 'git'
     ? gitRequest(operation, tail)
+    : group === 'assistant'
+      ? assistantRequest(operation, tail)
     : group === 'session'
       ? sessionRequest(operation, requestTail)
       : group === 'screen'
@@ -183,13 +202,18 @@ async function main(argv) {
         : group === 'win'
           ? winRequest(operation, tail)
       : null;
-  if (!input) throw new Error('usage: wc.js git|session <start|stop|list|leads [--all-projects]>|screen|win …');
-  const result = group === 'session'
+  if (!input) throw new Error('usage: wc.js git|assistant|session <start|stop|list|leads [--all-projects]>|screen|win …');
+  const result = (group === 'session' || (group === 'assistant' && ['projects', 'threads', 'thread'].includes(operation)))
     ? await postSessionWithRetry(`${base}${input.path}`, token, input.body)
     : await request(`${base}${input.path}`, token, input.body);
+  if (group === 'assistant' && (result.status < 200 || result.status >= 300)) {
+    let failure; try { failure = JSON.parse(result.output); } catch { failure = {}; }
+    process.stdout.write(`${JSON.stringify({ ...failure, ok: false, error: result.status === 503 ? 'hub unavailable' : (failure.error || 'request failed') })}\n`); return;
+  }
   if (result.status < 200 || result.status >= 300) {
     throw new Error(result.status === 503 ? 'hub unavailable' : result.output);
   }
+  if (group === 'assistant') { process.stdout.write(`${JSON.stringify(JSON.parse(result.output))}\n`); return; }
   if (group === 'win' && operation === 'info') {
     const response = JSON.parse(result.output);
     for (const warning of response.disk?.warnings || []) process.stderr.write(`${warning}\n`);
@@ -213,8 +237,8 @@ async function main(argv) {
 
 if (require.main === module) {
   main(process.argv.slice(2)).catch((error) => {
-    process.stderr.write(`wc: ${error.message}\n`);
-    process.exitCode = 1;
+    if (process.argv[2] === 'assistant') process.stdout.write(`${JSON.stringify({ ok: false, error: ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND'].includes(error.code) ? 'hub unavailable' : error.message })}\n`);
+    else { process.stderr.write(`wc: ${error.message}\n`); process.exitCode = 1; }
   });
 }
 

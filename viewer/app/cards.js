@@ -4,11 +4,51 @@
 const crypto = require('node:crypto');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const { execFile } = require('node:child_process');
+const execFileAsync = require('node:util').promisify(execFile);
 const { appError } = require('./state.js');
 const { resolvable, retractable, truncateTitle, validate } = require('./card.js');
 
 const REPLAY = Symbol('replay');
 const SINGLETONS = new Set(['offer', 'idea', 'deferred', 'progress']);
+
+// Spec §1 "The permit card": the hub's own checks on a pull request the lead wants to push to.
+const PR_URL = /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/\d+$/;
+const repoOf = (url) => { const m = PR_URL.exec(String(url || '')); return m ? `${m[1]}/${m[2]}`.toLowerCase() : null; };
+
+// Checks 7 and 8, synchronous so the press can run them and assign in one step.
+function permitConflict(thread, others, url, headRefName) {
+  const mine = repoOf(url);
+  const other = others.find((item) => item.id !== thread.id && !item.archived && (
+    (item.project === thread.project && item.branch === headRefName)
+    || (item.target_pr && mine && repoOf(item.target_pr.url) === mine && item.target_pr.head_branch === headRefName)));
+  if (other) return `that branch belongs to the thread "${other.title}" on this hub`;
+  return thread.target_pr ? `this thread already has an OK for ${thread.target_pr.url}` : null;
+}
+
+async function checkPermit(hub, thread, card) {
+  const refuse = (reason) => { throw appError(422, reason); };
+  if (!PR_URL.test(card.pr_url)) refuse('the pull request link is not a GitHub pull request');
+  let view;
+  try {
+    const result = await execFileAsync('gh', ['pr', 'view', card.pr_url, '--json', 'number,title,state,author,headRefName,baseRefName,isCrossRepository,isDraft'], { timeout: 15000 });
+    view = JSON.parse(result.stdout);
+    if (!view || typeof view !== 'object' || Array.isArray(view)) throw new Error('invalid response');
+  } catch (error) {
+    const stderr = String(error.stderr || '');
+    if (/authentication|gh auth login|HTTP 401|HTTP 403|HTTP 404|Could not resolve to/i.test(stderr)) refuse(`the app's GitHub login can't read this pull request: ${stderr.split(/\r?\n/)[0]}`);
+    refuse("couldn't reach GitHub to check the pull request; try again in a minute");
+  }
+  if (view.state !== 'OPEN') refuse('that pull request is closed');
+  if (view.isCrossRepository) refuse("that pull request comes from a fork; pushing to forks isn't supported yet");
+  if (view.isDraft) refuse('that pull request is a draft; ask the author to mark it ready first');
+  if (thread.default_branch && view.baseRefName !== thread.default_branch) refuse(`that pull request targets ${view.baseRefName}, not ${thread.default_branch}`);
+  if (view.headRefName === thread.branch) refuse("that is this thread's own branch");
+  const conflict = permitConflict(thread, await hub.allThreads(), card.pr_url, view.headRefName);
+  if (conflict) refuse(conflict);
+  if (thread.cards.some((item) => item.kind === 'permit' && !item.answered && !item.retracted_at)) refuse('a permit request is already open');
+  return { pr_number: view.number, pr_title: view.title, pr_author: view.author?.login ?? '', head_branch: view.headRefName };
+}
 
 function addCard(thread, card, meta = {}) {
   const at = new Date().toISOString();
@@ -58,6 +98,7 @@ function currentDone(thread) {
 async function acceptCard(hub, payload) {
   const result = await hub.updateThread(payload.thread_id, async (thread) => {
     const session = hub.session(thread, payload.session);
+    if (thread.assistant && ['title', 'diagram', 'offer', 'idea', 'deferred', 'approval', 'progress', 'done', 'check', 'stub', 'sudo', 'reach'].includes(payload.kind)) throw appError(422, `the assistant doesn't post ${payload.kind}`);
     require('./handoff.js').refuseFrozen(hub, thread);
     if (thread.archived) throw appError(409, 'thread is archived');
     thread.delivered_ids ||= [];
@@ -170,6 +211,8 @@ async function acceptCard(hub, payload) {
       const targetName = peers.threadName(target);
       Object.assign(checked.card, { target_title: targetName, target_project: target.project, title: `Let this lead talk to ${targetName}?` });
     }
+
+    if (checked.card.kind === 'permit') Object.assign(checked.card, await checkPermit(hub, thread, checked.card));
 
     let crossThread = null;
     if (checked.card.kind === 'message' && !thread.sessions.some((item) => item.name === checked.card.to) && session.role === 'lead') {
@@ -331,4 +374,4 @@ async function sudoOutcome(hub, body) {
   });
 }
 
-module.exports = { REPLAY, currentDone, SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, retractCard, sudoOutcome, validSudoStatus };
+module.exports = { permitConflict, REPLAY, currentDone, SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, retractCard, sudoOutcome, validSudoStatus };

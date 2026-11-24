@@ -22,6 +22,7 @@ async function read(hub, thread, file) {
   catch (error) { if (error.status === 400 || error.status === 404) throw appError(404, 'document not found'); throw appError(502, `Couldn't reach ${thread.machine}`); }
 }
 function refresh(hub, snapshot) {
+  if (snapshot.target_pr) return;
   const s = state(hub), now = Date.now();
   if (s.flight.has(snapshot.id) || (s.attempts.has(snapshot.id) && now - s.attempts.get(snapshot.id) < 30000)) return;
   s.flight.add(snapshot.id); s.attempts.set(snapshot.id, now);
@@ -33,7 +34,7 @@ function refresh(hub, snapshot) {
     const result = await call(hub, snapshot, 'list', { slug });
     await hub.withThread(snapshot.id, async () => {
       const current = await hub.thread(snapshot.id);
-      if (current.machine !== snapshot.machine || current.project !== snapshot.project || current.slug !== snapshot.slug || current.default_branch !== snapshot.default_branch) return;
+      if (current.target_pr || current.machine !== snapshot.machine || current.project !== snapshot.project || current.slug !== snapshot.slug || current.default_branch !== snapshot.default_branch) return;
       let changed = false;
       if (!current.slug) { current.slug = slug; changed = true; }
       if (result.status != null && current.last_status !== result.status) { current.last_status = result.status; changed = true; }

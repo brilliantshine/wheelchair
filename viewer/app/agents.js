@@ -136,7 +136,7 @@ function buildAgents(threads, stages = {}, accounts = []) {
 }
 
 async function agents(hub) {
-  const threads = await hub.allThreads();
+  const threads = await require('./assistant.js').visible(hub, await hub.allThreads());
   const stages = Object.fromEntries(await Promise.all(threads.map(async (thread) => [thread.id, !thread.slug ? 'idea' : STATUS_GROUP[thread.worktree ? await readStatus(thread) : thread.last_status] || 'idea'])));
   const leads = buildAgents(threads, stages, typeof hub.state?.settings === 'function' ? (await require('./settings.js').load(hub)).accounts || [] : []);
   const registry = await hub.machines();

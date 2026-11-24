@@ -13,7 +13,7 @@ const agy = require('../../connectors/agy/machine.js');
 test('project tools launch privately and stale Antigravity files are swept', async () => {
   const root = await makeTemp('project-tools-service-'), bin = path.join(root, 'bin'), state = path.join(root, 'state'), work = path.join(root, 'work'), log = path.join(root, 'commands');
   await fsp.mkdir(bin); await fsp.mkdir(work);
-  const script = `#!/bin/sh\nprintf '%s %s\n' "$(basename "$0")" "$*" >> "$FAKE_TOOLS_LOG"\ncase "$(basename "$0"):$1" in\n systemd-run:*) exit 1;;\n tmux:capture-pane) printf 'Ask Codex to do anything\\n? for shortcuts\\n';;\n git:*) echo deadbeef;;\nesac\n`;
+  const script = `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nprintf '%s %s\n' "$(basename "$0")" "$*" >> "$FAKE_TOOLS_LOG"\ncase "$(basename "$0"):$1" in\n systemd-run:*) exit 1;;\n tmux:capture-pane) printf 'Ask Codex to do anything\\n? for shortcuts\\n';;\n git:*) echo deadbeef;;\nesac\n`;
   for (const name of ['git', 'tmux', 'systemd-run']) await fsp.writeFile(path.join(bin, name), script, { mode: 0o755 });
   const oldPath = process.env.PATH, oldLog = process.env.FAKE_TOOLS_LOG, oldPrepare = agy.prepare, oldError = console.error, lines = [];
   process.env.PATH = `${bin}:${oldPath}`; process.env.FAKE_TOOLS_LOG = log; agy.prepare = () => {}; console.error = (...args) => lines.push(args.join(' '));

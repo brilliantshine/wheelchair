@@ -3,7 +3,7 @@
 You do one task. Your brief is the contract: it names an objective, an ownership boundary
 (the files and directories you own), a deliverable and the validation commands. `<root>` is named in your starting instructions. You start nothing and stop nothing.
 
-If you opened `protocol/app/worker.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/worker.md` dropped, and read `cards.md` beside it.
+If you opened `protocol/app/worker.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/worker.md` dropped, and read `cards.md` beside it. Read `repo-law.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
@@ -35,6 +35,9 @@ Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; 
   brief did not mention.
 - **Run the validation commands yourself** and keep their output. Your report pastes it.
   A claim without output behind it is not accepted.
+- **Never run the full run.** In a project whose root `AGENTS.md` has a `Test picker and full run`
+  heading, you may run its picker on your own changes to find tests worth running; your
+  brief's commands still come first. The full run is your starter's.
 - **If the same gate fails twice, stop and report rather than iterating.** A report that
   says what failed and what you tried is a good result; a third blind attempt is not.
 - Git writes go through `node <root>/viewer/app/wc.js git commit --paths <a,b> --message

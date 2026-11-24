@@ -6,7 +6,7 @@ plan slug (`docs/plans/<slug>/IDEA.md` for what the work is for, `PLAN.md` for t
 `COMPLETION.md` for the builder's claims); for a fix, the reported problem or what the user
 asked for, and the Spec when there is one. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/verifier.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/verifier.md` dropped, and read `realism.md` beside it.
+If you opened `protocol/app/verifier.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/verifier.md` dropped, and read `realism.md` beside it. Read `repo-law.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
@@ -40,6 +40,31 @@ For each spec item (or each thing the reported problem says is wrong):
 1. Locate the code and read it.
 2. Where a validation command exists, run it yourself and read its output.
 3. Ask whether the item is satisfied by letter but not by intent.
+
+**Picker and full run.** A project opts in with a root `AGENTS.md` heading `Test picker and full run`
+naming a picker command (taking a base commit) and a full-run command. Use this
+paragraph and the next only when that heading exists **and** your brief gives a picker base and
+the line `Full run: by the starter`; otherwise run the commands as written, as before. Run every
+Spec validation command as written, plus the commands the picker prints when you run the
+picker command the project's `AGENTS.md` names with the picker base, against the commit you
+check (in wheelchair: `--base <picker base> --head <the commit you check>`). Never run the full-run command, or a
+whole suite that neither the picker nor a Spec validation command names: a Spec command always
+runs as written, even when it is a whole suite. A whole suite the picker selects is skipped,
+because the starter's full run covers it on the same commit; say so in your report, name the
+picker base, the comparison commit and the picked commands.
+
+**Comparing a failure with main** (same condition). Re-run only the failing test files at the
+comparison commit your brief names (default: `git merge-base origin/<default branch> HEAD`),
+never the whole suite. For a suite that only runs whole (one runner script, never narrowed to files) the
+suite command is the unit (for wheelchair's sudo-helper, whichever of its two commands failed), and the same
+failure means the same failing check name and message; a failure with no check name or message,
+or in a different command, is never already on main. Get that tree as its own clone in a scratch
+directory outside any repository: `git clone --quiet <your checkout> <scratch>/main`, then
+`git -C <scratch>/main checkout --quiet --detach <commit>`, and link into it the dependency
+folders your checkout has (in wheelchair, `viewer/node_modules` and any top-level `node_modules`). A
+failure is already on main only when the same test fails there with the same error; a test file
+missing at the comparison commit, or failing there for another reason, is the branch's failure.
+Report the comparison commit.
 
 Items listed in the plan's Prior Work were built before this workflow ran and have never
 been reviewed against the Spec. Verify them as rigorously as the rest; do not read
@@ -120,6 +145,14 @@ GAP: ...
 VERDICT: BLOCKED
 REASON: <what stopped you>
 ```
+
+Except for steps-only work, check the change against each rule it can break under `repo-law.md`.
+Check from `git merge-base origin/<default branch> <checked commit>` to the checked commit;
+only breaks in that range count. Skip rules a diff cannot show. Each break makes the verdict
+FAIL and gets exactly this line; a clash settled for the role rules by `repo-law.md` is not a
+gap, and no law file means no line:
+
+`GAP: repo law <path of the law file>:<line> — <what the change does against that rule> — <file:line evidence>`
 
 A gap you think is a rare path per `realism.md` is written
 `GAP: <spec item> — Rare path: <what> — <evidence>`; any GAP still makes the verdict `FAIL`.
