@@ -158,3 +158,28 @@ Focused browser specs (Chromium and Firefox), re-run by the sub-lead on T6b's br
   holds an uncommitted scratch test file; removing them needs a delete.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1 at `125ffb25`)
+
+The lead answered fix all 11 gaps (`REMEDIATION-1.md`); one rare path (slow remote launch vs the 120 s relay) went to Accepted Risks.
+
+| Gap | Fix | Task | Evidence |
+|---|---|---|---|
+| G1 guard broke two existing tests | fakes in `viewer/test/app-hub.test.js` and `app-session-meta.test.js` gain `threadSnapshot`; guard stays read-only | R1 | both files pass (142/142 with `assistant.test.js`) |
+| G2 assistant saw asides | `asides` removed from what `threads`/`thread` return (`viewer/app/assistant-actions.js`) | R1 | new test in `viewer/test/assistant.test.js` |
+| G3 stale stage | stage from `views.currentStatus`, the reader `/features` uses | R1 | new test in `assistant.test.js` |
+| G4 `recent` lost user messages | filter to human, assistant and context items, then last 30 | R1 | new test in `assistant.test.js` |
+| G5 queued `[wc:assistant]` marker and Send now duplicate | pending text unprefixed and labelled; matched by unprefixed text | R2 | `viewer/test/app-assistant.spec.js` "assistant queued messages and card presses render and reconcile after Send now" |
+| G6 pop-up not the same conversation | the pop-up renderer (`viewer/pages/assistant-popup.js`) now draws context, tool and peer lines, press bubbles, question consequences and free-text answers, needs actions, file, image and lesson cards; repeated-text pending bubbles kept by occurrence count. Per the lead: no iframe or CSP change, and the queued list and Send now may be omitted | R3b, R3c | `viewer/test/app-assistant-popup.spec.js` (22 tests) |
+| G7 assistant page vs mockup | terminal, attach and files column hidden on the assistant thread; screen-reader label | R2 | `app-assistant.spec.js`; screenshots posted beside `mockup-thread-*` |
+| G8 phone button over the composer | button lifted above the composer on phone thread pages | R3 | `app-assistant-popup.spec.js` bounding-box test |
+| G9 off in an open tab | pop-up removes itself on 404 "the assistant is off" | R3 | `app-assistant-popup.spec.js` |
+| G10 preview link syntax and wrap | link text only, one line with ellipsis | R2 | `app-assistant.spec.js` |
+| G11 card seen leaves unread dot | `rememberSeen` includes card times | R2 | `app-assistant.spec.js` |
+
+Validation after remediation:
+- `npm --prefix viewer run test:browser` at `712c888b` (everything but R3c): `34 skipped`, `1460 passed (23.9m)`, exit 0.
+- `node --test viewer/test/*.test.js` at `712c888b`: `# tests 955`, `# pass 953`, `# fail 2` — `app-harnesses.test.js:311` (pre-existing) and `app-quiet.test.js` "6 message clears debt" (fails 2 of 3 runs alone under the same load on base `25f34a45`).
+- At the merged tip after R3c: `node --test viewer/test/assistant.test.js viewer/test/assistant-render.test.js machine/test/assistant.test.js` → `# pass 22`, `# fail 0`; `npx playwright test test/app-assistant-popup.spec.js test/app-assistant.spec.js test/app-send-now.spec.js` → `50 passed`.
+
+Line references in the coverage table above predate remediation; the files named are unchanged in role.
