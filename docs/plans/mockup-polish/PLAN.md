@@ -36,6 +36,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | A spot comment's message names the mockup by file path, not by card (supersedes that part of Decision 4); the lead handles it by the existing Mockups rules for the current stage. | Round 1: a designer may not be running, and comments on a build's Mockup half are usually about the build; the versioned file path already identifies the mockup. | review-round-1 |
 | 9 | Decision 8 also supersedes Decision 4's "passes it to the designer": the lead routes a spot comment by the Mockups rules for the current stage (live designer while drafting, fresh designer during review, stub after Start building), keeping its location line. | Round 2: the log contradicted itself. | review-round-2 |
 | 10 | Keep all four items; run another review round (budget reset). | Collin picked "Run another round" after three rounds without a clean one. | user |
+| 11 | Spot comment box sticks to the bottom of the visible area, replacing "under the mockup" in S2. | Verification 8: on a mockup taller than the screen, a box under the mockup and the pin can't both be on screen (the same gap survived R6 and R7); Collin picked option A. | user |
 
 ## Spec
 
@@ -116,8 +117,10 @@ Mockup half of an image card) and the mockup on the picture page.
   designer renders); the picture pane around it still scrolls.
 - Pressing it puts a transparent layer over the mockup (the iframe stays sandboxed and is
   never read). The next tap on the layer drops a visible pin there and opens a small text
-  box with Send and Cancel under the mockup. Tapping elsewhere on the mockup moves the
-  pin. Cancel, or sending, removes the layer, pin and box.
+  box with Send and Cancel that sticks to the bottom of the visible area (the bottom of the
+  screen in the thread, the bottom of the picture pane on the full-size page), overlaying
+  the mockup while open; nothing scrolls, and the pin stays in view (Decision 11). Tapping
+  elsewhere on the mockup moves the pin. Cancel, or sending, removes the layer, pin and box.
 - The tap is converted to the mockup's own pixels: x and y divided by the current scale,
   rounded, clamped to 0..width-1 and 0..height-1.
 - Send posts Collin's own message the way the composer's send handler does
@@ -401,3 +404,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-24 — Choice: R7, app-spot-comment.spec.js: the `.spot-text` locator is not scoped to `.spot-box`, and the test doesn't re-check the pin after the extra scroll.
 - 2026-11-24 — R7 accepted (band: scout): the tap layer still covers exactly the mockup and thread files are untouched; the pre-fix failure (box at x=-628) is pasted in the report. Sub-lead re-ran spot-comment and picture specs: 48 passed.
 - 2026-11-24 — Verification 8 (commit 42537b7f): Claude (claude-opus-5-5) PASS, wide-mockup fix confirmed; GPT (gpt-6.2-sol) FAIL with 2 gaps: html grid layout lost in the PNG (judged rare, Accepted Risks) and, on the picture page, a tap near the top of a mockup taller than the screen scrolls to the box and loses the pin. The latter is the same gap as attempts 6-7 (pin and box both on screen after a tap), which has had two fixes (R6, R7): brought to the lead as a plan defect.
+- 2026-11-24 — Collin picked option A for the spot comment box (Decision 11); S2 updated. Remediation 8 follows.
