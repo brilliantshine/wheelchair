@@ -196,9 +196,14 @@ Protocol documents have no suite (`CONTRIBUTING.md:90-92`): read the composed pr
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Protocol text: new `repo-law.md`, lead S2, reviewer S3, verifier S5, realism S6, seven fallback lines, protocol/app router, protocol-rules tests | `protocol/app/` (named files), `viewer/test/protocol-rules.test.js` | standard, gpt / gpt-6.1-terra (Claude held back) | wc-5104b20caa0f-worker | `node --test viewer/test/protocol-rules.test.js` | not started |
+| T1 | Protocol text: new `repo-law.md`, lead S2, reviewer S3, verifier S5, realism S6, seven fallback lines, protocol/app router, protocol-rules tests | `protocol/app/` (named files), `viewer/test/protocol-rules.test.js` | standard, gpt / gpt-6.1-terra (Claude held back) | wc-5104b20caa0f-worker | `node --test viewer/test/protocol-rules.test.js` | done |
 | T2 | Compose `repo-law.md` into seven roles (machine) and Settings preview; service and settings tests. After T1 | `machine/service.js`, `viewer/app/settings.js`, `machine/test/service.test.js`, `viewer/test/app-settings.test.js` | light, any | | `bash machine/test/run.sh`; `node --test viewer/test/app-settings.test.js` | not started |
 
 ## Log
 
 - Build accepted: approval c53e6449-5814-4c60-811c-13048a1fa413
+- 2026-11-24 — Choice: T1, fallback lines: `repo-law.md` added as a separate sentence "Read `repo-law.md` beside it." (worker reported none; scout listed these)
+- 2026-11-24 — Choice: T1, reviewer.md: finding cites "the law file line" rather than "the CONTRIBUTING.md line", since the law may be `.github/` or `docs/`
+- 2026-11-24 — Choice: T1, verifier.md: repo-law GAP line placed before the rare-path GAP form
+- 2026-11-24 — Choice: T1, protocol-rules.test.js: one-source test scans protocol/app `.md` files, skipping `repo-law.md` by name
+- 2026-11-24 — T1 accepted (band: scout): protocol-rules 47/47; scout confirmed every S1/S2/S3/S5/S6 point and the seven fallback lines
