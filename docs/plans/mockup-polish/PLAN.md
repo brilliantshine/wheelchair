@@ -384,3 +384,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-24 — Lead answered verification-5 gap: fix (inline px font size on the wrapped html; tests for rem, em and inherited). REMEDIATION-5.md written; R5 dispatched.
 - 2026-11-24 — R5: worker reported 'none'; I listed 1 choice from the diff: `rootPx` is computed before the attribute-copy loop rather than directly above the style line (picture-export.js:125).
 - 2026-11-24 — R5 accepted (band: scout): scout found no code deviation; the report pastes a condensed diff rather than the exact one. Sub-lead re-ran mockup-png and picture-download: 28 passed.
+- 2026-11-24 — Verification 6 (commit ee575590): Claude verifier (claude-opus-5-5) PASS; GPT verifier (gpt-6.2-sol) FAIL with 2 new gaps (wide mockup spot tap scrolls the picture pane left; a mockup `div` rule styles the PNG export wrapper), both judged normal use; sent to the lead. The root-font-size gap is confirmed fixed by both.
