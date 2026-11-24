@@ -217,3 +217,14 @@ cancelled-claim revocations. `POST /handoff-revokes/dismiss` accepts
 Handoff exports use version 2 with `who: user` for the user's history; version 1 files still import.
 
 Both HTML diagram routes accept `download=1` to serve an inert attachment under the HTML file’s own name.
+
+### Assistant actions
+
+`POST /api/machine/assistant` requires the machine secret and a `calling_session` naming the live personal assistant lead. The setting must be on. The body carries `action` and its arguments; refusals return their HTTP status and `{error}`. The assistant thread cannot be targeted.
+
+- `projects` returns machines and their available project paths and names.
+- `threads` accepts `archived`; `thread` accepts `thread` and adds open cards, lead queue text and recent chat.
+- `start` accepts `machine`, `project`, `message` and optional `title`; `message` accepts `thread` and `text`.
+- `press` accepts `thread`, `card`, `press_action` and optional `value`; `restart` and `archive` accept `thread`.
+
+Writes are sent once by `wc.js assistant`; reads retry hub unavailability. Start and message return their own `ok` shapes, while press, restart and archive return `{ok:true,result}` with the browser route's public result. Assistant messages, card answers, restarts and archives carry attribution.
