@@ -22,6 +22,7 @@ const ROLE_CARD_FILES = {
   verifier: [],
 };
 const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
+const ROLE_REPO_LAW = new Set(['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier']);
 const STALE_DAYS = 90, HISTORY_MAX = 20, REMOVED_MAX = 50;
 const MODEL_MAX = 64;
 const WORK_TIERS = ['light', 'standard', 'heavy', 'critical'];
@@ -253,7 +254,7 @@ function fullPrompt(hub, settings, role, project) {
   const header = ROLE_CARD_FILES[role].length
     ? 'Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context.'
     : 'Your role rules are below, already loaded: do not read these files again unless this text is no longer in your context.';
-  const files = [`[full text of protocol/app/${role}.md]`, ...(ROLE_REALISM.has(role) ? ['[full text of protocol/app/realism.md]'] : []), ...ROLE_CARD_FILES[role].map((file) => `[full text of protocol/app/${file}]`)];
+  const files = [`[full text of protocol/app/${role}.md]`, ...(ROLE_REALISM.has(role) ? ['[full text of protocol/app/realism.md]'] : []), ...(ROLE_REPO_LAW.has(role) ? ['[full text of protocol/app/repo-law.md]'] : []), ...ROLE_CARD_FILES[role].map((file) => `[full text of protocol/app/${file}]`)];
   return `Role: ${role}\n${header} \`<root>\` is \`${hub.root}\`.\n\n${files.join('\n')}\n\n${roleLayers(settings, role, project, undefined, undefined, true).text}`;
 }
 
