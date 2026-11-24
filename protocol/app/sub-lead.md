@@ -34,10 +34,10 @@ working.
 1a. In a lighter mode, if `status: verifying`, read the Log before changing status. If it
    contains `Deferred and finished at the user's choice` (or the older form
    `Deferred and finished at Collin's choice`), send the done result described below and
-   do nothing else. In an opted-in project, send that done result only once a full run has
-   passed for that commit; run it first if the Log does not show one. If your brief carries
-   that choice, save those rows with that
-   Log line, commit and message the lead, then send that result without a new attempt.
+   do nothing else (in an opted-in project, the full run must first have passed for that
+   commit: run it if the Log does not show one). If your brief carries that choice, save
+   those rows with that Log line, commit and message the lead, then send that result
+   without a new attempt (the same full-run condition applies).
    Otherwise skip steps 2 and 3: leave `verifying` in place, apply any per-gap answer in
    your brief not yet logged, and start a new verification attempt on the current
    committed tip.
