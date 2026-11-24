@@ -336,6 +336,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 | R4 | Remediation 4: carry the mockup's html font-size onto the SVG root so rem sizes export right | viewer/pages/picture-export.js, app-mockup-png.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-7 | browser subset + repeat-each=3 | done |
 | R5 | Remediation 5: same px root font size inline on the wrapped html, so em and inherited text aren't scaled twice (second fix of the root-font-size gap) | viewer/pages/picture-export.js, app-mockup-png.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-8 | browser subset + repeat-each=3 | done |
 | R6 | Remediation 6: PNG root box as a custom element no mockup rule matches; comment box scrolls only vertically | viewer/pages/picture-export.js, diagram.js, app-mockup-png.spec.js, app-spot-comment.spec.js | gpt light / gpt-6-luna (Claude unavailable; hub routed to gpt) | wc-c06d283728e9-worker-9 | browser subset + repeat-each=3 | done (div-rule test weak; R6b) |
+| R6b | Remediation 6 follow-up: divrule fixture in normal flow so the div-rule PNG test fails without the fix (R6's test passed on old code, brief defect) | viewer/test/app-mockup-png.spec.js | gpt light / gpt-6-luna | wc-c06d283728e9-worker-10 | div-rule test fails with old root box, passes now; repeat-each=2 | in progress |
 
 ## Log
 
