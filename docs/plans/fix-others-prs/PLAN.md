@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: How does a thread take on someone else's pull request?
-- **Context:** New threads always start on a fresh `wc/<id>` branch from main (`viewer/pages/new.js:229-241`, `machine/service.js:668-713`). In Junjie's thread the lead simply fetched the PR in chat.
-- **Options:** (a) In chat: tell any thread "fix PR #N"; the lead fetches it and asks to push. (b) A "Start from a pull request" picker on the new-thread screen.
-- **Recommendation:** (a) now, picker deferred.
-
 ### Q2: Should the app auto-merge someone else's pull request after the fix?
 - **Context:** Auto-merge merges a thread's PR once every done card is `verified` (`viewer/app/auto-merge.js:19-43`), and may delete the head branch. The author may still be working on it.
 - **Options:** (a) Never auto-merge it; the done card says it's ready and Collin or the author merges. (b) Same as own PRs.
@@ -48,6 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | Pushes to another person's PR are plain (non-force) pushes; on rejection: fetch, merge, re-verify, push again | Never overwrites the author's work (IDEA) | defaulted |
 | 4 | The thread never opens its own PR when it is fixing someone else's; its done card points at the target PR | IDEA: no replacement PR | defaulted |
 | 5 | The thread does not post reviews or comments on GitHub; review findings stay in the thread | Keeps scope to fixing; can be added later | defaulted |
+| 6 | A thread takes on someone else's PR when Collin names it in chat ("fix PR #173"); no new start screen. A picker is deferred | Collin's pick; matches how Junjie's thread worked | user |
 
 ## Spec
 
@@ -67,6 +63,7 @@ Optional; present only in the lighter modes.
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | D1 | Fixing pull requests that come from a fork | Collaborators push branches to this repo (PR #173 did); forks need the author's "allow edits by maintainers" and pushing to their repo | planning | Query `maintainerCanModify` and `headRepository`; push to the fork URL; until then the thread says it can't push and offers a replacement PR |
+| D3 | A "Start from a pull request" picker on the new-thread screen | Naming the PR in chat works for normal use | planning | `viewer/pages/new.js:229-241`, `machine/service.js:668-713` create threads from main today |
 | D2 | The machine itself refusing pushes to branches the thread has no OK for | Today's own-branch rule is also only a protocol rule; the recorded OK makes this possible later | planning | `machine/service.js:1588-1613` passes push args through; check refspec against own branch or recorded target |
 
 ## Accepted Risks
