@@ -1,6 +1,6 @@
 ---
 slug: personal-assistant
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-23
 ---
 
@@ -412,7 +412,7 @@ npm --prefix viewer run test:browser
 | T5 | Chat labels in `renderTurn` for assistant messages, presses, restarts (§4) | `connectors/hub-common.js`, `viewer/app/chat.js`, `viewer/test/assistant-render.test.js` | standard / gpt-6.1-terra | wc-eec6963c41b4-worker-3 | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | done |
 | T6 | Pages: Settings control, pinned Threads row, assistant thread page and labels (§1, §2, §4, §6; mockups threads, thread) | `viewer/pages/settings.js`, `threads.js`, `thread.js`, their css; `viewer/test/app-assistant.spec.js` | standard / claude-sonnet-5-5 | wc-eec6963c41b4-worker-6 | `npm --prefix viewer run test:browser` | done (fixes in T6b) |
 | T6b | Assistant page composer text, preview fetch cost and text, Needs-you and preview tests, fresh screenshots | `viewer/pages/threads.js`, `thread.js`, `thread.css`, `views.css`, `viewer/test/app-assistant.spec.js` | standard / claude-sonnet-5-5 | wc-eec6963c41b4-worker-9 | `npm --prefix viewer run test:browser` | done |
-| T8 | Find and fix the new intermittent failure of `app-send-now.spec.js:84` (Enter sends) | `viewer/app/**`, `viewer/pages/**` for the fix; `viewer/test/` for a regression check | standard / claude-sonnet-5-5 | wc-eec6963c41b4-worker-10 | loop of `app-send-now.spec.js` 12/12; assistant specs | in progress |
+| T8 | Find and fix the new intermittent failure of `app-send-now.spec.js:84` (Enter sends) | `viewer/app/**`, `viewer/pages/**` for the fix; `viewer/test/` for a regression check | standard / claude-sonnet-5-5 | wc-eec6963c41b4-worker-10 | loop of `app-send-now.spec.js` 12/12; assistant specs | done |
 | T7 | Pop-up in `nav.js` (§5; mockups popup, closed, thinking) | `viewer/pages/nav.js`, new pop-up files, `app.css`; `viewer/test/app-assistant-popup.spec.js` | standard / claude-sonnet-5-5 | wc-eec6963c41b4-worker-7 | `npm --prefix viewer run test:browser` | done |
 
 ## Log
@@ -461,3 +461,5 @@ Build accepted: approval 071c4262-8c38-4de7-aa3b-5c36df3f0ef5
 - 2026-11-23 — Choice: T6b, `viewer/pages/thread.css`/`thread.js`: the plan hint is hidden by CSS on the `assistant-thread` body class; the "Message the assistant" placeholder applies when sending is possible (otherwise "No live lead"); the screen-reader label in `thread.html` still reads "Message the lead" (worker reported; scout listed).
 - 2026-11-23 — T6b accepted (band: scout): assistant and pop-up specs 26/26 (Chromium and Firefox) re-run by me; worker's full browser run 1452 passed, 0 failed. Remaining mockup differences are the real app header, "Open in terminal" kept on the assistant page, and seed data. Its worktree keeps an uncommitted temporary `viewer/test/tmp-shots.spec.js` (workers may not delete).
 - 2026-11-23 — Full validation at `afba6dbe`: viewer unit 950 pass / 1 fail (pre-existing harness timing); machine assistant 2/2; browser 1449 passed / 1 failed (`app-send-now.spec.js:84`). That test fails about 1 in 4 runs alone on the feature branch and 0 of 4 on base `25f34a45`, so it went to T8.
+- 2026-11-23 — Choice: T8, `viewer/app/assistant.js`: the off-guard reads `hub.threadSnapshot` instead of `hub.thread` (which can save a provider migration outside the thread's lock); `hub.thread` itself unchanged (worker reported).
+- 2026-11-23 — T8 accepted (band: scout): `assistant.test.js` 14/14 re-run by me. The `app-send-now.spec.js:84` flake is pre-existing: base `25f34a45` failed 3 of 10 runs alone (Chromium); the feature branch with T8 failed 2 of 8. The guard fix stands on its own (a save outside the lock could drop a concurrent change).
