@@ -479,7 +479,7 @@ Filled by Stage 3. One row per worker brief.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S1 test picker, test-map.json, tests | test-support/pick-tests.js, test-support/test-map.json, test-support/test/pick-tests.test.js | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker | `node --test test-support/test/*.test.js`; picker on HEAD~1, bad base, docs-only scratch commit | dispatched |
 | T2 | S2 full-run.sh | test-support/full-run.sh | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-2 | `bash -n`; usage and dirty-tree exit 2; stubbed loop in scratch clone | done |
-| T3 | S3 browser workers | test-support/browser-workers.js, viewer/playwright.config.js, test-support/test/browser-workers.test.js | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker-3 | `node --test test-support/test/browser-workers.test.js`; worker counts a–d on one small spec | dispatched |
+| T3 | S3 browser workers | test-support/browser-workers.js, viewer/playwright.config.js, test-support/test/browser-workers.test.js | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker-3 | `node --test test-support/test/browser-workers.test.js`; worker counts a–d on one small spec | done |
 | T4 | S4 flaky harness test | viewer/test/app-harnesses.test.js (one test) | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-4 | 10x loop under load; break-and-fail check | dispatched |
 | T5 | tricky — S5 role rules, AGENTS.md, CONTRIBUTING.md | protocol/app/{lead,sub-lead,verifier,worker}.md, AGENTS.md, CONTRIBUTING.md, protocol/AGENTS.md | standard, claude-sonnet-5-5 | wc-8bfbebc2e0d5-worker-5 | `node --test viewer/test/protocol-rules.test.js`; S5 coverage table | done |
 
@@ -501,3 +501,7 @@ Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
 - 2026-11-23 — Choice: T2, full-run.sh: a relative log dir resolves against the caller's cwd.
 - 2026-11-23 — Choice: T2, full-run.sh: refusal text `full-run: refusing dirty tracked worktree`; progress lines `<suite>: exit <n>` after each suite; a missing repo root or failed `cd` exits 2.
 - 2026-11-23 — Choice: T2, full-run.sh: reusing a log dir overwrites its summary.txt; no signal trap (a stopped run leaves a partial summary).
+- 2026-11-23 — T3 accepted (band: scout). Sub-lead fix after merge: `decide()` returns 2 for any run without `WHEELCHAIR_FULL_RUN=1` before reading an inherited `WHEELCHAIR_BROWSER_WORKERS`, so a non-full run never inherits a full run's count; checked with an inherited 6 (got 2) and a lone full run (got 6, registry empty after).
+- 2026-11-23 — Choice: T3, browser-workers.js: the decision travels to Playwright's worker processes in `WHEELCHAIR_BROWSER_WORKERS`; the registry dir is created on demand; non-numeric file names in it are ignored; only ESRCH marks a file stale; other filesystem errors propagate.
+- 2026-11-23 — Choice: T3, browser-workers.js exports `liveOthers`, `register`, `unregister` and `decide` beside `chooseWorkers`; `decide()` reads `os.cpus().length`.
+- 2026-11-23 — Choice: T3, validation: `--repeat-each` on one small spec to make the worker count visible.

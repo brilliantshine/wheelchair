@@ -42,16 +42,16 @@ function unregister(dir, pid) {
 }
 
 function decide() {
+  const full = process.env.WHEELCHAIR_FULL_RUN === '1';
+  // A run that is not full always takes 2, even if it inherits a full run's decision.
+  if (!full) return chooseWorkers({ full, othersFull: false, cpus: os.cpus().length });
   if (process.env.WHEELCHAIR_BROWSER_WORKERS !== undefined)
     return Number(process.env.WHEELCHAIR_BROWSER_WORKERS);
-  const full = process.env.WHEELCHAIR_FULL_RUN === '1';
   const dir = path.join(os.tmpdir(), 'wheelchair-browser-tests');
-  const othersFull = full && liveOthers(dir, process.pid) > 0;
+  const othersFull = liveOthers(dir, process.pid) > 0;
   const workers = chooseWorkers({ full, othersFull, cpus: os.cpus().length });
-  if (full) {
-    register(dir, process.pid);
-    process.on('exit', () => unregister(dir, process.pid));
-  }
+  register(dir, process.pid);
+  process.on('exit', () => unregister(dir, process.pid));
   process.env.WHEELCHAIR_BROWSER_WORKERS = String(workers);
   return workers;
 }
