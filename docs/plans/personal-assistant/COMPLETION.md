@@ -197,3 +197,17 @@ Attempt 2: Claude verifier PASS, GPT verifier FAIL (`REMEDIATION-2.md`). One rar
 Validation at `f2a4b7a8`:
 - `TZ=UTC npm --prefix viewer run test:browser`: `34 skipped`, `1470 passed (21.8m)`, exit 0. (`TZ=UTC` because the `app-accounts.spec.js` "lead waiting line" tests fail after 9 PM Pacific on base `25f34a45` too, when the shown wait crosses midnight.)
 - `node --test viewer/test/*.test.js`: `# tests 955`, `# pass 953`, `# fail 2` — `app-harnesses.test.js:311` and `app-quiet.test.js` "6 message clears debt", both failing on base too.
+
+### Remediation 3 (after verification attempt 3 at `f140fe7c`)
+
+Attempt 3: both verifiers FAIL (`REMEDIATION-3.md`). One rare path (`--archived` as a press value) went to Accepted Risks. The lead deferred J4, J5, J6 (PLAN.md Deferred 7-9). J1 (phone button placement) had survived two fix attempts (R3, R4) and went to the user, who chose option (a): make room for the button.
+
+| Gap | Fix | Task | Evidence |
+|---|---|---|---|
+| J1 button covers the newest message on phone thread pages | phone thread pages reserve 70px under `#chat` while the button exists; the button is 46px high and sits 12px above the composer (`viewer/pages/assistant-popup.css`) | R6 | `viewer/test/app-assistant-phone.spec.js`: no overlap with any `#chat` element or `#composer` at 390x844 for a one-message thread (before and after a reply) and a 30-message thread; desktop and off unchanged |
+| J3 Send before the first chat load | Send starts disabled until the first render applies the live-lead rule; the draft is kept (`viewer/pages/assistant-popup.js`) | R5 | `viewer/test/app-assistant-popup.spec.js` held-first-response test |
+| J7 Firefox `app-threads.spec.js` card test | no change: 1 failure in 24 runs on the feature branch and 1 in 24 on base `25f34a45` | R5 | PLAN.md Log 2026-11-24 |
+
+Validation at `3e6a9f5b`:
+- `TZ=UTC npm --prefix viewer run test:browser`: `1 failed` (`[firefox] app-threads.spec.js:555:5`, the J7 flake that fails on base too), `34 skipped`, `1479 passed (21.9m)`.
+- `node --test viewer/test/*.test.js`: `# tests 955`, `# pass 954`, `# fail 1` — `app-harnesses.test.js:311` (pre-existing).
