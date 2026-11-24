@@ -40,7 +40,9 @@
 .wc-asst-input { flex: 1; min-height: 36px; max-height: 120px; resize: none; border: 0; background: transparent; font-size: 13px; }
 .wc-asst-send { background: var(--accent); color: var(--accent-ink); border: 0; font-weight: 700; }
 @media (max-width: 899px) {
-  .wc-asst-float { right: 16px; bottom: 92px; }
+  .wc-asst-float { right: 16px; bottom: 92px; height: 46px; line-height: 20px; }
+  /* Room for the 46px button and 12px on either side of it. */
+  html:has(.wc-asst-float) .shell.on-thread #chat { padding-bottom: 70px; }
   .wc-asst-shade { display: block; position: fixed; inset: 0; z-index: 45; background: #0008; }
   .wc-asst-panel { inset: 12px 8px 8px; width: auto; height: auto; max-height: none; }
 }
