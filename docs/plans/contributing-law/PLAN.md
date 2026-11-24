@@ -14,6 +14,12 @@ get buried as this file grows.
 
 (none)
 
+## Open Questions (budget)
+
+### Q4: Keep a per-thread way to set a CONTRIBUTING.md rule aside, or change the law only by amending CONTRIBUTING.md in the same change?
+- **Context:** Exceptions (Decisions 11, 16) drew findings in all three rounds: where they are recorded, how they reach workers, verifiers and re-checks.
+- **Recommendation:** cut exceptions; a plan that needs a rule changed edits CONTRIBUTING.md itself as a Spec item Collin approves.
+
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -48,7 +54,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 A new file `protocol/app/repo-law.md` holds the whole shared rule, once:
 - **Which file is law:** the first that exists of `CONTRIBUTING.md`, `.github/CONTRIBUTING.md`, `docs/CONTRIBUTING.md` at the root of the agent's own checkout. None: the rest of this file and every role rule that refers to it is a no-op.
 - **Read it yourself** before changing or judging anything, and follow it. Not through a scout or helper.
-- **Precedence:** on the project's code, files, layout, tests and documentation, it wins over the agent's own judgement and over any role rule. Two things are wheelchair's: how agents coordinate (commits through `wc.js git`, pushes, the mechanics of opening a PR, sessions, cards), and the format of wheelchair's own files (`docs/plans/`, `docs/maps/`, mockups, reports). There the role rules win; an agent meeting such a clash follows them and names the clash in its report or result, and a verifier does not report it as a gap. A PR's title, description and checklist follow CONTRIBUTING.md as far as `wc.js git pr` allows; what it cannot do is named in the done card's `note`.
+- **Precedence:** on the project's code, files, layout, tests and documentation, it wins over the agent's own judgement and over any role rule. Three things are wheelchair's: how agents coordinate (commits through `wc.js git`, pushes, the mechanics of opening a PR, sessions, cards, and each task's ownership boundary: an edit CONTRIBUTING.md needs outside a worker's boundary goes to the sub-lead as a `message`); which validation commands run and when (S2, `verifier.md`, `sub-lead.md`); and the format of wheelchair's own files (`docs/plans/`, `docs/maps/`, mockups, reports). There the role rules win; an agent meeting such a clash follows them and names the clash in its report or result, and a verifier does not report it as a gap. A PR's title, description and checklist follow CONTRIBUTING.md as far as `wc.js git pr` allows; what it cannot do is named in the done card's `note`.
 - **Steps-only verifier work** (Check it yourself) skips this file.
 - **Exceptions:** only Collin may set a rule aside, for one thread. On a planned thread it is logged in PLAN.md's Decision Log as a Decision starting `CONTRIBUTING.md exception:` (source `user`). His "push it as it is" answer on a gap that cites CONTRIBUTING.md is also an exception (logged the same way on a planned thread). Agents honour exceptions and never make their own.
 
@@ -56,7 +62,7 @@ The machine composes `repo-law.md` into the starting instructions of `lead`, `su
 
 ### S2. Lead
 While planning: the Spec must not require breaking a CONTRIBUTING.md rule unless Collin approved an exception (S1); where his wish needs one, the lead names the rule and asks. Validation commands CONTRIBUTING.md requires for the areas the Spec touches go into the Spec's validation commands; how and when they run stays as `verifier.md` and `sub-lead.md` say.
-A small fix follows CONTRIBUTING.md; one that would need Collin to set a rule aside up front is taken into planning instead. Its verifier brief lists the required commands.
+A small fix follows CONTRIBUTING.md; one that would need Collin to set a rule aside up front is taken into planning instead. Every verifier brief the lead writes outside a planned build (small fix, after-done fix, repair) adds CONTRIBUTING.md's required commands for the areas that fix touches.
 
 ### S3. Reviewer
 A Spec item requiring a break of a CONTRIBUTING.md rule not covered by a logged exception, or a required validation command missing from the Spec, is a finding citing the CONTRIBUTING.md line, rated on the usual ladder.
@@ -148,12 +154,17 @@ Protocol documents have no suite (`CONTRIBUTING.md:90-92`): read the composed pr
 
 ### Round 3 — 2026-11-24
 
-**Lanes:** intent lens; mechanics lens; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:** change base removed; the verifier's range is now the merge-base with the default branch (S5, Decision 15); S1 precedence also beats role rules on code and tests, clashes settled for role rules are not gaps, PR content rule moved into S1, steps-only skips repo law; "push it as it is" counts as an exception (Decision 16); GAP line names the law file path; S2 and S4 trimmed; S8 tests updated.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | "Tests" in S1 precedence lets verifiers run CONTRIBUTING.md's own test list, undoing Decision 9 | upheld | S1: which commands run is wheelchair's |
+| mechanics | blocking | Precedence could let a worker edit outside its ownership boundary | upheld (major) | S1: boundaries are wheelchair's; edit goes to the sub-lead |
+| mechanics | major | Planless "push it as it is" exception lost on a re-check | downgraded (minor): worst case Collin is asked again | pending Collin's call on exceptions |
+| mechanics | major | No handoff for logging an exception while the sub-lead owns the checkout | upheld | pending Collin's call on exceptions |
+| mechanics | blocking | After-done fix or repair in a new area misses that area's required commands | upheld (major) | S2: every non-build verifier brief adds them |
 
 ## Implementation Tasks
 
