@@ -32,14 +32,14 @@
   const dlEl = $('download'); const noteEl = $('download-note');
   let busy = false;
   function note(text) { noteEl.hidden = !text; noteEl.textContent = text || ''; }
-  function offerPng(name, make) {
+  function offerPng(name, make, failText) {
     dlEl.hidden = false; dlEl.href = '#'; dlEl.removeAttribute('download');
     dlEl.onclick = async (ev) => {
       ev.preventDefault();
       if (busy) return;
       busy = true; note('');
       try { await window.WCPictureExport.save(await make(), window.WCPictureExport.fileName(titleEl.textContent, name)); }
-      catch (e) { note(e.message || 'Could not make the PNG.'); }
+      catch (e) { note(failText || e.message || 'Could not make the PNG.'); }
       busy = false;
     };
   }
@@ -58,9 +58,25 @@
     });
   }
 
+  // The screenshot view: an image card's file at its natural pixel size, scrolling inside the picture area.
+  function showImage(card, thread) {
+    title(card.title || 'Screenshot');
+    const kept = !thread.archived || (Array.isArray(thread.kept_files) && thread.kept_files.includes(card.file));
+    if (!kept) return say('Image removed when the thread was archived');
+    messageEl.hidden = true;
+    const url = T() + '/files/' + encodeURIComponent(card.file);
+    const img = document.createElement('img'); img.className = 'picture-shot'; img.src = url; img.alt = card.title || '';
+    pictureEl.appendChild(img);
+    dlEl.hidden = false; dlEl.href = url; dlEl.setAttribute('download', card.name || card.file);
+  }
+
   async function showCard() {
     let chat;
     try { chat = await fetchJson(T() + '/chat', 'thread'); } catch (e) { return say(e.message); }
+    if (params.get('view') === 'image') {
+      const shot = (chat.cards || []).find((c) => c.id === cardId && c.kind === 'image' && c.file && !c.retracted_at);
+      return shot ? showImage(shot, chat.thread) : say('This picture was not found in the thread.');
+    }
     const card = (chat.cards || []).find((c) => c.id === cardId && (c.kind === 'diagram' || (c.kind === 'image' && c.mockup)));
     if (!card) return say('This picture was not found in the thread.');
     const thread = chat.thread;
@@ -75,7 +91,9 @@
       const f = document.createElement('iframe'); f.className = 'picture-mockup'; f.src = src; f.title = titleEl.textContent; f.setAttribute('sandbox', '');
       f.style.width = m.width + 'px'; f.style.height = m.height + 'px';
       pictureEl.appendChild(f);
-      dlEl.hidden = false; dlEl.href = src + '&download=1';
+      const htmlEl = $('download-html'); htmlEl.hidden = false; htmlEl.href = src + '&download=1';
+      offerPng(spec.graph, () => window.WCPictureExport.mockupCanvas(src, m.width, m.height),
+        'This browser could not make a PNG of this mockup. Download HTML instead.');
       return;
     }
     title(card.title || card.graph);

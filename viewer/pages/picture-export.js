@@ -77,6 +77,74 @@
     });
   }
 
+  // ---- mockups ----
+  // The mockup's page background as a browser shows it on the canvas: the html element's, or the body's
+  // when html sets none. Read from computed style in a hidden, script-free same-origin frame.
+  const BG = ['background-color', 'background-image', 'background-repeat', 'background-position', 'background-size'];
+  function canvasBackground(html) {
+    return new Promise((resolve) => {
+      const f = document.createElement('iframe');
+      f.setAttribute('sandbox', 'allow-same-origin'); f.setAttribute('aria-hidden', 'true');
+      f.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;height:600px;border:0;visibility:hidden';
+      const done = (v) => { f.remove(); resolve(v); };
+      f.onload = () => {
+        try {
+          const d = f.contentDocument; const read = (n) => { const cs = f.contentWindow.getComputedStyle(n); return BG.map((p) => [p, cs.getPropertyValue(p)]); };
+          const set = (list) => { const c = list[0][1]; return (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') || list[1][1] !== 'none'; };
+          const h = read(d.documentElement); const b = d.body ? read(d.body) : null;
+          done(set(h) ? { list: h, from: 'html' } : (b && set(b) ? { list: b, from: 'body' } : null));
+        } catch (e) { done(null); }
+      };
+      f.srcdoc = html;
+      document.body.appendChild(f);
+    });
+  }
+  function loadSvg(text) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('The mockup could not be drawn to an image.'));
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text);
+    });
+  }
+  // A PNG canvas of the mockup at src, w x h CSS pixels. No script from the mockup runs: scripts are
+  // stripped before the frame or the drawing sees it.
+  async function mockupCanvas(src, w, h) {
+    const res = await fetch(src);
+    if (!res.ok) throw new Error('Could not load the mockup (status ' + res.status + ').');
+    const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+    for (const s of Array.from(doc.querySelectorAll('script'))) s.remove();
+    for (const n of Array.from(doc.querySelectorAll('*'))) for (const a of Array.from(n.attributes)) if (/^on/i.test(a.name)) n.removeAttribute(a.name);
+    const plain = '<!doctype html>' + doc.documentElement.outerHTML;
+    const bg = await canvasBackground(plain);
+    for (const st of Array.from(doc.querySelectorAll('style'))) st.textContent = st.textContent.replace(/:root\b/g, 'html');
+    const NS = 'http://www.w3.org/1999/xhtml';
+    const root = doc.createElementNS(NS, 'div');
+    root.setAttribute('style', 'box-sizing:border-box;width:' + w + 'px;height:' + h + 'px;overflow:hidden;' + (bg ? bg.list.map(([p, v]) => p + ':' + v).join(';') : ''));
+    const wrap = doc.createElementNS(NS, 'html');
+    for (const a of Array.from(doc.documentElement.attributes)) wrap.setAttribute(a.name, a.value);
+    while (doc.documentElement.firstChild) wrap.appendChild(doc.documentElement.firstChild);
+    wrap.setAttribute('style', (wrap.getAttribute('style') || '') + ';display:block;width:' + w + 'px;height:' + h + 'px');
+    // The background is moved to the root box, not copied: the element it came from paints none.
+    if (bg && bg.from === 'html') wrap.setAttribute('style', wrap.getAttribute('style') + ';background:none !important');
+    if (bg && bg.from === 'body') {
+      const b = Array.from(wrap.children).find((n) => n.localName === 'body');
+      if (b) b.setAttribute('style', (b.getAttribute('style') || '') + ';background:none !important');
+    }
+    root.appendChild(wrap);
+    const inner = new XMLSerializer().serializeToString(root);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '"><foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' + inner + '</foreignObject></svg>';
+    const img = await loadSvg(svg);
+    const k = scaleFor(w, h);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(w * k)); canvas.height = Math.max(1, Math.round(h * k));
+    const c = canvas.getContext('2d');
+    c.fillStyle = '#fff'; c.fillRect(0, 0, canvas.width, canvas.height);
+    c.drawImage(img, 0, 0, canvas.width, canvas.height);
+    try { c.getImageData(0, 0, 1, 1); } catch (e) { throw new Error('The mockup canvas was refused.'); }
+    return canvas;
+  }
+
   // ---- forms ----
   const W = 900; const PAD = 24; const GAP = 14; const LH = 1.4;
   function palette() {
@@ -192,5 +260,5 @@
     return canvas;
   }
 
-  window.WCPictureExport = { fileName, save, graphCanvas, formCanvas, scaleFor };
+  window.WCPictureExport = { fileName, save, graphCanvas, formCanvas, mockupCanvas, scaleFor };
 })();
