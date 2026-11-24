@@ -18,7 +18,7 @@ Each check runs every test (about 945 Node tests, about 1,500 browser tests in t
 ## What good looks like
 
 - A re-check after a small fix finishes in a few minutes, not 15–25.
-- A clean merge of already-tested main changes doesn't trigger a full run.
+- A clean merge of main gets a quick targeted check; the full run happens alongside it, before the push.
 - A full run still happens before anything is pushed.
 - With no other tests running, the browser suite finishes noticeably faster; when runs overlap, the machine isn't saturated.
 - The timing test no longer fails just because the machine is busy.
@@ -32,4 +32,4 @@ Each check runs every test (about 945 Node tests, about 1,500 browser tests in t
 ## Constraints
 
 - Concurrent test runs from several threads must not saturate the machine (the reason for today's 2-worker cap).
-- Nothing gets pushed without a full test run, except a conflict-free merge of main into work whose full run passed (Collin asked for that merge to get a targeted run).
+- Nothing gets pushed without a full test run of its code.

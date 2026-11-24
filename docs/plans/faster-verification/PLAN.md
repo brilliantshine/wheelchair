@@ -43,6 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | Superseded Decision 7's worker rule: only full runs (started by full-run.sh) may take the larger worker count, and only when no other full run is live; all other runs use 2. | Round 2: a short picked run must not hold a 10-minute full run at 2. | review-round-2 |
 | 12 | Full-run evidence carries to descendant commits the picker selects nothing for, and to a conflict-free default-branch merge whose picked check passed. Verifiers switch to picked-only mode only when the brief gives a picker base and says the starter runs the full run. | Round 2: bookkeeping commits and rollout handshake. | review-round-2 |
 | 13 | The verifier handshake has two forms (`Full run: by the starter` / `not needed: clean merge of the default branch`); with the first, verifiers skip whole suites the picker selects. Coverage carries across picker-empty descendants of any covered commit. A full-run failure confirmed on main (same test, same error) does not fail the gate. | Round 3. | review-round-3 |
+| 14 | Superseded D8 and D13's clean-merge parts: a conflict-free merge of the default branch gets a picked verifier check plus the usual full run in the background before the push; there is no clean-merge exemption. IDEA "What good looks like" and Constraint reworded. | Collin chose to simplify after three review rounds kept finding holes in the exemption. | idea-change |
 
 ## Spec
 
@@ -54,7 +55,7 @@ Verifiers run whatever validation commands the Spec and brief name, which are us
 whole suites, and often re-run them on main to compare failures (MAP.md, Verification flow).
 After this change, in a project that declares a test picker and a full run (S5.0; this
 repository does): verifiers run only the tests the picker selects for the change they check
-(S1); one full run covers each pushed commit (with the S5.6 exemptions), done by the session
+(S1); one full run covers each pushed commit's code (S5.6), done by the session
 about to push or hand off (S2, S5); full browser runs use more workers when no other full run
 is going (S3); the flaky harness assertion stops measuring load (S4). Projects that declare
 neither keep today's flow.
@@ -201,8 +202,7 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    `bash test-support/full-run.sh <log-dir>`. Rules 3–6 below apply only in an opted-in
    project, and rule 2 too; elsewhere today's rules stand.
    **Handshake:** a verifier uses rules 2–3 only when its brief gives a picker base and a
-   `Full run:` line, either `by the starter` or `not needed: clean merge of the default
-   branch` (S5.6); a brief without both gets today's behaviour. So a lead or sub-lead still
+   line `Full run: by the starter`; a brief without both gets today's behaviour. So a lead or sub-lead still
    on older rules never gets a verifier that skips the full suite.
 1. **Spec validation commands** (lead.md, step 4.6): in an opted-in project the lead writes
    targeted commands per Spec item and does not list whole-suite or full-run commands as
@@ -222,7 +222,7 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    prints for the **picker base** the brief names; never the full-run command, and never a
    whole suite the picker did not select. When the brief says `Full run: by the starter`, a
    whole suite the picker selects is skipped (the starter's full run covers it on the same
-   commit) and the report says so; with `not needed: clean merge`, picked whole suites run.
+   commit) and the report says so.
    The report names both commits and the picked commands.
 4. **Which commits a verifier brief names.** The comparison commit is always the merge-base of
    the checked commit with the default branch. The picker base is: the comparison commit for
@@ -252,16 +252,11 @@ Edit `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.
    repair (Making the pull request mergeable 6–8) nothing unverified is pushed and the
    budget's `needs` card applies, as today.
    The same baseline exception as 5 applies to the lead's full runs.
-   **Covered:** a commit with a passing full run is covered; so is a passed clean-merge
-   check's merge commit (below); and so is any descendant Y of a covered commit X when the
-   picker selects nothing for X..Y (so COMPLETION.md, `status: done` and Accepted Risks
-   record commits stay covered). No full run is needed when:
-   - the commit to push is covered; or
-   - the push is a conflict-free merge of the default branch into a covered commit
-     (Making the pull request mergeable 7), with the brief's `Full run: not needed: clean
-     merge of the default branch`:
-     the verifier's picked run (base = the merged default-branch tip) is its check, as
-     Collin asked. Once that check passes, the merge commit counts as covered. A merge with conflicts gets the full run.
+   **Covered:** a commit with a passing full run is covered, and so is any descendant Y of a
+   covered commit X when the picker selects nothing for X..Y (so COMPLETION.md,
+   `status: done` and Accepted Risks record commits stay covered). A push of a covered
+   commit needs no new full run. Every other push, including a conflict-free merge of the
+   default branch, gets a full run alongside its verifier's picked check.
 7. **Workers** keep running their task's commands; worker.md may point them at the picker for
    their own changes. No worker runs the full run.
 8. AGENTS.md's Verification section and CONTRIBUTING.md name the picker and the full run,
@@ -393,6 +388,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | run-dir.js suites unnamed; browser misses | upheld | S1 rule 4 names suites |
 | mechanics | minor | S4 timeout does not cover the route await | upheld | S4 one timeout for both |
 | mechanics | minor | Validation misses ordinary-run-live case and floor | upheld | Validation line |
+
+### Round 4 — 2026-11-23
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 3:** Round 3 fixes (S1 rule 4 suites; S5.0 handshake; S5.3 skip whole suites with `Full run: by the starter`; S5.4 step 6 vs 7 bases; S5.5/S5.6 baseline exception; S4 timeout; Validation S3 line), then D14: clean-merge exemption removed (S5.0 handshake single form, S5.3, S5.6 "Covered"), IDEA What good looks like and Constraint reworded.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
