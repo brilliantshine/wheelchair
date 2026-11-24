@@ -12,10 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-(none)
-
-## Open Questions (budget)
-
 ### Q4: Keep a per-thread way to set a CONTRIBUTING.md rule aside, or change the law only by amending CONTRIBUTING.md in the same change?
 - **Context:** Exceptions (Decisions 11, 16) drew findings in all three rounds: where they are recorded, how they reach workers, verifiers and re-checks.
 - **Recommendation:** cut exceptions; a plan that needs a rule changed edits CONTRIBUTING.md itself as a Spec item Collin approves.
