@@ -376,10 +376,11 @@ async function press(hub, id, cardId, input, by) {
       else thread.target_pr = { url: card.pr_url, number: card.pr_number, head_branch: card.head_branch, title: card.pr_title, author: card.pr_author, card: card.id, allowed_at: new Date().toISOString() };
     }
     card.answered = true;
+    attribute();
     card.answered_action = 'picked';
     card.answered_value = input.value;
     thread.user_at = new Date().toISOString();
-    await hub.enqueue(thread, lead.name, `[card ${card.id}] ${text}`, 'card');
+    await hub.enqueue(thread, lead.name, `${prefix}[card ${card.id}] ${text}`, 'card');
     return { queued: true, text };
   }
   // A press is the user acting in the thread, so it moves the thread up the list like a message.

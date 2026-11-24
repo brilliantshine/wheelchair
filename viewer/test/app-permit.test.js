@@ -145,3 +145,20 @@ test('retract while open; a press on a withdrawn card is refused', async () => {
     assert.equal((await f.post()).pr_number, 7); // the withdrawn one no longer counts as open
   } finally { f.restore(); }
 });
+
+test('an assistant press on a permit card is attributed', async () => {
+  const f = await fixture();
+  try {
+    const card = await f.post();
+    await f.hub.press('one', card.id, { action: 'picked', value: 'allow' }, 'assistant');
+    const t = await f.get();
+    assert.equal(t.cards[0].answered_by, 'assistant');
+    assert.ok(t.target_pr);
+    assert.equal(t.sessions[0].queue.at(-1).text, `[wc:assistant] [card ${card.id}] picked: allow`);
+    const g = await fixture();
+    try {
+      const other = await g.post(); await g.press(other);
+      assert.equal(Object.hasOwn((await g.get()).cards[0], 'answered_by'), false);
+    } finally { g.restore(); }
+  } finally { f.restore(); }
+});
