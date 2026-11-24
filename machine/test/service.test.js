@@ -324,6 +324,24 @@ test('done is never spooled when the hub is unavailable or earlier cards are wai
     assert.equal((await fs.readdir(path.join(offline.state, 'spool', 'cards'))).length, 0);
   } finally { await offline.close(); }
 });
+test('permit is never spooled when the hub is unavailable or earlier cards are waiting', async () => {
+  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env);
+    const cards = path.join(env.state, 'spool', 'cards');
+    const permit = () => api(env, 'POST', '/v1/agent/cards', { kind: 'permit' }, agentHeader('alpha'));
+    const first = await permit(); assert.equal(first.status, 503); assert.match(first.body.error, /the permit card was not recorded; try again in a minute/);
+    assert.equal((await fs.readdir(cards)).length, 0);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'idea' }, agentHeader('alpha'))).status, 202);
+    const second = await permit(); assert.equal(second.status, 503); assert.match(second.body.error, /the permit card was not recorded; try again in a minute/);
+    assert.equal((await fs.readdir(cards)).length, 1);
+  } finally { await env.close(); await hub.close(); }
+  const offline = await service(await temp()); try {
+    await start(offline);
+    const result = await api(offline, 'POST', '/v1/agent/cards', { kind: 'permit' }, agentHeader('alpha'));
+    assert.equal(result.status, 503); assert.match(result.body.error, /the permit card was not recorded; try again in a minute/);
+    assert.equal((await fs.readdir(path.join(offline.state, 'spool', 'cards'))).length, 0);
+  } finally { await offline.close(); }
+});
 test('done waits beyond five seconds for a hub refusal', async () => {
   const hub = await hubServer(422, { delay: 6000 }); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
     await start(env);
