@@ -31,7 +31,7 @@ for (const role of ['worker', 'mapper', 'designer', 'sub-lead', 'reviewer', 'ver
 }
 
 const roles = ['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier'];
-const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'file', 'stub', 'sudo', 'reach', 'retract', 'title'];
+const leadKinds = ['offer', 'idea', 'deferred', 'question', 'approval', 'needs', 'resolve', 'done', 'check', 'merged', 'diagram', 'file', 'stub', 'sudo', 'reach', 'permit', 'retract', 'title'];
 const sharedKinds = ['progress', 'image', 'message', 'result', 'lesson'];
 const sections = text => [...text.matchAll(/^### `([^`]+)`$/gm)].map(match => match[1]);
 
