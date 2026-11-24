@@ -85,7 +85,7 @@ and refuses (422) in this order:
 4a. `that pull request is a draft; ask the author to mark it ready first` (`isDraft` true; add `isDraft` to the `--json` list).
 5. `that pull request targets <baseRefName>, not <thread.default_branch>` (when `thread.default_branch` is set and differs).
 6. `that is this thread's own branch` (`headRefName` equals `thread.branch`).
-7. `that branch belongs to the thread "<title>" on this hub`: `headRefName` equals the `branch` or the `target_pr.head_branch` of any other thread record that is not archived and has the same `project` as this thread.
+7. `that branch belongs to the thread "<title>" on this hub`: among other thread records that are not archived, one has the same `project` and a `branch` equal to `headRefName`, or (any project) a `target_pr` whose url names the same `<owner>/<repo>` and whose `head_branch` equals `headRefName`.
 8. `this thread already has an OK for <target url>` (`thread.target_pr` is set).
 9. `a permit request is already open` (an unanswered, unretracted `permit` card exists).
 
@@ -117,7 +117,11 @@ When `thread.target_pr` is set and the done card's `pr_url` equals `thread.targe
 including the base check against `thread.default_branch`. A done card for any other PR is
 judged exactly as today.
 
-### 3. Auto-merge
+### 3. Auto-merge and plan discovery
+
+- A thread with `target_pr` never records a slug: `viewer/app/views.js` skips the
+  `newPlanDirectories` path (:38) and `discoverSlug` returns nothing for it. Merging a
+  collaborator's PR can add their `docs/plans/<slug>/`, which is not this thread's plan.
 
 - `viewer/app/auto-merge.js`: when the current done card's `pr_url` equals
   `thread.target_pr.url`, `afterCheck` does nothing: no merge, no "Not merged
@@ -133,29 +137,36 @@ PR's branch as in 'Fixing someone else's pull request'." Add that section:
   asks for it to be reviewed or fixed. Only on the small-fix path, before the thread has
   a plan directory or any commit of its own. Otherwise say it needs a new thread and
   offer a stub naming the PR. If the fix turns out to need a plan, say so and offer a stub.
-- **Look first:** `gh pr view <n> --json url,state,headRefName,baseRefName,isCrossRepository,author,title`
+- **Look first:** `gh pr view <n> --json url,state,isDraft,headRefName,baseRefName,isCrossRepository,author,title`
   run in the worktree (so it resolves against `origin`; a full link must name the same
-  repository as `gh repo view --json url`). Closed, a fork, a base other than the default
-  branch, another repository, or a head branch that equals a `branch` in `session leads`:
-  say so plainly and offer the old way (a replacement PR from this thread's own branch, as
-  a normal small fix). Make no permit card.
+  repository as `gh repo view --json url`). A draft: say the author must mark it ready
+  first and stop. Closed, a fork, a base other than the default branch, another
+  repository, or a head branch that equals a `branch` in `session leads`: say so plainly
+  and offer the old way (a replacement PR from this thread's own branch, as a normal small
+  fix). Make no permit card.
 - **Ask first:** post the `permit` card now, before fetching or editing anything, so the
-  chosen PR is recorded. A refusal: say why in the reply and offer the old way. On
+  chosen PR is recorded. A refusal: say why in the reply; for a draft stop there,
+  otherwise offer the old way. On
   `don't allow` or `allow failed`, offer the replacement PR in a `question` card. Once
   allowed, the target holds for the life of the thread. After a restart, an allowed
-  `permit` card in the context names the target; an open one is still waiting. Until the
-  first successful push to the target branch, a restarted lead resumes the small fix where
-  it was (an unfinished merge is completed, not aborted); "Making the pull request
-  mergeable" step 9 applies only after that first push.
+  `permit` card in the context names the target; an open one is still waiting.
+- **Restart before `done`:** complete any unfinished merge (never abort it), then
+  `wc.js git fetch origin <head branch>`. The first push has happened when `HEAD` is an
+  ancestor of `origin/<head branch>` and not an ancestor of `origin/<default branch>`
+  (`git merge-base --is-ancestor`). If it has, carry on from "Making the pull request
+  mergeable" step 2 with a new window; otherwise carry on with the small fix (verify if
+  not yet verified, then Push). "Making the pull request mergeable" step 9 applies only
+  once a `done` card exists.
 - **Bring it in:** `wc.js git fetch origin <head branch>`, then `wc.js git merge origin/<head branch>`
   (this also brings the default branch, as of the thread's start, into the PR; expected).
   Review and fix as a small fix: commits, progress line and verifier as step 1, the
   verifier briefed with the PR's title and description and Collin's request.
 - **Push:** immediately before every push, run `gh pr view <target url> --json state`.
   `OPEN`: `wc.js git push origin HEAD:<head branch>`. Never `--force`, `--force-with-lease`
-  or `+` refspecs, and never `wc.js git pr`. `CLOSED` or `MERGED`: do not push; say so and
-  post a `stub` (`depends_on_parent: false`) with `commits` (the fix's own commits, not
-  merges) naming the PR and what happened to it; this thread does nothing more with it. A rejected push (the author
+  or `+` refspecs, and never `wc.js git pr`. `CLOSED`: do not push; say it was closed and
+  change nothing unless Collin asks for a stub. `MERGED`: do not push; if the fix has
+  commits of its own (not merges), post a `stub` with them as `commits` naming the merged
+  PR; if it has none (a conflict-only fix), say the PR merged without it and post nothing. A rejected push (the author
   pushed): `wc.js git fetch origin <head branch>`, merge `origin/<head branch>`,
   re-verify unless it was a fast-forward, then push again.
 - **Finish:** follow "Making the pull request mergeable" with `<head branch>` in place of
@@ -163,9 +174,11 @@ PR's branch as in 'Fixing someone else's pull request'." Add that section:
   the target URL; its `note` says it is ready for Collin or the author to merge and will
   not merge itself. `verified` follows the usual rule.
 - **After done (step 9):** every `gh pr view` names the target URL. Fixes go to the same
-  head branch the same way. Stubs from such a thread use `depends_on_parent: false` and
-  name the target PR and its branch in the summary; one that needs the PR's unmerged code
-  says to start it only once that PR is merged.
+  head branch the same way.
+- **Stubs:** every stub from such a thread, including the missed-merge stub of "Making
+  the pull request mergeable" step 4, uses `depends_on_parent: false` and names the target
+  PR and its branch in the summary; one that needs the PR's unmerged code says to start it
+  only once that PR is merged.
 
 ### Not changed
 
@@ -181,8 +194,9 @@ bash machine/test/run.sh
 ```
 
 New or extended tests must cover:
-- `viewer/test/app-permit.test.js` (new): each refusal 1-9 and 4a with a stubbed `gh` (7 both by another thread's `branch` and by its `target_pr.head_branch`, and not by a thread in another project); an accepted card stores the copied fields; Allow sets `thread.target_pr`; Allow after another thread claimed the branch gives `allow failed`; Don't allow leaves `target_pr` unset; retract while open; a second press is refused.
+- `viewer/test/app-permit.test.js` (new): each refusal 1-9 and 4a with a stubbed `gh` (7 both by another thread's `branch` and by its `target_pr.head_branch`, and not by another project's own `branch`, but yes by another project's `target_pr` for the same repository); an accepted card stores the copied fields; Allow sets `thread.target_pr`; Allow after another thread claimed the branch gives `allow failed`; Don't allow leaves `target_pr` unset; retract while open; a second press is refused.
 - `viewer/test/app-done-gate.test.js`: a done card for the target PR passes with the target's head branch; a done card for another PR whose head is not the thread's branch is still refused.
+- Slug discovery: a thread with `target_pr` whose worktree gained a new `docs/plans/<slug>/` records no slug.
 - `viewer/test/app-auto-merge.test.js`: a target-PR done card with a passing check makes no merge, no notice and no branch deletion.
 - `machine/test`: a `permit` card is relayed synchronously and returns 503 with the unavailable text when the hub is down; never spooled.
 - `viewer/test/app-permit.spec.js` (new, Playwright): the card shows author, number, title and both buttons; pressing Allow shows it answered.
@@ -286,6 +300,15 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | CLOSED stub has nothing to cherry-pick | upheld | §4 Push: CLOSED changes nothing; MERGED stubs only with own commits |
+| intent | minor | Missed-merge stub in step 4 still `depends_on_parent: true` | upheld | §4 Stubs: every stub from a target thread, step 4 included |
+| intent | minor | Look first misses drafts; a draft refusal offers a replacement | upheld | `isDraft` in Look first; drafts stop |
+| intent | minor | Restart can't tell before or after first push | upheld | §4 Restart before done: ancestor test |
+| mechanics | blocking | Two clones of one repo can both claim a branch | downgraded (minor) | Two projects of one repo on one hub, both on the same PR, is unusual; cheap fix: refusal 7 compares target claims by repository |
+| mechanics | major | Restart can't tell whether the first push happened | upheld | Same as intent finding 4 |
+| mechanics | major | Recovery stub omits a conflict-only fix | upheld | Same as intent finding 1 |
+| mechanics | major | Closed or merged after the push: inherited rules misfire | upheld | CLOSED already says so and changes nothing; missed-merge stub fixed by §4 Stubs |
+| mechanics | major | A collaborator's plan directory is recorded as this thread's plan | upheld | §3: threads with `target_pr` never record a slug |
 
 ## Prior Work
 
