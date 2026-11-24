@@ -127,6 +127,15 @@ Protocol documents have no suite (`CONTRIBUTING.md:90-92`): read the composed pr
 | mechanics | blocking | Validation omits wheelchair's full set and the protocol rendered check | upheld | Validation: full set and composed-prompt check |
 | mechanics | minor | Rare path: changed-path command exits 0 if git diff fails | accepted-risk | Accepted Risks; command dropped |
 
+### Round 2 — 2026-11-24
+
+**Lanes:** intent lens; mechanics lens; cross-family: pending.
+
+**Changed since Round 1:** the Spec was rewritten: shared rule moved to one `protocol/app/repo-law.md` composed by the machine into seven roles (S1); precedence now covers wheelchair's own files; small fixes have no exceptions; change base in verifier briefs (S2, S5); sub-lead copies exceptions into worker briefs (S4); mapper no longer copies rules (S7); tests (S8) and Validation (full set) redone. Decisions 12-14.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
