@@ -234,3 +234,19 @@ Full validation on the merged tip (sub-lead):
 npm --prefix viewer run test:browser   (one unsharded run, 16.9m)   EXIT 0   1486 passed, 34 skipped
 node --test viewer/test/*.test.js   # tests 935  # pass 934  # fail 1  (the known harness timing flake, also on main)
 ```
+
+### Remediation 8 — 2026-11-24
+
+Verification attempt 8 (commit `42537b7f`): the Claude verifier passed. The GPT verifier reported a gap: on a mockup taller than the screen, a box placed under the mockup and the pin could not both be on screen. This was the same gap as attempts 6-7, after two fixes (R6, R7), so it went to the lead as a plan defect. Collin picked option A, now Decision 11; S2 is updated. GPT also reported the `html` grid layout gap, judged rare (Accepted Risks, verification-8). Task R8 (attempt 1: gpt standard / gpt-6.1-terra, which hit its fails-twice guardrail on the thread case; attempt 2: gpt standard at effort xhigh / gpt-6.1-terra, on a rewritten brief), see `REMEDIATION-8.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S2 (Decision 11): after a tap, the comment box sticks to the bottom of the visible area and nothing scrolls | `viewer/pages/diagram.js` (the scrollIntoView block is removed); `viewer/pages/thread.css:202` (`.card-diagram` `overflow: clip`, so the box sticks to the screen, not the card); `thread.css:461` (`.spot-box` sticky at `bottom: calc(var(--composer-h) + 8px)`, `z-index: 3`, page background); `viewer/pages/picture.css:22` (`bottom: 0` on the picture pane's sticky box) | `app-spot-comment.spec.js`: new tall-mockup tests in the thread and on the picture page (no scroll; pin, text box, Send and Cancel on screen; in the thread, above the composer). Pre-fix failures are pasted in `reports/R8.md`. The existing coordinate test's second tap moved to 50% height, because the open box now overlays the lower part. Screenshots: `/tmp/wheelchair-r8-w13/thread.png`, `/tmp/wheelchair-r8-w13/picture.png` |
+
+Full validation on the merged tip (sub-lead):
+```
+npm --prefix viewer run test:browser   (one unsharded run, 22.1m)
+  EXIT 1   1489 passed, 1 failed, 34 skipped
+  failed: [firefox] app-project-tools.spec.js:1182 (not touched by this build): re-run --repeat-each=5 -> 10 passed
+node --test viewer/test/*.test.js   # tests 935  # pass 933  # fail 2  (harness timing, known on main; app-quiet "6 message clears debt", load flake, alone 27/27 earlier)
+```
