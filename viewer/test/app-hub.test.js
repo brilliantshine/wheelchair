@@ -2103,7 +2103,7 @@ test('retract validates targets, removes pins and refuses stale presses', async 
   assert.equal(validate('retract', { card: 'x', note: 'one\ntwo' }, 'lead').ok, false);
   assert.equal(validate('retract', { card: 'x', note: 'No longer needed' }, 'worker').ok, false);
   const targets = { cards: [{ id: 'x', kind: 'idea' }, { id: 's', kind: 'needs', system: true }, { id: 'a', kind: 'question', answered: true }, { id: 'r', kind: 'offer', replaced: true }] };
-  for (const [id, reason] of [['x', 'only a question, offer, approval, needs, sudo, deferred or reach card can be retracted'], ['s', 'a system needs card closes itself'], ['a', 'card is already answered'], ['r', 'no such card in this thread']]) assert.equal(retractable(targets, id).reason, reason);
+  for (const [id, reason] of [['x', 'only a question, offer, approval, needs, sudo, deferred, reach or permit card can be retracted'], ['s', 'a system needs card closes itself'], ['a', 'card is already answered'], ['r', 'no such card in this thread']]) assert.equal(retractable(targets, id).reason, reason);
   await withContext(async (context) => {
     const made = await thread(context); const other = await thread(context); const lead = made.sessions[0].name;
     const foreign = await openNeed(context, other);

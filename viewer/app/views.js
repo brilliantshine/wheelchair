@@ -35,7 +35,7 @@ async function features(hub) {
     let thread = listed;
     const needs = [];
     addNeeds(needs, thread);
-    if (!thread.assistant && !thread.slug && thread.worktree && !await require('./remote-plan.js').isRemote(hub, thread)) {
+    if (!thread.assistant && !thread.target_pr && !thread.slug && thread.worktree && !await require('./remote-plan.js').isRemote(hub, thread)) {
       const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
       if (names.length === 1) { thread = structuredClone(thread); await recordSlug(hub, thread, names[0]); }
     }
@@ -57,6 +57,7 @@ async function recordSlug(hub, snapshot, slug) {
   snapshot.slug = slug;
   await hub.withThread(snapshot.id, async () => {
     const thread = await hub.thread(snapshot.id);
+    if (thread.target_pr) { delete snapshot.slug; return; }
     if (thread.slug) { snapshot.slug = thread.slug; return; }
     thread.slug = slug;
     await hub.save(thread);
@@ -99,7 +100,7 @@ async function newPlanDirectories(worktree, defaultBranch = 'main') {
 // the thread list, which every page polls, from spawning git for each one on every poll. A
 // worktree the archive failed to remove is still searched.
 async function discoverSlug(thread, hub) {
-  if (thread.assistant || thread.slug || !thread.worktree) return null;
+  if (thread.assistant || thread.target_pr || thread.slug || !thread.worktree) return null;
   if (hub && await require('./remote-plan.js').isRemote(hub, thread)) return null;
   if (thread.archived && await fs.stat(thread.worktree).then(() => false, (error) => error.code === 'ENOENT' || error.code === 'ENOTDIR')) return null;
   const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
@@ -140,13 +141,13 @@ async function currentStatus(hub, snapshot) {
 
 function addNeeds(needs, thread) {
   for (const card of thread.cards) {
-    const open = !card.replaced && !card.answered && ['question', 'needs', 'approval', 'merged', 'reach'].includes(card.kind);
+    const open = !card.replaced && !card.answered && ['question', 'needs', 'approval', 'merged', 'reach', 'permit'].includes(card.kind);
     if (!open) continue;
     needs.push({
       thread_id: thread.id,
       card_id: card.id,
       kind: card.kind,
-      title: card.title || card.question || 'Approval',
+      title: card.kind === 'permit' ? `Push to #${card.pr_number}?` : card.title || card.question || 'Approval',
     });
   }
 }

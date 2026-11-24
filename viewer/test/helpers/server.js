@@ -65,12 +65,14 @@ function waitForExit(child) {
 
 async function startServer({ open, cacheRoot, stateDir, port, env, cwd = ROOT } = {}) {
   const root = cacheRoot || await makeDir();
+  // One writer per state directory. Explicit reuse is for sequential restart tests only.
+  const chosenStateDir = stateDir || await makeDir('server-state-');
   const graphDir = path.join(root, 'graphs');
   await fs.mkdir(graphDir, { recursive: true });
   const graphPath = open || path.join(graphDir, 'canonical.json');
   const chosenPort = port || await freePort();
   const args = ['viewer/server.js', '--port', String(chosenPort), '--cache-root', root, '--open', graphPath];
-  if (stateDir) args.push('--state-dir', stateDir);
+  args.push('--state-dir', chosenStateDir);
   const child = spawn(process.execPath, args, {
     cwd,
     env: { ...process.env, ...env },
@@ -88,7 +90,7 @@ async function startServer({ open, cacheRoot, stateDir, port, env, cwd = ROOT } 
     throw error;
   }
   return {
-    root, graphDir, graphPath, port: chosenPort, child, url: `http://127.0.0.1:${chosenPort}/wheelchair`,
+    root, stateDir: chosenStateDir, graphDir, graphPath, port: chosenPort, child, url: `http://127.0.0.1:${chosenPort}/wheelchair`,
     token,
     async stop({ leaveLock = false } = {}) {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');

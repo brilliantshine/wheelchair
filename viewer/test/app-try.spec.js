@@ -38,6 +38,8 @@ async function setup(page, status, extra = {}) {
     });
   }
   await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+  // On a phone the panel sits in the Files panel; open it when it is there to open.
+  if (!extra.closed) { await expect(page.locator('#files-toggle')).toBeVisible(); await page.locator('#files-toggle').click(); }
   return fake;
 }
 const panel = (page) => page.locator('#copy');
@@ -172,9 +174,14 @@ test('network failure on a write and the re-read shows the hub sentence, not bro
   expect(fake.posts.length).toBe(1);
 });
 
-test('a page load with the hub unreachable shows the hub sentence', async ({ page }) => {
-  await setup(page, S(), { abortGet: true });
+test('a page load with the hub unreachable shows the hub sentence and Refresh recovers', async ({ page }) => {
+  const fake = await setup(page, S(), { abortGet: true, closed: true });
+  await expect.poll(() => fake.gets).toBeGreaterThan(0);
+  await page.locator('#files-toggle').click();
   await expect(panel(page).locator('.card-error')).toHaveText("Can't reach the hub.");
+  fake.abortGet = false;
+  await panel(page).getByRole('button', { name: 'Refresh' }).click();
+  await expect(panel(page).getByRole('button', { name: 'Try it in my copy' })).toBeVisible();
 });
 
 test('a failed background poll clears its hub error once a later poll succeeds', async ({ page }) => {
@@ -204,12 +211,15 @@ test('a refused write shows the reason and re-reads Status once', async ({ page 
   await expect(panel(page).locator('.card-error')).toHaveText('Your copy changed since this page loaded.');
 });
 
-test('refused is shown instead of Try; Done and Dismiss send the version', async ({ page }) => {
-  const fake = await setup(page, S({ refused: 'This folder runs wheelchair itself; switching it would swap the running app for untested code.' }));
-  await expect(panel(page)).toContainText('This folder runs wheelchair itself');
-  await expect(panel(page).getByRole('button', { name: 'Try it in my copy' })).toHaveCount(0);
-  fake.status = S({ state: 'interrupted', files: ['a', 'b'], files_count: 2, earlier_branch: 'main', index_lock: '/tmp/project/.git/index.lock' });
-  await panel(page).getByRole('button', { name: 'Refresh' }).click();
+test('refused hides the panel; an interrupted switch brings it back as needing you; Done and Dismiss send the version', async ({ page }) => {
+  const fake = await setup(page, S({ refused: 'This folder runs wheelchair itself; switching it would swap the running app for untested code.' }), { closed: true });
+  await expect.poll(() => fake.gets).toBeGreaterThan(0);
+  await expect(page.locator('#head-files')).toBeHidden();
+  await expect(panel(page)).toHaveCount(0);
+  fake.status = S({ refused: 'This folder runs wheelchair itself; switching it would swap the running app for untested code.', state: 'interrupted', files: ['a', 'b'], files_count: 2, earlier_branch: 'main', index_lock: '/tmp/project/.git/index.lock' });
+  await page.reload();
+  await expect(page.locator('#files-toggle')).toHaveText('Files · Your copy needs you');
+  await page.locator('#files-toggle').click();
   await expect(panel(page)).toContainText('A switch was interrupted.');
   await expect(panel(page)).toContainText('main');
   await expect(panel(page)).toContainText('Git left a lock file: /tmp/project/.git/index.lock');
@@ -228,4 +238,41 @@ test('nothing overflows at phone width with long paths', async ({ page }) => {
     kept: [{ ref: 'refs/wheelchair/kept/' + 'h'.repeat(70) + '/abcd1234', label: 'commits made while trying thread', at: '2026-01-02T00:00:00Z', missing: false, old_identity: false }] }));
   await expect(panel(page)).toContainText('and 88 more');
   await noOverflow(page);
+});
+
+test('a thread with nothing new to try shows no panel and no Files button', async ({ page }) => {
+  const fake = await setup(page, S({ nothing_new: true }), { closed: true });
+  await expect.poll(() => fake.gets).toBeGreaterThan(0);
+  await expect(page.locator('#head-files')).toBeHidden();
+  await expect(panel(page)).toHaveCount(0);
+});
+
+test('on a wide screen the panel sits last in the files column', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await setup(page, S(), { closed: true });
+  await expect(page.locator('#files #copy')).toContainText('Your copy');
+  await expect(page.locator('#files #copy').getByRole('button', { name: 'Try it in my copy' })).toBeVisible();
+  expect(await page.evaluate(() => document.getElementById('files').lastElementChild.id)).toBe('copy');
+});
+
+test('the panel appears without a reload once the thread has something new, re-read when Files opens', async ({ page }) => {
+  const fake = await setup(page, S({ nothing_new: true }), { closed: true });
+  await expect.poll(() => fake.gets).toBeGreaterThan(0);
+  await expect(page.locator('#head-files')).toBeHidden();
+  fake.status = S();
+  await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+  await expect(page.locator('#files-toggle')).toBeVisible();
+  const gets = fake.gets;
+  await page.locator('#files-toggle').click();
+  await expect.poll(() => fake.gets).toBeGreaterThan(gets);
+  await expect(panel(page).getByRole('button', { name: 'Try it in my copy' })).toBeVisible();
+});
+
+test('after Switch back on an archived thread, what happened stays shown', async ({ page }) => {
+  const fake = await setup(page, S({ state: 'trying-other', active_thread_title: 'Other' }), { archived: true });
+  fake.write = async () => { fake.status = S({ state: 'none', last: { op: 'back', thread_id: 'x', at: 'now', outcome: 'warning', reason: 'Git reported a warning.', appeared: ['z.bin'], appeared_count: 1 } }); return { status: 200, json: { accepted: true, status: fake.status } }; };
+  await panel(page).getByRole('button', { name: 'Switch back' }).click();
+  await panel(page).getByRole('button', { name: 'Confirm' }).click();
+  await expect(panel(page)).toContainText('Switched your copy back. Git reported a warning.');
+  await expect(panel(page)).toContainText('These files appeared after switching back');
 });

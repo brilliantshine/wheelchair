@@ -167,6 +167,24 @@ for (const [label, size] of SIZES) {
       await noSideScroll(page);
     });
 
+    test('on a phone the way back from Archived stays on screen', async ({ page }) => {
+      for (let i = 0; i < 14; i += 1) {
+        const made = await ctx.make({ cli: 'claude' });
+        await ctx.patch(made.id, (x) => { x.title = `Archived ${i}`; x.archived = true; });
+      }
+      await page.setViewportSize({ width: 360, height: 640 });
+      await page.goto(`${ctx.server.url}/app/threads`);
+      await page.locator('#show-archived').click();
+      await expect(page.locator('#list li.row')).toHaveCount(14);
+      const back = page.locator('#show-archived');
+      await expect(back).toHaveText('\u2190 Back to threads');
+      await expect(back).toBeInViewport();
+      await back.click();
+      await expect(back).toHaveText('Archived');
+      await expect(page.locator('#list li', { hasText: 'Archived 0' })).toHaveCount(0);
+      await noSideScroll(page);
+    });
+
     test('lead chips follow the newest lead and link to Agents', async ({ page }) => {
       const live = await ctx.make({ cli: 'claude' });
       const ended = await ctx.make({ cli: 'claude' });

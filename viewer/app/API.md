@@ -228,3 +228,9 @@ Both HTML diagram routes accept `download=1` to serve an inert attachment under 
 - `press` accepts `thread`, `card`, `press_action` and optional `value`; `restart` and `archive` accept `thread`.
 
 Writes are sent once by `wc.js assistant`; reads retry hub unavailability. Start and message return their own `ok` shapes, while press, restart and archive return `{ok:true,result}` with the browser route's public result. Assistant messages, card answers, restarts and archives carry attribution.
+
+### Background preferences
+
+`GET /settings/background` returns `image_id`, `media_type`, `opacity`, `revision`, `image_url`, and `missing_image`. `GET /settings/background/image/<id>` serves only the current image. `POST /settings/background/upload?revision=<n>&opacity=<n>` accepts a raw PNG, JPEG, WEBP, or GIF (at most 25 MiB) with its matching Content-Type. `PUT /settings/background` accepts `{revision,image_id,opacity}`; null image_id removes the image. Writes compare revisions and return 409 with current metadata on conflict. JSON writes are limited to 4 KiB. All routes use normal browser authentication and origin checks.
+
+A state directory supports one running hub writer. Tests must use independent state directories except for sequential restart tests, which stop the first server before reusing its directory.

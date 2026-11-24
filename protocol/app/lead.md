@@ -114,6 +114,29 @@ needs no re-verification and is not an unverified commit for the repair rules. A
 only rare gaps never counts toward a retry, the repair budget or a question to the user. On a
 planned thread, every such verifier's brief also includes the plan's Accepted Risks table.
 
+**Picker and full run** (only in a project whose root `AGENTS.md` has a `Test picker and full run`
+heading naming a picker and a full-run command; elsewhere none of this applies and your
+verifiers run the commands as before). The lead's own pushes that add commits (small fix,
+after-done fix, repair) get a full run on the exact commit, started in the background
+alongside the verifier; stop a full run whose commit a fix replaced. A full run passes when its
+`summary.txt` names that commit and every suite exit is 0, or when every failure was confirmed
+already on main by the verifier's method (same test, same error at the comparison commit).
+Write such failures to `baseline.txt` beside `summary.txt` before the push, and repeat them in
+the `done` card's note afterwards. A failed full run is a failed check under the rule that
+governs that push: for a small fix or after-done fix, it counts toward the two attempts and the
+user's choice to push it as it is or drop it; for a repair, nothing unverified is pushed and the
+budget's `needs` card applies. **Covered:** a commit with a passing full run is covered, and so
+is any descendant Y of a covered commit X when the picker selects nothing for X..Y (plan-file
+commits stay covered). Pushing a covered commit needs no new full run; every other push,
+including a conflict-free merge of the default branch, gets one. Every verifier brief in such a
+project names the **comparison commit** (the merge-base of the checked commit with the default
+branch), a **picker base** and the line `Full run: by the starter`. The picker base is the
+comparison commit for a first check of a small fix or after-done fix; the commit the previous
+attempt checked, for a re-check or a repair of a failed pull request check (that same commit
+again: the previous picker base, with the commands that failed named); the default-branch tip
+merged in, after merging the default branch (Making the pull request mergeable 7); this branch's
+last pushed commit, after merging others' commits from the pull request branch (6).
+
 ### 1. Starting: a small fix, or a feature
 
 The user picks the project and the machine, then writes in plain words.
@@ -134,9 +157,13 @@ The user picks the project and the machine, then writes in plain words.
   `sessions` from `session list`. Start a verifier on that commit with
   `--not-provider <the provider the lead runs on>` if `review_families` is `both`, or no
   provider flag if it is `claude`, `gpt`, `gemini`, `kimi`, or `openrouter`, and a brief that says what the user asked for;
-  its `result` names the commit it checked. A failed check gets one more attempt; a
+  its `result` names the commit it checked (in a project with a `Test picker and full run`
+  heading, add the bases and start the full run as above). A failed check gets one more attempt; a
   gap surviving two attempts comes to the user as a `question` card (push the fix as it is,
-  or drop it, which you do with `wc.js git revert`). Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
+  or drop it, which you do with `wc.js git revert`). With a `Test picker and full run`
+  heading, also wait until the full run has passed for that commit (or it is covered),
+  unless they chose to push it as it is. Then
+  push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
   with `wc.js git pr`, and follow **Making the pull request mergeable** before posting
   `done`, setting `verified` as that section says. Say in your reply what changed. After the `done` card, follow step 10 (Check it
   yourself).
@@ -214,7 +241,10 @@ against. The mapper checks that; you only rely on MAP.md once the `result` arriv
    document page; you do not need to paste them.
 6. When the Open Questions and the Watch List are empty, write the final pass of the Spec:
    a fresh agent with no history must be able to implement from it (behavior, boundaries,
-   edge cases, non-goals, concrete validation commands). Set `status: ready-for-review`.
+   edge cases, non-goals, concrete validation commands). In a project with a `Test picker and full run`
+   heading, write targeted commands per Spec item and no whole-suite or full-run
+   commands; the full run is the pusher's. Verifiers still run every Spec command as written.
+   Set `status: ready-for-review`.
 
 IDEA.md is stable, not frozen. A new hard constraint may be added to its Constraints. A
 change to What, Why, What good looks like or Not doing is a scope change: propose it,
@@ -497,23 +527,27 @@ When the user reports a problem, first run `gh pr view --json state`:
   2. Read `review_families` and the lead's provider in `sessions` from `session list`.
      Start a verifier on that commit with `--not-provider <the provider the lead runs on>`
      if `review_families` is `both`, or no provider flag if it is `claude`, `gpt`, `gemini`, `kimi`, or `openrouter`,
-     briefed with the reported problem and the plan's Spec. Its
+     briefed with the reported problem and the plan's Spec (and, with a `Test picker and full run`
+     heading, the bases above; start the full run alongside it). Its
      `result` names the commit it checked. A failed check gets one more
      attempt; a gap surviving two attempts comes to the user as a `question` card: push the
      fix as it is, or drop it. Dropping reverts the fix's commits with `wc.js git revert`,
      so nothing unverified reaches the pull request later.
-  3. On a pass, or when they chose "push it as it is" (then no re-verify, and the `done`
+  3. On a pass (and, with a `Test picker and full run` heading, a passing full run for the
+     commit, or a covered one), or when they chose "push it as it is" (then no re-verify, and the `done`
      card says the fix failed its check and was pushed at their request): run
      `wc.js git fetch`. If `origin/wc/<thread-id>` has commits this branch lacks (the user
      updated the pull request branch), merge them with `wc.js git merge` and re-verify
-     first. Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`.
+     first (with a `Test picker and full run` heading, the merge commit also gets a full run
+     unless it is covered, and the push waits for it to pass). Then push with
+     `wc.js git push -u origin HEAD:wc/<thread-id>`.
   4. Follow **Making the pull request mergeable** before posting a new `done` card for the
      fix, saying what changed, what was re-checked and the pull request link, and setting
      `verified` as that section says. Then follow
      step 10 (Check it yourself) for that `done` card; its steps cover only what the fix
      changed.
 
-No thread ever pushes to another thread's branch. Every stub starts from the default
+No thread pushes to another thread's branch, except a target PR's branch as in "Fixing someone else's pull request". Every stub starts from the default
 branch and opens its own pull request.
 
 ### 10. Check it yourself
@@ -684,7 +718,8 @@ body names the current done head counts as its check card: post no other.
    origin/wc/<thread-id>`. Resolve conflicts as in 7 and commit the resolved files. If this
    brought in only their commits (a fast-forward, with nothing of yours unpushed), the new
    tip is the pushed commit: return to 2 in the same window, without a verifier. Otherwise
-   re-verify the merge as in 7, push, and return to 2 with a new window. This does not count
+   re-verify the merge as in 7 (picker base: this branch's last pushed commit), push, and return
+   to 2 with a new window. This does not count
    toward the budget; if the verifier fails, post the `needs` card in 8.
 7. **Repair.** For conflicts or behind, `wc.js git fetch`, then `wc.js git merge
    origin/<default branch>`. A successful merge already made its commit. On conflicts, edit
@@ -694,7 +729,10 @@ body names the current done head counts as its check card: post no other.
    `detailsUrl`. If you cannot tell what the check needs, post the `needs` card in 8 naming
    it. Fix the cause and `wc.js git commit`. Start a fresh verifier on the new commit using
    step 9's provider rule, briefed with the user's request for a small fix or the plan's Spec,
-   and what the repair changed. On a pass, push and return to 2 with a new window. On a
+   and what the repair changed, with the bases above when the project has a `Test picker and full run`
+   heading (the default-branch tip merged in, for a merge repair; the previously
+   checked commit, for a failed check), and start the full run alongside it unless the commit is
+   covered. On a pass (and, with that heading, a passing full run), push and return to 2 with a new window. On a
    fail, count one failed attempt, fix locally and re-verify; never push an unverified
    commit or poll for it.
 8. **Budget.** A repair that fails its verifier, or whose push still ends in a failed check
@@ -738,6 +776,59 @@ check `ok` in every `wc.js git` JSON result: git failures still exit 0.
   (the push, or opening the PR after a successful push) and that "Keep going" retries it;
   do not mention merging the PR. On "Keep going", redo the failed operation first,
   applying the non-fast-forward rule above, then carry on from where it failed.
+
+## Fixing someone else's pull request
+
+- **When:** Collin names an open PR (number or link) that this thread did not open and
+  asks for it to be reviewed or fixed. Only on the small-fix path (step 1), before the thread has
+  a plan directory or any commit of its own. Otherwise say it needs a new thread and
+  offer a stub naming the PR. If the fix turns out to need a plan, say so and offer a stub.
+- **Look first:** `gh pr view <n> --json url,state,isDraft,headRefName,baseRefName,isCrossRepository,author,title`
+  run in the worktree (so it resolves against `origin`; a full link must name the same
+  repository as `gh repo view --json url`). A draft: say the author must mark it ready
+  first and stop. Closed, a fork, a base other than the default branch, another
+  repository, or a head branch that equals a `branch` in `session leads`: say so plainly
+  and offer the old way (a replacement PR from this thread's own branch, as a normal small
+  fix). Make no permit card.
+- **Ask first:** post the `permit` card now, before fetching or editing anything, so the
+  chosen PR is recorded. A refusal: say why in the reply; for a draft stop there,
+  otherwise offer the old way. On
+  `don't allow` or `allow failed`, offer the replacement PR in a `question` card. Once
+  allowed, the target holds for the life of the thread. After a restart, an allowed
+  `permit` card in the context names the target; an open one is still waiting.
+- **Off the normal path, stop and ask.** After a restart, or whenever the target PR is
+  closed, retargeted or turned into a draft, merged before this thread's `done` card at
+  a commit other than the pushed one, or anything else this section does not cover
+  happens: change nothing (never abort a merge, push,
+  revert or stub on your own), and post one `question` card saying in plain words what you
+  see (local work, what is on the PR, its state) with fitting options, such as carry on,
+  push after a check, start a follow-up thread, or leave it. Do what Collin picks using
+  the rules here and in "Making the pull request mergeable". This replaces that section's
+  steps 4 (Merged, at another commit), 5 (Closed) and 9 (After a restart) for a target PR. Not a question: a restart
+  with an open `permit` card (keep waiting on it); a restart where an accepted `done`
+  card's `head` equals local `HEAD` and `git status --untracked-files=no` is clean (carry
+  on with step 10's restart rule only); a merge at the pushed commit (post `done` as in
+  that section's step 4); a problem reported after `done` (step 9, After done,
+  as usual, whose `MERGED` stub uses the Stubs rule below; its state check reads
+  `gh pr view <target url> --json state,isDraft`, and a draft is off the normal path).
+- **Bring it in:** `wc.js git fetch origin <head branch>`, then `wc.js git merge origin/<head branch>`
+  (this also brings the default branch, as of the thread's start, into the PR; expected).
+  Resolving conflicts is the normal path: edit the files and `wc.js git commit --paths
+  <resolved files>`. Review and fix as a small fix: commits, progress line and verifier as step 1, the
+  verifier briefed with the PR's title and description and Collin's request.
+- **Push:** immediately before every push, run `gh pr view <target url> --json state,isDraft`.
+  `OPEN` and not a draft: `wc.js git push origin HEAD:<head branch>`. Never `--force`, `--force-with-lease`
+  or `+` refspecs, and never `wc.js git pr`. Anything else: stop and ask, as above. A rejected push (the author
+  pushed): `wc.js git fetch origin <head branch>`, merge `origin/<head branch>`,
+  re-verify unless it was a fast-forward, then push again.
+- **Finish:** follow "Making the pull request mergeable" with `<head branch>` in place of
+  `wc/<thread-id>` everywhere and the target URL as the PR. The `done` card's `pr_url` is
+  the target URL; its `note` says it is ready for Collin or the author to merge and will
+  not merge itself. `verified` follows the usual rule.
+- **After done (step 9):** every `gh pr view` names the target URL. Fixes go to the same
+  head branch the same way.
+- **Stubs:** every stub from such a thread uses `depends_on_parent: false` and names the
+  target PR and its branch in the summary.
 
 ## Other leads on this machine
 

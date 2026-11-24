@@ -12,14 +12,17 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | File | Role |
 |---|---|
 | `server.js` | The whole server, with no runtime dependencies: routes, token and remember-cookie auth, graph validation, the layout pass, the app-hub glue, the agent-write contract, the lock and registry kept under the cache root. Its header comment is the route and error-code list |
-| `app/state.js` | Hub-state paths, atomic JSON writes, and thread persistence. `allThreads()` and `threadSnapshot(id)` serve shared, deep-frozen records from a stat-checked cache; code that mutates or saves reads with `thread(id)` (or clones the one record). |
+| `app/state.js` | Hub-state paths, atomic JSON writes, per-file transaction queues, and thread persistence. `allThreads()` and `threadSnapshot(id)` serve shared, deep-frozen records from a stat-checked cache; code that mutates or saves reads with `thread(id)` (or clones the one record). |
 | `app/machine-client.js` | The authenticated client for machine-service routes, including JSON status and body pass-through. |
 | `app/cards.js`, `card.js` | Hub card handling, including hidden `resolve` and `retract` cards, and the agent-side card validator/CLI. |
 | `app/peer-log.js` | Peer message limits, log retention and held-queue cleanup. |
 | `app/peers.js` | Same-machine peer and linked-thread discovery and lead summaries. |
-| `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js screen`, the invisible-screen commands). |
+| `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js git`, the git writes, and `wc.js screen`, the invisible-screen commands). |
 | `app/quiet.js` | The quiet-turn detector: who owes a report, the reminders to an agent and its starter, and the system `needs` card, run on the queue retry timer. |
 | `app/auto-merge.js` | The opt-in auto-merge run after a `check` card is accepted: gates, GitHub readiness re-check, the exact-head REST merge, the attempt record per head and the "Not merged automatically" `needs` card. |
+| `app/background.js` | Shared appearance metadata, bounded authenticated image requests, immutable image storage, revision checks and cleanup, both through the settings file queue; one hub writer per state directory. |
+| `pages/background-format.js` | Pure bounded image-container validation and GIF loop normalization shared by hub and local previews. |
+| `pages/background.js`, `pages/background.css` | Saved appearance renderer, token-scoped local preview ownership, Settings editor and opaque content surfaces; signed-in top-level pages only. |
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
 | `app/asides.js` | Aside records, prompts, turn lifecycle and graph handling. |
 | `app/handoff.js` | Thread handoffs: the export file format and its validator, history text, the export points and quiet test, the frozen guard, export itself, the handed-off banner, Download again and the `handoffs/` start-up sweep. |
@@ -49,7 +52,8 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; page polls go through `window.wcPoller` (defined in `nav.js`), which pauses while the tab is hidden; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the lead sidebar, agent tree, side panel and bottom terminal panel. `term-view.js` is the terminal view (xterm, View only / Typing switch, mouse-report filter, scrollback history) that both the Agents panel and `terminal.html`/`terminal.js` mount. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
 | `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/`. The app's fonts are not here: `/wheelchair/assets/fonts/<name>.woff2` serves four allowlisted files from `node_modules/@fontsource` (`FONT_FILES` in `server.js`) |
 | `signin.html` | What a browser with no remember cookie gets before it is signed in |
-| `playwright.config.js` | The browser suite's two projects, Chromium and Firefox; `workers: 2` so concurrent runs do not saturate the machine |
+| `playwright.config.js` | The browser suite's two projects, Chromium and Firefox; workers from `test-support/browser-workers.js`: a full run (`WHEELCHAIR_FULL_RUN=1`) with no other full run live gets up to 6, every other run 2, so concurrent runs do not saturate the machine; `--workers` still overrides |
+| `package.json` | Viewer dependencies (Playwright, the Inter and JetBrains Mono fonts) and the `test` and `test:browser` commands |
 | `test/` | The suites. See below |
 
 ## Boundaries
@@ -79,7 +83,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 
 | Directory | What it holds |
 |---|---|
-| `test/` | The node and Playwright suites; `fixtures/` holds the graph files they open, `helpers/server.js` starts a server on a free port with its own cache root, a folder from `test-support/run-dir.js` under system temp, and `hooks/` holds fault seams selected by an environment variable, used only by tests |
+| `test/` | The node and Playwright suites; `fixtures/` holds the graph files they open, `helpers/server.js` starts a server on a free port with its own cache root, separate temporary hub state and cache directories from `test-support/run-dir.js`, and `hooks/` holds fault seams selected by an environment variable, used only by tests |
 
 ## Tests
 
@@ -89,3 +93,5 @@ npm --prefix viewer run test:browser  # Chromium and Firefox
 ```
 
 Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`), which removes them when the test process ends; never allocate from `os.tmpdir()` directly in a test.
+
+Each isolated test server receives its own `--state-dir`. Reusing an explicit state directory is supported only for sequential restart tests after stopping its previous server; concurrent hub writers sharing state are unsupported.

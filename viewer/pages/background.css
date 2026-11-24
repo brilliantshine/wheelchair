@@ -1,0 +1,33 @@
+/* The image alone is translucent; all controls remain in the normal document stack. */
+html.background-active body { position: relative; isolation: isolate; }
+.background-layer { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.background-layer img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.background-active :is(.col-list, .col-side, .placeholder, .list-opts, #empty, .v-empty, #files, #content,
+  .home-side, .section-head, .stage-head, .term-bar, .agents-heading, .agents-thread, .agents-count,
+  .agents-finished-bar, .doc-bar, .doc-page #message, .new-screen > h1, #new-form, .new-screen .saved,
+  .pin-bar, .lead-wait, #export-reason, .agents-back, .agents-path-legend, .tv-view, .working, .head-files, .picture-bar, .picture-page #message) { background-color: var(--bg); }
+.background-active .settings .sections { border-right: 0; }
+.background-active .settings .sections a { background-color: var(--panel); }
+.background-active .settings .sections a[aria-current="page"] { background-color: var(--panel-2); }
+.background-active .settings .panel > :is(.models, .writing, .background-editor) > div:first-child { background-color: var(--bg); padding: 12px; border-radius: 10px; }
+.background-active .settings :is(.tpl-list, .tpl-edit) { background-color: var(--bg); }
+.background-active :is(#new-form, .new-screen .saved) { padding: 12px; border-radius: 10px; }
+.background-editor { max-width: 680px; display: flex; flex-direction: column; gap: 16px; }
+.background-editor .box { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.background-editor .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.background-editor input[type=range] { width: 100%; }
+.background-editor .hint { overflow-wrap: anywhere; }
+.background-active :is(.bubble.assistant, .bubble.human.card, .thread-head, #composer) { background-color: var(--bg); }
+.background-active .bubble.assistant { padding: 12px 14px; border-radius: 10px; }
+/* Small chat labels sit on pills that hug their text, not bars across the column.
+   The name row keeps its normal width, so its name cap and the "Ask about this" button work as without a background. */
+.background-active :is(.lead-by-name, .tool > summary, .ctx > *) { background-color: var(--bg); padding: 2px 10px; border-radius: 10px; }
+.background-active .tool > summary { width: fit-content; }
+
+/* Status remains explicit in labels; translucent content panels would expose the image. */
+.background-active :is(.v-group.empty .stage-head, .bubble.human.pending, .sent-attachments.pending,
+  .card-needs.is-answered, .card-merged.is-answered, .card-question.is-resolved, .card.is-retracted) { opacity: 1; }
+
+/* Settings groups are content panels; the main column and its gutters stay clear. */
+.background-active .settings :is(.models > section, .writing > section, .writing > .actions,
+  .writing > div:last-child, .pt > *, .accounts > #add-account, .harnesses > *) { background-color: var(--bg); }

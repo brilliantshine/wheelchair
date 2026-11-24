@@ -1,0 +1,169 @@
+[
+  {
+    "glob": "protocol/**",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "docs/plans/kimi-code/samples/**",
+    "tests": [
+      "viewer/test/app-kimi-hub.test.js"
+    ]
+  },
+  {
+    "glob": "docs/plans/openrouter-harness/samples/**",
+    "tests": [
+      "viewer/test/app-openrouter-hub.test.js",
+      "machine/test/pi-login.test.js",
+      "machine/test/pi-spend.test.js",
+      "machine/test/pi.test.js"
+    ]
+  },
+  {
+    "glob": "docs/plans/*/graphs/**",
+    "tests": [
+      "viewer/test/browser.spec.js"
+    ]
+  },
+  {
+    "glob": "connectors/**",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "test-support/**",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "sensitivity/**",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "codex/**",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "install/**",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "sudo-helper/**",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "install.sh",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "viewer/server.js",
+    "tests": [
+      "viewer-node",
+      "viewer-browser"
+    ]
+  },
+  {
+    "glob": "machine/**",
+    "additive": true,
+    "tests": [
+      "machine/test/name-guard.test.js"
+    ]
+  },
+  {
+    "glob": "viewer/app/**",
+    "additive": true,
+    "tests": [
+      "machine/test/name-guard.test.js"
+    ]
+  },
+  {
+    "glob": "viewer/pages/**",
+    "additive": true,
+    "tests": [
+      "machine/test/name-guard.test.js"
+    ]
+  },
+  {
+    "glob": "viewer/server.js",
+    "additive": true,
+    "tests": [
+      "machine/test/name-guard.test.js"
+    ]
+  },
+  {
+    "glob": "machine/test/fixtures/**",
+    "additive": true,
+    "tests": [
+      "viewer/test/app-chat.test.js"
+    ]
+  }
+]

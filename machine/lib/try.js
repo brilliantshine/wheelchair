@@ -376,6 +376,8 @@ class TryService {
       Promise.all((record.kept || []).map(async entry => ({ ...entry, missing: entry.old_identity ? true : !await this.resolveRef(folder, entry.ref), old_identity: !!entry.old_identity }))),
       record.active || record.pending ? this.identity(folder) : null, this.indexLock(folder)
     ]);
+    // Nothing new: the thread's branch is already contained in what the folder shows (a thread with no commits of its own yet).
+    const nothingNew = !!target && !!head?.sha && (await this.git(folder, ['merge-base', '--is-ancestor', target, head.sha])).status === 0;
     const busy = lock.held || generation !== lock.generation;
     const mismatch = (record.active || record.pending) && !identity?.timedOut && !this.sameIdentity(record.identity, identity);
     let state = 'none';
@@ -389,7 +391,7 @@ class TryService {
     const earlier = pending && (pending.return_point || record.active?.return_point || pending.from);
     const files = pending?.files || [];
     return { version: record.version, state, active_thread_id: record.active?.thread_id || null, active_commit: record.active?.commit || null,
-      target_available: !!target, newest: state === 'trying-this' && !!target && target !== record.active.commit,
+      target_available: !!target, nothing_new: nothingNew, newest: state === 'trying-this' && !!target && target !== record.active.commit,
       refused, earlier_branch: earlier ? (earlier.branch ? earlier.branch.replace(/^refs\/heads\//, '') : earlier.sha.slice(0, 7)) : null,
       files: files.slice(0, 50), files_count: pending ? (pending.files_count ?? files.length) : 0,
       index_lock: busy ? null : indexLock, last: record.last || null, kept };

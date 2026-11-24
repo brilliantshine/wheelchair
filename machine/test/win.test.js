@@ -6,6 +6,7 @@ const path = require('node:path');
 const { makeTempSync } = require('../../test-support/run-dir');
 const { WinBridge } = require('../lib/win');
 const { readState, writeState } = require('../lib/win-sync');
+require('./fixtures/win/wslpath-standin');
 
 function fixture(wsl = true) {
   const root = makeTempSync('win-bridge-');

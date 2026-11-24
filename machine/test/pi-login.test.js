@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), os = require('node:os');
 const pi = require('../../connectors/pi/machine.js'), { MachineService } = require('../service'), { makeTempSync } = require('../../test-support/run-dir');
 test('Pi sign-in command, environment and dry-run screens', () => {
-  const dir = makeTempSync('pi-login-'), bin = path.join(dir, 'bin'); fs.mkdirSync(bin); fs.writeFileSync(path.join(bin, 'pi'), '#!/bin/sh\n', { mode: 0o755 });
+  const dir = makeTempSync('pi-login-'), bin = path.join(dir, 'bin'); fs.mkdirSync(bin); fs.writeFileSync(path.join(bin, 'pi'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\n', { mode: 0o755 });
   const old = process.env.PATH; process.env.PATH = `${bin}:${old}`;
   try { assert.deepEqual(pi.loginCommand(), [path.join(bin, 'pi'), 'auth', 'login', 'openrouter', '--api-key']); } finally { process.env.PATH = old; }
   assert.deepEqual(pi.loginEnv(null), {}); assert.deepEqual(pi.loginEnv(path.join(os.homedir(), '.pi/agent')), {}); assert.deepEqual(pi.loginEnv(dir), { PI_CODING_AGENT_DIR: dir });

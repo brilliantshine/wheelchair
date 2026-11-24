@@ -26,8 +26,8 @@ async function service(wsl = true, options = {}) {
   const exe = path.join(mount, 'c/tools/git.exe');
   for (const [src, dest] of [['powershell.exe', powershell], ['git.exe', exe]]) { fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(path.join(__dirname, 'fixtures/win', src), dest); fs.chmodSync(dest, 0o755); }
   const log = path.join(root, 'tmux.log');
-  write(path.join(bin, 'tmux'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "$FAKE_LOG"\ncase "$1" in\n capture-pane) printf 'auto mode on\\n❯ Try anything\\n';;\n list-sessions) printf '%s\\n' $FAKE_SESSIONS;;\nesac\n`, 0o755);
-  write(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', 0o755);
+  write(path.join(bin, 'tmux'), `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nprintf '%s\\n' "$*" >> "$FAKE_LOG"\ncase "$1" in\n capture-pane) printf 'auto mode on\\n❯ Try anything\\n';;\n list-sessions) printf '%s\\n' $FAKE_SESSIONS;;\nesac\n`, 0o755);
+  write(path.join(bin, 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', 0o755);
   const prior = { ...process.env };
   Object.assign(process.env, { PATH: `${bin}:${prior.PATH}`, FAKE_LOG: log, FAKE_SESSIONS: '', WC_FAKE_MOUNT: mount, WC_FAKE_LOCALAPPDATA: 'C:\\Users\\Test', WC_FAKE_GIT_PATH: 'C:\\tools\\git.exe', WC_FAKE_APP_DIR: path.join(root, 'apps'), WHEELCHAIR_SESSION_TOKEN: 'secret-not-for-windows' });
   const secret = path.join(root, 'secret'); write(secret, 'correct-secret\n');
@@ -114,8 +114,8 @@ test('readying uses the adapter loaded entries', async () => {
     write(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { windows: { command: e.exe } } }));
     const seen = [];
     e.instance.win.beforeLaunch = async (session, opts) => { seen.push([session.cli, opts.windowsTools]); };
-    write(path.join(e.root, 'bin/pi'), '#!/bin/sh\nexit 0\n', 0o755);
-    write(path.join(e.root, 'bin/kimi'), '#!/bin/sh\necho 2.6.3\n', 0o755);
+    write(path.join(e.root, 'bin/pi'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 0\n', 0o755);
+    write(path.join(e.root, 'bin/kimi'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho 2.6.3\n', 0o755);
     for (const cli of ['claude', 'codex', 'agy', 'pi', 'kimi']) await start(e, 'lead', dir, { cli });
     assert.deepEqual(seen, [['claude', true], ['codex', true], ['agy', true], ['pi', false], ['kimi', false]]);
   } finally { await e.close(); }

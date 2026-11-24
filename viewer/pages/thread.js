@@ -272,10 +272,11 @@
   // ---- "Your copy": this thread's work in Collin's own checkout of the folder ----
   // Fetched on load, after each action and on its own button; never on the page's poll timer.
   // While a switch runs it re-reads every 3 seconds on a timer of its own.
-  const copyEl = el('section', 'card copy-panel'); copyEl.id = 'copy'; copyEl.setAttribute('aria-label', 'Your copy');
-  // After the phone Files panel, so the panel opens right under its button.
-  $('files-panel').after(copyEl);
-  const copy = { status: null, error: '', ask: null, sending: false, waiting: false, loading: false, started: false, timer: null, seq: 0 };
+  // It lives with the files: last in the right column on a wide screen, last in the Files panel on a phone.
+  // It shows only when there is something to try or something to look at, never on a thread with nothing new.
+  const copyEl = el('section', 'files-section copy-panel'); copyEl.id = 'copy'; copyEl.setAttribute('aria-label', 'Your copy');
+  const wideScreen = window.matchMedia('(min-width: 900px)');
+  const copy = { status: null, error: '', ask: null, sending: false, waiting: false, loading: false, started: false, timer: null, seq: 0, touched: false, lastCard: null };
   const plural = (list, total) => {
     const ul = el('ul', 'copy-files');
     for (const f of list) ul.appendChild(el('li', '', f));
@@ -315,8 +316,36 @@
     }
     return out;
   }
+  // Something in the panel needs Collin to look at it.
+  function copyNeedsYou() {
+    const S = copy.status;
+    return !!S && (['mismatch', 'interrupted', 'stale'].includes(S.state) || !!S.index_lock);
+  }
+  function copyShown() {
+    const S = copy.status; const t = thread();
+    if (!S) return !!copy.error;
+    // After a switch from this page, keep showing what happened until the page is reloaded.
+    if (copy.touched || copy.sending || copy.waiting || copy.ask || copy.error) return true;
+    if (S.state !== 'none' || copyNeedsYou() || (S.kept && S.kept.length)) return true;
+    return !!S.target_available && !S.nothing_new && !S.refused && !t.archived;
+  }
+  // Put the panel in the files container for this screen size, or take it out; then size the Files controls.
+  function mountCopy() {
+    const into = wideScreen.matches ? filesEl : filesPanel;
+    if (copyShown()) { if (copyEl.parentNode !== into || into.lastChild !== copyEl) into.appendChild(copyEl); }
+    else copyEl.remove();
+    filesEl.hidden = !filesEl.children.length;
+    const n = filesCount(); const phoneCopy = copyEl.parentNode === filesPanel;
+    headFilesEl.hidden = n === 0 && !phoneCopy;
+    filesToggle.textContent = (n ? 'Files (' + n + ')' : 'Files') + (phoneCopy && copyNeedsYou() ? ' · Your copy needs you' : '');
+    filesToggle.classList.toggle('needs-you', phoneCopy && copyNeedsYou());
+    if (headFilesEl.hidden) setPanel(false);
+    else if (!filesPanel.hidden) setPanel(true);
+  }
+  wideScreen.addEventListener('change', () => { if (data) mountCopy(); });
   function renderCopy() {
     if (!data) return;
+    mountCopy();
     const t = thread(); const S = copy.status;
     copyEl.textContent = '';
     if (t.assistant) { copyEl.hidden = true; return; }
@@ -394,6 +423,8 @@
     finally { if (seq === copy.seq) copy.loading = false; renderCopy(); }
     copySchedule();
   }
+  function copyFresh() { if (copy.started && !copy.loading && !copy.sending && !copy.timer) copyLoad(true); }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && data) copyFresh(); });
   // Re-read every 3 seconds while a switch runs, then show `last`.
   function copySchedule() {
     clearTimeout(copy.timer); copy.timer = null;
@@ -403,7 +434,7 @@
   }
   async function copyWrite(body) {
     if (copy.sending) return;
-    copy.sending = true; copy.error = ''; copy.ask = null; renderCopy();
+    copy.sending = true; copy.touched = true; copy.error = ''; copy.ask = null; renderCopy();
     let reread = false;
     try {
       const res = await fetch(T + '/try', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -495,18 +526,14 @@
   }
   function renderFiles() {
     fillFiles(filesEl);
-    filesEl.hidden = !filesEl.children.length;
     fillFiles(filesPanel);
-    const n = filesCount();
-    headFilesEl.hidden = n === 0;
-    filesToggle.textContent = 'Files (' + n + ')';
-    if (n === 0) setPanel(false);
+    mountCopy();
   }
   function setPanel(open) {
     filesPanel.hidden = !open || !filesPanel.children.length;
     filesToggle.setAttribute('aria-expanded', String(!filesPanel.hidden));
   }
-  filesToggle.addEventListener('click', () => setPanel(filesPanel.hidden));
+  filesToggle.addEventListener('click', () => { const opening = filesPanel.hidden; setPanel(opening); if (opening) copyFresh(); });
   filesPanel.addEventListener('click', (e) => { if (e.target.closest('a')) setPanel(false); });
   async function doArchive() {
     try { await post(T + '/archive'); archiveAsk = false; sigs.head = null; await poll(); }
@@ -691,7 +718,7 @@
           const d = el('details'); d.appendChild(el('summary', '', it.text));
           d.appendChild(el('div', '', (thread().title ? thread().title + ': ' : '') + (thread().context || '')));
           c.appendChild(d);
-        } else c.textContent = it.text;
+        } else c.appendChild(el('span', '', it.text));
         chatEl.appendChild(c);
       }
     }
@@ -812,7 +839,7 @@
   const copied = {};         // check card step key -> true for ~2s after a successful Copy
   async function press(card, action, value, node) {
     if (pressing[card.id]) return;
-    const once = card.kind === 'question' || card.kind === 'offer' || card.kind === 'reach';
+    const once = card.kind === 'question' || card.kind === 'offer' || card.kind === 'reach' || card.kind === 'permit';
     if (once) { pressing[card.id] = true; card.answered = true; sigs.chat = null; sigs.pinned = null; render(); }
     try {
       await post(T + '/cards/' + encodeURIComponent(card.id) + '/press',
@@ -862,10 +889,10 @@
     } else if (card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       label = ' ' + (card.resolved_note || (card.resolved_by === 'user' ? 'Dismissed' : 'Resolved'));
       tag.classList.add('resolved');
-    } else if (card.kind === 'reach' && card.allow_failed) {
+    } else if ((card.kind === 'reach' || card.kind === 'permit') && card.allow_failed) {
       label = ' Allow failed: ' + card.allow_failed;
       tag.classList.add('resolved');
-    } else if (card.kind === 'reach' && card.answered_value != null) {
+    } else if ((card.kind === 'reach' || card.kind === 'permit') && card.answered_value != null) {
       label = ' You picked ' + (card.answered_value === 'allow' ? 'Allow' : "Don't allow");
     } else if (card.kind === 'question' && card.resolved_by) {
       label = ' Answered in chat' + (card.resolved_note ? ' \u00b7 ' + card.resolved_note : '');
@@ -1006,6 +1033,25 @@
           el('strong', '', card.target_title || ''), document.createTextNode(' (' + seg + ')?'));
         box.appendChild(h);
         if (card.why) box.appendChild(el('div', 'fits', card.why));
+        const a = el('div', 'actions');
+        for (const [value, label] of [['allow', 'Allow'], ["don't allow", "Don't allow"]]) {
+          const pk = card.answered && card.answered_value === value && !card.allow_failed;
+          const b = button(label, (pk ? 'picked' : ''), () => press(card, 'picked', value), off);
+          b.dataset.option = value;
+          if (pk) b.prepend(icon(ICON.check, 12), document.createTextNode(' '));
+          a.appendChild(b);
+        }
+        box.appendChild(a);
+        break;
+      }
+      case 'permit': {
+        head(box, 'Push to a pull request', card.answered ? '' : 'warn');
+        const h = el('h3', '');
+        h.append(document.createTextNode('Let this thread push its fix to '), el('strong', '', card.pr_author || ''),
+          document.createTextNode("'s pull request #" + card.pr_number + ': ' + (card.pr_title || '') + '?'));
+        box.appendChild(h);
+        if (card.why) box.appendChild(el('div', 'fits', card.why));
+        if (card.head_branch) box.appendChild(el('small', 'fits', 'Branch: ' + card.head_branch));
         const a = el('div', 'actions');
         for (const [value, label] of [['allow', 'Allow'], ["don't allow", "Don't allow"]]) {
           const pk = card.answered && card.answered_value === value && !card.allow_failed;
@@ -1344,7 +1390,7 @@
       default:
         return null;
     }
-    if (card.retracted_at || ['offer', 'question', 'reach', 'approval'].includes(card.kind) || (card.kind === 'check' && card.answered_by === 'assistant') || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
+    if (card.retracted_at || ['offer', 'question', 'reach', 'permit', 'approval'].includes(card.kind) || (card.kind === 'check' && card.answered_by === 'assistant') || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
@@ -1475,7 +1521,11 @@
     if (!data) return;
     const t = thread();
     renderHandoff();
-    if (!copy.started && !t.assistant) { copy.started = true; copyLoad(); }
+    // Re-read on load, on each new card (the thread may have gained commits) and when the page comes back into view.
+    const lastCard = data.cards.length ? data.cards[data.cards.length - 1].id : null;
+    if (t.assistant) { /* the assistant thread has no copy panel */ }
+    else if (!copy.started) { copy.started = true; copy.lastCard = lastCard; copyLoad(); }
+    else if (lastCard !== copy.lastCard) { copy.lastCard = lastCard; copyFresh(); }
     sync('copy', [t.archived, t.project, t.machine], renderCopy);
     document.body.classList.toggle('assistant-thread', !!t.assistant);
     document.title = (t.assistant ? 'Personal assistant' : t.title || slug() || base(t.project)) + ' - thread';

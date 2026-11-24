@@ -9,7 +9,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 
-const { newPlanDirectories, findSlug } = require('../app/views.js');
+const { newPlanDirectories, findSlug, features, addNeeds } = require('../app/views.js');
 
 function git(cwd, ...args) { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }); }
 
@@ -123,4 +123,23 @@ test('an archived thread whose worktree the archive left behind is still searche
     await findSlug({ save: async () => {} }, thread);
     assert.equal(thread.slug, 'new-thing');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('target PR threads never discover a local plan', async () => {
+  const { work, branch } = await repoWithOldPlans();
+  await fs.mkdir(path.join(work, 'docs', 'plans', 'new-thing'), { recursive: true });
+  await fs.writeFile(path.join(work, 'docs', 'plans', 'new-thing', 'IDEA.md'), 'idea');
+  const thread = { id: 'one', worktree: work, default_branch: branch, target_pr: { url: 'https://github.com/o/r/pull/1' }, cards: [], sessions: [] };
+  let saves = 0;
+  const hub = { allThreads: async () => [thread], save: async () => { saves++; }, withThread: async (_id, fn) => fn(), thread: async () => thread };
+  await findSlug(hub, thread);
+  await features(hub);
+  assert.equal(thread.slug, undefined);
+  assert.equal(saves, 0);
+});
+
+test('open permit appears in Needs you with its PR number', () => {
+  const needs = [];
+  addNeeds(needs, { id: 'one', cards: [{ id: 'permit', kind: 'permit', pr_number: 42 }, { id: 'answered', kind: 'permit', pr_number: 43, answered: true }] });
+  assert.deepEqual(needs, [{ thread_id: 'one', card_id: 'permit', kind: 'permit', title: 'Push to #42?' }]);
 });

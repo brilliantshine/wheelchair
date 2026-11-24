@@ -55,10 +55,10 @@ test('Kimi login results persist and require successful exit', () => {
 test('version floor follows the resolved binary and its mtime', async () => {
   const dir = makeTempSync('kimi-bin-'), file = path.join(dir, 'kimi'), old = process.env.PATH;
   try {
-    fs.writeFileSync(file, '#!/bin/sh\necho 2.6.2\n', { mode: 0o755 }); process.env.PATH = `${dir}:${old}`;
+    fs.writeFileSync(file, '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho 2.6.2\n', { mode: 0o755 }); process.env.PATH = `${dir}:${old}`;
     const machine = Object.create(MachineService.prototype);
     await machine.checkVersion('kimi'); assert.match(machine.cliStatus('kimi', { logged_in: true }).problem, /found 2.6.2/);
-    fs.writeFileSync(file, '#!/bin/sh\necho 2.6.3\n'); fs.utimesSync(file, new Date(), new Date(Date.now() + 2000));
+    fs.writeFileSync(file, '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho 2.6.3\n'); fs.utimesSync(file, new Date(), new Date(Date.now() + 2000));
     await machine.checkVersion('kimi'); assert.equal(machine.cliStatus('kimi', { logged_in: true }).logged_in, true);
     assert.equal(kimi.loginCommand()[0], file); assert.equal(kimi.command({}, {}, '', { accountDir: dir }).argv[0], file);
   } finally { process.env.PATH = old; }
@@ -151,7 +151,7 @@ test('recovery recognizes Kimi footer and prompt', async () => {
 test('effective login home and executable fallback use absolute paths', () => {
   const root = makeTempSync('kimi-home-'), oldHome = process.env.HOME, oldPath = process.env.PATH, oldKimi = process.env.KIMI_CODE_HOME;
   try {
-    const file = path.join(root, '.kimi-code/bin/kimi'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '#!/bin/sh\necho 2.6.3\n', { mode: 0o755 });
+    const file = path.join(root, '.kimi-code/bin/kimi'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho 2.6.3\n', { mode: 0o755 });
     process.env.HOME = root; process.env.PATH = '/usr/bin:/bin'; process.env.KIMI_CODE_HOME = 'relative-kimi-home';
     assert.equal(kimi.resolveCli(), file);
     assert.deepEqual(kimi.loginCommand(), [file, 'login', '--region', 'global']);
@@ -180,7 +180,7 @@ test('version cache checks semver and invalidates when mtime changes', async () 
   try {
     process.env.PATH = `${dir}:${old}`;
     let tick = Date.now();
-    const version = output => { fs.writeFileSync(file, `#!/bin/sh\necho hit >> '${count}'\necho '${output}'\n`, { mode: 0o755 }); tick += 2000; fs.utimesSync(file, tick / 1000, tick / 1000); };
+    const version = output => { fs.writeFileSync(file, `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho hit >> '${count}'\necho '${output}'\n`, { mode: 0o755 }); tick += 2000; fs.utimesSync(file, tick / 1000, tick / 1000); };
     version('2.6.2'); await machine.checkVersion('kimi'); assert.equal(machine.cliStatus('kimi').problem, 'Kimi Code 2.6.3 or newer is needed (found 2.6.2)');
     machine.cliStatus('kimi'); assert.equal(fs.readFileSync(count, 'utf8').trim().split('\n').length, 1);
     version('unknown'); await machine.checkVersion('kimi'); assert.match(machine.cliStatus('kimi').problem, /found unknown/);
@@ -193,10 +193,10 @@ test('version cache checks semver and invalidates when mtime changes', async () 
 test('launch rechecks the executable after worktree creation and uses that path', async () => {
   const root = makeTempSync('kimi-launch-version-'), bin = path.join(root, 'bin'), file = path.join(bin, 'kimi'), log = path.join(root, 'tmux.log');
   fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nprintf '%s\\n' "$@" >> '${log}'\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nprintf '%s\\n' "$@" >> '${log}'\n`, { mode: 0o755 });
   const old = process.env.PATH;
-  const version = (value, time) => { fs.writeFileSync(file, `#!/bin/sh\necho ${value}\n`, { mode: 0o755 }); fs.utimesSync(file, time, time); };
+  const version = (value, time) => { fs.writeFileSync(file, `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho ${value}\n`, { mode: 0o755 }); fs.utimesSync(file, time, time); };
   try {
     process.env.PATH = `${bin}:/usr/bin:/bin`;
     const machine = Object.create(MachineService.prototype);
@@ -220,18 +220,18 @@ test('version timeout and nonzero exit make authenticated Kimi accounts ineligib
   const root = makeTempSync('kimi-version-failures-'), bin = path.join(root, 'bin'), file = path.join(bin, 'kimi');
   const old = { HOME: process.env.HOME, PATH: process.env.PATH, KIMI_CODE_HOME: process.env.KIMI_CODE_HOME };
   fs.mkdirSync(bin); fs.symlinkSync('/bin/sh', path.join(bin, 'sh'));
-  for (const cli of ['claude', 'codex', 'agy']) fs.writeFileSync(path.join(bin, cli), '#!/bin/sh\necho test\n', { mode: 0o755 });
+  for (const cli of ['claude', 'codex', 'agy']) fs.writeFileSync(path.join(bin, cli), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho test\n', { mode: 0o755 });
   try {
     process.env.HOME = root; process.env.PATH = `${bin}:/usr/bin:/bin`; process.env.KIMI_CODE_HOME = fixture();
     assert.equal(kimi.loginStatus(null).logged_in, true);
     const machine = Object.create(MachineService.prototype); machine.options = { kimiVersionTimeoutMs: 100 }; machine.sessions = {}; machine.liveTmux = () => new Set();
-    fs.writeFileSync(file, '#!/bin/sh\necho 2.6.3\nexec sleep 2\n', { mode: 0o755 });
+    fs.writeFileSync(file, '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho 2.6.3\nexec sleep 2\n', { mode: 0o755 });
     await machine.checkVersion('kimi');
     let status = machine.status();
     assert.equal(status.kimi.problem, 'Kimi Code 2.6.3 or newer is needed (found 2.6.3)');
     let accounts = status.accounts.filter(account => account.cli === 'kimi');
     assert.ok(accounts.length > 0); assert.ok(accounts.every(account => account.logged_in === false));
-    fs.writeFileSync(file, '#!/bin/sh\nexit 1\n'); fs.utimesSync(file, new Date(), new Date(Date.now() + 2000));
+    fs.writeFileSync(file, '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n'); fs.utimesSync(file, new Date(), new Date(Date.now() + 2000));
     await machine.checkVersion('kimi');
     status = machine.status();
     assert.equal(status.kimi.problem, 'Kimi Code 2.6.3 or newer is needed (found no output)');
@@ -254,9 +254,9 @@ test('seed writes account metadata without copying credentials', () => {
 test('service launch and login include absolute home and executable', async () => {
   const root = makeTempSync('kimi-service-'), bin = path.join(root, 'bin'), log = path.join(root, 'tmux.log');
   fs.mkdirSync(bin); const old = { PATH: process.env.PATH, HOME: process.env.HOME, KIMI_CODE_HOME: process.env.KIMI_CODE_HOME };
-  const file = path.join(root, '.kimi-code/bin/kimi'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '#!/bin/sh\necho 2.6.3\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nprintf '%s\\n' "$@" >> '${log}'\n`, { mode: 0o755 });
+  const file = path.join(root, '.kimi-code/bin/kimi'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho 2.6.3\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nprintf '%s\\n' "$@" >> '${log}'\n`, { mode: 0o755 });
   try {
     process.env.PATH = `${bin}:/usr/bin:/bin`; process.env.HOME = root; process.env.KIMI_CODE_HOME = path.relative(process.cwd(), fixture());
     const machine = Object.create(MachineService.prototype);
@@ -340,9 +340,9 @@ test('status lists multiple Kimi accounts and version problem suppresses account
   const root = makeTempSync('kimi-status-'), oldHome = process.env.HOME, oldPath = process.env.PATH, oldKimi = process.env.KIMI_CODE_HOME;
   try {
     process.env.HOME = root; delete process.env.KIMI_CODE_HOME;
-    const bin = path.join(root, 'bin'); fs.mkdirSync(bin); fs.writeFileSync(path.join(bin, 'kimi'), '#!/bin/sh\necho 2.6.2\n', { mode: 0o755 });
+    const bin = path.join(root, 'bin'); fs.mkdirSync(bin); fs.writeFileSync(path.join(bin, 'kimi'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho 2.6.2\n', { mode: 0o755 });
     fs.symlinkSync('/bin/sh', path.join(bin, 'sh'));
-    for (const cli of ['claude', 'codex', 'agy']) fs.writeFileSync(path.join(bin, cli), '#!/bin/sh\necho test\n', { mode: 0o755 });
+    for (const cli of ['claude', 'codex', 'agy']) fs.writeFileSync(path.join(bin, cli), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho test\n', { mode: 0o755 });
     process.env.PATH = bin;
     const global = fixture(); fs.cpSync(global, path.join(root, '.kimi-code'), { recursive: true });
     assert.equal(kimi.loginStatus(null).logged_in, true);
@@ -386,7 +386,7 @@ test('service command leaves named account model effort at its default', () => {
 test('fake tmux login polls cover exit markers and liveness', () => {
   const root = makeTempSync('kimi-tmux-'), bin = path.join(root, 'bin'), pane = path.join(root, 'pane'), live = path.join(root, 'live'), log = path.join(root, 'argv');
   fs.mkdirSync(bin); const old = process.env.PATH;
-  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1" in\n capture-pane) [ -f '${pane}' ] || exit 1; cat '${pane}' ;;\n list-sessions) [ -f '${live}' ] || exit 1; cat '${live}' ;;\nesac\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nprintf '%s\\n' "$*" >> '${log}'\ncase "$1" in\n capture-pane) [ -f '${pane}' ] || exit 1; cat '${pane}' ;;\n list-sessions) [ -f '${live}' ] || exit 1; cat '${live}' ;;\nesac\n`, { mode: 0o755 });
   const dir = fixture(), machine = Object.create(MachineService.prototype);
   try {
     process.env.PATH = `${bin}:${old}`; machine.logins = { team: { cli: 'kimi', dir } };
@@ -447,7 +447,7 @@ test('approval panels require ordered bottom lines and no input box', () => {
 test('readiness polling opens one Kimi permission hold and clears it on input', async () => {
   const root = makeTempSync('kimi-prompt-tmux-'), bin = path.join(root, 'bin'), pane = path.join(root, 'pane'), old = process.env.PATH;
   fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\ncat '${pane}'\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\ncat '${pane}'\n`, { mode: 0o755 });
   const machine = Object.create(MachineService.prototype), events = [];
   const session = { name: 'wc-test-worker', cli: 'kimi', status: 'ready', thread_id: 'test', prompt_open: false };
   machine.sessions = { [session.name]: session }; machine.persistSessions = async () => {}; machine.emitEvent = async event => events.push(event);
@@ -473,8 +473,8 @@ test('recovery prioritizes anchored Kimi markers over reply text', async () => {
 
 test('HTTP status stays responsive while a slow version check runs and launch awaits it', async () => {
   const root = makeTempSync('kimi-slow-'), bin = path.join(root, 'bin'), old = { HOME: process.env.HOME, PATH: process.env.PATH, KIMI_CODE_HOME: process.env.KIMI_CODE_HOME };
-  fs.mkdirSync(bin); fs.writeFileSync(path.join(bin, 'kimi'), '#!/bin/sh\nsleep 3\necho 2.6.3\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 }); fs.writeFileSync(path.join(bin, 'tmux'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.mkdirSync(bin); fs.writeFileSync(path.join(bin, 'kimi'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nsleep 3\necho 2.6.3\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', { mode: 0o755 }); fs.writeFileSync(path.join(bin, 'tmux'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 0\n', { mode: 0o755 });
   const secret = path.join(root, 'secret'); fs.writeFileSync(secret, 'secret');
   process.env.HOME = root; process.env.PATH = `${bin}:/usr/bin:/bin`; delete process.env.KIMI_CODE_HOME;
   const http = require('node:http'), probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));

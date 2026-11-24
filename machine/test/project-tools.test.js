@@ -17,7 +17,7 @@ async function fixture() {
   await fs.writeFile(path.join(repo, '.mcp.json'), JSON.stringify({ extra: { keep: true }, mcpServers: { old: { command: 'tool' } } }));
   git('-C', repo, 'add', '.mcp.json'); git('-C', repo, 'commit', '-qm', 'initial'); git('-C', repo, 'push', '-q', remote, 'main'); git('--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main'); git('-C', repo, 'remote', 'add', 'origin', 'https://github.com/owner/name.git');
   await fs.writeFile(config, `[url "${root}/"]\n insteadOf = https://github.com/\n`);
-  await fs.writeFile(path.join(bin, 'gh'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_GH_LOG"\nif [ "$1 $2" = "pr list" ]; then printf "%s\\n" "${TEST_GH_LIST:-[]}"; else if [ "${TEST_GH_FAIL:-}" = 1 ]; then echo failed >&2; exit 1; fi; echo https://github.com/owner/name/pull/1; fi\n', { mode: 0o755 });
+  await fs.writeFile(path.join(bin, 'gh'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nprintf "%s\\n" "$*" >> "$TEST_GH_LOG"\nif [ "$1 $2" = "pr list" ]; then printf "%s\\n" "${TEST_GH_LIST:-[]}"; else if [ "${TEST_GH_FAIL:-}" = 1 ]; then echo failed >&2; exit 1; fi; echo https://github.com/owner/name/pull/1; fi\n', { mode: 0o755 });
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, GIT_CONFIG_GLOBAL: config, TEST_GH_LOG: log };
   const runner = (program, args, options) => commandAsync(program, args, { ...options, env: { ...options.env, ...env } });
   return { root, repo, remote, log, env, runner, tools: createProjectTools({ commandAsync: runner, stateDir: path.join(root, 'state') }) };
@@ -168,7 +168,7 @@ test('multiple configured origin URLs use keys-only mode', async () => {
 });
 test('PR URL is the last HTTPS line in gh output', async () => {
   const f = await fixture();
-  await fs.writeFile(path.join(f.root, 'bin', 'gh'), '#!/bin/sh\nif [ "$1 $2" = "pr list" ]; then echo "[]"; else echo "Creating pull request"; echo "https://github.com/owner/name/pull/42"; fi\n', { mode: 0o755 });
+  await fs.writeFile(path.join(f.root, 'bin', 'gh'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nif [ "$1 $2" = "pr list" ]; then echo "[]"; else echo "Creating pull request"; echo "https://github.com/owner/name/pull/42"; fi\n', { mode: 0o755 });
   const read = (await f.tools.read({ path: f.repo })).body;
   const reply = await f.tools.save({ path: f.repo, token: read.token, tools: { x: { command: 'run' } }, keys: {} });
   assert.equal(reply.body.pr_url, 'https://github.com/owner/name/pull/42');
@@ -188,7 +188,7 @@ async function routeServer(f) {
 }
 test('concurrent route saves on one project serialize PR creation', async () => {
   const f = await fixture();
-  await fs.writeFile(path.join(f.root, 'bin', 'gh'), '#!/bin/sh\nif [ "$1 $2" = "pr list" ]; then echo "[]"; else echo start >> "$TEST_GH_LOG"; sleep 1; echo end >> "$TEST_GH_LOG"; echo https://github.com/owner/name/pull/1; fi\n', { mode: 0o755 });
+  await fs.writeFile(path.join(f.root, 'bin', 'gh'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nif [ "$1 $2" = "pr list" ]; then echo "[]"; else echo start >> "$TEST_GH_LOG"; sleep 1; echo end >> "$TEST_GH_LOG"; echo https://github.com/owner/name/pull/1; fi\n', { mode: 0o755 });
   const server = await routeServer(f);
   try {
     const read = (await server.post('read', { path: f.repo })).body;
@@ -211,7 +211,7 @@ test('alias and thread worktree share keys through routes', async () => {
 });
 test('failed worktree add after registration removes and prunes the temporary worktree', async () => {
   const f = await fixture(), read = (await f.tools.read({ path: f.repo })).body;
-  await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', { mode: 0o755 });
   const reply = await f.tools.save({ path: f.repo, token: read.token, tools: { x: { command: 'run' } }, keys: {} });
   assert.equal(reply.status, 502);
   assert.equal(reply.body.outcome, 'failed');
@@ -274,8 +274,8 @@ test('malformed key stores never expose values in replies or launch logs', async
   const initial = (await f.tools.read({ path: f.repo })).body;
   await f.tools.save({ path: f.repo, token: initial.token, tools: null, keys: { K: 'original' } });
   const dir = path.join(state, 'project-keys'), [file] = await fs.readdir(dir);
-  await fs.writeFile(path.join(f.root, 'bin', 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-  await fs.writeFile(path.join(f.root, 'bin', 'tmux'), '#!/bin/sh\nif [ "$1" = capture-pane ]; then printf "auto mode on\\n❯ Ready\\n"; fi\n', { mode: 0o755 });
+  await fs.writeFile(path.join(f.root, 'bin', 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', { mode: 0o755 });
+  await fs.writeFile(path.join(f.root, 'bin', 'tmux'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nif [ "$1" = capture-pane ]; then printf "auto mode on\\n❯ Ready\\n"; fi\n', { mode: 0o755 });
   const previousPath = process.env.PATH; process.env.PATH = `${path.join(f.root, 'bin')}:${previousPath}`;
   const previousError = console.error, logs = []; console.error = (...args) => logs.push(args.join(' '));
   try {

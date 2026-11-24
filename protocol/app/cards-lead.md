@@ -304,6 +304,40 @@ What reaches you, once per card:
 
 The link lasts until either thread is archived and works both ways: the other lead can message you back without a card of its own.
 
+### `permit`
+
+Asks the user to let this thread push its fix to someone else's open pull request. Only a lead posts it; see "Fixing someone else's pull request" in `lead.md`.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `pr_url` | string | yes | The pull request, `https://github.com/<owner>/<repo>/pull/<n>` |
+| `why` | string | yes | One line, in the user's terms, on why this thread should push to it |
+
+The user sees "Let this thread push its fix to **<author>**'s pull request #<number>: <title>?", the `why`, the head branch in small text, and two buttons, **Allow** and **Don't allow**. One answer only; a second press is refused `card is already answered`. An open `permit` card counts in "Needs you". Only one may be open per thread (`a permit request is already open`).
+
+A `permit` card is never queued; the machine relays it synchronously. If the hub is down the post fails with `the app is unreachable; the permit card was not recorded; try again in a minute`, so you always get either an id or a refusal.
+
+The hub looks the pull request up with `gh` and refuses it at post time (422), in this order:
+
+1. `the pull request link is not a GitHub pull request`.
+2. `couldn't reach GitHub to check the pull request; try again in a minute`, or `the app's GitHub login can't read this pull request: <first stderr line>`.
+3. `that pull request is closed`.
+4. `that pull request comes from a fork; pushing to forks isn't supported yet`.
+4a. `that pull request is a draft; ask the author to mark it ready first`.
+5. `that pull request targets <base>, not <default branch>`.
+6. `that is this thread's own branch`.
+7. `that branch belongs to the thread "<title>" on this hub` (another thread that is not archived has that branch, or has already been allowed that head branch).
+8. `this thread already has an OK for <target url>`.
+9. `a permit request is already open`.
+
+The hub copies `pr_number`, `pr_title`, `pr_author` (login) and `head_branch` onto the stored card.
+
+What reaches you, once per card:
+
+- `[card <id>] picked: allow`: the hub recorded the target on this thread. It holds for the life of the thread; go on as the lead.md section says.
+- `[card <id>] picked: don't allow`: nothing changed. Offer the replacement pull request in a `question` card.
+- `[card <id>] allow failed: <reason>`: another thread claimed the branch before the press (reasons as 7 and 8 above); nothing is recorded. Offer the replacement pull request in a `question` card.
+
 ## The kinds never shown
 
 ### `retract`
@@ -321,7 +355,7 @@ Only a lead may retract, and any lead of the thread may retract an earlier lead'
 The hub checks these refusals in order (422):
 
 1. `no such card in this thread`: missing, in another thread, or replaced.
-2. `only a question, offer, approval, needs, sudo, deferred or reach card can be retracted`.
+2. `only a question, offer, approval, needs, sudo, deferred, reach or permit card can be retracted`.
 3. `a system needs card closes itself` (the user can dismiss it unless its live session is still held).
 4. `card is already answered`: including a previous retraction, resolution or press; sudo
    cards are checked by state instead.

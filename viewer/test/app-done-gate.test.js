@@ -77,3 +77,10 @@ test('slow gh does not hold the thread lock', async () => {
     await done;
   } finally { f.restore(); }
 });
+
+test('target PR uses its head branch only for the exact URL', () => {
+  const target = { ...thread, target_pr: { url: card.pr_url, head_branch: 'author/fix' } };
+  assert.deepEqual(judgePr({ ...view, headRefName: 'author/fix' }, target, card), { ok: true });
+  assert.deepEqual(judgePr({ ...view, headRefName: 'author/fix' }, target, { ...card, pr_url: 'https://github.com/o/r/pull/2' }), { ok: false, reason: "that pull request is not this thread's (its branch is author/fix)" });
+  assert.deepEqual(judgePr({ ...view, headRefName: 'author/fix', baseRefName: 'other' }, target, card), { ok: false, reason: 'that pull request targets other' });
+});
