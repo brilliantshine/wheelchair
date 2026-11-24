@@ -373,3 +373,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — Lead answered verification-3 gaps: fix 1 (spot draft clears right after the POST succeeds); defer 2 as D4.
 - 2026-11-23 — R3: worker didn't report its choices; I listed 3: the held route lets other requests through with `route.continue()`; the bubble check uses `toContainText` rather than `toBeVisible`; `release()` is not in a `finally` (app-spot-comment.spec.js ~142-154).
 - 2026-11-23 — R3 accepted (band: scout): scout confirmed the thread.js change matches the brief exactly; the report shows the test failing on the old handler. Sub-lead re-ran spot-comment and send-now: 38 passed.
+- 2026-11-23 — Verification 4 (commit b060a327): Claude verifier (claude-opus-5-5) PASS; GPT verifier (gpt-6.2-sol) FAIL with 1 gap (rem sizes wrong in the PNG when the mockup sets a root font size), judged normal use; sent to the lead for defer/fix.
