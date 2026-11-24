@@ -564,3 +564,9 @@ while True:
   assert.equal(f.git('rev-parse', 'HEAD'), target); assert.equal(result.state, 'interrupted'); assert.ok(result.files.includes('file'));
   const reload = new TryService({ stateDir: f.instance.stateDir, root: f.instance.root, projects: f.instance.projects }); assert.deepEqual((await reload.handle({ ...f.request, action: 'status' })).files, result.files); assert.equal(await fs.readFile(path.join(f.repo, 'precious'), 'utf8'), 'mine');
 });
+test('status says nothing_new until the thread branch has commits the folder lacks', async () => {
+  const f = await tryFixture();
+  assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).nothing_new, false);
+  f.agentGit('reset', '--hard', 'main');
+  assert.equal((await f.instance.handle({ ...f.request, action: 'status' })).nothing_new, true);
+});

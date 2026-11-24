@@ -271,9 +271,10 @@
   // ---- "Your copy": this thread's work in Collin's own checkout of the folder ----
   // Fetched on load, after each action and on its own button; never on the page's poll timer.
   // While a switch runs it re-reads every 3 seconds on a timer of its own.
-  const copyEl = el('section', 'card copy-panel'); copyEl.id = 'copy'; copyEl.setAttribute('aria-label', 'Your copy');
-  // After the phone Files panel, so the panel opens right under its button.
-  $('files-panel').after(copyEl);
+  // It lives with the files: last in the right column on a wide screen, last in the Files panel on a phone.
+  // It shows only when there is something to try or something to look at, never on a thread with nothing new.
+  const copyEl = el('section', 'files-section copy-panel'); copyEl.id = 'copy'; copyEl.setAttribute('aria-label', 'Your copy');
+  const wideScreen = window.matchMedia('(min-width: 900px)');
   const copy = { status: null, error: '', ask: null, sending: false, waiting: false, loading: false, started: false, timer: null, seq: 0 };
   const plural = (list, total) => {
     const ul = el('ul', 'copy-files');
@@ -314,8 +315,35 @@
     }
     return out;
   }
+  // Something in the panel needs Collin to look at it.
+  function copyNeedsYou() {
+    const S = copy.status;
+    return !!S && (['mismatch', 'interrupted', 'stale'].includes(S.state) || !!S.index_lock);
+  }
+  function copyShown() {
+    const S = copy.status; const t = thread();
+    if (!S) return false;
+    if (copy.sending || copy.waiting || copy.ask || copy.error) return true;
+    if (S.state !== 'none' || copyNeedsYou() || (S.kept && S.kept.length)) return true;
+    return !!S.target_available && !S.nothing_new && !S.refused && !t.archived;
+  }
+  // Put the panel in the files container for this screen size, or take it out; then size the Files controls.
+  function mountCopy() {
+    const into = wideScreen.matches ? filesEl : filesPanel;
+    if (copyShown()) { if (copyEl.parentNode !== into || into.lastChild !== copyEl) into.appendChild(copyEl); }
+    else copyEl.remove();
+    filesEl.hidden = !filesEl.children.length;
+    const n = filesCount(); const phoneCopy = copyEl.parentNode === filesPanel;
+    headFilesEl.hidden = n === 0 && !phoneCopy;
+    filesToggle.textContent = (n ? 'Files (' + n + ')' : 'Files') + (phoneCopy && copyNeedsYou() ? ' · Your copy needs you' : '');
+    filesToggle.classList.toggle('needs-you', phoneCopy && copyNeedsYou());
+    if (headFilesEl.hidden) setPanel(false);
+    else if (!filesPanel.hidden) setPanel(true);
+  }
+  wideScreen.addEventListener('change', () => { if (data) mountCopy(); });
   function renderCopy() {
     if (!data) return;
+    mountCopy();
     const t = thread(); const S = copy.status;
     copyEl.textContent = '';
     const head = el('div', 'copy-head');
@@ -493,12 +521,8 @@
   }
   function renderFiles() {
     fillFiles(filesEl);
-    filesEl.hidden = !filesEl.children.length;
     fillFiles(filesPanel);
-    const n = filesCount();
-    headFilesEl.hidden = n === 0;
-    filesToggle.textContent = 'Files (' + n + ')';
-    if (n === 0) setPanel(false);
+    mountCopy();
   }
   function setPanel(open) {
     filesPanel.hidden = !open || !filesPanel.children.length;

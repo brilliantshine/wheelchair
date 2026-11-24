@@ -405,7 +405,9 @@ iframe.mockup-frame { display: block; position: absolute; top: 0; left: 0; borde
 .card-check .check-broken { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 6px 8px; }
 
 /* "Your copy" panel */
-.copy-panel { margin: 0 0 12px; min-width: 0; overflow-wrap: anywhere; }
+.copy-panel { min-width: 0; overflow-wrap: anywhere; }
+.copy-panel .copy-head h3 { margin-bottom: 0; }
+#files-toggle.needs-you { color: var(--warn); border-color: var(--warn-line); }
 .copy-panel .copy-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .copy-panel .copy-where { font-size: 12px; margin-top: 2px; }
 .copy-panel p { margin: 6px 0 0; font-size: 13px; }
