@@ -122,9 +122,10 @@
     const root = doc.createElementNS(NS, 'div');
     root.setAttribute('style', 'box-sizing:border-box;width:' + w + 'px;height:' + h + 'px;overflow:hidden;' + (bg ? bg.list.map(([p, v]) => p + ':' + v).join(';') : ''));
     const wrap = doc.createElementNS(NS, 'html');
+    const rootPx = /^[\d.]+px$/.test(page.fontSize || '') ? page.fontSize : null;
     for (const a of Array.from(doc.documentElement.attributes)) wrap.setAttribute(a.name, a.value);
     while (doc.documentElement.firstChild) wrap.appendChild(doc.documentElement.firstChild);
-    wrap.setAttribute('style', (wrap.getAttribute('style') || '') + ';display:block;width:' + w + 'px;height:' + h + 'px');
+    wrap.setAttribute('style', (wrap.getAttribute('style') || '') + ';display:block;width:' + w + 'px;height:' + h + 'px' + (rootPx ? ';font-size:' + rootPx + ' !important' : ''));
     // The background is moved to the root box, not copied: the element it came from paints none.
     if (bg && bg.from === 'html') wrap.setAttribute('style', wrap.getAttribute('style') + ';background:none !important');
     if (bg && bg.from === 'body') {
@@ -133,7 +134,7 @@
     }
     root.appendChild(wrap);
     const inner = new XMLSerializer().serializeToString(root);
-    const fontSize = /^[\d.]+px$/.test(page.fontSize || '') ? ' style="font-size:' + page.fontSize + '"' : '';
+    const fontSize = rootPx ? ' style="font-size:' + rootPx + '"' : '';
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '"' + fontSize + '><foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' + inner + '</foreignObject></svg>';
     const img = await loadSvg(svg);
     const k = scaleFor(w, h);
