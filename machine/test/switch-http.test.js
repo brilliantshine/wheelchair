@@ -182,10 +182,12 @@ test('failed relaunches use fatal stop cleanup and plain starts retain readiness
   for (const failure of ['gone', 'timeout']) {
     const f = await setup();
     try {
+      // The pane shows loading before the switch relaunches, so the service's background
+      // readiness poll cannot mark the relaunched session ready on a slow machine.
+      await write(f.env.fake.pane, 'loading');
       await postSwitch(f); await waitFor(() => f.session.active_switch === 'one');
       const config = path.join(f.env.state, 'settings', `${f.session.name}.mcp.json`); await write(config, 'old config'); let stopped = 0; f.env.instance.win.onStop = () => { stopped++; };
       const priorEvents = events(f).length; const beforeLog = await log(f.env);
-      await write(f.env.fake.pane, 'loading');
       if (failure === 'gone') { f.env.instance.pane = () => { throw new Error('gone'); }; process.env.FAKE_SESSIONS = ''; }
       else { f.session.relaunched_at = new Date(Date.now() - 31_000).toISOString(); process.env.FAKE_SESSIONS = ''; }
       await f.env.instance.checkReady(f.session);

@@ -9,7 +9,7 @@ const { MachineService } = require('../service');
 test('marked Claude tool is rewritten once, written privately and removed at stop', async () => {
   const root = await makeTemp('forward-service-'), state = path.join(root, 'state'), work = path.join(root, 'work'), bin = path.join(root, 'bin');
   fs.mkdirSync(work); fs.mkdirSync(bin);
-  for (const name of ['git', 'tmux', 'systemd-run']) fs.writeFileSync(path.join(bin, name), '#!/bin/sh\ncase "$1" in capture-pane) echo "❯ Try anything";; esac\nexit 0\n', { mode: 0o755 });
+  for (const name of ['git', 'tmux', 'systemd-run']) fs.writeFileSync(path.join(bin, name), '#!/bin/sh\ncase "$1" in capture-pane) echo "❯ Try anything";; load-buffer) cat >/dev/null;; esac\nexit 0\n', { mode: 0o755 });
   fs.writeFileSync(path.join(work, '.mcp.json'), JSON.stringify({ mcpServers: { tool: { type: 'http', url: 'http://localhost:1234/mcp' } }, wheelchair: { windows: ['tool'] } }));
   const old = process.env.PATH; process.env.PATH = `${bin}:${old}`;
   const forwards = { get: async port => { assert.equal(port, 1234); return 4567; }, restore: async () => {}, status: () => ({}), check: async () => ({ ok: true }) };
@@ -65,6 +65,7 @@ case "$(basename "$0"):$1" in
  systemd-run:*) exit 1;;
  tmux:new-session) printf '%s' "$*" > "$FORWARD_STATE/argv-$4"; cp "$FORWARD_STATE/win/forwards.json" "$FORWARD_STATE/hook-$4.json" 2>/dev/null || :;;
  tmux:list-sessions) printf '%s\\n' "$FORWARD_LIVE";;
+ tmux:load-buffer) cat >/dev/null;;
  tmux:capture-pane) printf '❯ Try anything\\n? for shortcuts\\n';;
  git:*) case "$*" in *--git-common-dir*) echo .;; *) exit 1;; esac;;
 esac

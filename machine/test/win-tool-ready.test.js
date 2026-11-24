@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const { makeTempSync } = require('../../test-support/run-dir');
 const { WinBridge } = require('../lib/win');
 const { createWinEnv } = require('../lib/win-env');
+require('./fixtures/win/wslpath-standin');
 
 function fixture() {
   const root = makeTempSync('ready-'), stateDir = path.join(root, 'state'), procRoot = path.join(root, 'proc'), etcRoot = path.join(root, 'etc'), mount = path.join(root, 'mnt');
