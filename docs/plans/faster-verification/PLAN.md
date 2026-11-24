@@ -484,6 +484,8 @@ Filled by Stage 3. One row per worker brief.
 | T3 | S3 browser workers | test-support/browser-workers.js, viewer/playwright.config.js, test-support/test/browser-workers.test.js | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker-3 | `node --test test-support/test/browser-workers.test.js`; worker counts a–d on one small spec | done |
 | T4 | S4 flaky harness test | viewer/test/app-harnesses.test.js (one test) | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-4 | 10x loop under load; break-and-fail check | done |
 | T5 | tricky — S5 role rules, AGENTS.md, CONTRIBUTING.md | protocol/app/{lead,sub-lead,verifier,worker}.md, AGENTS.md, CONTRIBUTING.md, protocol/AGENTS.md | standard, claude-sonnet-5-5 | wc-8bfbebc2e0d5-worker-5 | `node --test viewer/test/protocol-rules.test.js`; S5 coverage table | done |
+| R1 | Remediation 1, gap S1 rule 3: map every docs/ fixture tests read | test-support/test-map.json | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-6 | JSON parses; test-support suite; scratch-clone pick per new glob | dispatched |
+| R2 | Remediation 1, gaps S5.1/S5.3, S5.5, S5.6 wording | protocol/app/{verifier,sub-lead,lead}.md | light, claude-haiku-5-5 | wc-8bfbebc2e0d5-worker-7 | protocol-rules test | dispatched |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
