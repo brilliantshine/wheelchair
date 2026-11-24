@@ -142,7 +142,16 @@
       const clamp = (v, max) => Math.max(0, Math.min(max - 1, Math.round(v)));
       d.x = clamp((ev.clientX - r.left) / s, spec.width); d.y = clamp((ev.clientY - r.top) / s, spec.height); d.error = '';
       paint();
-      if (panel.scrollIntoView) panel.scrollIntoView({ block: 'nearest' });
+      if (panel.scrollIntoView) {
+        const savedX = window.scrollX;
+        const scrolls = [];
+        for (let ancestor = panel.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+          scrolls.push([ancestor, ancestor.scrollLeft]);
+        }
+        panel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        for (const [ancestor, scrollLeft] of scrolls) ancestor.scrollLeft = scrollLeft;
+        window.scrollTo(savedX, window.scrollY);
+      }
     });
     text.addEventListener('input', () => { if (!d) return; d.text = text.value; send.disabled = d.pending || !d.text.trim(); });
     cancel.addEventListener('click', () => { if (!d || d.pending) return; drafts.delete(opts.key); d.active = false; paint(); });

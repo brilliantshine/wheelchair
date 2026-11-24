@@ -12,13 +12,13 @@ test.afterEach(async () => { await ctx.close(); });
 
 const TEXT = (x, y, c) => `Comment on mockup "Home mockup" (docs/plans/dark/graphs/home.html, 600x900) at x=${x}, y=${y}: ${c}`;
 
-async function seed() {
+async function seed(width = 600, height = 900) {
   const made = await ctx.make({ cli: 'claude' });
   const worktree = path.join(ctx.state, 'worktree');
   const dir = path.join(worktree, 'docs/plans/dark/graphs'); await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, 'home.html'), '<body style="margin:0;background:#def"><h1 id="proof" style="margin:0">Mockup home</h1></body>');
   await ctx.patch(made.id, (t) => { t.worktree = worktree; t.slug = 'dark'; });
-  const card = await ctx.post(made.id, { kind: 'diagram', plan: 'dark', graph: 'home', title: 'Home mockup', format: 'mockup', width: 600, height: 900 });
+  const card = await ctx.post(made.id, { kind: 'diagram', plan: 'dark', graph: 'home', title: 'Home mockup', format: 'mockup', width, height });
   return { made, card };
 }
 const needs = (id, at) => ({ id, kind: 'needs', title: 'Note ' + id, body: 'Body', at, created_at: at, answered: true, resolved_by: 'user' });
@@ -217,6 +217,23 @@ async function openPicture(page, made, card) {
   await page.goto(`${ctx.server.url}/app/picture?thread=${made.id}&card=${card.id}`);
   await expect(page.locator('#picture iframe')).toHaveAttribute('scrolling', 'no');
 }
+
+test('on the picture page, a tap on the right of a wide mockup keeps the pin in view', async ({ page }) => {
+  const { made, card } = await seed(1000, 600);
+  await openPicture(page, made, card);
+  await page.getByRole('button', { name: 'Comment on a spot' }).click();
+  const pane = page.locator('.picture-body');
+  await pane.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+  const before = await pane.evaluate((el) => el.scrollLeft);
+  const layer = await page.locator('.spot-layer').boundingBox();
+  await page.mouse.click(layer.x + layer.width * 0.9, layer.y + layer.height * 0.2);
+  const after = await pane.evaluate((el) => el.scrollLeft);
+  expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+  const pin = await page.locator('.spot-pin').boundingBox();
+  const box = await pane.boundingBox();
+  expect(pin.x).toBeGreaterThanOrEqual(box.x - 1);
+  expect(pin.x + pin.width).toBeLessThanOrEqual(box.x + box.width + 1);
+});
 
 test('the picture page sends the same format and shows Sent to the thread', async ({ page }) => {
   const { made, card } = await seed();
