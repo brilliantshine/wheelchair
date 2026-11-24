@@ -323,3 +323,55 @@ test('the thread guard reads without writing, so it cannot overwrite a concurren
   await assistant.guard(hub, old.id);
   assert.deepEqual(saves, []);
 });
+
+
+test('assistant reads omit aside conversations', async () => {
+  const { c, call } = await assistantFixture();
+  try {
+    const t = await thread(c);
+    const secret = 'unique-private-aside-987';
+    await editThread(c, t.id, (v) => { v.asides = [{ id: 'a', history: [{ reply: secret, graph: secret }] }]; });
+    const listed = (await call({ action: 'threads' })).body;
+    const detail = (await call({ action: 'thread', thread: t.id })).body;
+    assert.ok(!JSON.stringify(listed).includes(secret));
+    assert.ok(!JSON.stringify(detail).includes(secret));
+  } finally { await close(c); }
+});
+
+test('assistant reads refresh local plan status like features', async () => {
+  const { c, call } = await assistantFixture();
+  try {
+    const t = await thread(c);
+    const { makeDir } = require('./helpers/server.js');
+    const worktree = await makeDir('assistant-plan-');
+    const dir = path.join(worktree, 'docs/plans/example');
+    await fs.mkdir(dir, { recursive: true });
+    const plan = path.join(dir, 'PLAN.md');
+    await fs.writeFile(plan, 'status: planning\n');
+    await editThread(c, t.id, (v) => { v.worktree = worktree; v.slug = 'example'; v.last_status = 'planning'; });
+    assert.equal((await call({ action: 'thread', thread: t.id })).body.last_status, 'planning');
+    await fs.writeFile(plan, 'status: implementing\n');
+    assert.equal((await call({ action: 'threads' })).body.threads.find((v) => v.id === t.id).last_status, 'implementing');
+    await editThread(c, t.id, (v) => { v.last_status = 'planning'; });
+    assert.equal((await call({ action: 'thread', thread: t.id })).body.last_status, 'implementing');
+    assert.equal((await api(c, '/features')).body.building.find((v) => v.id === t.id).status, 'implementing');
+  } finally { await close(c); }
+});
+
+
+test('assistant recent filters before applying the 30 item limit', async () => {
+  const routes = require('../app/routes.js');
+  const helpers = require('../app/assistant.js');
+  const originalList = routes.listThreads, originalOn = helpers.isOn;
+  const target = { id: 'target', sessions: [], cards: [], queues: {} };
+  routes.listThreads = async () => [target]; helpers.isOn = async () => true;
+  const hub = {
+    allThreads: async () => [{ assistant: true, id: 'assistant', sessions: [{ role: 'lead', live: true, name: 'lead' }] }],
+    thread: async () => target,
+    chat: async () => ({ items: [{ type: 'human', text: 'user' }, { type: 'assistant', text: 'reply' }, ...Array.from({ length: 31 }, () => ({ type: 'tool', text: 'tool' }))] }),
+  };
+  try {
+    const result = await require('../app/assistant-actions.js').dispatch(hub, { calling_session: 'lead', action: 'thread', thread: 'target' });
+    assert.deepEqual(result.recent.map((item) => item.text), ['user', 'reply']);
+  } finally { routes.listThreads = originalList; helpers.isOn = originalOn; }
+});
