@@ -7,7 +7,7 @@ const { command } = require('../../connectors/codex/machine.js');
 const input = { role: 'worker', model: 'test-model' };
 const session = { name: 'wc-test', effort: 'high' };
 const worktree = '/work/tree';
-const base = ['codex', '-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true', '-c', `notify=[${JSON.stringify(path.resolve(__dirname, '../hook.sh'))},"codex","wc-test"]`, '-c', 'projects={"/work/tree"={trust_level="trusted"}}', '-m', 'test-model', '-c', 'model_reasoning_effort=high'];
+const base = ['codex', '-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true', '-c', `notify=[${JSON.stringify(path.resolve(__dirname, '../hook.sh'))},"codex","wc-test"]`, '-c', 'projects={"/work/tree"={trust_level="trusted"}}', '-c', 'check_for_update_on_startup=false', '-m', 'test-model', '-c', 'model_reasoning_effort=high'];
 const call = servers => command(input, session, worktree, { tools: true, mcp: { names: Object.keys(servers), servers } });
 const pairs = (...values) => values.flatMap(value => ['-c', value]);
 const { serverLabel } = require('../lib/project-mcp');
