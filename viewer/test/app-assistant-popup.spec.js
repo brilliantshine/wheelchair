@@ -61,6 +61,41 @@ test.describe('assistant pop-up', () => {
     await expect(page.locator('.wc-asst-float, .wc-asst-panel')).toHaveCount(0, { timeout: 15000 });
   });
 
+  test('turning on in an open tab and off and on again restores the button', async ({ page }) => {
+    test.setTimeout(90000);
+    await page.clock.install();
+    await projectPage(page);
+    await expect(page.locator('.wc-asst-float')).toHaveCount(0);
+    await setting(page, 'on');
+    await page.clock.fastForward(30000);
+    await expect(page.locator('.wc-asst-float')).toBeVisible();
+    await setting(page, 'off');
+    await page.clock.fastForward(10000);
+    await expect(page.locator('.wc-asst-float')).toHaveCount(0);
+    await setting(page, 'on');
+    await page.clock.fastForward(30000);
+    await expect(page.locator('.wc-asst-float')).toBeVisible();
+  });
+
+  test('a new restart context line lights the unread dot', async ({ page }) => {
+    const id = await turnOn(page);
+    await seedAssistant(id, [['assistant', 'Old news', OLD]]);
+    let restarted = false;
+    await page.route(`**/api/threads/${id}/chat`, async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      if (restarted) data.items.push({ type: 'context', text: 'Assistant restarted · starting fresh', at: NEW });
+      await route.fulfill({ response, json: data });
+    });
+    await page.goto(`${ctx.server.url}/app/threads`);
+    await page.locator('.wc-asst-float').click();
+    await expect(page.locator('.wc-asst-panel')).toContainText('Old news');
+    await page.getByRole('button', { name: 'Close' }).click();
+    await expect(page.locator('.wc-asst-unread')).toBeHidden();
+    restarted = true;
+    await expect(page.locator('.wc-asst-unread')).toBeVisible({ timeout: 15000 });
+  });
+
   test('keeps a pending message when earlier transcript text matches', async ({ page }) => {
     const id = await turnOn(page);
     await seedAssistant(id, [['human', 'yes', OLD]]);
@@ -127,17 +162,35 @@ test.describe('assistant pop-up', () => {
 
   test.describe('phone', () => {
     test.use({ viewport: { width: 390, height: 844 } });
-    test('closed button clears the project composer', async ({ page }) => {
+    async function clearComposer(page) {
+      await expect.poll(async () => {
+        const b = await page.locator('.wc-asst-float').boundingBox();
+        const c = await page.locator('#composer').boundingBox();
+        return b && c ? c.y - (b.y + b.height) : -1000;
+      }).toBeGreaterThanOrEqual(0);
+    }
+    const lines = (count) => Array.from({ length: count }, (_, i) => ['human', 'Conversation ' + i, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()]);
+    for (const [name, count] of [['short', 1], ['long', 30]]) {
+      test(`closed button clears the ${name} project composer`, async ({ page, browserName }) => {
+        await turnOn(page);
+        const made = await ctx.make({ cli: 'claude' });
+        await ctx.timedTranscript(made.id, lines(count));
+        await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+        await expect(page.locator('#chat')).toContainText('Conversation 0');
+        await clearComposer(page);
+        if (browserName === 'chromium') await page.screenshot({ path: `/tmp/r4-${name}-thread.png` });
+      });
+    }
+    test('button follows the composer as a short thread grows', async ({ page }) => {
       await turnOn(page);
       const made = await ctx.make({ cli: 'claude' });
-      await ctx.timedTranscript(made.id, Array.from({ length: 30 }, (_, i) => ['human', 'A longer conversation ' + i, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()]));
+      await ctx.timedTranscript(made.id, lines(1));
       await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
-      await page.locator('#composer').scrollIntoViewIfNeeded();
-      const button = page.locator('.wc-asst-float');
-      await expect(button).toBeVisible();
-      const b = await button.boundingBox();
-      const c = await page.locator('#composer').boundingBox();
-      expect(b.y + b.height).toBeLessThanOrEqual(c.y);
+      await expect(page.locator('#chat')).toContainText('Conversation 0');
+      await clearComposer(page);
+      await ctx.timedTranscript(made.id, lines(30));
+      await expect(page.locator('#chat')).toContainText('Conversation 29', { timeout: 15000 });
+      await clearComposer(page);
     });
 
     test('opens as a sheet covering nearly the screen, with a close control', async ({ page }) => {

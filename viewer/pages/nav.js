@@ -167,19 +167,27 @@
   window.wcPoller(refreshSessions, 10000);
 
   // The assistant pop-up: when the assistant is on, load its button and panel (assistant-popup.*).
+  let assistantLoading = false, assistantCss = false;
   async function loadAssistant() {
+    if (assistantLoading || document.querySelector('.wc-asst-float')) return;
+    assistantLoading = true;
     try {
       const res = await fetch(API + '/assistant');
       if (!res.ok) return;
       const status = await res.json();
       if (!status || status.on !== true || !status.thread) return;
       window.__wcAssistant = status;
-      const css = el('link'); css.rel = 'stylesheet'; css.href = '/wheelchair/assets/pages/assistant-popup.css';
-      document.head.appendChild(css);
+      if (location.pathname === '/wheelchair/app/thread' && new URLSearchParams(location.search).get('id') === status.thread) return;
+      if (!assistantCss) {
+        const css = el('link'); css.rel = 'stylesheet'; css.href = '/wheelchair/assets/pages/assistant-popup.css';
+        document.head.appendChild(css); assistantCss = true;
+      }
       const load = (src) => new Promise((resolve) => { const s = el('script'); s.src = src; s.onload = resolve; s.onerror = resolve; document.head.appendChild(s); });
       if (!window.WCMarkdown) await load('/wheelchair/assets/pages/md.js');
       await load('/wheelchair/assets/pages/assistant-popup.js');
-    } catch (e) { /* no pop-up this load */ }
+    } catch (e) { /* retry on the next check */ }
+    finally { assistantLoading = false; }
   }
   loadAssistant();
+  window.wcPoller(loadAssistant, 30000);
 })();

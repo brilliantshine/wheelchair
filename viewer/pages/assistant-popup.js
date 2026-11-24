@@ -56,6 +56,25 @@
   panel.append(head, stopped, chat, errorEl, form);
   document.body.append(button, shade, panel);
 
+  const composer = document.getElementById('composer');
+  function positionButton() {
+    if (composer && window.innerWidth < 900) {
+      button.style.bottom = Math.max(92, window.innerHeight - composer.getBoundingClientRect().top + 12) + 'px';
+    } else button.style.removeProperty('bottom');
+  }
+  let positionFrame = 0;
+  function schedulePosition() {
+    if (!positionFrame) positionFrame = requestAnimationFrame(() => { positionFrame = 0; positionButton(); });
+  }
+  window.addEventListener('resize', schedulePosition);
+  window.addEventListener('scroll', schedulePosition, true);
+  const composerObserver = composer && window.ResizeObserver ? new ResizeObserver(schedulePosition) : null;
+  if (composerObserver) composerObserver.observe(composer);
+  const chatContainer = document.getElementById('chat');
+  const chatObserver = chatContainer ? new MutationObserver(schedulePosition) : null;
+  if (chatObserver) chatObserver.observe(chatContainer, { childList: true, subtree: true, characterData: true });
+  schedulePosition();
+
   let data = null, isOpen = false, poller = null, busy = false, sig = '', pending = [], newest = '';
   const showError = (m) => { errorEl.textContent = m || ''; errorEl.hidden = !m; };
 
@@ -63,10 +82,10 @@
   const liveLead = (d) => leadsOf(d).some((s) => s.live);
   const working = (d) => leadsOf(d).some((s) => s.live && s.ready && s.turn_ended === false);
 
-  // The newest thing the user did not write: assistant text and cards.
+  // The newest thing the user did not write: assistant text, context and cards.
   function newestAt(d) {
     let best = '';
-    for (const i of d.items || []) if (i.type === 'assistant' && i.at > best) best = i.at;
+    for (const i of d.items || []) if ((i.type === 'assistant' || i.type === 'context') && i.at > best) best = i.at;
     for (const c of d.cards || []) { const at = c.at || c.created_at || ''; if (at > best) best = at; }
     return best;
   }
@@ -267,6 +286,12 @@
       if (res.status === 404 && (out.detail || out.error) === 'the assistant is off') {
         if (poller) poller.stop();
         button.remove(); shade.remove(); panel.remove();
+        document.removeEventListener('keydown', onKeydown);
+        window.removeEventListener('resize', schedulePosition);
+        window.removeEventListener('scroll', schedulePosition, true);
+        if (composerObserver) composerObserver.disconnect();
+        if (chatObserver) chatObserver.disconnect();
+        if (positionFrame) cancelAnimationFrame(positionFrame);
         isOpen = false;
         return;
       }
@@ -293,7 +318,8 @@
   button.addEventListener('click', open);
   close.addEventListener('click', shut);
   shade.addEventListener('click', shut);
-  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && isOpen) shut(); });
+  function onKeydown(ev) { if (ev.key === 'Escape' && isOpen) shut(); }
+  document.addEventListener('keydown', onKeydown);
 
   function enterSends() {
     let v = null; try { v = localStorage.getItem('enter-sends'); } catch (e) { /* default below */ }
