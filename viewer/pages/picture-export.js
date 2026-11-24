@@ -78,10 +78,9 @@
   }
 
   // ---- mockups ----
-  // The mockup's page background as a browser shows it on the canvas: the html element's, or the body's
-  // when html sets none. Read from computed style in a hidden, script-free same-origin frame.
+  // Read the mockup's canvas background and root font size in a hidden, script-free same-origin frame.
   const BG = ['background-color', 'background-image', 'background-repeat', 'background-position', 'background-size'];
-  function canvasBackground(html, w, h) {
+  function readMockupPage(html, w, h) {
     return new Promise((resolve) => {
       const f = document.createElement('iframe');
       f.setAttribute('sandbox', 'allow-same-origin'); f.setAttribute('aria-hidden', 'true');
@@ -92,8 +91,9 @@
           const d = f.contentDocument; const read = (n) => { const cs = f.contentWindow.getComputedStyle(n); return BG.map((p) => [p, cs.getPropertyValue(p)]); };
           const set = (list) => { const c = list[0][1]; return (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') || list[1][1] !== 'none'; };
           const h = read(d.documentElement); const b = d.body ? read(d.body) : null;
-          done(set(h) ? { list: h, from: 'html' } : (b && set(b) ? { list: b, from: 'body' } : null));
-        } catch (e) { done(null); }
+          const bg = set(h) ? { list: h, from: 'html' } : (b && set(b) ? { list: b, from: 'body' } : null);
+          done({ bg, fontSize: f.contentWindow.getComputedStyle(d.documentElement).fontSize || null });
+        } catch (e) { done({ bg: null, fontSize: null }); }
       };
       f.srcdoc = html;
       document.body.appendChild(f);
@@ -116,7 +116,7 @@
     for (const s of Array.from(doc.querySelectorAll('script'))) s.remove();
     for (const n of Array.from(doc.querySelectorAll('*'))) for (const a of Array.from(n.attributes)) if (/^on/i.test(a.name)) n.removeAttribute(a.name);
     const plain = '<!doctype html>' + doc.documentElement.outerHTML;
-    const bg = await canvasBackground(plain, w, h);
+    const page = await readMockupPage(plain, w, h); const bg = page.bg;
     for (const st of Array.from(doc.querySelectorAll('style'))) st.textContent = st.textContent.replace(/:root\b/g, 'html');
     const NS = 'http://www.w3.org/1999/xhtml';
     const root = doc.createElementNS(NS, 'div');
@@ -133,7 +133,8 @@
     }
     root.appendChild(wrap);
     const inner = new XMLSerializer().serializeToString(root);
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '"><foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' + inner + '</foreignObject></svg>';
+    const fontSize = /^[\d.]+px$/.test(page.fontSize || '') ? ' style="font-size:' + page.fontSize + '"' : '';
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '"' + fontSize + '><foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' + inner + '</foreignObject></svg>';
     const img = await loadSvg(svg);
     const k = scaleFor(w, h);
     const canvas = document.createElement('canvas');
