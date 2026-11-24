@@ -391,6 +391,10 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Permit card: card.js schema and retract, hub checks and stored fields (cards.js), Allow/Don't allow presses (threads.js), thread page rendering; `tricky` | viewer/app/card.js, cards.js, threads.js, viewer/pages/thread.js, viewer/test/app-permit.test.js, app-permit.spec.js | standard (claude-sonnet-5-5) | wc-426aa645964b-worker | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
+| T2 | Machine relays permit synchronously, never spooled | machine/service.js (relay condition), machine/test/service.test.js | light (gpt-6-luna) | wc-426aa645964b-worker-2 | `bash machine/test/run.sh` | running |
+| T3 | Done gate, auto-merge skip, slug guard (local and remote), Needs-you entry | viewer/app/pr-gate.js, auto-merge.js, views.js, remote-plan.js and their tests | standard (gpt-6.1-terra) | wc-426aa645964b-worker-3 | `node --test viewer/test/*.test.js` | running |
+| T4 | Protocol docs: lead.md line and new section, cards-lead.md permit section, cards.md rows and presses, protocol-rules leadKinds | protocol/app/lead.md, cards-lead.md, cards.md, viewer/test/protocol-rules.test.js | standard (claude-sonnet-5-5) | wc-426aa645964b-worker-4 | `node --test viewer/test/protocol-rules.test.js` | running |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
