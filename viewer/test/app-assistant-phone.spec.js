@@ -68,3 +68,26 @@ test.describe('assistant phone spacing', () => {
     });
   }
 });
+
+test('jump to latest remains clickable above a long thread', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    await signIn(page, ctx); await page.setViewportSize({ width: 390, height: 844 });
+    await setting(page, 'on');
+    const thread = await ctx.make({ cli: 'claude' });
+    await ctx.timedTranscript(thread.id, Array.from({ length: 80 }, (_, i) => line('human', `Message ${i}`, i)));
+    await page.goto(`${ctx.server.url}/app/thread?id=${thread.id}`);
+    await expect(page.locator('#chat')).toContainText('Message 79');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const jump = page.locator('#jump-bottom');
+    await expect(jump).toBeVisible();
+    await expect.poll(() => jump.evaluate((j) => {
+      const a = j.getBoundingClientRect(), b = document.querySelector('.wc-asst-float').getBoundingClientRect();
+      return document.elementFromPoint(a.left + a.width / 2, a.top + a.height / 2)?.closest('button') === j && (b.bottom <= a.top || b.top >= a.bottom || b.right <= a.left || b.left >= a.right);
+    })).toBe(true);
+    if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/r7-jump.png` });
+    await jump.click();
+    await expect(jump).toBeHidden();
+    await clearConversation(page);
+  } finally { await ctx.close(); }
+});

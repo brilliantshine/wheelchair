@@ -307,12 +307,40 @@ test.describe('assistant pop-up', () => {
     test('says the assistant is not running and offers Restart', async ({ page }) => {
       const id = await turnOn(page);
       await seedAssistant(id, [['assistant', 'Hi', OLD]]);
-      await ctx.patch(id, (t) => { t.sessions[0].live = false; });
+      await ctx.patch(id, (t) => { t.sessions = []; });
       await page.goto(`${ctx.server.url}/app/threads`);
       await page.locator('.wc-asst-float').click();
       await expect(page.locator('.wc-asst-stopped')).toContainText("The assistant isn't running");
       await expect(page.getByRole('button', { name: 'Restart' })).toBeVisible();
       await expect(page.getByRole('textbox', { name: 'Message the assistant' })).toBeDisabled();
+      await page.getByRole('button', { name: 'Restart' }).click();
+      await expect(page.getByRole('textbox', { name: 'Message the assistant' })).toBeEnabled();
     });
   });
+});
+
+test('poll does not allow a second send while a message is in flight', async ({ page }) => {
+  const ctx = await startWorld();
+  let release;
+  try {
+    await signIn(page, ctx);
+    await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assistant: 'on' }) }));
+    const id = await page.evaluate(async () => (await (await fetch('/wheelchair/api/assistant')).json()).thread);
+    let count = 0, polls = 0;
+    const held = new Promise((resolve) => { release = resolve; });
+    await page.route(`**/api/threads/${id}/messages`, async (route) => { count++; await held; await route.fulfill({ json: { ok: true } }); });
+    await page.route(`**/api/threads/${id}/chat`, async (route) => { polls++; await route.continue(); });
+    await page.goto(`${ctx.server.url}/app/threads`);
+    await page.locator('.wc-asst-float').click();
+    const send = page.getByRole('button', { name: 'Send' });
+    await page.getByRole('textbox', { name: 'Message the assistant' }).fill('Only once');
+    await expect(send).toBeEnabled();
+    await send.click();
+    await expect.poll(() => count).toBe(1);
+    const before = polls;
+    await expect.poll(() => polls, { timeout: 15000 }).toBeGreaterThan(before);
+    await expect(send).toBeDisabled();
+    await send.evaluate((button) => button.click());
+    expect(count).toBe(1);
+  } finally { if (release) release(); await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
 });

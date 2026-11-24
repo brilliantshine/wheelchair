@@ -57,9 +57,11 @@
   document.body.append(button, shade, panel);
 
   const composer = document.getElementById('composer');
+  const jump = document.getElementById('jump-bottom');
   function positionButton() {
     if (composer && window.innerWidth < 900) {
-      button.style.bottom = Math.max(92, window.innerHeight - composer.getBoundingClientRect().top + 12) + 'px';
+      const target = jump && !jump.hidden && jump.getClientRects().length ? jump : composer;
+      button.style.bottom = Math.max(92, window.innerHeight - target.getBoundingClientRect().top + 12) + 'px';
     } else button.style.removeProperty('bottom');
   }
   let positionFrame = 0;
@@ -73,8 +75,10 @@
   const chatContainer = document.getElementById('chat');
   const chatObserver = chatContainer ? new MutationObserver(schedulePosition) : null;
   if (chatObserver) chatObserver.observe(chatContainer, { childList: true, subtree: true, characterData: true });
+  if (jump) new MutationObserver(schedulePosition).observe(jump, { attributes: true, attributeFilter: ['hidden', 'class'] });
   schedulePosition();
 
+  let sending = false;
   let data = null, isOpen = false, poller = null, busy = false, sig = '', pending = [], newest = '';
   const showError = (m) => { errorEl.textContent = m || ''; errorEl.hidden = !m; };
 
@@ -269,7 +273,7 @@
       });
       stopped.append(r);
     }
-    input.disabled = !live; send.disabled = !live;
+    input.disabled = !live; send.disabled = !live || sending;
     const next = JSON.stringify([data.items, data.cards, working(data), pending, cardErrors, live, leadsOf(data)]);
     if (next === sig) return;
     sig = next;
@@ -334,14 +338,14 @@
     ev.preventDefault();
     const text = input.value.trim();
     if (!text || send.disabled) return;
-    send.disabled = true;
+    sending = true; send.disabled = true;
     try {
       const seen = (data.items || []).filter((i) => i.type === 'human' && i.text === text).length;
       await post(T + '/messages', { text });
       input.value = ''; pending.push({ text, seen }); sig = ''; showError('');
       await poll(); render();
     } catch (e) { showError('Message not sent: ' + e.message); }
-    finally { send.disabled = !(data && liveLead(data)); }
+    finally { sending = false; send.disabled = !(data && liveLead(data)); }
   });
 
   poll(); startPolling();

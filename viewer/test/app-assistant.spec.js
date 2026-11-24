@@ -223,3 +223,26 @@ test('assistant queued messages and card presses render and reconcile after Send
     await expect(page.locator('#chat .human')).toHaveCount(2);
   } finally { await ctx.close(); }
 });
+
+test('assistant with no sessions offers restart', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    await setAssistant(page, ctx, 'on');
+    const id = await assistantId(page, ctx);
+    await ctx.patch(id, (t) => { t.sessions = []; });
+    await signIn(page, ctx);
+    await page.goto(`${ctx.server.url}/app/thread?id=${id}`);
+    await expect(page.getByRole('button', { name: 'Restart lead' })).toBeVisible();
+  } finally { await ctx.close(); }
+});
+
+test('answered Check card attributes the assistant', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    const made = await ctx.make({ cli: 'claude' });
+    await ctx.patch(made.id, (t) => { t.cards.push({ id: 'check-assistant', kind: 'check', update: 'Check this', steps: [], answered: true, answered_by: 'assistant', at: '2030-01-01T00:00:00.000Z' }); });
+    await signIn(page, ctx);
+    await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    await expect(page.locator('.card', { hasText: 'Check this' })).toContainText('by your assistant');
+  } finally { await ctx.close(); }
+});

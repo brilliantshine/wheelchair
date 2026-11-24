@@ -566,7 +566,7 @@
   }
   function renderDead() {
     const t = thread();
-    const dead = !t.archived && !frozen() && (leads().length > 0 || t.imported) && !liveLead();
+    const dead = !t.archived && !frozen() && (leads().length > 0 || t.imported || t.assistant) && !liveLead();
     deadEl.hidden = !dead;
     if (!dead) return;
     deadEl.textContent = '';
@@ -1344,7 +1344,7 @@
       default:
         return null;
     }
-    if (card.retracted_at || ['offer', 'question', 'reach', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
+    if (card.retracted_at || ['offer', 'question', 'reach', 'approval', 'check'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));

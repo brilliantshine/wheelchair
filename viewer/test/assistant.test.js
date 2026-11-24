@@ -375,3 +375,22 @@ test('assistant recent filters before applying the 30 item limit', async () => {
     assert.deepEqual(result.recent.map((item) => item.text), ['user', 'reply']);
   } finally { routes.listThreads = originalList; helpers.isOn = originalOn; }
 });
+
+test('restart starts a fresh assistant after first preflight fails', async () => {
+  const c = await setup();
+  try {
+    await api(c, '/settings/balancing', { method: 'PUT', body: { lead_order: ['gpt'] } });
+    c.machine.preflightOk = false;
+    await api(c, '/settings/preferences', { method: 'PUT', body: { assistant: 'on' } });
+    const id = (await api(c, '/assistant')).body.thread;
+    const file = path.join(c.state, 'threads', `${id}.json`);
+    assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).sessions.length, 0);
+    c.machine.preflightOk = true;
+    await api(c, '/settings/balancing', { method: 'PUT', body: { lead_order: ['claude'] } });
+    assert.equal((await api(c, `/threads/${id}/restart`, { method: 'POST', body: {} })).status, 201);
+    const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+    assert.equal(saved.sessions.length, 1);
+    assert.equal(saved.sent.find((m) => m.source === 'context').text, `[wc:context restart] Thread state:\n${JSON.stringify({ thread: id, title: 'Personal assistant', assistant: true })}`);
+    assert.equal(c.machine.calls.filter((x) => x.path === '/v1/sessions').at(-1).body.prompt_role, 'assistant');
+  } finally { await close(c); }
+});
