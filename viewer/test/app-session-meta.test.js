@@ -90,7 +90,7 @@ test('open and restart responses filter every session, including waiting stub wr
   const { handle } = require('../app/routes.js');
   const secret = { name: 'wc-one', role: 'lead', brief: 'private', token: 'secret' };
   let value = { id: 't', sessions: [secret] };
-  const hub = { thread: async () => ({ id: 't' }), openStub: async () => value, restartLead: async () => secret };
+  const hub = { thread: async () => ({ id: 't' }), threadSnapshot: async () => ({ id: 't' }), openStub: async () => value, restartLead: async () => secret };
   const invoke = async (action) => {
     const request = { method: 'POST', url: `/wheelchair/api/threads/t/${action}`, async *[Symbol.asyncIterator]() {} };
     let output; const response = { writeHead() {}, end(data) { output = JSON.parse(data); } };

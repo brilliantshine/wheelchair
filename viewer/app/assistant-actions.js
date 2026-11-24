@@ -27,13 +27,15 @@ async function dispatch(hub, input) {
     const rows = await Promise.all(list.map(async (summary) => {
       const thread = await hub.thread(summary.id), needs = [];
       require('./views.js').addNeeds(needs, thread);
-      return { ...summary, lead_live: thread.sessions.some((s) => s.role === 'lead' && s.live), waiting: needs.map((n) => ({ id: n.card_id, kind: n.kind, text: n.title.split('\n')[0] })) };
+      const { asides, ...visibleSummary } = summary;
+      const status = thread.slug ? await require('./views.js').currentStatus(hub, thread) : summary.last_status;
+      return { ...visibleSummary, last_status: status, lead_live: thread.sessions.some((s) => s.role === 'lead' && s.live), waiting: needs.map((n) => ({ id: n.card_id, kind: n.kind, text: n.title.split('\n')[0] })) };
     }));
     if (action === 'threads') return { threads: rows };
     const row = rows.find((t) => t.id === input.thread);
     if (!row) throw appError(404, 'thread not found');
     const thread = await hub.thread(input.thread), chat = await hub.chat(input.thread);
-    return { ...row, cards: thread.cards.filter((c) => !c.replaced && !c.answered && !c.retracted_at), queued: Object.entries(thread.queues || {}).filter(([name]) => thread.sessions.some((s) => s.name === name && s.role === 'lead')).flatMap(([, queue]) => queue.map((entry) => entry.text)), recent: chat.items.slice(-30) };
+    return { ...row, cards: thread.cards.filter((c) => !c.replaced && !c.answered && !c.retracted_at), queued: Object.entries(thread.queues || {}).filter(([name]) => thread.sessions.some((s) => s.name === name && s.role === 'lead')).flatMap(([, queue]) => queue.map((entry) => entry.text)), recent: chat.items.filter((item) => ['human', 'assistant', 'context'].includes(item.type)).slice(-30) };
   }
   if (action === 'start') {
     if (typeof input.message !== 'string' || !input.message.trim() || !input.machine || !input.project) throw appError(400, 'project, machine and message are required');
