@@ -211,3 +211,18 @@ Attempt 3: both verifiers FAIL (`REMEDIATION-3.md`). One rare path (`--archived`
 Validation at `3e6a9f5b`:
 - `TZ=UTC npm --prefix viewer run test:browser`: `1 failed` (`[firefox] app-threads.spec.js:555:5`, the J7 flake that fails on base too), `34 skipped`, `1479 passed (21.9m)`.
 - `node --test viewer/test/*.test.js`: `# tests 955`, `# pass 954`, `# fail 1` — `app-harnesses.test.js:311` (pre-existing).
+
+### Remediation 4 (after verification attempt 4 at `f82e1b31`)
+
+Attempt 4: both verifiers FAIL (`REMEDIATION-4.md`). The lead declined K5: on a short thread the closed button sits higher than in `mockup-closed-phone` because it follows the composer, which is the user's make-room choice working as chosen.
+
+| Gap | Fix | Task | Evidence |
+|---|---|---|---|
+| K1 assistant button covers "Jump to the latest message" on phone | while the jump button shows, the assistant button sits 12px above it (`viewer/pages/assistant-popup.js`) | R7 | `viewer/test/app-assistant-phone.spec.js`: 80-message thread scrolled to the top, `elementFromPoint` at the jump button's centre is the jump button |
+| K2 no Restart after a failed first start | the assistant thread shows its Restart box whenever no lead is live, even with no sessions (`viewer/pages/thread.js` `renderDead`); the hub restart route already starts a lead with the fresh context | R7 | `viewer/test/assistant.test.js` failed-preflight then `POST /restart`; `app-assistant.spec.js` "assistant with no sessions offers restart" |
+| K3 Check card omits "by your assistant" | the answered tag shows on Check cards answered by the assistant (`viewer/pages/thread.js:1347`, scoped by the sub-lead so normal threads are unchanged) | R7 | `app-assistant.spec.js` "answered Check card attributes the assistant"; `app-check-card.spec.js` unchanged and passing |
+| K4 double send from the pop-up | a `sending` flag keeps Send disabled through a send | R7 | `app-assistant-popup.spec.js` held-POST test |
+
+Validation at `fc8f4525`:
+- `TZ=UTC npm --prefix viewer run test:browser`: `34 skipped`, `1488 passed (18.7m)`, exit 0.
+- `node --test viewer/test/*.test.js` (run alone; a run alongside the browser suite stalled after 231 tests and timed out): `# tests 956`, `# pass 955`, `# fail 1` — `app-harnesses.test.js:311` (pre-existing).
