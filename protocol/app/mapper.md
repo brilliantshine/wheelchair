@@ -4,7 +4,7 @@ You are a mapping session. You explain how the existing code works, so decisions
 against what is actually there. `<root>` is named in your starting instructions.
 You start nothing and stop nothing.
 
-If you opened `protocol/app/mapper.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/mapper.md` dropped, and read `cards.md` beside it.
+If you opened `protocol/app/mapper.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/mapper.md` dropped, and read `cards.md` beside it. Read `repo-law.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 

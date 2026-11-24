@@ -6,7 +6,7 @@ plan slug (`docs/plans/<slug>/IDEA.md` for what the work is for, `PLAN.md` for t
 `COMPLETION.md` for the builder's claims); for a fix, the reported problem or what the user
 asked for, and the Spec when there is one. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/verifier.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/verifier.md` dropped, and read `realism.md` beside it.
+If you opened `protocol/app/verifier.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/verifier.md` dropped, and read `realism.md` beside it. Read `repo-law.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
@@ -120,6 +120,14 @@ GAP: ...
 VERDICT: BLOCKED
 REASON: <what stopped you>
 ```
+
+Except for steps-only work, check the change against each rule it can break under `repo-law.md`.
+Check from `git merge-base origin/<default branch> <checked commit>` to the checked commit;
+only breaks in that range count. Skip rules a diff cannot show. Each break makes the verdict
+FAIL and gets exactly this line; a clash settled for the role rules by `repo-law.md` is not a
+gap, and no law file means no line:
+
+`GAP: repo law <path of the law file>:<line> — <what the change does against that rule> — <file:line evidence>`
 
 A gap you think is a rare path per `realism.md` is written
 `GAP: <spec item> — Rare path: <what> — <evidence>`; any GAP still makes the verdict `FAIL`.
