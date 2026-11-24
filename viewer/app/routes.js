@@ -510,14 +510,18 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
   if (bits[1] === 'sudo-outcome' && request.method === 'POST') {
     return send(response, 200, await require('./cards.js').sudoOutcome(hub, body));
   }
+  if (bits[1] === 'assistant' && request.method === 'POST') {
+    try { return send(response, 200, await require('./assistant-actions.js').dispatch(hub, body)); }
+    catch (error) { if (!error.status) throw error; return send(response, error.status, { error: error.message }); }
+  }
   if (bits[1] === 'session' && request.method === 'POST') {
     return send(response, 200, await hub.sessionRequest(body));
   }
   throw appError(404, 'route not found');
 }
 
-async function handleThreads(hub, request, response, url, bits, body) {
-  if (bits.length === 1 && request.method === 'GET') {
+
+async function listThreads(hub, lean = true) {
     const listed = await require('./assistant.js').visible(hub, await hub.allThreads());
     const all = await Promise.all(listed.map((thread) => hub.withThread(thread.id, async () => {
       let current = await hub.readSnapshot(thread.id);
@@ -530,8 +534,8 @@ async function handleThreads(hub, request, response, url, bits, body) {
     for (const thread of all) require('./remote-plan.js').refresh(hub, thread);
     // `?view=list` is what the pages poll: each thread's summary without its history
     // (cards, sent messages, briefs), which is most of the bytes and none of the list.
-    const lean = url.searchParams.get('view') === 'list';
-    const threads = all.map((thread) => {
+
+    return all.map((thread) => {
       if (!lean) return { ...thread, handed_off: thread.handed_off || null, sessions: thread.sessions.map(publicSession) };
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
@@ -544,6 +548,11 @@ async function handleThreads(hub, request, response, url, bits, body) {
           : progress.stage === 'verify' ? (progress.phase === 'clean' ? 'verified' : 'verifying') : null;
       return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, progress_stage: progressStage, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
+}
+
+async function handleThreads(hub, request, response, url, bits, body) {
+  if (bits.length === 1 && request.method === 'GET') {
+    const threads = await listThreads(hub, url.searchParams.get('view') === 'list');
     const revoke_notices = (await require('./handoff-ops.js').revokes(hub)).filter((entry) => entry.last_result === 'failed').map((entry) => ({ thread_id: entry.thread_id, sha: entry.sha, text: `Couldn't take back a cancelled pick-up on ${entry.repository || entry.project} ${entry.branch}: ${entry.error}` }));
     return send(response, 200, { threads, revoke_notices });
   }
@@ -777,4 +786,4 @@ async function handleSessions(hub, request, response, bits, body) {
   throw appError(404, 'route not found');
 }
 
-module.exports = { handle, readBody, send, HTML_HEADERS, UPLOAD_LIMIT };
+module.exports = { handle, readBody, send, newThread, listThreads, HTML_HEADERS, UPLOAD_LIMIT };

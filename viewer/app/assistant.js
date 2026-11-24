@@ -3,9 +3,10 @@
 const settings = require('./settings.js');
 const { appError } = require('./state.js');
 
+async function isOn(hub) { return (await settings.load(hub)).assistant === 'on'; }
 async function visible(hub, threads) {
   if (!threads.some((thread) => thread.assistant)) return threads;
-  const on = (await settings.load(hub)).assistant === 'on';
+  const on = await isOn(hub);
   return threads.filter((thread) => !thread.assistant || on);
 }
 async function guard(hub, id) {
@@ -37,4 +38,4 @@ async function change(hub, on) {
   hub.assistantChange = work;
   return work;
 }
-module.exports = { visible, guard, status, change };
+module.exports = { isOn, visible, guard, status, change };
