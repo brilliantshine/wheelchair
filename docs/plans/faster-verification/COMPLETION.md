@@ -109,3 +109,43 @@ Failures, each checked by S5.2's method (scratch clone at merge-base 7b93c1ae, f
 - `win-tool-proxy.test.js` can hang inside the whole machine suite (seen on main too), which stalls a full run until it is stopped. Not addressed here (Spec non-goal: individual tests).
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1, 2026-11-23)
+
+Gaps and tasks: `REMEDIATION-1.md`. Lead's per-gap answers and the full-run reading are in PLAN.md's Log.
+
+- **R1** (S1 rule 3): `test-support/test-map.json:13-18` maps `docs/plans/kimi-code/samples/**` to `viewer/test/app-kimi-hub.test.js`. A re-grep of every test for tracked `docs/` reads found no other unmapped one (`reports/R1.md`). Scratch-clone commit touching `docs/plans/kimi-code/samples/wire.jsonl` → picker selects `viewer/test/app-kimi-hub.test.js`. `node --test test-support/test/*.test.js`: 23/23.
+- **R2** (S5.1/S5.3, S5.5, S5.6):
+  - `protocol/app/verifier.md:49-51`: Spec commands always run as written, even a whole suite.
+  - `protocol/app/sub-lead.md:36-40` and `:298-301`: the deferral-finish paths still need a passing full run.
+  - `protocol/app/lead.md:536-538`: a merge of the user's pull-request commits gets a full run unless covered.
+  - `node --test viewer/test/protocol-rules.test.js`: 44/44.
+- **Accepted Risk** (verification-1): full-run.sh with a directory at `summary.txt`.
+- **Deferred 4** (verification): the free-port race in `viewer/test/helpers/server.js`.
+
+**Full run on 381e4014** (`bash test-support/full-run.sh <scratch>/full2`), started 22:36 with load average ~13 from other threads:
+```
+commit 381e401482d94a08ebe23e6c63a7d81c80ace2b7
+suite viewer-browser exit 1
+suite viewer-node exit 1
+suite machine exit 1
+suite test-support exit 0
+suite sensitivity exit 0
+suite codex exit 0
+suite install exit 0
+suite sudo-helper exit 0
+```
+The browser stage ran `Running 1466 tests using 6 workers`.
+
+Every failure, judged by the lead's reading of S2 (confirmed on main by S5.2, or a load flake that passes alone):
+
+| Suite | Failure | Judgment | Evidence |
+|---|---|---|---|
+| viewer-browser | `app-accounts.spec.js:576,584,591,599` "lead waiting line", chromium and firefox (8) | on main | Main clone at 7b93c1ae, `-g "lead waiting line"`: the same 8 fail with the same error, `Expected pattern: /^Waiting for GPT to refill, about \d/`, `Received string: "Waiting for GPT to refill, about Tue 01:46 AM"` (late evening, the time rolls into the next day). Branch: identical. |
+| viewer-browser | `[chromium] app-handoff.spec.js:206`, `[chromium] app-threads.spec.js:414 desktop` | load flake | `--project chromium --repeat-each 3` on both: `9 passed`, exit 0. |
+| viewer-node | `app-new-thread.test.js` "GET /new-thread returns found repositories…" (`Refused to use a port held by a process it cannot identify`); the file then hung 11+ min and the sub-lead stopped it | load flake (Deferred 4) | Alone: `# pass 13 / # fail 0`. |
+| viewer-node | `lifecycle.test.js:313` "--service gives up after three takeovers" (same port race) | load flake (Deferred 4) | Alone: `# pass 31 / # fail 0`. |
+| machine | 18 tests in `win.test.js`, `win-tool-proxy.test.js`, `win-tool-ready.test.js` (`spawnSync wslpath ENOENT`) | on main | The same 18 names and error lines as main's run of those files (attempt 1 evidence above). |
+| machine | `win-tool-proxy.test.js` hung 13+ min in the whole suite, stopped by the sub-lead; its "stand-in hands held calls…" and `win-tool-ready.test.js` "context errors before a readying task write failed" then failed (`Cannot read properties of undefined (reading 'ok')`) | load flake / hang (also hangs on main) | Both files alone, 3 runs: `# pass 31 / # fail 2` each time, and the 2 are main's `wslpath` failures ("existing copy remains waiting…", "failed readying becomes ready…"). Hang on main: attempt 1 evidence above. |
+
+So the full run on 381e4014 passes under the lead's reading of S2.

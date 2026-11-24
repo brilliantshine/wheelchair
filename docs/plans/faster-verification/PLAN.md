@@ -523,3 +523,4 @@ Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
 - 2026-11-23 — Choice (R2, worker didn't report its choices; I listed 2): sub-lead.md 1a wording "send that done result only once a full run has passed" (since reworded by the sub-lead); placement of that sentence before the brief-carried branch.
 - 2026-11-23 — R1 accepted (band: scout). Scout confirmed no other tracked docs/ read is unmapped.
 - 2026-11-23 — Choice (R1, worker reported none; I listed 2): new kimi entry placed after `protocol/**`; graph reads in browser.spec.js left to the existing `docs/plans/*/graphs/**` entry.
+- 2026-11-23 — Full run on 381e4014 judged a pass under the lead's reading: every failure is on main (8 evening browser tests, 18 wslpath machine tests) or passes alone (2 browser, 2 viewer-node port race, 2 machine after the win-tool-proxy hang). Evidence in COMPLETION.md Remediation 1. Starting verification attempt 2.
