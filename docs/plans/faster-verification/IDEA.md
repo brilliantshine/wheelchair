@@ -32,4 +32,4 @@ Each check runs every test (about 945 Node tests, about 1,500 browser tests in t
 ## Constraints
 
 - Concurrent test runs from several threads must not saturate the machine (the reason for today's 2-worker cap).
-- Nothing gets pushed without a full test run.
+- Nothing gets pushed without a full test run, except a conflict-free merge of main into work whose full run passed (Collin asked for that merge to get a targeted run).
