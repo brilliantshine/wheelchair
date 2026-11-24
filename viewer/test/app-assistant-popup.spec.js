@@ -40,6 +40,7 @@ test.describe('assistant pop-up', () => {
     await expect(page.locator('.wc-asst-float')).toBeVisible();
     await page.goto(`${ctx.server.url}/app/thread?id=${id}`);
     await expect(page.locator('#app-nav')).toBeVisible();
+    await expect(page.locator('.col-list')).toBeVisible();
     await page.waitForTimeout(1500);
     await expect(page.locator('.wc-asst-float')).toHaveCount(0);
     await page.goto(`${ctx.server.url}/app/threads`);
@@ -58,6 +59,44 @@ test.describe('assistant pop-up', () => {
     await expect(page.locator('.wc-asst-panel')).toBeVisible();
     await setting(page, 'off');
     await expect(page.locator('.wc-asst-float, .wc-asst-panel')).toHaveCount(0, { timeout: 15000 });
+  });
+
+  test('renders context, a press, and question consequences and sends an answer', async ({ page }) => {
+    const id = await turnOn(page);
+    await ctx.transcript(id);
+    await ctx.patch(id, (t) => {
+      t.cards.push({ id: 'popup-question', kind: 'question', question: 'Which path?', fits: 'Choose a path', why: 'A decision', options: [{ id: 'a', label: 'First', consequence: 'The first consequence' }, { id: 'b', label: 'Second', consequence: 'The second consequence' }], leaning: 'a', at: '2030-01-01T00:00:00.000Z' });
+    });
+    await page.goto(`${ctx.server.url}/app/threads`);
+    await page.locator('.wc-asst-float').click();
+    const panel = page.locator('.wc-asst-panel');
+    await expect(panel.locator('.wc-asst-context')).toContainText('Lead restarted');
+    await expect(panel.locator('.wc-asst-press')).toContainText('Picked Option B');
+    const card = panel.locator('[data-card="popup-question"]');
+    await expect(card).toContainText('The first consequence');
+    await expect(card.getByRole('button', { name: 'Send answer' })).toBeDisabled();
+    await card.getByRole('textbox', { name: 'Answer in your own words' }).fill('My own answer');
+    const press = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${id}/cards/popup-question/press`));
+    await card.getByRole('button', { name: 'Send answer' }).click();
+    expect((await press).postDataJSON()).toEqual({ action: 'answered', value: 'My own answer' });
+  });
+
+  test('shows queued messages and offers Send now', async ({ page }) => {
+    const id = await turnOn(page);
+    await ctx.timedTranscript(id, [['human', 'Earlier message', OLD]]);
+    const at = new Date().toISOString();
+    await ctx.patch(id, (t) => {
+      const queue = [{ text: 'Queued for the assistant', source: 'user', at }];
+      Object.assign(t.sessions[0], { live: true, ready: true, turn_ended: false, queue });
+      t.queues = { [t.sessions[0].name]: queue };
+    });
+    await page.goto(`${ctx.server.url}/app/threads`);
+    await page.locator('.wc-asst-float').click();
+    const bubble = page.locator('.wc-asst-pending');
+    await expect(bubble).toContainText('Queued for the assistant');
+    const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${id}/send-now`));
+    await bubble.getByRole('button', { name: 'Send now' }).click();
+    expect((await request).postDataJSON()).toEqual({ at });
   });
 
   test.describe('phone', () => {

@@ -45,3 +45,16 @@
   .wc-asst-shade { display: block; position: fixed; inset: 0; z-index: 45; background: #0008; }
   .wc-asst-panel { inset: 12px 8px 8px; width: auto; height: auto; max-height: none; }
 }
+
+.wc-asst-press { background: transparent; border: 1px solid var(--line); color: var(--dim); font-size: 12px; }
+.wc-asst-context { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 12px; }
+.wc-asst-context::before, .wc-asst-context::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.wc-asst-tool { color: var(--dim); font-size: 12px; }
+.wc-asst-tool pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wc-asst-consequence { display: block; color: var(--dim); font-size: 12px; }
+.wc-asst-own-words { display: flex; gap: 8px; margin-top: 10px; }
+.wc-asst-own-words textarea { flex: 1; min-width: 0; }
+
+.wc-asst-image { max-width: 100%; height: auto; }
+.wc-asst-tag { display: block; color: var(--dim); font-size: 11px; }
+.wc-asst-pending { opacity: .7; }
