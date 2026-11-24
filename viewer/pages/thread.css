@@ -450,3 +450,7 @@ iframe.mockup-frame { display: block; position: absolute; top: 0; left: 0; borde
   body:not(.aside-open) .shell.on-thread.side-collapsed { grid-template-columns: 220px minmax(0, 1fr) 44px; }
   body:not(.aside-open) .shell.on-thread.list-collapsed.side-collapsed { grid-template-columns: 44px minmax(0, 1fr) 44px; }
 }
+
+/* The assistant's thread: no asides, and a label on what it sent to another thread's lead. */
+body.assistant-thread .aside-selection, body.assistant-thread .aside-handoff, body.assistant-thread #aside-panel { display: none !important; }
+.bubble.human .by-assistant { display: block; margin-bottom: 4px; font-size: 11px; color: var(--dim); }

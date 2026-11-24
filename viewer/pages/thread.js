@@ -173,8 +173,8 @@
     headEl.appendChild(back);
     const block = el('div', 'title-block');
     const titleLine = el('div', 'thread-title-line');
-    titleLine.appendChild(el('h1', '', t.title || slug() || base(t.project)));
-    if (t.lead_name) {
+    titleLine.appendChild(el('h1', '', t.assistant ? 'Personal assistant' : t.title || slug() || base(t.project)));
+    if (t.lead_name && !t.assistant) {
       const newest = leads().reduce((a, b) => !a || (b.created_at || '') > (a.created_at || '') ? b : a, null);
       const chip = el(newest && newest.live ? 'a' : 'span', 'lead-chip', t.lead_name);
       if (newest && newest.live) chip.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(id);
@@ -182,23 +182,24 @@
     }
     block.appendChild(titleLine);
     const where = slug() ? base(t.project) + ' / ' + slug() : base(t.project);
-    block.appendChild(el('div', 'meta', [
+    if (t.assistant) block.appendChild(el('div', 'meta', 'Across your projects'));
+    else block.appendChild(el('div', 'meta', [
       where, lead ? 'lead' : '', PROVIDER_LABEL[t.provider] || t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
     ].filter(Boolean).join(' \u00b7 ')));
     headEl.appendChild(block);
 
     const line = el('div', 'head-actions' + (archiveAsk ? ' asking' : ''));
     if (t.stub && !t.sessions.length) line.appendChild(el('span', 'badge', 'stub'));
-    if (t.archived) line.appendChild(el('span', 'badge', 'archived'));
-    if (t.pr_url) { const pr = prLink(t.pr_url, 'btn small'); pr.prepend(icon(ICON.pr, 13)); line.appendChild(pr); }
+    if (t.archived) line.appendChild(el('span', 'badge', t.archived_by === 'assistant' ? 'Archived by your assistant' : 'archived'));
+    if (t.pr_url && !t.assistant) { const pr = prLink(t.pr_url, 'btn small'); pr.prepend(icon(ICON.pr, 13)); line.appendChild(pr); }
     if (lead && !t.archived) {
       const term = el('a', 'btn small', 'Open in terminal');
       term.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(lead.name);
       line.appendChild(term);
     }
     const agents = el('a', 'btn small', 'Agents'); agents.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(id);
-    line.appendChild(agents);
-    {
+    if (!t.assistant) line.appendChild(agents);
+    if (!t.assistant) {
       const wrap = el('div', 'export-action');
       if (exportAsk) {
         wrap.append(el('span', 'dim', 'Export and hand off? This thread stops taking work here.'), button('Confirm', 'primary small', async () => { try { await download(T + '/export', 'POST'); exportAsk = false; await poll(); } catch (e) { exportAsk = false; renderHead(); showError(e.message); } }), button('Cancel', 'small', () => { exportAsk = false; renderHead(); }));
@@ -210,7 +211,7 @@
       line.appendChild(wrap);
     }
     const stubless = t.stub && !t.sessions.length;
-    if (!t.archived) {
+    if (!t.archived && !t.assistant) {
       if (!archiveAsk) {
         line.appendChild(button('Archive', 'danger small archive', () => { archiveAsk = true; sigs.head = null; renderHead(); }));
       } else {
@@ -222,7 +223,7 @@
     headEl.appendChild(line);
     const reason = $('export-reason');
     reason.textContent = t.export && t.export.reason || '';
-    reason.hidden = !!(t.archived || frozen() || !t.export || t.export.ok || !t.export.reason);
+    reason.hidden = !!(t.assistant || t.archived || frozen() || !t.export || t.export.ok || !t.export.reason);
   }
 
   async function download(url, method) {
@@ -318,6 +319,7 @@
     if (!data) return;
     const t = thread(); const S = copy.status;
     copyEl.textContent = '';
+    if (t.assistant) { copyEl.hidden = true; return; }
     const head = el('div', 'copy-head');
     head.appendChild(el('h3', '', 'Your copy'));
     head.appendChild(button('Refresh', 'small', () => copyLoad(), copy.loading || copy.sending));
@@ -639,7 +641,7 @@
     // Who wrote the next message: the lead's first letter in a circle, then its name.
     // A sibling, not inside the bubble: asides measure offsets in the bubble's text.
     const leadBy = () => {
-      const name = thread().lead_name || 'Lead';
+      const name = thread().assistant ? 'Assistant' : thread().lead_name || 'Lead';
       const row = el('div', 'lead-by');
       row.append(el('span', 'lead-avatar', Array.from(name)[0].toUpperCase()), el('span', 'lead-by-name', name));
       return row;
@@ -648,7 +650,11 @@
       cardsBefore(Date.parse(it.at));
       if (it.type === 'human') {
         const parts = splitAttached(it.card ? '' : it.text);
-        if (it.card || parts.text) chatEl.appendChild(el('div', 'bubble human' + (it.card ? ' card' : ''), it.card ? it.text : parts.text));
+        if (it.card || parts.text) {
+          const bubble = el('div', 'bubble human' + (it.card ? ' card' : ''), it.card ? it.text : parts.text);
+          if (it.by === 'assistant') bubble.prepend(el('span', 'by-assistant', 'From your assistant'));
+          chatEl.appendChild(bubble);
+        }
         if (parts.files.length) chatEl.appendChild(attachedRow(parts.files));
       } else if (it.type === 'assistant') {
         const lead = el('div', 'bubble assistant md');
@@ -856,6 +862,7 @@
     } else if ((card.kind === 'question' || card.kind === 'offer') && card.answered_value != null) {
       label = ' You picked ' + pickedLabel(card);
     }
+    if (card.answered_by === 'assistant') label += ' \u00b7 by your assistant';
     tag.append(icon(ICON.check, 12), document.createTextNode(label));
     return tag;
   }
@@ -1455,15 +1462,16 @@
     if (!data) return;
     const t = thread();
     renderHandoff();
-    if (!copy.started) { copy.started = true; copyLoad(); }
+    if (!copy.started && !t.assistant) { copy.started = true; copyLoad(); }
     sync('copy', [t.archived, t.project, t.machine], renderCopy);
-    document.title = (t.title || slug() || base(t.project)) + ' - thread';
-    sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
+    document.body.classList.toggle('assistant-thread', !!t.assistant);
+    document.title = (t.assistant ? 'Personal assistant' : t.title || slug() || base(t.project)) + ' - thread';
+    sync('head', [t.assistant, t.archived_by, t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
     sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), data.documents, t.imported && t.imported.at, data.cards.filter((c) => c.kind === 'file' || c.kind === 'image').map((c) => [c.id, c.title, c.file, c.name, c.size, c.retracted_at, c.created_at]), t.kept_files, (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported], renderDead);
-    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.retracted_at]), ideaOpen, deferredOpen, pinsFolded, cardErrors, t.handed_off, t.handoff_op, t.imported], renderPinned);
+    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.answered_by, c.retracted_at]), ideaOpen, deferredOpen, pinsFolded, cardErrors, t.handed_off, t.handoff_op, t.imported], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     const leadNow = leadSession();
@@ -1480,7 +1488,8 @@
     if ($('working-label').textContent !== workingText) { $('working-label').textContent = workingText; workingEl.setAttribute('aria-label', workingText); }
     if (workingEl.hidden === working) { workingEl.hidden = !working; if (working && nearBottom) changed = true; }
     placeIds();
-    if (window.WCAside) window.WCAside.update(data, changed);
+    if (t.assistant) rememberSeen();
+    if (window.WCAside && !t.assistant) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     syncJump();
     const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
@@ -1489,6 +1498,16 @@
     const canSend = liveLead() && !t.archived && !frozen();
     msgEl.disabled = !canSend || uploading; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
     msgEl.placeholder = canSend ? 'Message the lead' : (t.archived ? 'Archived' : 'No live lead');
+  }
+
+  // The newest chat item this page has shown, for the pop-up's unread dot. Only moves forward.
+  function rememberSeen() {
+    const newest = data.items.map((i) => i.at).filter((x) => Number.isFinite(Date.parse(x))).sort((a, b) => Date.parse(a) - Date.parse(b)).pop();
+    if (!newest) return;
+    try {
+      const old = Date.parse(localStorage.getItem('wc-assistant-seen'));
+      if (!(old >= Date.parse(newest))) localStorage.setItem('wc-assistant-seen', new Date(newest).toISOString());
+    } catch (e) { /* storage blocked */ }
   }
 
   let busy = false;
