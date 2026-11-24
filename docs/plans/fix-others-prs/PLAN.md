@@ -82,9 +82,10 @@ and refuses (422) in this order:
 2. `couldn't reach GitHub to check the pull request; try again in a minute`, or `the app's GitHub login can't read this pull request: <first stderr line>` (same split as `pr-gate.js:36-42`).
 3. `that pull request is closed` (state not `OPEN`).
 4. `that pull request comes from a fork; pushing to forks isn't supported yet` (`isCrossRepository` true).
+4a. `that pull request is a draft; ask the author to mark it ready first` (`isDraft` true; add `isDraft` to the `--json` list).
 5. `that pull request targets <baseRefName>, not <thread.default_branch>` (when `thread.default_branch` is set and differs).
 6. `that is this thread's own branch` (`headRefName` equals `thread.branch`).
-7. `that branch belongs to the thread "<title>" on this hub`: `headRefName` equals the `branch` or the `target_pr.head_branch` of any other thread record that is not archived.
+7. `that branch belongs to the thread "<title>" on this hub`: `headRefName` equals the `branch` or the `target_pr.head_branch` of any other thread record that is not archived and has the same `project` as this thread.
 8. `this thread already has an OK for <target url>` (`thread.target_pr` is set).
 9. `a permit request is already open` (an unanswered, unretracted `permit` card exists).
 
@@ -93,7 +94,7 @@ The hub copies onto the stored card: `pr_number`, `pr_title`, `pr_author` (login
 Shown (`viewer/pages/thread.js`, modelled on the reach card at :981-998): "Let this thread
 push its fix to **<pr_author>**'s pull request #<pr_number>: <pr_title>?", the `why`, the
 head branch in small text, and **Allow** and **Don't allow**. One answer only, like reach
-(:796). An open permit card counts in "Needs you" (`viewer/app/views.js:142`).
+(:796). An open permit card counts in "Needs you": add `permit` to the kind list at `viewer/app/views.js:142`, with the shown title `Push to #<pr_number>?`.
 
 Press handling (`viewer/app/threads.js`, beside reach at :330). On `allow`, re-run checks
 7 and 8 and, in the same synchronous step with no `await` between the checks and the
@@ -116,15 +117,12 @@ When `thread.target_pr` is set and the done card's `pr_url` equals `thread.targe
 including the base check against `thread.default_branch`. A done card for any other PR is
 judged exactly as today.
 
-### 3. Auto-merge and waiting stubs
+### 3. Auto-merge
 
 - `viewer/app/auto-merge.js`: when the current done card's `pr_url` equals
   `thread.target_pr.url`, `afterCheck` does nothing: no merge, no "Not merged
   automatically" notice, no branch deletion. The `merged` card from `pollMerged`
   (`threads.js:466-495`) still appears when someone merges it.
-- `viewer/app/threads.js` `pollWaiting` (:497-514): when the parent has `target_pr`, a
-  waiting stub is ready once `gh pr view <target_pr.url> --json state` says `MERGED`,
-  instead of the `--head <parent.branch>` lookup.
 
 ### 4. Lead protocol (`protocol/app/lead.md`)
 
@@ -145,16 +143,19 @@ PR's branch as in 'Fixing someone else's pull request'." Add that section:
   chosen PR is recorded. A refusal: say why in the reply and offer the old way. On
   `don't allow` or `allow failed`, offer the replacement PR in a `question` card. Once
   allowed, the target holds for the life of the thread. After a restart, an allowed
-  `permit` card in the context names the target; an open one is still waiting.
+  `permit` card in the context names the target; an open one is still waiting. Until the
+  first successful push to the target branch, a restarted lead resumes the small fix where
+  it was (an unfinished merge is completed, not aborted); "Making the pull request
+  mergeable" step 9 applies only after that first push.
 - **Bring it in:** `wc.js git fetch origin <head branch>`, then `wc.js git merge origin/<head branch>`
   (this also brings the default branch, as of the thread's start, into the PR; expected).
   Review and fix as a small fix: commits, progress line and verifier as step 1, the
   verifier briefed with the PR's title and description and Collin's request.
 - **Push:** immediately before every push, run `gh pr view <target url> --json state`.
   `OPEN`: `wc.js git push origin HEAD:<head branch>`. Never `--force`, `--force-with-lease`
-  or `+` refspecs, and never `wc.js git pr`. `CLOSED`: do not push; say so and offer a
-  replacement PR in a `question` card. `MERGED`: do not push; post a `stub` with
-  `commits` (the fix's own commits) naming the merged PR. A rejected push (the author
+  or `+` refspecs, and never `wc.js git pr`. `CLOSED` or `MERGED`: do not push; say so and
+  post a `stub` (`depends_on_parent: false`) with `commits` (the fix's own commits, not
+  merges) naming the PR and what happened to it; this thread does nothing more with it. A rejected push (the author
   pushed): `wc.js git fetch origin <head branch>`, merge `origin/<head branch>`,
   re-verify unless it was a fast-forward, then push again.
 - **Finish:** follow "Making the pull request mergeable" with `<head branch>` in place of
@@ -163,12 +164,13 @@ PR's branch as in 'Fixing someone else's pull request'." Add that section:
   not merge itself. `verified` follows the usual rule.
 - **After done (step 9):** every `gh pr view` names the target URL. Fixes go to the same
   head branch the same way. Stubs from such a thread use `depends_on_parent: false` and
-  name the target PR and its branch in the summary.
+  name the target PR and its branch in the summary; one that needs the PR's unmerged code
+  says to start it only once that PR is merged.
 
 ### Not changed
 
 A thread's own PR and its push to `wc/<thread-id>`; `wc.js`; new-thread creation; fork
-PRs; PRs whose base is not the default branch; GitHub comments or reviews.
+PRs; PRs whose base is not the default branch; draft PRs; GitHub comments or reviews; `pollWaiting`.
 
 ### Validation
 
@@ -179,10 +181,9 @@ bash machine/test/run.sh
 ```
 
 New or extended tests must cover:
-- `viewer/test/app-permit.test.js` (new): each refusal 1-9 with a stubbed `gh` (7 both by another thread's `branch` and by its `target_pr.head_branch`); an accepted card stores the copied fields; Allow sets `thread.target_pr`; Allow after another thread claimed the branch gives `allow failed`; Don't allow leaves `target_pr` unset; retract while open; a second press is refused.
+- `viewer/test/app-permit.test.js` (new): each refusal 1-9 and 4a with a stubbed `gh` (7 both by another thread's `branch` and by its `target_pr.head_branch`, and not by a thread in another project); an accepted card stores the copied fields; Allow sets `thread.target_pr`; Allow after another thread claimed the branch gives `allow failed`; Don't allow leaves `target_pr` unset; retract while open; a second press is refused.
 - `viewer/test/app-done-gate.test.js`: a done card for the target PR passes with the target's head branch; a done card for another PR whose head is not the thread's branch is still refused.
 - `viewer/test/app-auto-merge.test.js`: a target-PR done card with a passing check makes no merge, no notice and no branch deletion.
-- A `pollWaiting` test: a waiting stub whose parent has `target_pr` becomes ready when that PR is merged.
 - `machine/test`: a `permit` card is relayed synchronously and returns 503 with the unavailable text when the hub is down; never spooled.
 - `viewer/test/app-permit.spec.js` (new, Playwright): the card shows author, number, title and both buttons; pressing Allow shows it answered.
 - `viewer/test/protocol-rules.test.js` passes with `permit` in `leadKinds` and the new section.
@@ -197,6 +198,7 @@ Optional; present only in the lighter modes.
 | D3 | A "Start from a pull request" picker on the new-thread screen | Naming the PR in chat works for normal use | planning | `viewer/pages/new.js:229-241`, `machine/service.js:668-713` create threads from main today |
 | D4 | PRs whose base is not the default branch | Collaborators' PRs here target main | review-round-1 | Would need the thread to start from the PR head and repair against the PR's base, not `origin/<default>` (`machine/service.js:701-709`, lead.md step 7) |
 | D5 | Starting the thread exactly at the PR head, so the first push adds only the fix | Merging the default branch into the PR is what a conflict fix does anyway | review-round-1 | Needs a guarded way to point an empty thread's branch at the PR head; `wc.js` has no reset (`viewer/app/wc.js:49-51`) |
+| D6 | Fixing draft pull requests | Drafts are still being worked on by their author | review-round-2 | Finishing waits on `DRAFT` (`lead.md` Making the pull request mergeable 2); would need a done path that does not wait for ready |
 | D2 | The machine itself refusing pushes to branches the thread has no OK for | Today's own-branch rule is also only a protocol rule; the recorded OK makes this possible later | planning | `machine/service.js:1588-1613` passes push args through; check refspec against own branch or recorded target |
 
 ## Accepted Risks
@@ -208,6 +210,8 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Two Allow presses for the same branch in two threads within the same save window can both succeed | Rare path: sub-second race between two presses | review-round-2 |
+| The network drops after the hub records a permit but before the reply, so the lead is told it was not recorded | Rare path; a retry is refused with `a permit request is already open`, which shows it exists | review-round-2 |
 | A handed-off thread loses `target_pr`, so the importing machine's done gate refuses the target PR | Rare path: handing off a thread mid-fix of someone else's PR | review-round-1 |
 | The author retargets the PR to another base while the thread is fixing it; the done gate then refuses it | Rare path: retargeting during a fix | review-round-1 |
 
@@ -261,6 +265,24 @@ exit. Downgrades and declines cite evidence.
 **Lanes:** intent (claude); mechanics (other family); cross-family: yes.
 
 **Changed since Round 1:** permit refusals 5 (base must be default), 7 (also other threads' `target_pr.head_branch`), 8 (any existing target); Allow recheck without await; permit never queued (machine relay); pollWaiting uses the target PR; lead section reordered (permit first, repo check, state check before every push with closed/merged paths, step 9 names the target URL, stubs `depends_on_parent: false`); docs/test list for `permit`; D4, D5 deferred; two Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | §3 pollWaiting change and `depends_on_parent: false` cancel out | upheld | Dropped the pollWaiting change and its test; stubs needing unmerged PR code say to start once it merges |
+| intent | minor | Needs-you entry would show as "Approval" | upheld | §1 names the kind-list change and title `Push to #<n>?` |
+| mechanics | blocking | Overlapping Allow presses race across the async save | accepted-risk | Rare path: sub-second race between two presses in two threads |
+| mechanics | major | 503 after the hub saved the permit | accepted-risk | Rare path: network drop in the exact window; retry shows "already open" |
+| mechanics | major | Closed-PR path offers a replacement the thread cannot build | upheld | §4 Push: closed or merged both post a stub with the fix's commits |
+| mechanics | major | Follow-up stubs needing unmerged PR code start from main | downgraded (minor) | Stubs after done arise when the PR merged; the rare other case says to start once merged |
+| mechanics | major | Restart before the first push could abort a conflict merge | upheld | §4 Ask first: resume the small fix; mergeable step 9 only after the first push |
+| mechanics | major | Refusal 7 compares branches across projects | downgraded (minor) | Worst case a false refusal; fixed: same `project` only |
+| mechanics | major | Draft PRs pass the permit but done waits on DRAFT | upheld | Refusal 4a; drafts deferred (D6) |
+
+### Round 3 — 2026-11-23
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 2:** refusal 4a (drafts) and D6; refusal 7 limited to the same project; Needs-you title; pollWaiting change dropped; closed and merged PRs both end in a stub with the fix's commits; restart before the first push resumes the small fix; follow-up stubs that need unmerged PR code wait for its merge; two Accepted Risks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
