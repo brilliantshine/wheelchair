@@ -1,6 +1,6 @@
 ---
 slug: contributing-law
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-24
 ---
 
@@ -45,15 +45,28 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ## Spec
 
+```mermaid
+flowchart TD
+  A[Agent starts in a project] --> B{Does the project have a CONTRIBUTING.md?}
+  B -- no --> Z[Work as today]
+  B -- yes --> C[Agent reads it itself and follows it]
+  C --> D[Lead plans: no rule broken unless the plan edits the rule; required test commands copied into the plan]
+  D --> E[Reviewers flag plans that break a rule or miss a required command]
+  E --> F[Workers build following it]
+  F --> G[Verifier checks everything the pull request brings in against it]
+  G -- break found --> H[Must-fix gap, fixed like any other]
+  G -- none --> I[Passes]
+```
+
 ### S1. One source: `protocol/app/repo-law.md`
 A new file `protocol/app/repo-law.md` holds the whole shared rule, once:
 - **Which file is law:** the first that exists of `CONTRIBUTING.md`, `.github/CONTRIBUTING.md`, `docs/CONTRIBUTING.md` at the root of the agent's own checkout. None: the rest of this file and every role rule that refers to it is a no-op.
 - **Read it yourself** before changing or judging anything, and follow it. Not through a scout or helper.
 - **Precedence:** on the project's code, files, layout, tests and documentation, it wins over the agent's own judgement and over any role rule. Three things are wheelchair's: how agents coordinate (commits through `wc.js git`, pushes, the mechanics of opening a PR, sessions, cards, and each task's ownership boundary: an edit CONTRIBUTING.md needs outside a worker's boundary goes to the sub-lead as a `message`); which validation commands run and when (S2, `verifier.md`, `sub-lead.md`); and the format of wheelchair's own files (`docs/plans/`, `docs/maps/`, mockups, reports). There the role rules win; an agent meeting such a clash follows them and names the clash in its report or result, and a verifier does not report it as a gap. A PR's title, description and checklist follow CONTRIBUTING.md as far as `wc.js git pr` allows; what it cannot do is named in the done card's `note`.
 - **Steps-only verifier work** (Check it yourself) skips this file.
-- **Changing the law:** the law is the file as it stands at the commit being worked on or checked; there are no waivers. A rule is changed only by editing the law file as part of the change, and only when the plan's Spec names that edit as its own item (on a small fix, when Collin's request asks for it). Agents never edit the law file otherwise.
+- **Changing the law:** there are no waivers. The law for a change is the law file at the change's base (S5's merge-base), as amended by edits the plan's Spec names as its own items (on a small fix, edits Collin's request asks for). The lead plans, reviewers review, and workers and verifiers work and check against that. Adding, loosening or removing a rule happens only as such a named edit; other upkeep of the file (for example adding a new suite to its validation list) follows the file's own rules.
 
-The machine composes `repo-law.md` into the starting instructions of `lead`, `sub-lead`, `worker`, `mapper`, `designer`, `reviewer` and `verifier`, the same way it adds `realism.md` (`machine/service.js:199-208`, as `--- repo-law.md ---`). Asides and any `role_prompt` override are unchanged. `protocol/app/AGENTS.md` lists the new file and its delivery. Role files do not repeat these rules; they add only their role's part below.
+The machine composes `repo-law.md` into the starting instructions of `lead`, `sub-lead`, `worker`, `mapper`, `designer`, `reviewer` and `verifier`, the same way it adds `realism.md` (`machine/service.js:199-208`, as `--- repo-law.md ---`). Asides and any `role_prompt` override are unchanged. `protocol/app/AGENTS.md` lists the new file and its delivery. Each of the seven role files' "If you opened ... by its path" fallback line also says to read `repo-law.md` beside it. The Settings "See it in full" preview (`viewer/app/settings.js` `fullPrompt`, around line 255) lists `[full text of protocol/app/repo-law.md]` after `realism.md`'s place for those seven roles. Role files do not repeat these rules; they add only their role's part below.
 
 ### S2. Lead
 While planning: the Spec must not require breaking a CONTRIBUTING.md rule. Where Collin's wish needs one changed, the lead names the rule and asks; if he agrees, the Spec gains an item editing CONTRIBUTING.md (S1). Validation commands CONTRIBUTING.md requires for the areas the Spec touches go into the Spec's validation commands; how and when they run stays as `verifier.md` and `sub-lead.md` say.
@@ -63,10 +76,10 @@ A small fix follows CONTRIBUTING.md; one that would need a rule changed is taken
 A Spec item requiring a break of a CONTRIBUTING.md rule the Spec does not also change, or a required validation command missing from the Spec, is a finding citing the CONTRIBUTING.md line, rated on the usual ladder.
 
 ### S4. Sub-lead and worker
-The sub-lead treats a verifier's CONTRIBUTING.md gap as must-fix (S6).
+No role-file change beyond S1's delivery; S6 makes a CONTRIBUTING.md gap must-fix through the existing always-fixed rule.
 
 ### S5. Verifier
-Every verifier except steps-only work adds one check: read CONTRIBUTING.md at the checked commit and check the change, from `git merge-base origin/<default branch> <checked commit>` to the checked commit, against each of its rules the change can break. That range is everything the pull request would bring in, including commits of someone else's pull request this thread took on, and excludes default-branch commits merged into it. Only breaks in that range count. Rules a diff cannot show (for example "open an issue first") are skipped. The rules are those of the law file at the checked commit; an edit to the law file in the range that no Spec item (or, without a plan, the brief's request) names is itself a gap. Each break is one line:
+Every verifier except steps-only work adds one check: read the law (S1) and check the change, from `git merge-base origin/<default branch> <checked commit>` to the checked commit, against each of its rules the change can break. That range is everything the pull request would bring in, including commits of someone else's pull request this thread took on, and excludes default-branch commits merged into it. Only breaks in that range count. Rules a diff cannot show (for example "open an issue first") are skipped. The rules are the law for the change as S1 defines it. Each break is one line:
 `GAP: repo law <path of the law file>:<line> — <what the change does against that rule> — <file:line evidence>`
 and makes the verdict FAIL like any gap. A clash S1 settles for the role rules is not a gap. No CONTRIBUTING.md: no line.
 
@@ -78,10 +91,11 @@ No role-file change beyond S1's delivery: they read and follow CONTRIBUTING.md t
 
 ### S8. Tests
 - `viewer/test/protocol-rules.test.js`: `repo-law.md` names all three paths in order; no role file other than `repo-law.md` names `.github/CONTRIBUTING.md` (one source); `verifier.md` contains `GAP: repo law ` and `merge-base`; `realism.md`'s always-fixed paragraph names CONTRIBUTING.md; `aside.md` does not mention CONTRIBUTING.md.
+- `viewer/test/protocol-rules.test.js`: each of the seven roles' fallback line names `repo-law.md`; `viewer/test/app-settings.test.js`: the full-prompt preview for a role lists `repo-law.md`.
 - `machine/test/service.test.js`: the composed prompt contains `--- repo-law.md ---` for each of the seven roles, and not for a `role_prompt` override.
 
 ### Non-goals
-No connector or viewer app code changes, and no machine change beyond adding `repo-law.md` to composition; no change to wheelchair's own CONTRIBUTING.md or any project's; no other document becomes law by this plan, beyond what a CONTRIBUTING.md itself tells agents to read; no change to which tests verifiers run; no ROUTER.md removal (thread 84f82b5fc945).
+No connector code changes; no machine or viewer change beyond adding `repo-law.md` to composition and to the Settings preview; no change to wheelchair's own CONTRIBUTING.md or any project's; no other document becomes law by this plan, beyond what a CONTRIBUTING.md itself tells agents to read; no change to which tests verifiers run; no ROUTER.md removal (thread 84f82b5fc945).
 
 ### Validation
 This change touches protocol, machine and viewer tests, so it runs wheelchair's full set (`CONTRIBUTING.md:73-94`), with `install/test/run.sh` standing in for `./install.sh`, which is refused from a worktree:
@@ -107,6 +121,7 @@ Protocol documents have no suite (`CONTRIBUTING.md:90-92`): read the composed pr
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A change that deletes the only CONTRIBUTING.md without a Spec item naming it. | Rare; S1's base law still applies to the change anyway. | review-round-4 |
 | The changed-path check in the first draft's Validation exited 0 if `git diff` itself failed. | Needs a broken base ref; that command has been dropped anyway. | review-round-1 |
 
 ## Review Rounds
@@ -163,12 +178,19 @@ Protocol documents have no suite (`CONTRIBUTING.md:90-92`): read the composed pr
 
 ### Round 4 — 2026-11-24
 
-**Lanes:** intent lens; mechanics lens; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** waivers removed (Decision 17): S1 "Changing the law", S2, S3, S4, S5, S6 and S8 updated to match; S1 precedence now also keeps ownership boundaries and which validation commands run with wheelchair; S2 adds required commands to every non-build verifier brief.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Every law-file edit counted as a rule change, blocking routine upkeep | upheld | S1: only rule changes need a Spec item |
+| intent | minor | S4 restates S6 | upheld | S4 trimmed |
+| mechanics | blocking | Deleting the only CONTRIBUTING.md escapes the check | accepted-risk (rare path) | Accepted Risks; S1 base law covers it anyway |
+| mechanics | blocking | Which revision of the law supplies validation when the Spec edits it | downgraded (minor): a careful reader uses the Spec's edited version | S1: base law as amended by the Spec |
+| mechanics | blocking | "Push it as it is" can ship a repo-law gap | declined: Decision 17, Collin's choice; the card names the gap | none |
+| mechanics | minor | Role-file fallback line omits repo-law.md | upheld | S1 and S8 |
+| mechanics | minor | Settings "See it in full" omits repo-law.md | upheld | S1, S8, Non-goals |
 
 ## Implementation Tasks
 
