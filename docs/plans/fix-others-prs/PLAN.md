@@ -46,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | The OK card is a new `permit` kind, refused for closed PRs, forks, this thread's own branch and any branch of another thread record on this hub | The hub can check these itself; the lead checks `session leads` too | defaulted |
 | 11 | Only PRs whose base is the thread's default branch are supported; others are turned down and a replacement PR offered | Avoids pushing main's commits into a PR aimed elsewhere; collaborators' PRs here target main | review-round-1 |
 | 12 | The `permit` card is posted before the PR is brought in, and is relayed synchronously, never queued | Records the chosen PR before any work so a restart finds it; a queued card the hub later refused would vanish | review-round-1 |
+| 13 | Off the normal path (a restart, the PR closed, merged, retargeted or made a draft, anything not covered), the thread changes nothing and asks Collin in one question card what to do | Collin's pick after three review rounds drew findings in the self-recovery rules; fewer rules, an occasional extra question | user |
 
 ## Spec
 
@@ -150,23 +151,21 @@ PR's branch as in 'Fixing someone else's pull request'." Add that section:
   `don't allow` or `allow failed`, offer the replacement PR in a `question` card. Once
   allowed, the target holds for the life of the thread. After a restart, an allowed
   `permit` card in the context names the target; an open one is still waiting.
-- **Restart before `done`:** complete any unfinished merge (never abort it), then
-  `wc.js git fetch origin <head branch>`. The first push has happened when `HEAD` is an
-  ancestor of `origin/<head branch>` and not an ancestor of `origin/<default branch>`
-  (`git merge-base --is-ancestor`). If it has, carry on from "Making the pull request
-  mergeable" step 2 with a new window; otherwise carry on with the small fix (verify if
-  not yet verified, then Push). "Making the pull request mergeable" step 9 applies only
-  once a `done` card exists.
+- **Off the normal path, stop and ask.** After a restart (before or after `done`), or
+  whenever the target PR is closed, merged, retargeted or turned into a draft, or anything
+  else this section does not cover happens: change nothing (never abort a merge, push,
+  revert or stub on your own), and post one `question` card saying in plain words what you
+  see (local work, what is on the PR, its state) with fitting options, such as carry on,
+  push after a check, start a follow-up thread, or leave it. Do what Collin picks using
+  the rules here and in "Making the pull request mergeable". This replaces that section's
+  step 9 and its closed and merged handling for a target PR.
 - **Bring it in:** `wc.js git fetch origin <head branch>`, then `wc.js git merge origin/<head branch>`
   (this also brings the default branch, as of the thread's start, into the PR; expected).
   Review and fix as a small fix: commits, progress line and verifier as step 1, the
   verifier briefed with the PR's title and description and Collin's request.
 - **Push:** immediately before every push, run `gh pr view <target url> --json state`.
   `OPEN`: `wc.js git push origin HEAD:<head branch>`. Never `--force`, `--force-with-lease`
-  or `+` refspecs, and never `wc.js git pr`. `CLOSED`: do not push; say it was closed and
-  change nothing unless Collin asks for a stub. `MERGED`: do not push; if the fix has
-  commits of its own (not merges), post a `stub` with them as `commits` naming the merged
-  PR; if it has none (a conflict-only fix), say the PR merged without it and post nothing. A rejected push (the author
+  or `+` refspecs, and never `wc.js git pr`. Anything else: stop and ask, as above. A rejected push (the author
   pushed): `wc.js git fetch origin <head branch>`, merge `origin/<head branch>`,
   re-verify unless it was a fast-forward, then push again.
 - **Finish:** follow "Making the pull request mergeable" with `<head branch>` in place of
@@ -175,10 +174,8 @@ PR's branch as in 'Fixing someone else's pull request'." Add that section:
   not merge itself. `verified` follows the usual rule.
 - **After done (step 9):** every `gh pr view` names the target URL. Fixes go to the same
   head branch the same way.
-- **Stubs:** every stub from such a thread, including the missed-merge stub of "Making
-  the pull request mergeable" step 4, uses `depends_on_parent: false` and names the target
-  PR and its branch in the summary; one that needs the PR's unmerged code says to start it
-  only once that PR is merged.
+- **Stubs:** every stub from such a thread uses `depends_on_parent: false` and names the
+  target PR and its branch in the summary.
 
 ### Not changed
 
@@ -309,6 +306,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Recovery stub omits a conflict-only fix | upheld | Same as intent finding 1 |
 | mechanics | major | Closed or merged after the push: inherited rules misfire | upheld | CLOSED already says so and changes nothing; missed-merge stub fixed by §4 Stubs |
 | mechanics | major | A collaborator's plan directory is recorded as this thread's plan | upheld | §3: threads with `target_pr` never record a slug |
+
+### Round 4 — 2026-11-23
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 3:** round 3 fixes (refusal 7 compares target claims by repository; threads with `target_pr` never record a slug; drafts stop at Look first); then Decision 13 replaced the self-recovery rules (restart before or after done, closed or merged PR, step 9 and step 4 handling for a target PR) with "stop and ask"; Push keeps only the OPEN path and the rejected-push retry; Stubs rule shortened.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
