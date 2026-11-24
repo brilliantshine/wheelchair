@@ -223,7 +223,9 @@ and the step you propose, then wait for the answer.
 
 ## Finishing and verifying
 
-When every task is done and the full validation passes:
+When every task is done and the task checks have passed (in a project whose root `AGENTS.md`
+has a `Test picker and full run` heading, the project is opted in and the checks are the ones
+already run, not a whole-suite run; elsewhere run the full validation):
 
 1. Write `docs/plans/<slug>/COMPLETION.md` from `<root>/protocol/templates/COMPLETION.md`:
    spec-item-by-item coverage with `file:line` references and each item's origin (`this
@@ -242,6 +244,15 @@ When every task is done and the full validation passes:
    stop the second verifier at once.
    In a lighter mode its brief also names the mode and includes the Deferred table. Every
    verifier brief includes the plan's Accepted Risks and Check Once Built tables.
+   In an opted-in project the brief also names the **comparison commit** (the merge-base of the
+   checked commit with the default branch), the **picker base** and the line `Full run: by the
+   starter`. The picker base is the comparison commit for the first attempt; for a re-check
+   after remediation, the commit the previous attempt checked; for a re-check of that same
+   commit, the previous picker base, with the commands that failed last time named so they are
+   re-run. Start the full run (`bash test-support/full-run.sh <log-dir>`, or the project's
+   named command) on the same commit now, in the background, with logs in a scratch
+   directory outside the repository; stop a full run whose commit a fix replaced, and repeat
+   it on the new commit.
    Its brief gives it the PLAN.md and COMPLETION.md paths (its role rules are already in its
    starting instructions, so the brief never tells it to read its role file), and says nothing
    of this conversation. Its report arrives as a `result`; stop it
@@ -258,10 +269,15 @@ When every task is done and the full validation passes:
    outcome is decided on the merged list after that; rare gaps never go to remediation or
    count toward the two-attempt rule. When you cannot tell,
    `message` the lead with `asks: true` and decide the attempt's outcome after the answer.
-4. **PASS**: once the merged list is empty after rare-path judgment, post `phase: clean`,
+4. **PASS**: once the merged list is empty after rare-path judgment, and in an opted-in
+   project the full run has passed for the commit you report, post `phase: clean`,
    then send the lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md,
    `commit` the
-   commit verified).
+   commit verified). A full run passes when its `summary.txt` names that commit and every suite
+   exit is 0. Paste `summary.txt` into COMPLETION.md. A full-run failure is a gap like a
+   verifier's (same realism judgment, remediation and two-attempt rule), except a failure you
+   confirm is already on main by the verifier's method (same test, same error at the
+   comparison commit): that does not fail the gate and is listed in COMPLETION.md.
 4a. In a lighter mode, when the merged list is non-empty after rare-path judgment and before
    remediation, send the lead one `message` with `asks: true` listing every gap, each
    marked `hardening` or `must-fix`, any surviving two fix attempts, and the evidence.

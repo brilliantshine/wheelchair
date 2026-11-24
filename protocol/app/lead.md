@@ -113,6 +113,29 @@ needs no re-verification and is not an unverified commit for the repair rules. A
 only rare gaps never counts toward a retry, the repair budget or a question to the user. On a
 planned thread, every such verifier's brief also includes the plan's Accepted Risks table.
 
+**Picker and full run** (only in a project whose root `AGENTS.md` has a `Test picker and full
+run` heading naming a picker and a full-run command; elsewhere none of this applies and your
+verifiers run the commands as before). The lead's own pushes that add commits (small fix,
+after-done fix, repair) get a full run on the exact commit, started in the background
+alongside the verifier; stop a full run whose commit a fix replaced. A full run passes when its
+`summary.txt` names that commit and every suite exit is 0, or when every failure was confirmed
+already on main by the verifier's method (same test, same error at the comparison commit).
+Write such failures to `baseline.txt` beside `summary.txt` before the push, and repeat them in
+the `done` card's note afterwards. A failed full run is a failed check under the rule that
+governs that push: for a small fix or after-done fix, it counts toward the two attempts and the
+user's choice to push it as it is or drop it; for a repair, nothing unverified is pushed and the
+budget's `needs` card applies. **Covered:** a commit with a passing full run is covered, and so
+is any descendant Y of a covered commit X when the picker selects nothing for X..Y (plan-file
+commits stay covered). Pushing a covered commit needs no new full run; every other push,
+including a conflict-free merge of the default branch, gets one. Every verifier brief in such a
+project names the **comparison commit** (the merge-base of the checked commit with the default
+branch), a **picker base** and the line `Full run: by the starter`. The picker base is the
+comparison commit for a first check of a small fix or after-done fix; the commit the previous
+attempt checked, for a re-check or a repair of a failed pull request check (that same commit
+again: the previous picker base, with the commands that failed named); the default-branch tip
+merged in, after merging the default branch (Making the pull request mergeable 7); this branch's
+last pushed commit, after merging others' commits from the pull request branch (6).
+
 ### 1. Starting: a small fix, or a feature
 
 The user picks the project and the machine, then writes in plain words.
@@ -133,7 +156,8 @@ The user picks the project and the machine, then writes in plain words.
   `sessions` from `session list`. Start a verifier on that commit with
   `--not-provider <the provider the lead runs on>` if `review_families` is `both`, or no
   provider flag if it is `claude`, `gpt`, `gemini`, `kimi`, or `openrouter`, and a brief that says what the user asked for;
-  its `result` names the commit it checked. A failed check gets one more attempt; a
+  its `result` names the commit it checked (in a project with a `Test picker and full run`
+  heading, add the bases and start the full run as above). A failed check gets one more attempt; a
   gap surviving two attempts comes to the user as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
   with `wc.js git pr`, and follow **Making the pull request mergeable** before posting
@@ -213,7 +237,10 @@ against. The mapper checks that; you only rely on MAP.md once the `result` arriv
    document page; you do not need to paste them.
 6. When the Open Questions and the Watch List are empty, write the final pass of the Spec:
    a fresh agent with no history must be able to implement from it (behavior, boundaries,
-   edge cases, non-goals, concrete validation commands). Set `status: ready-for-review`.
+   edge cases, non-goals, concrete validation commands). In a project with a `Test picker and
+   full run` heading, write targeted commands per Spec item and no whole-suite or full-run
+   commands; the full run is the pusher's. Verifiers still run every Spec command as written.
+   Set `status: ready-for-review`.
 
 IDEA.md is stable, not frozen. A new hard constraint may be added to its Constraints. A
 change to What, Why, What good looks like or Not doing is a scope change: propose it,
@@ -496,12 +523,14 @@ When the user reports a problem, first run `gh pr view --json state`:
   2. Read `review_families` and the lead's provider in `sessions` from `session list`.
      Start a verifier on that commit with `--not-provider <the provider the lead runs on>`
      if `review_families` is `both`, or no provider flag if it is `claude`, `gpt`, `gemini`, `kimi`, or `openrouter`,
-     briefed with the reported problem and the plan's Spec. Its
+     briefed with the reported problem and the plan's Spec (and, with a `Test picker and full
+     run` heading, the bases above; start the full run alongside it). Its
      `result` names the commit it checked. A failed check gets one more
      attempt; a gap surviving two attempts comes to the user as a `question` card: push the
      fix as it is, or drop it. Dropping reverts the fix's commits with `wc.js git revert`,
      so nothing unverified reaches the pull request later.
-  3. On a pass, or when they chose "push it as it is" (then no re-verify, and the `done`
+  3. On a pass (and, with a `Test picker and full run` heading, a passing full run for the
+     commit, or a covered one), or when they chose "push it as it is" (then no re-verify, and the `done`
      card says the fix failed its check and was pushed at their request): run
      `wc.js git fetch`. If `origin/wc/<thread-id>` has commits this branch lacks (the user
      updated the pull request branch), merge them with `wc.js git merge` and re-verify
@@ -683,7 +712,8 @@ body names the current done head counts as its check card: post no other.
    origin/wc/<thread-id>`. Resolve conflicts as in 7 and commit the resolved files. If this
    brought in only their commits (a fast-forward, with nothing of yours unpushed), the new
    tip is the pushed commit: return to 2 in the same window, without a verifier. Otherwise
-   re-verify the merge as in 7, push, and return to 2 with a new window. This does not count
+   re-verify the merge as in 7 (picker base: this branch's last pushed commit), push, and return
+   to 2 with a new window. This does not count
    toward the budget; if the verifier fails, post the `needs` card in 8.
 7. **Repair.** For conflicts or behind, `wc.js git fetch`, then `wc.js git merge
    origin/<default branch>`. A successful merge already made its commit. On conflicts, edit
@@ -693,7 +723,10 @@ body names the current done head counts as its check card: post no other.
    `detailsUrl`. If you cannot tell what the check needs, post the `needs` card in 8 naming
    it. Fix the cause and `wc.js git commit`. Start a fresh verifier on the new commit using
    step 9's provider rule, briefed with the user's request for a small fix or the plan's Spec,
-   and what the repair changed. On a pass, push and return to 2 with a new window. On a
+   and what the repair changed, with the bases above when the project has a `Test picker and
+   full run` heading (the default-branch tip merged in, for a merge repair; the previously
+   checked commit, for a failed check), and start the full run alongside it unless the commit is
+   covered. On a pass (and a passing full run), push and return to 2 with a new window. On a
    fail, count one failed attempt, fix locally and re-verify; never push an unverified
    commit or poll for it.
 8. **Budget.** A repair that fails its verifier, or whose push still ends in a failed check
