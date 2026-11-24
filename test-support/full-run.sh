@@ -36,7 +36,7 @@ all_pass=0
 run_suite() {
   local name=$1
   shift
-  "$@" > "$log_dir/$name.log" 2>&1
+  "$@" < /dev/null > "$log_dir/$name.log" 2>&1
   local result=$?
   printf 'suite %s exit %s\n' "$name" "$result" >> "$log_dir/summary.txt"
   printf '%s: exit %s\n' "$name" "$result"
@@ -53,9 +53,9 @@ run_suite sensitivity bash sensitivity/test/run.sh
 run_suite codex bash codex/test/run.sh
 run_suite install bash install/test/run.sh
 
-python3 -m unittest discover -s sudo-helper/test > "$log_dir/sudo-helper.log" 2>&1
+python3 -m unittest discover -s sudo-helper/test < /dev/null > "$log_dir/sudo-helper.log" 2>&1
 sudo_python=$?
-bash sudo-helper/test/install-test.sh >> "$log_dir/sudo-helper.log" 2>&1
+bash sudo-helper/test/install-test.sh < /dev/null >> "$log_dir/sudo-helper.log" 2>&1
 sudo_install=$?
 if [[ $sudo_python -ne 0 ]]; then
   sudo_result=$sudo_python
