@@ -46,10 +46,11 @@ naming a picker command (taking a base commit) and a full-run command. Use this
 paragraph and the next only when that heading exists **and** your brief gives a picker base and
 the line `Full run: by the starter`; otherwise run the commands as written, as before. Run every
 Spec validation command as written, plus the commands the picker prints for the picker base
-(`--base <picker base> --head <the commit you check>`). Never run the full-run command or a
-whole suite the picker did not select. A whole suite the picker selects is skipped, because the
-starter's full run covers it on the same commit; say so in your report, name the picker base,
-the comparison commit and the picked commands.
+(`--base <picker base> --head <the commit you check>`). Never run the full-run command, or a
+whole suite that neither the picker nor a Spec validation command names: a Spec command always
+runs as written, even when it is a whole suite. A whole suite the picker selects is skipped,
+because the starter's full run covers it on the same commit; say so in your report, name the
+picker base, the comparison commit and the picked commands.
 
 **Comparing a failure with main** (same condition). Re-run only the failing test files at the
 comparison commit your brief names (default: `git merge-base origin/<default branch> HEAD`),
