@@ -2,7 +2,25 @@
 slug: fix-others-prs
 date: 2026-11-23
 implemented-by: "T1 standard (claude-sonnet-5-5); T2 light (gpt-6-luna); T3 standard (gpt-6.1-terra); T4 standard (claude-sonnet-5-5); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: top (claude-opus-5-5) PASS
+    checks: T1-T4 (claude-sonnet-5-5, gpt-6-luna, gpt-6.1-terra)
+  - round: 1
+    lane: top (gpt-6.2-sol) FAIL
+    checks: T1-T4 (claude-sonnet-5-5, gpt-6-luna, gpt-6.1-terra)
+  - round: 2
+    lane: top (claude-opus-5-5) PASS
+    checks: R1-1 (gpt-6-luna) and the build
+  - round: 2
+    lane: top (gpt-6.2-sol) FAIL
+    checks: R1-1 (gpt-6-luna) and the build
+  - round: 3
+    lane: top (claude-opus-5-5) PASS
+    checks: R2-1 (gpt-6-luna) and the build
+  - round: 3
+    lane: top (gpt-6.2-sol) FAIL (both gaps judged rare paths; Accepted Risks)
+    checks: R2-1 (gpt-6-luna) and the build
 ---
 
 # Completion Report — Fix other people's pull requests
@@ -121,3 +139,6 @@ ok 3 - prompt failures precede worktree creation and permit retry
 ```
 The worker's fault run (permit forced to 503 before the hub call) gave `not ok 1 - permit is relayed synchronously...` with "the machine must contact the hub before answering a permit card" in 360 ms; restored, it passed.
 
+### Verification 3
+
+Claude verifier PASS. GPT verifier FAIL on two gaps, both judged rare paths by the sub-lead and recorded in PLAN.md Accepted Risks (verification-3): the GitHub CLI default repository differing from `origin`, and two clones of one repository on one hub. No remediation. Verified commit: 783bb14c0f83dcf144247c118d9593d5b4097a69.
