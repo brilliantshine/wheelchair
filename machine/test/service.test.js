@@ -347,7 +347,10 @@ test('permit is relayed synchronously and returns the hub\'s answer', async () =
   const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
     await start(env);
     const pending = api(env, 'POST', '/v1/agent/cards', { kind: 'permit', pr_url: 'https://github.com/o/r/pull/7', why: 'fix it' }, agentHeader('alpha'));
-    while (!hub.calls.some(call => call.path.endsWith('/cards'))) await new Promise(resolve => setTimeout(resolve, 1));
+    let settled = false; pending.then(() => { settled = true; }, () => { settled = true; });
+    const deadline = Date.now() + 5000;
+    while (!hub.calls.some(call => call.path.endsWith('/cards')) && !settled && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.ok(hub.calls.some(call => call.path.endsWith('/cards')), 'the machine must contact the hub before answering a permit card');
     const cardsWhileWaiting = await fs.readdir(path.join(env.state, 'spool', 'cards')).catch(() => []);
     assert.equal(cardsWhileWaiting.filter(file => file.endsWith('.json')).length, 0);
     const result = await pending;
