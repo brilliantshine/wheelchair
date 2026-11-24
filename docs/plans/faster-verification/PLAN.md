@@ -328,6 +328,7 @@ Optional; present only in the lighter modes.
 | 1 | Follow imports transitively so picks are smaller | The fallback already runs more, never less | planning | Rule 2 reads only direct imports |
 | 2 | A check that flags test-map.json entries pointing at missing files or globs matching nothing | A stale entry only makes picks larger or falls back | planning | Could live in pick-tests.test.js against the real tree |
 | 3 | Record per-suite timings from full runs | Nice for tuning, not needed for speed | planning | summary.txt could gain a seconds column |
+| 4 | Free-port race in `viewer/test/helpers/server.js` ("Refused to use a port held by a process it cannot identify") | Pre-existing on main; a load flake that passes on re-run. It gets worse with more parallel test servers, so 6 browser workers surface it more often | verification | Seen in verification 1 in viewer-browser and viewer-node (`app-new-thread.test.js:184`) |
 
 ## Accepted Risks
 
@@ -514,3 +515,5 @@ Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
 - 2026-11-23 — Choice: T4, app-harnesses.test.js: local `withTimeout` helper around an async block, label "Harness cancellation route and machine requests"; `thirdCall` resolves as soon as the third call is recorded.
 - 2026-11-23 — Sub-lead edit: verifier.md "(always full)" reworded to "a suite that only runs whole (one runner script, never narrowed to files)"; the picker prints no such mark.
 - 2026-11-23 — Full validation: full run on 87b61340 failed machine (baseline on main: win.test.js needs wslpath; win-tool-proxy hangs) and viewer-browser (2 load flakes that passed on re-run; similar flakes on main). Evidence in COMPLETION.md. Verifying.
+- 2026-11-23 — Verification 1 (Claude PASS, GPT FAIL). Lead's per-gap answer: fix the kimi samples map entry, verifier.md Spec-commands-vs-picker wording, sub-lead.md deferral-finish full-run gate, lead.md after-done merge full run. Free-port race deferred as hardening (Deferred 4).
+- 2026-11-23 — Full-run validation reading (lead's ruling): the Spec's "exits 0 with all eight suites at 0" cannot be met on this machine because of main's wslpath failures (now its own thread, "Machine tests fail on Linux without wslpath"). It is judged by S2's "passes": every failure is confirmed on main by S5.2 and recorded in COMPLETION.md, or is a load flake that passes when re-run alone, recorded with that re-run evidence.
