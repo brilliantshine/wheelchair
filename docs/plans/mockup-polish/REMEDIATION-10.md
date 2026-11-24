@@ -44,3 +44,7 @@ Paste the exact `git diff` of your commit.
 If the same check fails twice, stop and report rather than iterating.
 
 List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none.
+
+## Attempt 2
+
+Attempt 1 stopped: its test queried a nonexistent `#dead-lead`. Attempt 2's brief writes the test out: the visible mockup card fills the band between the top bars and the composer, and the next row starts behind the composer. A poll then swaps that card for a shorter one with a new id, and scrollY must not move. Effort is raised one step (xhigh).
