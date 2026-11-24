@@ -12,11 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: How do agents get CONTRIBUTING.md?
-- **Context:** Role instructions are composed before the session's checkout exists (MAP.md; `machine/service.js:200-211,816-825`). Whether a CLI loads project files itself is not guaranteed.
-- **Options:** (a) a rule in each role file: read CONTRIBUTING.md from your checkout before changing or judging anything; (b) the machine pastes the file's text into each session's instructions at start.
-- **Recommendation:** (a). Works the same for every provider, reads the version in the agent's own checkout (a worker's branch may change it), costs nothing for projects without one. (b) needs a machine change, reads a possibly different copy, and adds its full text to every session.
-
 ### Q2: Do verifiers run the validation commands CONTRIBUTING.md asks for?
 - **Context:** Wheelchair's own CONTRIBUTING.md asks for area and full validation (`CONTRIBUTING.md:73-93`). Verifiers today run the Spec's validation commands. The "Faster verification checks" thread is working to make checks shorter.
 - **Options:** (a) yes, every command it requires for the touched areas; (b) only the Spec's commands; the lead copies CONTRIBUTING.md's required commands into the Spec while planning, so they are run once, deliberately.
@@ -45,10 +40,18 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | A CONTRIBUTING.md break in the change is must-fix: added to `realism.md`'s always-fixed list, never deferred as hardening. | "Repo law" means it is not optional. | defaulted |
 | 6 | Steps-only verifiers (Check it yourself) and asides are unchanged. | They judge steps or answer questions; they change nothing. | defaulted |
 | 7 | No mockups: nothing on screen changes. | Protocol-only change. | defaulted |
+| 8 | Agents get CONTRIBUTING.md through a rule in their role file telling them to read it from their own checkout; the machine does not paste it in. | Same for every provider, reads the copy being worked on, no machine change. | user |
 
 ## Spec
 
-(Grows as decisions land.)
+### S1. Which file is law
+The project's CONTRIBUTING.md is the first that exists of `CONTRIBUTING.md`, `.github/CONTRIBUTING.md`, `docs/CONTRIBUTING.md` at the root of the agent's own checkout. No such file: every rule below is a no-op and behaviour is unchanged.
+
+### S2. Reading it
+Each of these role files gains a short rule to read the project's CONTRIBUTING.md (S1) from its own checkout before changing or judging anything, and to follow it: `lead.md`, `sub-lead.md`, `worker.md`, `mapper.md`, `designer.md`, `reviewer.md`, `verifier.md`. Steps-only verifier work and `aside.md` are unchanged. A lead's scout may do the reading but the lead acts on its rules. No machine or connector code changes.
+
+### S3. Precedence
+On the project's code, files, layout, tests and documentation, CONTRIBUTING.md wins over a worker's or lead's own judgement. On how agents coordinate (commits through `wc.js git`, pushes, PR opening, sessions, cards), wheelchair's role rules win; an agent that meets such a clash follows its role rules and names the clash in its report or result.
 
 ## Deferred
 
