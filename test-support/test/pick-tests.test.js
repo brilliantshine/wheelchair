@@ -35,3 +35,34 @@ test('unmapped docs and markdown select nothing and bad base fails', () => { con
 test('a docs fixture named in the map selects its test', () => { const f = fixture(); f.write('docs/fixture/data', 'b'); const r = f.pick(); assert.deepEqual(names(r), ['viewer-browser']); assert.deepEqual(r.suites[0].files, ['viewer/test/page.spec.js']); });
 test('a source file selects tests named after it without an import', () => { const f = fixture(); f.write('machine/test/baz-more.test.js', ''); f.write('machine/test/bazooka.test.js', ''); f.git('add', '.'); f.git('commit', '-qm', 'tests'); f.write('machine/baz.js', 'x'); const r = f.pick(); assert.deepEqual(names(r), ['machine']); assert.deepEqual(r.suites[0].files, ['machine/test/baz-more.test.js']); assert.equal(r.suites[0].command, 'node --test machine/test/baz-more.test.js'); });
 test('a front-end page a Node test imports but the map does not name falls back to the viewer suites', () => { const f = fixture(); f.write('viewer/pages/x.js', 'a'); f.write('viewer/test/x.test.js', "require('../pages/x.js')\n"); f.git('add', '.'); f.git('commit', '-qm', 'page'); f.write('viewer/pages/x.js', 'b'); const r = f.pick(); assert.deepEqual(names(r), ['viewer-node', 'viewer-browser']); assert.equal(r.suites[0].command, 'node --test viewer/test/*.test.js'); });
+test('real repository changes include readers across suites', () => {
+  const root = path.resolve(__dirname, '../..');
+  const dir = makeTempSync('picker-real-');
+  execFileSync('git', ['clone', '--quiet', root, dir]);
+  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' });
+  git('config', 'user.email', 'test@example.com'); git('config', 'user.name', 'Test');
+  // Exercise the working map before it is committed as well as after it reaches HEAD.
+  fs.copyFileSync(path.join(root, 'test-support/test-map.json'), path.join(dir, 'test-support/test-map.json'));
+  git('add', 'test-support/test-map.json');
+  git('commit', '--quiet', '--allow-empty', '-m', 'map under test');
+  const cases = [
+    ['connectors/pi/guard.js', [['machine', 'machine/test/pi-guard.test.js']]],
+    ['viewer/doc.js', [['viewer-node', 'viewer/test/routes.test.js'], ['viewer-browser']]],
+    ['protocol/sensitivity.md', [['sensitivity']]],
+    ['install/guard.sh', [['install'], ['sensitivity'], ['sudo-helper']]],
+    ['docs/plans/kimi-code/samples/wire.jsonl', [['viewer-node', 'viewer/test/app-kimi-hub.test.js']]]
+  ];
+  const missing = [];
+  for (const [file, expected] of cases) {
+    fs.appendFileSync(path.join(dir, file), '\n');
+    git('add', file); git('commit', '--quiet', '-m', `change ${file}`);
+    const result = spawnSync(process.execPath, ['test-support/pick-tests.js', '--base', 'HEAD~1', '--json'], { cwd: dir, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const suites = JSON.parse(result.stdout).suites;
+    for (const [suite, reader] of expected) {
+      const selection = suites.find(s => s.suite === suite);
+      if (!selection || (reader && selection.files.length && !selection.files.includes(reader))) missing.push(`${file}: ${reader || suite}`);
+    }
+  }
+  assert.deepEqual(missing, []);
+});
