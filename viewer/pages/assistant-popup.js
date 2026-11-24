@@ -97,8 +97,13 @@
     for (const i of d.items || []) entries.push({ at: i.at, item: i });
     for (const c of d.cards || []) entries.push({ at: c.at || c.created_at || '', card: c });
     entries.sort((a, b) => time(a.at) - time(b.at));
-    const humans = new Set((d.items || []).filter((i) => i.type === 'human').map((i) => i.text));
-    pending = pending.filter((p) => !humans.has(p));
+    const humanCounts = new Map();
+    for (const i of d.items || []) if (i.type === 'human') humanCounts.set(i.text, (humanCounts.get(i.text) || 0) + 1);
+    pending = pending.filter((p, index) => {
+      if ((humanCounts.get(p.text) || 0) <= p.seen) return true;
+      for (const later of pending.slice(index + 1)) if (later.text === p.text) later.seen++;
+      return false;
+    });
     for (const e of entries) {
       if (e.item && e.item.type === 'human') {
         const lines = String(e.item.text || '').split('\n'); const files = [];
@@ -123,7 +128,7 @@
         line.append(document.createTextNode(e.item.limit ? 'Message limit reached with ' : 'Talked with '), link); if (!e.item.limit) line.append(document.createTextNode(' · ' + e.item.count + (e.item.count === 1 ? ' message' : ' messages'))); convo.append(line);
       } else if (e.card) convo.append(drawCard(e.card));
     }
-    for (const p of pending) convo.append(el('div', 'wc-asst-human', p));
+    for (const p of pending) convo.append(el('div', 'wc-asst-human', p.text));
     if (working(d)) {
       const w = el('div', 'wc-asst-work'); w.append(el('span', 'wc-asst-spin'), document.createTextNode(' Assistant is thinking…'));
       w.setAttribute('role', 'status');
@@ -305,8 +310,9 @@
     if (!text || send.disabled) return;
     send.disabled = true;
     try {
+      const seen = (data.items || []).filter((i) => i.type === 'human' && i.text === text).length;
       await post(T + '/messages', { text });
-      input.value = ''; pending.push(text); sig = ''; showError('');
+      input.value = ''; pending.push({ text, seen }); sig = ''; showError('');
       await poll(); render();
     } catch (e) { showError('Message not sent: ' + e.message); }
     finally { send.disabled = !(data && liveLead(data)); }

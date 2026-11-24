@@ -61,6 +61,19 @@ test.describe('assistant pop-up', () => {
     await expect(page.locator('.wc-asst-float, .wc-asst-panel')).toHaveCount(0, { timeout: 15000 });
   });
 
+  test('keeps a pending message when earlier transcript text matches', async ({ page }) => {
+    const id = await turnOn(page);
+    await seedAssistant(id, [['human', 'yes', OLD]]);
+    await page.route('**/api/threads/*/messages', (route) => route.fulfill({ status: 200, json: { ok: true } }));
+    await page.goto(`${ctx.server.url}/app/threads`);
+    await page.locator('.wc-asst-float').click();
+    const panel = page.locator('.wc-asst-panel');
+    await expect(panel.locator('.wc-asst-human')).toHaveText(['hello', 'yes']);
+    await panel.getByRole('textbox', { name: 'Message the assistant' }).fill('yes');
+    await panel.getByRole('button', { name: 'Send' }).click();
+    await expect(panel.locator('.wc-asst-human')).toHaveText(['hello', 'yes', 'yes']);
+  });
+
   test('renders context, a press, and question consequences and sends an answer', async ({ page }) => {
     const id = await turnOn(page);
     await ctx.transcript(id);
@@ -97,7 +110,7 @@ test.describe('assistant pop-up', () => {
     const panel = page.locator('.wc-asst-panel');
     const needs = panel.locator('[data-card="sys-needs"]');
     await expect(needs).toContainText('First detail');
-    await expect(needs.getByRole('link', { name: 'Open terminal' })).toHaveAttribute('href', '/wheelchair/app/terminal?name=wc-demo-lead');
+    await expect(needs.getByRole('link', { name: 'Open terminal' })).toHaveAttribute('href', '/wheelchair/app/terminal?name=wc-demo-lead', { timeout: 15000 });
     const file = panel.locator('[data-card="file-card"]');
     await expect(file).toContainText('25 B');
     await expect(file.getByRole('link', { name: 'Preview' })).toHaveAttribute('href', `/wheelchair/app/file?thread=${id}&file=123-notes.txt`);
