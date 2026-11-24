@@ -392,7 +392,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Permit card: card.js schema and retract, hub checks and stored fields (cards.js), Allow/Don't allow presses (threads.js), thread page rendering; `tricky` | viewer/app/card.js, cards.js, threads.js, viewer/pages/thread.js, viewer/test/app-permit.test.js, app-permit.spec.js | standard (claude-sonnet-5-5) | wc-426aa645964b-worker | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
-| T2 | Machine relays permit synchronously, never spooled | machine/service.js (relay condition), machine/test/service.test.js | light (gpt-6-luna) | wc-426aa645964b-worker-2 | `bash machine/test/run.sh` | running |
+| T2 | Machine relays permit synchronously, never spooled | machine/service.js (relay condition), machine/test/service.test.js | light (gpt-6-luna) | wc-426aa645964b-worker-2 | `bash machine/test/run.sh` | done |
 | T3 | Done gate, auto-merge skip, slug guard (local and remote), Needs-you entry | viewer/app/pr-gate.js, auto-merge.js, views.js, remote-plan.js and their tests | standard (gpt-6.1-terra) | wc-426aa645964b-worker-3 | `node --test viewer/test/*.test.js` | done |
 | T4 | Protocol docs: lead.md line and new section, cards-lead.md permit section, cards.md rows and presses, protocol-rules leadKinds | protocol/app/lead.md, cards-lead.md, cards.md, viewer/test/protocol-rules.test.js | standard (claude-sonnet-5-5) | wc-426aa645964b-worker-4 | `node --test viewer/test/protocol-rules.test.js` | done |
 
@@ -418,3 +418,7 @@ Build accepted: approval f7e8be3b-c689-4e48-87e4-e3985a40be81
 - 2026-11-23 — Choice: T3, pr-gate.js: the target head branch is chosen from the done card's `pr_url`; a missing `head_branch` skips the branch check exactly as a missing `thread.branch` does today.
 - 2026-11-23 — Choice: T3, tests: extra base-mismatch assertion under a target; remote test covers target set before and during discovery, the latter with a fixed 50 ms wait.
 - 2026-11-23 — T3 accepted (band: scout): focused suites 37/37 re-run by me. The worker's full-suite stop was `app-harnesses.test.js` "switching a harness off cancels its install..." (`Date.now() - started < 1000`), which also fails 2 of 3 runs on the feature branch without T3 under load ~13–17: pre-existing timing flake, not this task.
+- 2026-11-23 — T2: worker reported choices "none"; the scout listed 2, logged below.
+- 2026-11-23 — Choice: T2, machine/service.js: a lookup object keyed by kind for the three unavailable texts, instead of a ternary.
+- 2026-11-23 — Choice: T2, machine/test/service.test.js: copied the done test as is, so the queued card is an `idea` and the second 503 expects that one spooled `idea` (the permit itself is never spooled).
+- 2026-11-23 — T2 accepted (band: scout): `ok 402 - permit is never spooled...` in my own full-suite run on its branch, which had no failures through test 672 and then stopped progressing (other threads' machine suites are hung the same way on this machine); full suite re-run on the final tip.
