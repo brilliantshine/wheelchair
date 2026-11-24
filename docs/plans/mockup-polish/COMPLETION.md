@@ -183,3 +183,22 @@ npm --prefix viewer run test:browser   (one unsharded run, 26.5m)
   app-accounts.spec.js:576/584/591/599 "lead waiting line" x2 browsers (8): midnight crossing, fails on main too
   app-send-now.spec.js:84 [chromium] (30s timeout under load): --repeat-each=10 -> 20 passed here, 20 passed on main
 ```
+
+### Remediation 5 — 2026-11-24
+
+Verification attempt 5 (commit `41512f55`): both verifiers (claude-opus-5-5 and gpt-6.2-sol) reported the same gap, a regression from R4. A percentage root font size was applied twice, so `em` sizes and inherited text came out at 62.5%. The lead answered fix. This is the second fix attempt on the root-font-size gap. Task R5 (gpt light / gpt-6-luna; Claude had no room, so the hub routed it to GPT), see `REMEDIATION-5.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S3: `em` and inherited text scaled twice by a percentage root font size | `viewer/pages/picture-export.js:125` (`rootPx` computed once), `:128` (the wrapped `html` gets `font-size:<px> !important`), `:137` (the `<svg>` root as before) | `app-mockup-png.spec.js:117` "em sizes and inherited text follow the mockup's root font size" (fixture `:27`). The R5 worker reports it failed before the fix in both browsers. The rem test at `:109` is kept |
+
+Full validation on the merged tip (sub-lead):
+```
+node --test viewer/test/*.test.js   # tests 935  # pass 933  # fail 2
+  harness timing (known, also on main); app-quiet "6 message clears debt" (load flake, alone 27/27 earlier)
+npm --prefix viewer run test:browser   (one unsharded run, 29.1m; the clock is now past midnight, so the "lead waiting" tests passed)
+  EXIT 1   1479 passed, 3 failed, 34 skipped
+  app-handoff.spec.js:228 [chromium]    re-run --repeat-each=5 -> 10 passed
+  app-threads.spec.js:414 [chromium]    re-run --repeat-each=5 -> 20 passed
+  browser.spec.js:875 [chromium]        re-run --repeat-each=5 -> 10 passed  (checks the live default cache root, which other sessions on this machine share)
+```
