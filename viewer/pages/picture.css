@@ -16,3 +16,7 @@
 .picture-body .picture-mockup-wrap { position: relative; display: block; width: max-content; flex: none; }
 #spot-note, #spot-sent { margin: 0 0 8px; font-size: 13px; }
 .picture-bar .spot-btn { flex: none; }
+
+/* The full-width containing block lets the panel stick as the mockup scrolls. */
+.picture-mockup-content { width: max-content; min-width: 100%; }
+.picture-mockup-content .spot-box { position: sticky; left: 0; width: 100cqw; }

@@ -118,7 +118,8 @@
       const f = document.createElement('iframe'); f.className = 'picture-mockup'; f.src = src; f.title = titleEl.textContent; f.setAttribute('sandbox', '');
       f.style.width = m.width + 'px'; f.style.height = m.height + 'px'; f.setAttribute('scrolling', 'no');
       const wrap = document.createElement('div'); wrap.className = 'picture-mockup-wrap'; wrap.appendChild(f);
-      pictureEl.appendChild(wrap);
+      const content = document.createElement('div'); content.className = 'picture-mockup-content'; content.appendChild(wrap);
+      pictureEl.appendChild(content);
       offerSpotComment(wrap, thread, { plan: spec.plan, graph: spec.graph, width: m.width, height: m.height, title: card.title || spec.graph }, card.id);
       const htmlEl = $('download-html'); htmlEl.hidden = false; htmlEl.href = src + '&download=1';
       offerPng(spec.graph, () => window.WCPictureExport.mockupCanvas(src, m.width, m.height),

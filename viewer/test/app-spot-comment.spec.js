@@ -233,6 +233,20 @@ test('on the picture page, a tap on the right of a wide mockup keeps the pin in 
   const box = await pane.boundingBox();
   expect(pin.x).toBeGreaterThanOrEqual(box.x - 1);
   expect(pin.x + pin.width).toBeLessThanOrEqual(box.x + box.width + 1);
+  const controls = [page.locator('.spot-text'), page.locator('.spot-box').getByRole('button', { name: 'Send' }),
+    page.locator('.spot-box').getByRole('button', { name: 'Cancel' })];
+  async function expectInsidePane() {
+    const bounds = await pane.boundingBox();
+    for (const control of controls) {
+      await expect(control).toBeVisible();
+      const rect = await control.boundingBox();
+      expect(rect.x).toBeGreaterThanOrEqual(bounds.x - 1);
+      expect(rect.x + rect.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+    }
+  }
+  await expectInsidePane();
+  await pane.evaluate((el) => { el.scrollLeft -= 200; });
+  await expectInsidePane();
 });
 
 test('the picture page sends the same format and shows Sent to the thread', async ({ page }) => {
