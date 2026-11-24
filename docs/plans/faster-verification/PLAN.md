@@ -330,6 +330,7 @@ Optional; present only in the lighter modes.
 | 2 | A check that flags test-map.json entries pointing at missing files or globs matching nothing | A stale entry only makes picks larger or falls back | planning | Could live in pick-tests.test.js against the real tree |
 | 3 | Record per-suite timings from full runs | Nice for tuning, not needed for speed | planning | summary.txt could gain a seconds column |
 | 4 | Free-port race in `viewer/test/helpers/server.js` ("Refused to use a port held by a process it cannot identify") | Pre-existing on main; a load flake that passes on re-run. It gets worse with more parallel test servers, so 6 browser workers surface it more often | verification | Seen in verification 1 in viewer-browser and viewer-node (`app-new-thread.test.js:184`) |
+| 5 | Qualify `protocol/app/lead.md` repair step 7's "start the full run alongside it unless the commit is covered" with the `Test picker and full run` heading | Minor wording: the rest of the sentence and the push gate are already qualified, and a project that has not opted in names no full-run command, so a lead cannot act on it | verification | One phrase near lead.md:729; any protocol change maps to every suite, so batch it with other protocol edits |
 
 ## Accepted Risks
 
@@ -543,3 +544,4 @@ Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
 - 2026-11-24 — Choice: R5, pick-tests.js: `"additive": true` on a map entry (Spec rule 3 extension); it adds tests and never counts as mapping for rules 5–6.
 - 2026-11-24 — Verification 4 on 736bb799 (Claude FAIL on one minor router gap, GPT FAIL): four small gaps. The lead said to fix all four in one remediation commit (R7). Full run on 736bb799 passed under the lead's reading (COMPLETION.md).
 - 2026-11-24 — Verification 5 on bb3e2e3c: Claude PASS, GPT FAIL. The `index.json` import gap is a rare path, recorded in Accepted Risks. One minor wording gap remains (lead.md repair step: 'start the full run' not qualified by the opt-in heading); asked the lead to fix or defer. Full run on bb3e2e3c passed under the lead's reading.
+- 2026-11-24 — Lead deferred the lead.md:729 wording gap (Deferred 5). No must-fix gap remains after verification 5.
