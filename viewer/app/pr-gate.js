@@ -7,7 +7,8 @@ const unavailable = "couldn't reach GitHub to check the pull request; try again 
 
 function judgePr(view, thread, card) {
   const refuse = (reason) => ({ ok: false, reason });
-  if (thread.branch && view.headRefName !== thread.branch) return refuse(`that pull request is not this thread's (its branch is ${view.headRefName})`);
+  const branch = thread.target_pr && card.pr_url === thread.target_pr.url ? thread.target_pr.head_branch : thread.branch;
+  if (branch && view.headRefName !== branch) return refuse(`that pull request is not this thread's (its branch is ${view.headRefName})`);
   if (thread.default_branch && view.baseRefName !== thread.default_branch) return refuse(`that pull request targets ${view.baseRefName}`);
   if (view.headRefOid !== card.head) return refuse(`the pull request is at ${String(view.headRefOid).slice(0, 7)}, not ${card.head.slice(0, 7)}`);
   if (view.state === 'MERGED') return { ok: true };
