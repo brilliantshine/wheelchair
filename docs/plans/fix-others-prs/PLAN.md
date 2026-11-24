@@ -1,6 +1,6 @@
 ---
 slug: fix-others-prs
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-23
 ---
 
@@ -41,17 +41,117 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | The thread does not post reviews or comments on GitHub; review findings stay in the thread | Keeps scope to fixing; can be added later | defaulted |
 | 6 | A thread takes on someone else's PR when Collin names it in chat ("fix PR #173"); no new start screen. A picker is deferred | Collin's pick; matches how Junjie's thread worked | user |
 | 7 | The app never auto-merges a PR the thread did not open; the done card says it is fixed and ready, and Collin or the author merges | Collin's pick: it is the author's PR and they may still be working | user |
+| 8 | Only a thread on the small-fix path, with no plan or commits of its own yet, may take on someone else's PR | A plan's documents and unrelated commits would otherwise be pushed into the author's PR | defaulted |
+| 9 | No mockup designer: the only visible part is one card shaped like the existing reach card | Trivial visible change | defaulted |
+| 10 | The OK card is a new `permit` kind, refused for closed PRs, forks, this thread's own branch and any branch of another thread record on this hub | The hub can check these itself; the lead checks `session leads` too | defaulted |
 
 ## Spec
 
-A plan with visible work lists its agreed mockups under “Mockups” (path, screen/state, size) instead of describing the look in prose.
+### What changes, in one paragraph
 
-The settled design, grown as decisions land. Bar: a fresh agent with no conversation
-history can implement from this section alone — behavior, boundaries, edge cases,
-non-goals, and concrete validation commands.
+A thread can take on an existing open pull request that someone else opened (a "target
+PR") when Collin names it in chat. The lead works on it as a small fix in its own
+worktree. Before the first push it posts a new `permit` card. Once Collin presses Allow,
+the hub records the target on the thread. The lead then pushes with a plain (never
+forced) push to the target PR's head branch, opens no PR of its own, and finishes with a
+`done` card pointing at the target PR. The done gate accepts that PR. Auto-merge never
+merges it and never deletes its branch.
 
-A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
-Spec is still churning. See `protocol/diagrams.md`.
+### 1. The `permit` card (new, lead-only, shown)
+
+Fields (all required): `pr_url` (a `https://github.com/<owner>/<repo>/pull/<n>` link) and
+`why` (one line, the user's terms). Nothing else is accepted (`viewer/app/card.js`
+`fields`, `roles`, `shown`; retractable while open, like `reach`, `card.js:277`).
+
+On post, the hub (`viewer/app/cards.js`, beside the `reach` checks at :163) runs
+`gh pr view <pr_url> --json number,title,state,author,headRefName,baseRefName,isCrossRepository`
+and refuses (422) in this order:
+1. `the pull request link is not a GitHub pull request` (same regex as `viewer/app/pr-gate.js:32`).
+2. `couldn't reach GitHub to check the pull request; try again in a minute`, or `the app's GitHub login can't read this pull request: <first stderr line>` (same split as `pr-gate.js:36-42`).
+3. `that pull request is closed` (state not `OPEN`).
+4. `that pull request comes from a fork; pushing to forks isn't supported yet` (`isCrossRepository` true).
+5. `that is this thread's own branch` (`headRefName` equals `thread.branch`).
+6. `that branch belongs to the thread "<title>" on this hub` (`headRefName` equals the `branch` of any other thread record that is not archived).
+7. `this thread already works on <target pr_url>` (`thread.target_pr` is set and its url differs).
+8. `a permit request is already open` (an unanswered, unretracted `permit` card exists).
+
+A permit for the same url as an existing `thread.target_pr` is accepted (it just asks again).
+The hub copies onto the stored card: `pr_number`, `pr_title`, `pr_author` (login), `head_branch`, `base_branch`.
+
+Shown (`viewer/pages/thread.js`, modelled on the reach card at :981-998): "Let this thread push its fix to **<pr_author>**'s pull request #<pr_number>: <pr_title>?", the `why`, the head branch in small text, and two buttons **Allow** and **Don't allow**. One answer only, like `reach` (:796). An open permit card counts in "Needs you" (`viewer/app/views.js:142`).
+
+Press handling (`viewer/app/threads.js`, beside reach at :330): on `allow`, re-run check 6 against current thread records; if it now fails, mark `allow_failed` and send `[card <id>] allow failed: <reason>`. Otherwise set `thread.target_pr = { url, number, head_branch, base_branch, title, author, card, allowed_at }`, save, and send `[card <id>] picked: allow`. On `don't allow` send `[card <id>] picked: don't allow` and change nothing else. Messages go to the latest live lead exactly as reach does.
+
+Document the kind in `protocol/app/cards-lead.md` (`### permit`, fields, refusals, presses) and add it to the kinds table in `protocol/app/cards.md`.
+
+### 2. Done gate (`viewer/app/pr-gate.js` `judgePr`)
+
+When `thread.target_pr` is set and the done card's `pr_url` equals `thread.target_pr.url`
+(compare exactly after trimming a trailing `/`), check `view.headRefName` against
+`target_pr.head_branch` and `view.baseRefName` against `target_pr.base_branch` instead of
+`thread.branch` and `thread.default_branch`. Every other rule is unchanged. A done card
+pointing at any other PR is judged exactly as today.
+
+### 3. Auto-merge (`viewer/app/auto-merge.js`)
+
+When the current done card's `pr_url` equals `thread.target_pr.url`, `afterCheck` does
+nothing: no merge, no "Not merged automatically" notice, no branch deletion. The
+`merged` card from `pollMerged` (`threads.js:466-495`) still appears when someone merges it.
+
+### 4. Lead protocol (`protocol/app/lead.md`)
+
+Add a section "Fixing someone else's pull request" and change the line at :515 to:
+"No thread pushes to another thread's branch, except a target PR's branch as in 'Fixing
+someone else's pull request'." The section says:
+
+- **When:** Collin names an open PR (number or link) that this thread did not open and
+  asks for it to be reviewed or fixed. Only on the small-fix path: before the thread has
+  a plan directory or commits of its own. If the work would need a plan, say so and
+  offer a stub instead. If the thread already has commits or a plan, say it must be a new
+  thread and offer a stub naming the PR.
+- **Look first:** `gh pr view <n> --json state,headRefName,baseRefName,isCrossRepository,author,title`.
+  Closed, a fork, or a branch belonging to a thread in `session leads` (any `branch`
+  match): say so plainly and offer the old way (a replacement PR from this thread's own
+  branch, as a normal small fix). Make no permit card.
+- **Bring it in:** `wc.js git fetch origin <head branch>` then `wc.js git merge origin/<head branch>`.
+  The thread's own branch now contains the PR. Review and fix as a small fix: commits,
+  progress line and verifier exactly as step 1, the verifier briefed with the PR's
+  purpose (its title and description) and Collin's request.
+- **Ask:** post the `permit` card before the first push (it may be posted as soon as the
+  PR is chosen). On `don't allow` or `allow failed`, offer the replacement PR in a
+  `question` card. Once allowed, the target holds for the life of the thread; after a
+  restart the allowed `permit` card in the context names it.
+- **Push:** `wc.js git push origin HEAD:<head branch>`. Never `--force`, `--force-with-lease`
+  or `+` refspecs, and never `wc.js git pr`. A rejected push (the author pushed): `wc.js
+  git fetch origin <head branch>`, merge `origin/<head branch>`, re-verify unless it was a
+  fast-forward, push again.
+- **Finish:** follow "Making the pull request mergeable" with the target: `<head branch>`
+  in place of `wc/<thread-id>` everywhere (pushes, `origin/...` reads, fetches), the target
+  PR's URL as the PR. The `done` card's `pr_url` is the target PR; its `note` says it
+  is ready for Collin or the author to merge and will not merge itself. `verified` follows
+  the usual rule.
+- **After done (step 9):** fixes go to the same head branch the same way. Stubs from such
+  a thread name the target PR and its branch in the summary.
+
+### Not changed
+
+A thread's own PR, the push to `wc/<thread-id>`, `wc.js` and the machine service
+(they already pass push arguments through), new-thread creation, fork PRs, GitHub
+comments or reviews.
+
+### Validation
+
+```bash
+node --test viewer/test/*.test.js
+npm --prefix viewer run test:browser
+```
+
+New or extended tests must cover:
+- `viewer/test/app-permit.test.js` (new): each refusal 1-8 with a stubbed `gh`; accepted card stores the copied fields; Allow sets `thread.target_pr`; Allow after a conflicting thread appears gives `allow failed`; Don't allow leaves `target_pr` unset; retract while open; second press refused.
+- `viewer/test/app-done-gate.test.js`: a done card for the target PR passes with the target's head and base; a done card for another PR with a non-thread head is still refused.
+- `viewer/test/app-auto-merge.test.js`: a target-PR done card with a passing check triggers no merge, no notice and no branch deletion.
+- `viewer/test/app-permit.spec.js` (new, Playwright): the card renders the author, number, title and both buttons, and pressing Allow shows it answered.
+- `viewer/test/protocol-rules.test.js` passes with the new `### permit` section.
 
 ## Deferred
 
@@ -84,9 +184,9 @@ stays as review history.
 
 ## Review Rounds
 
-### Round 1 — <date>
+### Round 1 — 2026-11-23
 
-**Lanes:** <family / model>; <family / model>; cross-family: <yes|no>.
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
 
 Written for every round, including one where the table below stays empty. The table gets a row
 per finding, so a clean round would otherwise leave no record of which gate ran — which is the
