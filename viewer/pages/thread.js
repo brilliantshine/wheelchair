@@ -674,7 +674,7 @@
           const d = el('details'); d.appendChild(el('summary', '', it.text));
           d.appendChild(el('div', '', (thread().title ? thread().title + ': ' : '') + (thread().context || '')));
           c.appendChild(d);
-        } else c.textContent = it.text;
+        } else c.appendChild(el('span', '', it.text));
         chatEl.appendChild(c);
       }
     }

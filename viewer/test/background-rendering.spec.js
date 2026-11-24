@@ -168,7 +168,7 @@ for (const width of [1280, 390]) {
     await page.getByLabel('Visibility').focus(); await expect(page.getByLabel('Visibility')).toBeFocused();
     await screenshot(page, testInfo, 'settings', width);
     await page.goto(`${ctx.server.url}/app/thread?id=${thread.id}`);
-    await active(page); await solid(page.locator('#composer')); await solid(page.locator('.bubble.assistant').first()); await solid(page.locator('.lead-by').first());
+    await active(page); await solid(page.locator('#composer')); await solid(page.locator('.bubble.assistant').first()); await solid(page.locator('.lead-by-name').first());
     await page.locator('#msg').fill('Background does not block input'); await expect(page.locator('#msg')).toBeFocused();
     await expect(page.locator('#msg')).toHaveValue('Background does not block input');
     const frame = page.locator('iframe.diagram').first(); await solid(frame);

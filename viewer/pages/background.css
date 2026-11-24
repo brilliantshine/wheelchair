@@ -19,12 +19,10 @@ html.background-active body { position: relative; isolation: isolate; }
 .background-editor .hint { overflow-wrap: anywhere; }
 .background-active :is(.bubble.assistant, .bubble.human.card, .thread-head, #composer) { background-color: var(--bg); }
 .background-active .bubble.assistant { padding: 12px 14px; border-radius: 10px; }
-/* Small chat labels sit on a pill that hugs their text, not a bar across the column. */
-.background-active :is(.lead-by, .tool) { width: fit-content; background-color: var(--bg); padding: 2px 10px 2px 4px; border-radius: 999px; }
-.background-active .tool { padding-left: 8px; }
-/* The name's usual cap is a share of the row; a pill sized to its text needs a fixed cap instead. */
-.background-active .lead-by-name { max-width: min(420px, 55vw); }
-.background-active .ctx { color: var(--ink-2); text-shadow: 0 0 3px var(--bg), 0 0 6px var(--bg), 0 0 10px var(--bg); }
+/* Small chat labels sit on pills that hug their text, not bars across the column.
+   The name row keeps its normal width, so its name cap and the "Ask about this" button work as without a background. */
+.background-active :is(.lead-by-name, .tool > summary, .ctx > *) { background-color: var(--bg); padding: 2px 10px; border-radius: 10px; }
+.background-active .tool > summary { width: fit-content; }
 
 /* Status remains explicit in labels; translucent content panels would expose the image. */
 .background-active :is(.v-group.empty .stage-head, .bubble.human.pending, .sent-attachments.pending,
