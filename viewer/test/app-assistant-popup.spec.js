@@ -81,22 +81,35 @@ test.describe('assistant pop-up', () => {
     expect((await press).postDataJSON()).toEqual({ action: 'answered', value: 'My own answer' });
   });
 
-  test('shows queued messages and offers Send now', async ({ page }) => {
+  test('system needs, file, image and lesson cards retain their content and actions', async ({ page }) => {
     const id = await turnOn(page);
-    await ctx.timedTranscript(id, [['human', 'Earlier message', OLD]]);
-    const at = new Date().toISOString();
+    await seedAssistant(id, [['assistant', 'Cards follow', OLD]]);
     await ctx.patch(id, (t) => {
-      const queue = [{ text: 'Queued for the assistant', source: 'user', at }];
-      Object.assign(t.sessions[0], { live: true, ready: true, turn_ended: false, queue });
-      t.queues = { [t.sessions[0].name]: queue };
+      t.cards.push(
+        { id: 'sys-needs', kind: 'needs', system: true, session: 'wc-demo-lead', blocking: false, title: 'Needs attention', body: 'Review this', items: ['First detail'], at: '2030-01-01T01:00:00.000Z' },
+        { id: 'file-card', kind: 'file', title: 'Notes', name: 'notes.txt', file: '123-notes.txt', size: 25, at: '2030-01-01T02:00:00.000Z' },
+        { id: 'image-card', kind: 'image', title: 'Picture', file: '456-image.png', mockup: { graph: 'design', width: 390, height: 844 }, at: '2030-01-01T03:00:00.000Z' },
+        { id: 'lesson-card', kind: 'lesson', action: 'add', for: 'worker', snapshot: { text: 'Use the log', provider: 'codex', project: '/tmp/project' }, why: 'It helps', at: '2030-01-01T04:00:00.000Z' }
+      );
     });
     await page.goto(`${ctx.server.url}/app/threads`);
     await page.locator('.wc-asst-float').click();
-    const bubble = page.locator('.wc-asst-pending');
-    await expect(bubble).toContainText('Queued for the assistant');
-    const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${id}/send-now`));
-    await bubble.getByRole('button', { name: 'Send now' }).click();
-    expect((await request).postDataJSON()).toEqual({ at });
+    const panel = page.locator('.wc-asst-panel');
+    const needs = panel.locator('[data-card="sys-needs"]');
+    await expect(needs).toContainText('First detail');
+    await expect(needs.getByRole('link', { name: 'Open terminal' })).toHaveAttribute('href', '/wheelchair/app/terminal?name=wc-demo-lead');
+    const file = panel.locator('[data-card="file-card"]');
+    await expect(file).toContainText('25 B');
+    await expect(file.getByRole('link', { name: 'Preview' })).toHaveAttribute('href', `/wheelchair/app/file?thread=${id}&file=123-notes.txt`);
+    await expect(file.getByRole('link', { name: 'Download' })).toHaveAttribute('href', `/wheelchair/api/threads/${id}/files/123-notes.txt`);
+    const image = panel.locator('[data-card="image-card"]');
+    await expect(image.locator('img')).toHaveAttribute('alt', 'Picture');
+    await expect(image).toContainText('Mockup not found');
+    await expect(panel.locator('[data-card="lesson-card"]')).toContainText('Use the log');
+    await expect(panel.locator('[data-card="lesson-card"]')).toContainText('only in project');
+    const dismissed = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${id}/cards/sys-needs/dismiss`));
+    await needs.getByRole('button', { name: 'Dismiss' }).click();
+    await dismissed;
   });
 
   test.describe('phone', () => {

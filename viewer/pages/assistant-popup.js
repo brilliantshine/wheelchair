@@ -72,7 +72,7 @@
   }
   function newestAny(d) {
     let best = newestAt(d);
-    for (const i of d.items || []) if (i.type === 'human' && i.at > best) best = i.at;
+    for (const i of d.items || []) if (i.at > best) best = i.at;
     return best;
   }
   function syncDot() {
@@ -101,13 +101,21 @@
     pending = pending.filter((p) => !humans.has(p));
     for (const e of entries) {
       if (e.item && e.item.type === 'human') {
-        convo.append(el('div', 'wc-asst-human' + (e.item.card ? ' wc-asst-press' : ''), e.item.text));
+        const lines = String(e.item.text || '').split('\n'); const files = [];
+        if (!e.item.card) while (lines.length) { const m = /^\[attached: (.+)\]$/.exec(lines[lines.length - 1]); if (!m) { if (files.length && !lines[lines.length - 1].trim()) { lines.pop(); continue; } break; } files.unshift(m[1]); lines.pop(); }
+        const bubble = el('div', 'wc-asst-human' + (e.item.card ? ' wc-asst-press' : ''), e.item.card ? e.item.text : lines.join('\n').trim());
+        if (e.item.by === 'assistant') bubble.prepend(el('span', 'wc-asst-tag', 'From your assistant')); if (bubble.textContent) convo.append(bubble);
+        for (const path of files) { const name = path.split('/').pop(); const label = name.replace(/^[0-9]+-/, ''); const valid = /^[0-9]+-[A-Za-z0-9._-]+$/.test(name) && !d.thread.archived;
+          const link = el(valid ? 'a' : 'span', 'wc-asst-file', valid && /\.(png|jpe?g|gif|webp)$/i.test(name) ? undefined : label); if (valid) { link.href = T + '/files/' + encodeURIComponent(name); link.target = '_blank'; link.rel = 'noopener'; if (/\.(png|jpe?g|gif|webp)$/i.test(name)) { const img = el('img', 'wc-asst-image'); img.src = link.href; img.alt = label; img.loading = 'lazy'; link.append(img); } else link.setAttribute('download', label); } convo.append(link); }
+
       } else if (e.item && e.item.type === 'assistant') {
         const by = el('div', 'wc-asst-by'); by.append(el('span', 'wc-asst-avatar', 'A'), document.createTextNode(' Assistant'));
         const ans = el('div', 'wc-asst-answer'); md(e.item.text, ans);
         convo.append(by, ans);
       } else if (e.item && e.item.type === 'context') {
-        convo.append(el('div', 'wc-asst-context', e.item.text));
+        const context = el('div', 'wc-asst-context');
+        if (e.item.context === 'stub') { const details = el('details'); details.append(el('summary', '', e.item.text), el('div', '', (d.thread.title ? d.thread.title + ': ' : '') + (d.thread.context || ''))); context.append(details); }
+        else context.textContent = e.item.text; convo.append(context);
       } else if (e.item && e.item.type === 'tool') {
         const tool = el('details', 'wc-asst-tool'); tool.append(el('summary', '', e.item.text), el('pre', '', e.item.detail || 'No details recorded.')); convo.append(tool);
       } else if (e.item && e.item.type === 'peer') {
@@ -115,42 +123,28 @@
         line.append(document.createTextNode(e.item.limit ? 'Message limit reached with ' : 'Talked with '), link); if (!e.item.limit) line.append(document.createTextNode(' · ' + e.item.count + (e.item.count === 1 ? ' message' : ' messages'))); convo.append(line);
       } else if (e.card) convo.append(drawCard(e.card));
     }
-    const lead = leadsOf(d).filter((s) => s.live).pop();
-    const queue = (lead && lead.queue || []).filter((q) => q.source === 'user');
-    for (const p of pending) if (!queue.some((q) => q.text === p)) convo.append(el('div', 'wc-asst-human', p));
-    for (const q of queue) {
-      const b = el('div', 'wc-asst-human wc-asst-pending', q.text); b.append(el('span', 'wc-asst-tag', 'queued'));
-      if (lead.live && lead.ready && !lead.permission_open && !lead.needs_open && !(lead.limited_until && Date.parse(lead.limited_until) > Date.now())) {
-        const sendNow = el('button', '', 'Send now'); sendNow.type = 'button'; sendNow.disabled = !!sendingNow[q.at];
-        sendNow.addEventListener('click', async () => { sendingNow[q.at] = true; sendNow.disabled = true; try {
-          const out = await post(T + '/send-now', { at: q.at });
-          if (!out.sent) throw new Error('It will go when the lead finishes its turn.');
-          if (!pending.includes(q.text)) pending.push(q.text); showError('');
-        } catch (e) { showError('Could not send it now: ' + e.message); } finally { delete sendingNow[q.at]; sig = ''; await poll(); } });
-        b.append(sendNow);
-      }
-      convo.append(b);
-    }
+    for (const p of pending) convo.append(el('div', 'wc-asst-human', p));
     if (working(d)) {
       const w = el('div', 'wc-asst-work'); w.append(el('span', 'wc-asst-spin'), document.createTextNode(' Assistant is thinking…'));
       w.setAttribute('role', 'status');
       convo.append(w);
     }
   }
-  const cardErrors = {}, drafts = {}, sendingNow = {};
+  const cardErrors = {}, drafts = {}, pressing = {};
   let answerFocus = null; const answerCaret = {};
   function drawCard(card) {
-    if (card.replaced) return document.createDocumentFragment();
     const box = el('div', 'wc-asst-card wc-asst-card-' + card.kind);
     box.dataset.card = card.id;
     const eyebrow = (t) => box.append(el('small', '', t));
     if (card.kind === 'question') {
-      eyebrow(card.answered ? 'QUESTION · ANSWERED' : 'QUESTION');
+      eyebrow(card.progress || 'Question');
       box.append(el('h3', '', card.question || ''));
       if (card.fits) box.append(el('p', '', card.fits));
+      if (card.doc && data.thread.slug) { const a = el('a', '', 'Open ' + card.doc); a.href = '/wheelchair/app/doc?thread=' + encodeURIComponent(id) + '&file=' + encodeURIComponent(card.doc); box.append(a); }
+      let optionIndex = 0;
       for (const o of card.options || []) {
         const b = el('button', 'wc-asst-opt'); b.type = 'button'; b.disabled = !!card.answered || !!card.retracted_at;
-        b.append(el('span', '', o.label + (o.id === card.leaning ? ' · leaning' : '')), el('span', 'wc-asst-consequence', o.consequence || ''));
+        const label = el('span', '', String.fromCharCode(65 + optionIndex++ % 26) + ' · ' + o.label + (o.id === card.leaning ? ' · leaning' : '')); const consequence = el('span', 'wc-asst-consequence'); window.WCMarkdown.inline(o.consequence || '', consequence); b.append(label, consequence);
         b.addEventListener('click', () => press(card, 'picked', o.label));
         box.append(b);
       }
@@ -169,11 +163,13 @@
         sendAnswer.addEventListener('click', () => { sendAnswer.disabled = true; press(card, 'answered', answer.value.trim()); });
         row.append(answer, sendAnswer); box.append(row);
       }
-      if (card.answered) box.append(el('p', '', card.resolved_by ? 'Answered in chat' + (card.resolved_note ? ' · ' + card.resolved_note : '') : card.answered_action === 'answered' ? 'You answered: ' + card.answered_value : 'You picked ' + (card.answered_value || '')));
+      if (card.answered && !card.retracted_at) { const label = card.resolved_by ? 'Answered in chat' + (card.resolved_note ? ' · ' + card.resolved_note : '') : card.answered_action === 'answered' ? 'You answered: ' + card.answered_value : card.answered_value != null ? 'You picked ' + card.answered_value : 'Answered'; box.append(el('p', '', label + (card.answered_by === 'assistant' ? ' · by your assistant' : ''))); }
     } else if (card.kind === 'needs') {
       eyebrow('NEEDS YOU');
       box.append(el('h3', '', card.title || ''));
-      if (card.body) box.append(el('p', '', card.body));
+      if (card.body) { const body = el('div'); md(card.body, body); box.append(body); }
+      if ((card.items || []).length) { const list = el('ul'); for (const item of card.items) list.append(el('li', '', item)); box.append(list); }
+      if (card.resolved_by) box.append(el('p', '', card.resolved_note || (card.resolved_by === 'user' ? 'Dismissed' : 'Resolved')));
       if (card.system && !card.answered) {
         if (card.session) { const a = el('a', '', 'Open terminal'); a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session); box.append(a); }
         if (!card.blocking || card.auto_merge) { const dismiss = el('button', '', 'Dismiss'); dismiss.type = 'button'; dismiss.addEventListener('click', async () => {
@@ -185,15 +181,34 @@
         const keep = el('button', '', 'Keep going'); keep.type = 'button'; keep.addEventListener('click', () => press(card, 'keep-going'));
         const talk = el('button', '', 'Talk about it'); talk.type = 'button'; talk.addEventListener('click', () => press(card, 'talk', card.title)); box.append(keep, talk);
       }
-    } else if (card.kind === 'file') {
-      box.append(el('h3', '', card.title || ''), el('p', '', card.name || card.file || ''));
-      const a = el('a', '', 'Download'); a.href = T + '/files/' + encodeURIComponent(card.file); a.setAttribute('download', card.name || card.file); box.append(a);
-    } else if (card.kind === 'image') {
-      box.append(el('h3', '', card.title || '')); const a = el('a'); a.href = T + '/files/' + encodeURIComponent(card.file); a.target = '_blank'; a.rel = 'noopener';
-      const img = el('img', 'wc-asst-image'); img.src = a.href; img.alt = card.title || ''; a.append(img); box.append(a);
+    } else if (card.kind === 'file' || card.kind === 'image') {
+      box.append(el('h3', '', card.title || ''));
+      const available = !data.thread.archived || (data.thread.kept_files || []).includes(card.file);
+      const url = T + '/files/' + encodeURIComponent(card.file);
+      if (card.kind === 'file') {
+        const n = card.size; const size = !(n >= 0) ? '' : n < 1024 ? n + ' B' : n < 1000 * 1024 ? Math.round(n / 1024) + ' KB' : (n / 1024 / 1024).toFixed(1) + ' MB';
+        box.append(el('p', '', [card.name || card.file, size].filter(Boolean).join(' · ')));
+        if (!available) box.append(el('p', '', 'Removed when the thread was archived'));
+        else {
+          const name = card.name || card.file; const size = Number(card.size);
+          if (/\.(md|markdown|txt|log|csv|tsv|json|ya?ml|xml|ini|toml)$/i.test(name) && Number.isFinite(size) && size >= 0 && size <= 2 * 1024 * 1024) {
+            const preview = el('a', '', 'Preview'); preview.href = '/wheelchair/app/file?thread=' + encodeURIComponent(id) + '&file=' + encodeURIComponent(card.file); box.append(preview);
+          }
+          const download = el('a', '', 'Download'); download.href = url; download.setAttribute('download', name); box.append(download);
+        }
+      } else {
+        if (card.mockup) box.append(el('div', '', 'Built'));
+        if (!available) box.append(el('p', '', 'Image removed when the thread was archived'));
+        else { const a = el('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; const img = el('img', 'wc-asst-image'); img.src = url; img.alt = card.title || ''; a.append(img); box.append(a);
+          if (card.mockup) { const full = el('a', '', 'Open full size'); full.href = url; full.target = '_blank'; full.rel = 'noopener'; box.append(full); }
+        }
+        if (card.mockup) { box.append(el('div', '', 'Mockup')); if (!data.thread.slug) box.append(el('p', '', 'Mockup not found')); }
+      }
     } else if (card.kind === 'lesson') {
       const snap = card.snapshot || {}; const verb = card.action === 'remove' ? 'Removed a lesson for ' : card.action === 'replace' ? 'Updated a lesson for ' : 'Saved a lesson for ';
-      box.append(el('p', '', verb + (card.for || '') + 's: ' + (snap.text || ''))); if (card.why) box.append(el('p', '', card.why));
+      const roles = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers', designer: 'designers' };
+      box.append(el('p', '', verb + (roles[card.for] || card.for + 's') + ': ' + (snap.text || ''))); if (card.why) box.append(el('p', '', card.why));
+      if (snap.provider) { const provider = (window.WHEELCHAIR_TOOLS || []).find((t) => t.provider === snap.provider); box.append(el('p', '', 'only on ' + (provider ? provider.label : snap.provider))); } if (snap.project) box.append(el('p', '', 'only in ' + String(snap.project).split('/').filter(Boolean).pop()));
       const a = el('a', '', 'Open in Settings'); a.href = '/wheelchair/app/settings#templates/lessons/' + encodeURIComponent(card.for); box.append(a);
     } else {
       eyebrow(String(card.kind || 'card').toUpperCase());
@@ -206,8 +221,13 @@
     return box;
   }
   async function press(card, action, value) {
-    try { await post(T + '/cards/' + encodeURIComponent(card.id) + '/press', value === undefined ? { action } : { action, value }); delete cardErrors[card.id]; card.answered = true; }
-    catch (e) { cardErrors[card.id] = e.message; }
+    if (pressing[card.id]) return;
+    pressing[card.id] = true;
+    const once = card.kind === 'question';
+    if (once) { card.answered = true; sig = ''; render(); }
+    try { await post(T + '/cards/' + encodeURIComponent(card.id) + '/press', value === undefined ? { action } : { action, value }); delete cardErrors[card.id]; }
+    catch (e) { if (once && !/already answered/.test(e.message)) card.answered = false; cardErrors[card.id] = e.message; }
+    finally { delete pressing[card.id]; }
     sig = ''; await poll();
   }
 
@@ -226,7 +246,7 @@
       stopped.append(r);
     }
     input.disabled = !live; send.disabled = !live;
-    const next = JSON.stringify([data.items, data.cards, working(data), pending, cardErrors, sendingNow, live, leadsOf(data)]);
+    const next = JSON.stringify([data.items, data.cards, working(data), pending, cardErrors, live, leadsOf(data)]);
     if (next === sig) return;
     sig = next;
     const near = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 80;
