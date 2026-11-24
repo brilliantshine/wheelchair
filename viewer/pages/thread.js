@@ -1588,7 +1588,7 @@
     if (ev.key !== 'Enter' || ev.shiftKey || ev.isComposing || ev.keyCode === 229 || !enterSends()) return;
     ev.preventDefault(); composerEl.requestSubmit();
   });
-  msgEl.addEventListener('paste', (ev) => { if (!thread().assistant && ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
+  msgEl.addEventListener('paste', (ev) => { if (data && data.thread && !data.thread.assistant && ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
   composerEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
   composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); if (data && data.thread && !data.thread.assistant) addFiles(ev.dataTransfer.files, false); } });
   composerEl.addEventListener('submit', async (ev) => {
