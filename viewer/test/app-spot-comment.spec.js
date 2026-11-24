@@ -183,7 +183,9 @@ test('Cancel removes the layer, pin and box and forgets the draft', async ({ pag
   await expect(page.locator('.spot-box')).toBeHidden();
   await page.getByRole('button', { name: 'Comment on a spot' }).click();
   await expect(page.locator('.spot-pin')).toBeHidden();
-  await expect(page.locator('.spot-text')).toBeHidden();
+  await expect(page.locator('.spot-text')).toBeVisible();
+  await expect(page.locator('.spot-text')).toBeDisabled();
+  await expect(page.locator('.spot-box').getByRole('button', { name: 'Send' })).toBeDisabled();
 });
 
 test('the image card Mockup half has the button too', async ({ page }) => {
@@ -368,4 +370,57 @@ test('a hand-off starting hides the button in place without redrawing the mockup
   await expect(page.locator('.spot-btn')).toHaveCSS('visibility', 'hidden', { timeout: 8000 });
   expect(await page.evaluate(() => window.__frame === document.querySelector('.card-diagram iframe'))).toBe(true);
   expect(await page.evaluate(() => window.__loads)).toBe(0);
+});
+
+async function lowTap(page, testInfo, screenshot) {
+  const box = page.locator('.spot-box');
+  const layer = page.locator('.spot-layer');
+  const beforeBox = await box.boundingBox();
+  const layerRect = await layer.boundingBox();
+  const beforeScroll = await page.evaluate(() => ({ y: window.scrollY, pane: document.querySelector('.picture-body')?.scrollTop }));
+  const y = Math.min(beforeBox.y - 4, layerRect.y + layerRect.height - 4);
+  expect(y).toBeGreaterThan(layerRect.y);
+  await page.mouse.click(layerRect.x + layerRect.width / 2, y);
+  await expect(page.locator('.spot-pin')).toBeVisible();
+  if (process.env.R9_SCREENSHOTS && testInfo.project.name === 'chromium' && screenshot) {
+    await page.screenshot({ path: path.join(process.env.R9_SCREENSHOTS, screenshot) });
+  }
+  const afterBox = await box.boundingBox();
+  const pin = await page.locator('.spot-pin').boundingBox();
+  const hit = await page.evaluate(({ x, y }) => {
+    const el = document.elementFromPoint(x, y);
+    return el && (el.classList.contains('spot-pin') || el.classList.contains('spot-layer'));
+  }, { x: pin.x + pin.width / 2, y: pin.y + pin.height / 2 });
+  const afterScroll = await page.evaluate(() => ({ y: window.scrollY, pane: document.querySelector('.picture-body')?.scrollTop }));
+  expect.soft(afterBox.y).toBeGreaterThanOrEqual(beforeBox.y - 1);
+  expect.soft(hit).toBe(true);
+  expect.soft(afterScroll).toEqual(beforeScroll);
+}
+
+test('R9 newest short thread mockup low tap remains uncovered', async ({ page }, testInfo) => {
+  const { made } = await seed(390, 200);
+  await open(page, made);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.getByRole('button', { name: 'Comment on a spot' }).click();
+  await lowTap(page, testInfo, 'thread-short.png');
+});
+
+for (const where of ['thread', 'picture']) {
+  test(`R9 tall ${where} mockup low tap remains uncovered`, async ({ page }, testInfo) => {
+    const { made, card } = await seed(390, 844);
+    if (where === 'thread') await open(page, made); else await openPicture(page, made, card);
+    await page.getByRole('button', { name: 'Comment on a spot' }).click();
+    if (where === 'thread') await page.locator('.spot-layer').evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 190));
+    await lowTap(page, testInfo, where === 'picture' ? 'picture-low.png' : null);
+  });
+}
+
+test('R9 newest short thread mockup can scroll completely above the box', async ({ page }) => {
+  const { made } = await seed(390, 200);
+  await open(page, made);
+  await page.getByRole('button', { name: 'Comment on a spot' }).click();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const layer = await page.locator('.spot-layer').boundingBox();
+  const box = await page.locator('.spot-box').boundingBox();
+  expect(layer.y + layer.height).toBeLessThanOrEqual(box.y + 1);
 });
