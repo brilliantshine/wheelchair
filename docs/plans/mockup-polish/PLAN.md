@@ -379,3 +379,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — Choice: R4, app-mockup-png.spec.js: the rem test hardcodes export scale k = 2, as the other tests in the file do.
 - 2026-11-23 — Choice: R4, picture-export.js: `fontSize` falls back to null with `|| null` when the computed value is empty.
 - 2026-11-23 — R4 accepted (band: scout): scout found no deviation; the report shows the rem test failing on the old exporter. Sub-lead re-ran mockup-png and picture-download: 26 passed.
+- 2026-11-24 — Verification 5 (commit 41512f55): Claude (claude-opus-5-5) and GPT (gpt-6.2-sol) verifiers both FAIL on the same gap: R4's root font size fix makes `em` sizes and inherited text 62.5% too small when the mockup sets a percentage root font size. Judged normal use; sent to the lead. Second fix attempt on the root-font-size gap.
