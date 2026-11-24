@@ -214,6 +214,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 |---|------|-----------------|--------|-------------------------|
 | D1 | Earlier spot comments stay as pins on the mockup | The comment's text already says where; pins are a convenience | planning | Needs storing comments per mockup and drawing them on the overlay layer from S2 |
 | D2 | Make the mockup PNG on the machine when the phone's browser refuses | Only needed if Collin's browser refuses; HTML download still works | planning | Headless browser screenshot served from the machine; see Decision 7 |
+| D3 | Firefox PNG of a mockup that uses media queries | Only desktop Firefox drops width-based rules inside the SVG drawing; Chromium is right and the HTML download stays exact | verification | In the w x h helper frame, test each `@media` rule with `matchMedia` and unwrap the matching ones / drop the rest before serializing. Evidence: /tmp/wc-mockup-verify-WvBg2G/responsive.log (Firefox PNG button rgb(66,88,220) vs preview rgb(38,116,83)) |
 
 ## Accepted Risks
 
@@ -361,3 +362,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — Choice: R1, PNG helper: falls back to 800x600 when no size is given (picture-export.js `canvasBackground`).
 - 2026-11-23 — R1 accepted (band: scout): scout confirmed the three fixes match their scenarios; report gave counts rather than pasted output, so the sub-lead re-ran chat-stability, spot-comment, mockup-png, handoff: 82 passed.
 - 2026-11-23 — Verification 2: FAIL (gpt-6.2-sol, commit 699c1a26), 3 gaps, none rare; sent to the lead for defer/fix.
+- 2026-11-23 — Lead answered verification-2 gaps: fix 1 (Done handler live(card)) and 3 (hand-off test waits for the first load); defer 2 as D3.
