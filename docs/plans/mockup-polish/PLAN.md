@@ -323,10 +323,16 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S1 chat reconciled in place + scroll keep; mockup box aspect-ratio height; S4 thread links to `view=image` (tricky) | viewer/pages/thread.js, thread.css, diagram.js, viewer/test/app-chat-stability.spec.js, app-mockups.spec.js | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker | browser tests 1, 2, 5 (link half); full suites | in progress |
+| T1 | S1 chat reconciled in place + scroll keep; mockup box aspect-ratio height; S4 thread links to `view=image` (tricky) | viewer/pages/thread.js, thread.css, diagram.js, viewer/test/app-chat-stability.spec.js, app-mockups.spec.js | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker | browser tests 1, 2, 5 (link half); full suites | done |
 | T2 | S3 mockup PNG in browser + Download HTML; S4 picture page `view=image` true-size view | viewer/pages/picture.js, picture-export.js, picture.css, picture.html, viewer/test/app-mockup-png.spec.js, app-screenshot-view.spec.js, app-picture-download.spec.js | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-2 | browser tests 4, 5; full suites | in progress |
 | T3 | S2 spot comments (thread + picture page) + lead.md/designer.md sentences; after T1, T2 | viewer/pages/thread.js, thread.css, diagram.js, picture.js, picture.css, protocol/app/lead.md, protocol/app/designer.md, new spot-comment spec | claude standard / claude-sonnet-5-5 | | browser test 3; full suites | not started |
 
 ## Log
 
 Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
+- 2026-11-23 — Choice: T1, chat entry keys: type + id/time + first 60 chars of text, with a `#n` counter for duplicates (thread.js `renderChat`).
+- 2026-11-23 — Choice: T1, lead-name line: its own entry keyed to the entry it precedes, signature = lead name.
+- 2026-11-23 — Choice: T1, scroll keep: `showError()` itself wraps capture/restore, covering the poll path and every other banner change.
+- 2026-11-23 — Choice: T1, screenshot links: `view=image` links open in the same tab (dropped `target=_blank`).
+- 2026-11-23 — Choice: T1, card order: cards pushed out of time order are not reordered (existing `cardsBefore` assumption).
+- 2026-11-23 — T1 accepted (band: self): reconcile, scroll keep, aspect-ratio box and image links read in the diff; chat-stability, mockups and app-threads specs re-run green (42 passed). Sub-lead changed `viewer/test/app-threads.spec.js:867` to expect the kept answer box (it asserted the old full redraw). The app-harnesses timing failure the worker saw passes alone (20/20).
