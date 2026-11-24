@@ -197,6 +197,7 @@ const PREVIEW_TIMEOUT_MS = 60_000;
 const COPY_HASHES_IDLE_MS = 10 * 60_000;
 const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md'], worker: ['cards.md'], mapper: ['cards.md'], designer: ['cards.md'], reviewer: [], verifier: [] };
 const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
+const ROLE_REPO_LAW = new Set(['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier']);
 function composeRolePrompt(input) {
   const first = `Role: ${input.role}`;
   if (input.role_prompt) return `${first}\n${input.role_prompt}`;
@@ -205,6 +206,7 @@ function composeRolePrompt(input) {
   const read = file => fs.readFileSync(path.join(ROOT, 'protocol', 'app', file), 'utf8').trimEnd();
   const parts = [`${first}\n${header} \`<root>\` is \`${ROOT}\`.`, read(`${input.role}.md`)];
   if (ROLE_REALISM.has(input.role)) parts.push(`--- realism.md ---\n${read('realism.md')}`);
+  if (ROLE_REPO_LAW.has(input.role)) parts.push(`--- repo-law.md ---\n${read('repo-law.md')}`);
   for (const file of cards) parts.push(`--- ${file} ---\n${read(file)}`);
   const layers = typeof input.role_layers === 'string' ? input.role_layers.trim() : '';
   if (layers) parts.push(layers);
