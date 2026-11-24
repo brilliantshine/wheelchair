@@ -165,3 +165,21 @@ npm --prefix viewer run test:browser   (one unsharded run, 23.8m)
     app-settings.spec.js:99 [firefox]: its serial group's failure withheld the 30 "did not run"; re-run of the whole file alone -> 72 passed (verifier 3 also reproduced this failure on main)
 app-send-now.spec.js:59 "a regular composer send already shown by a poll…" fails about 1 in 72 here and on main (--repeat-each=6: 71 passed 1 failed on both)
 ```
+
+### Remediation 4 — 2026-11-23
+
+Verification attempt 4 (commit `b060a327`): the Claude verifier (claude-opus-5-5) passed; the GPT verifier (gpt-6.2-sol) reported one gap. The lead answered fix. Task R4 (gpt light / gpt-6-luna; Claude had no room, so the hub routed it to GPT), see `REMEDIATION-4.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S3: `rem` sizes exported at the wrong scale when the mockup sets a root font size (inside the SVG, `rem` resolved against 16px) | `viewer/pages/picture-export.js:83-96` (`readMockupPage` also reads `html`'s computed font size); `:136` (set on the `<svg>` root when it is a px value) | `app-mockup-png.spec.js:108-113` "rem sizes follow the mockup's root font size". It failed on the old exporter in both browsers (pasted in `reports/R4.md`) |
+
+Full validation on the merged tip (sub-lead):
+```
+node --test viewer/test/*.test.js   # tests 935  # pass 932  # fail 3
+  harness timing (known, also on main); app-quiet "6 message clears debt" -> alone 27/27; app-uploads-archive "stalled upload" -> alone 3/3
+npm --prefix viewer run test:browser   (one unsharded run, 26.5m)
+  EXIT 1   1471 passed, 9 failed, 34 skipped
+  app-accounts.spec.js:576/584/591/599 "lead waiting line" x2 browsers (8): midnight crossing, fails on main too
+  app-send-now.spec.js:84 [chromium] (30s timeout under load): --repeat-each=10 -> 20 passed here, 20 passed on main
+```
