@@ -325,7 +325,7 @@ New browser tests (Chromium and Firefox, phone viewport 390x844 where it matters
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S1 chat reconciled in place + scroll keep; mockup box aspect-ratio height; S4 thread links to `view=image` (tricky) | viewer/pages/thread.js, thread.css, diagram.js, viewer/test/app-chat-stability.spec.js, app-mockups.spec.js | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker | browser tests 1, 2, 5 (link half); full suites | done |
 | T2 | S3 mockup PNG in browser + Download HTML; S4 picture page `view=image` true-size view | viewer/pages/picture.js, picture-export.js, picture.css, picture.html, viewer/test/app-mockup-png.spec.js, app-screenshot-view.spec.js, app-picture-download.spec.js | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-2 | browser tests 4, 5; full suites | done |
-| T3 | S2 spot comments (thread + picture page) + lead.md/designer.md sentences; after T1, T2 | viewer/pages/thread.js, thread.css, diagram.js, picture.js, picture.css, protocol/app/lead.md, protocol/app/designer.md, new spot-comment spec | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-3 | browser test 3; full suites | in progress |
+| T3 | S2 spot comments (thread + picture page) + lead.md/designer.md sentences; after T1, T2 | viewer/pages/thread.js, thread.css, diagram.js, picture.js, picture.css, protocol/app/lead.md, protocol/app/designer.md, new spot-comment spec | claude standard / claude-sonnet-5-5 | wc-c06d283728e9-worker-3 | browser test 3; full suites | done |
 
 ## Log
 
@@ -335,10 +335,19 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-23 — Choice: T1, scroll keep: `showError()` itself wraps capture/restore, covering the poll path and every other banner change.
 - 2026-11-23 — Choice: T1, screenshot links: `view=image` links open in the same tab (dropped `target=_blank`).
 - 2026-11-23 — Choice: T1, card order: cards pushed out of time order are not reordered (existing `cardsBefore` assumption).
-- 2026-11-23 — T1 accepted (band: self): reconcile, scroll keep, aspect-ratio box and image links read in the diff; chat-stability, mockups and app-threads specs re-run green (42 passed). Sub-lead changed `viewer/test/app-threads.spec.js:867` to expect the kept answer box (it asserted the old full redraw). The app-harnesses timing failure the worker saw passes alone (20/20).
+- 2026-11-23 — T1 accepted (band: self): reconcile, scroll keep, aspect-ratio box and image links read in the diff; chat-stability, mockups and app-threads specs re-run green (42 passed). `viewer/test/app-threads.spec.js:867` asserted the old full redraw; the fix landed with T3 (the sub-lead's own edit was never committed and was dropped). The app-harnesses timing failure the worker saw passes alone (20/20).
 - 2026-11-23 — Choice: T2, mockup PNG background: read from a hidden script-free `sandbox="allow-same-origin"` srcdoc iframe's computed style (colour, image, repeat, position, size), not by parsing CSS (picture-export.js).
 - 2026-11-23 — Choice: T2, picture page: Download HTML link is `#download-html`, left of Download (picture.html/css).
 - 2026-11-23 — Choice: T2, screenshot view: accepts any non-retracted image card with a file, mockup or not; Download sets `download` to the card name; a missing card reuses "This picture was not found in the thread." (picture.js).
 - 2026-11-23 — Choice: T2, PNG export: inline `on*` attributes stripped as well as scripts; the wrapped `html` is forced to `display:block` at w x h with the root `overflow:hidden`; tainted canvas probed with `getImageData(0,0,1,1)`; `offerPng` gained an optional failure-text argument (picture-export.js, picture.js).
 - 2026-11-23 — Choice: T2, PNG failure note: shown for any failure making the PNG (fetch, load, taint), not only a refusal (picture.js).
 - 2026-11-23 — T2 accepted (band: bigger-scout): scout found no Spec deviation; its script-stripping test cannot fail (scripts can't run in an SVG image anyway), noted, not sent back. Sub-lead re-ran app-mockup-png, app-screenshot-view, app-picture-download: 26 passed. Full suites run once all tasks merge.
+- 2026-11-23 — Choice: T3, message title: the card's own title (image cards without the "Mockup: " prefix); picture page falls back to the graph name (diagram.js, thread.js `spotButton`, picture.js).
+- 2026-11-23 — Choice: T3, placement: the spot UI lives in `diagram.js` as `WCDiagram.spot`, shared by thread and picture page; image card Mockup half gets a `.mockup-links` row.
+- 2026-11-23 — Choice: T3, draft key: card id + graph name (the plan is fixed per card, so it names the mockup file).
+- 2026-11-23 — Choice: T3, box before first tap: hint "Tap the spot on the mockup." with Cancel only; textarea and Send appear with the pin; first tap scrolls the box into view.
+- 2026-11-23 — Choice: T3, thread Send checks `cantSendWhy()` first so a draft whose button is hidden reports why (archived / handed off / lead isn't running).
+- 2026-11-23 — Choice: T3, picture page ineligible at load: note "Comments on a spot cannot be sent: <why>." and the button `visibility: hidden`.
+- 2026-11-23 — Choice: T3, picture bar `flex-wrap: wrap` so the added button doesn't push Download off a phone screen; layer has a dashed outline; taps are click events.
+- 2026-11-23 — Choice: T3, `app-threads.spec.js` redraw-while-typing test now waits for the second card and asserts the answer box node is kept.
+- 2026-11-23 — T3 accepted (band: bigger-scout): scout found no Spec deviation; handed-off reason and picture-page pending state are untested (noted). Sub-lead re-ran spot-comment, mockups, chat-stability, picture, mockup-png, screenshot-view: 82 passed.
