@@ -138,3 +138,34 @@ test('an entry hidden under the sticky header is not the scroll anchor', async (
   const moved = await page.evaluate(() => document.querySelector('.card-diagram').getBoundingClientRect().top);
   expect(Math.abs(moved - setup.top)).toBeLessThanOrEqual(2);
 });
+
+test('an entry hidden behind the composer is not the scroll anchor', async ({ page }) => {
+  const made = await seed();
+  const t0 = Date.now() - 600000;
+  const at = (n) => new Date(t0 + n * 1000).toISOString();
+  await ctx.patch(made.id, (t) => t.cards.push(needs('n0', 'Top note', at(0.5))));
+  const first = await mockupCard(made, 'Visible mockup', at(2));
+  await mockupCard(made, 'Next mockup', at(3));
+  for (let i = 0; i < 3; i++) await ctx.patch(made.id, (t) => t.cards.push(needs('tail' + i, 'Tail note ' + i, at(4 + i))));
+  await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+  await expect(page.locator('.card-diagram iframe')).toHaveCount(2);
+  await page.addStyleTag({ content: 'html, body { overflow-anchor: none !important; scroll-padding: 0 !important; }' });
+  // The first mockup's bottom 4px above the composer, so the row after it starts behind the composer
+  // and the first mockup is the only entry between the top bars and the composer.
+  const setup = await page.evaluate((id) => {
+    const card = document.getElementById('card-' + id);
+    const composerTop = () => document.getElementById('composer').getBoundingClientRect().top;
+    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().bottom - (composerTop() - 4));
+    const covered = document.getElementById('head').getBoundingClientRect().bottom;
+    const next = card.nextElementSibling.getBoundingClientRect();
+    return { covered, composerTop: composerTop(), cardTop: card.getBoundingClientRect().top, nextTop: next.top, y: window.scrollY, h: window.innerHeight };
+  }, first.id);
+  expect(setup.cardTop).toBeLessThanOrEqual(setup.covered);          // the card fills the whole visible band
+  expect(setup.nextTop).toBeGreaterThan(setup.composerTop);          // the next row starts behind the composer
+  expect(setup.nextTop).toBeLessThan(setup.h);                       // ...but inside the window
+  // A poll swaps the only visible entry for a much shorter one with a new id.
+  await ctx.patch(made.id, (t) => { const k = t.cards.findIndex((c) => c.id === first.id); t.cards.splice(k, 1, needs('swap', 'A short card in its place', at(2))); });
+  await expect(page.locator('#card-swap')).toHaveCount(1, { timeout: 8000 });
+  const y = await page.evaluate(() => window.scrollY);
+  expect(Math.abs(y - setup.y)).toBeLessThanOrEqual(2);
+});

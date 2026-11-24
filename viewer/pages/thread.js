@@ -135,13 +135,16 @@
   function chatPlace() {
     const near = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     const seen = [];
-    // The sticky header, dead-lead bar and pins cover the top of the viewport: a row under them is not on screen.
+    // The sticky header, dead-lead bar and pins cover the top, and the composer covers the bottom: rows under them are not on screen.
     let covered = 0;
     for (const n of [headEl, deadEl, pinnedEl]) { if (n && !n.hidden) { const b = n.getBoundingClientRect(); if (b.height > 0) covered = Math.max(covered, b.bottom); } }
+    const composer = $('composer');
+    const cb = composer && !composer.hidden ? composer.getBoundingClientRect() : null;
+    const visibleBottom = cb && cb.height > 0 ? Math.min(window.innerHeight, cb.top) : window.innerHeight;
     if (!near && chatEl) for (const node of chatEl.children) {
       if (!node.dataset.key) continue;
       const r = node.getBoundingClientRect();
-      if (r.bottom > covered && r.top < window.innerHeight) seen.push([node.dataset.key, r.top]);
+      if (r.bottom > covered && r.top < visibleBottom) seen.push([node.dataset.key, r.top]);
     }
     return { near, seen };
   }
