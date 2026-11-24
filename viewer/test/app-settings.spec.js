@@ -68,9 +68,9 @@ test.describe('desktop', () => {
 
   test('permission labels name the tools in their groups', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
-    await expect(page.getByText('Claude, Antigravity and Kimi sessions', { exact: true })).toBeVisible();
+    await expect(page.getByText('Claude and Kimi sessions', { exact: true })).toBeVisible();
     await expect(page.getByText('Codex sessions', { exact: true })).toBeVisible();
-    await expect(page.getByRole('radiogroup', { name: 'Claude, Antigravity and Kimi permission mode', exact: true })).toBeVisible();
+    await expect(page.getByRole('radiogroup', { name: 'Claude and Kimi permission mode', exact: true })).toBeVisible();
     await expect(page.getByRole('radiogroup', { name: 'Codex permission mode', exact: true })).toBeVisible();
   });
 

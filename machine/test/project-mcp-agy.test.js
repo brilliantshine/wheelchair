@@ -16,7 +16,7 @@ test('translates only transport fields into private plugin file descriptions', (
   });
   const dir = path.join('/state', 'agy-tools', 'wc-a%2Fb');
   const plugin = path.join(dir, '.agents/plugins/wheelchair-project');
-  assert.deepEqual(result.argv, ['agy', '--settings', '/state/settings/wc-a/b.json', '--add-dir', dir, '--mode', 'auto']);
+  assert.deepEqual(result.argv, ['agy', '--settings', '/state/settings/wc-a/b.json', '--add-dir', dir, '--dangerously-skip-permissions']);
   assert.equal(result.toolFiles.dir, dir);
   assert.deepEqual(result.toolFiles.files.map(file => file.path), [path.join(plugin, 'plugin.json'), path.join(plugin, 'mcp_config.json')]);
   assert.equal(result.toolFiles.files[0].text, JSON.stringify({ name: 'wheelchair-project', version: '1' }, null, 2) + '\n');

@@ -69,7 +69,7 @@ module.exports = {
         { path: path.join(plugin, 'mcp_config.json'), text: JSON.stringify({ mcpServers: servers }, null, 2) + '\n' },
       ] };
     }
-    return { loaded: c.loadedTools(Object.keys(servers), context.mcp, context.mount, context.replaceEntries), ...(warnings.length ? { warnings } : {}), ...(toolFiles ? { toolFiles } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(toolFiles ? ['--add-dir', toolFiles.dir] : []), ...(session.permission_mode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--mode', 'auto']), ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
+    return { loaded: c.loadedTools(Object.keys(servers), context.mcp, context.mount, context.replaceEntries), ...(warnings.length ? { warnings } : {}), ...(toolFiles ? { toolFiles } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(toolFiles ? ['--add-dir', toolFiles.dir] : []), '--dangerously-skip-permissions', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('? for shortcuts') && !onboarding.some(s => pane.includes(s)); },
