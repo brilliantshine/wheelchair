@@ -44,3 +44,7 @@ Also paste the exact `git diff` of your commit (not condensed).
 If the same check fails twice, stop and report rather than iterating.
 
 List each decision you made that this brief did not settle, one line each, naming the file or piece of the design it affected. Write 'none' if there were none.
+
+## Follow-up R6b
+
+R6's div-rule test passed on the old code because the brief's fixture positioned its block absolutely. R6b rewrites that fixture and proves the test fails with the old root box.
