@@ -255,6 +255,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | The network drops after the hub records a permit but before the reply, so the lead is told it was not recorded | Rare path; a retry is refused with `a permit request is already open`, which shows it exists | review-round-2 |
 | A handed-off thread loses `target_pr`, so the importing machine's done gate refuses the target PR | Rare path: handing off a thread mid-fix of someone else's PR | review-round-1 |
 | The author retargets the PR to another base while the thread is fixing it; the done gate then refuses it | Rare path: retargeting during a fix | review-round-1 |
+| The author turns the target PR into a draft right after the thread's push; the Finish wait (`pr-wait.py`) polls until its time limit before the lead stops and asks | Rare path: the author changes the PR's state inside the finish window; worst case a ten-minute wait, then the usual time-limit handling | verification-1 |
 
 ## Check Once Built
 
@@ -427,3 +428,4 @@ Build accepted: approval f7e8be3b-c689-4e48-87e4-e3985a40be81
 - 2026-11-23 — Choice: T1, thread.js permit card: head branch shown as a small "Branch: <head_branch>" line; header "Push to a pull request".
 - 2026-11-23 — Choice: T1, cards.js: a missing `author.login` is stored as an empty `pr_author`; no `title` field is stored on the card (views.js builds the Needs-you title).
 - 2026-11-23 — T1 accepted (band: self, tricky): diff read in full; mirrors the reach card; press runs checks 7/8 and assigns `target_pr` with no await between. Re-ran app-permit, app-reach, app-hub (130/130) and browser app-permit + app-reach (10/10). Handoff export omits permit cards (historyText default), harmless; handoff mid-fix is an Accepted Risk.
+- 2026-11-23 — Verification 1 (claude PASS, gpt FAIL): 2 gaps. Draft-after-push wait accepted as a rare path (Accepted Risks). Machine permit test not asserting the synchronous success relay: must-fix (Spec Validation bullet).
