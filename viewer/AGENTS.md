@@ -20,6 +20,9 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js screen`, the invisible-screen commands). |
 | `app/quiet.js` | The quiet-turn detector: who owes a report, the reminders to an agent and its starter, and the system `needs` card, run on the queue retry timer. |
 | `app/auto-merge.js` | The opt-in auto-merge run after a `check` card is accepted: gates, GitHub readiness re-check, the exact-head REST merge, the attempt record per head and the "Not merged automatically" `needs` card. |
+| `app/background.js` | Shared appearance metadata, bounded authenticated image requests, immutable image storage and queued cleanup; one hub writer per state directory. |
+| `pages/background-format.js` | Pure bounded image-container validation and GIF loop normalization shared by hub and local previews. |
+| `pages/background.js`, `pages/background.css` | Saved appearance renderer, token-scoped local preview ownership, Settings editor and opaque content surfaces; signed-in top-level pages only. |
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
 | `app/asides.js` | Aside records, prompts, turn lifecycle and graph handling. |
 | `app/handoff.js` | Thread handoffs: the export file format and its validator, history text, the export points and quiet test, the frozen guard, export itself, the handed-off banner, Download again and the `handoffs/` start-up sweep. |
@@ -76,7 +79,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 
 | Directory | What it holds |
 |---|---|
-| `test/` | The node and Playwright suites; `fixtures/` holds the graph files they open, `helpers/server.js` starts a server on a free port with its own cache root, a folder from `test-support/run-dir.js` under system temp, and `hooks/` holds fault seams selected by an environment variable, used only by tests |
+| `test/` | The node and Playwright suites; `fixtures/` holds the graph files they open, `helpers/server.js` starts a server on a free port with its own cache root, separate temporary hub state and cache directories from `test-support/run-dir.js`, and `hooks/` holds fault seams selected by an environment variable, used only by tests |
 
 ## Tests
 
@@ -86,3 +89,5 @@ npm --prefix viewer run test:browser  # Chromium and Firefox
 ```
 
 Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`), which removes them when the test process ends; never allocate from `os.tmpdir()` directly in a test.
+
+Each isolated test server receives its own `--state-dir`. Reusing an explicit state directory is supported only for sequential restart tests after stopping its previous server; concurrent hub writers sharing state are unsupported.
