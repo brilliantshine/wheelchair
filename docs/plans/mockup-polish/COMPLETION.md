@@ -220,3 +220,17 @@ npm --prefix viewer run test:browser   (one unsharded run, 21.4m)
 node --test viewer/test/*.test.js   (run after the browser suite; run alongside it, it hung past 10 minutes)
   # tests 935  # pass 932  # fail 3: harness timing (known, on main), app-quiet "6 message clears debt" and app-uploads-archive "stalled upload" (load flakes that passed alone earlier: 27/27, 3/3)
 ```
+
+### Remediation 7 — 2026-11-24
+
+Verification attempt 7 (commit `b3e1f8f4`): both verifiers (claude-opus-5-5 and gpt-6.2-sol) reported that on a wide mockup the comment box was off screen while the pin stayed visible. GPT also reported a positioned-gradient PNG gap, judged rare (Accepted Risks, verification-7). The lead answered fix. This is the second fix attempt on the wide-mockup gap. Task R7 (gpt standard / gpt-6.1-terra; Claude had no room, so the hub routed it to GPT), see `REMEDIATION-7.md`:
+
+| Gap | Fix (file:line) | Test |
+|-----|-----------------|------|
+| S2: on the picture page, after a tap on the right of a wide mockup, the comment box sat off screen to the left | `viewer/pages/picture.js:121-122` (the mockup wrap goes inside a `.picture-mockup-content` box as wide as the scrolled content); `viewer/pages/picture.css:20-22` (the comment box is `position: sticky; left: 0; width: 100cqw`, under thread.css's 480px cap) | `app-spot-comment.spec.js` wide-mockup test now also checks that `.spot-text`, Send and Cancel are inside the pane after the tap and after scrolling 200px further left. Pre-fix failure (box at x=-628) is pasted in `reports/R7.md`. Screenshot: `/tmp/wc-r7-11/picture.png` |
+
+Full validation on the merged tip (sub-lead):
+```
+npm --prefix viewer run test:browser   (one unsharded run, 16.9m)   EXIT 0   1486 passed, 34 skipped
+node --test viewer/test/*.test.js   # tests 935  # pass 934  # fail 1  (the known harness timing flake, also on main)
+```
