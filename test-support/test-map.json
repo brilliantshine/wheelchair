@@ -2,12 +2,14 @@
   {
     "glob": "protocol/**",
     "tests": [
-      "viewer/test/protocol-rules.test.js",
-      "viewer/test/server.test.js",
-      "viewer/test/app-settings.test.js",
-      "machine/test/aside-turns.test.js",
-      "machine/test/service.test.js",
-      "machine/test/char-lib-argv.test.js"
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
     ]
   },
   {
@@ -34,34 +36,92 @@
   {
     "glob": "connectors/**",
     "tests": [
-      "machine/test/connectors-contract.test.js"
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
     ]
   },
   {
-    "glob": "viewer/index.html",
+    "glob": "test-support/**",
     "tests": [
-      "viewer/test/browser.spec.js",
-      "viewer/test/touch.spec.js",
-      "viewer/test/pages.spec.js"
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
     ]
   },
   {
-    "glob": "viewer/doc.html",
+    "glob": "sensitivity/**",
     "tests": [
-      "viewer/test/render.spec.js",
-      "viewer/test/pages.spec.js"
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
     ]
   },
   {
-    "glob": "viewer/doc.js",
+    "glob": "codex/**",
     "tests": [
-      "viewer/test/render.spec.js"
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
     ]
   },
   {
-    "glob": "viewer/pages/markdown.js",
+    "glob": "install/**",
     "tests": [
-      "viewer/test/render.spec.js"
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "sudo-helper/**",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
+    ]
+  },
+  {
+    "glob": "install.sh",
+    "tests": [
+      "viewer-node",
+      "viewer-browser",
+      "machine",
+      "test-support",
+      "sensitivity",
+      "codex",
+      "install",
+      "sudo-helper"
     ]
   }
 ]
