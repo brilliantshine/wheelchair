@@ -256,6 +256,8 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 | A handed-off thread loses `target_pr`, so the importing machine's done gate refuses the target PR | Rare path: handing off a thread mid-fix of someone else's PR | review-round-1 |
 | The author retargets the PR to another base while the thread is fixing it; the done gate then refuses it | Rare path: retargeting during a fix | review-round-1 |
 | The author turns the target PR into a draft right after the thread's push; the Finish wait (`pr-wait.py`) polls until its time limit before the lead stops and asks | Rare path: the author changes the PR's state inside the finish window; worst case a ten-minute wait, then the usual time-limit handling | verification-1 |
+| In a single-branch clone, `wc.js git fetch origin <head branch>` leaves `origin/<head branch>` missing, so the prescribed merge fails | Rare path: the app never clones; project clones normally fetch `+refs/heads/*:refs/remotes/origin/*`; the merge fails loudly and changes nothing | verification-2 |
+| A tag with the same name as the PR's head branch makes the fetch pick the tag and the push fail with "matches more than one" | Rare path: tag and branch sharing a name; the push fails loudly and overwrites nothing | verification-2 |
 
 ## Check Once Built
 
@@ -432,3 +434,4 @@ Build accepted: approval f7e8be3b-c689-4e48-87e4-e3985a40be81
 - 2026-11-23 — Verification 1 (claude PASS, gpt FAIL): 2 gaps. Draft-after-push wait accepted as a rare path (Accepted Risks). Machine permit test not asserting the synchronous success relay: must-fix (Spec Validation bullet).
 - 2026-11-23 — Choice: R1-1, machine/test/service.test.js: the 200 hub answers after a 100 ms delay and the test asserts the spool is empty while the request is in flight (polls `hub.calls` every 1 ms with no deadline), then again after the reply.
 - 2026-11-23 — R1-1 accepted (band: scout): new test `permit is relayed synchronously and returns the hub's answer` passes (re-run by me, 3/3 permit tests). Mutation (permit out of the relay condition) fails it at the in-flight spool check. The 422 half was not mutation-run, but by reading the code a spooled 422 keeps its spool file, so the zero-spool assertion would catch it. The unbounded poll would hang rather than fail only if a regression also stopped delivery; minor.
+\n- 2026-11-23 — Verification 2 (claude PASS, gpt FAIL): 3 gaps. Single-branch clone and tag/branch name clash accepted as rare paths (Accepted Risks). The R1-1 test's unbounded wait hangs instead of failing if the machine answers 503 without contacting the hub: must-fix (second fix attempt for the machine relay test gap).\n
