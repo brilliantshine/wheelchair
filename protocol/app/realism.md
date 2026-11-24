@@ -13,7 +13,7 @@ How likely a problem must be before it is chased. It applies in every plan mode.
   writes; unusual screen layouts or versions the tool does not ship.
 - **Always fixed, however rare**: secret or token leaks, permission or sandbox bypass,
   building the wrong thing, anything a Spec validation command checks, silent loss of
-  the user's work in normal use.
+  the user's work in normal use, breaking the project's CONTRIBUTING.md in this change.
 - **Unsure**: report it as normal use and say why it might be rare. The judge decides: the
   lead for review findings and for its own verifiers; the sub-lead for build verification.
 - **Pulled-back items**: a finding or gap about an item the user pulled back from Deferred is
