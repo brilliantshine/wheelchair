@@ -38,5 +38,7 @@ with headless Chromium via Playwright and read the PNG. If no browser is availab
 in your result and carry on.
 
 Post a `result` with task `mockups` listing each file, screen and state, and width x height.
+
+A spot comment's x and y are in the mockup's own pixels (from its top-left); render the file to see what sits there before changing it.
 Wait for revision `message`s from the lead; answer each with new versions and a new `result`.
 Never talk to the user or post shown cards.

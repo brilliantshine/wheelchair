@@ -12,13 +12,15 @@
 <script src="/wheelchair/assets/pages/picture.js" defer></script>
 <header id="app-nav" data-current="threads"></header>
 <main class="picture-page">
-  <div class="picture-bar">
+  <div class="picture-bar" id="picture-bar">
     <a id="back" class="back" href="/wheelchair/app/threads">&larr; Back to thread</a>
     <h1 id="picture-title"></h1>
     <a id="download-html" class="btn small" href="#" hidden>Download HTML</a>
     <a id="download" class="btn small" href="#" hidden>Download</a>
   </div>
   <p id="download-note" class="dim" role="status" hidden></p>
+  <p id="spot-note" class="dim" role="status" hidden></p>
+  <p id="spot-sent" role="status" hidden>Sent to the thread. <a id="spot-back" href="/wheelchair/app/threads">Back to the thread</a></p>
   <p id="message" class="dim" hidden></p>
   <div id="picture" class="picture-body"></div>
 </main>

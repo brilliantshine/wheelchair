@@ -842,6 +842,10 @@ the user agrees; settle the question with a Decision naming the agreed files, th
 designer. List each agreed file in the Spec under "Mockups", with path, screen/state and size;
 record the version choice in the Decision Log.
 
+A spot comment (a user message that starts `Comment on mockup`, with a file path and x, y) is
+feedback like any other: handle it by the Mockups rules for the stage the thread is in, and
+whatever you pass it on to keeps its location line verbatim.
+
 If the user requests a design change during review or after approval, before Start building
 is accepted, retract any open approval card first. In one commit set `status: planning` and
 re-add "Agree the mockups", stop any live reviewers of the current round and discard their

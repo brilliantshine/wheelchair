@@ -450,3 +450,15 @@ iframe.mockup-frame { display: block; position: absolute; top: 0; left: 0; borde
   body:not(.aside-open) .shell.on-thread.side-collapsed { grid-template-columns: 220px minmax(0, 1fr) 44px; }
   body:not(.aside-open) .shell.on-thread.list-collapsed.side-collapsed { grid-template-columns: 44px minmax(0, 1fr) 44px; }
 }
+/* Comment on a spot: a transparent layer over the mockup, a pin, and a small box under it. */
+.mockup-links { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.spot-layer { position: absolute; inset: 0; z-index: 2; cursor: crosshair; background: transparent; outline: 2px dashed var(--accent, #1f6feb); outline-offset: -2px; touch-action: manipulation; }
+.spot-layer.inset { inset: 1px; }
+.spot-layer[hidden], .spot-box[hidden], .spot-pin[hidden] { display: none; }
+.spot-layer.pending { cursor: default; opacity: .7; }
+.spot-pin { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #e5484d; border: 2px solid #fff; box-shadow: 0 0 0 1px #0006; pointer-events: none; box-sizing: border-box; }
+.spot-box { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-width: 480px; }
+.spot-box .spot-text { width: 100%; box-sizing: border-box; font: inherit; }
+.spot-box .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.spot-error { color: var(--bad, #c62828); font-size: 13px; }
+.spot-btn { white-space: nowrap; }

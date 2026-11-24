@@ -155,6 +155,27 @@
   }
   function safeUrl(u) { return /^https?:\/\//i.test(String(u)) ? String(u) : '#'; }
 
+  // Collin's own message to the lead: the composer's path, shared by the composer and spot comments.
+  // Sends it, then shows the pending bubble; the caller refreshes the chat.
+  async function sendAsUser(message) {
+    const seen = humanCount(message);   // counted before sending: the reply may lag the transcript
+    await post(T + '/messages', { text: message });
+    pending.push({ text: message, seen });
+  }
+  // A mockup's "Comment on a spot" button. Its drafts are kept outside the card's DOM (WCDiagram), keyed by card and file.
+  function spotButton(frame, card, plan, graph, width, height, title) {
+    const btn = window.WCDiagram.spot(frame, frame, { plan, graph, width, height, title }, {
+      key: card.id + '|' + graph,
+      canSend: canSendNow,
+      send: async (text) => {
+        const why = cantSendWhy();
+        if (why) throw new Error(why);
+        await sendAsUser(text);
+        sigs.chat = null; await poll(); render();
+      },
+    });
+    return btn;
+  }
   async function post(path, body) {
     const res = await fetch(path, {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -187,6 +208,12 @@
   function leads() { return thread().sessions.filter((s) => s.role === 'lead'); }
   function frozen() { return !!(thread().handed_off || thread().handoff_op); }
   function liveLead() { return leads().some((s) => s.live); }
+  // The composer's own test for whether a message can go: the Send button and the spot-comment buttons share it.
+  function canSendNow() { return liveLead() && !thread().archived && !frozen(); }
+  function cantSendWhy() {
+    const t = thread();
+    return t.archived ? 'the thread is archived' : frozen() ? 'the thread is being handed off' : !liveLead() ? "the lead isn't running" : '';
+  }
   // Mid-turn: a delivered message the lead has not finished answering.
   function leadWorking() { return leads().some((s) => s.live && s.ready && s.turn_ended === false); }
 
@@ -1305,6 +1332,10 @@
         // An archived thread's worktree is gone: the graph page draws the committed JSON the hub reads from the branch, read-only.
         if (thread().archived) box.appendChild(el('p', 'dim diagram-note', 'Diagram kept on branch ' + (thread().branch || '')));
         window.WCDiagram.draw(card, box, { id: id, archived: thread().archived, worktree: thread().worktree }, formCache);
+        if (card.format === 'mockup') {
+          const m = box.querySelector('.mockup-box');
+          if (m) bar.appendChild(spotButton(m, card, card.plan, card.graph, card.width, card.height, card.title));
+        }
         break;
       }
       case 'image': {
@@ -1324,7 +1355,10 @@
         if (!thread().slug) mock.appendChild(el('p', 'dim', 'Mockup not found'));
         else {
           window.WCDiagram.mockup({ plan: thread().slug, graph: card.mockup.graph, width: card.mockup.width, height: card.mockup.height, title: 'Mockup: ' + card.title }, mock, { id: id, archived: thread().archived, worktree: thread().worktree });
-          const l = el('a', 'btn small', 'Open full size'); l.href = pictureHref(card); mock.appendChild(l);
+          const l = el('a', 'btn small', 'Open full size'); l.href = pictureHref(card);
+          const m = mock.querySelector('.mockup-box');
+          if (m) { const row = el('div', 'mockup-links'); row.append(l, spotButton(m, card, thread().slug, card.mockup.graph, card.mockup.width, card.mockup.height, card.title)); mock.appendChild(row); }
+          else mock.appendChild(l);
         }
         const halves = el('div', 'image-halves'); halves.append(built, mock); pair.appendChild(halves); box.appendChild(pair);
         break;
@@ -1580,12 +1614,14 @@
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     else restorePlace(place);
-    // (Slot for later per-render passes that touch kept card nodes, e.g. showing or hiding buttons in place.)
+    // Spot-comment buttons follow the composer's eligibility in place (never part of a card's signature).
+    const sendOk = canSendNow();
+    document.querySelectorAll('#chat .spot-btn').forEach((b) => { b.style.visibility = sendOk ? '' : 'hidden'; });
     syncJump();
     const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
     queuedNote.hidden = queuedTotal === 0;
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
-    const canSend = liveLead() && !t.archived && !frozen();
+    const canSend = canSendNow();
     msgEl.disabled = !canSend || uploading; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
     msgEl.placeholder = canSend ? 'Message the lead' : (t.archived ? 'Archived' : 'No live lead');
   }
@@ -1674,9 +1710,8 @@
         } catch (e) { throw new Error('Upload failed: ' + e.message); }
       }
       const message = [text, paths.map((path) => '[attached: ' + path + ']').join('\n')].filter(Boolean).join('\n\n');
-      const seen = humanCount(message);   // counted before sending: the reply may lag the transcript
-      await post(T + '/messages', { text: message });
-      pending.push({ text: message, seen }); msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
+      await sendAsUser(message);
+      msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
       sigs.chat = null; await poll(); render();
     } catch (e) { showError(e.message.startsWith('Upload failed:') ? e.message : 'Message not sent: ' + e.message); }
     finally { uploading = false; renderAttachments(); render(); }
