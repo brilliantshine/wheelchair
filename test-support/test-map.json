@@ -11,6 +11,12 @@
     ]
   },
   {
+    "glob": "docs/plans/kimi-code/samples/**",
+    "tests": [
+      "viewer/test/app-kimi-hub.test.js"
+    ]
+  },
+  {
     "glob": "docs/plans/openrouter-harness/samples/**",
     "tests": [
       "viewer/test/app-openrouter-hub.test.js",
