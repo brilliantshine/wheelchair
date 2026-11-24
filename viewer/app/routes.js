@@ -557,7 +557,8 @@ async function handleThreads(hub, request, response, url, bits, body) {
     return send(response, 200, { threads, revoke_notices });
   }
   if (bits.length === 1 && request.method === 'POST') {
-    const thread = await hub.createThread(body);
+    const { _assistant_title, ...browserInput } = body;
+    const thread = await hub.createThread(browserInput);
     return send(response, 201, { ...thread, sessions: thread.sessions.map(publicSession) });
   }
   if (!bits[1]) throw appError(404, 'route not found');
