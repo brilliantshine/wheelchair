@@ -1,6 +1,6 @@
 ---
 slug: faster-verification
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-23
 ---
 
@@ -511,3 +511,5 @@ Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
 - 2026-11-23 — Choice: T1, test-map.json: added `machine/test/pi.test.js` to the OpenRouter samples entry and a `connectors/** -> machine/test/connectors-contract.test.js` entry; front-end map seeded with four entries (index.html, doc.html, doc.js, pages/markdown.js), the rest fall back.
 - 2026-11-23 — T4 accepted (band: scout). Sub-lead removed a dead `hubResponseProduced` flag the worker added (never set, so its assertion was vacuous); the worker's report said "none" for choices.
 - 2026-11-23 — Choice: T4, app-harnesses.test.js: local `withTimeout` helper around an async block, label "Harness cancellation route and machine requests"; `thirdCall` resolves as soon as the third call is recorded.
+- 2026-11-23 — Sub-lead edit: verifier.md "(always full)" reworded to "a suite that only runs whole (one runner script, never narrowed to files)"; the picker prints no such mark.
+- 2026-11-23 — Full validation: full run on 87b61340 failed machine (baseline on main: win.test.js needs wslpath; win-tool-proxy hangs) and viewer-browser (2 load flakes that passed on re-run; similar flakes on main). Evidence in COMPLETION.md. Verifying.

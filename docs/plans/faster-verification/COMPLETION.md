@@ -1,0 +1,111 @@
+---
+slug: faster-verification
+date: 2026-11-23
+implemented-by: "T1 standard gpt-6.1-terra; T2 light gpt-6-luna; T3 standard gpt-6.1-terra; T4 light gpt-6-luna; T5 standard claude-sonnet-5-5; integration fixes by the sub-lead (claude-opus-5-5)"
+verified-by: []
+---
+
+# Completion Report — Faster verification checks
+
+Written for a hostile reviewer: every claim checkable, no claim without evidence.
+
+## Spec coverage
+
+| Spec item | Origin | Implemented at (file:line) | Validated by |
+|-----------|--------|----------------------------|--------------|
+| S1 picker CLI (`--base`, `--head`, `--full`, `--json`), exit 1 on bad base | this run | `test-support/pick-tests.js:10-19,48,103-107` | `test-support/test/pick-tests.test.js:34`; `--base nonsense` exit 1 (below) |
+| S1 suite table, full commands as in AGENTS.md | this run | `test-support/pick-tests.js:20-28` | `pick-tests.test.js:32` (`--full` gives 8 suites); output below |
+| S1 rule 0 deletions and renames, head paths only | this run | `test-support/pick-tests.js:30,33,49-54,59` | `pick-tests.test.js:25,29,30` |
+| S1 rule 1 changed test selects itself | this run | `test-support/pick-tests.js:59` | `pick-tests.test.js:25` |
+| S1 rule 2 imports across both components, basename prefix | this run | `test-support/pick-tests.js:61-75` | `pick-tests.test.js:30,36` |
+| S1 rule 3 test-map.json | this run | `test-support/pick-tests.js:55,76-80`; `test-support/test-map.json` | `pick-tests.test.js:31,35` |
+| S1 rule 4 fan-out files | this run | `test-support/pick-tests.js:81-86` | `pick-tests.test.js:32` |
+| S1 rules 5–6 fallback; front-end only through the map | this run | `test-support/pick-tests.js:87-94` | `pick-tests.test.js:33,34,37` |
+| S1 rule 7 nothing selected | this run | `test-support/pick-tests.js:95-104` | `pick-tests.test.js:34`; docs-only scratch commit (below) |
+| S2 full-run.sh | this run | `test-support/full-run.sh:5-29` (usage, root, dirty refusal), `:31` (`WHEELCHAIR_FULL_RUN=1`), `:33-46` (summary, per-suite logs), `:48-66` (order: browser first), `:71` exit | Full run below; usage and dirty-tree exit 2 (T2 report and sub-lead re-run) |
+| S3 browser workers | this run | `test-support/browser-workers.js:7-9` (`chooseWorkers`), `:11-31` (stale files), `:33-42` (register/unregister), `:44-57` (`decide`, once, in main process, env carry); `viewer/playwright.config.js:8-13` | `test-support/test/browser-workers.test.js:10,17,25,32`; worker-count runs (below) |
+| S4 flaky harness test | this run | `viewer/test/app-harnesses.test.js:298-330` | 10x loop under load (below) |
+| S5.0 opt-in and handshake | this run | `AGENTS.md:76-87`; `protocol/app/lead.md:116`; `protocol/app/sub-lead.md:226-228,247-248`; `protocol/app/verifier.md:44-52`; `protocol/app/worker.md:38` | `node --test viewer/test/protocol-rules.test.js` |
+| S5.1 Spec validation commands | this run | `protocol/app/lead.md:239-243` | read |
+| S5.2 comparing a failure with main | this run | `protocol/app/verifier.md:54-65` | read |
+| S5.3 verifier runs picked commands | this run | `protocol/app/verifier.md:44-52` | read |
+| S5.4 picker base and comparison commit | this run | `protocol/app/lead.md:130-137,715,726-729`; `protocol/app/sub-lead.md:247-252` | read |
+| S5.5 sub-lead full run, gate, baseline | this run | `protocol/app/sub-lead.md:226-228,252-254,272-279` | read |
+| S5.6 lead full run before push; Covered; baseline.txt | this run | `protocol/app/lead.md:116-130,159-160,526-533,726-729` | read |
+| S5.7 workers | this run | `protocol/app/worker.md:38-40` | read |
+| S5.8 AGENTS.md and CONTRIBUTING.md | this run | `AGENTS.md:28,76-87`; `CONTRIBUTING.md:75-78` | read |
+
+## Deviations from plan
+
+- S1 rule 6 names `viewer/app/pages/**`; the tree's pages live in `viewer/pages/`. The picker treats both, viewer `*.html`/`*.css` and `viewer/doc.js` as front-end (`pick-tests.js:89`).
+- S1 rule 5: every `*.md` file (not only root ones) and `.gitignore` select nothing unless mapped, matching rule 5's last sentence.
+- S3: a run without `WHEELCHAIR_FULL_RUN=1` always takes 2, even if it inherits a full run's `WHEELCHAIR_BROWSER_WORKERS` (`browser-workers.js:45-47`); stricter than the Spec's wording, same intent.
+- This build ran under the installed rules, so the sub-lead ran full validation itself before verification, as those rules require.
+
+## Routers
+
+- `AGENTS.md`: the `test-support/` row now names `pick-tests.js` with `test-map.json`, `full-run.sh` and `browser-workers.js`; new `## Test picker and full run` section (the S5.0 opt-in heading).
+- `viewer/AGENTS.md`: unchanged; `viewer/playwright.config.js` already belonged to the viewer and only changed how it picks workers.
+
+## Validation evidence
+
+All on the hearth machine, 2026-11-23, with other threads' test runs live (load average 9–27).
+
+**test-support suite** (`node --test test-support/test/*.test.js`, commit 87b61340): `# tests 23 / # pass 23 / # fail 0`.
+
+**Protocol rules** (`node --test viewer/test/protocol-rules.test.js`, after the last protocol edit): `# pass 44 / # fail 0`.
+
+**Picker, docs-only** (scratch clone, one commit editing `docs/plans/faster-verification/IDEA.md`):
+```
+$ node test-support/pick-tests.js --base HEAD~1 --head HEAD --json
+{ "changed": [ "docs/plans/faster-verification/IDEA.md" ], "suites": [] }
+```
+**Picker against this branch's merge-base** (7b93c1ae):
+```
+node --test viewer/test/*.test.js
+npm --prefix viewer run test:browser
+node --test machine/test/aside-turns.test.js machine/test/char-lib-argv.test.js machine/test/service.test.js
+node --test test-support/test/*.test.js
+```
+(viewer whole: `viewer/playwright.config.js` changed; machine narrowed to the protocol readers; test-support whole.)
+
+**S4 loop under load**: `for i in $(seq 10); do node --test viewer/test/app-harnesses.test.js || exit 1; done` while `node --test viewer/test/*.test.js` ran concurrently: `loop exit 0`, last run `# pass 20 / # fail 0`. (The load run itself: 934/935, one failure in an unrelated graph kill test.)
+
+**S3 worker counts** (Playwright's "Running N tests using K workers"; `nproc` 16):
+- Full run alone (the full run below): `Running 1466 tests using 6 workers`.
+- `WHEELCHAIR_FULL_RUN=1` run while that full run was live: `Running 6 tests using 2 workers`; registry held only the full run's pid (`2201540`).
+- Run without the variable while it was live: `Running 6 tests using 2 workers`; no registry file for it.
+- Inherited `WHEELCHAIR_BROWSER_WORKERS=6` without `WHEELCHAIR_FULL_RUN`: `Running 4 tests using 2 workers`.
+- Full run started while a non-full run was live gets 6: T3 report (`reports/T3.md`, "Running 6 tests using 6 workers" during an ordinary 2-worker run).
+- Registry directory empty after runs end.
+
+**Full run** (`bash test-support/full-run.sh <scratch>/full1`) — summary.txt:
+```
+commit 87b61340fa27cb20e48cb553c849367eb90378bf
+suite viewer-browser exit 1
+suite viewer-node exit 0
+suite machine exit 1
+suite test-support exit 0
+suite sensitivity exit 0
+suite codex exit 0
+suite install exit 0
+suite sudo-helper exit 0
+```
+Commits after 87b61340 change only `protocol/app/verifier.md` (one phrase), this file and PLAN.md.
+
+Failures, each checked by S5.2's method (scratch clone at merge-base 7b93c1ae, failing files only):
+
+- **machine** — already on main. `machine/test/win.test.js` fails 16 tests and `win-tool-proxy`/`win-tool-ready` 2 more, alone and in the suite, with errors `spawnSync wslpath ENOENT` and an `ENOENT` open: this Linux machine has no `wslpath`. Branch and main, same five files (`service`, `switch-http`, `win`, `win-tool-proxy`, `win-tool-ready`): both `# tests 189 / # pass 171 / # fail 18`, the same 18 test names, error lines identical after stripping temp paths and numbers. In both full machine runs, `win-tool-proxy.test.js` also hung in the whole suite (idle for 30+ minutes, waiting in `epoll`) and was stopped by hand. Another thread's run on an older main had the same file hung for 4h40m at the same time. This branch changes nothing under `machine/`.
+- **viewer-browser** — 2 of 1466 failed, at 6 workers with load ~20: `[chromium] app-threads.spec.js:414 desktop › queued bubbles keep the queue order across tabs` and `[firefox] app-settings.spec.js:45 desktop › six sections, kept across a reload through the hash` (34 did not run after them). Re-runs on the branch: both tests `--repeat-each 3` at 2 workers, 18/18 passed; both whole files at `--workers 6` with load ~17, 242/242 passed (Playwright used 4). The same files on main at `--workers 6` with load ~13: 211 passed, 1 failed (`[firefox] app-settings.spec.js:99 editing a table cell saves`). These browser specs fail under machine load on main too. An earlier overlapping run on the branch (during the full run's Node suites, `--repeat-each 2`) reproduced the same two failures; the quiet re-run did not.
+
+## Known gaps / residual risks
+
+- test-map.json is seeded, not complete (Spec rule 3 allows this): most `viewer/pages/*` files fall back to both whole viewer suites. Picks are larger, never smaller.
+- Picker paths in printed commands are not shell-quoted; the tree has no paths with spaces.
+- `decide()` itself has no unit test; its once-only and full-only behaviour is shown by the worker-count runs below.
+- The registration race between two full runs starting in the same instant is in Accepted Risks.
+- The full run cannot exit 0 on this machine at any commit, main included, while `machine/test/win.test.js` needs `wslpath`; the S2 baseline exception (failures confirmed on main and written down) is what lets a full run pass here.
+- Six browser workers mean more load per run. The two browser failures above passed on re-run and similar specs fail on main under load, but a busy machine may make full runs flake more than at 2 workers. Worth watching in the first threads that use it.
+- `win-tool-proxy.test.js` can hang inside the whole machine suite (seen on main too), which stalls a full run until it is stopped. Not addressed here (Spec non-goal: individual tests).
+
+## Remediation rounds

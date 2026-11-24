@@ -53,7 +53,7 @@ the comparison commit and the picked commands.
 
 **Comparing a failure with main** (same condition). Re-run only the failing test files at the
 comparison commit your brief names (default: `git merge-base origin/<default branch> HEAD`),
-never the whole suite. For a suite the picker marks "(always full)" (one runner script) the
+never the whole suite. For a suite that only runs whole (one runner script, never narrowed to files) the
 suite command is the unit (for wheelchair's sudo-helper, whichever of its two commands failed), and the same
 failure means the same failing check name and message; a failure with no check name or message,
 or in a different command, is never already on main. Get that tree as its own clone in a scratch
