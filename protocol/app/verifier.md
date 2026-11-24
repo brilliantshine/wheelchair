@@ -45,8 +45,9 @@ For each spec item (or each thing the reported problem says is wrong):
 naming a picker command (taking a base commit) and a full-run command. Use this
 paragraph and the next only when that heading exists **and** your brief gives a picker base and
 the line `Full run: by the starter`; otherwise run the commands as written, as before. Run every
-Spec validation command as written, plus the commands the picker prints for the picker base
-(`--base <picker base> --head <the commit you check>`). Never run the full-run command, or a
+Spec validation command as written, plus the commands the picker prints when you run the
+picker command the project's `AGENTS.md` names with the picker base, against the commit you
+check (in wheelchair: `--base <picker base> --head <the commit you check>`). Never run the full-run command, or a
 whole suite that neither the picker nor a Spec validation command names: a Spec command always
 runs as written, even when it is a whole suite. A whole suite the picker selects is skipped,
 because the starter's full run covers it on the same commit; say so in your report, name the

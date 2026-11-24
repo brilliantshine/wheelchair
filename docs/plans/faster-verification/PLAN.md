@@ -487,6 +487,8 @@ Filled by Stage 3. One row per worker brief.
 | T5 | tricky — S5 role rules, AGENTS.md, CONTRIBUTING.md | protocol/app/{lead,sub-lead,verifier,worker}.md, AGENTS.md, CONTRIBUTING.md, protocol/AGENTS.md | standard, claude-sonnet-5-5 | wc-8bfbebc2e0d5-worker-5 | `node --test viewer/test/protocol-rules.test.js`; S5 coverage table | done |
 | R1 | Remediation 1, gap S1 rule 3: map every docs/ fixture tests read | test-support/test-map.json | light, gpt-6-luna | wc-8bfbebc2e0d5-worker-6 | JSON parses; test-support suite; scratch-clone pick per new glob | done |
 | R2 | Remediation 1, gaps S5.1/S5.3, S5.5, S5.6 wording | protocol/app/{verifier,sub-lead,lead}.md | light, claude-haiku-5-5 | wc-8bfbebc2e0d5-worker-7 | protocol-rules test | done |
+| R3 | Remediation 2, map completeness audit + real-tree sample test | test-support/test-map.json, test-support/test/pick-tests.test.js (add only) | standard, gpt-6.1-terra | wc-8bfbebc2e0d5-worker-8 | JSON parses; test-support suite; reader table | dispatched |
+| R4 | Remediation 2, verifier.md picker flags; sub-lead.md summary before result | protocol/app/{verifier,sub-lead}.md | sub-lead (claude-opus-5-5) | — | protocol-rules test | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -526,3 +528,4 @@ Build accepted: approval 299c031b-af82-422d-be20-a69dc148f876
 - 2026-11-23 — Choice (R1, worker reported none; I listed 2): new kimi entry placed after `protocol/**`; graph reads in browser.spec.js left to the existing `docs/plans/*/graphs/**` entry.
 - 2026-11-23 — Full run on 381e4014 judged a pass under the lead's reading: every failure is on main (8 evening browser tests, 18 wslpath machine tests) or passes alone (2 browser, 2 viewer-node port race, 2 machine after the win-tool-proxy hang). Evidence in COMPLETION.md Remediation 1. Starting verification attempt 2.
 - 2026-11-23 — Verification 2 (Claude FAIL, GPT FAIL). Lead's per-gap answer: fix all three. Map audit: every entry lists every reader across all suites, including the shell suites; an entry that can't be made complete is removed so the fallback covers it ("when unsure, leave it to the fallback; a bigger pick is fine, a missed test is not"); add a real-tree sample test. Fix the verifier.md picker flags and the sub-lead.md summary-before-result order.
+- 2026-11-23 — R4 done by the sub-lead: verifier.md runs the picker command the project's AGENTS.md names (wheelchair's flags as the example); sub-lead.md step 4 pastes summary.txt into COMPLETION.md and commits before sending the result. protocol-rules 44/44.
