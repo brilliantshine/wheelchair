@@ -1,0 +1,58 @@
+[
+  {
+    "glob": "protocol/**",
+    "tests": [
+      "viewer/test/protocol-rules.test.js",
+      "viewer/test/server.test.js",
+      "viewer/test/app-settings.test.js",
+      "machine/test/aside-turns.test.js",
+      "machine/test/service.test.js",
+      "machine/test/char-lib-argv.test.js"
+    ]
+  },
+  {
+    "glob": "docs/plans/openrouter-harness/samples/**",
+    "tests": [
+      "viewer/test/app-openrouter-hub.test.js",
+      "machine/test/pi-login.test.js",
+      "machine/test/pi.test.js"
+    ]
+  },
+  {
+    "glob": "docs/plans/*/graphs/**",
+    "tests": [
+      "viewer/test/browser.spec.js"
+    ]
+  },
+  {
+    "glob": "connectors/**",
+    "tests": [
+      "machine/test/connectors-contract.test.js"
+    ]
+  },
+  {
+    "glob": "viewer/index.html",
+    "tests": [
+      "viewer/test/browser.spec.js",
+      "viewer/test/touch.spec.js"
+    ]
+  },
+  {
+    "glob": "viewer/app/doc.html",
+    "tests": [
+      "viewer/test/render.spec.js"
+    ]
+  },
+  {
+    "glob": "viewer/app/doc.js",
+    "tests": [
+      "viewer/test/render.spec.js"
+    ]
+  },
+  {
+    "glob": "viewer/app/pages/markdown.js",
+    "tests": [
+      "viewer/test/render.spec.js"
+    ]
+  }
+]
