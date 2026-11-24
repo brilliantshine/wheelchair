@@ -96,6 +96,46 @@ test.describe('assistant pop-up', () => {
     await expect(page.locator('.wc-asst-unread')).toBeVisible({ timeout: 15000 });
   });
 
+  test('keeps a draft until the first chat response arrives', async ({ page }) => {
+    const id = await turnOn(page);
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    let intercepted;
+    const requested = new Promise((resolve) => { intercepted = resolve; });
+    const errors = [];
+    const messages = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith(`/threads/${id}/messages`)) messages.push(request);
+    });
+    await page.route(`**/api/threads/${id}/chat`, async (route) => {
+      intercepted();
+      await held;
+      await route.continue();
+    });
+    try {
+      await page.goto(`${ctx.server.url}/app/threads`);
+      await requested;
+      await page.locator('.wc-asst-float').click();
+      const input = page.getByRole('textbox', { name: 'Message the assistant' });
+      const send = page.getByRole('button', { name: 'Send' });
+      await input.fill('A draft before loading');
+      await expect(send).toBeDisabled();
+      await input.press('Enter');
+      await send.evaluate((button) => button.click());
+      expect(errors).toEqual([]);
+      expect(messages).toHaveLength(0);
+      await expect(input).toHaveValue('A draft before loading');
+      release();
+      await expect(send).toBeEnabled();
+      const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${id}/messages`));
+      await send.click();
+      expect((await sent).postDataJSON()).toEqual({ text: 'A draft before loading' });
+    } finally {
+      release();
+    }
+  });
+
   test('keeps a pending message when earlier transcript text matches', async ({ page }) => {
     const id = await turnOn(page);
     await seedAssistant(id, [['human', 'yes', OLD]]);

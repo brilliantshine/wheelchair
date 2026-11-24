@@ -51,7 +51,7 @@
   const box = el('div', 'wc-asst-box');
   const input = el('textarea', 'wc-asst-input'); input.rows = 1; input.placeholder = 'Message the assistant';
   input.setAttribute('aria-label', 'Message the assistant');
-  const send = el('button', 'wc-asst-send', '➜'); send.type = 'submit'; send.setAttribute('aria-label', 'Send');
+  const send = el('button', 'wc-asst-send', '➜'); send.type = 'submit'; send.disabled = true; send.setAttribute('aria-label', 'Send');
   box.append(input, send); form.append(box);
   panel.append(head, stopped, chat, errorEl, form);
   document.body.append(button, shade, panel);
