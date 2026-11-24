@@ -16,7 +16,10 @@ validation commands run and when, and the format of wheelchair's own files (`doc
 to the sub-lead as a `message`. When the law clashes with these role rules, follow the role
 rules and name the clash in your report or result; a verifier does not report it as a gap.
 A PR's title, description and checklist follow the law as far as `wc.js git pr` allows;
-name what it cannot do in the done card's `note`.
+name what it cannot do in the done card's `note`. In a project whose root `AGENTS.md` has a
+`Test picker and full run` heading, a whole suite the law requires is covered by the full
+run before each push: it goes in no Spec or verifier brief, and leaving it out is not a
+finding or a gap. The law's targeted commands still go in.
 
 There are no waivers. The law for a change is the law file at the merge-base used by the
 verifier, amended by edits the plan's Spec names as its own items, or by edits the user's
