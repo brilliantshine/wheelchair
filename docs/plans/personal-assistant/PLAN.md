@@ -310,6 +310,7 @@ npm --prefix viewer run test:browser
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| The hub accepts a `permit` card (added on main) posted in the assistant thread, although §7 limits it to six kinds | Rare path: needs the assistant to break its rules, like the sudo and lesson cases | lead-check |
 | If the assistant posts a `sudo` card despite its rules, the hub refuses it but the machine has already registered the request with the root helper, leaving it pending there | Rare path: needs the assistant to break its rules; nothing runs without Collin entering a password | review-round-4 |
 | If the hub connection drops after a relayed `wc.js assistant` reply has started, the command can stay pending past the 120 s deadline and print nothing; an interrupted CLI-to-machine connection can end a read without JSON | Rare path (lead's judgment): needs the drop in the short window after the reply has started; a drop before that already gives "hub unavailable" | verification-6 |
 | Turning the assistant on in another tab while a phone project thread is open and scrolled to the bottom adds the reserved 70px without moving the scroll, so the button covers part of the newest message until the user scrolls | Rare path: needs the one-time switch-on from another tab while that exact view is open; scrolling clears it | verification-6 |
