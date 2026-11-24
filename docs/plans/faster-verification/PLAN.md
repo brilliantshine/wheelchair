@@ -12,11 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: How are "the tests covering what changed" picked?
-- **Context:** MAP.md: names hint at coverage but imports, shared helpers, served pages and config fan out widely; no import graph or coverage exists.
-- **Options:** (a) a selector script: changed files -> tests from names, direct imports and a small hand-kept table, falling back to the full suite for config, helpers or anything unmapped; (b) agents pick tests by judgment; (c) a coverage-built map.
-- **Recommendation:** (a).
-
 ### Q2: Who does the one full run before a push?
 - **Context:** Today the sub-lead runs full validation and each verifier runs the Spec's commands (usually full suites) again; re-checks repeat it.
 - **Options:** (a) the session about to push or hand off (sub-lead at build end, lead for small fixes/repairs) runs the full suite on the exact commit in the background; verifiers run only targeted tests and read that log; (b) the last verifier runs it on the final commit.
@@ -44,6 +39,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 2 | The flaky harness test (viewer/test/app-harnesses.test.js:298-319) stops relying on a 1000 ms wall-clock deadline: it asserts the route answers while the never-resolving machine request is still pending, with a generous safety timeout only. | MAP.md: the never-resolving promise already proves non-blocking; the deadline only measures load. | defaulted |
 | 3 | A failure seen during a check is compared with main by re-running only the failing test files on main, never the whole suite. | The whole-suite comparison was most of the doubled time. | defaulted |
 | 4 | Browser workers: a run that finds no other cooperating browser run active (machine-wide lock in the test-run area) and a 1-minute load average below half the cores uses up to 6 workers; otherwise 2. An explicit --workers still wins. | Keeps S7's cap for concurrent runs (Constraint); 16 cores leave room solo. Collin offered lock or load check; both together cover non-cooperating runs. | defaulted |
+| 5 | Tests are picked by a selector script: changed files -> tests from names, direct imports and a small hand-kept table; config, shared helpers or anything unmapped falls back to the full suite. | Predictable, errs toward running more. | user |
 
 ## Spec
 
