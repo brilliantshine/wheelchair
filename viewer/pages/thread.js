@@ -1590,7 +1590,7 @@
   });
   msgEl.addEventListener('paste', (ev) => { if (!thread().assistant && ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
   composerEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
-  composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); if (!thread().assistant) addFiles(ev.dataTransfer.files, false); } });
+  composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); if (data && data.thread && !data.thread.assistant) addFiles(ev.dataTransfer.files, false); } });
   composerEl.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const text = msgEl.value.trim();

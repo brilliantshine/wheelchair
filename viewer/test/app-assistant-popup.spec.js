@@ -51,8 +51,30 @@ test.describe('assistant pop-up', () => {
     await expect(page.locator('.wc-asst-float, .wc-asst-panel')).toHaveCount(0);
   });
 
+  test('turning off removes an open panel without reloading', async ({ page }) => {
+    await turnOn(page);
+    await page.goto(`${ctx.server.url}/app/threads`);
+    await page.locator('.wc-asst-float').click();
+    await expect(page.locator('.wc-asst-panel')).toBeVisible();
+    await setting(page, 'off');
+    await expect(page.locator('.wc-asst-float, .wc-asst-panel')).toHaveCount(0, { timeout: 15000 });
+  });
+
   test.describe('phone', () => {
     test.use({ viewport: { width: 390, height: 844 } });
+    test('closed button clears the project composer', async ({ page }) => {
+      await turnOn(page);
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.timedTranscript(made.id, Array.from({ length: 30 }, (_, i) => ['human', 'A longer conversation ' + i, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()]));
+      await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+      await page.locator('#composer').scrollIntoViewIfNeeded();
+      const button = page.locator('.wc-asst-float');
+      await expect(button).toBeVisible();
+      const b = await button.boundingBox();
+      const c = await page.locator('#composer').boundingBox();
+      expect(b.y + b.height).toBeLessThanOrEqual(c.y);
+    });
+
     test('opens as a sheet covering nearly the screen, with a close control', async ({ page }) => {
       const id = await turnOn(page);
       await seedAssistant(id, [['assistant', 'Hello from the assistant', OLD]]);

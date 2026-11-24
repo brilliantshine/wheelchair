@@ -182,6 +182,12 @@
     try {
       const res = await fetch(T + '/chat');
       const out = await res.json().catch(() => ({}));
+      if (res.status === 404 && (out.detail || out.error) === 'the assistant is off') {
+        if (poller) poller.stop();
+        button.remove(); shade.remove(); panel.remove();
+        isOpen = false;
+        return;
+      }
       if (!res.ok) throw new Error(out.detail || out.error || 'http ' + res.status);
       data = out; newest = newestAt(out);
       if (isOpen) { setSeen(newestAny(out)); showError(''); }

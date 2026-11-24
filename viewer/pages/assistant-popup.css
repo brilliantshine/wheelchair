@@ -41,6 +41,7 @@
 .wc-asst-send { background: var(--accent); color: var(--accent-ink); border: 0; font-weight: 700; }
 @media (max-width: 899px) {
   .wc-asst-float { right: 16px; bottom: 92px; }
+  html:has(.shell.on-thread) .wc-asst-float { bottom: calc(var(--composer-h, 130px) + 12px); }
   .wc-asst-shade { display: block; position: fixed; inset: 0; z-index: 45; background: #0008; }
   .wc-asst-panel { inset: 12px 8px 8px; width: auto; height: auto; max-height: none; }
 }
