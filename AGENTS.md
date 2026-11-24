@@ -25,7 +25,7 @@ The root sudo helper is the other reach outside the clone and the only part that
 | `protocol/` | [AGENTS.md](protocol/AGENTS.md) | stages, writing and diagram rules, templates |
 | `sensitivity/` | [AGENTS.md](sensitivity/AGENTS.md) | dial block writer |
 | `install/` | — | `guard.sh` canonical-clone guard; `unseen.py` old hook removal; `test/run.sh` installer fixtures. Temp homes and command shims only; real harness and machine state stay untouched |
-| `test-support/` | — | `run-dir.js`: every temp folder a machine or viewer test makes lives in one per-process folder, removed at exit and swept when its owner is gone; smoke and Mac CI checks |
+| `test-support/` | — | `run-dir.js`: every temp folder a machine or viewer test makes lives in one per-process folder, removed at exit and swept when its owner is gone; `pick-tests.js` with `test-map.json` (test picker), `full-run.sh` (full run), `browser-workers.js` (worker count); smoke and Mac CI checks |
 | `.github/workflows/macos.yml` | — | Mac CI job |
 | `connectors/` | [README.md](connectors/README.md) | per-tool connectors: manifests, machine and hub halves, registry |
 | `codex/` | [AGENTS.md](codex/AGENTS.md) | `preflight.sh` login check and model heads-up; `model.sh` GPT model pins; fixtures |
@@ -70,6 +70,18 @@ npm --prefix viewer run test:browser  # Chromium and Firefox; fails loudly if ei
 Run `./install.sh` only from the canonical clone; it and its two writers refuse linked worktrees and paths under `~/.local/state/wheelchair/worktrees` (exit 3 unless `WHEELCHAIR_ALLOW_WORKTREE=1`). From a worktree use `bash install/test/run.sh` instead. Leave the `node --test viewer/test/*.test.js` glob unquoted.
 
 **Never check the viewer by starting a server by hand.** Start your own isolated server with `--port` and `--cache-root` as in `viewer/test/helpers/server.js:72`. There is no cache-root environment variable.
+
+## Test picker and full run
+
+Verifiers and workers run the tests that cover a change; one full run covers each pushed commit.
+
+```bash
+node test-support/pick-tests.js --base <commit>   # prints the commands that cover base..HEAD; --head <commit>, --json
+bash test-support/full-run.sh <log-dir>           # every suite above except smoke, live and install.sh; writes <log-dir>/summary.txt
+```
+
+`summary.txt` starts with `commit <sha>`, then one `suite <name> exit <n>` line per suite. The
+role rules in `protocol/app/` use these two commands because this heading exists.
 
 There is no protocol document test suite; stages enforce their order and each stage's output is the next stage's input.
 
