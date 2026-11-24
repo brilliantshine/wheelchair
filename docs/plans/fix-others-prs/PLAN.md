@@ -1,6 +1,6 @@
 ---
 slug: fix-others-prs
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-23
 ---
 
@@ -64,6 +64,24 @@ Supported targets: an open PR in the same GitHub repository as the thread's `ori
 whose head branch is in that repository (not a fork), and whose base is the thread's
 default branch. Anything else is turned down and the old way (a replacement PR) is offered.
 
+### The flow
+
+```mermaid
+flowchart TD
+  A["Collin names someone's open pull request in chat"] --> B{"Lead looks: open, same repo, aimed at main, not a draft, not another thread's?"}
+  B -- no --> R["Say why; offer a replacement pull request (or stop for a draft)"]
+  B -- yes --> C["Permit card: Allow pushing to their pull request?"]
+  C -- "Don't allow or refused" --> R
+  C -- Allow --> D["App records the target; lead brings the pull request in and fixes it"]
+  D --> E["Check the fix (verifier)"]
+  E --> F{"Still open and not a draft, right before pushing?"}
+  F -- no --> Q["Stop and ask Collin"]
+  F -- yes --> G["Plain push to their branch"]
+  G -- "author pushed meanwhile" --> H["Bring in their changes, check again"] --> F
+  G -- accepted --> I["Wait until GitHub says ready"]
+  I --> J["Done card points at their pull request; never auto-merged"]
+```
+
 ### 1. The `permit` card (new, lead-only, shown)
 
 Fields (both required): `pr_url` (`https://github.com/<owner>/<repo>/pull/<n>`) and `why`
@@ -95,7 +113,9 @@ The hub copies onto the stored card: `pr_number`, `pr_title`, `pr_author` (login
 Shown (`viewer/pages/thread.js`, modelled on the reach card at :981-998): "Let this thread
 push its fix to **<pr_author>**'s pull request #<pr_number>: <pr_title>?", the `why`, the
 head branch in small text, and **Allow** and **Don't allow**. One answer only, like reach
-(:796). An open permit card counts in "Needs you": add `permit` to the kind list at `viewer/app/views.js:142`, with the shown title `Push to #<pr_number>?`.
+(:796). Answered, it shows "You picked Allow" / "You picked Don't allow", or "Allow failed:
+<reason>" when `allow_failed` is set, extending the reach branches of `answeredTag`
+(`thread.js:836-850`) and the tag condition at :1327 to `permit`. An open permit card counts in "Needs you": add `permit` to the kind list at `viewer/app/views.js:142`, with the shown title `Push to #<pr_number>?`.
 
 Press handling (`viewer/app/threads.js`, beside reach at :330). On `allow`, re-run checks
 7 and 8 and, in the same synchronous step with no `await` between the checks and the
@@ -161,12 +181,13 @@ PR's branch as in 'Fixing someone else's pull request'." Add that section:
   see (local work, what is on the PR, its state) with fitting options, such as carry on,
   push after a check, start a follow-up thread, or leave it. Do what Collin picks using
   the rules here and in "Making the pull request mergeable". This replaces that section's
-  steps 4 (merged at another commit), 5 and 9 for a target PR. Not a question: a restart
+  steps 4 (merged at another commit), 5 and 9 (After a restart) for a target PR. Not a question: a restart
   with an open `permit` card (keep waiting on it); a restart where an accepted `done`
   card's `head` equals local `HEAD` and `git status --untracked-files=no` is clean (carry
   on with step 10's restart rule only); a merge at the pushed commit (post `done` as in
-  that section's step 4); a problem reported after `done` (step 9 as usual, whose
-  `MERGED` stub uses the Stubs rule below).
+  that section's step 4); a problem reported after `done` (lead step 9, After done, as
+  usual, whose `MERGED` stub uses the Stubs rule below; its state check reads
+  `gh pr view <target url> --json state,isDraft`, and a draft is off the normal path).
 - **Bring it in:** `wc.js git fetch origin <head branch>`, then `wc.js git merge origin/<head branch>`
   (this also brings the default branch, as of the thread's start, into the PR; expected).
   Resolving conflicts is the normal path: edit the files and `wc.js git commit --paths
@@ -205,7 +226,7 @@ New or extended tests must cover:
 - Slug discovery: a thread with `target_pr` whose worktree gained a new `docs/plans/<slug>/` records no slug.
 - `viewer/test/app-auto-merge.test.js`: a target-PR done card with a passing check makes no merge, no notice and no branch deletion.
 - `machine/test`: a `permit` card is relayed synchronously and returns 503 with the unavailable text when the hub is down; never spooled.
-- `viewer/test/app-permit.spec.js` (new, Playwright): the card shows author, number, title and both buttons; pressing Allow shows it answered.
+- `viewer/test/app-permit.spec.js` (new, Playwright): the card shows author, number, title and both buttons; pressing Allow shows it answered; a card with `allow_failed` shows "Allow failed: <reason>".
 - `viewer/test/protocol-rules.test.js` passes with `permit` in `leadKinds` and the new section.
 
 ## Deferred
@@ -340,6 +361,9 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | "Step 9" names two different steps | upheld | Named "(After a restart)" and "lead step 9, After done" |
+| mechanics | major | Draft check too late for an after-done fix | downgraded (minor) | Worst case some wasted work before the pre-push question; fixed: after-done state check reads `isDraft` |
+| mechanics | minor | Permit card must show a failed Allow | upheld | §1 names the answered-tag change |
 
 ## Prior Work
 
