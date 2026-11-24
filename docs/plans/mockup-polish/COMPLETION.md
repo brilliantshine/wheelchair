@@ -2,7 +2,64 @@
 slug: mockup-polish
 date: 2026-11-23
 implemented-by: "claude standard (claude-sonnet-5-5) x3 workers; sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5
+  - round: 2
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5
+  - round: 3
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5
+  - round: 4
+    lane: claude / claude-opus-5-5
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 4
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 5
+    lane: claude / claude-opus-5-5
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 5
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 6
+    lane: claude / claude-opus-5-5
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 6
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 7
+    lane: claude / claude-opus-5-5
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 7
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 8
+    lane: claude / claude-opus-5-5
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 8
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 9
+    lane: claude / claude-opus-5-5
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 9
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 10
+    lane: claude / claude-opus-5-5
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 10
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 11
+    lane: claude / claude-opus-5-5
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
+  - round: 11
+    lane: gpt / gpt-6.2-sol
+    checks: claude standard / claude-sonnet-5-5 and gpt light/standard
 ---
 
 # Completion Report — Mockups that behave well in a thread
@@ -281,3 +338,12 @@ Full validation on the merged tip (sub-lead):
 npm --prefix viewer run test:browser   (one unsharded run, 16.6m)   EXIT 0   1500 passed, 34 skipped
 node --test viewer/test/*.test.js   # tests 935  # pass 934  # fail 1  (the known harness timing flake, also on main)
 ```
+
+### Verification attempt 11 — 2026-11-24: PASS
+
+Commit `1f3c422e`. Both verifiers passed: Claude (claude-opus-5-5) and GPT (gpt-6.2-sol).
+- Browser suite: 1500 passed, 34 skipped (GPT, one run). Claude's three shards hit one known `app-send-now.spec.js:84` load timeout, which passed on re-run (78 passed).
+- Unit suite: 934/935 in both runs. The one failure is the harness timing test, which also fails on main.
+- Both checked S1-S4 by hand at 390x844.
+
+Rare paths accepted over the build (PLAN.md Accepted Risks): verification-1, -3, -7, -8 and -10, five in all. Deferred from verification at the lead's choice: D3 and D4.

@@ -425,3 +425,4 @@ Build accepted: approval 0fa443cd-2221-4538-8537-32e849071195
 - 2026-11-24 — R10 attempt 1 (gpt light / gpt-6-luna) hit its fails-twice guardrail: its new test queried `#dead-lead`, which doesn't exist. Not merged. The verifier's log shows the trigger is the visible card swapped for a shorter card with a new id. Escalation: rewritten brief with the test written out, fresh session, effort raised one step to xhigh.
 - 2026-11-24 — R10: worker reported 'none'; I listed 1 choice from the diff: the reworded comment above `covered` in `chatPlace` (thread.js:138).
 - 2026-11-24 — R10 accepted (band: scout; attempt 2): `chatPlace` counts only rows above the composer's top; the test matches the brief and failed on the old code at the scrollY check (733px). Sub-lead re-ran chat-stability and app-threads: 182 passed.
+- 2026-11-24 — Verification 11 (commit 1f3c422e): Claude (claude-opus-5-5) PASS and GPT (gpt-6.2-sol) PASS, no gaps. Build verified.
