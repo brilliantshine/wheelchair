@@ -82,7 +82,7 @@ node test-support/pick-tests.js --base <commit>   # prints the commands that cov
 bash test-support/full-run.sh <log-dir>           # every suite above except smoke, live and install.sh; writes <log-dir>/summary.txt
 ```
 
-`summary.txt` starts with `commit <sha>`, then one `suite <name> exit <n>` line per suite. The
+`summary.txt` starts with `commit <sha>`, then one `suite <name> exit <n> seconds <s>` line per suite. The
 role rules in `protocol/app/` use these two commands because this heading exists.
 
 ## Maintaining routers
