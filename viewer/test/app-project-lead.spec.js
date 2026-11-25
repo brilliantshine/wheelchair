@@ -271,8 +271,7 @@ test('the Settings switch turns project leads on and off', async ({ page }) => {
   expect(await value()).toBe('off');
 });
 
-// needs T6 (start on use)
-test.fixme('a message to a project lead with no live lead clears the draft in both composers and shows a start failure', async ({ page }) => {
+test('a message to a project lead with no live lead clears the draft in both composers and shows a start failure', async ({ page }) => {
   const usage = await make('/tmp/work/wheelchair', 'Usage page');
   await settings({ project_leads: 'on' });
   const id = await leadFor('/tmp/work/wheelchair');
