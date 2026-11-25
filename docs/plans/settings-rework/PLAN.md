@@ -131,6 +131,7 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
+| 1 | Titles and hints wrap onto a different number of lines than the mockups (phone list You line, phone assistant title, desktop Threads folder hint), moving rows 7-37 px | Line wraps differ from the mockups only because of the app's real fonts | verification | Check whether the taller rows bother Collin on a real phone |
 
 ## Accepted Risks
 
@@ -287,3 +288,4 @@ Build accepted: approval c097ed47-f022-4759-a895-e5d8bb654791
 - 2026-11-25 — Choice: T2, settings.js refreshAfterInstall: an open sign-in card still stops post-install version re-reads (comment only changed)
 - 2026-11-25 — T2 accepted (band: self): read the diff; Check Once Built #1 handled by reading /harnesses?fresh=1 (clears the hub's machine cache, viewer/app/harnesses.js:14) before /usage after sign-in and account changes. Merged branch: S6 node 87 pass, sensitivity 67 pass, S6 browser 870 pass. Worker noted a pre-existing stray "0" on an account card with no machine readings (settings.js accountCard `machines.length && …`), not fixed.
 - 2026-11-25 — Verification attempt 1 on 6d7c4f03: both verifiers FAIL. Check Once Built #1 passed (both). One rare path recorded in Accepted Risks. Full run: viewer-browser (app-permit.spec.js:26 firefox), viewer-node (app-quiet.test.js:41), install ('real wheelchair directory is byte-identical', live ~/.wheelchair written by running sessions) failed; each passed on re-run alone (install 213/213, quiet 3x, permit 4/4).
+- 2026-11-25 — Lead's answer on verification-1 gaps: 1-3 remediate; 4 fix (re-read Diagrams each time You is shown); 5 fix; 6 fix to match the mockup (short Visibility track; preview panes as drawn); 7 deferred (Deferred row 1).
