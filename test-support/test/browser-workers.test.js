@@ -8,10 +8,12 @@ const { makeTempSync } = require('../run-dir');
 const { chooseWorkers, liveOthers, register, unregister } = require('../browser-workers');
 
 test('worker count depends on full runs and CPUs', () => {
-  for (const [cpus, expected] of [[16, 6], [8, 4], [4, 2], [2, 2], [1, 2]])
-    assert.equal(chooseWorkers({ full: true, othersFull: false, cpus }), expected);
-  assert.equal(chooseWorkers({ full: false, othersFull: false, cpus: 16 }), 2);
-  assert.equal(chooseWorkers({ full: true, othersFull: true, cpus: 16 }), 2);
+  for (const [cpus, expected] of [[16, 8], [32, 8], [8, 4], [4, 2], [2, 2], [1, 2]])
+    assert.equal(chooseWorkers({ full: true, others: 0, cpus }), expected);
+  for (const [others, expected] of [[1, 4], [2, 2], [3, 2], [8, 2]])
+    assert.equal(chooseWorkers({ full: true, others, cpus: 16 }), expected);
+  for (const others of [0, 1, 2])
+    assert.equal(chooseWorkers({ full: false, others, cpus: 16 }), 2);
 });
 
 test('stale entries are ignored and removed', () => {

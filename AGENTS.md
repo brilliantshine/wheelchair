@@ -64,7 +64,7 @@ bash test-support/smoke/run.sh        # hearth only
 bash test-support/smoke/live.sh       # hearth only, costs model turns
 ./install.sh && ./install.sh          # canonical clone only: refused from a worktree; elsewhere, install/test/run.sh
 node --test viewer/test/*.test.js     # unquoted glob; works on Node 20 and 26
-npm --prefix viewer run test:browser  # Chromium and Firefox; fails loudly if either is missing
+npm --prefix viewer run test:browser  # fails loudly if either browser is missing
 ```
 
 Run `./install.sh` only from the canonical clone; it and its two writers refuse linked worktrees and paths under `~/.local/state/wheelchair/worktrees` (exit 3 unless `WHEELCHAIR_ALLOW_WORKTREE=1`). From a worktree use `bash install/test/run.sh` instead. Leave the `node --test viewer/test/*.test.js` glob unquoted.
@@ -72,6 +72,8 @@ Run `./install.sh` only from the canonical clone; it and its two writers refuse 
 **Never check the viewer by starting a server by hand.** Start your own isolated server with `--port` and `--cache-root` as in `viewer/test/helpers/server.js:72`. There is no cache-root environment variable.
 
 There is no protocol document test suite; stages enforce their order and each stage's output is the next stage's input.
+
+Every spec runs in Chromium; the specs in `viewer/test/firefox-specs.js` also run in Firefox. A spec testing drawing, touch, pixels or scroll belongs on that list.
 
 ## Test picker and full run
 
