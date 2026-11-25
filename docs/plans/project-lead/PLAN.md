@@ -435,6 +435,11 @@ The build matches these.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | tricky. Hub lifecycle: `project_leads` setting, record/identity/status routes, start on use with queued messages, start body and role layers, Off with stop retry, refusals and `special` exclusions (S1, hub half of S3, S5) | `viewer/app/{project-lead,assistant,settings,routes,sessions,threads,hub,peers,views,auto-merge,handoff,cards,pr-gate}.js`, stub `project-lead-actions.js`, `connectors/hub-common.js`, `viewer/test/project-lead.test.js`, `viewer/test/helpers/app-machine.js`, `viewer/AGENTS.md` app entries | standard (provider by hub) | | `node --test viewer/test/project-lead.test.js`; `node --test viewer/test/assistant.test.js`; picker commands | not started |
+| T2 | Project lead actions: shared dispatcher with the assistant, project scope, other-project filtering, `wc.js project-lead` (S4) | `viewer/app/{project-lead-actions,assistant-actions,wc}.js`, `viewer/test/project-lead.test.js` (adds), `viewer/test/assistant.test.js` (adds) | standard (provider by hub) | | same as T1 | not started; after T1 |
+| T3 | Machine: clone + refresh, refresh endpoint, prompt, allow-list lock-down, file/image containment, Codex sandbox, switch (S3) | `machine/service.js`, `machine/lib/project-lead.js`, `connectors/codex/machine.js`, `machine/test/project-lead.test.js`, `machine/AGENTS.md` | standard (provider by hub) | | `node --test machine/test/project-lead.test.js`; `bash machine/test/run.sh`; picker commands | not started; after T4 |
+| T4 | Role file `protocol/app/project-lead.md`, `assistant.md` update, protocol routers (S6, S7) | `protocol/app/{project-lead,assistant,cards,cards-lead}.md`, `protocol/AGENTS.md`, `protocol/app/AGENTS.md` | standard, claude | | picker commands | not started |
+| T5 | Pages: Settings switch, Threads list grouping and lead rows, project lead thread page, pop-up switch, per-conversation seen; browser test (S1, S2, S5; all mockups) | `viewer/pages/`, `viewer/test/app-project-lead.spec.js`, `viewer/AGENTS.md` pages entries | standard, claude | | `npm --prefix viewer run test:browser -- app-project-lead.spec.js`; assistant browser specs; picker commands | not started; after T1 |
 
 ## Log
 
