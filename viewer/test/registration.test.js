@@ -70,9 +70,9 @@ async function register(ctx, body, headers = {}) {
 }
 
 test('open, show, and register-plan use the server registration writer', async () => {
-  const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'other.json');
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'other.json');
   const plan = path.join(root, 'repo', 'docs', 'plans', 'remote-viewer'); await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.mkdir(plan, { recursive: true });
-  const ctx = await startServer({ cacheRoot: root, port });
+  const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     assert.equal((await run(['--cache-root', root, '--port', String(port), '--open', graph])).code, 0);
     assert.equal((await run(['--cache-root', root, '--port', String(port), '--show', graph, '--no-browser'])).code, 0);
@@ -116,9 +116,9 @@ test('a refused POST /register leaves .registered and .plans byte-identical', as
 });
 
 test('commands reuse a proven server and register without exposing its token', async () => {
-  const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'reused.json'); await fs.mkdir(path.dirname(graph), { recursive: true });
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'reused.json'); await fs.mkdir(path.dirname(graph), { recursive: true });
   const plan = path.join(root, 'repo', 'docs', 'plans', 'slug'); await fs.mkdir(plan, { recursive: true });
-  const ctx = await startServer({ cacheRoot: root, port });
+  const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const open = await run(['--cache-root', root, '--port', String(port), '--open', graph]); assert.equal(open.code, 0, open.stderr);
     const planResult = await run(['--cache-root', root, '--port', String(port), '--register-plan', plan]); assert.equal(planResult.code, 0, planResult.stderr);
@@ -134,10 +134,10 @@ test('--register-plan is best effort and never starts a server', async () => {
 });
 
 test('--open records the caller tmux session, while a missing tmux records null', async () => {
-  const root = await makeDir(); const port = await freePort(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
+  const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
   const bin = path.join(root, 'bin'); await fs.mkdir(bin); const tmux = path.join(bin, 'tmux');
   await fs.writeFile(tmux, "#!/bin/sh\nprintf 'work-session\\n'\n", { mode: 0o755 });
-  const ctx = await startServer({ cacheRoot: root, port });
+  const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const first = path.join(graphDir, 'session.json');
     const firstResult = await run(['--cache-root', root, '--port', String(port), '--open', first], { ...process.env, TMUX: 'yes', TMUX_PANE: '%1', PATH: `${bin}:${process.env.PATH}` });
@@ -151,8 +151,8 @@ test('--open records the caller tmux session, while a missing tmux records null'
 });
 
 test('a failing tmux lookup records a null session', async () => {
-  const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'tmux-fails.json'); const bin = path.join(root, 'bin-fail'); await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.mkdir(bin);
-  await fs.writeFile(path.join(bin, 'tmux'), '#!/bin/sh\nexit 1\n', { mode: 0o755 }); const ctx = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'tmux-fails.json'); const bin = path.join(root, 'bin-fail'); await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.mkdir(bin);
+  await fs.writeFile(path.join(bin, 'tmux'), '#!/bin/sh\nexit 1\n', { mode: 0o755 }); const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const result = await run(['--cache-root', root, '--port', String(port), '--open', graph], { ...process.env, TMUX: 'yes', TMUX_PANE: '%1', PATH: bin }); assert.equal(result.code, 0, result.stderr);
     assert.equal(JSON.parse(await fs.readFile(path.join(root, '.registered')))[graph].session, null);
@@ -160,8 +160,8 @@ test('a failing tmux lookup records a null session', async () => {
 });
 
 test('twenty concurrent opens all land in the running server registry', async () => {
-  const root = await makeDir(); const port = await freePort(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
-  const ctx = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const paths = Array.from({ length: 20 }, (_, index) => path.join(graphDir, `parallel-${index}.json`));
     const results = await Promise.all(paths.map((graph) => run(['--cache-root', root, '--port', String(port), '--open', graph])));
@@ -195,8 +195,8 @@ test('a failed listener never changes either pre-existing list', async () => {
 });
 
 test('a plan first graph creates its missing graphs directory and registers', async () => {
-  const root = await makeDir(); const port = await freePort(); const plan = path.join(root, 'repo', 'docs', 'plans', 'first'); const graph = path.join(plan, 'graphs', 'first.json'); await fs.mkdir(plan, { recursive: true });
-  const ctx = await startServer({ cacheRoot: root, port, open: graph });
+  const root = await makeDir(); const plan = path.join(root, 'repo', 'docs', 'plans', 'first'); const graph = path.join(plan, 'graphs', 'first.json'); await fs.mkdir(plan, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: graph }); const port = ctx.port;
   try {
     await fs.access(path.join(plan, 'graphs'));
     assert.equal(JSON.parse(await fs.readFile(path.join(root, '.registered')))[graph].opened, true);
@@ -221,8 +221,8 @@ test('show signs watching without sending the token', async () => {
 });
 
 test('a port thief after proof receives a signature but never the token', async () => {
-  const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'thief.json'); await fs.mkdir(path.dirname(graph), { recursive: true }); const marker = path.join(root, 'pause');
-  const ctx = await startServer({ cacheRoot: root, port }); let stdout = ''; let stderr = '';
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'thief.json'); await fs.mkdir(path.dirname(graph), { recursive: true }); const marker = path.join(root, 'pause');
+  const ctx = await startServer({ cacheRoot: root }); const port = ctx.port; let stdout = ''; let stderr = '';
   const child = trackedSpawn(process.execPath, ['--require', HOOK, 'viewer/server.js', '--cache-root', root, '--port', String(port), '--open', graph], { cwd: ROOT, env: { ...process.env, GRAPH_TEST_HOOK: 'pause-before-register', GRAPH_TEST_MARKER: marker }, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', (chunk) => { stdout += chunk; }); child.stderr.on('data', (chunk) => { stderr += chunk; });
   try {
@@ -236,9 +236,9 @@ test('a port thief after proof receives a signature but never the token', async 
 });
 
 test('show overwrites open session and harness metadata with its own environment', async () => {
-  const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'shown.json'); const bin = path.join(root, 'bin'); await fs.mkdir(bin, { recursive: true });
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'shown.json'); const bin = path.join(root, 'bin'); await fs.mkdir(bin, { recursive: true });
   const tmux = path.join(bin, 'tmux'); await fs.writeFile(tmux, "#!/bin/sh\nprintf '%s\\n' \"$TMUX_LABEL\"\n", { mode: 0o755 });
-  const ctx = await startServer({ cacheRoot: root, port });
+  const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const common = { ...process.env, TMUX: 'yes', TMUX_PANE: '%1', PATH: `${bin}:${process.env.PATH}` };
     assert.equal((await run(['--cache-root', root, '--port', String(port), '--open', graph], { ...common, TMUX_LABEL: 'open-session' })).code, 0);
@@ -248,10 +248,10 @@ test('show overwrites open session and harness metadata with its own environment
 });
 
 test('open and show print token-free prefixed graph URLs, while show opens the token link and url prints the bookmark', async () => {
-  const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'printed.json'); const opened = path.join(root, 'opened-url');
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'printed.json'); const opened = path.join(root, 'opened-url');
   await fs.mkdir(path.dirname(graph), { recursive: true }); const opener = path.join(root, 'opener');
   await fs.writeFile(opener, `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(opened)}, process.argv[2]);\n`, { mode: 0o755 });
-  const ctx = await startServer({ cacheRoot: root, port });
+  const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const open = await run(['--cache-root', root, '--port', String(port), '--open', graph]);
     assert.equal(open.code, 0, open.stderr); assert.match(open.stdout, new RegExp(`/wheelchair/\\?path=${encodeURIComponent(graph)}`)); assert.doesNotMatch(open.stdout, /token=/);
@@ -264,11 +264,11 @@ test('open and show print token-free prefixed graph URLs, while show opens the t
 });
 
 test('the nearest codex process wins over inherited CLAUDECODE and a claude ancestor', async () => {
-  const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'harness.json'); const bin = path.join(root, 'chain'); await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.mkdir(bin);
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'harness.json'); const bin = path.join(root, 'chain'); await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.mkdir(bin);
   const claude = path.join(bin, 'claude'); const codex = path.join(bin, 'codex');
   await fs.writeFile(claude, '#!/bin/sh\n"$(dirname "$0")/codex" "$@"\n', { mode: 0o755 });
   await fs.writeFile(codex, '#!/bin/sh\nnode "$@"\n', { mode: 0o755 });
-  const ctx = await startServer({ cacheRoot: root, port });
+  const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const child = trackedSpawn(claude, ['viewer/server.js', '--cache-root', root, '--port', String(port), '--open', graph], { cwd: ROOT, env: { ...process.env, CLAUDECODE: '1' }, stdio: 'ignore' });
     await new Promise((resolve) => child.once('exit', resolve));
