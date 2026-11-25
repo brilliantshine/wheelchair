@@ -48,6 +48,12 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Keys: a tool's description lists the key names it needs; wheelchair passes only those to the tool's script or server process at start, never to the agent. Project tools read the project's keys; shared tools read a machine-wide set of shared keys typed once per machine in Settings | Keys out of the agent's reach; a shared tool's key typed once | user |
 | 11 | Tools are requested by asking in any thread; no new button. Every lead gets the tool guide. Shared tools are made in a thread of the shared tools project (the assistant can start one) | Reuses how Collin already asks for changes | user |
 | 12 | The Tools page lists every folder tool read-only: name, script or server, project or shared, and working or the reason not. Settings also gains the shared tools project picker and shared keys | Seeing what exists and what is broken, from a phone; read-only keeps it small (changes go through a thread) | user |
+| 13 | Folder layout `.wheelchair/tools/<name>/tool.json` (+ the tool's files), in a project repo and in the shared tools repo alike; `<name>` is letters, digits, `_`, `-`, at most 40 characters and must equal `name` in tool.json | One layout for both homes; a hidden folder avoids clashing with a project's own `tools/` | defaulted |
+| 14 | Script tool protocol: wheelchair runs the tool's `run` command in its folder with the inputs as JSON on stdin; stdout is the result text; a non-zero exit returns an error carrying stderr; default time limit 120 s, a tool may set up to 600 s | Works in any language with no library | defaulted |
+| 15 | Folder tools reach agents through the existing project-tools path: the machine adds synthetic stdio entries (one `wheelchair-tools` bridge for script tools, one entry per server tool) to the servers it already passes to connectors, so each AI's existing translation and limits apply unchanged | Reuses tested per-AI wiring instead of a second one | defaulted |
+| 16 | `wc.js tool new|list|check|run` commands; `run` also lets Kimi and Pi agents use script tools from the shell | A scaffold and a test command make "follow the standard" concrete for agents; shell access comes almost free | defaulted |
+| 17 | The tool guide lives at `protocol/tools.md` (canonical, per CONTRIBUTING.md); role rules for lead, sub-lead and worker point to it; the README gets a short section pointing to it | protocol/ holds canonical rules | defaulted |
+| 18 | One server template, Node.js, using a small zero-dependency MCP stdio helper shipped with wheelchair; other languages can still write a server by hand | One well-tested template beats several thin ones; Node is already required | defaulted |
 
 ## Spec
 
@@ -114,6 +120,68 @@ or server, project or shared, and whether it can be used or the reason it cannot
 reasons the problems card gives). Settings gains a picker for the shared tools project (or
 none) and a shared keys section that works like the project keys section. Existing
 `.mcp.json` editing is unchanged. Look: see Mockups (to be agreed).
+
+### S7. The description file and folder
+Every tool is `.wheelchair/tools/<name>/` holding `tool.json` and the tool's own files, in a
+project repository or in the shared tools repository. `<name>` matches `^[A-Za-z0-9_-]{1,40}$`
+and equals `tool.json`'s `name`. `tool.json` fields:
+- `name` (string), `description` (one line, shown to agents), `kind` (`script` or `server`).
+- `keys` (optional array of key names, same rules as project key names).
+- Script only: `inputs`, an object of input name to `{type, description, required}` with
+  `type` one of `string`, `number`, `boolean`, `object`, `array`; `run`, an argv array whose
+  first element is a program on PATH or a path relative to the tool folder; `timeout_seconds`
+  (optional, 1 to 600, default 120).
+- Server only: `start`, an argv array as `run` above, launching a stdio MCP server.
+A file that fails these rules makes that tool unusable with a reason on the problems card
+and the Tools page; other tools are unaffected. Unknown fields are ignored.
+
+### S8. How tools reach an agent
+At session start, for the roles that get project tools today (lead, sub-lead, worker,
+verifier; not reviewers, mappers, assistants or project leads), the machine reads folder
+tools from the thread's worktree and from the shared tools copy (S3), applies S3's name
+rule, and adds stdio entries to the servers it already passes to connectors
+(`machine/service.js` `prepareLaunch`):
+- one `wheelchair-tools` entry running a wheelchair bridge that offers every usable script
+  tool as an MCP tool (name, description, input schema from `inputs`) and runs it per S9;
+- one entry per usable server tool, running a wheelchair launcher that starts the tool's
+  `start` command in its folder with its keys.
+Each connector then applies its existing translation and limits (Codex sees
+`project_<name>`; Kimi and Pi load no servers and say so). A `.mcp.json` server with the same
+name as one of these entries wins and the folder tool is reported hidden. Tools are read
+once per session start; a tool changed mid-session reaches the next session.
+
+### S9. Running a script tool
+The bridge runs `run` with the tool folder as working directory, the inputs as one JSON
+object on stdin, and an environment made of the machine's normal session environment minus
+the agent's project keys, plus the tool's own `keys` (S4). stdout (cut at 1 MiB, saying so)
+is the result; a non-zero exit, a timeout or a launch failure returns an MCP error with the
+exit code and the last 4 KiB of stderr. Calls may run in parallel; the bridge never runs the
+same call twice.
+
+### S10. The `wc.js tool` commands
+`node <root>/viewer/app/wc.js tool <command>` runs in the session's own worktree:
+- `new <name> --kind script|server [--shared]`: writes a working example tool from the
+  template into `.wheelchair/tools/<name>/` (`--shared` is refused outside the shared tools
+  project). The script template is a short shell script; the server template is Node.js.
+- `list`: the tools this session would get, kind, source and status (same reasons as S6).
+- `check [<name>]`: validates description files; for a server tool, starts it and confirms
+  it answers the MCP handshake and lists at least one tool, then stops it.
+- `run <name> --input '<json>'`: runs a script tool exactly as the bridge would and prints
+  its result. Kimi and Pi agents use this to call script tools; the guide says so.
+These commands only read and run; any file written by `new` is committed by the agent as
+usual.
+
+### S11. The guide
+`protocol/tools.md` is the one guide for people and agents: what a tool is, both kinds,
+`tool.json` fields with a full example of each, keys, project versus shared, the
+`wc.js tool` commands, how to test before asking for review, and per-AI limits. The lead,
+sub-lead and worker role rules gain one line pointing to it for any request to make or
+change a tool. README.md's project tools section gains a short paragraph pointing to it.
+
+### Not doing (this plan)
+- No change to how `.mcp.json` servers are read, edited or launched.
+- No Windows-side folder tools: a folder tool runs on the Linux side only.
+- No editing tools from the app; the Tools page list is read-only.
 
 ## Deferred
 
