@@ -5,8 +5,7 @@ const { publicSession } = require('./sessions.js');
 const assistantHelpers = require('./assistant.js');
 const routes = require('./routes.js');
 
-async function dispatch(hub, input, policy) {
-  if (policy) return run(hub, input, policy);
+async function dispatch(hub, input) {
   if (!await assistantHelpers.isOn(hub)) throw appError(403, 'the assistant is off');
   const assistant = (await hub.allThreads()).find((thread) => thread.assistant);
   const lead = assistant?.sessions.filter((s) => s.role === 'lead' && s.live).at(-1);
@@ -15,7 +14,7 @@ async function dispatch(hub, input, policy) {
     if (id === assistant.id) throw appError(403, 'the assistant thread cannot be a target');
     const target = (await hub.allThreads()).find((thread) => thread.id === id);
     if (target?.project_lead) throw appError(403, "that's a project lead; talk to it directly");
-  }, include: (t) => !t.assistant && !t.project_lead });
+  }, include: (t) => !assistantHelpers.special(t) });
 }
 
 async function run(hub, input, policy) {
@@ -94,4 +93,4 @@ async function run(hub, input, policy) {
   if (policy.press) await policy.press(input);
   return { ok: true, result: await hub.press(input.thread, input.card, { action: input.press_action, value: input.value }, 'assistant') };
 }
-module.exports = { dispatch };
+module.exports = { dispatch, run };

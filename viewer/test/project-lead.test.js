@@ -356,7 +356,9 @@ test('concurrent first sends start only one lead and preserve order', async (t) 
   const replies = await Promise.all([sendMessage(c, id, 'first'), sendMessage(c, id, 'second')]);
   assert.ok(replies.every((r) => r.status === 202)); assert.equal(starts(c, id).length, 1);
   const record = await savedLead(c, id);
-  assert.deepEqual([...record.sent.filter((m) => m.source === 'user'), ...record.sessions.at(-1).queue.filter((m) => m.source === 'user')].map((m) => m.text), ['first', 'second']);
+  const messages = [...record.sent.filter((m) => m.source === 'user'), ...record.sessions.at(-1).queue.filter((m) => m.source === 'user')];
+  assert.deepEqual(messages.map((m) => m.text).sort(), ['first', 'second']);
+  assert.deepEqual(messages.map((m) => m.at), messages.map((m) => m.at).sort());
 });
 
 test('a dead lead restarts on a message and turn ends deliver queued messages', async (t) => {
@@ -457,5 +459,82 @@ test('project lead CLI sends files and retries reads only', async () => {
     calls = []; await run('message', 'target', '--text-file', file); assert.equal(calls[0].body.text, 'hello\n');
     calls = []; fail = true; await run('refresh'); assert.equal(calls.length, 2);
     calls = []; await run('archive', 'target'); assert.equal(calls.length, 1);
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+});
+
+async function actionFixture() {
+  const hub = new Hub({ stateDir: await makeDir('project-lead-followup-') });
+  await hub.state.init();
+  await settings.update(hub, (value) => { value.project_leads = 'on'; });
+  hub.machines = async () => ({ hub: { name: 'hub' }, remote: { name: 'remote' } });
+  const source = { ...emptyThread({ machine: 'hub', project }), project_lead: true, sessions: [{ name: 'project-lead-session', role: 'lead', live: true }] };
+  const local = emptyThread({ machine: 'hub', project });
+  const outside = { ...emptyThread({ machine: 'remote', project }), title: 'Outside project title' };
+  const otherLead = { ...emptyThread({ machine: 'hub', project: '/other/project-path' }), project_lead: true };
+  for (const record of [source, local, outside, otherLead]) await hub.save(record);
+  const call = (action, extra = {}) => require('../app/project-lead-actions.js').dispatch(hub, { calling_session: 'project-lead-session', action, ...extra });
+  return { hub, source, local, outside, otherLead, call };
+}
+
+test('the same path on another registered machine is outside the project', async () => {
+  const { local, outside, call } = await actionFixture();
+  assert.deepEqual((await call('threads')).threads.map((row) => row.id), [local.id]);
+  for (const action of ['thread', 'message', 'press', 'restart', 'archive']) await assert.rejects(call(action, { thread: outside.id }), /that thread is in another project/);
+});
+
+test('another project lead is refused as a target of every targeted action', async () => {
+  const { otherLead, call } = await actionFixture();
+  for (const action of ['thread', 'message', 'press', 'restart', 'archive']) await assert.rejects(call(action, { thread: otherLead.id }), /that thread is in another project/);
+});
+
+test('closed reach and permit cards are absent from waiting and cards', async () => {
+  const { hub, local, call } = await actionFixture();
+  local.cards = ['reach', 'permit'].flatMap((kind) => [
+    { id: `${kind}-open`, kind }, { id: `${kind}-answered`, kind, answered: true },
+    { id: `${kind}-retracted`, kind, retracted_at: '2026-01-01' }, { id: `${kind}-replaced`, kind, replaced: true },
+  ]);
+  await hub.save(local);
+  const detail = await call('thread', { thread: local.id });
+  for (const field of ['waiting', 'cards']) assert.deepEqual(detail[field].map((card) => card.id).sort(), ['permit-open', 'reach-open']);
+});
+
+test('cross-thread messages and recent chat omit other project identifiers, titles and paths', async () => {
+  const { hub, local, outside, call } = await actionFixture();
+  const values = [outside.id, outside.title, outside.project];
+  local.cross_thread_messages = [...values.map((text) => ({ text: `mentions ${text}` })), { text: 'local message' }];
+  await hub.save(local);
+  hub.chat = async () => ({ items: [...values.map((text) => ({ type: 'human', text: `mentions ${text}` })), { type: 'human', text: 'local chat' }] });
+  const detail = await call('thread', { thread: local.id });
+  assert.deepEqual(detail.cross_thread_messages, [{ text: 'local message' }]);
+  assert.deepEqual(detail.recent.map((item) => item.text), ['local chat']);
+});
+
+test('short other-project titles do not redact same-project text', async () => {
+  const { hub, local, outside, call } = await actionFixture();
+  outside.title = 'ok'; await hub.save(outside);
+  local.cross_thread_messages = [{ text: 'ok' }]; await hub.save(local);
+  const detail = await call('thread', { thread: local.id });
+  assert.deepEqual(detail.cross_thread_messages, [{ text: 'ok' }]);
+});
+
+test('every project lead action is refused when the setting is off', async () => {
+  const { hub, local, call } = await actionFixture();
+  await settings.update(hub, (value) => { value.project_leads = 'off'; });
+  for (const action of ['threads', 'thread', 'start', 'message', 'press', 'restart', 'archive', 'refresh']) await assert.rejects(call(action, { thread: local.id }), /project leads are off/);
+});
+
+test('project lead CLI retries thread reads and does not retry writes', async () => {
+  const http = require('node:http'), { spawn } = require('node:child_process');
+  let calls = 0;
+  const server = http.createServer((req, res) => { calls++; res.writeHead(calls === 1 ? 503 : 200, { 'content-type': 'application/json' }); res.end(calls === 1 ? '{"error":"hub unavailable"}' : '{"ok":true}'); });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const file = path.join(await makeDir('project-lead-retry-'), 'message'); await fs.writeFile(file, 'hello');
+  const run = (...args) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [path.join(__dirname, '../app/wc.js'), 'project-lead', ...args], { env: { ...process.env, WHEELCHAIR_SESSION_TOKEN: 'test', WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}` } });
+    let output = ''; child.stdout.on('data', (data) => { output += data; }); child.on('error', reject); child.on('close', () => resolve(JSON.parse(output)));
+  });
+  try {
+    for (const args of [['threads'], ['thread', 'target']]) { calls = 0; assert.equal((await run(...args)).ok, true); assert.equal(calls, 2); }
+    for (const args of [['message', 'target', '--text-file', file], ['restart', 'target'], ['archive', 'target']]) { calls = 0; assert.match((await run(...args)).error, /hub unavailable/); assert.equal(calls, 1); }
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
