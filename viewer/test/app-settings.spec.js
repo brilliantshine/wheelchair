@@ -634,6 +634,24 @@ test('the preview panes are unfilled and Visibility is a short track under its l
   expect(track.y).toBeGreaterThanOrEqual(value.y + value.height - 1);
 });
 
+// mockup-phone-you.html: 14px text on 1.45 lines with a line's margin around each paragraph.
+test('the preview panes carry the mockup\u2019s text and are its height at 390px', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPage(page, context, '/app/settings#you');
+  await expect(page.locator('.pane')).toHaveCount(2);
+  await page.evaluate(() => document.fonts.ready);
+  const text = await page.locator('.pane p').evaluateAll((els) => els.map((el) => {
+    const css = getComputedStyle(el);
+    return { size: css.fontSize, line: Math.round(parseFloat(css.lineHeight) * 10) / 10, above: css.marginTop, below: css.marginBottom };
+  }));
+  for (const p of text) expect(p).toEqual({ size: '14px', line: 20.3, above: '14px', below: '14px' });
+  // The mockup in the app's own Inter measures 176px and 115px. (Opened as a file it loads no
+  // Inter, and its first pane wraps one line more in the fallback font.)
+  const heights = await page.locator('.pane').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+  expect(Math.abs(heights[0] - 176)).toBeLessThanOrEqual(4);
+  expect(Math.abs(heights[1] - 115)).toBeLessThanOrEqual(4);
+});
+
 test('Models fits at 390px', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openPage(page, context, '/app/settings#models');
