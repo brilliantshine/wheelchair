@@ -90,3 +90,33 @@ test('shared document and entry validators report the reader reasons', () => {
   assert.equal(entryReason('x', { command: 'run' }), null);
   assert.equal(entryReason('x', null), 'not a valid stdio, http or sse entry');
 });
+
+test('Claude adds folder entries alone and beside replacements only when tools are enabled', () => {
+  const entry = { type: 'stdio', command: '/node', args: ['/bridge'], env: {} };
+  const extras = [{ name: 'wheelchair-tools', folder: 'bridge', entry }];
+  const invoke = context => claude.command({}, session, '/work', { ...base, ...context });
+  const alone = invoke({ tools: true, extraServers: extras });
+  assert.deepEqual(alone.mcpConfig.data.mcpServers, { 'wheelchair-tools': entry });
+  assert.ok(alone.argv.includes('--mcp-config'));
+  assert.deepEqual(alone.loaded.map(x => x.name), ['wheelchair-tools']);
+  const mcp = { names: ['old'], servers: { old: { command: 'old' } } };
+  const replacement = { command: 'new' };
+  const both = invoke({ tools: true, mcp, replaceEntries: { old: replacement }, extraServers: extras });
+  assert.deepEqual(both.mcpConfig.data.mcpServers, { old: replacement, 'wheelchair-tools': entry });
+  assert.deepEqual(both.loaded.map(x => x.name), ['old', 'wheelchair-tools']);
+  assert.deepEqual(invoke({ tools: false, mcp, extraServers: extras }), invoke({ tools: false, mcp }));
+  assert.deepEqual(invoke({ tools: true, mcp, extraServers: [] }), invoke({ tools: true, mcp }));
+});
+
+test('Kimi and Pi warn only for folder servers when tools are enabled', async () => {
+  const extraServers = [{ name: 'wheelchair-tools', folder: 'bridge', entry: {} }, { name: 'one', folder: 'server', entry: {} }, { name: 'two', folder: 'server', entry: {} }];
+  const dir = await fixture();
+  for (const [adapter, product] of [[require('../../connectors/kimi/machine'), 'Kimi Code'], [require('../../connectors/pi/machine'), 'Pi']]) {
+    const ctx = { ...base, stateDir: dir, tools: true };
+    const invoke = changes => adapter.command({}, session, '/work', { ...ctx, ...changes });
+    assert.deepEqual(invoke({ extraServers }).warnings, [{ names: ['one', 'two'], text: `server tools don't work on ${product}: one, two` }]);
+    assert.deepEqual(invoke({ extraServers: [extraServers[0]] }), invoke({}));
+    assert.deepEqual(invoke({ extraServers: [] }), invoke({}));
+    assert.deepEqual(invoke({ tools: false, extraServers }), invoke({ tools: false }));
+  }
+});
