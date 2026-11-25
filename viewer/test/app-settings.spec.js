@@ -797,3 +797,200 @@ test.describe('categories', () => {
     await expect(page.locator('#style-text')).toHaveValue('typed, not saved');
   });
 });
+
+test.describe('one place for sign-in, usage and each draft', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }); });
+  const NAMES = ['claude', 'gpt', 'gemini', 'kimi', 'openrouter'];
+  const goTo = (page, hash) => page.evaluate((k) => { location.hash = k; }, hash);
+  const group = (page, p) => page.locator(`.prov-group[data-provider="${p}"]`);
+  const row = (page, p) => page.locator(`.h-row[data-provider="${p}"]`);
+  const acct = (page, id) => page.locator(`.acct[data-account="${id}"]`);
+  const allOn = () => Object.fromEntries(NAMES.map((n) => [n, true]));
+
+  // One signed-out default account per provider shown, as the hub's /usage would answer.
+  function usageBody(state = 'signed_out', machines = ['hub'], reading = null) {
+    const one = (provider, label) => ({ label, left: null, accounts: [{ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false, machines: Object.fromEntries(machines.map((m) => [m, state])), reading, next: false, reason: '', live_sessions: 0 }] });
+    return { providers: { claude: one('claude', 'Claude'), gpt: one('gpt', 'GPT') } };
+  }
+  // Codex is installed and, unless `signedIn()` says otherwise, signed out on every machine.
+  function harnessBody({ machines = ['hub'], signedIn = () => false, switches = allOn() } = {}) {
+    const rowFor = (n) => ({ installed: n === 'gpt', version: n === 'gpt' ? '1' : null, signed_in: n === 'gpt' && signedIn(), recipe: true });
+    return { switches, threads_using: {}, machines: machines.map((name) => ({ name, reachable: true, harnesses: Object.fromEntries(NAMES.map((n) => [n, rowFor(n)])) })), can_start: { machine: 'hub', lead: { ok: true }, worker: { ok: true } } };
+  }
+  const idle = (page) => page.route('**/api/machines/*/harnesses/*/install', (r) => r.fulfill({ json: { state: 'idle' } }));
+  async function patchSettings(page, patch) {
+    await page.route('**/api/settings', async (r) => {
+      try { await r.fulfill({ json: { ...await (await r.fetch()).json(), ...patch() } }); } catch { await r.abort().catch(() => {}); }
+    });
+  }
+
+  test("Harnesses' sign-in link opens the account cards' sign-in for the Harnesses machine", async ({ page }) => {
+    const machines = ['hub', 'node-2'];
+    const posts = [];
+    await idle(page);
+    await page.route('**/api/harnesses**', (r) => r.fulfill({ json: harnessBody({ machines }) }));
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_out', machines) }));
+    await page.route('**/api/accounts/*/signin', (r) => { posts.push([new URL(r.request().url()).pathname, r.request().postDataJSON()]); return r.fulfill({ json: {} }); });
+    await page.route('**/api/accounts/*/signin/*', (r) => r.fulfill({ json: { state: 'waiting', url: 'https://example.test/login' } }));
+    await openPage(page, context, '/app/settings#providers');
+    await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
+    const link = row(page, 'gpt').getByRole('link', { name: 'Sign in Codex' });
+    await expect(link).toHaveAttribute('href', '#providers');
+    await expect(row(page, 'gpt').getByRole('button', { name: /Sign in/ })).toHaveCount(0);
+    await expect(page.locator('.signin-card')).toHaveCount(0);
+    expect(posts).toEqual([]);
+    await link.click();
+    const card = group(page, 'gpt').locator('.signin-card');
+    await expect(card).toContainText('Sign in default on node-2');
+    await expect(card.getByRole('link', { name: 'https://example.test/login' })).toBeVisible();
+    await expect(group(page, 'gpt')).toBeInViewport();
+    await expect(page.locator('.signin-card')).toHaveCount(1);
+    expect(posts).toEqual([['/wheelchair/api/accounts/default-gpt/signin', { machine: 'node-2' }]]);
+    // The 30-second repaint of Accounts keeps the card where it is.
+    await goTo(page, 'usage');
+    await goTo(page, 'providers');
+    await expect(group(page, 'gpt').locator('.signin-card')).toContainText('node-2');
+  });
+
+  test('account cards show one usage line and no usage bars', async ({ page }) => {
+    const hour = (n) => new Date(Date.now() + n * 3600000).toISOString();
+    const reading = { at: hour(0), five_hour: { used: 42, resets_at: hour(2) }, week: { used: 61, resets_at: hour(60) } };
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_in', ['hub'], reading) }));
+    await openPage(page, context, '/app/settings#providers');
+    const card = acct(page, 'default-claude');
+    await expect(card.locator('.acct-usage')).toHaveCount(1);
+    await expect(card.locator('.acct-usage')).toHaveText(/^5-hour 42% used · week 61% used · as of [^·]+$/);
+    await expect(card.locator('.win, .meter, .bar, meter, progress')).toHaveCount(0);
+    await expect(card).not.toContainText('resets');
+    const lines = await card.locator('.acct-usage').evaluate((el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight || '20'));
+    expect(lines).toBeLessThan(1.5);
+  });
+
+  for (const first of ['lead-order', 'balancing']) {
+    test(`pressing the ${first} Save keeps the other box's unsaved edit and updates the reserve label`, async ({ page }) => {
+      const saved = [];
+      await patchSettings(page, () => ({ harnesses: allOn(), lead_order: ['claude', 'gpt', 'any'], leave: 10, reserved_provider: 'Claude' }));
+      await page.route('**/api/settings/balancing', (r) => { const body = r.request().postDataJSON(); saved.push(body); return r.fulfill({ json: { ...body, reserved_provider: 'GPT' } }); });
+      await openPage(page, context, '/app/settings#usage');
+      const leads = page.locator('[data-order="lead_order"]');
+      const order = () => leads.locator('li span').allTextContents();
+      await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save Claude for leads');
+      await leads.getByRole('button', { name: 'Move Claude down' }).click();
+      await page.locator('#bal-leave').fill('33');
+      const [one, other] = first === 'lead-order' ? ['#lead-order-save', '#bal-save'] : ['#bal-save', '#lead-order-save'];
+      await page.locator(one).click();
+      await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
+      await expect(page.locator('.balancing')).toContainText('When GPT is projected to have less than this left at refill');
+      await expect(page.locator('.balancing')).toContainText('Held back when GPT runs short');
+      await expect(page.locator('#bal-leave')).toHaveValue('33');
+      expect(await order()).toEqual(['GPT', 'Claude']);
+      expect(Object.hasOwn(saved[0], 'lead_order')).toBe(first === 'lead-order');
+      expect(Object.hasOwn(saved[0], 'leave')).toBe(first === 'balancing');
+      await page.locator(other).click();
+      await expect.poll(() => saved.length).toBe(2);
+      if (first === 'lead-order') expect(saved[1].leave).toBe(33);
+      else expect(saved[1].lead_order).toEqual(['gpt', 'claude', 'any']);
+    });
+  }
+
+  test('opening Usage and balancing re-reads the reserved provider and keeps what was typed', async ({ page }) => {
+    let reserved = 'Claude';
+    await patchSettings(page, () => ({ leave: 10, reserved_provider: reserved }));
+    await openPage(page, context, '/app/settings#usage');
+    await page.locator('#bal-leave').fill('33');
+    await goTo(page, 'models');
+    await expect(page.locator('#bal-leave')).toHaveCount(0);
+    reserved = 'GPT';
+    await goTo(page, 'usage');
+    await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
+    await expect(page.locator('.balancing')).toContainText('Save GPT for leads');
+    await expect(page.locator('.balancing')).toContainText('When GPT is projected');
+    await expect(page.locator('.balancing')).toContainText('Held back when GPT runs short');
+    await expect(page.locator('#bal-leave')).toHaveValue('33');
+  });
+
+  test('turning a harness on shows its account cards, waiting while an account edit is open', async ({ page }) => {
+    const switches = { ...allOn(), gpt: false, claude: false };
+    await idle(page);
+    await page.route('**/api/harnesses**', (r) => r.fulfill({ json: harnessBody({ switches }) }));
+    await patchSettings(page, () => ({ harnesses: { ...switches } }));
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody() }));
+    await page.route('**/api/settings/harnesses/*', (r) => { switches[r.request().url().split('/').pop()] = r.request().postDataJSON().enabled; return r.fulfill({ json: { harnesses: { ...switches } } }); });
+    await openPage(page, context, '/app/settings#providers');
+    await expect(row(page, 'gpt')).toBeVisible();
+    await expect(group(page, 'gpt')).toHaveCount(0);
+    await page.getByLabel('Use Codex').click();
+    await expect(group(page, 'gpt').locator('.acct[data-account="default-gpt"]')).toBeVisible();
+    await expect(page.locator('.catview h1')).toHaveText('AI providers');
+
+    await acct(page, 'default-gpt').getByRole('button', { name: 'Rename' }).click();
+    const name = page.getByRole('textbox', { name: 'Account name' });
+    await name.fill('typed, not saved');
+    await page.getByLabel('Use Claude Code').click();
+    await expect(page.getByLabel('Use Claude Code')).toBeChecked();
+    await expect(row(page, 'claude').getByRole('button', { name: 'Install Claude Code' })).toBeVisible();
+    await expect(name).toHaveValue('typed, not saved');
+    await expect(group(page, 'claude')).toHaveCount(0);
+    await acct(page, 'default-gpt').getByRole('button', { name: 'Cancel' }).click();
+    await expect(group(page, 'claude')).toHaveCount(1);
+  });
+
+  // The hub keeps each machine's answer for a while: only a fresh harness read renews what
+  // both /harnesses and /usage say.
+  test('after an account sign-in, Harnesses and the account card show the new status', async ({ page }) => {
+    let machine = false; let kept = false; let hold = null; let release = null; let heldAnswered = false;
+    await idle(page);
+    await page.route('**/api/harnesses**', async (r) => {
+      if (r.request().url().includes('fresh=1')) { await new Promise((done) => setTimeout(done, 300)); kept = machine; }
+      await r.fulfill({ json: harnessBody({ signedIn: () => kept }) });
+    });
+    await page.route('**/api/usage', async (r) => {
+      const body = usageBody(kept ? 'signed_in' : 'signed_out');
+      const wait = hold; hold = null;
+      if (wait) await wait;
+      await r.fulfill({ json: body });
+      if (wait) heldAnswered = true;
+    });
+    await page.route('**/api/accounts/default-gpt/signin', (r) => r.fulfill({ json: {} }));
+    await page.route('**/api/accounts/default-gpt/signin/hub', (r) => { machine = true; return r.fulfill({ json: { state: 'done', logged_in: true } }); });
+    await openPage(page, context, '/app/settings#providers');
+    const state = acct(page, 'default-gpt').locator('li[data-machine="hub"] .mstate');
+    await expect(state).toHaveText('signed out');
+    await expect(row(page, 'gpt').locator('.h-state')).toHaveText('Installed 1');
+    // A reading asked for before the sign-in, and answered after it, must not undo it.
+    hold = new Promise((done) => { release = done; });
+    await goTo(page, 'usage');
+    await expect.poll(() => hold === null).toBe(true);
+    // Coming back reads Harnesses afresh; let that finish so it cannot stand in for the sign-in's.
+    const entered = page.waitForResponse((res) => res.url().includes('/harnesses?fresh=1'));
+    await goTo(page, 'providers');
+    await entered;
+    await acct(page, 'default-gpt').getByRole('button', { name: 'Sign in default on hub' }).click();
+    await expect(row(page, 'gpt').locator('.h-state')).toHaveText('Signed in', { timeout: 8000 });
+    await expect(state).toHaveText('signed in');
+    release();
+    await expect.poll(() => heldAnswered).toBe(true);
+    await page.waitForTimeout(300);
+    await expect(state).toHaveText('signed in');
+  });
+
+  test('pausing and adding an account reload the Harnesses status', async ({ page }) => {
+    let paused = false; let added = false;
+    await idle(page);
+    await page.route('**/api/harnesses**', (r) => r.fulfill({ json: harnessBody({ signedIn: () => !paused || added }) }));
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_in') }));
+    await page.route('**/api/settings/accounts/default-gpt', (r) => { paused = true; return r.fulfill({ json: {} }); });
+    await page.route('**/api/settings/accounts', (r) => { added = true; return r.fulfill({ status: 201, json: { id: 'spare' } }); });
+    await openPage(page, context, '/app/settings#providers');
+    const status = row(page, 'gpt').locator('.h-state');
+    await expect(status).toHaveText('Signed in');
+    await acct(page, 'default-gpt').getByRole('button', { name: 'Pause' }).click();
+    await expect(status).toHaveText('Installed 1');
+    await page.locator('#add-account').click();
+    await page.locator('#add-provider').selectOption('gpt');
+    await page.locator('#add-name').fill('Spare');
+    await page.locator('.add-form button[type="submit"]').click();
+    await expect(status).toHaveText('Signed in');
+  });
+});

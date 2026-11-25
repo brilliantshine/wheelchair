@@ -165,7 +165,7 @@
 
 /* ---- Accounts, Usage, lead order ---- */
 .prov-group h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.prov-group { gap: 12px; }
+.prov-group { gap: 12px; scroll-margin-top: calc(var(--nav-h, 64px) + 12px); }
 .acct { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); min-width: 0; }
 .acct-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .acct-name { font-size: 15px; overflow-wrap: anywhere; }
@@ -178,13 +178,7 @@
 .mstate.note { color: var(--dim); }
 .mstate.signed_in { color: var(--good-text); }
 .mstate.signed_out, .mstate.problem { color: var(--warn); }
-.wins { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
-.win { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.win .k { flex: 0 0 110px; color: var(--ink-2); }
-.win .v { min-width: 0; overflow-wrap: anywhere; }
-.win .dim { color: var(--dim); }
-.meter { flex: 0 0 90px; height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
-.meter > span, .bar > span { display: block; height: 100%; background: var(--accent); }
+.bar > span { display: block; height: 100%; background: var(--accent); }
 .acct .actions input, .acct .actions select { flex: 1 1 140px; min-width: 0; }
 .add-form { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 .add-form .fields { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -227,7 +221,6 @@ button.danger { color: var(--bad-text); }
   .usage-table th[scope="row"] { padding-top: 10px; font-weight: 600; }
   .usage-table td::before { content: attr(data-label); display: block; font-size: 11px; color: var(--dim); margin-bottom: 2px; }
   .usage-table th[scope="row"]::before { content: none; }
-  .win .k { flex-basis: 100%; }
 }
 
 .diagram-radios { display: flex; flex-direction: column; }
@@ -295,7 +288,8 @@ button.danger { color: var(--bad-text); }
 .h-confirm { font-size: 13px; }
 .h-explain { margin: 0; font-size: 13px; color: var(--dim); overflow-wrap: anywhere; }
 .h-tail { margin: 0; max-height: 140px; overflow: auto; padding: 8px 10px; border-radius: 6px; background: var(--term-bg); font-family: var(--mono); font-size: 11px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
-.h-signin:empty { display: none; }
+.prov-signin:empty { display: none; }
+.acct-usage { margin: 0; }
 .h-offline { font-size: 13px; }
 /* Lessons learned: written by agents, so tinted and labelled apart from Collin's templates. */
 .tpl-item.tpl-lessons { background: var(--accent-soft); border: 1px solid var(--accent-line); }
