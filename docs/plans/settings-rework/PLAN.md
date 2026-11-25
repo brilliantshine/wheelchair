@@ -13,11 +13,6 @@ Map: `MAP.md`.
 
 ## Open Questions
 
-### Q1: What are the new categories, and what goes in each?
-- **Context:** MAP.md Inventory and Grouping observations. Models and preferences is a grab bag; lead order (Models) and worker order (Usage) are split.
-- **Options:** A) 7 categories as in graphs/categories.json; A2) the same plus an "Assistant and project leads" category (Collin plans to add customization for both later); B) 4 broad groups with subsections; C) keep the 8 sections and only split Models and preferences.
-- **Recommendation:** A2.
-
 ### Q2: Agree the mockups
 - **Context:** A designer mocks the agreed categories on phone and desktop once Q1 is settled.
 
@@ -37,10 +32,22 @@ Map: `MAP.md`.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | 1 | Mode two-part | Collin's pick on the mode card | user |
+| 2 | Eight categories: You; AI providers; Usage and balancing; Models; Assistant and project leads; Threads; Agent behavior; Project tools (graphs/categories.json) | Collin plans to add customization for the assistant and project leads; one shared home keeps Threads focused | user |
 
 ## Spec
 
-(grows as decisions land)
+### S1. Categories
+
+The Settings page has eight categories, in this order, each holding exactly these existing controls (MAP.md Inventory names them). No control changes what it does or where it is stored.
+
+1. **You**: your name, Writing style (whole current section), Diagrams, Enter-to-send, Background (whole current section).
+2. **AI providers**: Harnesses and Accounts (both whole current sections).
+3. **Usage and balancing**: Usage (whole current section, including Balancing) plus the lead provider order moved from Models.
+4. **Models**: Tiers, lead and sub-lead models, Other agents, Escalation.
+5. **Assistant and project leads**: the personal assistant switch and the project leads switch. Future customization for both goes here.
+6. **Threads**: tool steps, auto-merge and branch deletion, default project folder, Permission mode, lead names.
+7. **Agent behavior**: Behavior templates and Lessons learned (whole current section).
+8. **Project tools**: unchanged.
 
 ## Deferred
 
