@@ -17,17 +17,17 @@ async function dispatch(hub, input) {
     if (!special(thread) && key && await projectLead.identity(hub, registry, thread.machine, thread.project) === key) allowed.add(thread.id);
   }
   const outside = threads.filter((thread) => !allowed.has(thread.id));
-  const forbidden = new Set(outside.flatMap((thread) => [thread.id, ...thread.sessions.map((s) => s.name)]));
+  const forbidden = new Set(outside.flatMap((thread) => [thread.id, thread.title, thread.project, ...thread.sessions.map((s) => s.name)]));
   // Cross-thread queues and cards can contain the other lead's message without its id.
   for (const thread of threads.filter((t) => allowed.has(t.id))) {
     for (const entry of thread.peer_log || []) if (!allowed.has(entry.thread)) {
       for (const value of [entry.text, entry.title, entry.session]) if (value) forbidden.add(value);
     }
   }
-  const containsOutside = (value) => typeof value === 'string' && [...forbidden].some((part) => part && value.includes(part));
+  const containsOutside = (value) => typeof value === 'string' && [...forbidden].some((part) => typeof part === 'string' && part.length >= 8 && value.includes(part));
   function clean(value, field) {
     if (typeof value === 'string') return containsOutside(value) ? undefined : value;
-    if (Array.isArray(value)) return value.map((item) => clean(item, field)).filter((item) => item !== undefined);
+    if (Array.isArray(value)) return value.filter((item) => field !== 'cards' || !item.replaced && !item.answered && !item.retracted_at).map((item) => clean(item, field)).filter((item) => item !== undefined);
     if (!value || typeof value !== 'object') return value;
     if (['reach', 'permit'].includes(value.kind)) return { id: value.id, kind: value.kind, text: value.kind === 'reach' ? "a request to talk to another project's lead" : "a request to push to someone else's pull request" };
     if ((value.thread && containsOutside(value.thread)) || (value.thread_id && containsOutside(value.thread_id)) || (value.to && containsOutside(value.to)) || (value.text && containsOutside(value.text))) return undefined;
@@ -61,6 +61,6 @@ async function dispatch(hub, input) {
       return { ok: true, commit: result.commit };
     } catch (error) { return { ok: false, error: error.message }; }
   }
-  return require('./assistant-actions.js').dispatch(hub, input, policy);
+  return require('./assistant-actions.js').run(hub, input, policy);
 }
 module.exports = { dispatch };
