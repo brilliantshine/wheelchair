@@ -86,6 +86,71 @@ test('Diagrams is read each time You comes on screen, and never behind the phone
   await shows(/High/, 4);
 });
 
+test('a save or read that finishes after You is hidden neither reads nor draws Diagrams', async ({ page }) => {
+  const state = { machines: { hub: ok('default') } };
+  await stub(page, state, () => ({ status: 200, body: {} }));
+  // Registered after the stub, so it runs first: each held request waits for its release.
+  const held = [];
+  let hold = null; // the method to hold
+  await page.route('**/api/settings/diagram-sensitivity', async (route) => {
+    if (route.request().method() === hold) await new Promise((release) => held.push(release));
+    await route.fallback();
+  });
+  const release = async () => {
+    await expect.poll(() => held.length).toBe(1);
+    const answered = page.waitForResponse('**/api/settings/diagram-sensitivity');
+    held.pop()();
+    await (await answered).finished();
+    // Long enough for the page to act on the answer: what follows asserts that nothing happens.
+    await page.waitForTimeout(500);
+  };
+  const radios = page.locator('#diagram-choices [role="radio"]');
+  const drawn = () => page.locator('#diagram-choices').evaluate((box) => box.innerHTML);
+
+  // Phone: save, then back to the list before the save answers.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPage(page, context, '/app/settings#you');
+  await expect(radio(page, /Default/)).toHaveAttribute('aria-checked', 'true');
+  hold = 'POST';
+  await radio(page, /High/).click();
+  await page.locator('.back').click();
+  await expect(page.locator('.cat-link[data-category="you"]')).toBeVisible();
+  state.machines = { hub: ok('high') };
+  await release();
+  expect(state.reads).toBe(1);
+  await expect(radios).toHaveCount(0);
+  hold = null;
+  await page.locator('.cat-link[data-category="you"]').click();
+  await expect(radio(page, /High/)).toHaveAttribute('aria-checked', 'true');
+  expect(state.reads).toBe(2);
+
+  // Desktop: the same, leaving for another category.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  hold = 'POST';
+  await radio(page, /Ask/).click();
+  await page.locator('#sections a[data-section="models"]').click();
+  await expect(page.locator('.catview[data-category="models"]')).toBeVisible();
+  await release();
+  expect(state.reads).toBe(2);
+  hold = null;
+  await page.locator('#sections a[data-section="you"]').click();
+  await expect(radio(page, /High/)).toHaveAttribute('aria-checked', 'true');
+  expect(state.reads).toBe(3);
+
+  // A read already on its way when the list covers You draws nothing there.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('.back').click();
+  await expect(page.locator('.cat-link[data-category="you"]')).toBeVisible();
+  hold = 'GET';
+  await page.locator('.cat-link[data-category="you"]').click();
+  await expect.poll(() => held.length).toBe(1);
+  await page.locator('.back').click();
+  await expect(page.locator('.cat-link[data-category="you"]')).toBeVisible();
+  const before = await drawn();
+  await release();
+  expect(await drawn()).toBe(before);
+});
+
 test('disagreeing machines select nothing and the note says why', async ({ page }) => {
   await stub(page, {
     machines: {
