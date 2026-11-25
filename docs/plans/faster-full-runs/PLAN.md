@@ -241,3 +241,7 @@ git diff --check
 | mechanics | blocking | Stopping cannot guarantee Playwright workers and browsers are gone | downgraded (minor): worst case is temporary load, never a wrong result, and today a stopped run leaves its whole suite running | S2 promise narrowed to its own children; Accepted Risk |
 | mechanics | minor | Second `startServerWithEnv` caller keeps its port | upheld | Both callers drop it; routes.test.js validated |
 | mechanics | minor | No evidence for the shorter wait | upheld | Wait minutes in D15 record |
+
+## Log
+
+- 2026-11-25 — Build accepted: approval 97655c29-d192-4e91-9f3a-da2fcd79aac9
