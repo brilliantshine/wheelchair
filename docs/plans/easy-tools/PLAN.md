@@ -135,7 +135,7 @@ reasons the problems card gives). "Can be used" means these launch-time checks p
 not hidden. A server tool that passes these shows "server tools don't
 work on Kimi or Pi" as its status, as in the mockup (a fixed fact about the kind). The page lists tools from the project's default branch
 (as the page reads `.mcp.json` today; for a project without a GitHub origin the list says
-"folder tools can only be listed for GitHub projects" and launch still works) plus the newest shared copy (not added when the
+"folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (listed for every project, GitHub or not) (not added when the
 page's project is the shared tools project itself), and checks programs
 against the selected machine's PATH as the machine service sees it, so it can differ from a
 thread that changed a tool. Per-AI limits and Codex's budget are reported only on the
@@ -197,8 +197,9 @@ The script runs in its own process group; on timeout, or when the bridge exits, 
 group gets SIGTERM, then SIGKILL after 5 seconds. The bridge, the server launcher and
 `wc.js tool run`/`check` record each process group they start in a per-session file under
 the machine state directory and remove the entry when it ends; when the machine service
-stops or sees the end of a session, it sends the same TERM-then-KILL to every group still
-recorded for it, so a crashed bridge or a killed `wc.js` leaves nothing running. Before each call the bridge re-reads the
+sees the end of a session (including a session it recovered after its own restart), it sends
+the same TERM-then-KILL to every group still recorded for it. A machine service stop or
+restart kills nothing, since sessions outlive it. So a crashed bridge or a killed `wc.js` leaves nothing running. Before each call the bridge re-reads the
 tool's `tool.json`; if it differs from what was offered at session start, the call returns
 an error saying the tool changed and to try it with `wc.js tool run` now or through MCP in
 the next session. Calls may run in parallel; the bridge never runs the
@@ -388,12 +389,14 @@ round where knowing it matters most.
 
 ### Round 5 — 2026-11-25
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol (restarted after the lead restart); cross-family: yes.
 
 **Changed since Round 4:** S4 (tool environment strips `.mcp.json` key names; guide forbids committing tokens), S6 (non-GitHub projects), S9 (scripts run live, description fixed; both streams drained; process-group record and cleanup at session end), Deferred row 3 note, Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Cleanup on machine service stop would kill live sessions' tools | upheld | S9: cleanup only at session end, including recovered sessions; service stop kills nothing |
+| intent | minor | Shared tools listing unclear for non-GitHub projects | upheld | S6: shared copy listed for every project |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
