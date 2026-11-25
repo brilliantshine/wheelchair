@@ -36,6 +36,7 @@ created: 2026-11-24
 | 9 | Like the assistant, a project lead starts fresh after a restart; it rebuilds its picture from the project and its threads. | Matches the assistant; the project itself is the lasting memory. | defaulted |
 | 10 | Its messages and presses reuse the assistant's `[wc:assistant]` marker, so target threads label them "From your assistant". A distinct "From your project lead" label is deferred. | Reuses the built renderer; the label is cosmetic. | defaulted |
 | 11 | Mockups agreed: `graphs/mockup-{threads,thread,popup-lead,popup-assistant,settings}-{phone,desktop}.html` (version of commit c9a0acec). | Collin picked "Agree them". | user |
+| 12 | Supersedes 8 on the mechanism: the read-only copy is a separate local clone of the project folder under the machine's `worktrees/`, not a worktree, so its git state is isolated; it sees every thread's local branch. | Round 1: a shared worktree let git writes reach other threads, and unpushed thread branches were invisible under `origin/`. | review-round-1 |
 
 ## Spec
 
@@ -115,8 +116,7 @@ Threads list shows.
      `upstream/<default>` when it exists, else `origin/<default>`, where `<default>` is
      the project's `origin/HEAD` target, else the first of `main` or `master` that exists
      as a local branch, else the project folder's current branch.
-  Step 1 and 2 need no network beyond step 1, so a network outage still gives the last
-  fetched tip. If no default tip can be found at all, the start fails with "this project
+  Only step 1 uses the network, so an outage still gives the last fetched tip. If no default tip can be found at all, the start fails with "this project
   has no branch to read" and shows like any failed start.
   These git writes are done by the machine service, never by the agent.
 - `wc.js project-lead refresh` (S4) runs the same three steps on request.
@@ -219,13 +219,19 @@ The build matches these.
 ### Validation
 
 - `node --test viewer/test/project-lead.test.js`: record creation idempotent per project;
-  start on first message only; off stops and refuses; every action's out-of-project,
+  start on first message only, with the message queued before the start and moved to the
+  next lead after a failed start; `session start`, `session leads`, `wc.js git` and
+  `sudo`/`reach`/`permit` posts and presses refused for a project lead; off stops and
+  refuses, and a stop is retried while off; every action's out-of-project,
   self, assistant and project-lead target refusals; `threads` filtering; the assistant
   refusing project lead targets; Needs you counting; exclusions from features,
-  `session leads` and pollers; grouping key machine + path.
-- `bash machine/test/run.sh` with a new case: folder created as a detached worktree at the
-  default tip; refreshed at start and by `refresh`; local edits discarded; fetch failure
-  does not block start; `prompt_role: "project-lead"` builds the prompt from
+  `session leads` and pollers; grouping key resolved machine + path; the pop-up opening
+  the assistant on archived-only and project lead pages.
+- `bash machine/test/run.sh` with a new case: folder created as a clone under
+  `worktrees/` at the default tip, picked as S3 says (`upstream/`, `origin/`, `main`/
+  `master`, current branch); an unpushed `wc/<id>` readable as `origin/wc/<id>`; refreshed
+  at start and by `refresh`; local edits discarded; a project `origin` fetch failure does
+  not block start; no default tip fails the start; a `file` card from the clone accepted; `prompt_role: "project-lead"` builds the prompt from
   `project-lead.md`.
 - `npm --prefix viewer run test:browser -- app-project-lead.spec.js`: rows pinned per
   group with both states; same-name headings show the machine; pop-up switch on a project
@@ -242,6 +248,7 @@ The build matches these.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| On a harness with no read-only sandbox (Claude Code), a project lead that broke its rules could still run shell commands that write outside its clone, such as in the project folder | Rare path: needs the agent to act against its role; machine-mediated writes, helper starts and cross-project actions are refused outside the prompt, and its clone is reset at every start | review-round-1 |
 
 ## Review Rounds
 
@@ -253,6 +260,21 @@ The build matches these.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | `origin/wc/<id>` misses unpushed thread branches (`protocol/app/lead.md` pushes only at PR) | upheld | S3: separate clone fetches the project's local branches into `origin/*`; Decision 12 |
+| intent | minor | Routers not updated | upheld | S7 |
+| intent | minor | `assistant.md` not updated for project-lead exclusions | upheld | S7 |
+| intent | minor | `file` cards refused from `<state>/project-leads` (`machine/service.js:427`) | upheld | S3: folder under `worktrees/` |
+| intent | minor | Pop-up on a project lead's own page unclear | upheld | S2: opens the assistant |
+| mechanics | blocking | Read-only not enforced; shared worktree state; project tools; machine git writes | downgraded (major) | Not wrong-build: rules forbid; fixed anyway. S3 "Locked down" + clone isolation; shell writes on Claude → Accepted Risk (rare path) |
+| mechanics | blocking | `session leads --all-projects` reaches other projects | upheld | S3: refused for project leads |
+| mechanics | blocking | Pressing `reach` in a same-project thread links another project | upheld | S4: `reach`, `permit`, `sudo` presses refused |
+| mechanics | blocking | No-origin repos; default-branch fallback to `main` | downgraded (minor) | A failing delegated start already reports `{ok:false, thread, url}` as for the browser; default tip rule written in S3 |
+| mechanics | major | First launch during a fetch outage has no tip | upheld | S3 refresh steps; no tip → named start failure |
+| mechanics | major | First message lost if the start fails | upheld | S1: queued before start, moves to next lead |
+| mechanics | major | Off with an unreachable machine leaves a lead running | downgraded (minor) | Actions are refused while off, so an orphan can do nothing; S1: no starts while off, stop retried when the machine reports in |
+| mechanics | major | `file` cards refused from the state folder | downgraded (minor) | Same as intent row; a failed `file` card loses nothing. S3 |
+| mechanics | major | Same-name folders on one machine look identical | upheld | S5: path shown on collision; resolved machine identity |
+| mechanics | minor | Pop-up on an archived project page | upheld | S2 |
 
 ## Implementation Tasks
 
