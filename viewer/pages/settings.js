@@ -142,9 +142,12 @@
     return { agreed, lines };
   }
 
+  // Behind a phone's list or another category, Diagrams is neither read nor drawn.
+  const youShown = () => section === 'you' && !(atRoot && phone.matches);
+
   function drawDiagram() {
     const box = document.getElementById('diagram-choices');
-    if (!box) return;
+    if (!box || !youShown()) return;
     if (!diagram) { box.replaceChildren(h('span', { class: 'hint', text: 'Reading each machine\u2026' })); return; }
     const { agreed, lines } = diagramView();
     box.replaceChildren(
@@ -157,6 +160,7 @@
   }
 
   async function loadDiagram() {
+    if (!youShown()) return; // a save can finish after You was left
     const read = ++diagramReads;
     let next;
     try { next = await api('/settings/diagram-sensitivity'); }
@@ -170,7 +174,7 @@
   // is left or the window grows past it. Never while the list hides it.
   function syncDiagrams() {
     if (!data) return;
-    const shown = section === 'you' && !(atRoot && phone.matches);
+    const shown = youShown();
     if (shown && !diagramShown) { diagram = null; drawDiagram(); loadDiagram(); }
     diagramShown = shown;
   }
