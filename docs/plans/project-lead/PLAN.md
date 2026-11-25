@@ -444,7 +444,7 @@ The build matches these.
 | T7 | Doc-truth follow-ups from T4's review: `refresh` retries in `project-lead.md`; `lead.md:23` marker sentence (cards.md reader lists and cards-lead.md opening left as they are: they already omit the assistant, which is also a `lead`-role session) | `protocol/app/{project-lead,lead}.md` | light, gpt-6-luna | wc-df22283a57e1-worker-5 | `node --test viewer/test/*.test.js` | done |
 | T8 | Machine follow-ups from T3's review: project_dir basename guard, start refuses assistant/from_remote_branch with project_lead, recorded codex_mode, fetch timeout, clone push URL disabled, `git clean -fdx`, and the missing test cases | `machine/service.js`, `machine/lib/project-lead.js`, `machine/test/project-lead.test.js` | standard, gpt-6.1-terra | wc-df22283a57e1-worker-7 | same as T3 | done |
 | T9 | Follow-ups to T2: answered reach/permit cards reappearing, `special` in the assistant exclusion, no policy bypass on `dispatch`, redaction floor, the flaky concurrent-send test, missing action tests | `viewer/app/{project-lead-actions,assistant-actions}.js`, `viewer/test/project-lead.test.js`, `viewer/test/assistant.test.js` | standard, gpt-6.1-terra | wc-df22283a57e1-worker-11 | same as T1 | done |
-| T10 | Keep the caller's own project path and in-project titles out of the redaction set | `viewer/app/project-lead-actions.js`, `viewer/test/project-lead.test.js` | light, gpt-6-luna | wc-df22283a57e1-worker-12 | `node --test viewer/test/project-lead.test.js` | in progress |
+| T10 | Keep the caller's own project path and in-project titles out of the redaction set | `viewer/app/project-lead-actions.js`, `viewer/test/project-lead.test.js` | light, gpt-6-luna | wc-df22283a57e1-worker-12 | `node --test viewer/test/project-lead.test.js` | done |
 
 ## Log
 
@@ -504,3 +504,6 @@ The build matches these.
 - 2026-11-24 — Choice: T9, project-lead.test.js: the concurrent-send test checks `at` order of the saved messages, not arrival order.
 - 2026-11-24 — Choice: T9, project-lead-actions.js: the 8-character floor applies to every forbidden string, ids included.
 - 2026-11-24 — Choice: T9, assistant-actions.js: `run(hub, input, policy)` exported as the shared runner with no checks of its own.
+- 2026-11-24 — T10 accepted (band: scout): fix as briefed; `project-lead.test.js` 26 pass on its branch. It narrowed T9's redaction test, which asserted that the shared path itself was hidden (the behaviour this fix removes); no test now checks that a different outside path is hidden.
+- 2026-11-24 — Choice: T10, project-lead.test.js: dropped the shared-path assertion from the outside-content redaction test and renamed it.
+- 2026-11-24 — Choice: T10, project-lead-actions.js: any forbidden value that is a substring of the caller's path is dropped (as briefed), so an outside path that is a prefix of the caller's path is not hidden; no type guard on `includes`.
