@@ -50,6 +50,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Shared tools live in their own git repository, added to wheelchair as an ordinary project. Threads in that project make and fix shared tools through the usual pull request; each machine offers the merged version | History, review and the normal thread flow; works across machines | user |
 | 7 | Settings names which project holds the shared tools (one per hub, or none). At session start the machine fetches that project's default branch and reads the tools from it, falling back to the last fetched copy if the fetch fails | Agents get the merged version without anyone pulling by hand; a network drop does not lose tools | defaulted |
 | 8 | When a project tool and a shared tool have the same name, the project tool wins and the problems card notes the shared one was hidden | The project knows its own needs best; the clash is visible | defaulted |
+| 9 | Supersedes 4 in part: a tool folder holds either a script tool (as in 4) or a server tool, a real MCP server made from a wheelchair template. Wheelchair starts and connects both kinds automatically; no hand-editing .mcp.json | Servers keep state, answer fast and use all of MCP; template + automatic connection removes the setup-and-connect chore that prompted this idea | user |
 
 ## Spec
 
@@ -60,15 +61,22 @@ history can implement from this section alone — behavior, boundaries, edge cas
 non-goals, and concrete validation commands.
 
 ### S1. What a tool is
-A tool is a folder: a description file (name, one-line purpose, named inputs with types and
-descriptions) plus a script in any language. Wheelchair offers it to agents and, when an
-agent calls it, runs the script with the inputs and returns its output. No MCP server is
-written by the tool's author. Exact file names and formats: to be settled.
+A tool is a folder with a description file and one of two kinds of body:
+- **Script tool:** the description gives the name, a one-line purpose and named inputs with
+  types and descriptions, plus a script in any language. When an agent calls the tool,
+  wheelchair runs the script with the inputs and returns its output. Each call is a fresh run.
+- **Server tool:** a real MCP server, started from a wheelchair template, for tools that
+  keep state between calls, are called often, or use MCP features beyond tools. The
+  description says how to start it. Wheelchair starts it for the session and connects it.
+No author edits `.mcp.json` for either kind. Kimi and Pi load no MCP servers, so server
+tools are unavailable there (the problems card says so). Exact file names, formats and the
+template's languages: to be settled.
 
 ### S2. Connecting
 No connect step. At each agent session start, wheelchair finds every tool in the project's
 tools folder (from the thread's own worktree) and in the shared tools folder, and offers the
-valid ones through one built-in MCP server for that session. A broken tool is named, with
+valid ones: script tools through one built-in MCP server for that session, server tools
+each as their own MCP server. A broken tool is named, with
 the reason, on the thread's existing "Project tools problem" card. Existing `.mcp.json`
 servers keep working unchanged.
 
