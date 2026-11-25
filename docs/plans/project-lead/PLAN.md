@@ -443,7 +443,8 @@ The build matches these.
 | T6 | tricky. Start on use (messages queued before the start, 202 with `start_error`) and Off with stop retry (S1) | `viewer/app/{routes (messages route),project-lead,hub,threads,sessions}.js`, `viewer/test/project-lead.test.js` (adds), `viewer/test/helpers/app-machine.js` | standard, gpt-6.1-terra | wc-df22283a57e1-worker-8 | same as T1 | done |
 | T7 | Doc-truth follow-ups from T4's review: `refresh` retries in `project-lead.md`; `lead.md:23` marker sentence (cards.md reader lists and cards-lead.md opening left as they are: they already omit the assistant, which is also a `lead`-role session) | `protocol/app/{project-lead,lead}.md` | light, gpt-6-luna | wc-df22283a57e1-worker-5 | `node --test viewer/test/*.test.js` | done |
 | T8 | Machine follow-ups from T3's review: project_dir basename guard, start refuses assistant/from_remote_branch with project_lead, recorded codex_mode, fetch timeout, clone push URL disabled, `git clean -fdx`, and the missing test cases | `machine/service.js`, `machine/lib/project-lead.js`, `machine/test/project-lead.test.js` | standard, gpt-6.1-terra | wc-df22283a57e1-worker-7 | same as T3 | done |
-| T9 | Follow-ups to T2: answered reach/permit cards reappearing, `special` in the assistant exclusion, no policy bypass on `dispatch`, redaction floor, the flaky concurrent-send test, missing action tests | `viewer/app/{project-lead-actions,assistant-actions}.js`, `viewer/test/project-lead.test.js`, `viewer/test/assistant.test.js` | standard, gpt-6.1-terra | wc-df22283a57e1-worker-11 | same as T1 | in progress |
+| T9 | Follow-ups to T2: answered reach/permit cards reappearing, `special` in the assistant exclusion, no policy bypass on `dispatch`, redaction floor, the flaky concurrent-send test, missing action tests | `viewer/app/{project-lead-actions,assistant-actions}.js`, `viewer/test/project-lead.test.js`, `viewer/test/assistant.test.js` | standard, gpt-6.1-terra | wc-df22283a57e1-worker-11 | same as T1 | done |
+| T10 | Keep the caller's own project path and in-project titles out of the redaction set | `viewer/app/project-lead-actions.js`, `viewer/test/project-lead.test.js` | light, gpt-6-luna | wc-df22283a57e1-worker-12 | `node --test viewer/test/project-lead.test.js` | in progress |
 
 ## Log
 
@@ -497,3 +498,9 @@ The build matches these.
 - 2026-11-24 — Choice: T2, project-lead-actions.js: `waitingText` maps reach/permit to the two plain texts.
 - 2026-11-24 — Choice: T2, assistant-actions.js: assistant exclusion hardcoded as `!t.assistant && !t.project_lead` (changed to `special` in T9).
 - 2026-11-24 — Choice: T2, assistant-actions.js: `dispatch` takes an optional `policy` argument (split in T9).
+- 2026-11-24 — T9 accepted (band: scout): items 1-6 in; I re-ran `project-lead.test.js` (25 pass) and `assistant.test.js` (19 pass). Scout found the redaction set can hold the caller's own path when the same path exists on another machine; sent to T10 (light). Worker reported "none" for choices; the scout listed 5, logged below.
+- 2026-11-24 — Choice: T9, project-lead-actions.js: the closed-card filter applies to every card kind in a `cards` field.
+- 2026-11-24 — Choice: T9, project-lead-actions.js: outside threads' project paths go into the redaction set (over-redaction fixed in T10).
+- 2026-11-24 — Choice: T9, project-lead.test.js: the concurrent-send test checks `at` order of the saved messages, not arrival order.
+- 2026-11-24 — Choice: T9, project-lead-actions.js: the 8-character floor applies to every forbidden string, ids included.
+- 2026-11-24 — Choice: T9, assistant-actions.js: `run(hub, input, policy)` exported as the shared runner with no checks of its own.
