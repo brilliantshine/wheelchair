@@ -57,7 +57,7 @@ the whole set.
 - An explicit `port` argument (sequential restart tests) never retries.
 - Each failed attempt's child is killed and awaited before the next starts, as the existing
   error path does; temp and state directories are reused across attempts.
-- `startServerWithEnv` in `viewer/test/routes.test.js` becomes a call to `startServer` with `env` (and `open`, `cacheRoot`), so it gets the same retry; its inline-port caller drops the port.
+- `startServerWithEnv` in `viewer/test/routes.test.js` becomes a call to `startServer` with `env` (and `open`, `cacheRoot`), so it gets the same retry; both its callers (`routes.test.js:101-115`, `:235`) drop the explicit port.
 - Callers: every `startServer(...)` call in `viewer/test/` that passes `port: await freePort()` inline (the port is not kept for later use) drops the `port` argument and reads `ctx.port` where it needs the port, so it gets the retry. A caller that keeps the port in a variable for a later start on the same port stays explicit.
 - For the test, `startServer` accepts an optional `nextPort` function (default `freePort`);
   only tests pass it.
@@ -76,7 +76,7 @@ the whole set.
   fixed order (viewer-browser first), whatever order they finish in:
   `suite <name> exit <n> seconds <s>`, `<s>` the suite's wall time in whole seconds. The
   printed progress lines gain the same seconds.
-- Stopping: the browser suite runs in its own process group. On `TERM` or `HUP` the script kills that group and its current foreground suite, waits for them, and exits non-zero without claiming success; a stopped run leaves no browser suite or Playwright process behind.
+- Stopping: the browser suite runs in its own process group. On `TERM` or `HUP` the script kills that group and its current foreground suite, waits for those two child processes, and exits non-zero without claiming success. Browser processes Playwright starts in their own groups are not chased (Accepted Risks). Today a stopped run leaves its whole current suite running, so this is no worse.
 - Exit status, the dirty-worktree refusal, `WHEELCHAIR_FULL_RUN=1`, log file names and the
   sudo-helper pair's combined result are unchanged.
 - Anything that reads `summary.txt` keeps working: it only looks at the `commit` line and
@@ -85,7 +85,7 @@ the whole set.
   `full-run.sh` and stub suites at the paths it calls (each stub records start and end
   times and exits with a chosen code; the browser stub sleeps longer than the rest), assert:
   the browser stub's run overlaps the machine stub's; summary lines appear in the fixed order
-  with the `seconds` field; the script exits 1 when one stub fails and 0 when all pass, including a case where the browser stub is the only failure (its line shows its exit and the script exits 1); sending `TERM` to the script mid-run leaves no stub process alive; the
+  with the `seconds` field; the script exits 1 when one stub fails and 0 when all pass, including a case where the browser stub is the only failure (its line shows its exit and the script exits 1); sending `TERM` or `HUP` to the script mid-run stops both stub suites it started; the
   dirty-tree refusal still exits 2.
 
 ### S3. Browser workers (D14) — `test-support/browser-workers.js`
@@ -93,14 +93,16 @@ the whole set.
 - `CAP = 8`, a named constant. `chooseWorkers({ full, others, cpus })`: a non-full run gets
   2. A full run gets `max(2, floor(top / (others + 1)))`, `top = min(CAP, floor(cpus / 2))`,
   `others` the number of other live full runs found by `liveOthers` (unchanged). On 16 cores:
-  alone 8; beside one other 4; beside three or more 2. Decided once at start (D14).
+  alone 8; beside one other 4; beside two or more 2. Decided once at start (D14).
 - `decide()` passes the count instead of a yes/no; the env override and registration are
   unchanged. Update the `viewer/playwright.config.js:10` comment and `viewer/AGENTS.md:57`.
-- Test: `test-support/test/browser-workers.test.js` covers alone, beside one, beside three,
+- Test: `test-support/test/browser-workers.test.js` covers alone, beside one, beside two,
   low-CPU machines (8, 4, 2, 1 cores) and non-full runs.
 - Timing record (D15): the sub-lead puts its full run's `summary.txt` (with seconds) and total
   wall time in COMPLETION.md beside the before figures (2026-11-25 logs: total 14–21 min,
-  browser 8–11 min, machine about 6 min, run alone), saying what else was running.
+  browser 8–11 min, machine about 6 min, run alone), saying what else was running, and the
+  minutes between the verifiers passing and the full run passing. Reported to Collin, not a
+  gate: the build's run overlaps the verifiers, so it is not a like-for-like comparison.
 
 ### S4. Firefox only where it matters (D8, D11)
 
@@ -132,12 +134,12 @@ the whole set.
 - `protocol/app/lead.md` repair step 7: "and start the full run alongside it unless the
   commit is covered" becomes "and, with that heading, start the full run alongside it unless
   the commit is covered". No other protocol change. Validation: read the rendered step 7 and check it still tells a
-  lead in a project without the heading nothing about full runs (`CONTRIBUTING.md:94`).
+  lead in a project without the heading nothing about full runs (`protocol/app/lead.md:119`, the edit at `:736-741`).
 
 ### Validation commands
 
 ```bash
-node --test viewer/test/server-port-retry.test.js viewer/test/server.test.js viewer/test/app-new-thread.test.js
+node --test viewer/test/server-port-retry.test.js viewer/test/server.test.js viewer/test/app-new-thread.test.js viewer/test/routes.test.js
 node --test test-support/test/full-run.test.js test-support/test/browser-workers.test.js
 node --test viewer/test/playwright-projects.test.js
 npm --prefix viewer run test:browser -- --list   # firefox lists only the files in firefox-specs.js
@@ -164,6 +166,7 @@ git diff --check
 |------|--------------|-------|
 | Tests that keep a `freePort()` port in a variable for a later start on the same port keep the probe-then-bind race | Few such tests; the inline callers that make up most starts get the retry | review-round-1 |
 | Two full runs starting within the same instant can both see no other and take 8 each | Sub-second race between two actors (realism.md) | review-round-1 |
+| After `TERM`/`HUP`, browser processes Playwright started in their own process groups may outlive a stopped full run briefly | Extra load for a while, never a wrong result; today a stopped run leaves its whole suite running | review-round-3 |
 | A Firefox-only bug in a spec not on `viewer/test/firefox-specs.js` is not caught | Collin's trade in D8; the list covers drawing, touch, pixels and scroll known today | review-round-2 |
 
 ## Review Rounds
@@ -217,3 +220,10 @@ git diff --check
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | D15 timing record has no judge and is not like-for-like | upheld | Reported, not a gate; wait time added |
+| intent | minor | "beside two" case missing | upheld | S3 wording and test |
+| intent | minor | S5 cites the wrong line | upheld | Fixed citation |
+| intent | minor | `docs/maps/full-test-runs.md` goes stale | declined | Maps record the commit they were checked against; the next mapper re-checks before reuse |
+| mechanics | blocking | Stopping cannot guarantee Playwright workers and browsers are gone | downgraded (minor): worst case is temporary load, never a wrong result, and today a stopped run leaves its whole suite running | S2 promise narrowed to its own children; Accepted Risk |
+| mechanics | minor | Second `startServerWithEnv` caller keeps its port | upheld | Both callers drop it; routes.test.js validated |
+| mechanics | minor | No evidence for the shorter wait | upheld | Wait minutes in D15 record |
