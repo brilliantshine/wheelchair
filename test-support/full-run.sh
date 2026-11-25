@@ -90,8 +90,11 @@ run_suite 6 install bash install/test/run.sh
 run_suite 7 sudo-helper sudo_suite
 wait "$browser_pid"
 browser_pid=
-read -r browser_result browser_seconds < "$log_dir/.browser-result.$$"
+read -r browser_result browser_seconds < "$log_dir/.browser-result.$$" 2>/dev/null
 rm -f "$log_dir/.browser-result.$$"
+# A browser job killed before it recorded its result counts as a failure.
+[[ $browser_result =~ ^[0-9]+$ ]] || browser_result=1
+[[ $browser_seconds =~ ^[0-9]+$ ]] || browser_seconds=0
 results[0]=$browser_result
 times[0]=$browser_seconds
 printf 'viewer-browser: exit %s seconds %s\n' "$browser_result" "$browser_seconds"
