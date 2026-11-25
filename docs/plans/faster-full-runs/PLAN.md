@@ -173,7 +173,7 @@ git diff --check
 |---|-----------|-----------|------|------------|--------|
 | T1 | S1 port clash retry in startServer; inline `freePort()` callers drop `port`; new retry test | `viewer/test/helpers/server.js`, `viewer/test/server-port-retry.test.js`, startServer call sites in `viewer/test/` | standard / gpt-6.1-terra | S1 commands, whole node suite, pages/app-views chromium | dispatched (wc-870c1331c2ff-worker) |
 | T2 | S2 full-run.sh side by side with seconds and TERM/HUP cleanup; new full-run test; AGENTS.md:85; S5 lead.md step 7 | `test-support/full-run.sh`, `test-support/test/full-run.test.js`, `AGENTS.md:85`, `protocol/app/lead.md` step 7 | standard / gpt-6.1-terra | `node --test test-support/test/full-run.test.js` | dispatched (wc-870c1331c2ff-worker-2) |
-| T3 | S3 CAP 8 start-time split; S4 Firefox list, config, docs; new projects test | `test-support/browser-workers.js` + test, `viewer/playwright.config.js`, `viewer/test/firefox-specs.js`, `viewer/test/playwright-projects.test.js`, `CONTRIBUTING.md:94`, `AGENTS.md:67`, `viewer/AGENTS.md:57,94` | standard / gpt-6.1-terra | workers + projects tests, `--list`, touch/app-new-thread specs | dispatched (wc-870c1331c2ff-worker-3) |
+| T3 | S3 CAP 8 start-time split; S4 Firefox list, config, docs; new projects test | `test-support/browser-workers.js` + test, `viewer/playwright.config.js`, `viewer/test/firefox-specs.js`, `viewer/test/playwright-projects.test.js`, `CONTRIBUTING.md:94`, `AGENTS.md:67`, `viewer/AGENTS.md:57,94` | standard / gpt-6.1-terra | workers + projects tests, `--list`, touch/app-new-thread specs | done (aec8d7b5) |
 
 ## Deferred
 
@@ -253,3 +253,8 @@ git diff --check
 ## Log
 
 - 2026-11-25 — Build accepted: approval 97655c29-d192-4e91-9f3a-da2fcd79aac9
+- 2026-11-25 — Choice: T3, `viewer/test/playwright-projects.test.js`: resolves the firefox project's real file set with Playwright's internal `createFileMatcher` (`playwright/lib/util`); may need updating on a Playwright upgrade.
+- 2026-11-25 — Choice: T3, `viewer/playwright.config.js`: firefox project `testMatch` is the basename array from `firefox-specs.js`.
+- 2026-11-25 — Choice: T3, `AGENTS.md`: the Chromium/Firefox statement sits as a paragraph at the end of the Validation section (`:76`), with `:67`'s command comment trimmed.
+- 2026-11-25 — Choice: T3, `test-support/browser-workers.js`: `decide()` passes `others: 0` for non-full runs.
+- 2026-11-25 — T3 accepted (band: scout): CAP 8 start-time split, firefox list of 15 matches `--list` exactly, 52 specs in Chromium; sub-lead reworded "overlapping full runs share the budget" in `viewer/playwright.config.js` and `viewer/AGENTS.md:57` to the actual formula.
