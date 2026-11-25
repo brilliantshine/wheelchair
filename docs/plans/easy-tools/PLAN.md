@@ -411,6 +411,15 @@ round where knowing it matters most.
 | mechanics | major | Rare path: reused process-group id killed at cleanup | accepted-risk | Rare path: needs a crashed launcher, an exited child and id reuse before session end |
 | mechanics | minor | Non-GitHub page can't check shared-name collisions | upheld | S6: rows say not checked against the project's own tools |
 
+### Round 6 — 2026-11-25
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 5:** S4 (`WHEELCHAIR_TOOL_STRIP` names and `WHEELCHAIR_SESSION_TOKEN` stripped by bridge, server launcher and `wc.js tool run`/`check`), S6 (shared tools listed for non-GitHub projects, with an unchecked-collision note), S9 (cleanup only at session end, never on service stop; CLI commands write no record and clean up their own child on exit and signals), Accepted Risks (two rare paths), Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
