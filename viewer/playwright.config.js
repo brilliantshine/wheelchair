@@ -6,7 +6,8 @@ const { defineConfig, devices } = require('@playwright/test');
 const { decide } = require('../test-support/browser-workers');
 const firefoxSpecs = require('./test/firefox-specs');
 
-// Full runs alone use up to eight workers; overlapping full runs share that budget.
+// A full run alone uses up to eight workers; one starting beside n other live full runs
+// takes max(2, floor(8 / (n + 1))), fixed at its start. Non-full runs use two.
 // --workers on the command line still overrides the cap.
 module.exports = defineConfig({
   workers: decide(),
