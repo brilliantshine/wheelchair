@@ -44,3 +44,6 @@ project in view, and that knows the project well.
 
 - Builds on the personal assistant (PR #186): reuse its special thread, role and powers,
   narrowed to one project.
+- The fence around a project lead is for focus and catching mistakes: the app blocks what it
+  asks the app to do outside its project, but it is not sealed against an agent that
+  deliberately ignores its rules.

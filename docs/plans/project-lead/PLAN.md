@@ -37,6 +37,7 @@ created: 2026-11-24
 | 10 | Its messages and presses reuse the assistant's `[wc:assistant]` marker, so target threads label them "From your assistant". A distinct "From your project lead" label is deferred. | Reuses the built renderer; the label is cosmetic. | defaulted |
 | 11 | Mockups agreed: `graphs/mockup-{threads,thread,popup-lead,popup-assistant,settings}-{phone,desktop}.html` (version of commit c9a0acec). | Collin picked "Agree them". | user |
 | 12 | Supersedes 8 on the mechanism: the read-only copy is a separate local clone of the project folder under the machine's `worktrees/`, not a worktree, so its git state is isolated; it sees every thread's local branch. | Round 1: a shared worktree let git writes reach other threads, and unpushed thread branches were invisible under `origin/`. | review-round-1 |
+| 13 | The project fence stops mistakes, not a deliberately rule-breaking agent: every app-mediated action and read is checked against the project (S3, S4); direct shell access outside the clone is an accepted risk. Added to IDEA Constraints. | Collin picked "Stop mistakes, as planned" after the round 3 budget stop. | user |
 
 ## Spec
 
@@ -357,6 +358,20 @@ The build matches these.
 | mechanics | blocking | `threads` `peer_log` and `reach` cards leak other projects | downgraded (major) | Collin's own data shown to his own project lead, but breaks IDEA's boundary; S4 filter on both actions |
 | mechanics | major | Message order across failed starts | upheld | S1: submission order |
 | mechanics | minor | Pop-up loses accepted messages on reload until a lead starts | upheld | Deferred D2 |
+
+### Round 4 — 2026-11-24
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 3:**
+- Decision 13 / IDEA Constraints: the fence is for focus and mistakes, not a rule-breaking agent.
+- S1: messages queued in submission order across failed starts.
+- S3: allow-list keeps lifecycle callbacks; `file`/`image` must be inside the clone; Codex always sandboxed.
+- S4: other-project `peer_log`/`queued` entries and `reach`/`permit` cards left out of `threads` and `thread`.
+- Deferred D2; Accepted Risk 1 widened; Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
