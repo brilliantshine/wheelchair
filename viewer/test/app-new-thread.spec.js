@@ -139,7 +139,7 @@ test('no default folder: a line linking to Settings', async ({ page }) => {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ default_project_folder: '' }),
   }));
   await open(page);
-  await expect(page.locator('#nt-no-folder a')).toHaveAttribute('href', '/wheelchair/app/settings');
+  await expect(page.locator('#nt-no-folder a')).toHaveAttribute('href', '/wheelchair/app/settings#threads');
   await expect(page.locator('#nt-note')).toBeHidden();
 });
 

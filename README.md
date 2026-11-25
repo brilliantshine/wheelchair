@@ -258,7 +258,7 @@ next. Start at the root one. `CONTRIBUTING.md` has the conventions and validatio
 ## Dependencies
 
 - Claude Code, Codex, Antigravity, Kimi Code and Pi (OpenRouter) are optional harnesses,
-  installable from Settings → Harnesses. Multiple harnesses let reviews and checks use another family.
+  installable from Settings → AI providers. Multiple harnesses let reviews and checks use another family.
 - `tmux`, which runs every agent session.
 - `git` and the GitHub CLI `gh`, signed in, so threads can push branches and open pull
   requests.

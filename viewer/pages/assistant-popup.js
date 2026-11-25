@@ -284,7 +284,7 @@
       const roles = { lead: 'leads', 'sub-lead': 'sub-leads', worker: 'workers', reviewer: 'reviewers', verifier: 'verifiers', mapper: 'mappers', designer: 'designers' };
       box.append(el('p', '', verb + (roles[card.for] || card.for + 's') + ': ' + (snap.text || ''))); if (card.why) box.append(el('p', '', card.why));
       if (snap.provider) { const provider = (window.WHEELCHAIR_TOOLS || []).find((t) => t.provider === snap.provider); box.append(el('p', '', 'only on ' + (provider ? provider.label : snap.provider))); } if (snap.project) box.append(el('p', '', 'only in ' + String(snap.project).split('/').filter(Boolean).pop()));
-      const a = el('a', '', 'Open in Settings'); a.href = '/wheelchair/app/settings#templates/lessons/' + encodeURIComponent(card.for); box.append(a);
+      const a = el('a', '', 'Open in Settings'); a.href = '/wheelchair/app/settings#behavior/lessons/' + encodeURIComponent(card.for); box.append(a);
     } else {
       eyebrow(String(card.kind || 'card').toUpperCase());
       const text = card.title || card.summary || card.body || card.note || '';

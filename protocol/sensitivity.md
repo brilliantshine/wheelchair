@@ -22,7 +22,7 @@ nothing else reads this region or writes the installed copies.
 diagram-sensitivity: default
 
 Three levels — `ask`, `default`, `high`. This block is owned by the wheelchair repo and
-rewritten in place. Move the dial on the wheelchair app's Settings page (Models, Diagrams), never by editing
+rewritten in place. Move the dial on the wheelchair app's Settings page (You, Diagrams), never by editing
 these lines: an edit here is overwritten the next time the writer runs.
 
 An answer has a **shape** when it names three or more things that relate to each other, or
@@ -93,7 +93,7 @@ unrelated to what that check tests. None of the other commands depends on the bl
 
 ## Moving the dial
 
-The wheelchair app's Settings control under Models > Diagrams asks each machine's service
+The wheelchair app's Settings control under You > Diagrams asks each machine's service
 to run `sensitivity/set.sh <level>`. `sensitivity/set.sh --report` still prints the current
 state without writing, including disagreements between present files.
 
