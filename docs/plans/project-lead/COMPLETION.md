@@ -2,7 +2,25 @@
 slug: project-lead
 date: 2026-11-24
 implemented-by: "standard gpt-6.1-terra (T2, T3, T6, T8, T9), heavy gpt-6.2-sol (T1 attempt 3), standard claude-sonnet-5-5 (T4, T5), light gpt-6-luna (T7, T10); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (verifier)
+    checks: gpt-6.1-terra, gpt-6.2-sol, claude-sonnet-5-5, gpt-6-luna
+  - round: 1
+    lane: gpt-6.2-sol (verifier)
+    checks: gpt-6.1-terra, gpt-6.2-sol, claude-sonnet-5-5, gpt-6-luna
+  - round: 2
+    lane: claude-opus-5-5 (verifier)
+    checks: gpt-6.1-terra (R1)
+  - round: 2
+    lane: gpt-6.2-sol (verifier)
+    checks: gpt-6.1-terra (R1)
+  - round: 3
+    lane: claude-opus-5-5 (verifier)
+    checks: gpt-6.1-terra (R2a, R2b, R2c)
+  - round: 3
+    lane: gpt-6.2-sol (verifier)
+    checks: gpt-6.1-terra (R2a, R2b, R2c)
 ---
 
 # Completion Report — A project lead pinned in each project
@@ -133,7 +151,7 @@ tip separately.
   renderer; there is no project-lead-specific attribution test.
 - The pop-up's old global `wc-assistant-seen` value is not migrated: the assistant's unread dot
   may light once after the update.
-- Deferred D1-D3 remain deferred.
+- Deferred D1-D11 remain deferred (D4-D9 mockup styling, D10-D11 S4 text-filter edges).
 
 ## Remediation rounds
 
@@ -200,4 +218,31 @@ $ node --test machine/test/project-lead.test.js
 # pass 21
 # fail 0
 ```
+
+### Verification attempt 3 (commit `139bf13d`) and finish
+
+Claude verifier: PASS. GPT verifier: FAIL with 5 gaps. Three were judged rare paths and recorded
+in PLAN.md Accepted Risks (verification-3). The other two are edges of S4's other-project text
+filter, which had been fixed four times. Collin chose to save them for follow-up: S4 is amended
+(Decision 14) and they are Deferred D10 and D11. The build finished at the user's choice with no
+further verification.
+
+Full run (`bash test-support/full-run.sh`) on `139bf13d`, `summary.txt`:
+
+```
+commit 139bf13d6a05a5dd87c7a6bc95b94fea73617dc5
+suite viewer-browser exit 0
+suite viewer-node exit 0
+suite machine exit 0
+suite test-support exit 0
+suite sensitivity exit 0
+suite codex exit 0
+suite install exit 1
+suite sudo-helper exit 0
+```
+
+The `install` failure is `FAIL real wheelchair directory is byte-identical after suite`. The
+same test fails with the same error at the comparison commit `7746cbc2` (run from an extracted
+copy of `main`: `RESULT 212 passed, 1 failed`), because live sessions on this machine write to
+`~/.wheelchair` during the run. It does not come from this change.
 
