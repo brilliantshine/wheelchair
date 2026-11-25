@@ -254,8 +254,8 @@ Round 2 fixes (for round 3): S5 blocks repaint independently (replaces the poll-
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | `tricky` Settings shell: eight categories, keys and aliases, blocks that repaint only themselves, live work per category, phone list and back link (S1 except lead-order Save semantics, S3 in-page, S4, S5 except harness-toggle→Accounts, S7) | `viewer/pages/settings.{js,css,html}`; Settings browser specs (app-settings, diagram, assistant, project-lead, harnesses, accounts, hidden-tabs, lessons, openrouter-spend, send-now, project-tools, browser, background-*) | standard / claude-sonnet-5-5 | wc-d14474dffb25-worker | S6 node + browser lists, name-guard | in progress |
-| T2 | `tricky` After T1: lead-order box Save semantics and `reserved_provider` (S1), sign-in handoff and Harnesses reload, one-line account usage (S2), harness toggle rebuilds Accounts (S5), Check Once Built #1 | `viewer/pages/settings.{js,css}`, `viewer/test/app-settings.spec.js`, `app-harnesses.spec.js`, `app-accounts.spec.js` | standard / claude-sonnet-5-5 | — | S6 lists | not started (waits on T1) |
+| T1 | `tricky` Settings shell: eight categories, keys and aliases, blocks that repaint only themselves, live work per category, phone list and back link (S1 except lead-order Save semantics, S3 in-page, S4, S5 except harness-toggle→Accounts, S7) | `viewer/pages/settings.{js,css,html}`; Settings browser specs (app-settings, diagram, assistant, project-lead, harnesses, accounts, hidden-tabs, lessons, openrouter-spend, send-now, project-tools, browser, background-*) | standard / claude-sonnet-5-5 | wc-d14474dffb25-worker | S6 node + browser lists, name-guard | done |
+| T2 | `tricky` After T1: lead-order box Save semantics and `reserved_provider` (S1), sign-in handoff and Harnesses reload, one-line account usage (S2), harness toggle rebuilds Accounts (S5), Check Once Built #1 | `viewer/pages/settings.{js,css}`, `viewer/test/app-settings.spec.js`, `app-harnesses.spec.js`, `app-accounts.spec.js` | standard / claude-sonnet-5-5 | — | S6 lists | in progress |
 | T3 | Links and texts outside the page (S3): threads.js, thread.js, assistant-popup.js, new.html, README, protocol/sensitivity.md, sensitivity/test/run.sh | those files + `viewer/test/app-new-thread.spec.js` | light / gpt-6-luna | wc-d14474dffb25-worker-2 | `bash sensitivity/test/run.sh`; app-new-thread.spec.js | done |
 
 ## Log
@@ -263,3 +263,15 @@ Round 2 fixes (for round 3): S5 blocks repaint independently (replaces the poll-
 Build accepted: approval c097ed47-f022-4759-a895-e5d8bb654791
 - 2026-11-24 — Dispatched T1 (claude standard) and T3 (light) in parallel; T2 waits on T1 (same file).
 - 2026-11-24 — T3 accepted (band: scout): all ten link/text edits as briefed; sensitivity 67 pass, app-new-thread.spec.js 26 pass (re-run by sub-lead). Worker reported choices: none.
+- 2026-11-25 — Choice: T1, settings.js parseHash: old-key and unknown-key addresses are kept as typed, not rewritten
+- 2026-11-25 — Choice: T1, category ledes without a mockup: AI providers "The agent programs wheelchair runs and the logins they use.", Usage and balancing "What is left this week, and how agents share it.", Models "Who runs what.", Agent behavior "How agents work, and what they have learned."; Project tools keeps its own heading
+- 2026-11-25 — Choice: T1, block headings: Your name, Writing style, Diagrams, Enter to send, Background Customization, Conversations, Threads, Permission mode, Lead names, Leads, Lead order, Harnesses, Accounts, Usage, Behavior templates; Accounts' provider headings became h3
+- 2026-11-25 — Choice: T1, Harnesses links: "Open Accounts"/"Add an account" go to #providers and scroll to the Accounts block; "Leads try" and "Workers try first" go to #usage
+- 2026-11-25 — Choice: T1, phone root: You is built behind the list and CSS shows one or the other; going from a category back to the list counts as leaving it (discards a background preview, stops polling)
+- 2026-11-25 — Choice: T1, a hash change within the same category rebuilds nothing; two background tests now expect the same editor
+- 2026-11-25 — Choice: T1, Saved notes sit under the category lede (You, Models, leads, Threads); Lead order and Balancing each show their own Save's note
+- 2026-11-25 — Choice: T1, Usage Saves still reset both boxes from saved values until T2
+- 2026-11-25 — Choice: T1, Diagrams choices (radio circles), Covers line, Never say box and In your own words count restyled to match the You mockup at every width
+- 2026-11-25 — Choice: T1, Lead names and Your name sections are not named regions, so their control labels stay unique
+- 2026-11-25 — Choice: T1, tests: app-harnesses.spec.js navigates by hash and stubs harness status in the switched-off-account test; app-send-now.spec.js opens #you
+- 2026-11-25 — T1 accepted (band: self): read the settings.js/css diff; on the merged branch (with T3) S6 node tests 87 pass, sensitivity 67 pass, S6 browser list 853 pass / 1 fail (firefox app-accounts.spec.js:262 'adding a GPT account does not warn'), which passed twice when re-run alone — flaky under load, watch in verification. The worker's four 'lead waiting line' failures near midnight did not recur.
