@@ -16,12 +16,6 @@ Map: `MAP.md`.
 ### Q2: Agree the mockups
 - **Context:** A designer mocks the agreed categories on phone and desktop once Q1 is settled.
 
-### Q3: Usage readings and sign-in shown twice (Accounts and Usage; Accounts and Harnesses): keep both or show once?
-- **Context:** MAP.md Grouping observations.
-
-### Q4: Old links to sections (`#models`, `#usage`, ... and text saying "Settings → Models")
-- **Context:** MAP.md Literal section-reference index. Must still land somewhere sensible; the global instructions' diagram dial text names "Models, Diagrams".
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -33,6 +27,8 @@ Map: `MAP.md`.
 |---|----------|-----------|--------|
 | 1 | Mode two-part | Collin's pick on the mode card | user |
 | 2 | Eight categories: You; AI providers; Usage and balancing; Models; Assistant and project leads; Threads; Agent behavior; Project tools (graphs/categories.json) | Collin plans to add customization for the assistant and project leads; one shared home keeps Threads focused | user |
+| 3 | Show each repeated thing once: sign-in only on account cards (Harnesses links to them); detailed usage only in Usage, account cards keep a one-line reading | The repetition is a main source of clutter; each thing stays one tap away | user |
+| 4 | New section keys `you`, `providers`, `usage`, `models`, `leads`, `threads`, `behavior`, `tools`; old keys keep working as aliases (`harnesses`, `accounts` → providers; `writing`, `background` → you; `templates` and `templates/lessons/<role>` → behavior); in-repo links and texts that name old sections are updated | Lesson cards and onboarding already link to old keys; aliases cost a lookup table | defaulted |
 
 ## Spec
 
@@ -48,6 +44,17 @@ The Settings page has eight categories, in this order, each holding exactly thes
 6. **Threads**: tool steps, auto-merge and branch deletion, default project folder, Permission mode, lead names.
 7. **Agent behavior**: Behavior templates and Lessons learned (whole current section).
 8. **Project tools**: unchanged.
+
+### S2. Each repeated thing shown once
+
+- Sign-in for a provider happens only on its account cards in AI providers. A Harnesses row that needs sign-in links to that provider's account cards instead of signing in itself.
+- Detailed usage (5-hour and weekly bars, per-account tables) appears only in Usage and balancing. Each account card keeps a one-line reading of its current usage.
+
+### S3. Section addresses and references
+
+- Keys: `you`, `providers`, `usage`, `models`, `leads`, `threads`, `behavior`, `tools`. An unknown key opens `you`.
+- Old keys open the category now holding them: `harnesses`, `accounts` → `providers`; `writing`, `background` → `you`; `templates` → `behavior`; `templates/lessons/<role>` opens that role's lesson editor as today.
+- Update every in-repo link and text naming an old section or "Models > Diagrams" (MAP.md Literal section-reference index): onboarding card, lesson card links, Harnesses' internal links, `protocol/sensitivity.md` (its delimited region: Settings page (You, Diagrams)), and tests.
 
 ## Deferred
 
