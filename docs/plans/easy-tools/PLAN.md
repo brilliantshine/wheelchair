@@ -15,8 +15,8 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q6: What changes on screen?
-- **Context:** The Tools page in Settings lists `.mcp.json` tools today. Whether new tools show there decides whether mockups are needed.
+### Q7: Agree the mockups
+- **Context:** A designer is drawing the Tools page list, the shared tools project picker and the shared keys section.
 
 ## Watch List
 
@@ -47,6 +47,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | Supersedes 4 in part: a tool folder holds either a script tool (as in 4) or a server tool, a real MCP server made from a wheelchair template. Wheelchair starts and connects both kinds automatically; no hand-editing .mcp.json | Servers keep state, answer fast and use all of MCP; template + automatic connection removes the setup-and-connect chore that prompted this idea | user |
 | 10 | Keys: a tool's description lists the key names it needs; wheelchair passes only those to the tool's script or server process at start, never to the agent. Project tools read the project's keys; shared tools read a machine-wide set of shared keys typed once per machine in Settings | Keys out of the agent's reach; a shared tool's key typed once | user |
 | 11 | Tools are requested by asking in any thread; no new button. Every lead gets the tool guide. Shared tools are made in a thread of the shared tools project (the assistant can start one) | Reuses how Collin already asks for changes | user |
+| 12 | The Tools page lists every folder tool read-only: name, script or server, project or shared, and working or the reason not. Settings also gains the shared tools project picker and shared keys | Seeing what exists and what is broken, from a phone; read-only keeps it small (changes go through a thread) | user |
 
 ## Spec
 
@@ -105,6 +106,14 @@ tool guide that says how to make, connect and test both kinds of tool. A request
 and ends in a pull request. A lead asked for a shared tool from another project's thread
 says it belongs in the shared tools project and names that project; the tool is made in
 a thread there.
+
+### S6. What you see
+The Tools page in Settings (`viewer/pages/project-tools.js`) gains a read-only list of
+folder tools for the chosen project, including shared tools: each with its name, script
+or server, project or shared, and whether it can be used or the reason it cannot (the same
+reasons the problems card gives). Settings gains a picker for the shared tools project (or
+none) and a shared keys section that works like the project keys section. Existing
+`.mcp.json` editing is unchanged. Look: see Mockups (to be agreed).
 
 ## Deferred
 
