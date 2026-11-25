@@ -828,6 +828,55 @@ test.describe('categories', () => {
     await expect(editor.getByRole('status')).toHaveText('Saved');
     await expect(page.locator('#style-text')).toHaveValue('typed, not saved');
   });
+
+  test('the phone list keeps the hidden background editor until You is reopened', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openPage(page, context, '/app/settings#you');
+    const editor = page.locator('.background-editor');
+    const visibility = editor.getByLabel('Visibility');
+    const save = editor.getByRole('button', { name: 'Save', exact: true });
+    await expect(editor.getByLabel('Choose background image')).toBeEnabled();
+    await editor.getByLabel('Choose background image').setInputFiles({ name: 'one.png', mimeType: 'image/png', buffer: PNG });
+    await save.click();
+    await expect(editor.getByRole('status')).toHaveText('Saved');
+    await expect(visibility).toHaveValue('35');
+
+    await page.locator('.back').click();
+    const you = page.locator('.cat-link[data-category="you"]');
+    await expect(you).toBeVisible();
+    await expect(editor).toBeHidden();
+    const hiddenNode = await editor.elementHandle();
+    const updated = await page.evaluate(async () => {
+      const { revision, image_id } = window.wcBackground.current().metadata;
+      const response = await fetch('/wheelchair/api/settings/background', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ revision, image_id, opacity: 42 }),
+      });
+      await window.wcBackground.refresh();
+      return response.ok;
+    });
+    expect(updated).toBe(true);
+    await expect(page.locator('.background-layer')).toHaveCSS('opacity', '0.42');
+    const sameEditor = (el) => el.isConnected && el === document.querySelector('.background-editor');
+    expect.soft(await hiddenNode.evaluate(sameEditor), 'editor after refresh').toBe(true);
+    await you.click();
+    await expect(editor).toBeVisible();
+    await expect(visibility).toHaveValue('42');
+
+    // The restore event used by pageshow must also leave the hidden editor in place.
+    await page.locator('.back').click();
+    await expect(you).toBeVisible();
+    const beforeRestore = await editor.elementHandle();
+    await page.evaluate(() => window.dispatchEvent(new Event('backgroundrestore')));
+    expect.soft(await beforeRestore.evaluate(sameEditor), 'editor after restore').toBe(true);
+    await you.click();
+    await expect(editor).toBeVisible();
+    await expect(visibility).toHaveValue('42');
+    await editor.getByRole('button', { name: 'Remove background' }).click();
+    await save.click();
+    await expect(editor.getByRole('status')).toHaveText('Saved');
+  });
 });
 
 test.describe('one place for sign-in, usage and each draft', () => {
@@ -944,6 +993,65 @@ test.describe('one place for sign-in, usage and each draft', () => {
     expect(Math.abs((await cancel.boundingBox()).y - box.y)).toBeLessThan(2);
     await page.mouse.up();
     await expect(page.locator('.add-form')).toHaveCount(0);
+  });
+
+  test('Harnesses answering during Send code keeps the sign-in card in place', async ({ page }) => {
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const codes = [];
+    const usage = usageBody();
+    usage.providers.openrouter = {
+      ...usage.providers.claude,
+      label: 'OpenRouter',
+      accounts: [{ ...usage.providers.claude.accounts[0], id: 'default-openrouter', provider: 'openrouter' }],
+    };
+    await idle(page);
+    await page.route('**/api/harnesses**', async (route) => { await held; await route.fulfill({ json: harnessBody() }); });
+    await page.route('**/api/usage', (route) => route.fulfill({ json: usage }));
+    await page.route('**/api/accounts/default-openrouter/signin', (route) => route.fulfill({ json: {} }));
+    await page.route('**/api/accounts/default-openrouter/signin/hub', (route) =>
+      route.fulfill({ json: { state: 'waiting', wantsCode: true } }));
+    await page.route('**/api/accounts/default-openrouter/signin/hub/code', (route) => {
+      codes.push(route.request().postDataJSON().code);
+      return route.fulfill({ status: 409, json: { error: 'The sign-in screen has moved on.' } });
+    });
+    await openPage(page, context, '/app/settings#providers');
+    await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
+    await acct(page, 'default-openrouter').getByRole('button', { name: 'Sign in default on hub' }).click();
+    const card = page.locator('.signin-card');
+    const key = card.getByPlaceholder('Paste your OpenRouter key');
+    const send = card.getByRole('button', { name: 'Send code' });
+    await key.fill('sk-or-test-1');
+    await send.click();
+    await expect(card.getByRole('button', { name: 'Start again' })).toBeVisible();
+    await key.fill('sk-or-test-2');
+    const harnesses = page.locator('[data-block="harnesses"]');
+    expect(await harnesses.evaluate((el) => {
+      const navBottom = document.getElementById('app-nav').getBoundingClientRect().bottom;
+      window.scrollBy(0, el.getBoundingClientRect().bottom - navBottom - 24);
+      return el.getBoundingClientRect().bottom > navBottom;
+    })).toBe(true);
+    await expect(send).toBeInViewport();
+    const box = await send.boundingBox();
+    const cardNode = await card.elementHandle();
+    const keyNode = await key.elementHandle();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    const focused = await page.evaluateHandle(() => document.activeElement);
+    release();
+    await expect(page.locator('.h-row')).toHaveCount(5);
+    const after = await send.boundingBox();
+    const preserved = await cardNode.evaluate((el, { field, focus }) => ({
+      card: el === document.querySelector('.signin-card'),
+      field: field === el.querySelector('input[type="password"]'),
+      focus: focus === document.activeElement,
+      key: field.value,
+    }), { field: keyNode, focus: focused });
+    await page.mouse.up();
+    await expect.poll(() => codes).toEqual(['sk-or-test-1', 'sk-or-test-2']);
+    expect(Math.abs(after.y - box.y)).toBeLessThan(2);
+    expect(after.x).toBe(box.x);
+    expect(preserved).toEqual({ card: true, field: true, focus: true, key: 'sk-or-test-2' });
   });
 
   for (const first of ['lead-order', 'balancing']) {
