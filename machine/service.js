@@ -802,7 +802,8 @@ class MachineService {
 
   async start(input) {
     if (input.project_lead === true || input.prompt_role === 'project-lead') {
-      if (input.role !== 'lead' || input.project_lead !== true || input.prompt_role !== 'project-lead' || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir) || !input.project || !input.project_machine || Object.hasOwn(input, 'worktree') || Object.hasOwn(input, 'branch')) die('invalid start body');
+      if (input.role !== 'lead' || input.project_lead !== true || input.prompt_role !== 'project-lead' || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir) || !input.project || !input.project_machine || Object.hasOwn(input, 'worktree') || Object.hasOwn(input, 'branch') || Object.hasOwn(input, 'assistant') || Object.hasOwn(input, 'from_remote_branch') || Object.hasOwn(input, 'default_branch')) die('invalid start body');
+      this.projectLead().folder(path.resolve(input.project_dir), input.thread_id);
       threadName(input.thread_id);
     }
     if (input.prompt_role === 'assistant' && (input.role !== 'lead' || input.assistant !== true)) die('invalid start body');
@@ -851,7 +852,7 @@ class MachineService {
   }
   async startIn(input, name, adapter, account, dir, options, createdWorktree, created, promptPath, rolePrompt) {
     const worktree = created.worktree;
-    const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
+    const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: input.project_lead === true ? 'sandboxed' : options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: input.assistant === true || input.project_lead === true ? null : created.branch || input.branch || null, default_branch: input.assistant === true || input.project_lead === true ? null : created.defaultBranch || input.default_branch || input.defaultBranch || null,
       ...(input.assistant === true ? { assistant: true } : {}),
@@ -2185,6 +2186,7 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/project-lead/refresh') {
         await this.authorize(request, 'hub'); const input = await bodyOf(request);
         if (typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir)) die('invalid project');
+        this.projectLead().folder(path.resolve(input.project_dir), input.thread_id);
         const result = await this.projectLead().run(input.project_dir, threadName(input.thread_id), false);
         return send(response, 200, { ok: true, commit: result.commit });
       }

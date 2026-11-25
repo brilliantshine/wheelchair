@@ -167,3 +167,84 @@ test('refresh keeps the fetched upstream tip during an origin outage', async () 
     assert.equal(git(['-C', result.worktree, 'rev-parse', 'origin/main']).stdout.trim(), git(['-C', repo, 'rev-parse', 'main']).stdout.trim());
   } finally { await env.close(); }
 });
+
+async function localRepo(root, branch) {
+  const repo = path.join(root, 'project'); git(['init', `--initial-branch=${branch}`, repo]);
+  git(['-C', repo, 'config', 'user.name', 'Test']); git(['-C', repo, 'config', 'user.email', 'test@example.test']);
+  await write(path.join(repo, 'file'), 'first'); git(['-C', repo, 'add', '.']); git(['-C', repo, 'commit', '-m', 'first']);
+  return repo;
+}
+async function commitFile(repo, content) {
+  await write(path.join(repo, 'file'), content); git(['-C', repo, 'add', '.']); git(['-C', repo, 'commit', '-m', content]);
+  return git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
+}
+function leadBody(repo, id = 'abc') { return { role: 'lead', cli: 'claude', thread_id: id, token: `${id}-token`, project_lead: true, prompt_role: 'project-lead', project_dir: repo, project: 'project', project_machine: 'local' }; }
+
+for (const branch of ['main', 'master', 'topic']) test(`default tip falls back to ${branch}`, async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try { const repo = await localRepo(root, branch); const tip = await commitFile(repo, 'second'); if (branch !== 'topic') { git(['-C', repo, 'checkout', '-b', 'other']); await commitFile(repo, 'other'); } const clone = await env.instance.projectLead().run(repo, branch, true); assert.equal(clone.commit, tip); }
+  finally { await env.close(); }
+});
+
+test('upstream default wins over a different local default', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try { const repo = await project(root); const old = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim(); await write(path.join(repo, 'README.md'), 'remote'); git(['-C', repo, 'commit', '-am', 'remote']); git(['-C', repo, 'push']); const remote = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim(); git(['-C', repo, 'reset', '--hard', old]); const result = await env.instance.projectLead().run(repo, 'tip', true); assert.equal(result.commit, remote); assert.notEqual(result.commit, old); }
+  finally { await env.close(); }
+});
+
+test('origin HEAD chooses trunk over local main', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try { const repo = await project(root, 'trunk'); git(['-C', repo, 'branch', 'main']); await write(path.join(repo, 'README.md'), 'trunk'); git(['-C', repo, 'commit', '-am', 'trunk']); git(['-C', repo, 'push']); git(['-C', repo, 'remote', 'set-head', 'origin', 'trunk']); const result = await env.instance.projectLead().run(repo, 'trunk', true); assert.equal(result.commit, git(['-C', repo, 'rev-parse', 'trunk']).stdout.trim()); assert.notEqual(result.commit, git(['-C', repo, 'rev-parse', 'main']).stdout.trim()); }
+  finally { await env.close(); }
+});
+
+test('start reuses and cleans clone and blocks pushing', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try { const repo = await localRepo(root, 'main'); const first = await api(env, 'POST', '/v1/sessions', leadBody(repo, 'one'), hubHeader); assert.equal(first.status, 201, JSON.stringify(first.body)); const clone = first.body.worktree; git(['-C', repo, 'branch', 'wc/unpushed']); await write(path.join(clone, 'file'), 'dirty'); await write(path.join(clone, '.git', 'info', 'exclude'), '.ignored\n'); await write(path.join(clone, '.ignored'), 'dirty'); const tip = await commitFile(repo, 'second'); git(['-C', clone, 'remote', 'set-url', '--push', 'origin', repo]);
+    const second = await api(env, 'POST', '/v1/sessions', { ...leadBody(repo, 'one'), name: 'wc-one-lead-2', token: 'second-token' }, hubHeader); assert.equal(second.status, 201, JSON.stringify(second.body)); assert.equal(second.body.worktree, clone); assert.equal(git(['-C', clone, 'rev-parse', 'HEAD']).stdout.trim(), tip); assert.equal(await fs.readFile(path.join(clone, 'file'), 'utf8'), 'second'); await assert.rejects(fs.stat(path.join(clone, '.ignored'))); assert.equal(git(['-C', clone, 'rev-parse', 'origin/wc/unpushed']).stdout.trim(), git(['-C', repo, 'rev-parse', 'wc/unpushed']).stdout.trim()); assert.notEqual(git(['-C', clone, 'push', 'origin', 'HEAD:refs/heads/test'], { allowFailure: true }).status, 0);
+  } finally { await env.close(); }
+});
+
+test('start survives unreachable origin and missing remote default', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try { const repo = await localRepo(root, 'main'); git(['-C', repo, 'remote', 'add', 'origin', path.join(root, 'missing')]); const tip = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim(); const result = await api(env, 'POST', '/v1/sessions', leadBody(repo), hubHeader); assert.equal(result.status, 201, JSON.stringify(result.body)); assert.equal(git(['-C', result.body.worktree, 'rev-parse', 'HEAD']).stdout.trim(), tip); }
+  finally { await env.close(); }
+});
+
+test('start rejects unborn project and forbidden fields and root path', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try { const repo = path.join(root, 'empty'); git(['init', '--initial-branch=main', repo]); const empty = await api(env, 'POST', '/v1/sessions', leadBody(repo), hubHeader); assert.match(empty.body.error, /this project has no branch to read/);
+    for (const key of ['assistant', 'from_remote_branch', 'default_branch']) { const result = await api(env, 'POST', '/v1/sessions', { ...leadBody(repo), [key]: true }, hubHeader); assert.equal(result.status, 400); assert.equal(result.body.error, 'invalid start body'); }
+    const invalid = await api(env, 'POST', '/v1/sessions', leadBody('/tmp/..'), hubHeader); assert.equal(invalid.body.error, 'invalid project'); const refresh = await api(env, 'POST', '/v1/project-lead/refresh', { thread_id: 'abc', project_dir: '/tmp/..' }, hubHeader); assert.equal(refresh.body.error, 'invalid project');
+  } finally { await env.close(); }
+});
+
+test('project lead relay and agent fence use the authenticated session', async () => {
+  const root = await temp(); const hub = await hubServer(); const env = await service(root, { realGit: true, config: { hub_url: hub.url } });
+  try { const repo = await localRepo(root, 'main'); const result = await api(env, 'POST', '/v1/sessions', leadBody(repo), hubHeader); assert.equal(result.status, 201); const headers = { 'x-wheelchair-session-token': 'abc-token' }; const relay = await api(env, 'POST', '/v1/agent/project-lead', { action: 'threads', calling_session: 'forged' }, headers); assert.equal(relay.status, 200); const call = hub.calls.find(c => c.path === '/api/machine/project-lead'); assert.equal(JSON.parse(call.body).calling_session, result.body.name);
+    for (const [route, body] of [['whatever', {}], ['cards', { kind: 'progress' }]]) assert.equal((await api(env, 'POST', `/v1/agent/${route}`, body, headers)).status, 403);
+    await fs.symlink(path.join(repo, 'file'), path.join(result.body.worktree, 'outside')); assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'file', path: path.join(result.body.worktree, 'outside'), title: 'outside' }, headers)).status, 403);
+  } finally { await env.close(); await hub.close(); }
+});
+
+test('project lead records sandboxed Codex mode', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true, pane: readyCodex });
+  try { const repo = await localRepo(root, 'main'); const result = await api(env, 'POST', '/v1/sessions', { ...leadBody(repo), cli: 'codex', codex_mode: 'unrestricted' }, hubHeader); assert.equal(result.status, 201, JSON.stringify(result.body)); assert.equal(env.instance.sessions[result.body.name].codex_mode, 'sandboxed'); }
+  finally { await env.close(); }
+});
+
+test('account switch relaunches in the clone without project tools', async () => {
+  const root = await temp(); const previous = { HOME: process.env.HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, FAKE_SESSIONS: process.env.FAKE_SESSIONS }; process.env.HOME = root; process.env.CLAUDE_CONFIG_DIR = path.join(root, '.claude');
+  const env = await service(root, { realGit: true });
+  try { const repo = await localRepo(root, 'main'); await write(path.join(repo, '.mcp.json'), JSON.stringify({ mcpServers: { fixture: { command: 'fixture-server' } } })); git(['-C', repo, 'add', '.mcp.json']); git(['-C', repo, 'commit', '-m', 'tools']); const started = await api(env, 'POST', '/v1/sessions', leadBody(repo), hubHeader); assert.equal(started.status, 201); const session = env.instance.sessions[started.body.name]; process.env.FAKE_SESSIONS = session.name;
+    const source = path.join(process.env.CLAUDE_CONFIG_DIR, 'projects/key', `${session.cli_session_id}.jsonl`); await write(source, '{"type":"fixture"}\n'); await env.instance.copyTranscript(session, source); session.source_transcript = source;
+    const result = await api(env, 'POST', `/v1/sessions/${session.name}/switch`, { switch_id: 'one', account: { id: 'other', dir: '~/.wheelchair/accounts/other' }, model: null, project_lead: true, project: 'project', project_dir: repo }, hubHeader); assert.equal(result.status, 202);
+    const deadline = Date.now() + 5000; while (!session.active_switch && session.switches.one.state !== 'failed' && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(session.active_switch, 'one'); const respawn = (await log(env)).split('\n').find(line => line.startsWith('tmux respawn-pane')); assert.ok((await log(env)).includes(`-c ${session.worktree}`)); assert.equal(session.worktree, started.body.worktree); assert.doesNotMatch(respawn, /fixture-server/); const settings = JSON.parse(await fs.readFile(path.join(env.state, 'settings', `${session.name}.json`), 'utf8')); assert.notEqual(settings.enableAllProjectMcpServers, true);
+  } finally { await env.close(); for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+});
+
+test('remote lacking the default branch uses the local default', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try { const repo = await localRepo(root, 'main'); const remote = path.join(root, 'empty.git'); git(['init', '--bare', remote]); git(['-C', repo, 'remote', 'add', 'origin', remote]); const tip = await commitFile(repo, 'new local'); const result = await env.instance.projectLead().run(repo, 'missing-default', true); assert.equal(result.commit, tip); }
+  finally { await env.close(); }
+});
