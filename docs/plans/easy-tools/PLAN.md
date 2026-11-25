@@ -15,9 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q4: How do tools get keys (secrets)?
-- **Context:** Project keys exist per project on each machine (MAP.md, "Secrets and configuration").
-
 ### Q5: How do you ask agents to make or connect a tool?
 - **Context:** IDEA.md wants it easy to just ask. Candidates: any thread (a small fix), the personal assistant, a dedicated "make a tool" action.
 
@@ -51,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | Settings names which project holds the shared tools (one per hub, or none). At session start the machine fetches that project's default branch and reads the tools from it, falling back to the last fetched copy if the fetch fails | Agents get the merged version without anyone pulling by hand; a network drop does not lose tools | defaulted |
 | 8 | When a project tool and a shared tool have the same name, the project tool wins and the problems card notes the shared one was hidden | The project knows its own needs best; the clash is visible | defaulted |
 | 9 | Supersedes 4 in part: a tool folder holds either a script tool (as in 4) or a server tool, a real MCP server made from a wheelchair template. Wheelchair starts and connects both kinds automatically; no hand-editing .mcp.json | Servers keep state, answer fast and use all of MCP; template + automatic connection removes the setup-and-connect chore that prompted this idea | user |
+| 10 | Keys: a tool's description lists the key names it needs; wheelchair passes only those to the tool's script or server process at start, never to the agent. Project tools read the project's keys; shared tools read a machine-wide set of shared keys typed once per machine in Settings | Keys out of the agent's reach; a shared tool's key typed once | user |
 
 ## Spec
 
@@ -92,6 +90,15 @@ Inside the shared tools project's own threads, its tools come from the thread's 
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
+
+### S4. Keys
+A tool's description lists the key names it needs. When wheelchair runs a script tool or
+starts a server tool, it passes exactly those keys to that process as environment
+variables, and never puts them in the agent's own environment, config or instructions.
+Project tools read the project's existing keys (`machine/lib/project-keys.js`); shared
+tools read a new machine-local set of shared keys, stored the same way (private file
+modes, never committed) and edited in Settings. A missing key puts the tool on the
+problems card, naming the key.
 
 ## Deferred
 
