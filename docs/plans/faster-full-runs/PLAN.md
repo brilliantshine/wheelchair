@@ -89,7 +89,7 @@ the whole set.
 - `chooseWorkers({ full, held, cpus })`: a non-full run gets 2. A full run gets
   `max(2, top − held)`, with `top = min(CAP, floor(cpus / 2))` and `held` the sum of the
   worker counts registered by other live full runs (D12). With `CAP` 8 on 16 cores: alone 8;
-  starting while an 8-worker run is live, 2; two that start apart while a 4-worker run is live, 4.
+  starting while an 8-worker run is live, 2; starting while a 4-worker run is live, 4.
 - Registration stores the chosen count in the run's file (today an empty file named by PID);
   an empty or unreadable file from an older run counts as 2.
 - Measuring (D4, D13), once S1, S2 and S4 are in, on the same machine with no other full run
@@ -183,3 +183,12 @@ git diff --check
 | mechanics | minor | Config test registers as a full run | upheld | Test clears WHEELCHAIR_FULL_RUN |
 | mechanics | minor | Background exit path untested | upheld | Browser-only failure case |
 | mechanics | minor | No before/after full-run timing | upheld | D13 |
+
+### Round 2 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 1:** S1 inline `freePort()` callers drop `port`; S2 stopping (process group, signal trap) and browser-only-failure test; S3 replaced by a held-worker budget (D12), registration stores counts, measurement times whole full runs before/after with a failure rule (D13); S4 adds app-views, app-ui, render specs and the config test clears `WHEELCHAIR_FULL_RUN`; two Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
