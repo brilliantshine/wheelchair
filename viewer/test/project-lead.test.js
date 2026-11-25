@@ -435,7 +435,7 @@ test('project lead actions enforce project scope and redact cross-project conten
   assert.equal(created.project, project); assert.equal(created.machine, 'hub'); assert.equal(created.message, '[wc:assistant] hello');
   let refresh; hub.call = async (...args) => { refresh = args; return { ok: true, commit: 'abc' }; };
   assert.deepEqual(await call('refresh'), { ok: true, commit: 'abc' });
-  assert.deepEqual(refresh, ['hub', '/v1/project-lead/refresh', 'POST', { thread_id: own.id, project_dir: project }]);
+  assert.deepEqual(refresh, ['hub', '/v1/project-lead/refresh', 'POST', { thread_id: own.id, project_dir: project }, 100000]);
   await settings.update(hub, (value) => { value.project_leads = 'off'; });
   await assert.rejects(call('threads'), /project leads are off/);
 });
@@ -476,6 +476,37 @@ async function actionFixture() {
   return { hub, source, local, outside, otherLead, call };
 }
 
+test('refresh waits for a slow machine', { timeout: 30000 }, async (t) => {
+  const c = await setup(); t.after(() => close(c));
+  await preferences(c, { project_leads: 'on' });
+  await seed(c, { project_lead: true, sessions: [{ name: 'project-lead-session', role: 'lead', live: true }] });
+  c.machine.refreshDelay = 6000;
+  const result = await machinePost(c, '/machine/project-lead', { calling_session: 'project-lead-session', action: 'refresh' });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, { ok: true, commit: 'a'.repeat(40) });
+});
+
+test('outside titles do not erase local question text', async () => {
+  const { hub, local, outside, call } = await actionFixture();
+  outside.title = 'Release notes'; await hub.save(outside);
+  const question = 'Are the Release notes ready?';
+  local.cards = [{ id: 'question1', kind: 'question', question }]; await hub.save(local);
+  const row = (await call('threads')).threads.find((item) => item.id === local.id);
+  assert.equal(row.waiting[0].text, question);
+  const detail = await call('thread', { thread: local.id });
+  assert.equal(detail.cards[0].question, question);
+});
+
+test('outside pull request URLs are removed from recent chat', async () => {
+  const { hub, local, outside, call } = await actionFixture();
+  const urls = ['https://github.com/outside/repo/pull/1', 'https://github.com/outside/repo/pull/2', 'https://github.com/outside/repo/pull/3'];
+  outside.pr_url = urls[0]; outside.target_pr = urls[1]; outside.cards = [{ kind: 'done', pr_url: urls[2] }]; await hub.save(outside);
+  const own = 'https://github.com/local/repo/pull/4'; local.pr_url = own; await hub.save(local);
+  hub.chat = async () => ({ items: [...urls, own].map((text) => ({ type: 'human', text })) });
+  const detail = await call('thread', { thread: local.id });
+  assert.deepEqual(detail.recent.map((item) => item.text), [own]);
+});
+
 test('the same path on another registered machine is outside the project', async () => {
   const { local, outside, call } = await actionFixture();
   assert.deepEqual((await call('threads')).threads.map((row) => row.id), [local.id]);
@@ -498,15 +529,17 @@ test('closed reach and permit cards are absent from waiting and cards', async ()
   for (const field of ['waiting', 'cards']) assert.deepEqual(detail[field].map((card) => card.id).sort(), ['permit-open', 'reach-open']);
 });
 
-test('cross-thread messages and recent chat omit other project identifiers and titles', async () => {
-  const { hub, local, outside, call } = await actionFixture();
-  const values = [outside.id, outside.title];
+test('cross-thread messages and recent chat omit other project identifiers but keep titles', async () => {
+  const { hub, local, outside, otherLead, call } = await actionFixture();
+  outside.sessions.push({ name: 'outside-session', role: 'lead', live: true });
+  outside.pr_url = 'https://github.com/outside/repo/pull/10'; await hub.save(outside);
+  const values = [outside.id, otherLead.project, 'outside-session', outside.pr_url, outside.title];
   local.cross_thread_messages = [...values.map((text) => ({ text: `mentions ${text}` })), { text: 'local message' }];
   await hub.save(local);
   hub.chat = async () => ({ items: [...values.map((text) => ({ type: 'human', text: `mentions ${text}` })), { type: 'human', text: 'local chat' }] });
   const detail = await call('thread', { thread: local.id });
-  assert.deepEqual(detail.cross_thread_messages, [{ text: 'local message' }]);
-  assert.deepEqual(detail.recent.map((item) => item.text), ['local chat']);
+  assert.deepEqual(detail.cross_thread_messages, [{ text: `mentions ${outside.title}` }, { text: 'local message' }]);
+  assert.deepEqual(detail.recent.map((item) => item.text), [`mentions ${outside.title}`, 'local chat']);
 });
 
 test('short other-project titles do not redact same-project text', async () => {

@@ -17,15 +17,15 @@ async function dispatch(hub, input) {
     if (!special(thread) && key && await projectLead.identity(hub, registry, thread.machine, thread.project) === key) allowed.add(thread.id);
   }
   const outside = threads.filter((thread) => !allowed.has(thread.id));
-  const forbidden = new Set(outside.flatMap((thread) => [thread.id, thread.title, thread.project, ...thread.sessions.map((s) => s.name)]));
+  const forbidden = new Set(outside.flatMap((thread) => [thread.id, thread.project, ...thread.sessions.map((s) => s.name), thread.pr_url, typeof thread.target_pr === 'string' && /^https?:\/\//i.test(thread.target_pr) ? thread.target_pr : null, require('./handoff.js').donePr(thread)].filter(Boolean)));
   // Cross-thread queues and cards can contain the other lead's message without its id.
   for (const thread of threads.filter((t) => allowed.has(t.id))) {
     for (const entry of thread.peer_log || []) if (!allowed.has(entry.thread)) {
-      for (const value of [entry.text, entry.title, entry.session]) if (value) forbidden.add(value);
+      for (const value of [entry.text, entry.session]) if (value) forbidden.add(value);
     }
   }
   for (const value of forbidden) {
-    if (value === source.project || [...threads].some((thread) => allowed.has(thread.id) && value === thread.title) || source.project.includes(value)) forbidden.delete(value);
+    if (value === source.project || source.project.includes(value)) forbidden.delete(value);
   }
   const containsOutside = (value) => typeof value === 'string' && [...forbidden].some((part) => typeof part === 'string' && part.length >= 8 && value.includes(part));
   function clean(value, field) {
@@ -60,7 +60,7 @@ async function dispatch(hub, input) {
   if (!['threads', 'thread', 'start', 'message', 'press', 'restart', 'archive', 'refresh'].includes(input.action)) throw appError(400, 'unsupported project lead action');
   if (input.action === 'refresh') {
     try {
-      const result = await hub.call(source.machine, '/v1/project-lead/refresh', 'POST', { thread_id: source.id, project_dir: source.project });
+      const result = await hub.call(source.machine, '/v1/project-lead/refresh', 'POST', { thread_id: source.id, project_dir: source.project }, 100000);
       return { ok: true, commit: result.commit };
     } catch (error) { return { ok: false, error: error.message }; }
   }

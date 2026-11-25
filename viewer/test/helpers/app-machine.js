@@ -37,6 +37,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
   let keptUploads;
   const projectToolsReplies = {};
   let usageReply = { status: 200, delay: 0, reading: null };
+  let refreshDelay = 0;
   let uploadsDir = options.uploadsDir;
   let preflightOk = true;
   let startOk = true;
@@ -109,6 +110,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
       return send(response, reply.status || 200, reply.status && reply.status !== 200 ? { error: reply.error || 'usage failed' } : { reading: reply.reading || { account: input.account, five_hour: null, week: null } });
     }
     if (request.method === 'POST' && url.pathname === '/v1/project-lead/refresh') {
+      if (refreshDelay) await new Promise((resolve) => setTimeout(resolve, refreshDelay));
       return send(response, 200, { ok: true, commit: 'a'.repeat(40) });
     }
     if (request.method === 'POST' && url.pathname === '/v1/sessions') {
@@ -169,6 +171,8 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
   return {
     port,
     secret,
+    get refreshDelay() { return refreshDelay; },
+    set refreshDelay(value) { refreshDelay = value; },
     get usageReply() { return usageReply; },
     set usageReply(value) { usageReply = value; },
     get uploadsDir() { return uploadsDir; },
