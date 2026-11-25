@@ -15,16 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: What is a tool, when you write one?
-- **Context:** Today a tool must be a whole MCP server listed in `.mcp.json` (MAP.md, "Connecting a project tool"). Claude, Codex and Antigravity load MCP servers, each with limits; Kimi and Pi load none.
-- **Options:** (a) a folder with a short description file plus a script in any language; wheelchair runs one built-in MCP server per agent that offers every tool and runs the script when called. (b) one file using a small wheelchair helper library (JS/Python) that wheelchair turns into a server. (c) still a real MCP server, but made from a template with a scaffold command.
-- **Recommendation:** (a). No server to write, any language, easy for agents, and one bridge means each AI's quirks are handled once. Because a tool is just a command, Kimi and Pi agents could run it through `wc.js` from the shell, possibly for free.
-
-### Q2: How does a tool get connected?
-- **Context:** Today you edit `.mcp.json` (or the Tools page, which opens a pull request).
-- **Options:** automatic: any tool in the project's tools folder or the shared tools folder is picked up at session start; or an explicit list/switch per tool.
-- **Recommendation:** automatic discovery, with a problems card when a tool is broken.
-
 ### Q3: Where do shared tools live, and how are changes to them kept?
 - **Context:** Project tools ride the project's git branch and PRs. Shared tools have no home today.
 - **Options:** a plain folder on the machine; a folder on the machine that is its own git repo; or inside wheelchair's own repository.
@@ -59,6 +49,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 1 | Plan mode: two-part | Settle how tools are written and connected first; hardening follows | user |
 | 2 | Cover both per-project tools and tools shared across all projects, with one way of writing a tool | Some tools fit one project, others everywhere | user |
 | 3 | Either Collin or agents make tools, following one standard; asking an agent should be easy | Agents follow a tight standard reliably; the same rules guide a person | user |
+| 4 | A tool is a folder holding a short description (what it does, its inputs) plus a script in any language. Wheelchair runs one built-in MCP server per agent session that offers every tool and runs the script when called. No hand-written server | No server to write, any language, simplest for agents; each AI's MCP quirks handled once in the bridge | user |
+| 5 | Tools connect automatically: any valid tool in the project's tools folder or the shared tools folder is offered at session start; invalid ones go on the thread's problems card | "Connecting" should be a non-step; explicit lists recreate the .mcp.json chore | defaulted |
 
 ## Spec
 
@@ -67,6 +59,19 @@ A plan with visible work lists its agreed mockups under “Mockups” (path, scr
 The settled design, grown as decisions land. Bar: a fresh agent with no conversation
 history can implement from this section alone — behavior, boundaries, edge cases,
 non-goals, and concrete validation commands.
+
+### S1. What a tool is
+A tool is a folder: a description file (name, one-line purpose, named inputs with types and
+descriptions) plus a script in any language. Wheelchair offers it to agents and, when an
+agent calls it, runs the script with the inputs and returns its output. No MCP server is
+written by the tool's author. Exact file names and formats: to be settled.
+
+### S2. Connecting
+No connect step. At each agent session start, wheelchair finds every tool in the project's
+tools folder (from the thread's own worktree) and in the shared tools folder, and offers the
+valid ones through one built-in MCP server for that session. A broken tool is named, with
+the reason, on the thread's existing "Project tools problem" card. Existing `.mcp.json`
+servers keep working unchanged.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
