@@ -32,7 +32,6 @@ created: 2026-11-25
 | D5 | `summary.txt` records each suite's seconds (old Deferred row 3). | Small, and needed to aim further speedups. | defaulted |
 | D6 | Qualify lead.md repair step 7's full-run phrase with the `Test picker and full run` heading (old Deferred row 5). | Protocol edits all map to every suite; batch it here. | defaulted |
 | D7 | A build runs one full run, only after its verifiers pass, on the final commit; remediation rounds rely on the picked tests. A failing full run is handled as a failed verification (one more round). | Six full runs in the Settings rework; the picker already checks each round. | user |
-
 | D8 | Every browser spec runs in Chromium; only specs marked browser-sensitive (graph geometry, touch, pixel sampling and the like) also run in Firefox. | Running everything twice is about half the browser suite's time. | user |
 | D9 | When full runs overlap (another thread's full run is live), browser workers are shared fairly across them instead of dropping each to 2. | `test-support/browser-workers.js:8` drops overlapping runs to 2 workers, likely why runs feel like 30 minutes. | defaulted |
 ## Spec
