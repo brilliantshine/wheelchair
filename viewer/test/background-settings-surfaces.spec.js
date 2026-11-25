@@ -24,23 +24,23 @@ async function opaqueBackdrop(locator) {
 
 test('all Settings categories keep content solid and outer gutters visible', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 850 });
-  await page.goto(`${ctx.server.url}/app/settings#background`);
+  await page.goto(`${ctx.server.url}/app/settings#you`);
   await expect.poll(() => page.evaluate(() => window.wcBackground.current().metadata !== null)).toBe(true);
   await page.getByLabel('Choose background image').setInputFiles({ name: 'quadrants.png', mimeType: 'image/png', buffer: await fs.readFile(path.join(__dirname, 'fixtures/background-browser/quadrants.png')) });
   await expect(page.locator('.background-layer img')).toHaveCount(1);
   await page.getByLabel('Visibility').fill('100');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
+  await page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('.background-editor').getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.wcBackground.current().available)).toBe(true);
   for (const [section, selector] of [
-    ['harnesses', '.harnesses > *'],
-    ['accounts', '.prov-group > h2, #add-account'],
-    ['usage', '.usage-bars, .models.usage > section'],
-    ['models', '.models > section'],
-    ['templates', '.tpl-list, .tpl-edit'],
-    ['writing', '.writing > section, .writing > .actions'],
+    ['providers', '.harnesses > *, .prov-group > h3, #add-account, .cat-head'],
+    ['usage', '.usage-bars, .models.balance > section, .lead-order-box > section'],
+    ['models', '.models > section, .cat-head'],
+    ['leads', '.models > section, .cat-head'],
+    ['threads', '.models > section, .cat-head'],
+    ['behavior', '.tpl-list, .tpl-edit, .cat-head'],
     ['tools', '.pt > div:visible'],
-    ['background', '.background-editor > div'],
+    ['you', '.writing > section, .writing > .actions, .writing > div:first-child, .background-editor > div, .models > section, .cat-head'],
   ]) {
     await page.locator(`#sections a[data-section="${section}"]`).click();
     await expect(page.locator(`#sections a[data-section="${section}"]`)).toHaveAttribute('aria-current', 'page');

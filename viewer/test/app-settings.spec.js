@@ -23,6 +23,8 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await context.server.stop(); });
 
+const KEYS = ['you', 'providers', 'usage', 'models', 'leads', 'threads', 'behavior', 'tools'];
+const TITLES = ['You', 'AI providers', 'Usage and balancing', 'Models', 'Assistant and project leads', 'Threads', 'Agent behavior', 'Project tools'];
 const settings = (page) => page.evaluate(async () => (await fetch('/wheelchair/api/settings')).json());
 const noSideScroll = async (page) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -39,22 +41,22 @@ test.describe('desktop', () => {
     await expect(page.locator('#app-nav .seg a[aria-current="page"]')).toHaveText('Settings');
     await expect(page.locator('#app-nav .seg .lbl')).toBeVisible();
     await expect(page.locator('#app-nav .seg .gear')).toBeHidden();
-    await expect(page.locator('#panel h1')).toHaveText('Models and preferences');
+    await expect(page.locator('.catview h1')).toHaveText('You');
   });
 
-  test('eight sections, kept across a reload through the hash', async ({ page }) => {
+  test('eight categories in order, kept across a reload through the hash', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const nav = page.locator('#sections a');
-    await expect(nav).toHaveText(['Harnesses', 'Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style', 'Project tools', 'Background Customization']);
-    await nav.nth(4).click();
-    await expect(page).toHaveURL(/#templates$/);
-    await expect(page.locator('.tpl-list h1')).toHaveText('Behavior templates');
+    await expect(nav).toHaveText(TITLES);
+    await nav.nth(6).click();
+    await expect(page).toHaveURL(/#behavior$/);
+    await expect(page.locator('.tpl-list h2')).toHaveText('Behavior templates');
     await page.reload();
-    await expect(page.locator('.tpl-list h1')).toBeVisible();
-    await expect(page.locator('#sections a[aria-current="page"]')).toHaveText('Behavior templates');
-    await nav.nth(5).click();
+    await expect(page.locator('.tpl-list h2')).toBeVisible();
+    await expect(page.locator('#sections a[aria-current="page"]')).toHaveText('Agent behavior');
+    await nav.nth(0).click();
     await page.reload();
-    await expect(page.locator('#panel h1')).toHaveText('Writing style');
+    await expect(page.locator('.catview h1')).toHaveText('You');
     await expect(page.locator('.covers')).not.toContainText('Phone notifications');
   });
 
@@ -67,7 +69,7 @@ test.describe('desktop', () => {
   });
 
   test('permission labels name the tools in their groups', async ({ page }) => {
-    await openPage(page, context, '/app/settings#models');
+    await openPage(page, context, '/app/settings#threads');
     await expect(page.getByText('Claude and Kimi sessions', { exact: true })).toBeVisible();
     await expect(page.getByText('Codex sessions', { exact: true })).toBeVisible();
     await expect(page.getByRole('radiogroup', { name: 'Claude and Kimi permission mode', exact: true })).toBeVisible();
@@ -117,20 +119,23 @@ test.describe('desktop', () => {
     await page.getByLabel('Claude heavy effort').selectOption('high');
     await expect.poll(async () => (await settings(page)).models.claude.heavy.effort).toBe('high');
 
+    await page.locator('#sections a[data-section="threads"]').click();
     await page.getByRole('radio', { name: 'Bypass' }).click();
     await expect.poll(async () => (await settings(page)).permission_mode).toBe('bypass');
     await expect(page.getByText('Never asks: it can write only inside its worktree.')).toBeVisible();
     await page.getByRole('radio', { name: 'Unrestricted' }).click();
     await expect.poll(async () => (await settings(page)).codex_mode).toBe('unrestricted');
     await expect(page.getByText(/it can change anything on the machine/)).toBeVisible();
+    await page.locator('#sections a[data-section="models"]').click();
     await page.getByLabel('Checker', { exact: true }).selectOption('critical');
     await expect.poll(async () => (await settings(page)).other_agents.verifier).toBe('critical');
 
     await page.reload();
     await expect(page.getByLabel('Claude standard model', { exact: true })).toHaveValue('__none');
+    await expect(page.getByLabel('Checker', { exact: true })).toHaveValue('critical');
+    await page.locator('#sections a[data-section="threads"]').click();
     await expect(page.getByRole('radio', { name: 'Bypass' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByRole('radio', { name: 'Unrestricted' })).toHaveAttribute('aria-checked', 'true');
-    await expect(page.getByLabel('Checker', { exact: true })).toHaveValue('critical');
   });
 
   test('effort selects: GPT tier and both leads save; GPT has no max', async ({ page }) => {
@@ -197,7 +202,7 @@ test.describe('desktop', () => {
   });
 
   test('creating and saving a template, marking it in use, and the worker-only switch', async ({ page }) => {
-    await openPage(page, context, '/app/settings#templates');
+    await openPage(page, context, '/app/settings#behavior');
     await page.getByRole('button', { name: '+ New template' }).click();
     await page.locator('#tname').fill('Careful');
     await expect(page.getByText("When the brief doesn't settle something")).toBeVisible();
@@ -256,7 +261,7 @@ test.describe('desktop', () => {
 
   test('a template whose project is gone says so', async ({ page }) => {
     await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/tmp/proj-alpha']));
-    await openPage(page, context, '/app/settings#templates');
+    await openPage(page, context, '/app/settings#behavior');
     await expect(page.locator('.tpl-item', { hasText: 'Careful' }).locator('.tag')).toContainText('project no longer listed');
     await page.locator('.tpl-item', { hasText: 'Careful' }).click();
     await expect(page.locator('#tscope option:checked')).toContainText('project no longer listed');
@@ -264,7 +269,7 @@ test.describe('desktop', () => {
   });
 
   test('the auto-merge switch says Saved, not applies to new sessions, and survives a reload', async ({ page }) => {
-    await openPage(page, context, '/app/settings#models');
+    await openPage(page, context, '/app/settings#threads');
     const merge = page.getByRole('radiogroup', { name: 'Merge pull requests when done' });
     await expect(page.getByRole('radiogroup', { name: 'Delete the branch after merging' })).toHaveCount(0);
     await merge.getByRole('radio', { name: 'On' }).click();
@@ -278,7 +283,7 @@ test.describe('desktop', () => {
   });
 
   test('the style saves', async ({ page }) => {
-    await openPage(page, context, '/app/settings#writing');
+    await openPage(page, context, '/app/settings#you');
     await page.getByRole('radio', { name: 'Thorough' }).click();
     await page.getByRole('radio', { name: 'Always' }).click();
     await page.getByLabel('Technical terms').selectOption('freely');
@@ -296,7 +301,7 @@ test.describe('desktop', () => {
   });
 
   test('preview: disabled with a spinner while pending, then the result; nothing is saved', async ({ page }) => {
-    await openPage(page, context, '/app/settings#writing');
+    await openPage(page, context, '/app/settings#you');
     const before = JSON.stringify((await settings(page)).style);
     let release;
     const gate = new Promise((resolve) => { release = resolve; });
@@ -321,7 +326,7 @@ test.describe('desktop', () => {
   });
 
   test('a failed preview shows one plain line under the panel', async ({ page }) => {
-    await openPage(page, context, '/app/settings#writing');
+    await openPage(page, context, '/app/settings#you');
     await page.route('**/api/settings/style/preview', (route) => route.fulfill({
       status: 502, contentType: 'application/json',
       body: JSON.stringify({ error: 'bad gateway', detail: 'Preview failed: Claude is not logged in.' }) }));
@@ -346,23 +351,16 @@ test.describe('phone', () => {
     await expect(page).toHaveURL(/\/app\/settings/);
   });
 
-  test('the sections are tabs above the section and the page never scrolls sideways', async ({ page }) => {
+  test('every category fits without scrolling sideways', async ({ page }) => {
     await openPage(page, context, '/app/settings');
-    const tabs = page.locator('#sections a');
-    await expect(tabs).toHaveCount(8);
-    const boxes = await tabs.evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().toJSON()));
-    expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(1);
-    const panel = await page.locator('#panel').boundingBox();
-    expect(boxes[0].bottom).toBeLessThanOrEqual(panel.y + 1);
-    for (const key of ['harnesses', 'accounts', 'usage', 'models', 'templates', 'writing']) {
-      await page.locator(`#sections a[data-section="${key}"]`).click();
-      await expect(page.locator('#sections a[aria-current="page"]')).toHaveAttribute('data-section', key);
+    await noSideScroll(page);
+    for (const [key, title] of KEYS.map((key, i) => [key, TITLES[i]])) {
+      await openPage(page, context, '/app/settings#' + key);
+      await expect(page.locator('.catview[data-category="' + key + '"]')).toBeVisible();
+      if (key !== 'tools') await expect(page.locator('.catview h1')).toHaveText(title);
       await page.waitForTimeout(200);
       await noSideScroll(page);
     }
-    await page.locator('#sections a[data-section="models"]').click();
-    await expect(page.getByLabel('Claude light model', { exact: true })).toBeVisible();
-    await noSideScroll(page);
   });
 
   for (const width of [390, 360]) {
@@ -408,7 +406,7 @@ test.describe('phone', () => {
   });
 
   test('Your name saves and survives a reload, and a too-long name is refused with the typed value kept', async ({ page }) => {
-    await openPage(page, context, '/app/settings');
+    await openPage(page, context, '/app/settings#you');
     const row = page.locator('.row-line', { hasText: 'Your name' });
     const input = page.getByLabel('Your name', { exact: true });
     await expect(input).toHaveValue('');
@@ -430,7 +428,7 @@ test.describe('phone', () => {
   });
 
   test('the Default project folder saves, and a refusal shows under it with the typed value kept', async ({ page }) => {
-    await openPage(page, context, '/app/settings');
+    await openPage(page, context, '/app/settings#threads');
     const input = page.getByLabel('Default project folder', { exact: true });
     await expect(input).toHaveValue('');
     await input.fill('~/projects');
@@ -461,7 +459,7 @@ test.describe('phone', () => {
 });
 
 test('picks a lead name list and uploads a custom one in Settings', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await page.getByLabel('Lead names', { exact: true }).selectOption('nato');
   await expect.poll(async () => (await settings(page)).lead_name_list).toBe('nato');
   await expect(page.getByLabel('Upload lead names')).toBeHidden();
@@ -475,14 +473,14 @@ test('picks a lead name list and uploads a custom one in Settings', async ({ pag
 });
 
 test('a quoted CSV upload keeps commas inside names', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await page.getByLabel('Lead names', { exact: true }).selectOption('custom');
   await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.csv', mimeType: 'text/csv', buffer: Buffer.from('"Ada","Grace, Jr."\n"Say ""Hi"""\n') });
   await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Ada', 'Grace, Jr.', 'Say "Hi"']);
 });
 
 test('a later dropdown choice wins over a slow upload save', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   const select = page.getByLabel('Lead names', { exact: true });
   await select.selectOption('custom');
   let release;
@@ -499,7 +497,7 @@ test('a later dropdown choice wins over a slow upload save', async ({ page }) =>
 });
 
 test('a slow upload does not undo a list picked after switching sections', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   const select = page.getByLabel('Lead names', { exact: true });
   await select.selectOption('custom');
   let release;
@@ -513,8 +511,8 @@ test('a slow upload does not undo a list picked after switching sections', async
   });
   await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\nGrace\n') });
   await sent;
-  await page.locator('#sections a').nth(5).click();
-  await page.locator('#sections a').nth(3).click();
+  await page.locator('#sections a[data-section="models"]').click();
+  await page.locator('#sections a[data-section="threads"]').click();
   const picked = page.waitForResponse((response) => response.url().includes('/settings/preferences') && JSON.parse(response.request().postData() || '{}').lead_name_list === 'people');
   await select.selectOption('people');
   // The old page sent this straight away; the fixed one waits behind the upload.
@@ -530,7 +528,7 @@ test('a slow upload does not undo a list picked after switching sections', async
 });
 
 test('picking Custom while another list saves keeps Custom and its file picker', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lead_names: [], lead_name_list: 'greek' }) }));
   await page.reload();
   const select = page.getByLabel('Lead names', { exact: true });
@@ -557,7 +555,7 @@ const clearLeadNames = async (page) => {
 };
 
 test('Custom picked again during a slow upload and another save stays Custom', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await clearLeadNames(page);
   const select = page.getByLabel('Lead names', { exact: true });
   await select.selectOption('custom');
@@ -581,7 +579,7 @@ test('Custom picked again during a slow upload and another save stays Custom', a
 });
 
 test('a failed save of another list keeps a later pick of Custom', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await clearLeadNames(page);
   const select = page.getByLabel('Lead names', { exact: true });
   let release;
@@ -601,7 +599,7 @@ test('a failed save of another list keeps a later pick of Custom', async ({ page
 });
 
 test('only the newest uploaded file is saved', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await clearLeadNames(page);
   await page.evaluate(() => {
     const read = File.prototype.text;
@@ -627,4 +625,175 @@ test('models and preferences fits at 390px', async ({ page }) => {
   await openPage(page, context, '/app/settings#models');
   await expect(page.locator('tr[data-provider="gemini"]')).toBeVisible();
   await noSideScroll(page);
+});
+
+test.describe('categories', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  const view = (page, key) => page.locator(`.catview[data-category="${key}"]`);
+  const goTo = (page, hash) => page.evaluate((k) => { location.hash = k; }, hash);
+  const rename = (page) => page.getByRole('textbox', { name: 'Account name' });
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
+
+  // Two machines whose harnesses are all missing; `install` answers the status polls.
+  async function stubHarnesses(page, install = () => ({ state: 'idle' })) {
+    const names = ['claude', 'gpt', 'gemini', 'kimi', 'openrouter'];
+    const machine = (name) => ({ name, reachable: true, harnesses: Object.fromEntries(names.map((n) => [n, { installed: false, version: null, signed_in: false, recipe: true }])) });
+    await page.route('**/api/harnesses**', (r) => r.fulfill({ json: { switches: Object.fromEntries(names.map((n) => [n, true])), threads_using: {}, machines: [machine('hub'), machine('node-2')], can_start: { machine: 'hub', lead: { ok: true }, worker: { ok: true } } } }));
+    await page.route('**/api/machines/*/harnesses/*/install', (r) => r.fulfill({ json: install(r.request().url()) }));
+  }
+  async function openRename(page) {
+    await page.locator('.acct[data-account="default-claude"]').getByRole('button', { name: 'Rename' }).click();
+    await rename(page).fill('typed, not saved');
+  }
+
+  test('each moved control is in its category', async ({ page }) => {
+    await stubHarnesses(page);
+    await page.route('**/api/settings/diagram-sensitivity', (r) => r.fulfill({ json: { machines: { hub: { level: 'high', files: [] } } } }));
+    await openPage(page, context, '/app/settings#you');
+    await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ auto_merge: 'on' }) }));
+    await page.reload();
+    const radios = (name) => page.getByRole('radiogroup', { name, exact: true });
+    const found = {
+      you: [page.getByRole('textbox', { name: 'Your name' }), page.locator('#style-text'), radios('Diagram sensitivity'), radios('Enter to send'), page.getByLabel('Choose background image')],
+      providers: [page.locator('.h-row[data-provider="claude"]'), page.locator('.acct[data-account="default-claude"]')],
+      usage: [page.locator('[data-order="lead_order"]'), page.locator('#bal-save')],
+      models: [page.getByLabel('Claude standard model', { exact: true }), page.getByLabel('Claude lead model', { exact: true }), page.getByLabel('Checker', { exact: true }), radios('What steps up first')],
+      leads: [radios('Personal assistant'), radios('Project leads')],
+      threads: [radios('Tool steps'), radios('Merge pull requests when done'), radios('Delete the branch after merging'), page.getByLabel('Default project folder', { exact: true }), radios('Aside access'), page.getByRole('combobox', { name: 'Lead names' })],
+      behavior: [page.getByRole('button', { name: '+ New template' }), page.locator('#export-lessons')],
+    };
+    for (const [key, controls] of Object.entries(found)) {
+      await page.locator(`#sections a[data-section="${key}"]`).click();
+      await expect(view(page, key)).toBeVisible();
+      for (const control of controls) await expect(control, key).toBeVisible();
+    }
+    await page.locator('#sections a[data-section="usage"]').click();
+    const order = await page.locator('[data-order="lead_order"]').boundingBox();
+    const balancing = await page.locator('.balancing').boundingBox();
+    expect(order.y + order.height).toBeLessThan(balancing.y);
+  });
+
+  test('Diagrams choices show in You', async ({ page }) => {
+    await page.route('**/api/settings/diagram-sensitivity', (r) => r.fulfill({ json: { machines: { hub: { level: 'high', files: [] } } } }));
+    await openPage(page, context, '/app/settings#models');
+    await expect(page.locator('#diagram-choices')).toHaveCount(0);
+    await goTo(page, 'you');
+    await expect(view(page, 'you').getByRole('radio', { name: /High/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('old keys open the category holding them, and an unknown key opens You', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    const keys = { harnesses: 'providers', accounts: 'providers', writing: 'you', background: 'you', templates: 'behavior', nonsense: 'you', 'templates/lessons/nobody': 'you', constructor: 'you' };
+    for (const [old, key] of Object.entries(keys)) {
+      await goTo(page, 'models');
+      await expect(view(page, 'models')).toBeVisible();
+      await goTo(page, old);
+      await expect(view(page, key), old).toBeVisible();
+      await expect(page.locator('#sections a[aria-current="page"]')).toHaveAttribute('data-section', key);
+      await expect(page).toHaveURL(new RegExp(`#${old}$`));
+    }
+  });
+
+  test("both lesson addresses open that role's editor", async ({ page }) => {
+    for (const [address, role] of [['behavior/lessons/reviewer', 'Reviewer'], ['templates/lessons/worker', 'Worker']]) {
+      await openPage(page, context, '/app/settings#models');
+      await goTo(page, address);
+      await expect(page.locator('.lessons-edit h2')).toHaveText('Lessons learned · ' + role);
+      await openPage(page, context, '/app/settings#' + address);
+      await expect(page.locator('.lessons-edit h2')).toHaveText('Lessons learned · ' + role);
+    }
+    await goTo(page, 'behavior/lessons/mapper');
+    await expect(page.locator('.lessons-edit h2')).toHaveText('Lessons learned · Mapper');
+  });
+
+  test('on a phone no hash lists the categories, and ‹ Settings returns to the list', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openPage(page, context, '/app/settings');
+    const list = page.locator('.category-list');
+    const back = page.getByRole('link', { name: /Settings$/ }).and(page.locator('.back'));
+    await expect(list).toBeVisible();
+    await expect(list.locator('strong')).toHaveText(TITLES);
+    await expect(page.locator('.catview')).toBeHidden();
+    await expect(page.locator('#sections')).toBeHidden();
+    await expect(page.locator('.back')).toBeHidden();
+    await noSideScroll(page);
+    await list.getByRole('link', { name: /^Threads/ }).click();
+    await expect(view(page, 'threads')).toBeVisible();
+    await expect(list).toBeHidden();
+    await back.click();
+    await expect(list).toBeVisible();
+    await expect(view(page, 'you')).toBeHidden();
+    await page.goBack();
+    await expect(view(page, 'threads')).toBeVisible();
+    await openPage(page, context, '/app/settings#models');
+    await expect(list).toBeHidden();
+    await back.click();
+    await expect(list).toBeVisible();
+    await expect(page.locator('.catview')).toBeHidden();
+  });
+
+  test('crossing the phone width rebuilds nothing', async ({ page }) => {
+    await stubHarnesses(page);
+    await openPage(page, context, '/app/settings#providers');
+    await openRename(page);
+    await page.setViewportSize({ width: 899, height: 844 });
+    await expect(page.locator('#sections')).toBeHidden();
+    await expect(page.locator('.back')).toBeVisible();
+    await expect(rename(page)).toHaveValue('typed, not saved');
+    await page.setViewportSize({ width: 900, height: 844 });
+    await expect(page.locator('#sections')).toBeVisible();
+    await expect(page.locator('.back')).toBeHidden();
+    await expect(rename(page)).toHaveValue('typed, not saved');
+
+    await openPage(page, context, '/app/settings');
+    await expect(view(page, 'you')).toBeVisible();
+    await expect(page.locator('.category-list')).toBeHidden();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('.category-list')).toBeVisible();
+    await expect(view(page, 'you')).toBeHidden();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(view(page, 'you')).toBeVisible();
+    await expect(page.locator('.category-list')).toBeHidden();
+  });
+
+  test('switching the Harnesses machine keeps an open account rename', async ({ page }) => {
+    await stubHarnesses(page);
+    await openPage(page, context, '/app/settings#providers');
+    await expect(page.locator('.h-row')).toHaveCount(5);
+    await openRename(page);
+    await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
+    await expect(page.getByLabel('Machine', { exact: true })).toHaveValue('node-2');
+    await expect(page.locator('.h-row')).toHaveCount(5);
+    await expect(rename(page)).toHaveValue('typed, not saved');
+  });
+
+  test('an install progress tick keeps an open account rename', async ({ page }) => {
+    let ticks = 0;
+    await stubHarnesses(page, (url) => (url.includes('/claude/') ? { state: 'running', output_tail: `tick ${++ticks}` } : { state: 'idle' }));
+    await openPage(page, context, '/app/settings#providers');
+    const tail = page.locator('.h-row[data-provider="claude"] .h-tail');
+    await expect(tail).toContainText('tick');
+    await openRename(page);
+    const seen = ticks;
+    await expect(tail).toHaveText(`tick ${seen + 1}`, { timeout: 8000 });
+    await expect(rename(page)).toHaveValue('typed, not saved');
+  });
+
+  test('saving a background keeps text typed in Writing style', async ({ page }) => {
+    await openPage(page, context, '/app/settings#you');
+    await page.locator('#style-text').fill('typed, not saved');
+    // A phrase not yet added lives only in the page: rebuilding Writing style would drop it.
+    await page.getByLabel('Add a phrase').fill('half a phrase');
+    await expect.poll(() => page.evaluate(() => window.wcBackground.current().metadata !== null)).toBe(true);
+    await page.getByLabel('Choose background image').setInputFiles({ name: 'one.png', mimeType: 'image/png', buffer: PNG });
+    const editor = page.locator('.background-editor');
+    await editor.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(editor.getByRole('status')).toHaveText('Saved');
+    await expect(page.locator('#style-text')).toHaveValue('typed, not saved');
+    await expect(page.getByLabel('Add a phrase')).toHaveValue('half a phrase');
+    await editor.getByRole('button', { name: 'Remove background' }).click();
+    await editor.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(editor.getByRole('status')).toHaveText('Saved');
+    await expect(page.locator('#style-text')).toHaveValue('typed, not saved');
+  });
 });

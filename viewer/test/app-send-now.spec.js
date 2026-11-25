@@ -95,7 +95,7 @@ test('Enter sends, Shift+Enter starts a new line, and the switch turns Enter-to-
   await expect(msg).toHaveValue('');
   expect(ctx.machine.sessions.get(made.sessions[0].name).submits).toEqual(['first line\nsecond line']);
 
-  await page.goto(ctx.server.url + '/app/settings');
+  await page.goto(ctx.server.url + '/app/settings#you');
   const group = page.getByRole('radiogroup', { name: 'Enter to send' });
   await expect(group.getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'true');
   await group.getByRole('radio', { name: 'Off' }).click();

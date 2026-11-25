@@ -1,11 +1,15 @@
 /* The Settings page (docs/proposals/app-shell/design/Settings*). Tokens come from app.css. */
 .settings { display: flex; min-height: calc(100dvh - var(--nav-h)); align-items: stretch; }
 .settings *, .settings *::before, .settings *::after { box-sizing: border-box; }
-.sections { flex: 0 0 240px; padding: 20px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.sections { flex: 0 0 240px; padding: 20px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
 .sections a { padding: 9px 12px; border-radius: 8px; color: var(--ink-2); font-size: 13px; text-decoration: none; }
 .sections a:hover { background: var(--panel); color: var(--ink); }
 .sections a[aria-current="page"] { background: var(--panel-2); color: var(--ink); font-weight: 600; }
-.panel { flex: 1; min-width: 0; max-width: 1080px; padding: 28px 32px 48px; display: flex; flex-direction: column; gap: 28px; }
+.panel { flex: 1; min-width: 0; max-width: 1080px; padding: 28px 32px 48px; display: flex; flex-direction: column; }
+/* The open category: its heading, then one block per former section or group. */
+.catview, .block { display: flex; flex-direction: column; gap: 26px; min-width: 0; }
+.block:empty { display: none; }
+.cat-head .note:empty { min-height: 0; margin: 0; }
 .panel [hidden] { display: none !important; }
 .panel h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
 .panel h2 { font-size: 16px; font-weight: 600; }
@@ -24,8 +28,8 @@
 .note.bad, .inline-err { color: var(--bad-text); }
 .inline-err { font-size: 12px; margin: 2px 0 0; }
 
-/* ---- Models and preferences ---- */
-.models { display: flex; flex-direction: column; gap: 28px; }
+/* ---- groups of controls ---- */
+.models { display: flex; flex-direction: column; gap: 26px; }
 .box { border-radius: 12px; border: 1px solid var(--line); background: var(--panel); min-width: 0; }
 .tiers { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
 .tiers th, .tiers td { text-align: left; font-weight: 400; vertical-align: top; padding: 10px 8px; border-bottom: 1px solid var(--panel-2); }
@@ -59,6 +63,8 @@
 .escalation-text p { margin: 0; overflow-wrap: anywhere; }
 .row-line .ctl { flex: 0 1 280px; min-width: 0; }
 .row-line .ctl.wide { flex-basis: 340px; }
+[data-block="lead-names"] .row-line .ctl.wide { flex: 0 1 auto; }
+#lead-names { width: auto; max-width: 100%; }
 .lead-names-custom { margin-top: 8px; }
 .lead-names-custom[hidden] { display: none; }
 .lead-names-custom input[type="file"] { max-width: 100%; }
@@ -68,9 +74,9 @@
 .seg-radio button[aria-checked="true"] { background: var(--line); color: var(--ink); font-weight: 600; }
 
 /* ---- Behavior templates ---- */
-.tpl { display: flex; gap: 0; align-items: flex-start; margin: -28px -32px -48px; }
+.tpl { display: flex; gap: 0; align-items: flex-start; margin: 0 -32px -48px; border-top: 1px solid var(--line); }
 .tpl-list { flex: 0 0 270px; padding: 24px 14px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; align-self: stretch; }
-.tpl-list h1 { font-size: 20px; margin: 0 0 4px 8px; }
+.tpl-list h2 { margin: 0 0 4px 8px; }
 .tpl-list .hint { margin: 0 0 12px 8px; }
 .tpl-list .new { margin-bottom: 10px; border-color: var(--line-2); color: var(--ink); width: 100%; }
 .group-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding: 10px 8px 4px; }
@@ -107,10 +113,13 @@
 .missing { color: var(--warn); }
 
 /* ---- Writing style ---- */
-.writing { max-width: 980px; display: flex; flex-direction: column; gap: 22px; }
-.covers { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; align-items: center; margin-top: 8px; }
-.covers .lbl { color: var(--dim); margin-right: 2px; }
-.covers .chip { padding: 3px 9px; border-radius: 999px; background: var(--accent-chip); color: var(--accent-hi); }
+.writing { max-width: 980px; display: flex; flex-direction: column; gap: 26px; }
+.writing .own-words { font-size: 16px; font-weight: 600; color: var(--ink); margin: 0; }
+.writing .ban { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.writing .ban .chips { padding: 0; border: 0; background: transparent; }
+.covers { display: flex; flex-wrap: wrap; font-size: 12px; align-items: center; margin-top: 8px; color: var(--dim); }
+.covers .lbl { margin-right: 4px; }
+.covers .chip + .chip::before { content: '·'; margin: 0 6px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
 .chips .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 999px; background: var(--panel-2); font-size: 12px; overflow-wrap: anywhere; }
 .chips .chip button { min-height: 0; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; line-height: 1; color: var(--dim); }
@@ -122,19 +131,29 @@
 .pane p { margin: 0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
 .pane p.empty { color: var(--dim); }
 
-/* ---- phone: the section list becomes a row of tabs, tables become stacked cards ---- */
+/* ---- phone: the category list, one category at a time, tables become stacked cards ---- */
+.back, .cat-root { display: none; }
 @media (max-width: 899px) {
-  .panel { padding: 16px; }
-  .tpl { flex-direction: column; margin: -16px; }
+  .settings { flex-direction: column; }
+  .sections { display: none; }
+  .panel { padding: 20px 16px 48px; max-width: none; }
+  .panel .back { display: inline-block; align-self: flex-start; margin-bottom: 14px; font-size: 13px; color: var(--accent-hi); text-decoration: none; }
+  .settings.at-root .cat-root { display: block; }
+  .settings.at-root .back, .settings.at-root .catview { display: none; }
+  .block:not([data-block="templates"]) .row-line { align-items: flex-start; }
+  .block:not([data-block="templates"]) .row-line .what { flex-basis: 100%; }
+  .block .row-line .ctl, .block .row-line .ctl.wide, [data-block="lead-names"] .row-line .ctl.wide { flex: 1 1 100%; }
+  .tpl { flex-direction: column; margin: 0 -16px -48px; }
   .tpl-list { flex: none; width: 100%; border-right: 0; border-bottom: 1px solid var(--line); }
   .tpl-edit { width: 100%; padding: 16px; }
 }
+.category-list { margin-top: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.cat-link { display: flex; align-items: center; gap: 12px; min-height: 73px; padding: 10px 14px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+.cat-link:first-child { border-top: 0; }
+.cat-link strong { display: block; font-size: 14px; font-weight: 600; }
+.cat-link .hint { display: block; margin-top: 3px; }
+.cat-link .chev { margin-left: auto; font-size: 23px; color: var(--dim); }
 @media (max-width: 640px) {
-  .settings { flex-direction: column; min-height: 0; }
-  .sections { flex: none; flex-direction: row; gap: 4px; padding: 8px; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; min-width: 0; }
-  .sections a { flex: 1 1 0; min-width: 0; text-align: center; padding: 8px 4px; font-size: 12px; line-height: 1.25; display: flex; align-items: center; justify-content: center; }
-  .panel { padding: 16px; gap: 22px; }
-  .tpl { margin: -16px; }
   .tiers, .tiers tbody, .tiers tr, .tiers td, .tiers th { display: block; width: auto; }
   .tiers thead { display: none; }
   .tiers th:first-child, .tiers td:first-child, .tiers th:last-child, .tiers td:last-child { width: auto; padding-left: 14px; padding-right: 14px; }
@@ -142,10 +161,10 @@
   .tiers tr:last-child { border-bottom: 0; }
   .tiers th, .tiers td { border: 0; padding: 6px 14px 2px; }
   .tiers td::before { content: attr(data-label); display: block; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
-  .row-line .ctl, .row-line .ctl.wide { flex: 1 1 100%; }
 }
 
 /* ---- Accounts, Usage, lead order ---- */
+.prov-group h3 { margin: 0; font-size: 16px; font-weight: 600; }
 .prov-group { gap: 12px; }
 .acct { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); min-width: 0; }
 .acct-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
@@ -209,14 +228,14 @@ button.danger { color: var(--bad-text); }
   .usage-table td::before { content: attr(data-label); display: block; font-size: 11px; color: var(--dim); margin-bottom: 2px; }
   .usage-table th[scope="row"]::before { content: none; }
   .win .k { flex-basis: 100%; }
-  .sections a { flex: 0 0 auto; min-width: 88px; max-width: 144px; min-height: 44px; font-size: 11px; padding: 8px 10px; overflow-wrap: normal; }
 }
 
 .diagram-radios { display: flex; flex-direction: column; }
-.diagram-radios .choice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; width: 100%; min-height: 44px; padding: 10px 16px; border: 0; border-top: 1px solid var(--panel-2); border-radius: 0; background: transparent; color: var(--ink); text-align: left; font-size: 13px; }
+.diagram-radios .choice { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-content: center; column-gap: 10px; width: 100%; min-height: 44px; padding: 11px 14px; border: 0; border-top: 1px solid var(--panel-2); border-radius: 0; background: transparent; color: var(--ink); text-align: left; font-size: 13px; }
+.diagram-radios .choice::before { content: ''; grid-row: 1 / span 2; align-self: start; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; border: 1px solid var(--dim); }
+.diagram-radios .choice[aria-checked="true"]::before { border: 5px solid var(--accent); }
 .diagram-radios .choice:first-child { border-top: 0; border-radius: 12px 12px 0 0; }
 .diagram-radios .choice:last-child { border-radius: 0 0 12px 12px; }
-.diagram-radios .choice[aria-checked="true"] { background: var(--line); font-weight: 600; }
 .diagram-radios .choice .hint { margin: 0; font-weight: 400; }
 .diagram-lines { padding: 8px 16px 12px; color: var(--dim); line-height: 1.5; }
 .note { white-space: pre-line; }
@@ -300,3 +319,12 @@ button.danger { color: var(--bad-text); }
 .lesson-removed h3, .lesson-waiting h3 { font-size: 14px; margin: 8px 0; }
 .lessons-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .lessons-tools button { flex: 1 1 auto; }
+/* Over a background image, the text outside background.css's panels keeps a solid backdrop. */
+.background-active .settings :is(.cat-head, .back, .cat-root > h1, .cat-root > .lede, .block > .models > div:first-child, .block > .writing > div:first-child, .background-editor > div:first-child) { background-color: var(--bg); }
+.background-active .settings :is(.cat-head, .cat-root > .lede, .block > .models > div:first-child, .block > .writing > div:first-child, .background-editor > div:first-child) { padding: 12px; border-radius: 10px; }
+.background-active .settings .category-list { background-color: var(--panel); }
+/* An empty save status takes no room, so a row with one sits like the others. */
+.panel .row-line .ctl .note:empty { min-height: 0; margin: 0; }
+.panel .background-editor .note:empty { min-height: 0; margin: -6px 0; }
+.writing > div:empty, .writing .actions .note:empty { display: none; }
+[data-block="lead-names"] .what label { margin: 0; font-size: 13px; color: var(--ink); }
