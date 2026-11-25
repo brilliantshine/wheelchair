@@ -123,7 +123,7 @@ Threads list shows.
   2. in the clone, fetches with `--prune` from the project folder `+refs/heads/*:refs/remotes/origin/*`
      (the project's local branches, including every thread's `wc/<id>` whether pushed
      or not, which on this machine are only this project's threads) and only the
-     project's `refs/remotes/origin/<default>` into `refs/remotes/upstream/<default>`
+     project's `refs/remotes/origin/<default>` (`<default>` as step 3 defines it) into `refs/remotes/upstream/<default>`
      (what the project last fetched of its default branch; other machines' pushed thread
      branches are not brought in); `--prune` drops refs deleted in the project folder, and
      since step 1's failure deletes nothing there, an outage keeps the last known refs;
@@ -393,6 +393,19 @@ The build matches these.
 | mechanics | major | Upstream `wc/*` from other machines fetched into the clone | downgraded (minor) | Only reachable by browsing refs no `threads` result names; S3 fetches only `upstream/<default>` |
 | mechanics | major | Role layers carry other projects' lessons and a scout instruction | downgraded (minor) | Lesson text, not threads; S3 names the layers; in-harness scout allowed |
 | mechanics | minor | Send in the window before a crash is noticed stays queued | upheld | S1: a lead found dead with queued messages is restarted |
+
+### Round 5 — 2026-11-24
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 4:**
+- S1: a project lead found dead with queued messages starts a new lead.
+- S3: clone fetches only `upstream/<default>` from the project's remote refs; the prompt's role layers are named.
+- S4: one rule leaves out every other-project item in any field; `reach` reduced to plain text in `waiting`; `permit` kept.
+- Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
