@@ -67,12 +67,13 @@ A tool is a folder with a description file and one of two kinds of body:
 - **Script tool:** the description gives the name, a one-line purpose and named inputs with
   types and descriptions, plus a script in any language. When an agent calls the tool,
   wheelchair runs the script with the inputs and returns its output. Each call is a fresh run.
-- **Server tool:** a real MCP server, started from a wheelchair template, for tools that
-  keep state between calls, are called often, or use MCP features beyond tools. The
-  description says how to start it. Wheelchair starts it for the session and connects it.
+- **Server tool:** a real stdio MCP server, for tools that keep state between calls, are
+  called often, or use MCP features beyond tools. It is either written from the wheelchair
+  template, or an existing server ("connect this one"): its `start` command may launch any
+  stdio MCP server, such as `npx -y some-mcp-server`. Wheelchair starts it for the session
+  and connects it. HTTP MCP servers stay in `.mcp.json` (Deferred).
 No author edits `.mcp.json` for either kind. Kimi and Pi load no MCP servers, so server
-tools are unavailable there (the problems card says so). Exact file names, formats and the
-template's languages: to be settled.
+tools are unavailable there (the problems card says so). File names and formats: S7.
 
 ### S2. Connecting
 No connect step. At each agent session start, wheelchair finds every tool in the project's
@@ -86,8 +87,12 @@ servers keep working unchanged.
 Shared tools live in their own git repository that Collin adds to wheelchair as an ordinary
 project. Settings names which project is the shared tools project (or none). Threads in
 that project make and change shared tools like any other work, ending in a pull request.
-At each agent session start the machine fetches that project's default branch and reads
-its tools folder from it; if the fetch fails it uses the last fetched copy. A project tool
+At each agent session start the machine fetches that project's default branch and updates
+a machine-owned copy of it under the machine state directory
+(`<state dir>/shared-tools/<project identity>/`, a detached checkout of the fetched
+commit, never Collin's own clone); shared tools are read and run from that copy. If the
+fetch fails it uses the copy as last updated; if there is none yet, no shared tools are
+offered and the problems card says why. A project tool
 with the same name as a shared tool hides the shared one, and the problems card says so.
 Inside the shared tools project's own threads, its tools come from the thread's worktree
 (as project tools), so a tool being built can be tried before merge.
@@ -101,7 +106,11 @@ starts a server tool, it passes exactly those keys to that process as environmen
 variables, and never puts them in the agent's own environment, config or instructions.
 Project tools read the project's existing keys (`machine/lib/project-keys.js`); shared
 tools read a new machine-local set of shared keys, stored the same way (private file
-modes, never committed) and edited in Settings. A missing key puts the tool on the
+modes, never committed) and edited in Settings. The bridge and the server launcher read the
+key store themselves when they spawn a tool (project identity of the thread's worktree, or
+the shared key set). Folder tools never use the existing agent-environment key injection
+(`injectProjectKeys`, `machine/lib/env-launch.js`), and no key value is written into any
+generated MCP config. A missing key puts the tool on the
 problems card, naming the key.
 
 ### S5. Asking agents for a tool
@@ -110,7 +119,8 @@ tool guide that says how to make, connect and test both kinds of tool. A request
 "make me a tool that does X" in a project's thread is handled like any other change there
 and ends in a pull request. A lead asked for a shared tool from another project's thread
 says it belongs in the shared tools project and names that project; the tool is made in
-a thread there.
+a thread there, which Collin opens (or asks the assistant to open, using what the
+assistant can already do; no assistant change in this plan).
 
 ### S6. What you see
 The Tools page in Settings (`viewer/pages/project-tools.js`) gains a read-only list of
@@ -138,14 +148,18 @@ and the Tools page; other tools are unaffected. Unknown fields are ignored.
 At session start, for the roles that get project tools today (lead, sub-lead, worker,
 verifier; not reviewers, mappers, assistants or project leads), the machine reads folder
 tools from the thread's worktree and from the shared tools copy (S3), applies S3's name
-rule, and adds stdio entries to the servers it already passes to connectors
-(`machine/service.js` `prepareLaunch`):
+rule, and passes stdio entries to connectors as a new "extra servers" input alongside
+the `.mcp.json` servers (`machine/service.js` `prepareLaunch`). This works when the
+project has no `.mcp.json` at all. Each connector that loads project tools today
+(Claude, Codex, Antigravity) gains support for that input in its own existing format:
+Claude through its `--mcp-config` file, Codex as `project_<name>` overrides, Antigravity
+in its per-session plugin. The entries are:
 - one `wheelchair-tools` entry running a wheelchair bridge that offers every usable script
   tool as an MCP tool (name, description, input schema from `inputs`) and runs it per S9;
 - one entry per usable server tool, running a wheelchair launcher that starts the tool's
   `start` command in its folder with its keys.
-Each connector then applies its existing translation and limits (Codex sees
-`project_<name>`; Kimi and Pi load no servers and say so). A `.mcp.json` server with the same
+Each connector applies its existing per-AI limits to these entries (Kimi and Pi load no
+servers and say so). The entries carry no key values (S4). A `.mcp.json` server with the same
 name as one of these entries wins and the folder tool is reported hidden. Tools are read
 once per session start; a tool changed mid-session reaches the next session.
 
@@ -159,23 +173,24 @@ same call twice.
 
 ### S10. The `wc.js tool` commands
 `node <root>/viewer/app/wc.js tool <command>` runs in the session's own worktree:
-- `new <name> --kind script|server [--shared]`: writes a working example tool from the
-  template into `.wheelchair/tools/<name>/` (`--shared` is refused outside the shared tools
-  project). The script template is a short shell script; the server template is Node.js.
+- `new <name> --kind script|server`: writes a working example tool from the template into
+  `.wheelchair/tools/<name>/` of the current worktree (in the shared tools project, that
+  makes a shared tool). The script template is a short shell script; the server template is Node.js.
 - `list`: the tools this session would get, kind, source and status (same reasons as S6).
 - `check [<name>]`: validates description files; for a server tool, starts it and confirms
   it answers the MCP handshake and lists at least one tool, then stops it.
 - `run <name> --input '<json>'`: runs a script tool exactly as the bridge would and prints
   its result. Kimi and Pi agents use this to call script tools; the guide says so.
-These commands only read and run; any file written by `new` is committed by the agent as
-usual.
+Only `new` writes files, and the agent commits them as usual.
 
 ### S11. The guide
 `protocol/tools.md` is the one guide for people and agents: what a tool is, both kinds,
 `tool.json` fields with a full example of each, keys, project versus shared, the
 `wc.js tool` commands, how to test before asking for review, and per-AI limits. The lead,
 sub-lead and worker role rules gain one line pointing to it for any request to make or
-change a tool. README.md's project tools section gains a short paragraph pointing to it.
+change a tool. Agents on Kimi or Pi with at least one usable script tool get one added
+line in their starting instructions naming those tools and the `wc.js tool run` command.
+README.md's project tools section gains a short paragraph pointing to it.
 
 ### Not doing (this plan)
 - No change to how `.mcp.json` servers are read, edited or launched.
@@ -211,6 +226,7 @@ Optional; present only in the lighter modes.
 |---|------|-----------------|--------|-------------------------|
 | 1 | Windows-side folder tools (a script or server tool that runs on Windows from WSL) | The feature works on the Linux side; Windows needs the go-between and readiness wiring from MAP.md | planning | Reuse `machine/lib/win-tool-wrap.js` and the readiness file; see MAP.md "Windows wiring" |
 | 2 | Server templates in languages other than Node.js (for example Python) | One template is enough to follow the standard; others are convenience | planning | Keep `wc.js tool new --kind server` the entry point, add a `--lang` option |
+| 3 | Folder tools that are HTTP MCP servers (a `url` instead of `start`) | Existing HTTP servers keep working in `.mcp.json`; stdio covers making and wrapping servers | review-round-1 | Needs header keys handled without putting them in agent config (S4) |
 
 ## Accepted Risks
 
