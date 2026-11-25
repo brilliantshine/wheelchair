@@ -12,7 +12,7 @@ created: 2026-11-25
 One standard, well-documented way to make a tool that wheelchair's agents can use, and an
 easy way to connect it. A tool can belong to one project or be shared by every project on
 the machine. The same standard works whether Collin writes the tool by hand or, ideally, just asks
-wheelchair's agents to make and connect it for him.
+wheelchair's agents to make and connect it.
 
 ## Why — the problem
 
