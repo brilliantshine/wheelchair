@@ -140,6 +140,7 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 | Turning a harness off while an add-account form for that provider is open leaves the form as it was | Rare path: two actions together in one visit; the hub's own checks still apply on submit | review-round-3 |
 | On desktop with no hash, narrowing the window below 899px mid-way through a Background preview may discard the unsaved preview | Rare path: a desktop resize across the breakpoint during an unsaved image pick | review-round-3 |
 | A hand-typed lesson address naming an inherited object key (`#behavior/lessons/constructor`) breaks the page ("lessonList(...).some is not a function") instead of opening You | Rare path: malformed input no link in the app produces; real lesson links name real roles | verification-1 |
+| Pressing Balancing's Save and then Lead order's Save while the first answer is still on its way, with the first answer arriving last, can put back the older reserve label until the next Save or visit | Rare path: two saves in flight with their answers arriving out of order | verification-2 |
 
 ## Check Once Built
 
@@ -298,3 +299,4 @@ Build accepted: approval c097ed47-f022-4759-a895-e5d8bb654791
 - 2026-11-25 — Choice: R1-6, settings.css .pane: only the panes' box and gap follow the mockup; text size and wide-screen two columns unchanged
 - 2026-11-25 — Choice: R1-6, background-settings-surfaces.spec.js: the surfaces check is one in-page measurement instead of one assertion per element
 - 2026-11-25 — R1-6 accepted (band: self): read the diff. R2 was a real bug (Harnesses repaint above the screen moved Accounts' buttons mid-press; fixed by holdPlace); R3 was the test measuring a detached node (test fixed). Merged branch: S6 node 87, sensitivity 67, S6 browser 878 pass.
+- 2026-11-25 — Verification attempt 2 on 05eb9de3: Claude verifier PASS; GPT verifier FAIL (4 gaps; one rare path recorded in Accepted Risks). Check Once Built #1 passed (both). Full run: every suite exit 0 except install ('real wheelchair directory is byte-identical after suite'), which fails the same way at the comparison commit 8440ad72 (run from a git archive: 212 passed, 1 failed) because running sessions write to ~/.wheelchair; it does not fail the gate.
