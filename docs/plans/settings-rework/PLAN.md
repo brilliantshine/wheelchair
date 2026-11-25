@@ -38,7 +38,7 @@ The Settings page has eight categories, in this order, each holding exactly thes
 
 1. **You**: your name, Writing style (whole current section), Diagrams, Enter-to-send, Background (whole current section).
 2. **AI providers**: Harnesses and Accounts (both whole current sections).
-3. **Usage and balancing**: Usage (whole current section, including Balancing) plus the lead provider order moved from Models. The lead order goes inside the Balancing box next to the worker order and is saved by Balancing's one Save; its own separate Save goes away. (Both already share one draft, `viewer/pages/settings.js:1663-1671`; one Save means one save never clears the other group's unsaved edits.)
+3. **Usage and balancing**: Usage (whole current section, including Balancing) plus the lead provider order moved from Models. The lead order keeps its own Save, in its own box above Balancing. Both share one draft (`viewer/pages/settings.js:1663-1671`); a Save sends only its own keys and, after saving, refreshes only those keys in the draft, so unsaved edits in the other box survive. The reserve labels ("Save <provider> for leads") keep naming the provider from the saved lead order, as today.
 4. **Models**: Tiers, lead and sub-lead models, Other agents, Escalation.
 5. **Assistant and project leads**: the personal assistant switch and the project leads switch. Future customization for both goes here.
 6. **Threads**: tool steps, auto-merge and branch deletion, default project folder, Permission mode, lead names.
@@ -47,13 +47,14 @@ The Settings page has eight categories, in this order, each holding exactly thes
 
 ### S2. Each repeated thing shown once
 
-- Sign-in for a provider happens only on its account cards in AI providers. A Harnesses row that needs sign-in links to that provider's account cards instead of signing in itself; the link carries the machine selected in Harnesses, and the account card's sign-in opens for that machine. When that sign-in succeeds, the Harnesses rows refresh their status (today only usage refreshes, `viewer/pages/settings.js:1401-1408`).
+- Sign-in for a provider happens only on its account cards in AI providers. A Harnesses row that needs sign-in links to that provider's account cards instead of signing in itself; the link carries the machine selected in Harnesses, and the account card's sign-in opens for that machine. After any account action that can change a harness's status (sign-in, pause, resume, remove), the Harnesses block reloads its status (today only usage refreshes, `viewer/pages/settings.js:1401-1408`).
 - Detailed usage (5-hour and weekly bars, per-account tables) appears only in Usage and balancing. Each account card keeps a one-line reading of its current usage.
 
 ### S3. Section addresses and references
 
 - Keys: `you`, `providers`, `usage`, `models`, `leads`, `threads`, `behavior`, `tools`. An unknown key opens `you`.
-- Old keys open the category now holding them: `harnesses`, `accounts` → `providers`; `writing`, `background` → `you`; `templates` → `behavior`; `templates/lessons/<role>` opens that role's lesson editor as today.
+- Old keys open the category now holding them: `harnesses`, `accounts` → `providers`; `writing`, `background` → `you`; `templates` → `behavior`.
+- A role's lesson editor opens at `#behavior/lessons/<role>`; the old `#templates/lessons/<role>` still opens it. Lesson cards (`viewer/pages/thread.js:1534`, `viewer/pages/assistant-popup.js:287`) link to the new address.
 - Settings opened with no hash (the app nav's Settings link, `viewer/pages/nav.js`) shows `#you` on desktop, and the category list on a phone (S7). Nothing opens `#models` by default any more.
 - The New Thread page's hint for a missing default project folder (`viewer/pages/new.html:24`) links to `#threads`.
 - Update every live link and user-facing text naming an old section or "Models > Diagrams" in code, tests, `protocol/`, `README.md` and `AGENTS.md` files (MAP.md Literal section-reference index); never edit other plans' or reports' files under `docs/plans/`. Text naming a section by its old name says the new category ("Settings → Harnesses" becomes "Settings → AI providers", e.g. `viewer/pages/thread.js:1636`, `README.md:261`). Includes: onboarding card, lesson card links, Harnesses' internal links, `protocol/sensitivity.md` (its delimited region: Settings page (You, Diagrams), and the later "Models > Diagrams" line becomes "You > Diagrams"), `sensitivity/test/run.sh`'s expected text, and tests.
@@ -63,9 +64,9 @@ The Settings page has eight categories, in this order, each holding exactly thes
 At 899px wide or less (the agreed mockups' breakpoint, also the page's first narrow rule, `viewer/pages/settings.css:126`), replacing today's horizontal tab strip:
 
 - Settings with no hash, or `#` alone, shows only the category list (`mockup-phone-navigation.html`): each of the eight categories with its one-line description, tapping one opens it.
-- A category (any key, including old keys and `templates/lessons/<role>`) shows only that category, full width, with a "‹ Settings" link at the top that opens the list (clears the hash). The browser's back button behaves the same way, since each is a hash change.
+- A category (any key, including old keys and `templates/lessons/<role>`) shows only that category, full width, with a "‹ Settings" link at the top that always opens the list (clears the hash), even when the category was reached by a direct link. The browser's Back button follows real history as usual.
 - Above 899px there is no list screen and no back link: the side navigation (`mockup-desktop-threads.html`) is always shown and no hash means `#you`.
-- Crossing the breakpoint (rotating, resizing) re-renders with the rule for the new width, keeping the current hash.
+- Crossing the breakpoint (rotating, resizing) changes layout only: the open category's content is not rebuilt, so typed text and open edits survive. With no hash, crossing from phone to desktop shows `#you` and back shows the list.
 
 ### S4. Mockups
 
@@ -83,9 +84,10 @@ Categories not mocked follow the same pattern: the moved controls keep today's w
 ### S5. Boundaries and non-goals
 
 - No control changes behaviour, wording (beyond headings that name a moved group), stored value or save route. Server endpoints (`viewer/app/settings.js`, `routes.js`) do not change.
-- Section-specific live work moves with its controls: Harnesses install/sign-in polling, Accounts and Usage 30-second refresh, Diagrams read on visit, Models diagram drawing. Each runs while the category holding it is open and stops when it is left, as today per section.
+- Each former section or group inside a category (for example Harnesses and Accounts in AI providers; your name, Writing style, Diagrams, Enter-to-send and Background in You) is its own block. A repaint caused by one block (its poll or timer, its Save, its machine picker) rebuilds only that block, so unsaved edits and typed text in the other blocks survive.
+- Section-specific live work moves with its controls: Harnesses install/sign-in polling, Accounts and Usage 30-second refresh, and the Diagrams read and draw (which fills `#diagram-choices`, `viewer/pages/settings.js:127-146`, today guarded by `section === 'models'` at :2254) all move to the category that now holds them. Each runs while the category holding it is open and stops when it is left, as today per section.
 - The saved background's 10-second refresh (`viewer/pages/background.js:68-105`) stays page-wide, running whatever category is open. Only the editor's repaint and preview cleanup are tied to the You visit (today's `section === 'background'` checks become "You is open").
-- A repaint from any timer or poll in a category (Harnesses install progress, Accounts/Usage refresh) never replaces the panel while an account edit is open: a rename, plan or weight change, or the add-account form. It waits until the edit closes, as the Accounts refresh guard does today (`viewer/pages/settings.js:1371-1373`).
+- Within the Accounts block, its own refresh still waits while an account edit is open (rename, plan or weight, add-account form), as today (`viewer/pages/settings.js:1371-1373`).
 - Enter-to-send stays in browser storage.
 - Not doing: new settings, the personal assistant changing settings, separate phone/computer backgrounds (other threads).
 
@@ -95,11 +97,11 @@ Run from the worktree:
 
 ```bash
 node --test viewer/test/app-settings.test.js viewer/test/app-harnesses.test.js viewer/test/app-usage.test.js viewer/test/app-lessons.test.js viewer/test/background.test.js viewer/test/app-diagram-sensitivity.test.js
-npm --prefix viewer run test:browser -- app-new-thread.spec.js app-assistant.spec.js app-project-lead.spec.js app-settings.spec.js app-harnesses.spec.js app-accounts.spec.js app-diagram-sensitivity.spec.js app-lessons.spec.js app-project-tools.spec.js app-hidden-tabs.spec.js background-editor.spec.js background-network.spec.js background-readiness.spec.js background-rendering.spec.js background-settings-surfaces.spec.js
+npm --prefix viewer run test:browser -- app-send-now.spec.js app-openrouter-spend.spec.js app-new-thread.spec.js app-assistant.spec.js app-project-lead.spec.js app-settings.spec.js app-harnesses.spec.js app-accounts.spec.js app-diagram-sensitivity.spec.js app-lessons.spec.js app-project-tools.spec.js app-hidden-tabs.spec.js background-editor.spec.js background-network.spec.js background-readiness.spec.js background-rendering.spec.js background-settings-surfaces.spec.js
 bash sensitivity/test/run.sh
 ```
 
-New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show: the eight categories in S1 order; each moved control is found in its S1 category; each old key in S3 opens the right category; Harnesses' sign-in link opens the provider's account cards; account cards show one usage line and no usage bars; on a 390px-wide page, no hash shows the category list and "‹ Settings" returns to it; reordering leads and changing a worker balancing value then pressing Save keeps both; a Harnesses progress tick with an account rename open keeps the typed name. `app-assistant.spec.js` and `app-project-lead.spec.js` open `#leads` to find their switches; `app-new-thread.spec.js` expects the hint to link to `#threads`.
+New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show: the eight categories in S1 order; each moved control is found in its S1 category; each old key in S3 opens the right category; Harnesses' sign-in link opens the provider's account cards; account cards show one usage line and no usage bars; on a 390px-wide page, no hash shows the category list and "‹ Settings" returns to it; reordering leads, changing a worker balancing value, then pressing either Save keeps the other's unsaved edit; typing in Writing style then saving a background keeps the typed text; switching the Harnesses machine with an account rename open keeps it; resizing across 899px with a rename open keeps it; Diagrams choices show in You; `#behavior/lessons/<role>` and `#templates/lessons/<role>` both open that editor; a Harnesses progress tick with an account rename open keeps the typed name. `app-assistant.spec.js` and `app-project-lead.spec.js` open `#leads` to find their switches; `app-new-thread.spec.js` expects the hint to link to `#threads`.
 
 ## Deferred
 
@@ -147,12 +149,22 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 - S1: lead provider order inside Balancing with one Save.
 - S2: Harnesses sign-in link carries the machine; Harnesses refresh after sign-in.
 - S5: background refresh stays page-wide; repaints wait for open edits.
+
+Round 2 fixes (for round 3): S5 blocks repaint independently (replaces the poll-wait rule); Diagrams read and draw move to You; S1 lead order keeps its own Save, each Save keeps the other's draft (replaces the one-Save rule); S2 Harnesses reload after every account action; S3 `#behavior/lessons/<role>`; S7 back link always opens list, layout change rebuilds nothing; S6 more specs.
 - S6: more specs and checks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | S7 breakpoint 640px differs from the agreed mockups' 899px | upheld (minor) | S7 now 899px |
 | intent | minor | "a text field with focus" freezes Harnesses progress needlessly | upheld (minor) | S5 limited to account edits |
+| mechanics | blocking | Diagrams moved to You but its read/draw stayed guarded by Models | upheld (blocking) | S5: read and draw move with it |
+| mechanics | major | One Save with reserve labels from saved order can reserve the wrong provider | upheld (major) | S1: back to two Saves that keep each other's draft; labels as today |
+| mechanics | major | Other blocks' actions (machine change, background save) rebuild the panel and erase drafts | upheld (major) | S5: each block repaints only itself |
+| mechanics | major | Rerender on crossing the breakpoint loses open edits | upheld (major) | S7: layout change only |
+| mechanics | major | Lesson cards moved to `#behavior` lose the role editor | upheld (major) | S3: `#behavior/lessons/<role>`, old alias kept |
+| mechanics | minor | Harnesses status not refreshed after other account actions | upheld (minor) | S2 |
+| mechanics | minor | Back link vs browser Back after a direct link | upheld (minor) | S7 |
+| mechanics | minor | Missing send-now and openrouter-spend specs | upheld (minor) | S6 |
 
 ## Implementation Tasks
 
