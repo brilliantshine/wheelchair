@@ -534,3 +534,6 @@ The build matches these.
 - 2026-11-24 — Choice: R1, project-lead-actions.js: `target_pr` counts only when it is an http(s) URL; `donePr` used with its defaults.
 - 2026-11-24 — Verification attempt 2 (9457fe87): both verifiers FAIL. Claude: outside PR URL substring hides local content. GPT: Claude project leads load project settings/MCP; object `target_pr` URL not filtered; cards.md message-card wording; two mockup style items. None judged rare; sent to the lead for per-gap answers.
 - 2026-11-24 — Lead's answers on verification-2 gaps: fix 1-4 (REMEDIATION-2); defer the preview and link-style items as D8, D9.
+- 2026-11-24 — R2a accepted (band: scout): whole-URL matching for outside PR URLs (string and `{url}` `target_pr`), cards.md `message` row; 31 project-lead tests pass. Worker reported "none" for choices; the scout listed these:
+- 2026-11-24 — Choice: R2a, project-lead-actions.js: a trailing `/` is trimmed from the whole text, not each occurrence, so an outside URL written with a trailing slash mid-sentence is not hidden.
+- 2026-11-24 — Choice: R2a, project-lead-actions.js: object-form `target_pr.url` accepted without an http(s) check; URL matching also applies to keys.
