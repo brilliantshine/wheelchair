@@ -90,8 +90,7 @@ npm --prefix viewer run test:browser
 ```
 
 The glob in the Node test command must be unquoted, expanded by the shell — a quoted
-glob isn't discovered on Node 20, which is what the always-on service runs. The browser
-suite runs in both Chromium and Firefox. Protocol documents have no test suite; review
+glob isn't discovered on Node 20, which is what the always-on service runs. Every spec runs in Chromium; the specs in `viewer/test/firefox-specs.js` also run in Firefox. A spec testing drawing, touch, pixels or scroll belongs on that list. Protocol documents have no test suite; review
 their rendered output and make sure each stage still produces the input the next stage
 expects.
 

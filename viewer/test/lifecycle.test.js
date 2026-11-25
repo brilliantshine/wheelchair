@@ -78,8 +78,8 @@ http.createServer((request,response)=>{
 }
 
 test('the token lasts across a restart, rotates only explicitly, and whoami proves a nonce', async () => {
-  const root = await makeDir(); const port = await freePort();
-  const first = await startServer({ cacheRoot: root, port });
+  const root = await makeDir();
+  const first = await startServer({ cacheRoot: root }); const port = first.port;
   try {
     const token = await fs.readFile(path.join(root, '.token'), 'utf8');
     const nonce = crypto.randomBytes(16).toString('hex');
@@ -121,9 +121,9 @@ test('stop treats a refused connection as no viewer even when stale information 
 });
 
 test('serving origin is accepted for PUT and drives the bookmark URL', async () => {
-  const root = await makeDir(); const port = await freePort(); const origin = 'https://viewer.example.ts.net';
+  const root = await makeDir(); const origin = 'https://viewer.example.ts.net';
   await fs.writeFile(path.join(root, '.serving'), JSON.stringify({ serve: true, origin }));
-  const ctx = await startServer({ cacheRoot: root, port });
+  const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const printed = await run(['--cache-root', root, '--port', String(port), '--url']);
     assert.equal(printed.code, 0); assert.match(printed.stdout, new RegExp(`^${origin.replace(/[.]/g, '\\.')}/wheelchair/\\?token=`));
@@ -159,7 +159,7 @@ test('simultaneous delayed listeners elect one server and print one token', asyn
 });
 
 test('SIGKILL leaves stale .server and the next start listens immediately', async () => {
-  const root = await makeDir(); const port = await freePort(); const first = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const first = await startServer({ cacheRoot: root }); const port = first.port;
   first.child.kill('SIGKILL'); await exit(first.child);
   const began = Date.now(); const replacement = await startServer({ cacheRoot: root, port });
   try { assert.ok(Date.now() - began < 1000); } finally { await replacement.stop(); }
@@ -186,7 +186,7 @@ test('a copied start id with a made-up pid and no proof is foreign', async () =>
 });
 
 test('/whoami supplies pid and code, and proof only for a nonce', async () => {
-  const ctx = await startServer({ port: await freePort() });
+  const ctx = await startServer();
   try {
     const plain = await request(ctx, '/whoami', { graphPath: undefined, token: undefined }); const nonce = 'c'.repeat(32);
     const signed = await request(ctx, `/whoami?nonce=${nonce}`, { graphPath: undefined, token: undefined });
@@ -196,7 +196,7 @@ test('/whoami supplies pid and code, and proof only for a nonce', async () => {
 });
 
 test('stopping refuses a mismatched .server pid', async () => {
-  const ctx = await startServer({ port: await freePort() });
+  const ctx = await startServer();
   try {
     const recordPath = path.join(ctx.root, '.server'); const record = JSON.parse(await fs.readFile(recordPath)); record.pid += 1; await fs.writeFile(recordPath, JSON.stringify(record));
     const result = await run(['--cache-root', ctx.root, '--port', String(ctx.port), '--stop']); assert.equal(result.code, 1); assert.equal(ctx.child.exitCode, null);
@@ -216,7 +216,7 @@ test('--stop waits five seconds then fails when the server ignores SIGTERM', asy
 });
 
 test('--stop --if-stale keeps current code and stops a changed server copy', async () => {
-  const root = await makeDir(); const port = await freePort(); const current = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const current = await startServer({ cacheRoot: root }); const port = current.port;
   try {
     const unchanged = await run(['--cache-root', root, '--port', String(port), '--stop', '--if-stale']);
     assert.equal(unchanged.code, 0); assert.match(unchanged.stdout, /Viewer is current\./); assert.equal(current.child.exitCode, null);
@@ -302,7 +302,7 @@ test('a proof-valid pre-prefix holder without a pid is not ours and open does no
 });
 
 test('--service takes over an open server without changing port or token', async () => {
-  const root = await makeDir(); const port = await freePort(); const opened = await startServer({ cacheRoot: root, port }); const token = opened.token;
+  const root = await makeDir(); const opened = await startServer({ cacheRoot: root }); const port = opened.port; const token = opened.token;
   const service = launch(['--cache-root', root, '--port', String(port), '--service']);
   try {
     await service.ready; assert.equal((await fs.readFile(path.join(root, '.token'), 'utf8')).trim(), token);
@@ -311,7 +311,7 @@ test('--service takes over an open server without changing port or token', async
 });
 
 test('--service gives up after three takeovers', { timeout: 30000 }, async () => {
-  const root = await makeDir(); const port = await freePort(); const marker = path.join(root, 'service-pause'); const holders = [await startServer({ cacheRoot: root, port })];
+  const root = await makeDir(); const marker = path.join(root, 'service-pause'); const first = await startServer({ cacheRoot: root }); const port = first.port; const holders = [first];
   const service = launch(['--cache-root', root, '--port', String(port), '--service'], 'delay-relisten-after-stop', { GRAPH_TEST_MARKER: marker });
   service.ready.catch(() => {});
   try {
@@ -336,14 +336,14 @@ test('a post-bind .server rename failure rolls back listener and record', async 
 });
 
 test('--open waits a closing server out and succeeds', async () => {
-  const root = await makeDir(); const port = await freePort(); const old = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const old = await startServer({ cacheRoot: root }); const port = old.port;
   old.child.kill('SIGTERM');
   const next = launch(['--cache-root', root, '--port', String(port), '--open', path.join(root, 'graphs', 'next.json')]);
   try { await next.ready; assert.equal(next.child.exitCode, null); } finally { await stop(next.child); await old.stop(); }
 });
 
 test('only localhost and served origins write, and serve false prints localhost', async () => {
-  const root = await makeDir(); const port = await freePort(); await fs.writeFile(path.join(root, '.serving'), JSON.stringify({ serve: false })); const ctx = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); await fs.writeFile(path.join(root, '.serving'), JSON.stringify({ serve: false })); const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const bad = await request(ctx, '/view', { method: 'PUT', body: { hash: 'x', graph: {} }, origin: 'https://bad.example' }); assert.equal(bad.status, 403); assert.equal(bad.body.error, 'bad-origin');
     const url = await run(['--cache-root', root, '--port', String(port), '--url']); assert.match(url.stdout, new RegExp(`^http://127\\.0\\.0\\.1:${port}/wheelchair/\\?token=`));
@@ -390,7 +390,7 @@ test('--register-plan retries a silent holder until it registers through it', as
 });
 
 test('--rotate-token waits for shutdown and leaves .server removal to the server', async () => {
-  const root = await makeDir(); const port = await freePort(); const ctx = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   const record = await fs.readFile(path.join(root, '.server'));
   const result = await run(['--cache-root', root, '--port', String(port), '--rotate-token']);
   assert.equal(result.code, 0); assert.notEqual(await fs.readFile(path.join(root, '.token'), 'utf8'), `${ctx.token}\n`);
@@ -398,7 +398,7 @@ test('--rotate-token waits for shutdown and leaves .server removal to the server
 });
 
 test('--rotate-token prints the new prefixed bookmark for a current server', async () => {
-  const root = await makeDir(); const port = await freePort(); const ctx = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   try {
     const rotated = await run(['--cache-root', root, '--port', String(port), '--rotate-token']); const token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
     assert.equal(rotated.code, 0, rotated.stderr); assert.match(rotated.stdout, new RegExp(`http://127\\.0\\.0\\.1:${port}/wheelchair/\\?token=${token}\\n$`));
@@ -406,7 +406,7 @@ test('--rotate-token prints the new prefixed bookmark for a current server', asy
 });
 
 test('shutdown releases the port before it removes only its own .server record', async () => {
-  const root = await makeDir(); const port = await freePort(); const ctx = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   const replacement = { pid: 1, port, token: '3'.repeat(64), start_id: '4'.repeat(32) };
   await fs.writeFile(path.join(root, '.server'), JSON.stringify(replacement)); ctx.child.kill('SIGTERM'); await exit(ctx.child);
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, '.server'))), replacement);
@@ -415,7 +415,7 @@ test('shutdown releases the port before it removes only its own .server record',
 });
 
 test('--stop leaves .server removal to the exiting server', async () => {
-  const root = await makeDir(); const port = await freePort(); const ctx = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root }); const port = ctx.port;
   const result = await run(['--cache-root', root, '--port', String(port), '--stop']); assert.equal(result.code, 0);
   await assert.rejects(fs.access(path.join(root, '.server'))); assert.equal(ctx.child.exitCode === null, false);
 });

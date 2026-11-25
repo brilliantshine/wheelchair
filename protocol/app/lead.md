@@ -737,7 +737,7 @@ body names the current done head counts as its check card: post no other.
    step 9's provider rule, briefed with the user's request for a small fix or the plan's Spec,
    and what the repair changed, with the bases above when the project has a `Test picker and full run`
    heading (the default-branch tip merged in, for a merge repair; the previously
-   checked commit, for a failed check), and start the full run alongside it unless the commit is
+   checked commit, for a failed check), and, with that heading, start the full run alongside it unless the commit is
    covered. On a pass (and, with that heading, a passing full run), push and return to 2 with a new window. On a
    fail, count one failed attempt, fix locally and re-verify; never push an unverified
    commit or poll for it.

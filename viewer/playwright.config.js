@@ -1,13 +1,13 @@
 'use strict';
 
-// Two projects so `npm run test:browser` (viewer/package.json) checks both browsers the user
-// actually uses (Decision Log #94): Chromium and Firefox. testDir/testMatch keep this to the
-// viewer's own suite — everything under test/ named *.spec.js, currently browser.spec.js and
-// touch.spec.js — and leave viewer/test/*.test.js (node --test's unit suite) alone.
+// Every spec runs in Chromium; specs in test/firefox-specs.js also run in Firefox.
+// Specs testing drawing, touch, pixels or scroll belong on that list.
 const { defineConfig, devices } = require('@playwright/test');
 const { decide } = require('../test-support/browser-workers');
+const firefoxSpecs = require('./test/firefox-specs');
 
-// Full runs alone can use up to six workers; overlapping and short runs stay capped at two.
+// A full run alone uses up to eight workers; one starting beside n other live full runs
+// takes max(2, floor(8 / (n + 1))), fixed at its start. Non-full runs use two.
 // --workers on the command line still overrides the cap.
 module.exports = defineConfig({
   workers: decide(),
@@ -15,6 +15,6 @@ module.exports = defineConfig({
   testMatch: '*.spec.js',
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'firefox', testMatch: firefoxSpecs, use: { ...devices['Desktop Firefox'] } },
   ],
 });
