@@ -66,3 +66,14 @@ test('skips a reader-marked duplicate header without a plugin', () => {
   assert.equal(result.toolFiles, undefined);
   assert.ok(!result.argv.includes('--add-dir'));
 });
+
+test('folder entries alone create the plugin and are loaded', () => {
+  const extraServers = [{ name: 'wheelchair-tools', folder: 'bridge', entry: { type: 'stdio', command: '/node', args: ['/bridge'], env: {} } }];
+  const context = { stateDir: '/state', tools: true };
+  const call = c => agy.command({}, { name: 'test' }, '/work', c);
+  const result = call({ ...context, extraServers });
+  assert.deepEqual(JSON.parse(result.toolFiles.files[1].text).mcpServers, { 'wheelchair-tools': { command: '/node', args: ['/bridge'], env: {} } });
+  assert.deepEqual(result.loaded.map(x => x.name), ['wheelchair-tools']);
+  assert.deepEqual(call({ ...context, extraServers: [] }), call(context));
+  assert.deepEqual(call({ ...context, tools: false, extraServers }), call({ ...context, tools: false }));
+});
