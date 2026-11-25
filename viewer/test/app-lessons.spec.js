@@ -47,6 +47,8 @@ test.describe('Settings', () => {
     await expect(page.getByText('Written by agents')).toHaveCount(0);
     await openSettings(page, '/app/settings#templates/lessons/worker');
     await expect(page.locator('.lessons-edit')).toContainText('No lessons for workers right now.');
+    await expect(page.locator('#using')).toHaveText('There is nothing to edit until an agent saves a lesson for workers.');
+    await expect(page.locator('#save-lessons')).toHaveCount(0);
     await expect(page.locator('.lesson-warning')).toHaveText(WARNING);
 
     await seed({ worker: [lesson('L000001', 'Run the lint first.', { provider: 'gpt', project: '/tmp/proj-alpha', thread: made.id }), lesson('L000002', 'Keep commits small.', { saved_by: 'user' })], reviewer: [lesson('L00000b', 'Read the diff twice.')] });
@@ -65,7 +67,7 @@ test.describe('Settings', () => {
     await openSettings(page, '/app/settings#templates/lessons/worker');
     await expect(page.locator('.lesson-warning')).toHaveText(WARNING);
     await expect(page.locator('#using')).toHaveText('Changes apply to workers started after you save.');
-    await expect(page.locator('#lessons-live')).toHaveText('Agents save these as they go, and nothing waits for you. A lesson reaches workers started after it is saved, only on the AI or project it is marked for, if any. Saving on this screen is only for your own edits and removals.');
+    await expect(page.locator('#lessons-live')).toHaveText('Agents save these as they go, and nothing waits for you. A lesson reaches workers started after it is saved, only on the AI and in the project it is marked for, if any. Saving on this screen is only for your own edits and removals.');
     const first = page.locator('.lesson-row[data-id="L000001"]');
     await expect(first).toContainText('only on GPT');
     await expect(first).toContainText('only in proj-alpha');
