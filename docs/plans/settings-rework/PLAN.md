@@ -132,6 +132,7 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | 1 | Titles and hints wrap onto a different number of lines than the mockups (phone list You line, phone assistant title, desktop Threads folder hint), moving rows 7-37 px | Line wraps differ from the mockups only because of the app's real fonts | verification | Check whether the taller rows bother Collin on a real phone |
+| 2 | The closed Technical terms picker on phone You cuts off the end of its selected option | At 390px in Inter the selected label is cut by a few pixels (309px label, 306px of text room) | verification | Options: smaller phone text, narrower phone gutters, or a custom picker |
 
 ## Accepted Risks
 
@@ -315,3 +316,4 @@ Build accepted: approval c097ed47-f022-4759-a895-e5d8bb654791
 - 2026-11-25 — Lead's answer on verification-3 gaps: fix all three (a repaint above an open sign-in card must not move or replace it); if the lost-press race survives this second fix, bring it to the lead. Remediation 3 dispatched with --provider claude; the hub routed it to GPT standard (gpt-6.1-terra); the GPT guardrail was sent to the worker by message.
 - 2026-11-25 — R3 attempt 1 (worker-6, gpt-6.1-terra) blocked: its hidden-editor test failed twice (ambiguous locator) and its partial T1 change (holding Accounts repaints while a sign-in card exists) broke three Chromium checks; not merged. Escalation rung 2: brief rewritten (deterministic T1 repro first, card must not be replaced, settled T2 select style and T3 locator) and restarted fresh at effort xhigh; asked for Claude, hub routed it to GPT (gpt-6.1-terra).
 - 2026-11-25 — R3 attempt 2 (worker-7, gpt-6.1-terra xhigh) blocked: T3's test failed twice (hidden rebuild stopped, but reopening You showed stale visibility); its T1 holdPlace change passed a deterministic repro; T2 measured 306px text room vs a 309px label at 13px in Inter. Not merged. T2 sent to the lead as a design question (suggested: defer with Deferred row 1). Escalation rung 3: T1 and T3 restarted fresh at Heavy on a rewritten brief; asked for Claude, hub routed it to GPT (gpt-6.2-sol).
+- 2026-11-25 — Lead's answer on the Technical terms picker: defer it (Deferred row 2). Remediation 3 now covers only the lost press (T1) and the hidden background editor (T3).
