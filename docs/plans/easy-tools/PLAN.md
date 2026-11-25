@@ -1,6 +1,6 @@
 ---
 slug: easy-tools
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-25
 ---
 
@@ -66,6 +66,18 @@ A plan with visible work lists its agreed mockups under “Mockups” (path, scr
 The settled design, grown as decisions land. Bar: a fresh agent with no conversation
 history can implement from this section alone — behavior, boundaries, edge cases,
 non-goals, and concrete validation commands.
+
+How a tool reaches an agent (S2, S3, S8, S9, S10):
+
+```mermaid
+flowchart TD
+  A["Tool folders: this project's worktree, plus the shared tools copy for this machine"] --> B["Agent starts: the machine reads every tool description"]
+  B --> C{"Description valid and program found?"}
+  C -- no --> D["Listed on the thread's problems card and the Tools page"]
+  C -- yes --> E{"Which AI?"}
+  E -- "Claude, Antigravity, unrestricted Codex" --> F["Connected automatically: script tools through wheelchair's built-in bridge, server tools started by the launcher"]
+  E -- "Kimi, Pi, sandboxed Codex" --> G["Agent runs script tools from its shell with wc.js tool run; server tools unavailable"]
+```
 
 ### S1. What a tool is
 A tool is a folder with a description file and one of two kinds of body:
@@ -148,7 +160,7 @@ or server, project or shared, and whether it can be used or the reason it cannot
 reasons the problems card gives). "Can be used" means these launch-time checks pass: valid
 `tool.json`; its `run`/`start` program found (in the tool folder or on the session's PATH);
 not hidden. A server tool that passes these shows "server tools don't
-work on Kimi or Pi" as its status, as in the mockup (a fixed fact about the kind). The page lists tools from the project's default branch
+work on Kimi, Pi or sandboxed Codex" as its status (this wording replaces the mockup's "Kimi or Pi"; layout as in the mockup) (a fixed fact about the kind). The page lists tools from the project's default branch
 (read-only: it needs only a GitHub fetch origin, not the matching push destination the
 `.mcp.json` editor requires; for a project without a GitHub origin the list says
 "folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (if a shared tools project is chosen, it is on this machine and no copy exists yet, the list says "no shared copy on this machine yet" and, if the last refresh failed, "last refresh failed: <reason>"; listed for every project, GitHub or not; for a non-GitHub project its rows add "not checked against this project's own tools", since a project tool of the same name would hide it) (not added when the
@@ -194,8 +206,8 @@ in its per-session plugin. The entries are:
   `start` command in its folder, in its own process group; when the launcher exits or its
   stdin closes, it sends that group SIGTERM, then SIGKILL after 5 seconds.
 The Codex translation gives the `wheelchair-tools` entry `tool_timeout_sec = 260` (the 240 s script limit plus cleanup grace), since Codex's default call deadline is shorter on some versions. Each connector applies its existing per-AI limits to these entries (Kimi and Pi load no
-servers and say so). A sandboxed Codex session gets no folder entries at all; its problems
-card says "folder tools run from the shell here (`wc.js tool run`); server tools need Codex
+servers and say so). A sandboxed Codex session gets no folder entries at all; when it has at least one usable
+folder tool it is not getting through MCP, its problems card says (and the line goes when there is none, like any other warning) "folder tools run from the shell here (`wc.js tool run`); server tools need Codex
 set to unrestricted".  Folder entries never displace
 `.mcp.json` entries: where a connector has a size budget (Codex's argument budget,
 `connectors/codex/machine.js` `codexOverrides`), `.mcp.json` entries are measured first, then
@@ -249,7 +261,7 @@ files, and the agent commits them as usual.
 `wc.js tool` commands, how to test before asking for review, and per-AI limits (including that sandboxed Codex sessions run script tools from the shell and have no server tools). The lead,
 sub-lead and worker role rules gain one line pointing to it for any request to make or
 change a tool. Agents on Kimi, Pi or sandboxed Codex with at least one usable script tool get one added
-line in their starting instructions naming those tools and the `wc.js tool run` command.
+line in their starting instructions saying that `wc.js tool list` shows their tools and `wc.js tool run` runs one, and that the shell call needs a timeout above the tool's `timeout_seconds` (the list is read live, so a resume needs no new line). After a resume or account switch, the machine's ready event carries the rediscovered tool problems and the hub applies them to the problems card as it does on a start.
 README.md's project tools section gains a short paragraph pointing to it.
 
 ### Not doing (this plan)
@@ -272,7 +284,7 @@ All under `docs/plans/easy-tools/graphs/`:
 Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
-- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, a sandboxed Codex session getting no folder entries and the problems card line while an unrestricted one gets them, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, Codex's bridge entry carrying `tool_timeout_sec = 260`, a failed or partial copy build falling back without stopping launch, two concurrent starts running only one refresh, a later refresh advancing the pointer, and a resume or account switch offering edited project tool descriptions while keeping the pinned shared copy), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
+- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, a sandboxed Codex session getting no folder entries and the problems card line only when it has a usable folder tool (no line with none) while an unrestricted one gets them, the problems card updated after an account switch, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, Codex's bridge entry carrying `tool_timeout_sec = 260`, a failed or partial copy build falling back without stopping launch, two concurrent starts running only one refresh, a later refresh advancing the pointer, and a resume or account switch offering edited project tool descriptions while keeping the pinned shared copy), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
 - S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, shared copies read-only after building, session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
 - S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline and when `wc.js` gets SIGTERM, `run`/`check` stripping the session token, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
@@ -536,6 +548,12 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Sandboxed Codex warning shows on every Codex thread | upheld | S8: only when a usable folder tool is skipped |
+| intent | minor | Page status omits sandboxed Codex | upheld | S6 wording (replaces mockup text) |
+| intent | minor | Shell timeout shorter than the tool's | upheld | S11: starting-instructions line says to set a longer shell timeout |
+| mechanics | minor | Resumed sandboxed Codex agent unaware of new tools | upheld | S11: line points to `wc.js tool list` (read live) |
+| mechanics | minor | Problems card stale after an account switch | upheld | S11/S8: ready event carries tool problems; hub applies them |
+| mechanics | minor | Sandboxed Codex warning has no condition | upheld | Same fix as intent finding 1 |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
