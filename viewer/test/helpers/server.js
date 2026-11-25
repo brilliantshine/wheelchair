@@ -49,7 +49,8 @@ function waitForLine(child) {
       if (line) { clearTimeout(timeout); resolve(line); }
     });
     child.stderr.on('data', (chunk) => { errors += chunk; });
-    child.once('exit', (code, signal) => {
+    // 'close' waits for stderr to drain, so the clash message is in `errors` when we decide.
+    child.once('close', (code, signal) => {
       clearTimeout(timeout);
       const error = new Error(`server exited before ready (${code ?? signal}): ${errors}`);
       error.startupStderr = errors;
