@@ -1,6 +1,6 @@
 ---
 slug: easy-tools
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-25
 ---
 
@@ -14,9 +14,6 @@ get buried as this file grows.
 
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
-
-### Q7: Agree the mockups
-- **Context:** A designer is drawing the Tools page list, the shared tools project picker and the shared keys section.
 
 ## Watch List
 
@@ -54,6 +51,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | `wc.js tool new|list|check|run` commands; `run` also lets Kimi and Pi agents use script tools from the shell | A scaffold and a test command make "follow the standard" concrete for agents; shell access comes almost free | defaulted |
 | 17 | The tool guide lives at `protocol/tools.md` (canonical, per CONTRIBUTING.md); role rules for lead, sub-lead and worker point to it; the README gets a short section pointing to it | protocol/ holds canonical rules | defaulted |
 | 18 | One server template, Node.js, using a small zero-dependency MCP stdio helper shipped with wheelchair; other languages can still write a server by hand | One well-tested template beats several thin ones; Node is already required | defaulted |
+| 19 | Mockups agreed: mockup-tools-mixed-phone, mockup-tools-empty-phone, mockup-tools-mixed-desktop, mockup-shared-none-phone, mockup-shared-chosen-phone (designer's single version, commit 2e82b6fe) | Collin agreed them | user |
+| 20 | Windows-side folder tools and server templates in other languages go to Deferred (follow-up thread) | Hardening and reach, not needed for the feature to work | defaulted |
 
 ## Spec
 
@@ -119,7 +118,7 @@ folder tools for the chosen project, including shared tools: each with its name,
 or server, project or shared, and whether it can be used or the reason it cannot (the same
 reasons the problems card gives). Settings gains a picker for the shared tools project (or
 none) and a shared keys section that works like the project keys section. Existing
-`.mcp.json` editing is unchanged. Look: see Mockups (to be agreed).
+`.mcp.json` editing is unchanged. Look: see Mockups. In the invalid-description example, the reason names the field actually missing (`start` for a server tool), per S7.
 
 ### S7. The description file and folder
 Every tool is `.wheelchair/tools/<name>/` holding `tool.json` and the tool's own files, in a
@@ -180,8 +179,29 @@ change a tool. README.md's project tools section gains a short paragraph pointin
 
 ### Not doing (this plan)
 - No change to how `.mcp.json` servers are read, edited or launched.
-- No Windows-side folder tools: a folder tool runs on the Linux side only.
+- A folder tool runs on the Linux side only (Windows-side folder tools: Deferred).
 - No editing tools from the app; the Tools page list is read-only.
+
+### Mockups
+All under `docs/plans/easy-tools/graphs/`:
+| File | Screen / state | Size |
+|---|---|---|
+| mockup-tools-mixed-phone.html | Tools page, folder tools with mixed statuses | 390x844 |
+| mockup-tools-empty-phone.html | Tools page, no folder tools yet | 390x844 |
+| mockup-tools-mixed-desktop.html | Tools page, mixed statuses, wide screen (same layout, wider frame) | 1280x900 |
+| mockup-shared-none-phone.html | Settings, Shared tools, none chosen | 390x844 |
+| mockup-shared-chosen-phone.html | Settings, Shared tools, project chosen, two keys (one missing) | 390x844 |
+
+### Validation
+Each item ships with tests; verifiers run, for the commits checked, the commands
+`node test-support/pick-tests.js --base <comparison commit>` prints, plus:
+- S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
+- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
+- S4, S9 (keys reach only the tool process, never the agent's environment or config files; stdin/stdout, errors, timeout, output cap): `node --test machine/test/folder-tools-run.test.js` (new), `node --test machine/test/project-keys.test.js`.
+- S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake): `node --test viewer/test/wc-tool.test.js` (new).
+- S6, Mockups (list and Shared tools section): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
+- S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
+- Routers: `machine/AGENTS.md` and `viewer/AGENTS.md` (and any other router whose file-to-role list changes) are updated in the same change.
 
 ## Deferred
 
@@ -189,6 +209,8 @@ Optional; present only in the lighter modes.
 
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
+| 1 | Windows-side folder tools (a script or server tool that runs on Windows from WSL) | The feature works on the Linux side; Windows needs the go-between and readiness wiring from MAP.md | planning | Reuse `machine/lib/win-tool-wrap.js` and the readiness file; see MAP.md "Windows wiring" |
+| 2 | Server templates in languages other than Node.js (for example Python) | One template is enough to follow the standard; others are convenience | planning | Keep `wc.js tool new --kind server` the entry point, add a `--lang` option |
 
 ## Accepted Risks
 
@@ -211,9 +233,9 @@ stays as review history.
 
 ## Review Rounds
 
-### Round 1 — <date>
+### Round 1 — 2026-11-25
 
-**Lanes:** <family / model>; <family / model>; cross-family: <yes|no>.
+**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
 
 Written for every round, including one where the table below stays empty. The table gets a row
 per finding, so a clean round would otherwise leave no record of which gate ran — which is the
