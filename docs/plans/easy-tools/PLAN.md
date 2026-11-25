@@ -104,7 +104,7 @@ clone's object store and never touching Collin's own working copy). A session re
 runs shared tools from the commit copy it started with, for its whole life: the copy's full
 path (project identity and commit), or an explicit "no shared copy", is recorded in the
 session's saved record, and a resume, account switch or `wc.js tool` lookup for that session
-uses that saved reference, never the current Settings choice. A newer commit gets a new copy, built in a temporary folder and renamed into place only when complete, so no session or page ever sees a partial copy. Refreshes of one shared repository run one at a time (an in-memory lock per repository inside the machine service, the only process that refreshes, like `machine/lib/try.js`'s locks; a start that finds one running waits for it within its own 20-second deadline, then uses the newest complete copy). "Newest" means the commit named in a per-repository pointer file, which only a finished refresh updates, under that lock, to the tip it fetched; it is never chosen by folder date. A copy is deleted only when it is not the newest
+uses that saved reference, never the current Settings choice. A newer commit gets a new copy, built in a temporary folder and made read-only (and renamed into place) only when complete, so no session or page ever sees a partial copy. Refreshes of one shared repository run one at a time (an in-memory lock per repository inside the machine service, the only process that refreshes, a waiting lock, unlike `machine/lib/try.js`'s refuse-when-busy locks; a start that finds one running waits for it within its own 20-second deadline, then uses the newest complete copy). "Newest" means the commit named in a per-repository pointer file, which only a finished refresh updates, under that lock, to the tip it fetched; it is never chosen by folder date. Copies are read-only for every tool, sandboxed or not, so no tool can change what other sessions run; the guide says tools keep their state in `WHEELCHAIR_PROJECT_DIR` or a temp folder, and deletion makes a copy writable first. A copy is deleted only when it is not the newest
 and no session record that has not ended (including ones found after a machine service
 restart, and starts in progress) names it. If the fetch fails the newest existing copy is used; if there is none, no shared
 tools are offered and the problems card says "shared tools couldn't be fetched: <reason>". A project tool
@@ -197,7 +197,7 @@ servers and say so).  Folder entries never displace
 folder entries are added one at a time (bridge first, then server tools by name) while they
 fit; any that do not fit are left out and named on the problems card. A `.mcp.json` server with the same
 name as one of these entries wins and the folder tool is reported hidden. Tools are read
-once per session start; a tool changed mid-session reaches the next session.
+once per agent start (a new session, a resume or an account switch); a tool changed mid-session reaches the next agent start.
 
 ### S9. Running a script tool
 The bridge runs `run` with the tool folder as working directory, the inputs as one JSON
@@ -214,8 +214,7 @@ their child on timeout, on exit and on SIGINT, SIGTERM or SIGHUP. Nothing else t
 programs: one whose starter is killed outright may keep running until the machine restarts
 (Decision 22). Before each call the bridge re-reads the
 tool's `tool.json`; if it differs from what this bridge offered when it started, the call returns
-an error saying the tool changed and to try it with `wc.js tool run` now or through MCP in
-the next session. In a session that runs sandboxed (Codex today), the bridge and the server launcher wrap every tool program with that connector's sandbox wrapper (`sandboxWrap`, as the screen launcher does). The wrapper is started with the session's worktree as its working folder, so the worktree is the writable root, and inside the sandbox it changes to the tool folder before running the program (a shared tool's copy is then readable but not writable). So folder tools reached through MCP get the same sandbox as the agent's own commands. A resume or account switch of the same session re-discovers project tools from the worktree (the agent process restarts anyway), so it offers their current descriptions; only the shared copy stays pinned (S3). For Codex, the bridge and launcher entries carry the session's `CODEX_HOME` (a path, not a secret) so the sandbox wrapper loads the active account's policy. Calls may run in parallel; the bridge never runs the
+an error saying the tool changed and to try it with `wc.js tool run` now or through MCP after the next agent start (a new session, a resume or an account switch). In a session that runs sandboxed (Codex today), the bridge and the server launcher wrap every tool program with that connector's sandbox wrapper (`sandboxWrap`, as the screen launcher does). The wrapper is started with the session's worktree as its working folder, so the worktree is the writable root, and inside the sandbox it changes to the tool folder before running the program (a shared tool's copy is then readable but not writable). So folder tools reached through MCP get the same sandbox as the agent's own commands. A resume or account switch of the same session re-discovers project tools from the worktree (the agent process restarts anyway), so it offers their current descriptions; only the shared copy stays pinned (S3). The policy that governs folder tools is the agent's own: for Codex, the bridge and launcher entries carry the session's `CODEX_HOME` (a path, not a secret) and the same worktree-trust override the agent launch passes (`connectors/codex/machine.js` command), and `sandboxWrap` is given both, so the wrapper loads exactly the account and project settings the agent runs under. Calls may run in parallel; the bridge never runs the
 same call twice.
 
 ### S10. The `wc.js tool` commands
@@ -242,7 +241,7 @@ files, and the agent commits them as usual.
 ### S11. The guide
 `protocol/tools.md` is the one guide for people and agents: what a tool is, both kinds,
 `tool.json` fields with a full example of each, that keys are not supported yet (S4), project versus shared, the
-`wc.js tool` commands, how to test before asking for review, and per-AI limits (including that on sandboxed Codex a server tool can write only in the worktree and temp folders, so a server that caches under `HOME`, such as `npx`, needs its cache pointed at a temp folder in an `sh -c` start). The lead,
+`wc.js tool` commands, how to test before asking for review, and per-AI limits (including that on sandboxed Codex a server tool can write only where the agent's own sandbox allows (normally the worktree and temp folders), so a server that caches under `HOME`, such as `npx`, needs its cache pointed at a temp folder in an `sh -c` start). The lead,
 sub-lead and worker role rules gain one line pointing to it for any request to make or
 change a tool. Agents on Kimi or Pi with at least one usable script tool get one added
 line in their starting instructions naming those tools and the `wc.js tool run` command.
@@ -269,7 +268,7 @@ Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
 - S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, Codex's bridge entry carrying `tool_timeout_sec = 260`, a failed or partial copy build falling back without stopping launch, two concurrent starts running only one refresh, a later refresh advancing the pointer, and a resume or account switch offering edited project tool descriptions while keeping the pinned shared copy), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, tool programs wrapped by `sandboxWrap` in a sandboxed Codex session (a project tool and a shared tool each write a file in the worktree successfully; a shared tool writing into its own copy, or a write under `HOME` outside the worktree, fails; run under a named Codex account whose `CODEX_HOME` differs from the default), session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
+- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, tool programs wrapped by `sandboxWrap` in a sandboxed Codex session (wiring only, with the fake Codex: the wrapper's argv, working folder, `CODEX_HOME` of a named account and the trust override; enforcement is Check Once Built row 2), shared copies read-only after building, session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
 - S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline and when `wc.js` gets SIGTERM, `run`/`check` stripping the session token, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
@@ -305,6 +304,7 @@ stays as review history.
 
 | # | What to check | Round |
 |---|---------------|-------|
+| 2 | On a real sandboxed Codex session under a named account: a project tool and a shared tool each write a file in the worktree; a shared tool writing into its copy, and a write to a folder under `HOME` outside every writable root, both fail | review-round-12 |
 | 1 | Claude's and Antigravity's MCP call deadlines are at least 260 s for the bridge, or the guide's per-AI limits state the lower limit; the guide also states Codex's default call deadline for server tools | review-round-8, review-round-9 |
 
 ## Review Rounds
@@ -516,6 +516,11 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | "Next session" wording vs resume re-discovery | upheld | S8/S9: "next agent start (session, resume or switch)" |
+| intent | minor | `try.js` locks don't wait | upheld | S3: a waiting lock, unlike `try.js` |
+| mechanics | blocking | RE-RAISE: wrapper's effective policy differs from the agent's | upheld | S9: same `CODEX_HOME` and trust override as the agent launch; S11 wording |
+| mechanics | blocking | Sandbox enforcement untestable with the fake Codex | upheld | Validation tests wiring; enforcement moved to Check Once Built row 2 on real Codex |
+| mechanics | major | Shared servers can write into the shared copy | upheld | S3: copies read-only; guide: state in the project or temp |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
