@@ -1958,7 +1958,7 @@
     v.opacity = m.opacity; v.image = null; v.token = bg.acquire();
   }
   function repaintBackground(v) {
-    if (section === 'you' && backgroundVisit === v) paint('background');
+    if (youShown() && backgroundVisit === v) paint('background');
   }
   function backgroundStateKey(state) {
     const m = state.metadata;
@@ -2060,12 +2060,17 @@
         (v.error || state.error) && h('p', { class: 'inline-err', role: 'alert', text: v.error || state.error }),
         h('p', { class: 'note', role: 'status', text: v.status || (v.pending ? 'Loading image…' : (!m ? 'Loading background…' : '')) })));
   }
+  function syncBackground(state) {
+    if (!bg || !data || !youShown()) return;
+    const v = backgroundVisit;
+    // The phone list can uncover an existing editor that missed a saved change or restore.
+    if (!v || (!v.dirty && !v.pending && v.renderedState !== backgroundStateKey(state || bg.current()))) {
+      paint('background');
+    }
+  }
   if (bg) {
-    bg.subscribe(state => {
-      if (section === 'you' && backgroundVisit && !backgroundVisit.dirty && !backgroundVisit.pending
-          && backgroundVisit.renderedState !== backgroundStateKey(state)) repaintBackground(backgroundVisit);
-    });
-    window.addEventListener('backgroundrestore', () => { discardBackground(); if (section === 'you') repaintBackground(ensureBackground()); });
+    bg.subscribe(syncBackground);
+    window.addEventListener('backgroundrestore', () => { discardBackground(); syncBackground(); });
     window.addEventListener('backgrounddispose', discardBackground);
   }
 
@@ -2378,12 +2383,19 @@
   };
   const blockHost = (name) => panel.querySelector(`.block[data-block="${name}"]`);
 
-  // A block repainted wholly above the screen (Harnesses answering while Accounts is in use)
-  // must not move what is below it: a button that moves mid-press loses the click. Measure
-  // before the repaint; call the returned function after it.
+  // A button that moves mid-press loses the click. Hold an on-screen sign-in card even
+  // when the block above it is partly visible. Otherwise hold the next block only when
+  // the repaint is wholly above the screen.
   function holdPlace(host) {
-    const next = host.nextElementSibling;
     const top = document.getElementById('app-nav')?.getBoundingClientRect().bottom || 0;
+    const card = signCard?.el;
+    if (card?.isConnected && !host.contains(card) && (host.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+      const before = card.getBoundingClientRect();
+      if (before.bottom > top && before.top < window.innerHeight) {
+        return () => window.scrollBy(0, card.getBoundingClientRect().top - before.top);
+      }
+    }
+    const next = host.nextElementSibling;
     if (!next || !window.scrollY || !host.childElementCount || host.getBoundingClientRect().bottom > top) return () => {};
     const was = next.getBoundingClientRect().top;
     return () => window.scrollBy(0, next.getBoundingClientRect().top - was);
@@ -2465,14 +2477,19 @@
     return { leaving, lessons };
   }
 
+  function syncYou() {
+    syncDiagrams();
+    syncBackground();
+  }
+
   window.addEventListener('hashchange', () => {
     const { leaving, lessons } = readHash();
     renderSections();
     if (leaving) { renderCategory(); syncSection(); }
     else if (lessons) paint('templates');
-    syncDiagrams();
+    syncYou();
   });
-  phone.addEventListener('change', syncDiagrams);
+  phone.addEventListener('change', syncYou);
   readHash();
   renderSections();
 
@@ -2484,7 +2501,7 @@
       renderPhoneNav();
       renderCategory();
       syncSection();
-      syncDiagrams();
+      syncYou();
     } catch (e) {
       error.hidden = false;
       error.textContent = 'Could not load settings: ' + e.message;
