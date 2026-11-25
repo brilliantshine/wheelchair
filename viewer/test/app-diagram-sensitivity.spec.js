@@ -25,7 +25,7 @@ async function stub(page, state, post) {
   const posts = [];
   await page.route('**/api/settings/diagram-sensitivity', async (route) => {
     const request = route.request();
-    if (request.method() === 'GET') return route.fulfill({ json: { machines: state.machines } });
+    if (request.method() === 'GET') { state.reads = (state.reads || 0) + 1; return route.fulfill({ json: { machines: state.machines } }); }
     const body = request.postDataJSON();
     posts.push(body);
     const result = post(body);
@@ -50,6 +50,40 @@ test('Diagrams sits between Writing style and Enter to send and selects the leve
   await expect(page.locator('.diagram-lines')).toHaveCount(0);
   // Nothing but the radio group: a skipped note must not leave text such as "null" behind.
   expect(await page.locator('#diagram-choices').evaluate((box) => [...box.childNodes].map((n) => n.nodeName))).toEqual(['DIV']);
+});
+
+test('Diagrams is read each time You comes on screen, and never behind the phone list', async ({ page }) => {
+  const state = { machines: { hub: ok('default') } };
+  await stub(page, state, () => ({ status: 200, body: {} }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPage(page, context, '/app/settings');
+  const you = page.locator('.cat-link[data-category="you"]');
+  const back = page.locator('.back');
+  const shows = async (level, reads) => {
+    await expect(radio(page, level)).toHaveAttribute('aria-checked', 'true');
+    expect(state.reads).toBe(reads);
+  };
+  await expect(you).toBeVisible();
+  state.machines = { hub: ok('high') };
+  await you.click();
+  await shows(/High/, 1);
+  await back.click();
+  await expect(you).toBeVisible();
+  state.machines = { hub: ok('ask') };
+  await you.click();
+  await shows(/Ask/, 2);
+  // Growing past the phone width uncovers You.
+  await back.click();
+  await expect(you).toBeVisible();
+  state.machines = { hub: ok('default') };
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await shows(/Default/, 3);
+  // Desktop: opening You again from another category.
+  await page.locator('#sections a[data-section="models"]').click();
+  await expect(page.locator('.catview[data-category="models"]')).toBeVisible();
+  state.machines = { hub: ok('high') };
+  await page.locator('#sections a[data-section="you"]').click();
+  await shows(/High/, 4);
 });
 
 test('disagreeing machines select nothing and the note says why', async ({ page }) => {
