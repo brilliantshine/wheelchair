@@ -318,6 +318,21 @@ The build matches these.
 | mechanics | major | Stale `upstream/<default>` wins after deletion | downgraded (minor) | Needs the default branch deleted upstream; fixed by `--prune` |
 | mechanics | minor | `protocol/app/AGENTS.md` missing | upheld | S7 |
 
+### Round 3 — 2026-11-24
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 2:**
+- S1: any message with no live lead queues and starts one; 202 with `start_error`; record created when the pop-up panel opens.
+- S3: refresh fetch uses `--prune`; "Locked down" is now an allow-list on the machine; Codex runs in the usual sandbox with network, writable folder = clone.
+- S4: `thread` leaves out cross-thread items.
+- S5 / preamble: grouping change applies whether or not project leads are on.
+- S7: `protocol/app/AGENTS.md`.
+- One Accepted Risk; Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
