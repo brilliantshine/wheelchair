@@ -98,9 +98,10 @@ At each agent session start the machine fetches that project's default branch an
 a machine-owned copy of that commit under the machine state directory
 (`<state dir>/shared-tools/<project identity>/<commit>/`, made from the project's local
 clone's object store and never touching Collin's own working copy). A session reads and
-runs shared tools from the commit copy it started with, for its whole life: the commit is
-recorded in the session's saved record, and a resume or account switch of the same session
-reuses it. A newer commit gets a new copy. A copy is deleted only when it is not the newest
+runs shared tools from the commit copy it started with, for its whole life: the copy's full
+path (project identity and commit), or an explicit "no shared copy", is recorded in the
+session's saved record, and a resume, account switch or `wc.js tool` lookup for that session
+uses that saved reference, never the current Settings choice. A newer commit gets a new copy. A copy is deleted only when it is not the newest
 and no session record that has not ended (including ones found after a machine service
 restart, and starts in progress) names it. If the fetch fails the newest existing copy is used; if there is none, no shared
 tools are offered and the problems card says "shared tools couldn't be fetched: <reason>". A project tool
@@ -111,12 +112,15 @@ Inside the shared tools project's own threads, its tools come from the thread's 
 ### S4. Keys: not in this plan
 Key handling for folder tools was split into its own follow-up thread (Decision 21).
 Here wheelchair passes no keys to folder tools: `tool.json` has no `keys` field, the bridge and server tools get the agent's session environment minus every
-key name the session's `.mcp.json` referenced at launch, and minus `WHEELCHAIR_SESSION_TOKEN`
+project key name the session's `.mcp.json` referenced at launch (by the existing project-key
+reference rules in `machine/lib/project-keys.js`, so reserved names such as `PATH` are never stripped), and minus `WHEELCHAIR_SESSION_TOKEN`
 (the agent's wheelchair credential, as the screen launcher already strips it). At launch the
 machine puts those key names, never values, in the agent's environment as
 `WHEELCHAIR_TOOL_STRIP` (comma-separated); the bridge, the server launcher and
 `wc.js tool run`/`check` all remove every listed name, `WHEELCHAIR_TOOL_STRIP` itself and
-`WHEELCHAIR_SESSION_TOKEN` before spawning a tool program. Nothing reads the key store for them. The guide also says a key must never be written into `tool.json` or any file in the tool folder
+`WHEELCHAIR_SESSION_TOKEN` before spawning a tool program. Nothing reads the key store for them.
+The goal is narrow: keep the session token from tool programs, and keep one project's keys
+from shared tools written elsewhere; the agent itself can still read its own environment. The guide also says a key must never be written into `tool.json` or any file in the tool folder
 (they are committed); a tool that needs a token waits for key support, or is listed in
 `.mcp.json` with project keys as today.
 
@@ -137,8 +141,9 @@ reasons the problems card gives). "Can be used" means these launch-time checks p
 `tool.json`; its `run`/`start` program found (in the tool folder or on the session's PATH);
 not hidden. A server tool that passes these shows "server tools don't
 work on Kimi or Pi" as its status, as in the mockup (a fixed fact about the kind). The page lists tools from the project's default branch
-(as the page reads `.mcp.json` today; for a project without a GitHub origin the list says
-"folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (listed for every project, GitHub or not; for a non-GitHub project its rows add "not checked against this project's own tools", since a project tool of the same name would hide it) (not added when the
+(read-only: it needs only a GitHub fetch origin, not the matching push destination the
+`.mcp.json` editor requires; for a project without a GitHub origin the list says
+"folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (if there is none yet, the list says "shared tools appear after the first agent session on this machine"; listed for every project, GitHub or not; for a non-GitHub project its rows add "not checked against this project's own tools", since a project tool of the same name would hide it) (not added when the
 page's project is the shared tools project itself), and checks programs
 against the selected machine's PATH as the machine service sees it, so it can differ from a
 thread that changed a tool. Per-AI limits and Codex's budget are reported only on the
@@ -178,7 +183,8 @@ in its per-session plugin. The entries are:
 - one `wheelchair-tools` entry running a wheelchair bridge that offers every usable script
   tool as an MCP tool (name, description, input schema from `inputs`) and runs it per S9;
 - one entry per usable server tool, running a wheelchair launcher that starts the tool's
-  `start` command in its folder.
+  `start` command in its folder, in its own process group; when the launcher exits or its
+  stdin closes, it sends that group TERM-then-KILL as in S9.
 Each connector applies its existing per-AI limits to these entries (Kimi and Pi load no
 servers and say so).  Folder entries never displace
 `.mcp.json` entries: where a connector has a size budget (Codex's argument budget,
@@ -199,8 +205,10 @@ last 4 KiB.
 The script runs in its own process group; on timeout, or when the bridge exits, the whole
 group gets SIGTERM, then SIGKILL after 5 seconds. The bridge and the server launcher record each process group they start in a per-session file under
 the machine state directory and remove the entry when it ends; when the machine service
-sees the end of a session (including a session it recovered after its own restart), it sends
-the same TERM-then-KILL to every group still recorded for it. A machine service stop or
+sees the end of a session, it sends the same TERM-then-KILL to every group still recorded for
+it. The end of a session is an explicit stop, or the machine finding the session's tmux pane
+gone (during normal running, or when it recovers sessions after its own restart); an account
+switch that replaces the pane does the same for the groups recorded before the switch. A machine service stop or
 restart kills nothing, since sessions outlive it. So a crashed bridge leaves nothing running.
 `wc.js tool run`/`check` write no record (they run inside the caller's sandbox, which cannot
 write machine state); they send the same TERM-then-KILL to their child's group on timeout,
@@ -260,9 +268,9 @@ All under `docs/plans/easy-tools/graphs/`:
 Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
-- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, the shared project's own threads skipping the shared copy, and the 20 s fetch limit), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S9 (stdin/stdout, errors, timeout killing the whole process group, cleanup after a killed bridge, stripped `.mcp.json` key names and session token, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
-- S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline and when `wc.js` gets SIGTERM, `run`/`check` stripping `WHEELCHAIR_TOOL_STRIP` names and the session token, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
+- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, and the 20 s fetch limit), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
+- S9 (stdin/stdout, errors, timeout killing the whole process group, cleanup after a killed bridge, after a pane that exits on its own (live and after a service restart), after an account switch (old launcher's server gone), stripped `.mcp.json` key names and session token, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
+- S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline and when `wc.js` gets SIGTERM, `run`/`check` stripping `WHEELCHAIR_TOOL_STRIP` names and the session token (with a reserved `PATH` reference kept), `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
 - Routers: `machine/AGENTS.md` and `viewer/AGENTS.md` (and any other router whose file-to-role list changes) are updated in the same change.
@@ -413,12 +421,19 @@ round where knowing it matters most.
 
 ### Round 6 — 2026-11-25
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:** S4 (`WHEELCHAIR_TOOL_STRIP` names and `WHEELCHAIR_SESSION_TOKEN` stripped by bridge, server launcher and `wc.js tool run`/`check`), S6 (shared tools listed for non-GitHub projects, with an unchecked-collision note), S9 (cleanup only at session end, never on service stop; CLI commands write no record and clean up their own child on exit and signals), Accepted Risks (two rare paths), Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Stripping key names adds little; goal unstated | upheld | S4 states the narrow goal |
+| intent | minor | Page empty with no reason before the first shared copy | upheld | S6: "appear after the first agent session" line |
+| mechanics | major | No cleanup when a pane exits on its own | upheld | S9: pane gone counts as session end, live and after restart |
+| mechanics | major | Old server survives an account switch | upheld | S8: launcher kills its group on exit; S9: switch cleans old groups |
+| mechanics | major | Changing the Settings choice loses a live session's copy | upheld | S3: full copy reference (or none) saved per session |
+| mechanics | minor | Strip list could remove `PATH` | upheld | S4: uses project-key reference rules |
+| mechanics | minor | Fork-push clones fall into keys-only | upheld | S6: list needs only a GitHub fetch origin |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
