@@ -15,10 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q3: Where do shared tools live, and how are changes to them kept?
-- **Context:** Project tools ride the project's git branch and PRs. Shared tools have no home today.
-- **Options:** a plain folder on the machine; a folder on the machine that is its own git repo; or inside wheelchair's own repository.
-
 ### Q4: How do tools get keys (secrets)?
 - **Context:** Project keys exist per project on each machine (MAP.md, "Secrets and configuration").
 
@@ -51,6 +47,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | Either Collin or agents make tools, following one standard; asking an agent should be easy | Agents follow a tight standard reliably; the same rules guide a person | user |
 | 4 | A tool is a folder holding a short description (what it does, its inputs) plus a script in any language. Wheelchair runs one built-in MCP server per agent session that offers every tool and runs the script when called. No hand-written server | No server to write, any language, simplest for agents; each AI's MCP quirks handled once in the bridge | user |
 | 5 | Tools connect automatically: any valid tool in the project's tools folder or the shared tools folder is offered at session start; invalid ones go on the thread's problems card | "Connecting" should be a non-step; explicit lists recreate the .mcp.json chore | defaulted |
+| 6 | Shared tools live in their own git repository, added to wheelchair as an ordinary project. Threads in that project make and fix shared tools through the usual pull request; each machine offers the merged version | History, review and the normal thread flow; works across machines | user |
+| 7 | Settings names which project holds the shared tools (one per hub, or none). At session start the machine fetches that project's default branch and reads the tools from it, falling back to the last fetched copy if the fetch fails | Agents get the merged version without anyone pulling by hand; a network drop does not lose tools | defaulted |
+| 8 | When a project tool and a shared tool have the same name, the project tool wins and the problems card notes the shared one was hidden | The project knows its own needs best; the clash is visible | defaulted |
 
 ## Spec
 
@@ -72,6 +71,16 @@ tools folder (from the thread's own worktree) and in the shared tools folder, an
 valid ones through one built-in MCP server for that session. A broken tool is named, with
 the reason, on the thread's existing "Project tools problem" card. Existing `.mcp.json`
 servers keep working unchanged.
+
+### S3. Shared tools
+Shared tools live in their own git repository that Collin adds to wheelchair as an ordinary
+project. Settings names which project is the shared tools project (or none). Threads in
+that project make and change shared tools like any other work, ending in a pull request.
+At each agent session start the machine fetches that project's default branch and reads
+its tools folder from it; if the fetch fails it uses the last fetched copy. A project tool
+with the same name as a shared tool hides the shared one, and the problems card says so.
+Inside the shared tools project's own threads, its tools come from the thread's worktree
+(as project tools), so a tool being built can be tried before merge.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
