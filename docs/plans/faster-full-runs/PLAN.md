@@ -200,7 +200,7 @@ git diff --check
 | intent | minor | IDEA still promises fewer runs per build, against D10 | user-decision | Asked Collin |
 | intent | minor | Rare path: legacy empty registration file counted as 2 | declined | Moot: D14 removes counts |
 | intent | minor | S3 heading cites D9; no rule if another run is live while measuring | upheld | Moot after D14 rewrite |
-| mechanics | blocking | INT cannot be trapped in a background bash run | upheld (minor) | INT dropped from the promise; TERM/HUP remain |
+| mechanics | blocking | INT cannot be trapped in a background bash run | downgraded (minor): only TERM/HUP are how runs get stopped | INT dropped from the promise; TERM/HUP remain |
 | mechanics | blocking | Benchmarks assigned to a worker | upheld | D14/D15 (same as intent) |
 | mechanics | blocking | Firefox list omits four scroll/pixel specs | upheld (major) | Added; list declared authoritative, residual in Accepted Risks |
 | mechanics | minor | `startServerWithEnv` bypasses retry | upheld | S1 routes it through `startServer` |
