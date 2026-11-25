@@ -55,6 +55,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 20 | Windows-side folder tools and server templates in other languages go to Deferred (follow-up thread) | Hardening and reach, not needed for the feature to work | defaulted |
 | 21 | Supersedes 10: key handling for folder tools (tool-only keys, shared keys, keeping keys out of agent-visible output, the Shared keys section) is split into its own follow-up thread. This plan passes no keys to folder tools | Three review rounds kept finding problems only there; the rest had settled | user |
 | 22 | Simplify both safety rules: tool programs are stopped only on timeout or when the program that started them exits (no per-session tracking or session-end cleanup); tools get the agent's environment minus only the wheelchair login (no key-name stripping) | Review kept finding gaps in both; the agent can already read those keys and run tools from its shell | user |
+| 23 | Supersedes 14's limit: a script tool's `timeout_seconds` is 1 to 240 (default 120) | Codex ends MCP calls at 300 s; a longer script would finish after the agent was told it timed out | review-round-7 |
 
 ## Spec
 
@@ -114,10 +115,13 @@ Inside the shared tools project's own threads, its tools come from the thread's 
 Key handling for folder tools was split into its own follow-up thread (Decision 21).
 Here wheelchair passes no keys to folder tools: `tool.json` has no `keys` field, and nothing
 reads the key store for them. The bridge, the server launcher and `wc.js tool run`/`check`
-give a tool program the agent's session environment minus only `WHEELCHAIR_SESSION_TOKEN`
-(the agent's wheelchair login, as the screen launcher already strips it). Keys already in the
-agent's environment (from `.mcp.json` today) are not removed: the agent can read them anyway
-(Decision 22). The guide also says a key must never be written into `tool.json` or any file in the tool folder
+give a tool program the environment they themselves received, minus only
+`WHEELCHAIR_SESSION_TOKEN` (the agent's wheelchair login, as the screen launcher already
+strips it). That environment differs by AI and path (Codex forwards only its default set to
+MCP servers; `wc.js` gets the agent's shell), so the guide says a tool may rely only on
+`PATH`, `HOME` and variables it sets itself, and never on keys it happens to find: keys
+already in the agent's environment are not removed (Decision 22), but they exist only on some
+AIs and projects. The guide also says a key must never be written into `tool.json` or any file in the tool folder
 (they are committed); a tool that needs a token waits for key support, or is listed in
 `.mcp.json` with project keys as today.
 
@@ -140,7 +144,7 @@ not hidden. A server tool that passes these shows "server tools don't
 work on Kimi or Pi" as its status, as in the mockup (a fixed fact about the kind). The page lists tools from the project's default branch
 (read-only: it needs only a GitHub fetch origin, not the matching push destination the
 `.mcp.json` editor requires; for a project without a GitHub origin the list says
-"folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (if there is none yet, the list says "shared tools appear after the first agent session on this machine"; listed for every project, GitHub or not; for a non-GitHub project its rows add "not checked against this project's own tools", since a project tool of the same name would hide it) (not added when the
+"folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (if a shared tools project is chosen, it is on this machine and no copy exists yet, the list says "shared tools appear after the first agent session on this machine; if one has run, its problems card says why"; listed for every project, GitHub or not; for a non-GitHub project its rows add "not checked against this project's own tools", since a project tool of the same name would hide it) (not added when the
 page's project is the shared tools project itself), and checks programs
 against the selected machine's PATH as the machine service sees it, so it can differ from a
 thread that changed a tool. Per-AI limits and Codex's budget are reported only on the
@@ -162,7 +166,7 @@ and equals `tool.json`'s `name`. The name `wheelchair-tools` is reserved for the
 - Script only: `inputs`, an object of input name to `{type, description, required}` with
   `type` one of `string`, `number`, `boolean`, `object`, `array`; `run`, an argv array whose
   first element is a program on PATH or a path relative to the tool folder; `timeout_seconds`
-  (optional, 1 to 600, default 120).
+  (optional, 1 to 240, default 120; 240 stays under Codex's 300-second MCP call deadline, Decision 23).
 - Server only: `start`, an argv array as `run` above, launching a stdio MCP server.
 A file that fails these rules makes that tool unusable with a reason on the problems card
 and the Tools page; other tools are unaffected. Unknown fields are ignored.
@@ -199,7 +203,8 @@ session (see the `tool.json` check below). stdout (cut at 1 MiB, saying so)
 is the result; a non-zero exit, a timeout or a launch failure returns an MCP error with the
 exit code and the last 4 KiB of stderr. Both streams are drained to the end; stdout keeps its first 2 MiB and stderr a rolling
 last 4 KiB.
-The script runs in its own process group; on timeout, or when the bridge exits, the whole
+The script runs in its own process group; on timeout, or when the bridge exits or its stdin
+closes (the normal MCP shutdown; the bridge then exits too), the whole
 group gets SIGTERM, then SIGKILL after 5 seconds. `wc.js tool run`/`check` do the same for
 their child on timeout, on exit and on SIGINT, SIGTERM or SIGHUP. Nothing else tracks tool
 programs: one whose starter is killed outright may keep running until the machine restarts
@@ -219,7 +224,7 @@ checked straight away.
   The script template is a short shell script; the server template is Node.js.
 - `list`: the tools found, kind, source and status (S6's checks).
 - `check [<name>]`: validates description files; for a server tool, starts it and confirms
-  it answers the MCP handshake and lists at least one tool, with a 30-second deadline for
+  it answers the MCP handshake and, if it advertises tools, lists them, with a 30-second deadline for
   the whole check; the server and its child processes are killed on success, failure,
   deadline or when `wc.js` exits.
 - `run <name> --input '<json>'`: runs a script tool as the bridge would (S9) and prints the
@@ -260,7 +265,7 @@ Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
 - S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, and the 20 s fetch limit), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits, session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
+- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
 - S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline and when `wc.js` gets SIGTERM, `run`/`check` stripping the session token, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
@@ -431,6 +436,22 @@ round where knowing it matters most.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 6:** Decision 22 (Collin): S4 now strips only `WHEELCHAIR_SESSION_TOKEN` (no `WHEELCHAIR_TOOL_STRIP`, keys in the agent's environment stay); S8/S9 cleanup is only timeout and starter exit (no per-session process-group records, no session-end or account-switch cleanup); this supersedes those parts of the Round 5 and 6 fixes. Accepted Risks rewritten (two rows, Decision 22). Also from Round 6: S3 saved copy reference, S6 fetch-origin-only listing and first-copy line, Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Bridge stdin close not a cleanup trigger | upheld | Same fix as mechanics finding 2 |
+| intent | minor | Agents may build tools on inherited keys | upheld | S4: guide says tools rely only on `PATH`, `HOME` and their own variables |
+| mechanics | major | Codex passes MCP servers a smaller environment | upheld | S4: environment is what the bridge/launcher received; guide limits what tools rely on |
+| mechanics | major | Bridge doesn't stop children on stdin EOF | upheld | S9: stdin close kills groups and exits |
+| mechanics | major | Script limit 600 s exceeds Codex's 300 s call deadline | upheld | S7: limit 240 s (Decision 23) |
+| mechanics | minor | "Appear after first session" shown when the real cause differs | upheld | S6: shown only when chosen, present and no copy yet |
+| mechanics | minor | `check` fails servers offering no tools | upheld | S10: lists tools only if advertised |
+
+### Round 8 — 2026-11-25
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 7:** S4 (tool environment is what the bridge/launcher received, minus the token; guide limits what tools rely on), S7 and Decision 23 (240 s limit), S9 (stdin close stops scripts and the bridge), S10 (`check` on servers without tools), S6 (first-copy line conditions), Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
