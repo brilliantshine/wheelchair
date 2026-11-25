@@ -146,8 +146,10 @@ folder tools for the chosen project, including shared tools: each with its name,
 or server, project or shared, and whether it can be used or the reason it cannot (the same
 reasons the problems card gives). "Can be used" means these launch-time checks pass: valid
 `tool.json`; its `run`/`start` program found (in the tool folder or on the session's PATH);
-every listed key set; not hidden. The page lists tools from the project's default branch
-(as the page reads `.mcp.json` today) plus the newest shared copy, and checks programs
+every listed key set; not hidden. A server tool that passes these shows "server tools don't
+work on Kimi or Pi" as its status, as in the mockup (a fixed fact about the kind). The page lists tools from the project's default branch
+(as the page reads `.mcp.json` today) plus the newest shared copy (not added when the
+page's project is the shared tools project itself), and checks programs
 against the selected machine's PATH as the machine service sees it, so it can differ from a
 thread that changed a tool. Per-AI limits and Codex's budget are reported only on the
 thread's problems card, for the AI that session runs on. Whether a server actually answers is only checked by `wc.js tool check`. A
@@ -200,8 +202,15 @@ The bridge runs `run` with the tool folder as working directory, the inputs as o
 object on stdin, and an environment made of the machine's normal session environment minus
 the agent's project keys, plus the tool's own `keys` (S4). stdout (cut at 1 MiB, saying so)
 is the result; a non-zero exit, a timeout or a launch failure returns an MCP error with the
-exit code and the last 4 KiB of stderr. Redaction (S4) runs on the whole captured stream
-before any cut (capture stops at 2 MiB per stream), so no key fragment survives a cut. Calls may run in parallel; the bridge never runs the
+exit code and the last 4 KiB of stderr. Redaction (S4) runs on each stream as it is read,
+holding back the last (longest key length minus one) bytes until more arrives or the stream
+ends; capture stops at 2 MiB per stream, and when it stops there the held-back bytes are
+dropped. Returned text is cut only after redaction, so no key fragment survives any cut.
+The script runs in its own process group; on timeout, or when the bridge exits, the whole
+group gets SIGTERM, then SIGKILL after 5 seconds. Before each call the bridge re-reads the
+tool's `tool.json`; if it differs from what was offered at session start, the call returns
+an error saying the tool changed and to try it with `wc.js tool run` now or through MCP in
+the next session. Calls may run in parallel; the bridge never runs the
 same call twice.
 
 ### S10. The `wc.js tool` commands
@@ -213,17 +222,22 @@ checked straight away.
   `.wheelchair/tools/<name>/` of the current worktree (in the shared tools project, that
   makes a shared tool). If that folder already exists it is refused and nothing is written.
   The script template is a short shell script; the server template is Node.js.
-- `list`: the tools found, kind, source and status (S6's checks).
+- `list`: the tools found, kind, source and status (S6's checks); whether each key is set
+  comes from the machine service as key names only, never values.
 - `check [<name>]`: validates description files; for a server tool, starts it and confirms
-  it answers the MCP handshake and lists at least one tool, with a 30-second deadline for
+  it answers the MCP handshake and lists at least one tool, without its keys (if it lists
+  any, the output says a failure may be because of that, and the guide says keyed servers are
+  confirmed through MCP in the next session), with a 30-second deadline for
   the whole check; the server and its child processes are killed on success, failure,
   deadline or when `wc.js` exits.
-- `run <name> --input '<json>'`: runs a script tool as the bridge would (S9, with its keys)
-  and prints the result. Only for sessions on Kimi or Pi, which load no MCP servers and run
-  with no sandbox; refused on other AIs, whose agents call the tool directly.
-`new`, `list` and `check` run inside the caller's own process (so inside its sandbox, if
-any) and never receive key values. `run` asks the machine service, authenticated by the
-session token, which runs the tool and returns the redacted output. Only `new` writes
+- `run <name> --input '<json>'`: runs a script tool as the bridge would (S9) and prints the
+  result. On Kimi or Pi (no MCP, no sandbox) it asks the machine service, authenticated by
+  the session token, which runs it with its keys and returns the redacted output; this is
+  how those agents call script tools. On other AIs it runs in the caller's own process
+  without keys and says so, for trying a tool just made; keyed tools are tried for real
+  through MCP in the next session.
+`new`, `list`, `check` and keyless `run` run inside the caller's own process (so inside its
+sandbox, if any) and never receive key values. Only `new` writes
 files, and the agent commits them as usual.
 
 ### S11. The guide
@@ -256,7 +270,7 @@ Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
 - S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, the shared project's own threads skipping the shared copy, and the 20 s fetch limit), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S4, S9 (keys reach only the tool process, never the agent's environment or config files; key values redacted from output, including a key straddling the cut point; stdin/stdout, errors, timeout, output cap): `node --test machine/test/folder-tools-run.test.js` (new), `node --test machine/test/project-keys.test.js`.
+- S4, S9 (keys reach only the tool process, never the agent's environment or config files; key values redacted from output, including a key straddling the returned-output cut and the 2 MiB capture limit; stdin/stdout, errors, timeout killing the whole process group, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new), `node --test machine/test/project-keys.test.js`.
 - S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, refusal for reviewer and mapper roles, `run` refused outside Kimi/Pi, `check` killing a stalled server at the deadline, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools section): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
@@ -353,12 +367,22 @@ round where knowing it matters most.
 
 ### Round 3 — 2026-11-25
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:** S3 (20 s fetch limit; shared project's own threads skip the shared copy and use shared keys; pin recorded on the session and kept across resume, switch and restart; matching local project), S5 (thread leads), S6 (page source and PATH; per-AI limits only on the card), S7 (`wheelchair-tools` reserved), S9 (redact before cutting), S10 (rewritten: where each command runs, `run` only on Kimi/Pi, `check` deadline), Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | A key split at the 2 MiB capture limit escapes redaction | upheld | S9: streaming redaction with hold-back; always fixed (secret leak) |
+| mechanics | major | `check` on keyed servers | upheld | Same fix as intent round-3 finding 2; guide: confirm through MCP next session |
+| mechanics | major | Bridge offers old schema while running edited script | upheld | S9: re-read `tool.json` per call; changed tool returns an error |
+| mechanics | major | Timed-out script's children keep running | upheld | S9: own process group, TERM then KILL |
+| mechanics | minor | Page in the shared project shows tools twice | upheld | Same fix as intent round-3 finding 4 |
+| mechanics | minor | Mockup server status vs S6 | upheld | S6: server tools show the Kimi/Pi note, as in the mockup |
+| intent | minor | No way to try a script tool just made on Claude/Codex/Antigravity | upheld | S10: keyless `run` in the caller's process on those AIs |
+| intent | minor | `check` without keys gives misleading failures for keyed servers | upheld | S10: output says it ran without keys |
+| intent | minor | `list` key status vs never receiving values | upheld | S10: names-only lookup |
+| intent | minor | Page shows shared project's tools twice | upheld | S6: shared copy not added for the shared project itself |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
