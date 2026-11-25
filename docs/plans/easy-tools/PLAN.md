@@ -110,10 +110,12 @@ Inside the shared tools project's own threads, its tools come from the thread's 
 
 ### S4. Keys: not in this plan
 Key handling for folder tools was split into its own follow-up thread (Decision 21).
-Here wheelchair passes no keys to folder tools: `tool.json` has no `keys` field, the bridge
-and server tools get the agent's ordinary session environment, and nothing reads the key
-store for them. The guide says tools that need a token wait for key support, and that
-such servers can still be listed in `.mcp.json` with project keys as today.
+Here wheelchair passes no keys to folder tools: `tool.json` has no `keys` field, the bridge and server tools get the agent's session environment minus every
+key name the session's `.mcp.json` references (the machine passes those names, never values,
+to the bridge and the server launcher, which remove them before spawning), and nothing reads
+the key store for them. The guide also says a key must never be written into `tool.json` or any file in the tool folder
+(they are committed); a tool that needs a token waits for key support, or is listed in
+`.mcp.json` with project keys as today.
 
 ### S5. Asking agents for a tool
 There is no new button. Every thread lead (and the sub-leads and workers it briefs) can read one
@@ -132,7 +134,8 @@ reasons the problems card gives). "Can be used" means these launch-time checks p
 `tool.json`; its `run`/`start` program found (in the tool folder or on the session's PATH);
 not hidden. A server tool that passes these shows "server tools don't
 work on Kimi or Pi" as its status, as in the mockup (a fixed fact about the kind). The page lists tools from the project's default branch
-(as the page reads `.mcp.json` today) plus the newest shared copy (not added when the
+(as the page reads `.mcp.json` today; for a project without a GitHub origin the list says
+"folder tools can only be listed for GitHub projects" and launch still works) plus the newest shared copy (not added when the
 page's project is the shared tools project itself), and checks programs
 against the selected machine's PATH as the machine service sees it, so it can differ from a
 thread that changed a tool. Per-AI limits and Codex's budget are reported only on the
@@ -184,11 +187,18 @@ once per session start; a tool changed mid-session reaches the next session.
 
 ### S9. Running a script tool
 The bridge runs `run` with the tool folder as working directory, the inputs as one JSON
-object on stdin, and the bridge's own environment (the agent's session environment). stdout (cut at 1 MiB, saying so)
+object on stdin, and the environment S4 describes. Script files are run live from the
+worktree, so edits can be tried at once; only the offered description is fixed for the
+session (see the `tool.json` check below). stdout (cut at 1 MiB, saying so)
 is the result; a non-zero exit, a timeout or a launch failure returns an MCP error with the
-exit code and the last 4 KiB of stderr. Capture stops at 2 MiB per stream.
+exit code and the last 4 KiB of stderr. Both streams are drained to the end; stdout keeps its first 2 MiB and stderr a rolling
+last 4 KiB.
 The script runs in its own process group; on timeout, or when the bridge exits, the whole
-group gets SIGTERM, then SIGKILL after 5 seconds. Before each call the bridge re-reads the
+group gets SIGTERM, then SIGKILL after 5 seconds. The bridge, the server launcher and
+`wc.js tool run`/`check` record each process group they start in a per-session file under
+the machine state directory and remove the entry when it ends; when the machine service
+stops or sees the end of a session, it sends the same TERM-then-KILL to every group still
+recorded for it, so a crashed bridge or a killed `wc.js` leaves nothing running. Before each call the bridge re-reads the
 tool's `tool.json`; if it differs from what was offered at session start, the call returns
 an error saying the tool changed and to try it with `wc.js tool run` now or through MCP in
 the next session. Calls may run in parallel; the bridge never runs the
@@ -245,7 +255,7 @@ Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
 - S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, the shared project's own threads skipping the shared copy, and the 20 s fetch limit), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S9 (stdin/stdout, errors, timeout killing the whole process group, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
+- S9 (stdin/stdout, errors, timeout killing the whole process group, cleanup after a killed bridge, stripped `.mcp.json` key names, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
 - S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
@@ -259,7 +269,7 @@ Optional; present only in the lighter modes.
 |---|------|-----------------|--------|-------------------------|
 | 1 | Windows-side folder tools (a script or server tool that runs on Windows from WSL) | The feature works on the Linux side; Windows needs the go-between and readiness wiring from MAP.md | planning | Reuse `machine/lib/win-tool-wrap.js` and the readiness file; see MAP.md "Windows wiring" |
 | 2 | Server templates in languages other than Node.js (for example Python) | One template is enough to follow the standard; others are convenience | planning | Keep `wc.js tool new --kind server` the entry point, add a `--lang` option |
-| 3 | Folder tools that are HTTP MCP servers (a `url` instead of `start`) | Existing HTTP servers keep working in `.mcp.json`; stdio covers making and wrapping servers | review-round-1 | Needs header keys handled without putting them in agent config (S4) |
+| 3 | Folder tools that are HTTP MCP servers (a `url` instead of `start`) | Existing HTTP servers keep working in `.mcp.json`; stdio covers making and wrapping servers | review-round-1 | Needs header keys; depends on the key-handling thread (Decision 21) |
 
 ## Accepted Risks
 
@@ -361,9 +371,26 @@ round where knowing it matters most.
 
 ### Round 4 — 2026-11-25
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** Key handling split into its own thread (Decision 21): S4 replaced, `keys` removed from S7, S6 (no key status, no Shared keys section), S9 (no redaction; bridge environment), S10 (all commands in the caller's process; no role refusal; pinned commit lookup), S3 (no shared keys), S11, Mockups notes, Validation. Round 3 fixes also landed in S6, S9 and S10.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Folder tools inherit `.mcp.json` keys on Claude/Codex | upheld | Superseded by mechanics finding 1's fix: those names are removed from the tool environment |
+| mechanics | blocking | Folder tools inherit project keys from the agent's environment | upheld | S4: key names referenced by `.mcp.json` removed before spawning (names only passed) |
+| mechanics | major | Script edits run live while description is fixed | downgraded (minor) | Intended; S9 now says scripts run live, description fixed |
+| mechanics | major | Children survive a crashed bridge or killed `wc.js` | upheld | S9: per-session process-group record, cleaned by the machine service at session end |
+| mechanics | major | Page cannot read non-GitHub projects | downgraded (minor) | One message line; S6 states it |
+| mechanics | minor | stderr tail lost after the cap | upheld | S9: drain both; rolling stderr tail |
+| intent | minor | Agents may commit tokens in the tool folder | upheld | S4: guide forbids it, points to `.mcp.json` |
+| intent | minor | Deferred row 3 points to removed S4 | upheld | Row now points to Decision 21 |
+
+### Round 5 — 2026-11-25
+
+**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+
+**Changed since Round 4:** S4 (tool environment strips `.mcp.json` key names; guide forbids committing tokens), S6 (non-GitHub projects), S9 (scripts run live, description fixed; both streams drained; process-group record and cleanup at session end), Deferred row 3 note, Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
