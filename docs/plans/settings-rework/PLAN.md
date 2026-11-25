@@ -254,7 +254,11 @@ Round 2 fixes (for round 3): S5 blocks repaint independently (replaces the poll-
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | `tricky` Settings shell: eight categories, keys and aliases, blocks that repaint only themselves, live work per category, phone list and back link (S1 except lead-order Save semantics, S3 in-page, S4, S5 except harness-toggle→Accounts, S7) | `viewer/pages/settings.{js,css,html}`; Settings browser specs (app-settings, diagram, assistant, project-lead, harnesses, accounts, hidden-tabs, lessons, openrouter-spend, send-now, project-tools, browser, background-*) | standard / claude-sonnet-5-5 | wc-d14474dffb25-worker | S6 node + browser lists, name-guard | in progress |
+| T2 | `tricky` After T1: lead-order box Save semantics and `reserved_provider` (S1), sign-in handoff and Harnesses reload, one-line account usage (S2), harness toggle rebuilds Accounts (S5), Check Once Built #1 | `viewer/pages/settings.{js,css}`, `viewer/test/app-settings.spec.js`, `app-harnesses.spec.js`, `app-accounts.spec.js` | standard / claude-sonnet-5-5 | — | S6 lists | not started (waits on T1) |
+| T3 | Links and texts outside the page (S3): threads.js, thread.js, assistant-popup.js, new.html, README, protocol/sensitivity.md, sensitivity/test/run.sh | those files + `viewer/test/app-new-thread.spec.js` | light / gpt-6-luna | wc-d14474dffb25-worker-2 | `bash sensitivity/test/run.sh`; app-new-thread.spec.js | in progress |
 
 ## Log
 
 Build accepted: approval c097ed47-f022-4759-a895-e5d8bb654791
+- 2026-11-24 — Dispatched T1 (claude standard) and T3 (light) in parallel; T2 waits on T1 (same file).
