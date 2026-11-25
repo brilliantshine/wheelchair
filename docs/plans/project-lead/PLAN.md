@@ -38,6 +38,7 @@ created: 2026-11-24
 | 11 | Mockups agreed: `graphs/mockup-{threads,thread,popup-lead,popup-assistant,settings}-{phone,desktop}.html` (version of commit c9a0acec). | Collin picked "Agree them". | user |
 | 12 | Supersedes 8 on the mechanism: the read-only copy is a separate local clone of the project folder under the machine's `worktrees/`, not a worktree, so its git state is isolated; it sees every thread's local branch. | Round 1: a shared worktree let git writes reach other threads, and unpushed thread branches were invisible under `origin/`. | review-round-1 |
 | 13 | The project fence stops mistakes, not a deliberately rule-breaking agent: every app-mediated action and read is checked against the project (S3, S4); direct shell access outside the clone is an accepted risk. Added to IDEA Constraints. | Collin picked "Stop mistakes, as planned" after the round 3 budget stop. | user |
+| 14 | Amends S4: the other-project filter covers items from other projects' threads plus text naming another project by exact identifier (thread id, session name, full path, whole PR URL); copied PR link variants and path-prefix projects are deferred (D10, D11). | Verification attempt 3 found two more text-matching edges after four fixes (T9, T10, R1, R2a); the lead put defer-and-amend vs one more round to Collin, who picked save for follow-up. | user |
 
 ## Spec
 
@@ -180,10 +181,11 @@ checks are done by the hub against the caller's own project (machine + path).
 | `message`, `press`, `restart`, `archive` | Same, with the out-of-project refusal above. `press` also refuses `sudo`, `reach` and `permit` cards ("that needs you"), since those reach beyond this project or the machine. |
 | `refresh` | Moves its folder to the current default branch tip (S3). Prints `{ok, commit}`. |
 
-**Other projects' content**: `threads` and `thread` leave out every item that names or
-carries content from a thread in another project, whatever field it is in (for example
-`peer_log`, `queued`, `message` cards, `lead_links`, `peer_pauses`), filtered before the
-response is built. A `reach` or `permit` card waiting on Collin stays in `waiting` and `cards` only as
+**Other projects' content** (amended by Decision 14): `threads` and `thread` leave out every
+item that comes from a thread in another project, whatever field it is in (for example
+`peer_log`, `queued`, `message` cards, `lead_links`, `peer_pauses`), and every item whose
+text names another project by an exact identifier: its thread id, a session name, its full
+project path or a whole PR URL. Filtered before the response is built. A `reach` or `permit` card waiting on Collin stays in `waiting` and `cards` only as
 `{id, kind, text}` with plain text ("a request to talk to another project's lead", "a
 request to push to someone else's pull request"), its target and details removed.
 Items between threads of the same project stay.
@@ -307,6 +309,8 @@ The build matches these.
 | D7 | Settings mockups: the page heading and the Project leads switch visible together at 390×844 and 1280×800 | The real page has more rows above the switch | verification | The built screens use the app's existing Settings layout; the follow-up decides whether to restyle or update the mockups. `viewer/pages/settings.js:571,605`; mockups `mockup-settings-{phone,desktop}.html` |
 | D8 | Desktop Threads mockup: the project lead row's preview on two lines instead of one line with an ellipsis | Cosmetic; the assistant row already uses one line | verification | The built screens use the app's existing one-line preview style; the follow-up decides whether to restyle or update the mockups. `viewer/pages/views.css:272`; mockup `mockup-threads-desktop.html` |
 | D9 | Project lead thread mockups: links in replies plain instead of underlined | Cosmetic; the thread page's existing link style | verification | The built screens use the app's existing link style; the follow-up decides whether to restyle or update the mockups. `viewer/pages/views.css`; mockups `mockup-thread-{phone,desktop}.html` |
+| D10 | A project lead still sees another project's PR link when it is copied as a variant: a comment link (`#issuecomment-…`), the Files tab (`/files`), or with a trailing slash inside Markdown | Only text a lead in this project wrote; the bare URL is hidden | verification | Match PR links by repo and number rather than as whole URLs. `viewer/app/project-lead-actions.js:7-17` |
+| D11 | A separate project whose path is a prefix of this project's path (`/x/other` beside `/x/other-local`) is not hidden when a reply names it | Only text naming a sibling folder; items from that project's threads are filtered | verification | Match paths at path boundaries instead of dropping every substring of the caller's own path. `viewer/app/project-lead-actions.js:38-43` |
 
 ## Accepted Risks
 
@@ -546,3 +550,4 @@ The build matches these.
 - 2026-11-24 — Choice: R2b, connectors/pi/machine.js: `--no-approve` for project leads.
 - 2026-11-24 — R2c accepted (band: scout): sparse-checkout keeps harness config paths out of the clone; 21 machine project-lead tests pass. Choice: R2c, lib/project-lead.js: `reset --hard` and `clean -fdx` before setting sparse-checkout, so dirty excluded files never survive or block checkout; an existing test now asserts an excluded file is absent.
 - 2026-11-24 — Verification attempt 3 (139bf13d): Claude verifier PASS; GPT verifier FAIL with 5 gaps. Three judged rare paths (Accepted Risks, verification-3). Two remain in the other-project text filter (PR link variants; a sibling project path that is a prefix of this project's path); raised with the lead under the two-fix-attempts rule.
+- 2026-11-24 — Collin picked save for follow-up on the S4 filter edges: S4 amended (Decision 14), D10 and D11 saved. Deferred and finished at the user's choice. Full run on 139bf13d: suite viewer-browser exit 0, suite viewer-node exit 0, suite machine exit 0, suite test-support exit 0, suite sensitivity exit 0, suite codex exit 0, suite install exit 1, suite sudo-helper exit 0; the install failure is the live-state check confirmed on main 7746cbc2 (same test, same error).
