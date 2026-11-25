@@ -130,3 +130,55 @@ bash machine/test/run.sh
 ```
 Also run any test file under `machine/test/` or `viewer/test/` whose name contains the name of
 a connector you changed. Do not run `install/test/run.sh`.
+
+## Task R2c (added after R2b)
+
+R2b found Kimi and Antigravity have no switch to stop workspace config discovery. The lead chose option A: sparse-checkout in the clone.
+
+## Objective: keep harness config out of the project lead's clone (remediation 2, part c)
+
+Kimi (`.kimi-code/mcp.json`, `.kimi-code/local.toml`) and Antigravity (`.agents/mcp_config.json`)
+read workspace config from their working folder and have no switch to turn it off, so a
+project lead on them could load the project's own MCP servers (S3 says it is launched without
+them). The lead decided: keep those paths out of the clone's working tree with git
+sparse-checkout, set by the machine at every refresh.
+
+Make these changes:
+
+1. **`machine/lib/project-lead.js` `refresh`**: before the `checkout --detach --force`, set
+   non-cone sparse-checkout on the clone so these root-level paths are never in the working tree:
+   `.kimi-code/`, `.agents/`, `.mcp.json`, `.claude/`, `.codex/`, `.pi/`. For example
+   `git -C <clone> sparse-checkout set --no-cone '/*' '!/.kimi-code/' '!/.agents/' '!/.mcp.json' '!/.claude/' '!/.codex/' '!/.pi/'`
+   (check the exact pattern syntax against `git help sparse-checkout` on this machine; paste the
+   git version in your report). Keep it in one constant with a comment saying why. Run it on
+   every refresh, so a clone created before this change gets it on its next refresh. Its failure
+   fails the refresh (use `required`). After checkout, the existing `clean -fdx` stays.
+2. **Robustness** (each with a test):
+   - a clone created before this change (no sparse-checkout config) refreshes and ends with the
+     paths absent;
+   - a project that has none of those paths refreshes normally and its other files are all
+     present;
+   - excluded paths never block the detached checkout: a project that has `.claude/settings.json`
+     and `.mcp.json` committed, and a clone where those files exist locally modified or
+     untracked before the refresh, still refreshes to the right commit with them absent;
+   - the excluded files stay readable with `git -C <clone> show HEAD:.mcp.json`.
+3. **`protocol/app/project-lead.md`**: one sentence in the paragraph about reading the folder
+   (around lines 24-29): your folder leaves out the project's harness config paths
+   (`.claude/`, `.codex/`, `.pi/`, `.kimi-code/`, `.agents/`, `.mcp.json`); read them with
+   `git show HEAD:<path>`.
+
+## Ownership boundary
+
+`machine/lib/project-lead.js`, `machine/test/project-lead.test.js`,
+`protocol/app/project-lead.md` (that one sentence), `docs/plans/project-lead/reports/R2c.md`.
+Nothing else.
+
+## Validation (one at a time; paste output tails)
+
+```bash
+node --check machine/lib/project-lead.js machine/test/project-lead.test.js
+node --test machine/test/project-lead.test.js
+bash machine/test/run.sh
+```
+Break each new behaviour once (e.g. skip the sparse-checkout call), watch its test fail, restore.
+Do not run `install/test/run.sh`.
