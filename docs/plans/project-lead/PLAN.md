@@ -441,7 +441,7 @@ The build matches these.
 | T4 | Role file `protocol/app/project-lead.md`, `assistant.md` update, protocol routers (S6, S7) | `protocol/app/{project-lead,assistant,cards,cards-lead}.md`, `protocol/AGENTS.md`, `protocol/app/AGENTS.md` | standard, claude-sonnet-5-5 | wc-df22283a57e1-worker-2 | picker commands | done |
 | T5 | Pages: Settings switch, Threads list grouping and lead rows, project lead thread page, pop-up switch, per-conversation seen; browser test (S1, S2, S5; all mockups) | `viewer/pages/`, `viewer/test/app-project-lead.spec.js`, `viewer/AGENTS.md` pages entries | standard, claude | | `npm --prefix viewer run test:browser -- app-project-lead.spec.js`; assistant browser specs; picker commands | not started; after T6 |
 | T6 | tricky. Start on use (messages queued before the start, 202 with `start_error`) and Off with stop retry (S1) | `viewer/app/{routes (messages route),project-lead,hub,threads,sessions}.js`, `viewer/test/project-lead.test.js` (adds), `viewer/test/helpers/app-machine.js` | standard (provider by hub) | | same as T1 | not started; after T1 |
-| T7 | Doc-truth follow-ups from T4's review: `refresh` retries in `project-lead.md`; `lead.md:23` marker sentence (cards.md reader lists and cards-lead.md opening left as they are: they already omit the assistant, which is also a `lead`-role session) | `protocol/app/{project-lead,lead}.md` | light, gpt-6-luna | wc-df22283a57e1-worker-5 | `node --test viewer/test/*.test.js` | in progress |
+| T7 | Doc-truth follow-ups from T4's review: `refresh` retries in `project-lead.md`; `lead.md:23` marker sentence (cards.md reader lists and cards-lead.md opening left as they are: they already omit the assistant, which is also a `lead`-role session) | `protocol/app/{project-lead,lead}.md` | light, gpt-6-luna | wc-df22283a57e1-worker-5 | `node --test viewer/test/*.test.js` | done |
 
 ## Log
 
@@ -458,3 +458,4 @@ The build matches these.
 - 2026-11-24 — Choice: T4, protocol/app/AGENTS.md: a sentence that the project lead gets only `project-lead.md`, `cards.md`, `cards-lead.md`.
 - 2026-11-24 — Choice: T4, project-lead.md: copied the assistant's "Writes print `{ok:true, result}`" line as its output rule.
 - 2026-11-24 — T1 attempt 2 (gpt-6.1-terra, xhigh) came back blocked: fails-twice guardrail, the second failure a syntax error in its new test file. Not merged (branch wc-df22283a57e1-w3). Attempt 3 at Heavy (gpt-6.2-sol) on the same brief plus a `node --check` step.
+- 2026-11-24 — T7 accepted (band: scout): both edits as briefed; one paragraph reflowed in project-lead.md. Worker reported no choices; the reflow is the one I see.
