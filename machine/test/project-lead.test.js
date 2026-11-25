@@ -258,7 +258,7 @@ test('Claude project lead excludes project settings and MCP discovery', async ()
     git(['-C', repo, 'add', '.']); git(['-C', repo, 'commit', '-m', 'project tools']);
     const result = await api(env, 'POST', '/v1/sessions', leadBody(repo), hubHeader);
     assert.equal(result.status, 201, JSON.stringify(result.body));
-    await fs.access(path.join(result.body.worktree, '.mcp.json')); await fs.access(path.join(result.body.worktree, '.claude/settings.json'));
+    await assert.rejects(fs.access(path.join(result.body.worktree, '.mcp.json'))); await assert.rejects(fs.access(path.join(result.body.worktree, '.claude/settings.json')));
     const adapter = require('../../connectors/claude/machine');
     const context = { stateDir: env.state, promptPath: '/prompt', mcp: null, tools: false };
     const session = env.instance.sessions[result.body.name];
@@ -285,4 +285,50 @@ test('Pi project lead ignores project inputs', () => {
   const ordinary = adapter.command({ role: 'lead' }, session, '/clone', context).argv;
   assert.ok(lead.includes('--no-approve')); assert.ok(!lead.includes('--approve'));
   assert.ok(ordinary.includes('--approve')); assert.ok(!ordinary.includes('--no-approve'));
+});
+
+
+test('refresh applies exclusions to an older clone and keeps committed config readable through git', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try {
+    const repo = await localRepo(root, 'main');
+    const excluded = ['.kimi-code/mcp.json', '.kimi-code/local.toml', '.agents/mcp_config.json', '.mcp.json', '.claude/settings.json', '.codex/config.toml', '.pi/settings.json'];
+    for (const file of excluded) await write(path.join(repo, file), `content ${file}`);
+    git(['-C', repo, 'add', '.']); git(['-C', repo, 'commit', '-m', 'config']);
+    const clone = env.instance.projectLead().folder(repo, 'old');
+    await fs.mkdir(path.dirname(clone), { recursive: true }); git(['clone', repo, clone]);
+    assert.notEqual(git(['-C', clone, 'config', '--bool', 'core.sparseCheckout'], { allowFailure: true }).status, 0);
+    const result = await env.instance.projectLead().run(repo, 'old', false);
+    assert.equal(result.commit, git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim());
+    for (const file of excluded) await assert.rejects(fs.access(path.join(clone, file)));
+    assert.equal(git(['-C', clone, 'show', 'HEAD:.mcp.json']).stdout, 'content .mcp.json');
+    assert.equal(await fs.readFile(path.join(clone, 'file'), 'utf8'), 'first');
+  } finally { await env.close(); }
+});
+
+test('refresh keeps all ordinary files when there are no excluded paths', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try {
+    const repo = await localRepo(root, 'main'); await write(path.join(repo, 'nested/file'), 'nested');
+    await write(path.join(repo, '.ordinary'), 'hidden'); git(['-C', repo, 'add', '.']); git(['-C', repo, 'commit', '-m', 'ordinary']);
+    const result = await env.instance.projectLead().run(repo, 'plain', true);
+    for (const [file, content] of [['file', 'first'], ['nested/file', 'nested'], ['.ordinary', 'hidden']]) assert.equal(await fs.readFile(path.join(result.worktree, file), 'utf8'), content);
+  } finally { await env.close(); }
+});
+
+test('refresh removes modified and untracked excluded paths before detached checkout', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try {
+    const repo = await localRepo(root, 'main');
+    await write(path.join(repo, '.claude/settings.json'), 'committed'); await write(path.join(repo, '.mcp.json'), 'committed');
+    git(['-C', repo, 'add', '.']); git(['-C', repo, 'commit', '-m', 'config']);
+    const clone = env.instance.projectLead().folder(repo, 'dirty');
+    await fs.mkdir(path.dirname(clone), { recursive: true }); git(['clone', repo, clone]);
+    await write(path.join(clone, '.claude/settings.json'), 'modified'); await fs.rm(path.join(clone, '.mcp.json'));
+    git(['-C', clone, 'rm', '--cached', '.mcp.json']); await write(path.join(clone, '.mcp.json'), 'untracked');
+    const tip = await commitFile(repo, 'next');
+    const result = await env.instance.projectLead().run(repo, 'dirty', false);
+    assert.equal(result.commit, tip); assert.equal(git(['-C', clone, 'rev-parse', 'HEAD']).stdout.trim(), tip);
+    for (const file of ['.claude/settings.json', '.mcp.json']) await assert.rejects(fs.access(path.join(clone, file)));
+  } finally { await env.close(); }
 });

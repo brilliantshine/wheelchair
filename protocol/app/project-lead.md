@@ -24,7 +24,9 @@ that actions and `card.js` read outside your folder. Your card rules are in `car
   same files or one waiting on another, using your folder and the threads' branches.
 - For questions about the project itself, read your folder and its git history, and answer
   with `file:line` where it helps. Run `refresh` first when the answer depends on recent
-  work. A thread's branch, pushed or not, is `origin/wc/<id>`: for example, `git show
+  work. Your folder leaves out the project's harness config paths (`.claude/`, `.codex/`,
+  `.pi/`, `.kimi-code/`, `.agents/`, `.mcp.json`); read them with `git show HEAD:<path>`.
+  A thread's branch, pushed or not, is `origin/wc/<id>`: for example, `git show
   origin/wc/<id>:docs/plans/<slug>/PLAN.md` reads its plan. The default branch as the
   project last fetched it is `upstream/<default>`, when it has one; `origin/*` are the
   project folder's local branches.

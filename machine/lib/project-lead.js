@@ -2,6 +2,9 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
+// Workspace harness configuration must not be discovered by a project lead's CLI.
+const sparsePatterns = ['/*', '!/.kimi-code/', '!/.agents/', '!/.mcp.json', '!/.claude/', '!/.codex/', '!/.pi/'];
+
 module.exports = function projectLead({ stateDir, commandAsync, inRepoQueue }) {
   const folder = (repo, id) => {
     const name = path.basename(path.resolve(repo));
@@ -26,6 +29,9 @@ module.exports = function projectLead({ stateDir, commandAsync, inRepoQueue }) {
     await required(clone, 'fetch', '--prune', 'origin', ...refs);
     const target = upstream ? `refs/remotes/upstream/${branch}` : `refs/remotes/origin/${branch}`;
     if (!await exists(clone, target)) throw Object.assign(new Error('this project has no branch to read'), { status: 409 });
+    await required(clone, 'reset', '--hard', 'HEAD');
+    await required(clone, 'clean', '-fdx');
+    await required(clone, 'sparse-checkout', 'set', '--no-cone', ...sparsePatterns);
     await required(clone, 'checkout', '--detach', '--force', target);
     await required(clone, 'clean', '-fdx');
     return required(clone, 'rev-parse', 'HEAD');
