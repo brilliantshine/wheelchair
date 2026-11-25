@@ -273,3 +273,4 @@ git diff --check
 - 2026-11-25 — Choice: T4, `viewer/test/pages.spec.js`: the retry loop is local, not the shared helper, because the helper always passes `--open` and `--state-dir`, which would change the bare start; its `waitForUrl` attaches `startupStderr` and decides on `close`.
 - 2026-11-25 — Choice: T4, `viewer/test/lifecycle.test.js`, `viewer/test/registration.test.js`: `freePort()` sites with no `startServer` receiving the port stay explicit (24 remain, each with a reason in reports/T4.md).
 - 2026-11-25 — T4 accepted (band: scout): conversions checked site by site; registration + lifecycle + retry tests 55/55, pages.spec.js chromium 10/10.
+- 2026-11-25 — Verification attempt 1 on 36da8a13: PASS, no gaps; full run on 36da8a13 passed (561 s, all suites exit 0).
