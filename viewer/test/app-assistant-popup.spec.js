@@ -290,12 +290,12 @@ test.describe('assistant pop-up', () => {
       const id = await turnOn(page);
       await seedAssistant(id, [['assistant', 'Old news', OLD], ['assistant', 'Newer news', NEW]]);
       await page.goto(`${ctx.server.url}/app/threads`);
-      await page.evaluate((at) => localStorage.setItem('wc-assistant-seen', at), OLD);
+      await page.evaluate(([key, at]) => localStorage.setItem(key, at), ['wc-seen:' + id, OLD]);
       await page.reload();
       await expect(page.locator('.wc-asst-unread')).toBeVisible();
       await page.locator('.wc-asst-float').click();
       await expect(page.locator('.wc-asst-panel')).toContainText('Newer news');
-      expect(await page.evaluate(() => localStorage.getItem('wc-assistant-seen'))).toBe(NEW);
+      expect(await page.evaluate((key) => localStorage.getItem(key), 'wc-seen:' + id)).toBe(NEW);
       await page.getByRole('button', { name: 'Close' }).click();
       await expect(page.locator('.wc-asst-unread')).toBeHidden();
       await page.reload();

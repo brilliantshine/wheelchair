@@ -166,28 +166,36 @@
   window.wcPoller(refreshNeeds, 10000);
   window.wcPoller(refreshSessions, 10000);
 
-  // The assistant pop-up: when the assistant is on, load its button and panel (assistant-popup.*).
-  let assistantLoading = false, assistantCss = false;
-  async function loadAssistant() {
-    if (assistantLoading || document.querySelector('.wc-asst-float')) return;
-    assistantLoading = true;
+  // The conversation pop-up (assistant-popup.*): the assistant when it is on, and on a project
+  // thread's page that project's lead; never the conversation whose own page this is.
+  let popupLoading = false, popupCss = false;
+  async function loadPopup() {
+    if (popupLoading) return;
+    popupLoading = true;
     try {
-      const res = await fetch(API + '/assistant');
-      if (!res.ok) return;
-      const status = await res.json();
-      if (!status || status.on !== true || !status.thread) return;
-      window.__wcAssistant = status;
-      if (location.pathname === '/wheelchair/app/thread' && new URLSearchParams(location.search).get('id') === status.thread) return;
-      if (!assistantCss) {
+      const here = location.pathname === '/wheelchair/app/thread' ? new URLSearchParams(location.search).get('id') || '' : null;
+      const read = async (path) => {
+        const res = await fetch(API + path);
+        if (!res.ok) throw new Error('http ' + res.status);
+        return res.json();
+      };
+      const [assistant, lead] = await Promise.all([read('/assistant'), here === null ? null : read('/project-lead?thread=' + encodeURIComponent(here))]);
+      const offered = {};
+      if (lead && lead.on === true && lead.project) offered.lead = { thread: lead.thread, project: lead.project };
+      if (assistant && assistant.on === true && assistant.thread && assistant.thread !== here) offered.assistant = { thread: assistant.thread };
+      window.__wcPopup = offered;
+      if (window.WCPopup) { window.WCPopup.update(offered); return; }
+      if (!offered.lead && !offered.assistant) return;
+      if (!popupCss) {
         const css = el('link'); css.rel = 'stylesheet'; css.href = '/wheelchair/assets/pages/assistant-popup.css';
-        document.head.appendChild(css); assistantCss = true;
+        document.head.appendChild(css); popupCss = true;
       }
       const load = (src) => new Promise((resolve) => { const s = el('script'); s.src = src; s.onload = resolve; s.onerror = resolve; document.head.appendChild(s); });
       if (!window.WCMarkdown) await load('/wheelchair/assets/pages/md.js');
       await load('/wheelchair/assets/pages/assistant-popup.js');
     } catch (e) { /* retry on the next check */ }
-    finally { assistantLoading = false; }
+    finally { popupLoading = false; }
   }
-  loadAssistant();
-  window.wcPoller(loadAssistant, 30000);
+  loadPopup();
+  window.wcPoller(loadPopup, 30000);
 })();
