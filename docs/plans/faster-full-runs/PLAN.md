@@ -1,6 +1,6 @@
 ---
 slug: faster-full-runs
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-25
 ---
 
@@ -39,6 +39,20 @@ _None._
 | D15 | Goal 1 (a faster full run) is checked by the sub-lead: COMPLETION.md records the build's full-run per-suite seconds and total beside the before figures in this plan (15–20 min, 2026-11-25 logs), noting what else was running. | Replaces D13's before run; the full run is the starter's. | review-round-2 |
 | D16 | IDEA updated: the goal is shorter full runs and a shorter wait after the checks pass, not fewer runs per build. | Follows D10. | idea-change |
 ## Spec
+
+```mermaid
+flowchart TD
+  A[Full run starts] --> B[Browser tests start in the background]
+  A --> C[Other suites run one after another]
+  B --> D{Other full runs live?}
+  D -- none --> E[8 workers]
+  D -- one --> F[4 workers]
+  D -- two or more --> G[2 workers]
+  E & F & G --> H[Every spec in Chromium, listed specs also in Firefox]
+  H --> I[Wait for both sides]
+  C --> I
+  I --> J[summary.txt: exit and seconds per suite]
+```
 
 Goal: shorten one full run and the wait after verification passes, without missing what a
 full run catches today. Full-run timing in the build is unchanged (D10). This project has a
