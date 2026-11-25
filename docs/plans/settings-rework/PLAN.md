@@ -138,6 +138,7 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 |------|--------------|-------|
 | Turning a harness off while an add-account form for that provider is open leaves the form as it was | Rare path: two actions together in one visit; the hub's own checks still apply on submit | review-round-3 |
 | On desktop with no hash, narrowing the window below 899px mid-way through a Background preview may discard the unsaved preview | Rare path: a desktop resize across the breakpoint during an unsaved image pick | review-round-3 |
+| A hand-typed lesson address naming an inherited object key (`#behavior/lessons/constructor`) breaks the page ("lessonList(...).some is not a function") instead of opening You | Rare path: malformed input no link in the app produces; real lesson links name real roles | verification-1 |
 
 ## Check Once Built
 
@@ -285,3 +286,4 @@ Build accepted: approval c097ed47-f022-4759-a895-e5d8bb654791
 - 2026-11-25 — Choice: T2, settings.js readReserved: re-reading the reserved provider rewrites the three labels in place so focus is kept
 - 2026-11-25 — Choice: T2, settings.js refreshAfterInstall: an open sign-in card still stops post-install version re-reads (comment only changed)
 - 2026-11-25 — T2 accepted (band: self): read the diff; Check Once Built #1 handled by reading /harnesses?fresh=1 (clears the hub's machine cache, viewer/app/harnesses.js:14) before /usage after sign-in and account changes. Merged branch: S6 node 87 pass, sensitivity 67 pass, S6 browser 870 pass. Worker noted a pre-existing stray "0" on an account card with no machine readings (settings.js accountCard `machines.length && …`), not fixed.
+- 2026-11-25 — Verification attempt 1 on 6d7c4f03: both verifiers FAIL. Check Once Built #1 passed (both). One rare path recorded in Accepted Risks. Full run: viewer-browser (app-permit.spec.js:26 firefox), viewer-node (app-quiet.test.js:41), install ('real wheelchair directory is byte-identical', live ~/.wheelchair written by running sessions) failed; each passed on re-run alone (install 213/213, quiet 3x, permit 4/4).
