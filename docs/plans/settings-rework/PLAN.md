@@ -141,6 +141,7 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 | On desktop with no hash, narrowing the window below 899px mid-way through a Background preview may discard the unsaved preview | Rare path: a desktop resize across the breakpoint during an unsaved image pick | review-round-3 |
 | A hand-typed lesson address naming an inherited object key (`#behavior/lessons/constructor`) breaks the page ("lessonList(...).some is not a function") instead of opening You | Rare path: malformed input no link in the app produces; real lesson links name real roles | verification-1 |
 | Pressing Balancing's Save and then Lead order's Save while the first answer is still on its way, with the first answer arriving last, can put back the older reserve label until the next Save or visit | Rare path: two saves in flight with their answers arriving out of order | verification-2 |
+| Turning a harness on and leaving AI providers before the hub answers can restart that harness's install polling while another category is open | Rare path: a category switch inside the switch's sub-second answer window | verification-3 |
 
 ## Check Once Built
 
@@ -309,3 +310,4 @@ Build accepted: approval c097ed47-f022-4759-a895-e5d8bb654791
 - 2026-11-25 — Choice: R2, settings.js saveDiagram: a late save's note still appears on whichever category is open; only the read and draw are held back
 - 2026-11-25 — Choice: R2, validation: the browser command was split by browser to fit the worker's time limit
 - 2026-11-25 — R2 accepted (band: self): read the diff. First-load timeout shown load-only (same failure on 8440ad72 when CPU-starved; the page awaits only GET /settings). Merged branch: S6 node 87, sensitivity 67, S6 browser 882 pass.
+- 2026-11-25 — Verification attempt 3 on cb54ddb3: Claude verifier PASS; GPT verifier FAIL (one rare path recorded; its Preview-hint wrap is Deferred row 1). Check Once Built #1 passed (both). Full run: install fails as at 8440ad72 (live ~/.wheelchair); viewer-browser failed firefox app-accounts.spec.js:179 (second Send code press lost) — reproduced 4/120 on the branch vs 0/180 at 8440ad72 (git archive), so a regression.
