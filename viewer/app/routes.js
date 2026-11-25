@@ -730,14 +730,17 @@ async function handleThreads(hub, request, response, url, bits, body) {
     return send(response, 200, await require('./threads.js').archivedGraph(hub, id, url.searchParams.get('file')));
   }
   if (request.method === 'POST' && bits[2] === 'messages') {
-    await hub.withThread(id, async () => {
+    const result = await hub.withThread(id, async () => {
       const thread = await hub.thread(id);
       require('./handoff.js').refuseFrozen(hub, thread);
-      const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
-      if (!lead) throw appError(409, 'no live lead');
+      if (thread.project_lead) await require('./project-lead.js').guard(hub, thread);
+      let lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
+      if (!lead && !thread.project_lead) throw appError(409, 'no live lead');
+      if (!lead) return require('./project-lead.js').message(hub, thread, String(body.text || ''));
       await hub.enqueue(thread, lead.name, String(body.text || ''), 'user');
+      return { queued: true };
     });
-    return send(response, 202, { queued: true });
+    return send(response, 202, result);
   }
   if (request.method === 'POST' && bits[2] === 'send-now') {
     return send(response, 202, { sent: await hub.sendNow(id, body.at) });
