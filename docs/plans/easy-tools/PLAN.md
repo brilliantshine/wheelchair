@@ -103,13 +103,13 @@ clone's object store and never touching Collin's own working copy). A session re
 runs shared tools from the commit copy it started with, for its whole life: the copy's full
 path (project identity and commit), or an explicit "no shared copy", is recorded in the
 session's saved record, and a resume, account switch or `wc.js tool` lookup for that session
-uses that saved reference, never the current Settings choice. A newer commit gets a new copy. A copy is deleted only when it is not the newest
+uses that saved reference, never the current Settings choice. A newer commit gets a new copy, built in a temporary folder and renamed into place only when complete, so no session or page ever sees a partial copy. A copy is deleted only when it is not the newest
 and no session record that has not ended (including ones found after a machine service
 restart, and starts in progress) names it. If the fetch fails the newest existing copy is used; if there is none, no shared
 tools are offered and the problems card says "shared tools couldn't be fetched: <reason>". A project tool
 with the same name as a shared tool hides the shared one, and the problems card says so.
 Inside the shared tools project's own threads, its tools come from the thread's worktree
-(as project tools), so a tool being built can be tried before merge; the shared copy is not read for those sessions. One 20-second deadline covers the whole refresh (finding the default branch and fetching it); past that the git process group is killed, its pipes are not waited on, and it counts as failed.
+(as project tools), so a tool being built can be tried before merge; the shared copy is not read for those sessions. One 20-second deadline covers the whole refresh (finding the default branch, fetching it and building the copy); past that the git process group is killed, its pipes are not waited on, and it counts as failed. Any failed refresh (including a failed copy) falls back to the newest complete copy as above and never stops the session's launch; the machine keeps the last refresh's outcome for the Tools page.
 
 ### S4. Keys: not in this plan
 Key handling for folder tools was split into its own follow-up thread (Decision 21).
@@ -124,7 +124,7 @@ already in the agent's environment are not removed (Decision 22), but they exist
 AIs and projects. The bridge, the launcher and `wc.js tool run`/`check` set
 `WHEELCHAIR_PROJECT_DIR` to the session's worktree (outside a session, to the top of the
 current git checkout), so a shared tool can act on the project it is used in; the guide says
-tools use it, never paths relative to their own folder. The guide also says a key must never be written into `tool.json` or any file in the tool folder
+for the project's files tools use it, never a path climbing out of their own folder (their own helper files are reached relative to the tool folder as usual). For an existing server that takes the project as an argument or works on its current folder, the guide shows `"start": ["sh", "-c", "cd \"$WHEELCHAIR_PROJECT_DIR\" && exec some-server \"$WHEELCHAIR_PROJECT_DIR\""]`. The guide also says a key must never be written into `tool.json` or any file in the tool folder
 (they are committed); a tool that needs a token waits for key support, or is listed in
 `.mcp.json` with project keys as today.
 
@@ -147,7 +147,7 @@ not hidden. A server tool that passes these shows "server tools don't
 work on Kimi or Pi" as its status, as in the mockup (a fixed fact about the kind). The page lists tools from the project's default branch
 (read-only: it needs only a GitHub fetch origin, not the matching push destination the
 `.mcp.json` editor requires; for a project without a GitHub origin the list says
-"folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (if a shared tools project is chosen, it is on this machine and no copy exists yet, the list says "shared tools appear after the first agent session in another project on this machine"; listed for every project, GitHub or not; for a non-GitHub project its rows add "not checked against this project's own tools", since a project tool of the same name would hide it) (not added when the
+"folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (if a shared tools project is chosen, it is on this machine and no copy exists yet, the list says "no shared copy on this machine yet" and, if the last refresh failed, "last refresh failed: <reason>"; listed for every project, GitHub or not; for a non-GitHub project its rows add "not checked against this project's own tools", since a project tool of the same name would hide it) (not added when the
 page's project is the shared tools project itself), and checks programs
 against the selected machine's PATH as the machine service sees it, so it can differ from a
 thread that changed a tool. Per-AI limits and Codex's budget are reported only on the
@@ -214,7 +214,7 @@ programs: one whose starter is killed outright may keep running until the machin
 (Decision 22). Before each call the bridge re-reads the
 tool's `tool.json`; if it differs from what was offered at session start, the call returns
 an error saying the tool changed and to try it with `wc.js tool run` now or through MCP in
-the next session. Calls may run in parallel; the bridge never runs the
+the next session. In a session that runs sandboxed (Codex today), the bridge and the server launcher wrap every tool program with that connector's sandbox wrapper (`sandboxWrap`, as the screen launcher does), so folder tools reached through MCP get the same sandbox as the agent's own commands. Calls may run in parallel; the bridge never runs the
 same call twice.
 
 ### S10. The `wc.js tool` commands
@@ -267,8 +267,8 @@ All under `docs/plans/easy-tools/graphs/`:
 Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
-- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, and Codex's bridge entry carrying `tool_timeout_sec = 260`), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
+- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, Codex's bridge entry carrying `tool_timeout_sec = 260`, a failed or partial copy build falling back without stopping launch), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
+- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, tool programs wrapped by `sandboxWrap` in a sandboxed Codex session (a script writing outside the worktree fails), session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
 - S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline and when `wc.js` gets SIGTERM, `run`/`check` stripping the session token, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
@@ -304,7 +304,7 @@ stays as review history.
 
 | # | What to check | Round |
 |---|---------------|-------|
-| 1 | Claude's and Antigravity's MCP call deadlines are at least 260 s for the bridge, or the guide's per-AI limits state the lower limit | review-round-8 |
+| 1 | Claude's and Antigravity's MCP call deadlines are at least 260 s for the bridge, or the guide's per-AI limits state the lower limit; the guide also states Codex's default call deadline for server tools | review-round-8, review-round-9 |
 
 ## Review Rounds
 
@@ -473,6 +473,12 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Existing servers can't get the project path | upheld | S4: guide shows an `sh -c` start using `WHEELCHAIR_PROJECT_DIR` |
+| intent | minor | "Never relative paths" contradicts the tool folder's own files | upheld | S4 wording narrowed |
+| intent | minor | Codex server entries' call deadline unstated | check-once-built | Check Once Built row 1 extended |
+| mechanics | blocking | Folder MCP tools escape the Codex sandbox | upheld | S9: bridge and launcher wrap tool programs with `sandboxWrap` |
+| mechanics | major | Failed or partial copy build undefined | upheld | S3: built aside, renamed when complete; failure falls back, never stops launch |
+| mechanics | minor | RE-RAISE: first-copy message wrong after a failed refresh | upheld | S6: "no shared copy yet" plus the last refresh failure |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
