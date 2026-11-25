@@ -124,9 +124,8 @@
 .chips .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 999px; background: var(--panel-2); font-size: 12px; overflow-wrap: anywhere; }
 .chips .chip button { min-height: 0; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; line-height: 1; color: var(--dim); }
 .chips input { flex: 1 1 160px; min-width: 0; }
-.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-.pane { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); min-width: 0; }
-.pane.with { border-color: var(--accent-line); background: var(--accent-soft); }
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.pane { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 8px; border: 1px solid var(--line); color: var(--ink-2); min-width: 0; }
 .pane .eyebrow { margin: 0; }
 .pane p { margin: 0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
 .pane p.empty { color: var(--dim); }
@@ -178,7 +177,6 @@
 .mstate.note { color: var(--dim); }
 .mstate.signed_in { color: var(--good-text); }
 .mstate.signed_out, .mstate.problem { color: var(--warn); }
-.bar > span { display: block; height: 100%; background: var(--accent); }
 .acct .actions input, .acct .actions select { flex: 1 1 140px; min-width: 0; }
 .add-form { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 .add-form .fields { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -208,6 +206,8 @@ button.danger { color: var(--bad-text); }
 .usage-line.amber { color: var(--warn); }
 .usage-line.dim { color: var(--dim); }
 .usage-table .why { color: var(--ink-2); }
+.meter { display: inline-block; width: 90px; max-width: 100%; height: 6px; margin-right: 4px; vertical-align: middle; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.meter > span, .bar > span { display: block; height: 100%; background: var(--accent); }
 .usage-table tr.next th { color: var(--accent-hi); }
 .usage-table th .v-badge { margin-left: 6px; }
 .order ol { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -321,4 +321,6 @@ button.danger { color: var(--bad-text); }
 .panel .row-line .ctl .note:empty { min-height: 0; margin: 0; }
 .panel .background-editor .note:empty { min-height: 0; margin: -6px 0; }
 .writing > div:empty, .writing .actions .note:empty { display: none; }
+/* Visibility is a short track on its own line (background.css stretches it). */
+.panel .background-editor input[type="range"] { display: block; width: auto; margin-top: 4px; }
 [data-block="lead-names"] .what label { margin: 0; font-size: 13px; color: var(--ink); }
