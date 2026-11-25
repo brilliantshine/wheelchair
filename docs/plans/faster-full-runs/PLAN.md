@@ -11,15 +11,6 @@ created: 2026-11-25
 
 ## Open Questions
 
-### Q1: When does a build run the full run?
-- **Context:** Today the sub-lead starts a full run on the verification commit alongside
-  the verifiers, and every remediation commit starts a new one (`protocol/app/sub-lead.md:249-256`,
-  `:273-283`). The Settings rework ran six, most failing on something. Verifiers already
-  run picker-selected tests on every round.
-- **Options:** (A) one full run, only once the verifiers pass, on the final commit;
-  (B) as today, one per round.
-- **Recommendation:** A.
-
 ### Q2: Which browsers run which browser tests?
 - **Context:** Every one of the 52 browser spec files runs in Chromium and in Firefox
   (`viewer/playwright.config.js:12-20`); that doubling is about half of the 9–11 minute
@@ -43,10 +34,13 @@ created: 2026-11-25
 | D4 | After the port fix, the lone full-run browser worker cap is set from a measured comparison rather than kept at 6. | The cap of 6 was chosen because parallel servers clashed. | defaulted |
 | D5 | `summary.txt` records each suite's seconds (old Deferred row 3). | Small, and needed to aim further speedups. | defaulted |
 | D6 | Qualify lead.md repair step 7's full-run phrase with the `Test picker and full run` heading (old Deferred row 5). | Protocol edits all map to every suite; batch it here. | defaulted |
+| D7 | A build runs one full run, only after its verifiers pass, on the final commit; remediation rounds rely on the picked tests. A failing full run is handled as a failed verification (one more round). | Six full runs in the Settings rework; the picker already checks each round. | user |
 
 ## Spec
 
 _Filled in as decisions land._
+
+- **Full run timing (D7):** the sub-lead starts no full run alongside the verifiers. It starts one full run on the commit the verifiers passed. Its failure counts as a failed verification and leads to remediation; the next full run waits again for that round's verifiers to pass. Role rules (`protocol/app/sub-lead.md`, `lead.md`, `verifier.md`, `AGENTS.md`) change to match.
 
 ## Deferred
 
