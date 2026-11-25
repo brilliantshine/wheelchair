@@ -49,8 +49,9 @@ user.
 ## Actions
 
 Run each action as `node <root>/viewer/app/wc.js project-lead <action>`. Every action prints
-one JSON line; failures exit 0 with `{"ok":false,"error":...}`. The read actions `threads`
-and `thread` retry on hub unavailability; writes never retry automatically. After “hub
+one JSON line; failures exit 0 with `{"ok":false,"error":...}`. The read actions
+`threads` and `thread`, and `refresh`, retry on hub unavailability; writes never retry
+automatically. After “hub
 unavailable” on a write to a thread, check `threads` or `thread` before trying again so you
 do not repeat an action that succeeded. Writes print `{ok:true, result}` with the browser
 route's outcome, except where a row says otherwise; report that outcome rather than
