@@ -71,7 +71,7 @@ test('assistant thread page: no project controls, labels, seen marker', async ({
     await expect(page.locator('#head .badge')).toHaveCount(0);
     await expect(page.locator('#head .meta')).toHaveText('Across your projects');
     await expect(page.locator('#copy')).toBeHidden();
-    expect(await page.evaluate(() => localStorage.getItem('wc-assistant-seen'))).toBe(cardAt);
+    expect(await page.evaluate((key) => localStorage.getItem(key), 'wc-seen:' + id)).toBe(cardAt);
     await expect(page.locator('#attach')).toBeHidden();
     await expect(page.locator('.col-side')).toBeHidden();
     await expect(page.locator('#head').getByText('Open in terminal')).toHaveCount(0);

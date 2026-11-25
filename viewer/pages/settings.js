@@ -559,6 +559,10 @@
       h('div', { class: 'what' }, h('span', { text: 'Personal assistant' }), h('span', { class: 'hint', text: 'An assistant that sees all your threads and acts on what you tell it.' })),
       modeGroup('assistant', 'Personal assistant', [['off', 'Off'], ['on', 'On']], 'Saved'));
 
+    const projectLeadsRow = h('div', { class: 'row-line', id: 'project-leads-setting' },
+      h('div', { class: 'what' }, h('span', { text: 'Project leads' }), h('span', { class: 'hint', text: 'A lead for each project that knows its threads and its work. Starts when you first send it a message.' })),
+      modeGroup('project_leads', 'Project leads', [['off', 'Off'], ['on', 'On']], 'Saved'));
+
     return h('div', { class: 'models' },
       h('div', {},
         h('h1', { text: 'Models and preferences' }),
@@ -602,6 +606,7 @@
         h('h2', { id: 'thread-view', text: 'Threads' }),
         h('div', { class: 'box rows' },
           assistantRow,
+          projectLeadsRow,
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),

@@ -23,7 +23,7 @@
   let stages = {};   // thread id -> stage label, from the features data
   let waiting = {};  // thread id -> number of open cards that need you
   let onboarding = null; // GET /onboarding when show is true, else null
-  let preview = '';      // one line of the assistant's latest reply
+  let leadsOn = false;   // GET /project-lead says project leads are on
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -44,6 +44,9 @@
   // Your last message in the thread; agent activity does not move it. Older threads fall back to creation.
   function stamp(t) { return Date.parse(t.user_at || t.created_at) || 0; }
   function nameOf(t) { return t.title || t.slug || base(t.project); }
+  // A project is one machine (resolved by the hub) plus one exact folder path.
+  const projectKey = (t) => JSON.stringify([t.machine_key || t.machine, t.project]);
+  const shortHome = (p) => String(p || '').replace(/^\/(?:home|Users)\/[^/]+(?=\/|$)/, '~');
 
   function row(t) {
     const li = el('li', 'row' + (t.id === currentId ? ' current' : ''));
@@ -84,26 +87,44 @@
     return li;
   }
 
-  // The assistant's pinned row: first in the list, outside every project group, never archivable.
-  function assistantRow(t) {
-    const li = el('li', 'row assistant-row' + (t.id === currentId ? ' current' : ''));
-    li.dataset.id = t.id;
+  // A pinned conversation row (the assistant's, or a project lead's): never archivable, with a line
+  // of its latest reply. A project lead with no record yet has no thread to link to.
+  function conversationRow(t, cls, label, empty) {
+    const li = el('li', 'row ' + cls + (t && t.id === currentId ? ' current' : ''));
+    if (t) li.dataset.id = t.id;
     const top = el('div', 'top');
-    top.appendChild(el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : 'blue')));
-    const a = el('a', 'row-link title', 'Personal assistant');
-    a.href = '/wheelchair/app/thread?id=' + encodeURIComponent(t.id);
-    if (t.id === currentId) a.setAttribute('aria-current', 'page');
+    const n = (t && waiting[t.id]) || 0;
+    const preview = t ? previewOf(t.id).text : '';
+    // A project lead's dot stays grey until it has something to say.
+    const colour = n ? 'amber' : cls === 'assistant-row' || preview ? 'blue' : '';
+    top.appendChild(el('span', 'dotmark ' + colour));
+    const a = el('a', 'row-link title', label);
+    a.href = t ? '/wheelchair/app/thread?id=' + encodeURIComponent(t.id) : '#';
+    if (t && t.id === currentId) a.setAttribute('aria-current', 'page');
     top.appendChild(a);
-    const n = waiting[t.id] || 0;
     if (n) top.appendChild(el('span', 'badge warn', n + ' needs you'));
     li.appendChild(top);
-    li.appendChild(el('div', 'sub assistant-preview', preview || 'Ask it about your threads.'));
+    li.appendChild(el('div', 'sub assistant-preview', preview || empty));
     return li;
+  }
+
+  let opening = false;
+  // Opening an unstarted project lead makes its record (which starts nothing), then goes to it.
+  async function openProjectLead(machine, path) {
+    if (opening) return;
+    opening = true;
+    try {
+      const res = await fetch(API + '/project-leads', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ machine, path }) });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.detail || out.error || 'http ' + res.status);
+      location.assign('/wheelchair/app/thread?id=' + encodeURIComponent(out.thread));
+    } catch (e) { errorEl.hidden = false; errorEl.textContent = 'Could not open the project lead: ' + e.message; }
+    finally { opening = false; }
   }
 
   function render() {
     const assistant = threads.find((t) => t.assistant);
-    const shown = threads.filter((t) => !t.assistant && !!t.archived === showArchived)
+    const shown = threads.filter((t) => !t.assistant && !t.project_lead && !!t.archived === showArchived)
       .sort((a, b) => stamp(b) - stamp(a));
     archivedBtn.setAttribute('aria-pressed', String(showArchived));
     archivedBtn.textContent = showArchived ? '\u2190 Back to threads' : 'Archived';
@@ -111,7 +132,7 @@
     emptyEl.textContent = showArchived ? 'No archived threads.' : 'No threads yet.';
     emptyEl.hidden = shown.length > 0 || (!!assistant && !showArchived);
     if (showArchived) listEl.appendChild(el('li', 'group-label', 'Archived'));
-    if (assistant && !showArchived) listEl.appendChild(assistantRow(assistant));
+    if (assistant && !showArchived) listEl.appendChild(conversationRow(assistant, 'assistant-row', 'Personal assistant', 'Ask it about your threads.'));
     if (onboarding && !showArchived) {
       const li = el('li', 'card onboarding'); li.id = 'onboarding';
       li.appendChild(el('h3', '', 'Set up an agent'));
@@ -145,12 +166,34 @@
     // Groups by project, the project you last wrote in first; most recently written-in first inside each.
     const groups = new Map();
     for (const t of shown) {
-      const key = base(t.project);
+      const key = projectKey(t);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(t);
     }
-    for (const [name, members] of groups) {
-      listEl.appendChild(el('li', 'group-label', name));
+    // Two shown groups with one folder name are told apart by path, and by machine when those differ.
+    const sameName = new Map();
+    for (const [first] of groups.values()) {
+      const name = base(first.project);
+      if (!sameName.has(name)) sameName.set(name, []);
+      sameName.get(name).push(first);
+    }
+    const leads = new Map(threads.filter((t) => t.project_lead).map((t) => [projectKey(t), t]));
+    for (const [key, members] of groups) {
+      const first = members[0];
+      const twins = sameName.get(base(first.project));
+      const shared = twins.length > 1;
+      const where = shared ? shortHome(first.project) : base(first.project);
+      const machines = new Set(twins.map((t) => t.machine_key || t.machine));
+      const suffix = shared && machines.size > 1 ? ' \u00b7 ' + (first.machine_key || first.machine) : '';
+      // A path keeps its own case: the uppercase heading style would hide the difference.
+      listEl.appendChild(el('li', 'group-label' + (shared ? ' path' : ''), where + suffix));
+      // The hub resolves no machine for a project on a removed one, and then it has no lead.
+      if (leadsOn && !showArchived && first.machine_key) {
+        const record = leads.get(key);
+        const li = conversationRow(record, 'lead-row', where + ' lead' + suffix, 'Ask about this project');
+        if (!record) li.querySelector('a').addEventListener('click', (ev) => { ev.preventDefault(); openProjectLead(first.machine, first.project); });
+        listEl.appendChild(li);
+      }
       for (const t of members) listEl.appendChild(row(t));
     }
   }
@@ -169,7 +212,7 @@
   }
   try {
     const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || 'null');
-    if (cached && Array.isArray(cached.threads)) apply(cached.threads, cached.features || {});
+    if (cached && Array.isArray(cached.threads)) { leadsOn = !!cached.leadsOn; apply(cached.threads, cached.features || {}); }
   } catch (e) { /* draw on the first fetch instead */ }
 
   async function pollOnboarding() {
@@ -194,40 +237,48 @@
   }
 
   // Fetched on load and then at most once a minute, never awaited by the list; a failure keeps the last one.
-  const PREVIEW_KEY = 'wheelchair.assistantPreview';
-  let previewAt = 0;
-  let previewBusy = false;
-  try { preview = sessionStorage.getItem(PREVIEW_KEY) || ''; } catch (e) { /* none yet */ }
+  // Cached per conversation: the assistant's and each project lead's.
+  const previews = {};
+  const previewKey = (threadId) => 'wheelchair.preview:' + threadId;
+  function previewOf(threadId) {
+    if (!previews[threadId]) {
+      let text = '';
+      try { text = sessionStorage.getItem(previewKey(threadId)) || ''; } catch (e) { /* none yet */ }
+      previews[threadId] = { text, at: 0, busy: false };
+    }
+    return previews[threadId];
+  }
   async function loadPreview(threadId) {
-    if (previewBusy || Date.now() - previewAt < 60000) return;
-    previewBusy = true; previewAt = Date.now();
+    const entry = previewOf(threadId);
+    if (entry.busy || Date.now() - entry.at < 60000) return;
+    entry.busy = true; entry.at = Date.now();
     try {
       const res = await fetch(API + '/threads/' + encodeURIComponent(threadId) + '/chat');
       if (!res.ok) return;
       const body = await res.json();
       const last = (body.items || []).filter((i) => i.type === 'assistant' && i.text).pop();
       const next = last ? previewLine(last.text) : '';
-      try { sessionStorage.setItem(PREVIEW_KEY, next); } catch (e) { /* no cache */ }
-      if (next !== preview) { preview = next; render(); }
-    } catch (e) { /* keep the last preview */ } finally { previewBusy = false; }
+      try { sessionStorage.setItem(previewKey(threadId), next); } catch (e) { /* no cache */ }
+      if (next !== entry.text) { entry.text = next; render(); }
+    } catch (e) { /* keep the last preview */ } finally { entry.busy = false; }
   }
 
   async function poll() {
     pollOnboarding();
     try {
-      const [res, features] = await Promise.all([
+      const [res, features, projectLeads] = await Promise.all([
         fetch(API + '/threads?view=list'),
         fetch(API + '/features').then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+        fetch(API + '/project-lead').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       ]);
       if (!res.ok) throw new Error('http ' + res.status);
       const payload = await res.json();
       const list = payload.threads || []; notices = payload.revoke_notices || [];
       errorEl.hidden = true;
-      const mine = list.find((t) => t.assistant);
-      if (!mine) preview = '';
+      if (projectLeads) leadsOn = projectLeads.on === true;
       apply(list, features);
-      if (mine) loadPreview(mine.id);
-      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ threads: list, features })); } catch (e) { /* no cache */ }
+      for (const t of list) if (t.assistant || (leadsOn && t.project_lead)) loadPreview(t.id);
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ threads: list, features, leadsOn })); } catch (e) { /* no cache */ }
     } catch (e) {
       errorEl.hidden = false;
       errorEl.textContent = 'Could not refresh threads.';

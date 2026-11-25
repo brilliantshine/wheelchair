@@ -58,6 +58,7 @@
   let handoffKey = null;
   const mergedArchiveAsk = {};
   let accountNames = null;   // account id -> name, from /settings; null until fetched
+  let startError = '';       // why a project lead did not start for a message that is now queued
   const cardErrors = {};
   const sendingNow = {};     // queued message `at` -> true while its Send now call runs
   const declining = {};      // card id -> true while a sudo Decline call is pending
@@ -165,8 +166,11 @@
   // Sends it, then shows the pending bubble; the caller refreshes the chat.
   async function sendAsUser(message) {
     const seen = humanCount(message);   // counted before sending: the reply may lag the transcript
-    await post(T + '/messages', { text: message });
+    const out = await post(T + '/messages', { text: message });
     pending.push({ text: message, seen });
+    // A project lead's message is queued even when starting its lead failed: never resent.
+    startError = out.start_error || '';
+    sigs.dead = null;
   }
   // A mockup's "Comment on a spot" button. Its drafts are kept outside the card's DOM (WCDiagram), keyed by card and file.
   function spotButton(frame, card, plan, graph, width, height, title) {
@@ -202,6 +206,9 @@
 
   // ---- derived thread facts ----
   function thread() { return data.thread; }
+  // The assistant and the project leads: a conversation with no branch, plan, PR, asides, export or attachments.
+  function special(t) { return !!(t.assistant || t.project_lead); }
+  function titleOf(t) { return t.assistant ? 'Personal assistant' : t.title || slug() || base(t.project); }
   function slug() {
     const t = thread();
     if (data.slug || t.slug) return data.slug || t.slug;
@@ -216,10 +223,12 @@
   function frozen() { return !!(thread().handed_off || thread().handoff_op); }
   function liveLead() { return leads().some((s) => s.live); }
   // The composer's own test for whether a message can go: the Send button and the spot-comment buttons share it.
-  function canSendNow() { return liveLead() && !thread().archived && !frozen(); }
+  // A project lead with no live lead takes one too: sending it starts the lead.
+  const leadReachable = () => liveLead() || !!thread().project_lead;
+  function canSendNow() { return leadReachable() && !thread().archived && !frozen(); }
   function cantSendWhy() {
     const t = thread();
-    return t.archived ? 'the thread is archived' : frozen() ? 'the thread is being handed off' : !liveLead() ? "the lead isn't running" : '';
+    return t.archived ? 'the thread is archived' : frozen() ? 'the thread is being handed off' : !leadReachable() ? "the lead isn't running" : '';
   }
   // Mid-turn: a delivered message the lead has not finished answering.
   function leadWorking() { return leads().some((s) => s.live && s.ready && s.turn_ended === false); }
@@ -238,8 +247,8 @@
     headEl.appendChild(back);
     const block = el('div', 'title-block');
     const titleLine = el('div', 'thread-title-line');
-    titleLine.appendChild(el('h1', '', t.assistant ? 'Personal assistant' : t.title || slug() || base(t.project)));
-    if (t.lead_name && !t.assistant) {
+    titleLine.appendChild(el('h1', '', titleOf(t)));
+    if (t.lead_name && !special(t)) {
       const newest = leads().reduce((a, b) => !a || (b.created_at || '') > (a.created_at || '') ? b : a, null);
       const chip = el(newest && newest.live ? 'a' : 'span', 'lead-chip', t.lead_name);
       if (newest && newest.live) chip.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(id);
@@ -248,6 +257,7 @@
     block.appendChild(titleLine);
     const where = slug() ? base(t.project) + ' / ' + slug() : base(t.project);
     if (t.assistant) block.appendChild(el('div', 'meta', 'Across your projects'));
+    else if (t.project_lead) block.appendChild(el('div', 'meta', base(t.project) + ' on ' + t.machine));
     else block.appendChild(el('div', 'meta', [
       where, lead ? 'lead' : '', PROVIDER_LABEL[t.provider] || t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
     ].filter(Boolean).join(' \u00b7 ')));
@@ -256,15 +266,15 @@
     const line = el('div', 'head-actions' + (archiveAsk ? ' asking' : ''));
     if (t.stub && !t.sessions.length) line.appendChild(el('span', 'badge', 'stub'));
     if (t.archived) line.appendChild(el('span', 'badge', t.archived_by === 'assistant' ? 'Archived by your assistant' : 'archived'));
-    if (t.pr_url && !t.assistant) { const pr = prLink(t.pr_url, 'btn small'); pr.prepend(icon(ICON.pr, 13)); line.appendChild(pr); }
-    if (lead && !t.archived && !t.assistant) {
+    if (t.pr_url && !special(t)) { const pr = prLink(t.pr_url, 'btn small'); pr.prepend(icon(ICON.pr, 13)); line.appendChild(pr); }
+    if (lead && !t.archived && !special(t)) {
       const term = el('a', 'btn small', 'Open in terminal');
       term.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(lead.name);
       line.appendChild(term);
     }
     const agents = el('a', 'btn small', 'Agents'); agents.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(id);
-    if (!t.assistant) line.appendChild(agents);
-    if (!t.assistant) {
+    if (!special(t)) line.appendChild(agents);
+    if (!special(t)) {
       const wrap = el('div', 'export-action');
       if (exportAsk) {
         wrap.append(el('span', 'dim', 'Export and hand off? This thread stops taking work here.'), button('Confirm', 'primary small', async () => { try { await download(T + '/export', 'POST'); exportAsk = false; await poll(); } catch (e) { exportAsk = false; renderHead(); showError(e.message); } }), button('Cancel', 'small', () => { exportAsk = false; renderHead(); }));
@@ -276,7 +286,7 @@
       line.appendChild(wrap);
     }
     const stubless = t.stub && !t.sessions.length;
-    if (!t.archived && !t.assistant) {
+    if (!t.archived && !special(t)) {
       if (!archiveAsk) {
         line.appendChild(button('Archive', 'danger small archive', () => { archiveAsk = true; sigs.head = null; renderHead(); }));
       } else {
@@ -288,7 +298,7 @@
     headEl.appendChild(line);
     const reason = $('export-reason');
     reason.textContent = t.export && t.export.reason || '';
-    reason.hidden = !!(t.assistant || t.archived || frozen() || !t.export || t.export.ok || !t.export.reason);
+    reason.hidden = !!(special(t) || t.archived || frozen() || !t.export || t.export.ok || !t.export.reason);
   }
 
   async function download(url, method) {
@@ -413,7 +423,7 @@
     mountCopy();
     const t = thread(); const S = copy.status;
     copyEl.textContent = '';
-    if (t.assistant) { copyEl.hidden = true; return; }
+    if (special(t)) { copyEl.hidden = true; return; }
     const head = el('div', 'copy-head');
     head.appendChild(el('h3', '', 'Your copy'));
     head.appendChild(button('Refresh', 'small', () => copyLoad(), copy.loading || copy.sending));
@@ -659,12 +669,15 @@
   }
   function renderDead() {
     const t = thread();
-    const dead = !t.archived && !frozen() && (leads().length > 0 || t.imported || t.assistant) && !liveLead();
+    if (liveLead()) startError = '';
+    // A project lead that was never started has not stopped; one that failed to start has.
+    const dead = !t.archived && !frozen() && (leads().length > 0 || t.imported || t.assistant || startError) && !liveLead();
     deadEl.hidden = !dead;
     if (!dead) return;
     deadEl.textContent = '';
     deadEl.appendChild(el('p', '', 'The lead has stopped.'));
-    const failed = el('p', 'dead-error'); failed.setAttribute('role', 'alert'); failed.hidden = true;
+    const failed = el('p', 'dead-error'); failed.setAttribute('role', 'alert'); failed.hidden = !startError;
+    if (startError) failed.textContent = 'Could not start the lead: ' + startError;
     deadEl.appendChild(button('Restart lead', 'primary', async () => {
       failed.hidden = true;
       try { await post(T + '/restart'); await poll(); } catch (e) {
@@ -767,13 +780,13 @@
     const entries = [];
     const used = new Map();
     const uniq = (base) => { const n = (used.get(base) || 0) + 1; used.set(base, n); return base + '#' + n; };
-    const leadName = () => thread().assistant ? 'Assistant' : thread().lead_name || 'Lead';
+    const leadName = () => thread().assistant ? 'Assistant' : thread().project_lead ? thread().title : thread().lead_name || 'Lead';
     // Who wrote the next message: the lead's first letter in a circle, then its name.
     // A sibling, not inside the bubble: asides measure offsets in the bubble's text.
     const leadBy = (forKey) => entries.push({ key: 'by:' + forKey, sig: leadName(), make: () => {
       const name = leadName();
       const row = el('div', 'lead-by');
-      row.append(el('span', 'lead-avatar', Array.from(name)[0].toUpperCase()), el('span', 'lead-by-name', name));
+      row.append(el('span', 'lead-avatar', thread().project_lead ? 'L' : Array.from(name)[0].toUpperCase()), el('span', 'lead-by-name', name));
       return row;
     } });
     let lastAssistant = false;
@@ -1661,17 +1674,17 @@
     renderHandoff();
     // Re-read on load, on each new card (the thread may have gained commits) and when the page comes back into view.
     const lastCard = data.cards.length ? data.cards[data.cards.length - 1].id : null;
-    if (t.assistant) { /* the assistant thread has no copy panel */ }
+    if (special(t)) { /* a conversation thread has no copy panel */ }
     else if (!copy.started) { copy.started = true; copy.lastCard = lastCard; copyLoad(); }
     else if (lastCard !== copy.lastCard) { copy.lastCard = lastCard; copyFresh(); }
     sync('copy', [t.archived, t.project, t.machine], renderCopy);
-    document.body.classList.toggle('assistant-thread', !!t.assistant);
-    document.title = (t.assistant ? 'Personal assistant' : t.title || slug() || base(t.project)) + ' - thread';
-    sync('head', [t.assistant, t.archived_by, t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
+    document.body.classList.toggle('assistant-thread', special(t));
+    document.title = titleOf(t) + ' - thread';
+    sync('head', [t.assistant, t.project_lead, t.archived_by, t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
     sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), data.documents, t.imported && t.imported.at, data.cards.filter((c) => c.kind === 'file' || c.kind === 'image').map((c) => [c.id, c.title, c.file, c.name, c.size, c.retracted_at, c.created_at]), t.kept_files, (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
-    sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported], renderDead);
+    sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported, startError], renderDead);
     sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.answered_by, c.retracted_at]), ideaOpen, deferredOpen, pinsFolded, cardErrors, t.handed_off, t.handoff_op, t.imported], renderPinned);
     const nearBottom = place.near;
     let changed = false;
@@ -1685,12 +1698,12 @@
     if (sigs.chat !== chatSig && (!selectingInChat() || sigs.chatCutoff !== cutoff)) { sigs.chat = chatSig; sigs.chatCutoff = cutoff; changed = renderChat() || changed; }
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
-    const workingText = (t.lead_name || 'The lead') + ' is working';
+    const workingText = ((t.project_lead ? t.title : t.lead_name) || 'The lead') + ' is working';
     if ($('working-label').textContent !== workingText) { $('working-label').textContent = workingText; workingEl.setAttribute('aria-label', workingText); }
     if (workingEl.hidden === working) { workingEl.hidden = !working; if (working && nearBottom) changed = true; }
     placeIds();
-    if (t.assistant) rememberSeen();
-    if (window.WCAside && !t.assistant) window.WCAside.update(data, changed);
+    if (special(t)) rememberSeen();
+    if (window.WCAside && !special(t)) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     else restorePlace(place);
     // Spot-comment buttons follow the composer's eligibility in place (never part of a card's signature).
@@ -1699,11 +1712,12 @@
     syncJump();
     const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
     queuedNote.hidden = queuedTotal === 0;
-    queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
+    queuedNote.textContent = queuedTotal + (t.project_lead && !liveLead() ? ' queued: waiting for the lead to start' : ' queued: waiting for the lead to finish its turn');
     const canSend = canSendNow();
     msgEl.disabled = !canSend || uploading; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
-    document.querySelector('label[for=msg]').textContent = t.assistant ? 'Message the assistant' : 'Message the lead';
-    msgEl.placeholder = canSend ? (t.assistant ? 'Message the assistant' : 'Message the lead') : (t.archived ? 'Archived' : 'No live lead');
+    const messageLabel = t.assistant ? 'Message the assistant' : t.project_lead ? 'Message the project lead' : 'Message the lead';
+    document.querySelector('label[for=msg]').textContent = messageLabel;
+    msgEl.placeholder = canSend ? messageLabel : (t.archived ? 'Archived' : 'No live lead');
   }
 
   // The newest chat item this page has shown, for the pop-up's unread dot. Only moves forward.
@@ -1711,8 +1725,9 @@
     const newest = [...data.items.map((i) => i.at), ...data.cards.map((c) => c.at || c.created_at)].filter((x) => Number.isFinite(Date.parse(x))).sort((a, b) => Date.parse(a) - Date.parse(b)).pop();
     if (!newest) return;
     try {
-      const old = Date.parse(localStorage.getItem('wc-assistant-seen'));
-      if (!(old >= Date.parse(newest))) localStorage.setItem('wc-assistant-seen', new Date(newest).toISOString());
+      const key = 'wc-seen:' + id;   // the pop-up reads the same key
+      const old = Date.parse(localStorage.getItem(key));
+      if (!(old >= Date.parse(newest))) localStorage.setItem(key, new Date(newest).toISOString());
     } catch (e) { /* storage blocked */ }
   }
 
@@ -1753,7 +1768,7 @@
     });
   }
   function addFiles(files, pasted) {
-    if (thread().assistant) return;
+    if (special(thread())) return;
     if (uploading) return;
     const errors = [];
     for (let file of files) {
@@ -1767,7 +1782,7 @@
     }
     attachmentError.textContent = errors.join(' · '); renderAttachments();
   }
-  $('attach').addEventListener('click', () => { if (!uploading && !thread().assistant) fileInput.click(); });
+  $('attach').addEventListener('click', () => { if (!uploading && !special(thread())) fileInput.click(); });
   fileInput.addEventListener('change', () => { addFiles(fileInput.files, false); fileInput.value = ''; });
   // Enter sends and Shift+Enter starts a new line, when this browser's Settings switch is on.
   // Unset, it is on for a mouse-and-keyboard device and off for a touch one (no Shift+Enter there).
@@ -1780,9 +1795,9 @@
     if (ev.key !== 'Enter' || ev.shiftKey || ev.isComposing || ev.keyCode === 229 || !enterSends()) return;
     ev.preventDefault(); composerEl.requestSubmit();
   });
-  msgEl.addEventListener('paste', (ev) => { if (data && data.thread && !data.thread.assistant && ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
+  msgEl.addEventListener('paste', (ev) => { if (data && data.thread && !special(data.thread) && ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
   composerEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
-  composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); if (data && data.thread && !data.thread.assistant) addFiles(ev.dataTransfer.files, false); } });
+  composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); if (data && data.thread && !special(data.thread)) addFiles(ev.dataTransfer.files, false); } });
   composerEl.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const text = msgEl.value.trim();

@@ -269,4 +269,4 @@
  .agents-toolbar { display: none; }
  .agents-sizer { width: 100%; }
 }
-.assistant-row .assistant-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assistant-row .assistant-preview, .lead-row .assistant-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
