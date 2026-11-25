@@ -125,9 +125,9 @@
 .chips .chip button { min-height: 0; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; line-height: 1; color: var(--dim); }
 .chips input { flex: 1 1 160px; min-width: 0; }
 .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
-.pane { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 8px; border: 1px solid var(--line); color: var(--ink-2); min-width: 0; }
-.pane .eyebrow { margin: 0; }
-.pane p { margin: 0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+.pane { display: flex; flex-direction: column; padding: 12px; border-radius: 8px; border: 1px solid var(--line); color: var(--ink-2); min-width: 0; font-size: 14px; line-height: 1.45; }
+.pane .eyebrow { margin: 0; font-weight: 400; line-height: 20.3px; }
+.pane p { margin: 14px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .pane p.empty { color: var(--dim); }
 
 /* ---- phone: the category list, one category at a time, tables become stacked cards ---- */
