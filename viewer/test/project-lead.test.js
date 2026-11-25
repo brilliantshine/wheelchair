@@ -395,3 +395,67 @@ test('ordinary threads still reject messages without a live lead', async (t) => 
   const c = await setup(); t.after(() => close(c)); const record = await seed(c);
   refused(await sendMessage(c, record.id, 'hello'), 409, /no live lead/);
 });
+
+test('project lead actions enforce project scope and redact cross-project content', async () => {
+  const dir = await makeDir('project-lead-actions-');
+  const hub = new Hub({ stateDir: dir }); await hub.state.init();
+  await settings.update(hub, (value) => { value.project_leads = 'on'; value.assistant = 'on'; });
+  const own = { ...emptyThread({ machine: 'hub', project }), project_lead: true, sessions: [{ name: 'project-lead-session', role: 'lead', live: true }] };
+  const same = emptyThread({ machine: 'hub', project });
+  const other = emptyThread({ machine: 'hub', project: '/elsewhere/project' });
+  other.sessions.push({ name: 'other-lead', role: 'lead', live: true });
+  const personal = { ...emptyThread({ machine: 'hub', project: null }), assistant: true };
+  same.sessions.push({ name: 'same-lead', role: 'lead', live: true });
+  same.queues = { 'same-lead': [{ text: '[wc:from other-lead] outside secret' }, { text: 'inside queued' }] };
+  same.peer_log = [{ thread: other.id, text: 'outside secret', direction: 'received' }, { thread: same.id, text: 'inside text', direction: 'sent' }];
+  same.lead_links = [other.id, same.id]; same.peer_pauses = { [other.id]: 'outside', [same.id]: 'inside' };
+  same.cards = [{ id: 'reach1', kind: 'reach', title: 'secret' }, { id: 'permit1', kind: 'permit', pr_number: 99 }, { id: 'msg1', kind: 'message', to: 'other-lead', text: 'outside secret' }, { id: 'local-message', kind: 'message', to: 'same-lead', text: 'inside card' }, { id: 'sudo1', kind: 'sudo' }];
+  for (const record of [own, same, other, personal]) await hub.save(record);
+  const dispatch = require('../app/project-lead-actions.js').dispatch;
+  const call = (action, extra = {}) => dispatch(hub, { calling_session: 'project-lead-session', action, ...extra });
+  for (const action of ['thread', 'message', 'press', 'restart', 'archive']) for (const target of [own, other, personal]) {
+    await assert.rejects(call(action, { thread: target.id }), /that thread is in another project/);
+  }
+  await assert.rejects(dispatch(hub, { calling_session: 'stranger', action: 'threads' }), /only a project lead/);
+  await assert.rejects(call('projects'), /unsupported project lead action/);
+  const rows = (await call('threads')).threads;
+  assert.deepEqual(rows.map((r) => r.id), [same.id]);
+  const detail = await call('thread', { thread: same.id });
+  assert.doesNotMatch(JSON.stringify(detail), /outside secret|other-lead|secret|#99/);
+  assert.match(JSON.stringify(detail), /inside text/);
+  assert.match(JSON.stringify(detail), /inside queued/); assert.match(JSON.stringify(detail), /inside card/);
+  assert.deepEqual(detail.lead_links, [same.id]); assert.deepEqual(Object.keys(detail.peer_pauses), [same.id]);
+  assert.deepEqual(detail.cards.find((c) => c.id === 'reach1'), { id: 'reach1', kind: 'reach', text: "a request to talk to another project's lead" });
+  assert.equal(detail.waiting.find((c) => c.id === 'permit1').text, "a request to push to someone else's pull request");
+  for (const card of ['reach1', 'permit1', 'sudo1']) await assert.rejects(call('press', { thread: same.id, card }), /that needs you/);
+  let created; hub.createThread = async (input) => { created = input; return { id: 'new-thread' }; };
+  assert.equal((await call('start', { project: '/wrong', machine: 'wrong', message: 'hello' })).thread, 'new-thread');
+  assert.equal(created.project, project); assert.equal(created.machine, 'hub'); assert.equal(created.message, '[wc:assistant] hello');
+  let refresh; hub.call = async (...args) => { refresh = args; return { ok: true, commit: 'abc' }; };
+  assert.deepEqual(await call('refresh'), { ok: true, commit: 'abc' });
+  assert.deepEqual(refresh, ['hub', '/v1/project-lead/refresh', 'POST', { thread_id: own.id, project_dir: project }]);
+  await settings.update(hub, (value) => { value.project_leads = 'off'; });
+  await assert.rejects(call('threads'), /project leads are off/);
+});
+
+test('project lead CLI sends files and retries reads only', async () => {
+  const http = require('node:http'), { spawn } = require('node:child_process');
+  let calls = [], fail = false;
+  const server = http.createServer(async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    calls.push({ path: req.url, body: JSON.parse(Buffer.concat(chunks)) });
+    res.writeHead(fail && calls.length === 1 ? 503 : 200, { 'content-type': 'application/json' }); res.end('{"ok":true}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const file = path.join(await makeDir('project-lead-cli-'), 'message'); await fs.writeFile(file, 'hello\n');
+  const run = (...args) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [path.join(__dirname, '../app/wc.js'), 'project-lead', ...args], { env: { ...process.env, WHEELCHAIR_SESSION_TOKEN: 'test', WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}` } });
+    let output = ''; child.stdout.on('data', (s) => { output += s; }); child.on('error', reject); child.on('close', () => resolve(JSON.parse(output)));
+  });
+  try {
+    await run('start', '--message-file', file); assert.equal(calls[0].path, '/project-lead'); assert.equal(calls[0].body.message, 'hello\n');
+    calls = []; await run('message', 'target', '--text-file', file); assert.equal(calls[0].body.text, 'hello\n');
+    calls = []; fail = true; await run('refresh'); assert.equal(calls.length, 2);
+    calls = []; await run('archive', 'target'); assert.equal(calls.length, 1);
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+});
