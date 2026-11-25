@@ -10,11 +10,6 @@ created: 2026-11-24
 
 ## Open Questions
 
-### Q1: Which projects get a project lead, and when does it run?
-- **Context:** each project lead is a live agent; one per project costs model usage. The assistant is opt-in by one Settings switch (`viewer/app/settings.js:56`).
-- **Options:** every project, always on; a Settings switch for all projects, agent started only when Collin first writes to it; a per-project switch.
-- **Recommendation:** one Settings switch; pinned row shown in every project; agent starts on first message.
-
 ### Q2: Which one does the pop-up open on a project's pages?
 - **Context:** the pop-up always opens the single assistant and sends no page context (`viewer/pages/nav.js:171-180`, `viewer/pages/assistant-popup.js:337-345`).
 - **Options:** project lead; assistant; project lead with a one-tap switch to the assistant.
@@ -41,10 +36,15 @@ created: 2026-11-24
 |---|----------|-----------|--------|
 | 1 | Mode is two-part. | Collin picked it. | user |
 | 2 | Why: both less noise and deeper project knowledge. | Collin picked "Both" (after first picking "Too much noise" by mistake). | user |
+| 3 | One Settings switch turns project leads on (off by default). When on, every project shows a pinned project lead; its agent starts only when Collin first writes to it. | Collin picked "One switch, starts on use": idle projects cost nothing. | user |
 
 ## Spec
 
-(grows as decisions land)
+### S1. Switch and lifecycle
+
+- A Settings switch "Project leads", off by default, separate from the personal assistant switch.
+- When on, every project in the threads list shows a pinned project lead row. No agent runs for it until Collin first sends it a message (from its thread or the pop-up); that message starts its lead.
+- Turning the switch off stops every live project lead and hides the rows.
 
 ## Deferred
 
