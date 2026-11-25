@@ -66,8 +66,8 @@ Threads list shows.
   project returns the existing record.
 - **Start on use**: whenever Collin sends a message (thread page composer or pop-up) and
   no lead is live (the first message, or after Off, a crash or a machine restart), the
-  message is saved to the chat and queued as his first, then a lead is started and receives
-  it. Opening the thread page alone starts nothing. The messages route answers 202
+  message is saved to the chat and queued behind any of his messages already waiting (in
+  the order he sent them), then a lead is started and receives them in that order. Opening the thread page alone starts nothing. The messages route answers 202
   `{queued: true}` once the message is queued, plus `start_error` when the start failed;
   both composers then clear the draft (the message is not resent) and, on `start_error`,
   show the failure with Restart as for any thread. The queued message moves to the next
@@ -130,12 +130,16 @@ Threads list shows.
   commands, e.g. `git log`, `git show origin/wc/<id>:docs/plans/<slug>/PLAN.md` for a
   thread's plan (pushed or not), `git diff`. It never edits files, runs git writes, starts
   helper sessions or changes Settings (as the assistant, `protocol/app/assistant.md:10-13`).
-  Enforced outside the prompt by an allow-list: the machine service accepts from a project
-  lead session only `wc.js project-lead` actions and `card.js` posts of its allowed kinds
-  (S6); every other agent route (`wc.js session`, `wc.js git`, screen, Windows bridge and
-  any added later) is refused with "a project lead can't do that". It is launched without
-  the project's tools (no project MCP servers or project tool settings). On Codex it runs
-  in the same sandbox as other sandboxed Codex sessions (workspace-write with network, so
+  Enforced outside the prompt by an allow-list: of the agent routes a session itself can
+  call, the machine service accepts from a project lead session only `wc.js project-lead`
+  actions and `card.js` posts of its allowed kinds (S6); every other one (`wc.js session`,
+  `wc.js git`, screen, Windows bridge and any added later) is refused with "a project lead
+  can't do that". The harness's own lifecycle callbacks (`/v1/agent/hooks`, used for turn
+  ends, `machine/service.js:2303`) are not agent actions and stay allowed. A `file` or
+  `image` card from a project lead is refused unless its resolved path is inside its own
+  clone. It is launched without
+  the project's tools (no project MCP servers or project tool settings). On Codex it always
+  runs sandboxed, whatever Collin's Codex mode, in the same sandbox as other sandboxed Codex sessions (workspace-write with network, so
   `wc.js` and `card.js` reach the machine; `connectors/codex/machine.js:124`), whose
   writable folder is its clone. An account switch keeps the same launch.
 - **Fresh starts**: every new lead starts with no memory, exactly as the assistant's
@@ -152,10 +156,14 @@ checks are done by the hub against the caller's own project (machine + path).
 | Action | Differences from the assistant's action |
 |---|---|
 | `threads [--archived]` | Only threads of its own project (excluding project lead and assistant threads). |
-| `thread <id>` | Refused for a thread outside its project: "that thread is in another project; ask your assistant". Leaves out every cross-thread item (`peer_log`, and `queued` entries or `recent` items that came from another thread's lead), since a same-project thread may be linked to another project. |
+| `thread <id>` | Refused for a thread outside its project: "that thread is in another project; ask your assistant". |
 | `start --message-file <f> [--title <t>]` | No `--project`/`--machine`: always its own project and machine. |
 | `message`, `press`, `restart`, `archive` | Same, with the out-of-project refusal above. `press` also refuses `sudo`, `reach` and `permit` cards ("that needs you"), since those reach beyond this project or the machine. |
 | `refresh` | Moves its folder to the current default branch tip (S3). Prints `{ok, commit}`. |
+
+**Other projects' content**: in both `threads` and `thread`, any `peer_log` or `queued`
+entry whose other thread is in another project is left out, and `reach` and `permit` cards
+are left out of `cards` and `waiting`. Entries between threads of the same project stay.
 
 There is no `projects` action. Its own thread, the assistant thread and every project lead
 thread are refused as targets of every action. Messages and presses are delivered with
@@ -228,11 +236,16 @@ The build matches these.
 ### Validation
 
 - `node --test viewer/test/project-lead.test.js`: record creation idempotent per project;
+  opening the pop-up panel creates it but a page load does not; two sends before a
+  successful start arrive in order; turn-end hooks from a project lead accepted and a
+  queued second message delivered through them; `file`/`image` posts outside the clone
+  refused; other-project `peer_log`/`queued` entries and `reach`/`permit` cards left out
+  of `threads` and `thread` while same-project ones stay;
   start on first message only, with the message queued before the start and moved to the
   next lead after a failed start; `session start`, `session leads`, `wc.js git` and
   `sudo`/`reach`/`permit` posts and presses refused for a project lead; every non-allowed
   agent route refused (session, git, screen, Windows bridge); `thread` leaves out
-  cross-thread items; a message with no live lead after the first is queued and starts one; off stops and
+  other-project items; a message with no live lead after the first is queued and starts one; off stops and
   refuses, and a stop is retried while off; every action's out-of-project,
   self, assistant and project-lead target refusals; `threads` filtering; the assistant
   refusing project lead targets; Needs you counting; exclusions from features,
@@ -255,13 +268,14 @@ The build matches these.
 
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
+| D2 | The pop-up shows Collin's accepted messages still waiting for a lead after a page reload | Only after a failed start plus a reload; the thread page shows them | review-round-3 | `viewer/pages/assistant-popup.js:82,118-154` keeps pending bubbles in memory; render the durable user queue as `viewer/pages/thread.js:849-863` does |
 | D1 | Messages and presses from a project lead are labelled "From your project lead" in the target thread, not "From your assistant" | Cosmetic; both act for Collin and the action is still attributed | planning | `connectors/hub-common.js` `renderTurn` and `viewer/pages/thread.js` attribution; needs a distinct marker or a field on the queued entry |
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| On a harness with no sandbox (Claude Code), a project lead that broke its rules could still run shell commands that write outside its clone, such as in the project folder | Rare path: needs the agent to act against its role; machine-mediated writes, helper starts and cross-project actions are refused outside the prompt, and its clone is reset at every start | review-round-1 |
+| On a harness with no sandbox (Claude Code), a project lead that broke its rules could still run shell commands that write outside its clone, such as in the project folder. On any harness it can read files outside its clone, including other projects and the machine's own credential, and could misuse them | Rare path: needs the agent to act against its role; true read isolation needs an OS-level sandbox per agent, which no wheelchair session has today; machine-mediated writes, helper starts and cross-project actions are refused outside the prompt, and its clone is reset at every start | review-round-1 |
 | If the machine launched a project lead but its start reply was lost, and Collin then turns project leads off, the stop retry may miss that session | Rare path: needs a lost start reply and an Off together; every action it tries is refused while off | review-round-2 |
 
 ## Review Rounds
@@ -332,6 +346,17 @@ The build matches these.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Allow-list refuses Claude's turn-end hooks | upheld | S3: lifecycle callbacks allowed |
+| intent | minor | Same-project lead messages hidden too | upheld | S4: only other-project entries left out |
+| intent | minor | `recent` never holds other leads' messages | upheld | S4: clause removed |
+| intent | minor | Codex unrestricted mode drops the sandbox | upheld | S3: always sandboxed |
+| intent | minor | No test for panel-open vs page-load record creation | upheld | Validation |
+| mechanics | blocking | Allow-list refuses Codex lifecycle callbacks | upheld | Same as intent row 1 |
+| mechanics | blocking | Shell can read other projects and the machine credential | accepted-risk | Rare path: agent acting against its role; Accepted Risk 1 widened |
+| mechanics | blocking | `file`/`image` cards read outside the clone | downgraded (minor) | Only an agent breaking its rules would post one; S3 containment check anyway |
+| mechanics | blocking | `threads` `peer_log` and `reach` cards leak other projects | downgraded (major) | Collin's own data shown to his own project lead, but breaks IDEA's boundary; S4 filter on both actions |
+| mechanics | major | Message order across failed starts | upheld | S1: submission order |
+| mechanics | minor | Pop-up loses accepted messages on reload until a lead starts | upheld | Deferred D2 |
 
 ## Implementation Tasks
 
