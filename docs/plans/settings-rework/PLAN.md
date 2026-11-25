@@ -30,6 +30,7 @@ Map: `MAP.md`.
 | 4 | New section keys `you`, `providers`, `usage`, `models`, `leads`, `threads`, `behavior`, `tools`; old keys keep working as aliases (`harnesses`, `accounts` → providers; `writing`, `background` → you; `templates` and `templates/lessons/<role>` → behavior); in-repo links and texts that name old sections are updated | Lesson cards and onboarding already link to old keys; aliases cost a lookup table | defaulted |
 | 5 | Mockups agreed: graphs/mockup-phone-navigation.html, mockup-phone-you.html, mockup-phone-assistant.html, mockup-desktop-threads.html (versions at commit 9abeca2f) | Collin pressed "Looks good" | user |
 | 6 | Keep lead and worker provider orders together in Usage and balancing, as planned (Collin: "it makes sense to me that agent orders like lead order and worker orders sort of go in the same category") | Answer to the review-budget question; the mechanical issues are fixed in S1 | user |
+| 7 | Keep Harnesses and Accounts merged in AI providers in this thread (split offered and declined) | Collin, after hearing the issue is redraw wiring, not design | user |
 
 ## Spec
 
@@ -209,6 +210,19 @@ Round 2 fixes (for round 3): S5 blocks repaint independently (replaces the poll-
 | mechanics | minor | Reserve label comes from hub `reserved_provider`, not saved order alone | upheld (minor) | S1, S6 |
 | mechanics | minor | Harnesses handoff needs destinations when no account can sign in | upheld (minor) | S2 |
 | mechanics | minor | Missing `machine/test/name-guard.test.js` | upheld (minor) | S6 |
+
+### Round 5 — 2026-11-24
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 4:**
+- S5: turning a harness on/off rebuilds the Accounts block; an open sign-in card keeps polling while away (not restarted).
+- S1: both Saves take `reserved_provider` from the response and rebuild both boxes from the shared draft.
+- S2: Harnesses keeps "Open Accounts"/"Add an account" links when no account can sign in; reload after restore default login too.
+- S6: name-guard test and new checks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
