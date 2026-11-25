@@ -2,7 +2,31 @@
 slug: settings-rework
 date: 2026-11-25
 implemented-by: "T1, T2: standard (claude-sonnet-5-5); T3: light (gpt-6-luna)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5
+    checks: "T1, T2 (claude-sonnet-5-5), T3 (gpt-6-luna)"
+  - round: 1
+    lane: gpt-6.2-sol
+    checks: "T1, T2 (claude-sonnet-5-5), T3 (gpt-6-luna)"
+  - round: 2
+    lane: claude-opus-5-5
+    checks: "Remediation 1 (claude-sonnet-5-5)"
+  - round: 2
+    lane: gpt-6.2-sol
+    checks: "Remediation 1 (claude-sonnet-5-5)"
+  - round: 3
+    lane: claude-opus-5-5
+    checks: "Remediation 2 (claude-sonnet-5-5)"
+  - round: 3
+    lane: gpt-6.2-sol
+    checks: "Remediation 2 (claude-sonnet-5-5)"
+  - round: 4
+    lane: claude-opus-5-5
+    checks: "Remediation 3 (gpt-6.2-sol)"
+  - round: 4
+    lane: gpt-6.2-sol
+    checks: "Remediation 3 (gpt-6.2-sol)"
 ---
 
 # Completion Report — Rework the Settings page
@@ -127,4 +151,34 @@ S6 browser list --project=chromium: 443 passed (4.7m)
 S6 browser list --project=firefox: 443 passed (8.1m)
 app-accounts.spec.js --project=firefox -g "failed key on an OpenRouter" --repeat-each=60 --workers=8: 120 passed
 ```
+
+### Verification attempt 4 and finish — 2026-11-25
+
+Attempt 4 (commit `86b4a241`): Claude verifier PASS; GPT verifier FAIL with two gaps. Both were deferred: the phone You heights as Deferred row 3 (lead), and the sign-in card losing focus or a press when Accounts repaints as Deferred row 4, at Collin's choice (pre-existing at `8440ad72`). The final full run then showed this branch's lead-order Save test losing a click when the usage bars loaded above it. Row 4 was widened to the general case (a block repaint above a control can move it mid-press), and F1 (light, gpt-6-luna) made that test mock `/usage` and wait for the bars before clicking (`viewer/test/app-settings.spec.js:1062`, `:1067`; 80/80 repeated). PLAN.md Log: "Deferred and finished at the user's choice".
+
+Deferred to follow-ups (PLAN.md Deferred): 1 mockup line wraps from the app's font; 2 Technical terms picker cut by a few pixels at 390px; 3 phone You text box and Diagrams stack about 12px taller than the mockup; 4 block repaints above a control can move or replace it mid-press, including an open sign-in card on Accounts' refresh.
+
+Rare paths accepted during verification (PLAN.md Accepted Risks): 3 (verification-1, -2, -3).
+
+Final full run on `908dd868` (`bash test-support/full-run.sh`), `summary.txt`:
+
+```
+commit 908dd868265918f0b477a78e3036b76db29cbae4
+suite viewer-browser exit 0
+suite viewer-node exit 0
+suite machine exit 0
+suite test-support exit 0
+suite sensitivity exit 0
+suite codex exit 0
+suite install exit 1
+suite sudo-helper exit 0
+```
+
+Failures confirmed on main (same test, same error at the comparison commit `8440ad72`), which do not fail the gate:
+- install: "real wheelchair directory is byte-identical after suite" (`install/test/run.sh:705`). It hashes the live `~/.wheelchair`, which running sessions write to; run from a `git archive` of `8440ad72` it failed the same way (212 passed, 1 failed). `install/` is unchanged on this branch.
+- viewer-node, in an earlier run on `f35b7793`: `viewer/test/server.test.js:579` "the global write lock serializes concurrent writes and retry retains both changes". `viewer/server.js` is identical to `8440ad72`, where the test failed 3 of 16 runs. It passed in the final run.
+
+Other one-off failures in earlier full runs were in files this branch does not touch and passed on rerun: test servers refused a port held by another process (`app-spot-comment.spec.js:409`, `app-agents-decks.spec.js:23`), `app-agents-decks.spec.js:247` (200/200 on both trees when repeated), `app-permit.spec.js:26`, `app-quiet.test.js:41`, `machine/test/switch-http.test.js:112`.
+
+The generated harness-instruction block still says "(Models, Diagrams)" until Collin runs `./install.sh` or `sensitivity/set.sh` from the canonical clone after merge.
 
