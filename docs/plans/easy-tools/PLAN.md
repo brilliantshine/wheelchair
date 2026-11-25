@@ -56,6 +56,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 21 | Supersedes 10: key handling for folder tools (tool-only keys, shared keys, keeping keys out of agent-visible output, the Shared keys section) is split into its own follow-up thread. This plan passes no keys to folder tools | Three review rounds kept finding problems only there; the rest had settled | user |
 | 22 | Simplify both safety rules: tool programs are stopped only on timeout or when the program that started them exits (no per-session tracking or session-end cleanup); tools get the agent's environment minus only the wheelchair login (no key-name stripping) | Review kept finding gaps in both; the agent can already read those keys and run tools from its shell | user |
 | 23 | Supersedes 14's limit: a script tool's `timeout_seconds` is 1 to 240 (default 120) | Codex ends MCP calls at 300 s; a longer script would finish after the agent was told it timed out | review-round-7 |
+| 24 | Keep reviewing with the full scope (no cut of shared tools or Codex) | Remaining findings are small runtime details; the design is stable | user |
 
 ## Spec
 
@@ -479,6 +480,15 @@ round where knowing it matters most.
 | mechanics | blocking | Folder MCP tools escape the Codex sandbox | upheld | S9: bridge and launcher wrap tool programs with `sandboxWrap` |
 | mechanics | major | Failed or partial copy build undefined | upheld | S3: built aside, renamed when complete; failure falls back, never stops launch |
 | mechanics | minor | RE-RAISE: first-copy message wrong after a failed refresh | upheld | S6: "no shared copy yet" plus the last refresh failure |
+
+### Round 10 — 2026-11-25
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 9:** S3 (copy built aside and renamed when complete; the deadline covers building it; a failed refresh never stops launch and its outcome is kept for the page), S4 (narrowed wording on paths; `sh -c` example for existing servers), S6 (no-copy message and last refresh failure), S9 (`sandboxWrap` for tool programs in sandboxed sessions), Check Once Built row 1, Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
