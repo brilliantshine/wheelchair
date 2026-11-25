@@ -87,8 +87,9 @@ servers keep working unchanged.
 Shared tools live in their own git repository that Collin adds to wheelchair as an ordinary
 project. Settings (one choice for the whole hub) names the shared tools project (or none),
 stored as its GitHub repository (`owner/repo`, as `machine/lib/project-tools.js` `repoName`
-reads it), not as a path. On each machine, the shared tools come from the project added on
-that machine whose origin is that repository. If the machine has no such project, it offers
+reads it), not as a path. On each machine, the shared tools come from the first of the hub's
+saved projects (in their saved order) whose path is a git repository on that machine with
+that origin. If the machine has no such project, it offers
 no shared tools and the problems card says "the shared tools project isn't added on this
 machine". The shared keys section (S4) is per machine, as in the mockup. Threads in
 that project make and change shared tools like any other work, ending in a pull request.
@@ -96,13 +97,16 @@ At each agent session start the machine fetches that project's default branch an
 a machine-owned copy of that commit under the machine state directory
 (`<state dir>/shared-tools/<project identity>/<commit>/`, made from the project's local
 clone's object store and never touching Collin's own working copy). A session reads and
-runs shared tools from the commit copy it started with, for its whole life; a newer commit
-gets a new copy. A copy is deleted once it is not the newest and no live session started
-from it. If the fetch fails the newest existing copy is used; if there is none, no shared
+runs shared tools from the commit copy it started with, for its whole life: the commit is
+recorded in the session's saved record, and a resume or account switch of the same session
+reuses it. A newer commit gets a new copy. A copy is deleted only when it is not the newest
+and no session record that has not ended (including ones found after a machine service
+restart, and starts in progress) names it. If the fetch fails the newest existing copy is used; if there is none, no shared
 tools are offered and the problems card says "shared tools couldn't be fetched: <reason>". A project tool
 with the same name as a shared tool hides the shared one, and the problems card says so.
 Inside the shared tools project's own threads, its tools come from the thread's worktree
-(as project tools), so a tool being built can be tried before merge.
+(as project tools), so a tool being built can be tried before merge; the shared copy is not
+read for those sessions, and the tools there use the shared keys (S4), not project keys. The fetch is limited to 20 seconds; past that it counts as failed.
 
 ### S4. Keys
 A tool's description lists the key names it needs. When wheelchair runs a script tool or
@@ -128,7 +132,7 @@ values with `[key <NAME>]`. Server tools' MCP traffic is not filtered; the guide
 authors never to return key values.
 
 ### S5. Asking agents for a tool
-There is no new button. Every lead (and the sub-leads and workers it briefs) can read one
+There is no new button. Every thread lead (and the sub-leads and workers it briefs) can read one
 tool guide that says how to make, connect and test both kinds of tool. A request like
 "make me a tool that does X" in a project's thread is handled like any other change there
 and ends in a pull request. A lead asked for a shared tool from another project's thread
@@ -142,8 +146,11 @@ folder tools for the chosen project, including shared tools: each with its name,
 or server, project or shared, and whether it can be used or the reason it cannot (the same
 reasons the problems card gives). "Can be used" means these launch-time checks pass: valid
 `tool.json`; its `run`/`start` program found (in the tool folder or on the session's PATH);
-every listed key set; the kind supported by at least one AI wheelchair offers; not hidden or
-left out. Whether a server actually answers is only checked by `wc.js tool check`. A
+every listed key set; not hidden. The page lists tools from the project's default branch
+(as the page reads `.mcp.json` today) plus the newest shared copy, and checks programs
+against the selected machine's PATH as the machine service sees it, so it can differ from a
+thread that changed a tool. Per-AI limits and Codex's budget are reported only on the
+thread's problems card, for the AI that session runs on. Whether a server actually answers is only checked by `wc.js tool check`. A
 script tool that fails when called returns its error to the agent (S9); a server tool whose
 launcher cannot start its program logs the reason to the machine log and exits non-zero,
 so the AI reports the server as failed. Settings gains a picker for the shared tools project (or
@@ -153,7 +160,8 @@ none) and a shared keys section that works like the project keys section. Existi
 ### S7. The description file and folder
 Every tool is `.wheelchair/tools/<name>/` holding `tool.json` and the tool's own files, in a
 project repository or in the shared tools repository. `<name>` matches `^[A-Za-z0-9_-]{1,40}$`
-and equals `tool.json`'s `name`. `tool.json` fields:
+and equals `tool.json`'s `name`. The name `wheelchair-tools` is reserved for the bridge
+(S8) and refused. `tool.json` fields:
 - `name` (string), `description` (one line, shown to agents), `kind` (`script` or `server`).
 - `keys` (optional array of key names, same rules as project key names).
 - Script only: `inputs`, an object of input name to `{type, description, required}` with
@@ -192,23 +200,31 @@ The bridge runs `run` with the tool folder as working directory, the inputs as o
 object on stdin, and an environment made of the machine's normal session environment minus
 the agent's project keys, plus the tool's own `keys` (S4). stdout (cut at 1 MiB, saying so)
 is the result; a non-zero exit, a timeout or a launch failure returns an MCP error with the
-exit code and the last 4 KiB of stderr. Calls may run in parallel; the bridge never runs the
+exit code and the last 4 KiB of stderr. Redaction (S4) runs on the whole captured stream
+before any cut (capture stops at 2 MiB per stream), so no key fragment survives a cut. Calls may run in parallel; the bridge never runs the
 same call twice.
 
 ### S10. The `wc.js tool` commands
-`node <root>/viewer/app/wc.js tool <command>` goes through the machine service like other
-`wc.js` commands, authenticated by the session token; the service refuses it (with the
-reason) for roles that do not get project tools (S8), and runs it only in that session's
-own worktree:
+`node <root>/viewer/app/wc.js tool <command>`, refused (with the reason) for roles that do
+not get project tools (S8). Tools are read from the session's current worktree files plus
+the shared copy the session is pinned to (S3), so a tool just made with `new` can be
+checked straight away.
 - `new <name> --kind script|server`: writes a working example tool from the template into
   `.wheelchair/tools/<name>/` of the current worktree (in the shared tools project, that
-  makes a shared tool). If that folder already exists it is refused and nothing is written. The script template is a short shell script; the server template is Node.js.
-- `list`: the tools this session would get, kind, source and status (same reasons as S6).
+  makes a shared tool). If that folder already exists it is refused and nothing is written.
+  The script template is a short shell script; the server template is Node.js.
+- `list`: the tools found, kind, source and status (S6's checks).
 - `check [<name>]`: validates description files; for a server tool, starts it and confirms
-  it answers the MCP handshake and lists at least one tool, then stops it.
-- `run <name> --input '<json>'`: runs a script tool exactly as the bridge would and prints
-  its result. Kimi and Pi agents use this to call script tools; the guide says so.
-Only `new` writes files, and the agent commits them as usual.
+  it answers the MCP handshake and lists at least one tool, with a 30-second deadline for
+  the whole check; the server and its child processes are killed on success, failure,
+  deadline or when `wc.js` exits.
+- `run <name> --input '<json>'`: runs a script tool as the bridge would (S9, with its keys)
+  and prints the result. Only for sessions on Kimi or Pi, which load no MCP servers and run
+  with no sandbox; refused on other AIs, whose agents call the tool directly.
+`new`, `list` and `check` run inside the caller's own process (so inside its sandbox, if
+any) and never receive key values. `run` asks the machine service, authenticated by the
+session token, which runs the tool and returns the redacted output. Only `new` writes
+files, and the agent commits them as usual.
 
 ### S11. The guide
 `protocol/tools.md` is the one guide for people and agents: what a tool is, both kinds,
@@ -239,9 +255,9 @@ All under `docs/plans/easy-tools/graphs/`:
 Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
-- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, and per-commit shared copies kept for a live session), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S4, S9 (keys reach only the tool process, never the agent's environment or config files; key values redacted from output; stdin/stdout, errors, timeout, output cap): `node --test machine/test/folder-tools-run.test.js` (new), `node --test machine/test/project-keys.test.js`.
-- S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, refusal for reviewer and mapper roles, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
+- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, the shared project's own threads skipping the shared copy, and the 20 s fetch limit), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
+- S4, S9 (keys reach only the tool process, never the agent's environment or config files; key values redacted from output, including a key straddling the cut point; stdin/stdout, errors, timeout, output cap): `node --test machine/test/folder-tools-run.test.js` (new), `node --test machine/test/project-keys.test.js`.
+- S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, refusal for reviewer and mapper roles, `run` refused outside Kimi/Pi, `check` killing a stalled server at the deadline, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools section): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
 - Routers: `machine/AGENTS.md` and `viewer/AGENTS.md` (and any other router whose file-to-role list changes) are updated in the same change.
@@ -314,9 +330,32 @@ round where knowing it matters most.
 
 ### Round 2 — 2026-11-25
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:** S1 (existing servers as server tools; HTTP deferred), S3 (hub-wide choice by GitHub repo; per-commit machine copies), S4 (key boundary, redaction, no agent-env injection), S6 (what "can be used" checks), S8 (extra-servers connector input; Codex budget order), S10 (role gate, `new` refuses existing folder, no `--shared`), S11 (Kimi/Pi line), S5 (assistant), Not doing (platforms), Validation, Deferred row 3.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Tools page source and PATH unstated | upheld | S6: default branch plus newest shared copy, machine's PATH; per-AI limits only on the card |
+| intent | minor | Shared tools project's threads would show "hidden" for every tool | upheld | S3: shared copy not read there |
+| intent | minor | Fetch has no time limit | upheld | S3: 20 s limit |
+| intent | minor | "Supported by at least one AI" always true | upheld | Removed from S6; per-AI on the card (S8) |
+| intent | minor | Project leads have no guide pointer | upheld | S5 scoped to thread leads |
+| mechanics | blocking | `run`/`check` through the service escape Codex's sandbox | upheld | S10: `new`/`list`/`check` run in the caller's process without keys; `run` only on Kimi/Pi (no MCP, no sandbox) |
+| mechanics | blocking | `wheelchair-tools` folder name clashes with the bridge | upheld | S7: name reserved |
+| mechanics | major | Redaction after clipping lets key fragments through | upheld | S9: redact whole capture before cutting |
+| mechanics | major | Account switch or restart could change or delete the pinned shared copy | upheld | S3: commit recorded on the session; cleanup honours unended records |
+| mechanics | major | Tool source for `list`/`check`/`run` unclear | upheld | S10: current worktree plus pinned shared copy |
+| mechanics | major | `check` has no deadline | upheld | S10: 30 s, children killed |
+| mechanics | minor | Which local project matches the shared repo | upheld | S3: first saved project with that origin |
+| mechanics | minor | Keys for shared tools tested before merge | upheld | S3: shared keys in the shared project's threads |
+| mechanics | minor | Settings page source revision | upheld | Same fix as intent round-2 finding 1 (S6) |
+
+### Round 3 — 2026-11-25
+
+**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+
+**Changed since Round 2:** S3 (20 s fetch limit; shared project's own threads skip the shared copy and use shared keys; pin recorded on the session and kept across resume, switch and restart; matching local project), S5 (thread leads), S6 (page source and PATH; per-AI limits only on the card), S7 (`wheelchair-tools` reserved), S9 (redact before cutting), S10 (rewritten: where each command runs, `run` only on Kimi/Pi, `check` deadline), Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
