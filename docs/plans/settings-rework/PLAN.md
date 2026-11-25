@@ -38,7 +38,7 @@ The Settings page has eight categories, in this order, each holding exactly thes
 
 1. **You**: your name, Writing style (whole current section), Diagrams, Enter-to-send, Background (whole current section).
 2. **AI providers**: Harnesses and Accounts (both whole current sections).
-3. **Usage and balancing**: Usage (whole current section, including Balancing) plus the lead provider order moved from Models. The lead order keeps its own Save, in its own box above Balancing. Both share one draft (`viewer/pages/settings.js:1663-1671`); a Save sends only its own keys and, after saving, refreshes only those keys in the draft, so unsaved edits in the other box survive. The reserve labels ("Save <provider> for leads") keep naming the provider from the saved lead order, as today.
+3. **Usage and balancing**: Usage (whole current section, including Balancing) plus the lead provider order moved from Models. The lead order keeps its own Save, in its own box above Balancing. Both share one draft (`viewer/pages/settings.js:1663-1671`); a Save sends only its own keys and, after saving, refreshes only those keys in the draft, so unsaved edits in the other box survive. The reserve labels ("Save <provider> for leads", margin and held-back lines) name the provider from the saved lead order; a successful lead-order Save therefore also rebuilds the Balancing box from the shared draft, so its labels name the new provider and its unsaved edits stay.
 4. **Models**: Tiers, lead and sub-lead models, Other agents, Escalation.
 5. **Assistant and project leads**: the personal assistant switch and the project leads switch. Future customization for both goes here.
 6. **Threads**: tool steps, auto-merge and branch deletion, default project folder, Permission mode, lead names.
@@ -87,6 +87,7 @@ Categories not mocked follow the same pattern: the moved controls keep today's w
 - Each former section or group inside a category (for example Harnesses and Accounts in AI providers; your name, Writing style, Diagrams, Enter-to-send and Background in You) is its own block. A repaint caused by one block (its poll or timer, its Save, its machine picker) rebuilds only that block, so unsaved edits and typed text in the other blocks survive.
 - Section-specific live work moves with its controls: Harnesses install/sign-in polling, Accounts and Usage 30-second refresh, and the Diagrams read and draw (which fills `#diagram-choices`, `viewer/pages/settings.js:127-146`, today guarded by `section === 'models'` at :2254) all move to the category that now holds them. Each runs while the category holding it is open and stops when it is left, as today per section.
 - The saved background's 10-second refresh (`viewer/pages/background.js:68-105`) stays page-wide, running whatever category is open. Only the editor's repaint and preview cleanup are tied to the You visit (today's `section === 'background'` checks become "You is open").
+- An open sign-in card that was left (another category opened) rechecks its status and resumes polling when AI providers is opened again.
 - Within the Accounts block, its own refresh still waits while an account edit is open (rename, plan or weight, add-account form), as today (`viewer/pages/settings.js:1371-1373`).
 - Enter-to-send stays in browser storage.
 - Not doing: new settings, the personal assistant changing settings, separate phone/computer backgrounds (other threads).
@@ -112,6 +113,8 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Turning a harness off while an add-account form for that provider is open leaves the form as it was | Rare path: two actions together in one visit; the hub's own checks still apply on submit | review-round-3 |
+| On desktop with no hash, narrowing the window below 899px mid-way through a Background preview may discard the unsaved preview | Rare path: a desktop resize across the breakpoint during an unsaved image pick | review-round-3 |
 
 ## Check Once Built
 
@@ -180,6 +183,11 @@ Round 2 fixes (for round 3): S5 blocks repaint independently (replaces the poll-
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | major | Balancing labels stale after a lead-order Save on the same screen | upheld (major) | S1: lead-order Save rebuilds Balancing from the draft |
+| mechanics | major | Harness switch changes Accounts while an add-account form is open | accepted-risk | Rare path (Accepted Risks) |
+| mechanics | major | No-hash desktop resize to phone width during Background preview | accepted-risk | Rare path (Accepted Risks) |
+| mechanics | minor | Sign-in card left mid-sign-in doesn't resume on return | upheld (minor) | S5 |
 
 ## Implementation Tasks
 
