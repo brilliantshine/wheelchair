@@ -502,3 +502,22 @@ test('queued leaves out held peer messages for a stopped lead', async () => {
   const hub = { readSnapshot: async () => thread, state: { settings: async () => null }, call: async () => ({ data: raw, gen: 'g', end: 1 }) };
   assert.equal((await chat.chat(hub, 't')).queued, 2);
 });
+
+// "queued" is the note under the lead's composer: messages left for a stopped worker or sub-lead are not counted.
+test('queued leaves out messages waiting for other agents in the thread', async () => {
+  const chat = require('../app/chat.js');
+  const raw = lines([{ type: 'user', origin: { kind: 'human' }, timestamp: '2026-03-01T09:10:00Z', message: { content: 'hi' } }]);
+  const thread = {
+    id: 't', machine: 'm', cards: [], pinned: {},
+    sessions: [
+      { name: 'lead', role: 'lead', cli: 'claude', live: true, status: 'running' },
+      { name: 'sub', role: 'sub-lead', cli: 'claude', live: false, status: 'ended' },
+      { name: 'w1', role: 'worker', cli: 'claude', live: false, status: 'stopped' },
+    ],
+    queues: { lead: [], sub: [{ text: 'a', source: 'session' }], w1: [{ text: 'b', source: 'session' }] },
+  };
+  const hub = { readSnapshot: async () => thread, state: { settings: async () => null }, call: async () => ({ data: raw, gen: 'g', end: 1 }) };
+  assert.equal((await chat.chat(hub, 't')).queued, 0);
+  thread.queues.lead = [{ text: 'mine', source: 'user' }];
+  assert.equal((await chat.chat(hub, 't')).queued, 1);
+});
