@@ -1,6 +1,7 @@
 'use strict';
 
 // The handoff is data, not a live card or session record.
+const { special } = require('./assistant.js');
 const LIMIT = 10 * 1024 * 1024;
 const KINDS = new Set(['message', 'press', 'offer', 'idea', 'question', 'reach', 'approval', 'progress', 'needs', 'done', 'check', 'diagram', 'image', 'stub', 'sudo', 'title', 'resolve', 'retract', 'result', 'merged']);
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -122,7 +123,7 @@ function stageFor(thread, status) {
   return 'idea-confirmed';
 }
 function exportReason(hub, thread, status, { pressed = false } = {}) {
-  if (thread.assistant) return "the assistant can't be handed off or exported";
+  if (special(thread)) return thread.project_lead ? "a project lead can't be handed off or exported" : "the assistant can't be handed off or exported";
   if (thread.archived) return "Archived threads can't be exported";
   if (thread.handed_off) return 'Already handed off';
   if (unfinished(hub, thread)) return "An import or undo didn't finish";
@@ -142,7 +143,7 @@ async function exportThread(hub, id) {
   const { appError } = require('./state.js');
   return hub.withThread(id, async () => {
     let thread = await hub.thread(id);
-    if (thread.assistant) throw appError(409, "the assistant can't be handed off or exported");
+    if (special(thread)) throw appError(409, exportReason(hub, thread));
     let status;
     try {
       const pr_url = donePr(thread);

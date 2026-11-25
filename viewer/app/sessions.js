@@ -9,8 +9,10 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { appError } = require('./state.js');
+const { special } = require('./assistant.js');
 const { outOfDate } = require('./ready.js');
 const settingsStore = require('./settings.js');
+const projectLead = require('./project-lead.js');
 const usage = require('./usage.js');
 const { choose, chooseSwitch, slotFor, reviewFamilies } = require('./balancer.js');
 const { PROVIDERS, cliOf, providerOf } = require('./providers.js');
@@ -269,7 +271,16 @@ async function resumeUnanswered(hub, thread, session) {
   return session;
 }
 
+function sessionProject(thread) {
+  if (thread.assistant) return { assistant: true };
+  return {
+    project: path.basename(thread.project), project_dir: thread.project,
+    ...(thread.project_lead ? { project_lead: true } : {}),
+  };
+}
+
 async function startSession(hub, thread, input) {
+  if (thread.project_lead) await projectLead.guard(hub, thread);
   require('./handoff.js').refuseFrozen(hub, thread);
   const role = input.role;
   const title = typeof input.title === 'string' ? input.title.trim().slice(0, 80) : '';
@@ -331,7 +342,7 @@ async function startSession(hub, thread, input) {
     scout = { light: await resolveScout(hub, selection.provider, settings.other_agents.scout), heavy: null };
     if (role === 'sub-lead') scout.heavy = await resolveScout(hub, selection.provider, settings.other_agents['scout-heavy']);
   }
-  const layers = settingsStore.roleLayers(settings, role, thread.project, scout, selection.provider);
+  const layers = settingsStore.roleLayers(settings, role, thread.project, scout, selection.provider, false, { projectLead: thread.project_lead });
   // Spec "Machine service on the hub": no new sessions while that service runs another commit.
   // A service that can't be reached falls through to the start, which records the failure.
   const current = await hub.call(thread.machine, '/v1/status', 'GET').catch(() => null);
@@ -374,14 +385,19 @@ async function startSession(hub, thread, input) {
       name: session.name,
       attempt_id: session.attempt_id,
       started_by: session.started_by,
-      ...(thread.assistant ? { assistant: true, prompt_role: 'assistant' } : { project_dir: thread.project, project: require('node:path').basename(thread.project), worktree: input.worktree }),
-      from_remote_branch: input.from_remote_branch,
-      branch: input.branch,
+      ...sessionProject(thread),
+      ...(thread.project_lead
+        ? { prompt_role: 'project-lead', project_machine: thread.machine }
+        : {
+            ...(thread.assistant ? { prompt_role: 'assistant' } : { worktree: input.worktree }),
+            from_remote_branch: input.from_remote_branch,
+            branch: input.branch,
+          }),
       brief: input.brief || '',
       model: resolved.model,
       ...(sessionEffort ? { effort: sessionEffort } : {}),
       permission_mode: settings.permission_mode,
-      codex_mode: settings.codex_mode,
+      codex_mode: thread.project_lead ? 'sandboxed' : settings.codex_mode,
       role_layers: layers.text,
       verify_ref: input.verify_ref,
       base: input.base,
@@ -422,7 +438,7 @@ async function startSession(hub, thread, input) {
   markIdleIfFresh(session);
   if (!thread.worktree && started.worktree) {
     thread.worktree = started.worktree;
-    if (!thread.assistant) thread.branch = `wc/${thread.id}`;
+    if (!special(thread)) thread.branch = `wc/${thread.id}`;
   }
   if (started.default_branch) thread.default_branch = started.default_branch;
   await hub.save(thread);
@@ -585,14 +601,15 @@ async function restoreSwitchLimit(hub, target, account) {
 }
 async function requestSwitch(hub, threadId, name, switchId, from, account, request) {
   await hub.withThread(threadId, async () => {
-  let accepted = false;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try { await hub.call(request.machine, `/v1/sessions/${encodeURIComponent(name)}/switch`, 'POST', request.body); accepted = true; break; }
-    catch (error) { if (error.status || attempt === 2) break; await new Promise(resolve => setTimeout(resolve, 2000)); }
-  }
     const thread = await hub.thread(threadId);
     const target = thread.sessions.find(s => s.name === name);
     if (!target || target.switching?.id !== switchId) return;
+    let accepted = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (thread.project_lead && (!target.live || !await projectLead.isOn(hub))) break;
+      try { await hub.call(request.machine, `/v1/sessions/${encodeURIComponent(name)}/switch`, 'POST', request.body); accepted = true; break; }
+      catch (error) { if (error.status || attempt === 2) break; await new Promise(resolve => setTimeout(resolve, 2000)); }
+    }
     if (accepted) {
       target.account = account.id;
       (target.switches ||= []).push({ from, to: account.id, at: target.switching.at });
@@ -640,7 +657,7 @@ async function event(hub, payload) {
         target.switching = { id, to: account.id, at: new Date().toISOString() };
         delete target.limited_until;
         delete target.quiet_check_at;
-        pendingSwitch = { id, from, account, request: { machine: thread.machine, body: { switch_id: id, account: { id: account.id, dir: account.id === `default-${target.provider}` ? null : `~/.wheelchair/accounts/${account.id}` }, model: target.model ?? null, ...(thread.assistant ? { assistant: true } : { project: path.basename(thread.project), project_dir: thread.project }) } } };
+        pendingSwitch = { id, from, account, request: { machine: thread.machine, body: { switch_id: id, account: { id: account.id, dir: account.id === `default-${target.provider}` ? null : `~/.wheelchair/accounts/${account.id}` }, model: target.model ?? null, ...sessionProject(thread) } } };
       }
     }
     target.turn_ended = true;
@@ -726,6 +743,7 @@ async function event(hub, payload) {
 
 async function sessionRequest(hub, payload) {
   const thread = await hub.threadBySession(payload.calling_session);
+  if (thread.project_lead) throw appError(403, "a project lead can't do that");
   const caller = session(thread, payload.calling_session);
   if (payload.action === 'leads') {
     if (caller.role !== 'lead') throw appError(403, 'only a lead may list other leads');
@@ -738,7 +756,7 @@ async function sessionRequest(hub, payload) {
     return { sessions: listed, review_families: await reviewFamilies(hub, thread) };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
-  if (payload.action === 'start' && thread.assistant) throw appError(403, 'the assistant starts threads, not helpers');
+  if (payload.action === 'start' && special(thread)) throw appError(403, 'the assistant starts threads, not helpers');
   if (payload.action === 'start') require('./handoff.js').refuseFrozen(hub, thread);
   if (payload.action === 'start' && payload.round !== undefined && (payload.role !== 'reviewer' || !((typeof payload.round === 'number' && Number.isInteger(payload.round)) || (typeof payload.round === 'string' && /^[0-9]+$/.test(payload.round))) || !Number.isSafeInteger(Number(payload.round)) || Number(payload.round) < 1)) throw appError(400, '--round requires a positive integer and is only allowed for reviewers');
   if (payload.action === 'start' && payload.effort !== undefined && (caller.role !== 'sub-lead' || payload.role !== 'worker')) throw appError(400, 'effort can only be set for a worker');

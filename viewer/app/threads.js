@@ -5,6 +5,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const crypto = require('node:crypto');
 const { appError } = require('./state.js');
+const { special } = require('./assistant.js');
 const { truncateTitle } = require('./card.js');
 const { publicSession, startSession, newSessionName, deliver } = require('./sessions.js');
 const { check: readyCheck, same: sameReady } = require('./ready.js');
@@ -138,7 +139,11 @@ async function restartLead(hub, id, by) {
       if (inspected.worktree_exists === false) { thread.worktree = null; await hub.save(thread); }
     } catch {}
   }
-  const state = thread.assistant ? { thread: thread.id, title: "Personal assistant", assistant: true } : {
+  const state = special(thread) ? {
+    thread: thread.id,
+    title: thread.project_lead ? thread.title : 'Personal assistant',
+    ...(thread.project_lead ? { project_lead: true } : { assistant: true }),
+  } : {
     slug: thread.slug,
     cards: thread.cards.filter((card) => !card.replaced),
     pinned: thread.pinned,
@@ -150,7 +155,7 @@ async function restartLead(hub, id, by) {
   };
   if (by === 'assistant') state.by = 'assistant';
   const peerMessages = (thread.peer_log || []).filter(item => ['sent', 'received'].includes(item.direction) && (!thread.imported || Date.parse(item.at) > Date.parse(thread.imported.at))).slice(-20);
-  if (!thread.assistant && peerMessages.length) state.cross_thread_messages = peerMessages;
+  if (!special(thread) && peerMessages.length) state.cross_thread_messages = peerMessages;
   if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50) };
   const firstImport = thread.imported && !thread.sessions.some((session) => session.role === 'lead' && Object.hasOwn(session, 'first_message') && Date.parse(session.created_at) > Date.parse(thread.imported.at));
   const context = `[wc:context ${firstImport ? 'import' : 'restart'}] Thread state:\n${JSON.stringify(state)}`;
@@ -187,13 +192,13 @@ async function restartLead(hub, id, by) {
   // Move, not copy: each ended lead's waiting messages go to the new lead once, and an older
   // restart's context note is dropped because the fresh one below replaces it.
   const queued = endedLeads.flatMap((session) => session.queue || [])
-    .filter((message) => message.source !== 'context' && (!thread.assistant || message.source !== 'card'));
+    .filter((message) => message.source !== 'context' && (!special(thread) || message.source !== 'card'));
   for (const session of endedLeads) {
     session.queue = [];
     delete thread.queues[session.name];
   }
-  if (thread.assistant) for (const card of thread.cards) {
-    if (['question', 'needs'].includes(card.kind) && !card.answered && !card.retracted_at && !card.replaced) require('./cards.js').retractCard(card, 'app', 'The assistant restarted');
+  if (special(thread)) for (const card of thread.cards) {
+    if (['question', 'needs'].includes(card.kind) && !card.answered && !card.retracted_at && !card.replaced) require('./cards.js').retractCard(card, 'app', thread.project_lead ? 'The project lead restarted' : 'The assistant restarted');
   }
   // The restart is the answer to every "Sessions ended" card the dead leads left open.
   for (const card of thread.cards) {
@@ -207,7 +212,7 @@ async function restartLead(hub, id, by) {
 
 async function archive(hub, id, by) {
   const thread = await hub.thread(id);
-  if (thread.assistant) throw appError(409, "the assistant can't be archived");
+  if (special(thread)) throw appError(409, thread.project_lead ? "a project lead can't be archived" : "the assistant can't be archived");
   if (require('./handoff.js').unfinished(hub, thread)) throw appError(409, 'Retry the unfinished import first');
   for (const aside of thread.asides || []) {
     if (aside.status === 'open') require('./asides.js').close(aside);
@@ -505,8 +510,9 @@ function mergedPr(thread) {
 }
 
 async function pollMerged(hub) {
-  const eligible = (await hub.allThreads()).map((thread) => ({ thread, url: mergedPr(thread) }))
-    .filter(({ thread, url }) => !thread.assistant && !thread.archived && url && /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/.test(url) && thread.merge_noticed_url !== url);
+  const eligible = (await hub.allThreads()).filter((thread) => !special(thread) && !thread.archived)
+    .map((thread) => ({ thread, url: mergedPr(thread) }))
+    .filter(({ thread, url }) => url && /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/.test(url) && thread.merge_noticed_url !== url);
   let next = 0;
   async function worker() {
     while (next < eligible.length) {
@@ -516,7 +522,7 @@ async function pollMerged(hub) {
         if (JSON.parse(result.stdout).state !== 'MERGED') continue;
         await hub.withThread(thread.id, async () => {
           const current = await hub.thread(thread.id);
-          if (current.archived || mergedPr(current) !== url || current.merge_noticed_url === url) return;
+          if (special(current) || current.archived || mergedPr(current) !== url || current.merge_noticed_url === url) return;
           current.merge_noticed_url = url;
           current.merge_noticed_at = new Date().toISOString();
           for (const card of current.cards) if (card.kind === 'needs' && card.auto_merge === true && !card.answered) require('./cards.js').resolveCard(card, 'app', 'Merged');

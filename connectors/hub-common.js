@@ -106,6 +106,7 @@ function renderTurn(turn, thread) {
     try {
       const state = JSON.parse(humanText.replace(/^\[wc:context restart\] Thread state:\n/, ''));
       if (state?.assistant === true) text = 'Assistant restarted · starting fresh';
+      else if (state?.project_lead === true) text = 'Project lead restarted · starting fresh';
       else if (state?.by === 'assistant') text = 'Lead restarted by your assistant';
     } catch { /* Older or malformed restart contexts keep the original label. */ }
     return [{ type: 'context', text, context: 'restart', at: turn.at }, ...turn.replies];
