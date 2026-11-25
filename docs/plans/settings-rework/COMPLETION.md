@@ -109,3 +109,22 @@ bash sensitivity/test/run.sh: RESULT 67 passed, 0 failed
 S6 browser list: exit 0, 882 passed (9.9m)
 ```
 
+### Remediation 3 — 2026-11-25
+
+Verification attempt 3 (commit `cb54ddb3`): Claude verifier PASS; GPT verifier FAIL; the starter's full run found a regression (Firefox `app-accounts.spec.js:179`, a lost second "Send code" press: 4/120 on the branch, 0/180 at `8440ad72`). One rare path went to Accepted Risks. The Technical terms picker gap was deferred by the lead (Deferred row 2: 309px label vs 306px text room at 13px in Inter). Lanes: standard gpt-6.1-terra (blocked), standard xhigh gpt-6.1-terra (blocked), heavy gpt-6.2-sol (done); the hub routed each to GPT. Report: `reports/R3.md`.
+
+| Gap | Fix | Check |
+|-----|-----|-------|
+| Lost press when a block above an open sign-in card repaints (second fix for repaint-moved presses; first was Remediation 1's `holdPlace`) | `settings.js` holdPlace anchors on an on-screen sign-in card whatever the scroll position | `app-settings.spec.js` lost-press test (holds the Harnesses answer through the press); Firefox repeat 120/120 |
+| Background refresh rebuilt the hidden You editor behind the phone list | `settings.js` syncBackground: repaint only while You is shown; bring the editor up to date when You is shown again | `app-settings.spec.js` hidden-editor test |
+
+Validation on the merged branch (sub-lead):
+
+```
+S6 node tests: # pass 87, # fail 0
+bash sensitivity/test/run.sh: RESULT 67 passed, 0 failed
+S6 browser list --project=chromium: 443 passed (4.7m)
+S6 browser list --project=firefox: 443 passed (8.1m)
+app-accounts.spec.js --project=firefox -g "failed key on an OpenRouter" --repeat-each=60 --workers=8: 120 passed
+```
+
