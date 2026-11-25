@@ -75,30 +75,36 @@ function waitForUrl(child) {
       if (line) { clearTimeout(timer); resolve(line); }
     });
     child.stderr.on('data', (chunk) => { errors += chunk; });
-    child.once('exit', (code, signal) => {
+    child.once('close', (code, signal) => {
       clearTimeout(timer);
-      reject(new Error(`server exited before ready (${code ?? signal}): ${errors}`));
+      const error = new Error(`server exited before ready (${code ?? signal}): ${errors}`);
+      error.startupStderr = errors;
+      reject(error);
     });
   });
 }
 
 async function startServerEnv({ root, port, env }) {
-  const args = ['viewer/server.js', '--port', String(port), '--cache-root', root, '--state-dir', path.join(root, 'hub-state')];
-  const child = spawn(process.execPath, args, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  trackChild(child);
-  let token;
-  try {
-    await waitForUrl(child);
-  // A bare start (no --open) prints only the base origin, with no token (server.js's viewerUrl) —
-  // read the token it wrote to disk instead of parsing the printed line.
-    token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
-    assert.ok(token, 'server wrote a token file');
-  } catch (error) {
-    await stopChild(child);
-    throw error;
+  let child; let token; let chosenPort;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    chosenPort = port === undefined ? await freePort() : port;
+    const args = ['viewer/server.js', '--port', String(chosenPort), '--cache-root', root, '--state-dir', path.join(root, 'hub-state')];
+    child = spawn(process.execPath, args, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    trackChild(child);
+    try {
+      await waitForUrl(child);
+      // A bare start prints no token; read the token it wrote to disk instead.
+      token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
+      assert.ok(token, 'server wrote a token file');
+      break;
+    } catch (error) {
+      child.kill('SIGKILL');
+      if (child.exitCode === null && child.signalCode === null) await new Promise((resolve) => child.once('exit', resolve));
+      if (port !== undefined || attempt === 4 || !/Refused to use a port held by a process it cannot identify|EADDRINUSE/.test(error.startupStderr || '')) throw error;
+    }
   }
   return {
-    root, port, token, url: `http://127.0.0.1:${port}/wheelchair`, child,
+    root, port: chosenPort, token, url: `http://127.0.0.1:${chosenPort}/wheelchair`, child,
     async stop() {
       await stopChild(child);
       await fs.unlink(path.join(root, '.server')).catch(() => {});
@@ -166,13 +172,13 @@ async function buildWorld(prefix = 'pages-') {
   await fs.writeFile(path.join(planDir, 'notes', 'a.md'), '# Note a\n\nSee [b](b.md) for details.\n');
   await fs.writeFile(path.join(planDir, 'notes', 'b.md'), '# Note b\n\nArrived.\n');
 
-  const port = await freePort();
   const baseEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
 
   const serverEnv = { ...baseEnv, FAKE_TMUX_LIST: 'wheelchair' };
   delete serverEnv.TMUX;
   delete serverEnv.TMUX_PANE;
-  const server = await startServerEnv({ root, port, env: serverEnv });
+  const server = await startServerEnv({ root, env: serverEnv });
+  const port = server.port;
 
   const runningEnv = { ...baseEnv, TMUX: 'yes', TMUX_PANE: '%1', FAKE_SESSION_NAME: 'wheelchair' };
   const openRunning = await runExec(path.join(bin, 'claude'),
@@ -312,11 +318,11 @@ async function buildRememberWorld() {
     '',
   ].join('\n'));
 
-  const port = await freePort();
   const env = { ...process.env };
   delete env.TMUX;
   delete env.TMUX_PANE;
-  const server = await startServerEnv({ root, port, env });
+  const server = await startServerEnv({ root, env });
+  const port = server.port;
 
   const opened = await run(['--cache-root', root, '--state-dir', path.join(root, 'hub-state'), '--port', String(port), '--open', graphPath], env);
   assert.equal(opened.code, 0, opened.stderr);
