@@ -459,9 +459,12 @@ iframe.mockup-frame { display: block; position: absolute; top: 0; left: 0; borde
 .spot-layer[hidden], .spot-box[hidden], .spot-pin[hidden] { display: none; }
 .spot-layer.pending { cursor: default; opacity: .7; }
 .spot-pin { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #e5484d; border: 2px solid #fff; box-shadow: 0 0 0 1px #0006; pointer-events: none; box-sizing: border-box; }
-.spot-box { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-width: 480px;
-  position: sticky; bottom: calc(var(--composer-h, 0px) + 8px); z-index: 3; background: var(--bg); padding: 8px 0; }
-.spot-box .spot-text { width: 100%; box-sizing: border-box; font: inherit; }
+.spot-box { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; align-self: stretch;
+  position: sticky; bottom: calc(var(--composer-h, 0px) + 8px); z-index: 3; background: var(--panel); padding: 8px 0; }
+.spot-box .spot-text { width: 100%; min-width: 0; min-height: 0; box-sizing: border-box; resize: vertical; font: inherit; font-size: 14px;
+  line-height: 1.5; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.spot-box .spot-text:focus { outline: none; border-color: var(--accent-line); }
+.spot-box .spot-hint { margin: 0; font-size: 13px; }
 .spot-box .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .spot-error { color: var(--bad, #c62828); font-size: 13px; }
 .spot-btn { white-space: nowrap; }

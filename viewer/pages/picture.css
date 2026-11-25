@@ -19,4 +19,4 @@
 
 /* The full-width containing block lets the panel stick as the mockup scrolls. */
 .picture-mockup-content { width: max-content; min-width: 100%; }
-.picture-mockup-content .spot-box { position: sticky; bottom: 0; left: 0; width: 100cqw; }
+.picture-mockup-content .spot-box { position: sticky; bottom: 0; left: 0; width: 100cqw; max-width: 480px; background: var(--bg); }
