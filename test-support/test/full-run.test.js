@@ -14,7 +14,7 @@ function fixture(t, failure = '') {
   fs.copyFileSync(source, path.join(dir, 'test-support/full-run.sh'));
   fs.writeFileSync(path.join(dir, 'viewer/test/a.test.js'), '');
   fs.writeFileSync(path.join(dir, 'test-support/test/a.test.js'), '');
-  const stub = `#!/bin/bash\ncase "$0 $*" in\n *npm*) name=viewer-browser;;\n *viewer/test*) name=viewer-node;;\n *test-support/test*) name=test-support;;\n *machine/test*) name=machine;;\n *sensitivity/test*) name=sensitivity;;\n *codex/test*) name=codex;;\n *install/test*) name=install;;\n *) name=sudo-helper;;\nesac\nprintf '%s start %s\\n' "$name" "$(date +%s%N)" >> "$EVENTS"\ntrap 'printf "%s stopped %s\\n" "$name" "$(date +%s%N)" >> "$EVENTS"; exit 143' TERM HUP\nif [[ $name == viewer-browser ]]; then sleep 3 & else sleep 1 & fi\nwait $!\nprintf '%s end %s\\n' "$name" "$(date +%s%N)" >> "$EVENTS"\n[[ $name != "$FAIL_SUITE" ]] || exit 7\n`;
+  const stub = `#!/bin/bash\ncase "$0 $*" in\n *npm*) name=viewer-browser;;\n *viewer/test*) name=viewer-node;;\n *test-support/test*) name=test-support;;\n *machine/test*) name=machine;;\n *sensitivity/test*) name=sensitivity;;\n *codex/test*) name=codex;;\n *install/test*) name=install;;\n *) name=sudo-helper;;\nesac\nprintf '%s start %s\\n' "$name" "$(date +%s%N)" >> "$EVENTS"\ntrap 'printf "%s stopped %s\\n" "$name" "$(date +%s%N)" >> "$EVENTS"; exit 143' TERM HUP\nif [[ $name == viewer-browser ]]; then sleep \${BROWSER_SLEEP:-3} & else sleep \${OTHER_SLEEP:-1} & fi\nwait $!\nprintf '%s end %s\\n' "$name" "$(date +%s%N)" >> "$EVENTS"\n[[ $name != "$FAIL_SUITE" ]] || exit 7\n`;
   for (const file of ['bin/npm', 'bin/node', 'bin/python3', 'machine/test/run.sh', 'sensitivity/test/run.sh', 'codex/test/run.sh', 'install/test/run.sh', 'sudo-helper/test/install-test.sh']) {
     fs.writeFileSync(path.join(dir, file), stub, { mode: 0o755 });
   }
@@ -48,7 +48,7 @@ for (const failure of ['', 'machine', 'viewer-browser']) test(`summary and exit:
   for (const name of names) assert.match(result.output, new RegExp(`${name}: exit \\d+ seconds \\d+`));
 });
 for (const signal of ['TERM', 'HUP']) test(`${signal} stops both suites`, async t => {
-  const f = fixture(t); const { child, done } = run(f);
+  const f = fixture(t); Object.assign(f.env, { BROWSER_SLEEP: '20', OTHER_SLEEP: '20' }); const { child, done } = run(f);
   await until(() => events(f).includes('viewer-browser start') && events(f).includes('viewer-node start'), done);
   child.kill(`SIG${signal}`); const result = await done;
   assert.notEqual(result.code, 0);
