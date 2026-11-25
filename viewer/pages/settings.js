@@ -1,11 +1,27 @@
 'use strict';
 
-// The Settings page: Models and preferences, Behavior templates, Writing style. Everything
+// The Settings page: eight categories (CATEGORIES), each a column of blocks that repaint on
+// their own, so one block's save or timer never drops what is typed in another. Everything
 // reads from and writes to the hub's /settings routes (viewer/app/API.md); the page keeps no
 // copy of its own beyond the unsaved editor drafts.
 (() => {
   const API = '/wheelchair/api';
-  const SECTIONS = [['harnesses', 'Harnesses'], ['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools'], ['background', 'Background Customization']];
+  // key (the address), title, the phone list's line, the line under the title (Project tools
+  // draws its own heading), and the blocks it holds in order.
+  const CATEGORIES = [
+    { key: 'you', title: 'You', line: 'Your name, writing style, diagrams and background', lede: 'Your name and preferences for how the app looks and communicates.', note: true, blocks: ['name', 'writing', 'diagrams', 'enter', 'background'] },
+    { key: 'providers', title: 'AI providers', line: 'Harnesses and accounts', lede: 'The agent programs wheelchair runs and the logins they use.', blocks: ['harnesses', 'accounts'] },
+    { key: 'usage', title: 'Usage and balancing', line: 'Usage, provider order and reserves', lede: 'What is left this week, and how agents share it.', blocks: ['usage', 'lead-order', 'balancing'] },
+    { key: 'models', title: 'Models', line: 'Tiers, agent models and escalation', lede: 'Who runs what.', note: true, blocks: ['tiers', 'lead-models', 'escalation', 'others'] },
+    { key: 'leads', title: 'Assistant and project leads', line: 'Personal assistant and project leads', lede: 'Turn on the assistants you can talk to across your work.', note: true, blocks: ['conversations'] },
+    { key: 'threads', title: 'Threads', line: 'Display, merging, folders and permissions', lede: 'Display, merging, folders and permissions for your threads.', note: true, blocks: ['thread-view', 'permission', 'lead-names'] },
+    { key: 'behavior', title: 'Agent behavior', line: 'Behavior templates and lessons learned', lede: 'How agents work, and what they have learned.', blocks: ['templates'] },
+    { key: 'tools', title: 'Project tools', line: 'Tools and keys for your projects', lede: '', blocks: ['tools'] },
+  ];
+  // Old addresses open the category that now holds what they named.
+  const ALIASES = { harnesses: 'providers', accounts: 'providers', writing: 'you', background: 'you', templates: 'behavior' };
+  const categoryOf = (key) => CATEGORIES.find((c) => c.key === key);
+  const phone = window.matchMedia('(max-width: 899px)');
   const TIERS = [
     ['light', 'Light', 'Spelled-out changes, few files'],
     ['standard', 'Standard', 'Most building'],
@@ -32,7 +48,8 @@
   const SAVED = 'Saved, applies to new sessions';
 
   let data = null;
-  let section = 'models';
+  let section = null; // the open category's key; on a phone with no hash the list covers 'you'
+  let atRoot = true;  // no hash
   let note = { text: '', bad: false };
   let selected = null; // a template id, or 'new'
   let draft = null;
@@ -43,8 +60,9 @@
   let styleDraft = null;
   let preview = { running: false, after: null, error: '' };
   let styleNote = '';
-  let diagram = null; // GET /settings/diagram-sensitivity, or null until read for this visit
-  let diagramLoading = false;
+  let diagram = null; // GET /settings/diagram-sensitivity, or null until read since You was shown
+  let diagramReads = 0; // only the newest read's answer is kept
+  let diagramShown = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
   let nameDraft = null; // the typed Your name, kept across re-renders until saved
   // Lead name saves, kept across re-renders: they run one after another in the order made,
@@ -124,9 +142,12 @@
     return { agreed, lines };
   }
 
+  // Behind a phone's list or another category, Diagrams is neither read nor drawn.
+  const youShown = () => section === 'you' && !(atRoot && phone.matches);
+
   function drawDiagram() {
     const box = document.getElementById('diagram-choices');
-    if (!box) return;
+    if (!box || !youShown()) return;
     if (!diagram) { box.replaceChildren(h('span', { class: 'hint', text: 'Reading each machine\u2026' })); return; }
     const { agreed, lines } = diagramView();
     box.replaceChildren(
@@ -139,11 +160,23 @@
   }
 
   async function loadDiagram() {
-    diagramLoading = true;
-    try { diagram = await api('/settings/diagram-sensitivity'); }
-    catch (e) { diagram = { machines: { hub: { error: e.message } } }; }
-    diagramLoading = false;
+    if (!youShown()) return; // a save can finish after You was left
+    const read = ++diagramReads;
+    let next;
+    try { next = await api('/settings/diagram-sensitivity'); }
+    catch (e) { next = { machines: { hub: { error: e.message } } }; }
+    if (read !== diagramReads) return;
+    diagram = next;
     drawDiagram();
+  }
+
+  // Diagrams is read each time You comes on screen: opened, or uncovered when a phone's list
+  // is left or the window grows past it. Never while the list hides it.
+  function syncDiagrams() {
+    if (!data) return;
+    const shown = youShown();
+    if (shown && !diagramShown) { diagram = null; drawDiagram(); loadDiagram(); }
+    diagramShown = shown;
   }
 
   async function saveDiagram(level) {
@@ -172,7 +205,7 @@
 
   // One model picker for a provider and slot. A change saves at once; a refusal shows its
   // reason under the control and puts the control back.
-  function modelPicker(provider, slot, { allowNone, withEffort }) {
+  function modelPicker(block, provider, slot, { allowNone, withEffort }) {
     const cell = data.models[provider] && data.models[provider][slot];
     const current = cell ? cell.model : null;
     const effort = cell && cell.effort ? cell.effort : '';
@@ -191,7 +224,7 @@
         const res = await api('/settings/models', { method: 'PUT', body });
         data.models = res.models;
         inlineErr(wrap, '');
-        renderPanel();
+        paint(block);
         setNote(SAVED, false);
       } catch (e) {
         select.value = current || NONE;
@@ -244,7 +277,7 @@
       const res = await api('/settings/models/heads-up', { method: 'POST', body });
       data.models = res.models;
       data.heads_up = res.heads_up;
-      renderPanel();
+      paint('tiers');
     } catch (e) { inlineErr(host, e.message); }
   }
 
@@ -411,7 +444,7 @@
         onclick: () => {
           if (on === value) return;
           try { localStorage.setItem('enter-sends', value ? '1' : '0'); } catch (e) { setNote('This browser would not save it', true); return; }
-          renderPanel();
+          paint('enter');
           setNote('Saved for this browser', false);
         },
       })));
@@ -477,7 +510,63 @@
       host);
   }
 
-  function renderModels() {
+  // A titled group of controls: the heading names what used to be a section or a group of one.
+  // A heading that repeats its one control's label does not also name the section after it.
+  const group = (cls, id, title, ...kids) => h('div', { class: cls },
+    h('section', { 'aria-labelledby': ['name-heading', 'names-heading'].includes(id) ? null : id }, h('h2', { id, text: title }), ...kids));
+  const rows = (...kids) => h('div', { class: 'box rows' }, ...kids);
+
+  // One segmented choice; each saves its own key through the preferences route and repaints
+  // the block it sits in.
+  function modeGroup(block, key, label, choices, saved = SAVED) {
+    const seg = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
+      choices.map(([value, text]) => h('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(data[key] === value), text,
+        onclick: async () => {
+          if (data[key] === value) return;
+          const row = seg.closest('.row-line');
+          try {
+            const res = await api('/settings/preferences', { method: 'PUT', body: { [key]: value } });
+            data[key] = res[key];
+            inlineErr(row, '');
+            paint(block);
+            if (key === 'assistant' && res.assistant_error) inlineErr(document.getElementById('assistant-setting'), res.assistant_error);
+            setNote(saved, false);
+          } catch (e) { inlineErr(row, e.message); setNote('', false); }
+        },
+      })));
+    return seg;
+  }
+  // The same segmented control, saving one key inside `escalation`.
+  function escalationGroup(key, label, choices) {
+    const seg = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
+      choices.map(([value, text]) => h('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(data.escalation[key] === value), text,
+        onclick: async () => {
+          if (data.escalation[key] === value) return;
+          const row = seg.closest('.row-line');
+          try {
+            const res = await api('/settings/preferences', { method: 'PUT', body: { escalation: { [key]: value } } });
+            data.escalation = res.escalation;
+            data.escalation_text = res.escalation_text;
+            inlineErr(row, '');
+            paint('escalation');
+            setNote(SAVED, false);
+          } catch (e) { inlineErr(row, e.message); setNote('', false); }
+        },
+      })));
+    return seg;
+  }
+
+  // ---------------------------------------------------------------- You
+
+  const renderName = () => group('models', 'name-heading', 'Your name', rows(nameRow()));
+  const renderDiagrams = () => group('models', 'diagrams', 'Diagrams', h('div', { class: 'box', id: 'diagram-choices' }));
+  const renderEnter = () => group('models', 'enter-heading', 'Enter to send', rows(enterRow()));
+
+  // ---------------------------------------------------------------- Models
+
+  function renderTiers() {
     const items = (data.heads_up || []).slice();
     if (data.models.malformed && !items.some((i) => i.kind === 'malformed')) items.unshift({ kind: 'malformed' });
     const lines = items.filter((i) => i.kind === 'malformed' || i.kind === 'tierless').map(headsUpLine);
@@ -488,55 +577,84 @@
     const body = PROVIDERS.filter(([provider]) => harnessOn(provider)).map(([provider, name, cli]) => h('tr', { class: toolOf(provider).settings.modelHeadsUp ? 'gpt' : '', 'data-provider': provider },
       h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli }), toolOf(provider).settings.familyHint && h('span', { class: 'hint', text: toolOf(provider).settings.familyHint })),
       TIERS.map(([slot, label]) => {
-        const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
+        const td = h('td', { 'data-label': label }, modelPicker('tiers', provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
         if (toolOf(provider).settings.modelHeadsUp) for (const item of tierItems(slot)) td.append(headsUpLine(item));
         return td;
       })));
     const table = h('table', { class: 'tiers' }, h('thead', {}, head), h('tbody', {}, body));
+    return group('models', 'tiers', 'Tiers',
+      lines,
+      h('div', { class: 'box' }, table),
+      h('span', { class: 'hint', text: '"Not used" means that provider can\'t be started at that tier. Effort is how hard the model thinks; "CLI default" leaves it to the CLI.' }));
+  }
 
-    // One segmented choice per CLI; each saves its own key through the preferences route.
-    const modeGroup = (key, label, choices, saved = SAVED) => {
-      const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
-        choices.map(([value, text]) => h('button', {
-          type: 'button', role: 'radio', 'aria-checked': String(data[key] === value), text,
-          onclick: async () => {
-            if (data[key] === value) return;
-            const row = group.closest('.row-line');
-            try {
-              const res = await api('/settings/preferences', { method: 'PUT', body: { [key]: value } });
-              data[key] = res[key];
-              inlineErr(row, '');
-              renderPanel();
-              if (key === 'assistant' && res.assistant_error) inlineErr(document.getElementById('assistant-setting'), res.assistant_error);
-              setNote(saved, false);
-            } catch (e) { inlineErr(row, e.message); setNote('', false); }
-          },
-        })));
-      return group;
-    };
-    // The same segmented control, saving one key inside `escalation`.
-    const escalationGroup = (key, label, choices) => {
-      const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
-        choices.map(([value, text]) => h('button', {
-          type: 'button', role: 'radio', 'aria-checked': String(data.escalation[key] === value), text,
-          onclick: async () => {
-            if (data.escalation[key] === value) return;
-            const row = group.closest('.row-line');
-            try {
-              const res = await api('/settings/preferences', { method: 'PUT', body: { escalation: { [key]: value } } });
-              data.escalation = res.escalation;
-              data.escalation_text = res.escalation_text;
-              inlineErr(row, '');
-              renderPanel();
-              setNote(SAVED, false);
-            } catch (e) { inlineErr(row, e.message); setNote('', false); }
-          },
-        })));
-      return group;
-    };
+  function renderLeadModels() {
+    return group('models', 'lead-models', 'Leads',
+      rows(PROVIDERS.flatMap(([provider, name]) => [['lead', 'Leads run on'], ['sub-lead', 'Sub-leads run on']].map(([slot, title]) => h('div', { class: 'row-line' },
+        h('div', { class: 'what' }, h('span', { text: title }), h('span', { class: 'hint', text: `${name} model` })),
+        h('div', { class: 'ctl wide' }, modelPicker('lead-models', provider, slot, { allowNone: false, withEffort: Boolean(EFFORTS[provider]) })))))));
+  }
+
+  function renderEscalation() {
     const escRow = (title, key, choices) => h('div', { class: 'row-line' },
       h('div', { class: 'what' }, h('span', { text: title })),
       escalationGroup(key, title, choices));
+    return group('models', 'escalation', 'Escalation',
+      h('div', { class: 'escalation-text' },
+        String(data.escalation_text || '').split('\n').filter(Boolean).map((line) => h('p', { text: line }))),
+      rows(
+        escRow('What steps up first', 'first', [['effort', 'Effort'], ['model', 'Model']]),
+        escRow('Highest effort', 'max_effort', [['high', 'High'], ['xhigh', 'xhigh'], ['max', 'Max']]),
+        escRow('Highest tier', 'max_tier', [['standard', 'Standard'], ['heavy', 'Heavy'], ['critical', 'Critical']]),
+        escRow('Ask me before', 'ask_before', [['never', 'Never'], ['critical', 'Critical'], ['any', 'Any step up']])),
+      h('span', { class: 'hint', text: 'The build follows these when a worker comes back wrong. Applies to builds started afterwards.' }));
+  }
+
+  function renderOthers() {
+    return group('models', 'others', 'Other agents',
+      rows(
+        h('div', { class: 'row-line' },
+          h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
+          modeGroup('others', 'review_families', 'Reviewers and checkers', [['both', 'Mix families'], ...TOOLS.filter((t) => t.settings.reviewFamily).map((t) => [t.provider, t.label])].filter(([v]) => v === 'both' || harnessOn(v)))),
+        otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
+        otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
+        otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
+        otherAgentRow('designer', 'Mockups', 'Draws mockups of screens during planning'),
+        otherAgentRow('scout', 'Scout', 'Reads code for leads and sub-leads and reports back'),
+        otherAgentRow('scout-heavy', 'Scout for bigger changes', 'Checks worker changes of 200 to 800 lines for the sub-lead')),
+      h('span', { class: 'hint', text: 'For threads in the app. Terminal commands keep their own rules.' }));
+  }
+
+  // ---------------------------------------------------------------- Assistant and project leads
+
+  function renderConversations() {
+    const assistantRow = h('div', { class: 'row-line', id: 'assistant-setting' },
+      h('div', { class: 'what' }, h('span', { text: 'Personal assistant' }), h('span', { class: 'hint', text: 'An assistant that sees all your threads and acts on what you tell it.' })),
+      modeGroup('conversations', 'assistant', 'Personal assistant', [['off', 'Off'], ['on', 'On']], 'Saved'));
+    const projectLeadsRow = h('div', { class: 'row-line', id: 'project-leads-setting' },
+      h('div', { class: 'what' }, h('span', { text: 'Project leads' }), h('span', { class: 'hint', text: 'A lead for each project that knows its threads and its work. Starts when you first send it a message.' })),
+      modeGroup('conversations', 'project_leads', 'Project leads', [['off', 'Off'], ['on', 'On']], 'Saved'));
+    return group('models', 'conversations', 'Conversations', rows(assistantRow, projectLeadsRow));
+  }
+
+  // ---------------------------------------------------------------- Threads
+
+  function renderThreadView() {
+    const AUTO_MERGE_HINT = 'When on, a thread merges its own pull request once an agent has seen at least one Check it yourself step work and none broke. A thread where you chose to push something that failed its check, or a thread handed over from another machine, is never merged automatically. It applies to pull requests checked after it is turned on. It never merges past failing checks, conflicts or GitHub\'s rules.';
+    return group('models', 'thread-view', 'Threads', rows(
+      h('div', { class: 'row-line' },
+        h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
+        modeGroup('thread-view', 'tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
+      h('div', { class: 'row-line' },
+        h('div', { class: 'what' }, h('span', { text: 'Merge pull requests when done' }), h('span', { class: 'hint', text: AUTO_MERGE_HINT })),
+        modeGroup('thread-view', 'auto_merge', 'Merge pull requests when done', [['off', 'Off'], ['on', 'On']], 'Saved')),
+      data.auto_merge === 'on' ? h('div', { class: 'row-line' },
+        h('div', { class: 'what' }, h('span', { text: 'Delete the branch after merging' }), h('span', { class: 'hint', text: 'When a thread merges its own pull request, it also deletes that branch on GitHub. The thread keeps its own copy on this machine.' })),
+        modeGroup('thread-view', 'auto_merge_delete_branch', 'Delete the branch after merging', [['off', 'Off'], ['on', 'On']], 'Saved')) : null,
+      folderRow()));
+  }
+
+  function renderPermission() {
     const permissionNames = (mode) => {
       const names = TOOLS.filter((t) => t.settings.permissionMode === mode).map((t) => t.settings.permissionName);
       return names.length < 2 ? (names[0] || '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
@@ -544,98 +662,28 @@
     const permissionChoices = (mode) => (TOOLS.find((t) => t.settings.permissionMode === mode) || { settings: {} }).settings.permissionChoices || [];
     const permissionModeName = permissionNames('permission_mode');
     const codexModeName = permissionNames('codex_mode');
-    const claudeMode = modeGroup('permission_mode', `${permissionModeName} permission mode`, permissionChoices('permission_mode'));
-    const codexMode = modeGroup('codex_mode', `${codexModeName} permission mode`, permissionChoices('codex_mode'));
-    const asideMode = modeGroup('aside_access', 'Aside access', [['read-only', 'Read-only'], ['full', 'Full']]);
+    const claudeMode = modeGroup('permission', 'permission_mode', `${permissionModeName} permission mode`, permissionChoices('permission_mode'));
+    const codexMode = modeGroup('permission', 'codex_mode', `${codexModeName} permission mode`, permissionChoices('codex_mode'));
+    const asideMode = modeGroup('permission', 'aside_access', 'Aside access', [['read-only', 'Read-only'], ['full', 'Full']]);
     const asideHint = data.aside_access === 'full'
       ? 'Never asks, no sandbox: an aside can read anywhere, run commands and change files.'
       : 'Reads files in the thread\'s worktree only. Runs no commands.';
-    const AUTO_MERGE_HINT = 'When on, a thread merges its own pull request once an agent has seen at least one Check it yourself step work and none broke. A thread where you chose to push something that failed its check, or a thread handed over from another machine, is never merged automatically. It applies to pull requests checked after it is turned on. It never merges past failing checks, conflicts or GitHub\'s rules.';
     const codexHint = data.codex_mode === 'unrestricted'
       ? 'Never asks, no sandbox: it can change anything on the machine. Reviewers stay read-only.'
       : 'Never asks: it can write only inside its worktree.';
-
-    const assistantRow = h('div', { class: 'row-line', id: 'assistant-setting' },
-      h('div', { class: 'what' }, h('span', { text: 'Personal assistant' }), h('span', { class: 'hint', text: 'An assistant that sees all your threads and acts on what you tell it.' })),
-      modeGroup('assistant', 'Personal assistant', [['off', 'Off'], ['on', 'On']], 'Saved'));
-
-    const projectLeadsRow = h('div', { class: 'row-line', id: 'project-leads-setting' },
-      h('div', { class: 'what' }, h('span', { text: 'Project leads' }), h('span', { class: 'hint', text: 'A lead for each project that knows its threads and its work. Starts when you first send it a message.' })),
-      modeGroup('project_leads', 'Project leads', [['off', 'Off'], ['on', 'On']], 'Saved'));
-
-    return h('div', { class: 'models' },
-      h('div', {},
-        h('h1', { text: 'Models and preferences' }),
-        h('p', { class: 'lede', text: 'Who runs what.' }),
-        noteEl()),
-      h('section', { 'aria-labelledby': 'tiers' },
-        h('h2', { id: 'tiers', text: 'Tiers' }),
-        lines,
-        h('div', { class: 'box' }, table),
-        h('span', { class: 'hint', text: '"Not used" means that provider can\'t be started at that tier. Effort is how hard the model thinks; "CLI default" leaves it to the CLI.' })),
-      h('section', { 'aria-labelledby': 'leads' },
-        h('h2', { id: 'leads', text: 'Leads' }),
-        h('div', { class: 'box rows' },
-          PROVIDERS.flatMap(([provider, name]) => [['lead', 'Leads run on'], ['sub-lead', 'Sub-leads run on']].map(([slot, title]) => h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: title }), h('span', { class: 'hint', text: `${name} model` })),
-            h('div', { class: 'ctl wide' }, modelPicker(provider, slot, { allowNone: false, withEffort: Boolean(EFFORTS[provider]) })))))
-          .concat([leadOrderRow(), leadNamesRow()]))),
-      h('section', { 'aria-labelledby': 'escalation' },
-        h('h2', { id: 'escalation', text: 'Escalation' }),
-        h('div', { class: 'escalation-text' },
-          String(data.escalation_text || '').split('\n').filter(Boolean).map((line) => h('p', { text: line }))),
-        h('div', { class: 'box rows' },
-          escRow('What steps up first', 'first', [['effort', 'Effort'], ['model', 'Model']]),
-          escRow('Highest effort', 'max_effort', [['high', 'High'], ['xhigh', 'xhigh'], ['max', 'Max']]),
-          escRow('Highest tier', 'max_tier', [['standard', 'Standard'], ['heavy', 'Heavy'], ['critical', 'Critical']]),
-          escRow('Ask me before', 'ask_before', [['never', 'Never'], ['critical', 'Critical'], ['any', 'Any step up']])),
-        h('span', { class: 'hint', text: 'The build follows these when a worker comes back wrong. Applies to builds started afterwards.' })),
-      h('section', { 'aria-labelledby': 'perm' },
-        h('h2', { id: 'perm', text: 'Permission mode' }),
-        h('div', { class: 'box rows' },
-          h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: `${permissionModeName} sessions` })),
-            claudeMode),
-          h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: `${codexModeName} sessions` }), h('span', { class: 'hint', text: codexHint })),
-            codexMode),
-          h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Asides' }), h('span', { class: 'hint', text: asideHint })),
-            asideMode))),
-      h('section', { 'aria-labelledby': 'thread-view' },
-        h('h2', { id: 'thread-view', text: 'Threads' }),
-        h('div', { class: 'box rows' },
-          assistantRow,
-          projectLeadsRow,
-          h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
-            modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
-          h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Merge pull requests when done' }), h('span', { class: 'hint', text: AUTO_MERGE_HINT })),
-            modeGroup('auto_merge', 'Merge pull requests when done', [['off', 'Off'], ['on', 'On']], 'Saved')),
-          data.auto_merge === 'on' ? h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Delete the branch after merging' }), h('span', { class: 'hint', text: 'When a thread merges its own pull request, it also deletes that branch on GitHub. The thread keeps its own copy on this machine.' })),
-            modeGroup('auto_merge_delete_branch', 'Delete the branch after merging', [['off', 'Off'], ['on', 'On']], 'Saved')) : null,
-          enterRow(),
-          folderRow(),
-          nameRow())),
-      h('section', { 'aria-labelledby': 'diagrams' },
-        h('h2', { id: 'diagrams', text: 'Diagrams' }),
-        h('div', { class: 'box', id: 'diagram-choices' })),
-      h('section', { 'aria-labelledby': 'others' },
-        h('h2', { id: 'others', text: 'Other agents' }),
-        h('div', { class: 'box rows' },
-          h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
-            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ...TOOLS.filter((t) => t.settings.reviewFamily).map((t) => [t.provider, t.label])].filter(([v]) => v === 'both' || harnessOn(v)))),
-          otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
-          otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
-          otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
-          otherAgentRow('designer', 'Mockups', 'Draws mockups of screens during planning'),
-          otherAgentRow('scout', 'Scout', 'Reads code for leads and sub-leads and reports back'),
-          otherAgentRow('scout-heavy', 'Scout for bigger changes', 'Checks worker changes of 200 to 800 lines for the sub-lead')),
-        h('span', { class: 'hint', text: 'For threads in the app. Terminal commands keep their own rules.' })));
+    return group('models', 'perm', 'Permission mode', rows(
+      h('div', { class: 'row-line' },
+        h('div', { class: 'what' }, h('span', { text: `${permissionModeName} sessions` })),
+        claudeMode),
+      h('div', { class: 'row-line' },
+        h('div', { class: 'what' }, h('span', { text: `${codexModeName} sessions` }), h('span', { class: 'hint', text: codexHint })),
+        codexMode),
+      h('div', { class: 'row-line' },
+        h('div', { class: 'what' }, h('span', { text: 'Asides' }), h('span', { class: 'hint', text: asideHint })),
+        asideMode)));
   }
+
+  const renderLeadNames = () => group('models', 'names-heading', 'Lead names', rows(leadNamesRow()));
 
   // ---------------------------------------------------------------- Behavior templates
 
@@ -687,7 +735,7 @@
       else saved = await api('/settings/templates', { method: 'POST', body });
       await reload(false);
       select(saved.id);
-      renderPanel();
+      paint('templates');
       setNote('Saved. Changes apply to agents started after you save.', false);
     } catch (e) { inlineErr(errHost, e.message); setNote('', false); }
   }
@@ -699,7 +747,7 @@
       const saved = await api('/settings/templates', { method: 'POST', body });
       await reload(false);
       select(saved.id);
-      renderPanel();
+      paint('templates');
       setNote('Duplicated.', false);
     } catch (e) { inlineErr(errHost, e.message); }
   }
@@ -709,7 +757,7 @@
       await api('/settings/templates/' + encodeURIComponent(draft.id), { method: 'DELETE' });
       await reload(false);
       select(data.templates[0] ? data.templates[0].id : 'new');
-      renderPanel();
+      paint('templates');
       setNote('Deleted.', false);
     } catch (e) { inlineErr(errHost, e.message); }
   }
@@ -718,7 +766,7 @@
     try {
       await api('/settings/templates/' + encodeURIComponent(draft.id), { method: 'PUT', body: { in_use: !draft.in_use } });
       await reload(true);
-      renderPanel();
+      paint('templates');
       setNote(draft.in_use ? 'In use for new sessions.' : 'No longer in use.', false);
     } catch (e) { inlineErr(errHost, e.message); }
   }
@@ -762,7 +810,7 @@
       if (draft.role !== 'worker') delete draft.switches.unsettled;
       else if (!draft.switches.unsettled) draft.switches.unsettled = 'ask';
       fullPrompt = null;
-      renderPanel();
+      paint('templates');
     });
     const scopeOptions = [h('option', { value: 'all', text: 'All projects' }),
       data.projects.map((p) => h('option', { value: p, text: projectLabel(p), title: p }))];
@@ -783,7 +831,7 @@
     const stuck = h('select', { id: 'tunsettled' },
       [['ask', 'Ask the lead'], ['decide', 'Pick, record it, keep going']].map(([v, l]) => h('option', { value: v, text: l })));
     stuck.value = sw.unsettled || 'ask';
-    stuck.addEventListener('change', () => { sw.unsettled = stuck.value; renderPanel(); });
+    stuck.addEventListener('change', () => { sw.unsettled = stuck.value; paint('templates'); });
     const files = h('input', { id: 'tfiles', type: 'number', min: 1, step: 1, value: sw.file_limit ? String(sw.file_limit) : '', placeholder: 'No limit' });
     files.addEventListener('input', () => {
       const n = parseInt(files.value, 10);
@@ -826,7 +874,7 @@
 
     const del = confirming
       ? h('button', { type: 'button', class: 'danger', id: 'confirm-delete', text: 'Really delete', onclick: () => deleteTemplate(errHost) })
-      : h('button', { type: 'button', class: 'danger', id: 'delete', text: 'Delete', onclick: () => { confirming = true; renderPanel(); } });
+      : h('button', { type: 'button', class: 'danger', id: 'delete', text: 'Delete', onclick: () => { confirming = true; paint('templates'); } });
 
     return h('div', { class: 'tpl-edit' },
       noteEl(),
@@ -873,7 +921,7 @@
     try {
       const res = await api('/threads?view=list');
       lessonThreads = Object.fromEntries((res.threads || []).map((t) => [t.id, t.title || t.slug || String(t.project || '').split('/').filter(Boolean).pop() || t.id]));
-      if (lessonEdit && section === 'templates') renderPanel();
+      if (lessonEdit) paint('templates');
     } catch { lessonThreads = lessonThreads || {}; }
   }
 
@@ -904,7 +952,7 @@
       await reload(false);
       lessonEdit = { role, texts: {}, removals: new Set(), confirming: null, history: lessonEdit.history };
       setNote(SAVED, false);
-      renderPanel();
+      paint('templates');
     } catch (e) {
       lessonEdit.saving = false;
       setLessonsBusy(false);
@@ -949,17 +997,17 @@
       const lost = keepLessonEdits(before);
       if (lost.length) {
         setNote('', false);
-        renderPanel();
+        paint('templates');
         showLessonLost(lost);
         return;
       }
       setNote(res.result === 'already' ? 'Already in your lessons' : SAVED, false);
-      renderPanel();
+      paint('templates');
     } catch (e) {
       if (e.status === 409) {
         await reload(false);
         const lost = keepLessonEdits(before);
-        renderPanel();
+        paint('templates');
         if (showLessonLost(lost, [e.message])) return;
       }
       inlineErr(errHost, e.message);
@@ -1018,7 +1066,7 @@
     return h('button', { type: 'button', class: 'history-toggle', 'aria-expanded': String(!!open), text: `History (${n})`, onclick: () => {
       lessonEdit.history = lessonEdit.history || new Set();
       if (open) lessonEdit.history.delete(id); else lessonEdit.history.add(id);
-      renderPanel();
+      paint('templates');
     } });
   }
 
@@ -1086,7 +1134,7 @@
       setNote(text, false);
       lost = before ? keepLessonEdits(before) : [];
     } catch (e) { setNote(e.message, true); }
-    renderPanel();
+    paint('templates');
     showLessonLost(lost);
   }
 
@@ -1114,9 +1162,9 @@
       const marks = lessonMarkers(item);
       const title = item.thread && lessonThreads && lessonThreads[item.thread];
       let remove;
-      if (removed) remove = h('button', { type: 'button', class: 'undo-remove', text: 'Undo', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.delete(item.id); renderPanel(); } });
-      else if (lessonEdit.confirming === item.id) remove = h('button', { type: 'button', class: 'danger confirm-remove', text: 'Really remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.add(item.id); lessonEdit.confirming = null; renderPanel(); } });
-      else remove = h('button', { type: 'button', class: 'danger remove-lesson', text: 'Remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.confirming = item.id; renderPanel(); } });
+      if (removed) remove = h('button', { type: 'button', class: 'undo-remove', text: 'Undo', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.delete(item.id); paint('templates'); } });
+      else if (lessonEdit.confirming === item.id) remove = h('button', { type: 'button', class: 'danger confirm-remove', text: 'Really remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.add(item.id); lessonEdit.confirming = null; paint('templates'); } });
+      else remove = h('button', { type: 'button', class: 'danger remove-lesson', text: 'Remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.confirming = item.id; paint('templates'); } });
       return h('li', { class: 'lesson-row' + (removed ? ' removed' : ''), 'data-id': item.id },
         field,
         h('div', { class: 'lesson-foot' },
@@ -1148,9 +1196,9 @@
   function renderTemplates() {
     if (selected === null) select(data.templates[0] ? data.templates[0].id : 'new');
     const list = h('nav', { class: 'tpl-list', 'aria-label': 'Templates' },
-      h('h1', { text: 'Behavior templates' }),
+      h('h2', { text: 'Behavior templates' }),
       h('p', { class: 'hint', text: "How each kind of agent works, on top of wheelchair's own rules." }),
-      h('button', { type: 'button', class: 'new', id: 'new-template', text: '+ New template', onclick: () => { select('new'); renderPanel(); } }),
+      h('button', { type: 'button', class: 'new', id: 'new-template', text: '+ New template', onclick: () => { select('new'); paint('templates'); } }),
       lessonsTools());
     for (const [role, label] of ROLES) {
       const items = data.templates.filter((t) => t.role === role);
@@ -1163,7 +1211,7 @@
         const id = 'lessons:' + role;
         list.append(h('button', {
           type: 'button', class: 'tpl-item tpl-lessons', 'data-lessons': role, 'aria-current': String(selected === id),
-          onclick: () => { select(id); renderPanel(); },
+          onclick: () => { select(id); paint('templates'); },
         }, h('span', { class: 'nm', text: 'Lessons learned' }), h('span', { class: 'tag agent-tag', text: 'Written by agents · ' + lessons.length + (staleN ? ` · ${staleN} may be out of date` : '') + (waitingN ? ` · ${waitingN} waiting to add` : '') })));
       }
       for (const t of items) {
@@ -1172,7 +1220,7 @@
         if (t.scope_missing) tags.push('project no longer listed');
         list.append(h('button', {
           type: 'button', class: 'tpl-item', 'data-id': t.id, 'aria-current': String(selected === t.id),
-          onclick: () => { select(t.id); renderPanel(); },
+          onclick: () => { select(t.id); paint('templates'); },
         }, h('span', { class: 'nm', text: t.name }), h('span', { class: 'tag', text: tags.join(' · ') })));
       }
     }
@@ -1277,7 +1325,7 @@
 
     const out = h('div', { class: 'writing' },
       h('div', {},
-        h('h1', { text: 'Writing style' }),
+        h('h2', { text: 'Writing style' }),
         h('p', { class: 'lede', text: 'How leads write to you. Only leads follow this: sub-leads, workers, reviewers and checkers never write to you, so they skip it and keep their full attention on the work.' }),
         h('div', { class: 'covers' }, h('span', { class: 'lbl', text: 'Covers:' }),
           ['Thread messages', 'Question cards', 'Plan approved and Done cards'].map((t) => h('span', { class: 'chip', text: t })))),
@@ -1289,11 +1337,12 @@
           row('Technical terms', 'Whether the lead can assume you know a term', h('div', { class: 'ctl wide' }, terms)))),
       h('section', { 'aria-labelledby': 'ban' },
         h('h2', { id: 'ban', text: 'Never say' }),
-        chips,
-        h('span', { class: 'hint', text: 'This takes over from the old wording list, and only leads see it now.' })),
+        h('div', { class: 'box ban' }, chips,
+          h('span', { class: 'hint', text: 'This takes over from the old wording list, and only leads see it now.' }))),
       h('section', {},
-        h('div', { class: 'head-line' }, h('label', { for: 'style-text', text: 'In your own words' }), count),
-        own),
+        h('label', { class: 'own-words', for: 'style-text', text: 'In your own words' }),
+        own,
+        count),
       h('section', { 'aria-labelledby': 'prev' },
         h('h2', { id: 'prev', text: 'Same message, before and after' }),
         h('div', { class: 'compare' },
@@ -1311,7 +1360,7 @@
             styleDraft = structuredClone(res.style);
             styleNote = 'Saved';
             inlineErr(errHost, '');
-            renderPanel();
+            paint('writing');
           } catch (e) { styleNote = ''; saved.textContent = ''; inlineErr(errHost, e.message); }
         } }),
         h('span', { class: 'hint', text: 'Leads pick it up on their next message.' }),
@@ -1338,8 +1387,10 @@
   let justAdded = null;        // an account id whose Sign in buttons are offered
   let openProvider = null;     // the provider whose account table is open on Usage
   let balDraft = null;         // unsaved balancing edits
-  let balNote = { text: '', bad: false };
+  let balNote = { box: null, text: '' }; // which balancing box reports its last Save
   let signCard = null;         // {account, machine, el, timers…} while a sign-in card is open
+  let usageAsks = 0;           // only the newest usage request's answer is kept
+  let reserveReads = 0;        // a Save outdates a reserved-provider read still on its way
 
   const when = (iso) => {
     const d = new Date(iso);
@@ -1367,24 +1418,41 @@
   const signinHint = (st, tool) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : (tool || TOOLS.find((t) => t.settings.signInKind === 'key')).settings.keyPrompt);
   const safeHref = (u) => (/^https?:\/\//i.test(String(u)) ? String(u) : '#');
 
-  async function refreshUsage() {
-    try {
-      usage = await api('/usage');
-      usageError = '';
-    } catch (e) { usageError = e.message; }
-    // A repaint would drop what is being typed, so it waits while a form is open.
-    const typing = document.activeElement && panel.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
-    if (!editing && !adding && !typing && (section === 'accounts' || section === 'usage')) renderPanel();
+  // A repaint of Accounts would drop what is being typed, so it waits while a form is open.
+  function accountsBusy() {
+    const focused = document.activeElement;
+    const typing = focused && blockHost('accounts')?.contains(focused) && /^(INPUT|SELECT|TEXTAREA)$/.test(focused.tagName);
+    return Boolean(editing || adding || typing);
   }
 
-  // The timer runs only while Accounts or Usage is shown.
+  async function refreshUsage() {
+    const ask = ++usageAsks;
+    let next = null; let failure = '';
+    try { next = await api('/usage'); } catch (e) { failure = e.message; }
+    if (ask !== usageAsks) return;
+    if (next) usage = next;
+    usageError = failure;
+    paint('usage');
+    if (!accountsBusy()) paint('accounts');
+  }
+
+  // After a sign-in or an account change. The hub keeps each machine's answer for 15 seconds;
+  // the fresh harness read drops it, so it goes first and the usage read after it is current too.
+  async function refreshStatus() {
+    await loadHarnesses(true);
+    await refreshUsage();
+  }
+
+  // Each category's live work runs only while it is open: Harnesses polling and the account
+  // readings in AI providers, the readings in Usage and balancing.
   function syncSection() {
-    if (section === 'harnesses') enterHarnesses(); else stopHarnesses();
-    const live = section === 'accounts' || section === 'usage';
+    if (section === 'providers') enterHarnesses(); else stopHarnesses();
+    const live = section === 'providers' || section === 'usage';
     if (live && !usageTimer) usageTimer = window.wcPoller(refreshUsage, 30000);
     if (!live && usageTimer) { usageTimer.stop(); usageTimer = null; }
     if (live) refreshUsage();
     if (section === 'usage') {
+      readReserved();
       fetch(API + '/usage/seen', { method: 'POST' }).then(() => window.dispatchEvent(new CustomEvent('wc-usage-seen'))).catch(() => {});
     }
   }
@@ -1406,13 +1474,13 @@
     if (!signCard) return;
     clearInterval(signCard.poll); clearTimeout(signCard.close);
     signCard.el.remove();
-    const inRow = signCard.harness;
     signCard = null;
-    refreshUsage();
-    if (inRow) loadHarnesses(true);
+    refreshStatus();
   }
 
-  function openSignin(account, machine, harness) {
+  // `atCards` opens the card with the provider's account cards (the Harnesses link), not at the
+  // top of Accounts (a card's own Sign in).
+  function openSignin(account, machine, atCards) {
     closeSignin();
     const terminal = `/wheelchair/app/terminal?login=${encodeURIComponent(account.id)}&machine=${encodeURIComponent(machine)}`;
     const status = h('p', { class: 'hint waiting', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Starting sign-in on ' + machine + '…'));
@@ -1431,7 +1499,7 @@
         inlineErr(codeBox, e.message);
         if (e.status === 409 && toolOf(account.provider).settings.signInKind === 'key') {
           field.value = '';
-          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine, harness) }));
+          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine, atCards) }));
         }
       }
     } });
@@ -1442,9 +1510,9 @@
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
       h('div', { class: 'head-line' }, h('h2', { text: `Sign in ${account.name} on ${machine}` }), closeBtn),
       status, actions, codeBox, pasteWrap, h('div', { class: 'actions' }, termLink));
-    const card = { account: account.id, provider: account.provider, machine, harness: harness || null, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
+    const card = { account: account.id, provider: account.provider, machine, atCards: Boolean(atCards), el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
     signCard = card;
-    const hostEl = harness ? document.querySelector(`[data-signin-host="${harness}"]`) : document.getElementById('signin-host');
+    const hostEl = atCards ? providerGroup(account.provider)?.querySelector('.prov-signin') : document.getElementById('signin-host');
     if (hostEl) hostEl.replaceChildren(root);
 
     const fail = () => {
@@ -1510,13 +1578,16 @@
 
   // ---- Accounts panel
 
-  function windowLine(label, w, at) {
-    if (!w) return h('div', { class: 'win' }, h('span', { class: 'k', text: label }), h('span', { class: 'v dim', text: 'no reading yet' }));
-    const expired = w.resets_at && Date.parse(w.resets_at) <= Date.now();
-    const used = expired ? 0 : w.used;
-    return h('div', { class: 'win' }, h('span', { class: 'k', text: label }),
-      h('span', { class: 'meter' }, h('span', { style: `width:${Math.min(100, Math.max(0, used))}%` })),
-      h('span', { class: 'v', text: `${pct(used)} used` + (w.resets_at && !expired ? `, resets ${when(w.resets_at)}` : '') }));
+  // One line on an account card; the bars and the per-account table are in Usage and balancing.
+  function usageLine(reading) {
+    const part = (label, w) => {
+      if (!w) return null;
+      const expired = w.resets_at && Date.parse(w.resets_at) <= Date.now();
+      return `${label} ${pct(expired ? 0 : w.used)} used`;
+    };
+    const parts = reading ? [part('5-hour', reading.five_hour), part('week', reading.week)].filter(Boolean) : [];
+    if (!parts.length) return 'no reading yet';
+    return [...parts, reading.at && 'as of ' + when(reading.at)].filter(Boolean).join(' · ');
   }
 
   async function mutate(host, fn) {
@@ -1525,7 +1596,8 @@
     editing = null;
     data = await api('/settings');
     await refreshUsage();
-    renderPanel();
+    paint('accounts');
+    refreshStatus();
     return true;
   }
 
@@ -1558,17 +1630,14 @@
         h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[stateName(st)] || stateName(st)) }),
         st && st.warning && h('span', { class: 'mstate note', text: st.warning }),
         stateName(st) !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) })))),
-      h('div', { class: 'wins' },
-        windowLine('5-hour window', a.reading && a.reading.five_hour),
-        windowLine('This week', a.reading && a.reading.week),
-        h('span', { class: 'hint', text: a.reading && a.reading.at ? 'as of ' + when(a.reading.at) : 'no reading yet' })));
+      h('p', { class: 'hint acct-usage', text: usageLine(a.reading) }));
 
     const edit = editing && editing.id === a.id ? editing.kind : null;
     if (edit === 'rename') {
       const name = h('input', { value: a.name, 'aria-label': 'Account name' });
       card.append(h('div', { class: 'actions' }, name,
         h('button', { type: 'button', class: 'primary small', text: 'Save', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body: { name: name.value } })) }),
-        h('button', { type: 'button', class: 'small', text: 'Cancel', onclick: () => { editing = null; renderPanel(); } })));
+        h('button', { type: 'button', class: 'small', text: 'Cancel', onclick: () => { editing = null; paint('accounts'); } })));
     } else if (edit === 'plan') {
       const plan = planSelect(a.provider, a.plan);
       const weight = h('input', { type: 'number', min: '0.1', step: 'any', placeholder: 'weight (optional)', 'aria-label': 'Weight override' });
@@ -1578,18 +1647,18 @@
           if (weight.value.trim() !== '') body.weight = Number(weight.value);
           return mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body }));
         } }),
-        h('button', { type: 'button', class: 'small', text: 'Cancel', onclick: () => { editing = null; renderPanel(); } })),
+        h('button', { type: 'button', class: 'small', text: 'Cancel', onclick: () => { editing = null; paint('accounts'); } })),
       h('span', { class: 'hint', text: 'Weight is how big this account is next to the others. Leave it blank to use the plan\'s.' }));
     } else if (edit === 'remove') {
       card.append(h('div', { class: 'actions' }, h('span', { text: isDefault ? `Remove the default login? Agents stop using this machine's own ${PROVIDER_NAME[a.provider]} login.` : `Remove ${a.name}?` }),
         h('button', { type: 'button', class: 'danger small', text: 'Remove', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'DELETE' })) }),
-        h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { editing = null; renderPanel(); } })));
+        h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { editing = null; paint('accounts'); } })));
     } else {
       card.append(h('div', { class: 'actions' },
         h('button', { type: 'button', class: 'small', text: a.paused ? 'Resume' : 'Pause', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body: { paused: !a.paused } })) }),
-        h('button', { type: 'button', class: 'small', text: 'Rename', onclick: () => { editing = { id: a.id, kind: 'rename' }; renderPanel(); } }),
-        h('button', { type: 'button', class: 'small', text: 'Change plan', onclick: () => { editing = { id: a.id, kind: 'plan' }; renderPanel(); } }),
-        h('button', { type: 'button', class: 'small', text: 'Remove', onclick: () => { editing = { id: a.id, kind: 'remove' }; renderPanel(); } })));
+        h('button', { type: 'button', class: 'small', text: 'Rename', onclick: () => { editing = { id: a.id, kind: 'rename' }; paint('accounts'); } }),
+        h('button', { type: 'button', class: 'small', text: 'Change plan', onclick: () => { editing = { id: a.id, kind: 'plan' }; paint('accounts'); } }),
+        h('button', { type: 'button', class: 'small', text: 'Remove', onclick: () => { editing = { id: a.id, kind: 'remove' }; paint('accounts'); } })));
     }
     if (justAdded === a.id) {
       card.append(h('div', { class: 'actions just-added' }, h('span', { text: 'Added. Sign in on:' }),
@@ -1605,8 +1674,9 @@
       adding = null;
       data = await api('/settings');
       await refreshUsage();
-      renderPanel();
-    } catch (e) { adding.warn = false; renderPanel(); inlineErr(document.querySelector('.add-form') || form, e.message); }
+      paint('accounts');
+      refreshStatus();
+    } catch (e) { adding.warn = false; paint('accounts'); inlineErr(document.querySelector('.add-form') || form, e.message); }
   }
 
   function addProviders() { return Object.entries(PROVIDER_NAME).filter(([v]) => !toolOf(v).singleAccount && harnessOn(v)); }
@@ -1614,15 +1684,15 @@
   function addForm() {
     const offered = addProviders();
     if (!offered.length) return null;
-    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: offered[0][0], name: '', plan: 'unknown', warn: false }; renderPanel(); } });
+    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: offered[0][0], name: '', plan: 'unknown', warn: false }; paint('accounts'); } });
     const form = h('form', { class: 'box add-form', onsubmit: (ev) => {
       ev.preventDefault();
       if (!adding.name.trim()) { inlineErr(form, 'Give the account a name.'); return; }
       const same = (data.accounts || []).filter((a) => a.provider === adding.provider).length;
-      if (toolOf(adding.provider).settings.accountWarning && same >= 1 && !adding.warn) { adding.warn = true; renderPanel(); return; }
+      if (toolOf(adding.provider).settings.accountWarning && same >= 1 && !adding.warn) { adding.warn = true; paint('accounts'); return; }
       saveAdd(form);
     } });
-    const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; renderPanel(); } },
+    const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; paint('accounts'); } },
       offered.map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
     const name = h('input', { id: 'add-name', value: adding.name, 'aria-label': 'Account name', placeholder: 'Name, e.g. Work', required: true, oninput: () => { adding.name = name.value; } });
     const plan = planSelect(adding.provider, adding.plan);
@@ -1633,10 +1703,10 @@
       form.append(h('div', { class: 'hu', role: 'alert', id: 'claude-warning' }, h('span', { class: 'msg', text: toolOf(adding.provider).settings.accountWarning }),
         h('div', { class: 'hu-actions' },
           h('button', { type: 'button', class: 'primary small', id: 'add-anyway', text: 'Add anyway', onclick: () => saveAdd(form) }),
-          h('button', { type: 'button', class: 'small', id: 'add-cancel', text: 'Cancel', onclick: () => { adding = null; renderPanel(); } }))));
+          h('button', { type: 'button', class: 'small', id: 'add-cancel', text: 'Cancel', onclick: () => { adding = null; paint('accounts'); } }))));
     } else {
       form.append(h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'primary', text: 'Save' }),
-        h('button', { type: 'button', text: 'Cancel', onclick: () => { adding = null; renderPanel(); } })));
+        h('button', { type: 'button', text: 'Cancel', onclick: () => { adding = null; paint('accounts'); } })));
     }
     return form;
   }
@@ -1650,13 +1720,14 @@
 
   function renderAccounts() {
     return h('div', { class: 'models accounts' },
-      h('div', {}, h('h1', { text: 'Accounts' }),
+      h('div', {}, h('h2', { text: 'Accounts' }),
         h('p', { class: 'lede', text: 'The logins agents run on. New sessions pick the account with the most room.' }),
         usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
-      h('div', { id: 'signin-host' }, signCard && !signCard.harness ? signCard.el : null),
+      h('div', { id: 'signin-host' }, signCard && !signCard.atCards ? signCard.el : null),
       Object.entries(PROVIDER_NAME).filter(([provider]) => harnessOn(provider)).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
-        h('h2', { text: label }),
+        h('h3', { text: label }),
         toolOf(provider).settings.accountPolicy && h('p', { class: 'hint', text: toolOf(provider).settings.accountPolicy }),
+        h('div', { class: 'prov-signin' }, signCard && signCard.atCards && signCard.provider === provider ? signCard.el : null),
         accountRows(provider).filter((a) => !toolOf(provider).singleAccount || a.id === `default-${provider}`).map(accountCard),
         !(data.accounts || []).some((a) => a.id === `default-${provider}`) && restoreDefault(provider))),
       addForm());
@@ -1675,6 +1746,8 @@
     for (const k of ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back']) balDraft[k] = structuredClone(data[k]);
   }
 
+  const orderBlock = (key) => (key === 'lead_order' ? 'lead-order' : 'balancing');
+
   // An order editor: the providers in order, up/down to move; leads may end in "then whatever's left".
   function orderEditor(key, label) {
     ensureDraft();
@@ -1692,7 +1765,7 @@
       const vis = list.slice();
       for (let i = 0; i < total; i++) if (out[i] === null) out[i] = vis.length ? vis.shift() : rest.shift();
       balDraft[key] = hasAny && key === 'lead_order' ? [...out, 'any'] : out;
-      renderPanel();
+      paint(orderBlock(key));
     };
     const move = (i, d) => { const next = real.slice(); const [item] = next.splice(i, 1); next.splice(i + d, 0, item); commit(next); };
     return h('div', { class: 'order', 'data-order': key, role: 'group', 'aria-label': label },
@@ -1702,22 +1775,62 @@
         real.length > 1 && h('button', { type: 'button', class: 'small', text: 'Remove', 'aria-label': `Leave ${PROVIDER_NAME[p]} out`, onclick: () => commit(real.filter((x) => x !== p)) })))),
       missing.map((p) => h('button', { type: 'button', class: 'small', text: `+ ${PROVIDER_NAME[p]}`, onclick: () => commit([...real, p]) })),
       key === 'lead_order' && h('label', { class: 'check' },
-        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...all, 'any'] : all.slice(); renderPanel(); } }),
+        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...all, 'any'] : all.slice(); paint(orderBlock(key)); } }),
         h('span', { text: "then whatever's left" })));
   }
 
-  async function saveBalancing(keys, host) {
+  // The two boxes share one draft. A Save sends its own keys and refreshes only those, so the
+  // other box's unsaved edits stay; both are rebuilt for the reserved provider's name.
+  // `balNote.box` says which box reports it.
+  async function saveBalancing(box, keys, host) {
     try {
       const res = await api('/settings/balancing', { method: 'PUT', body: balancingBody(keys) });
-      for (const k of keys) data[k] = res[k] !== undefined ? res[k] : balDraft[k];
+      for (const k of keys) {
+        data[k] = res[k] !== undefined ? res[k] : balDraft[k];
+        balDraft[k] = structuredClone(data[k]);
+      }
+      reserveReads++;
       data.reserved_provider = res.reserved_provider;
-      balDraft = null;
       inlineErr(host, '');
-      renderPanel();
-      setNote(SAVED, false);
+      balNote = { box, text: SAVED };
+      paint('lead-order', 'balancing');
       loadHarnesses(true);
-    } catch (e) { inlineErr(host, e.message); setNote('', false); }
+    } catch (e) {
+      inlineErr(host, e.message);
+      balNote = { box, text: '' };
+      const status = blockHost(box)?.querySelector('.note');
+      if (status) status.textContent = '';
+    }
   }
+  // The words that name the hub's reserved provider.
+  function reserveTexts() {
+    const provider = data.reserved_provider || "the lead's provider";
+    return {
+      save: `Save ${provider} for leads`,
+      margin: `When ${provider} is projected to have less than this left at refill, ticked roles go to another provider, or wait if there is none`,
+      held: `Held back when ${provider} runs short`,
+    };
+  }
+
+  // Opening Usage and balancing reads the reserved provider again (a harness may have been
+  // switched elsewhere). Only the words change, in place, so nothing typed or focused moves.
+  async function readReserved() {
+    const read = ++reserveReads;
+    let res;
+    try { res = await api('/settings'); } catch { return; }
+    if (read !== reserveReads) return;
+    data.reserved_provider = res.reserved_provider;
+    const box = document.getElementById('bal-save-lead');
+    if (!box) return;
+    const texts = reserveTexts();
+    const rowOf = (id) => document.getElementById(id).closest('.row-line');
+    box.setAttribute('aria-label', texts.save);
+    rowOf('bal-save-lead').querySelector('.what span').textContent = texts.save;
+    rowOf('bal-margin').querySelector('.hint').textContent = texts.margin;
+    rowOf('bal-held-worker').querySelector('.what span').textContent = texts.held;
+  }
+
+  const boxNote = (box) => h('p', { class: 'note', role: 'status', 'data-box': box, text: balNote.box === box ? balNote.text : '' });
 
   const numField = (key, label, hint, max) => h('div', { class: 'row-line' },
     h('div', { class: 'what' }, h('span', { text: label }), h('span', { class: 'hint', text: hint })),
@@ -1739,7 +1852,7 @@
           h('span', { class: 'usage-spend-text', text: spendText(f.spend) })));
     }
     return h('div', { class: 'usage-prov' + (f.amber ? ' amber' : ''), 'data-provider': provider },
-      h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; renderPanel(); } },
+      h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; paint('usage'); } },
         h('span', { class: 'usage-name', text: f.label }),
         h('span', { class: 'bar', role: 'img', 'aria-label': left === null ? 'no reading' : pct(left * 100) + ' of the week left' },
           h('span', { style: `width:${left === null ? 0 : Math.round(Math.min(1, Math.max(0, left)) * 100)}%` })),
@@ -1753,11 +1866,19 @@
       const r = a.reading || {};
       const cell = (label, text) => h('td', { 'data-label': label, text });
       const gone = (w) => !w || (w.resets_at && Date.parse(w.resets_at) <= Date.now());
+      const used = (label, w, windowName) => {
+        if (!w) return cell(label, '–');
+        const n = gone(w) ? 0 : w.used;
+        return h('td', { 'data-label': label },
+          h('span', { class: 'meter', role: 'img', 'aria-label': `${pct(n)} of the ${windowName} window used` },
+            h('span', { style: `width:${Math.min(100, Math.max(0, n))}%` })),
+          ' ' + pct(n));
+      };
       return h('tr', { class: a.next ? 'next' : '', 'data-account': a.id },
         h('th', { scope: 'row', 'data-label': 'Account' }, a.name, a.next && h('span', { class: 'v-badge ok', text: 'next' })),
-        cell('5-hour used', r.five_hour ? pct(gone(r.five_hour) ? 0 : r.five_hour.used) : '–'),
+        used('5-hour used', r.five_hour, '5-hour'),
         cell('5-hour resets', r.five_hour && r.five_hour.resets_at && !gone(r.five_hour) ? when(r.five_hour.resets_at) : '–'),
-        cell('Week used', r.week ? pct(gone(r.week) ? 0 : r.week.used) : '–'),
+        used('Week used', r.week, 'week'),
         cell('Week resets', r.week && r.week.resets_at && !gone(r.week) ? when(r.week.resets_at) : '–'),
         h('td', { 'data-label': 'Why', class: 'why', text: a.reason || '' }));
     });
@@ -1765,13 +1886,22 @@
   }
 
   function renderUsage() {
+    return h('div', { class: 'models usage' },
+      h('div', {}, h('h2', { text: 'Usage' }),
+        h('p', { class: 'lede', text: 'How much of this week is left, per provider.' }),
+        usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
+      h('section', { class: 'usage-bars', 'aria-label': 'Providers' },
+        usage ? Object.entries(usage.providers).map(([p, f]) => providerBar(p, f)) : h('p', { class: 'v-empty waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Loading usage…'))));
+  }
+
+  function renderBalancing() {
     ensureDraft();
     const settingsBox = h('section', { class: 'balancing', 'aria-labelledby': 'bal' });
-    const provider = data.reserved_provider || "the lead's provider";
-    const reserveLabel = `Save ${provider} for leads`;
+    const texts = reserveTexts();
+    const reserveLabel = texts.save;
     const within = h('select', { id: 'bal-within', 'aria-label': 'Within a provider', onchange: (ev) => { balDraft.within = ev.target.value; } },
       WITHIN.map(([v, l]) => h('option', { value: v, text: l, selected: v === balDraft.within })));
-    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing(['worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'], settingsBox) });
+    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing('balancing', ['worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'], settingsBox) });
     settingsBox.append(
       h('h2', { id: 'bal', text: 'Balancing' }),
       h('div', { class: 'box rows' },
@@ -1781,28 +1911,22 @@
         numField('notify_below', 'Warn me below (%)', 'Shows a dot on Settings when a provider drops under this', 100),
         h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: reserveLabel }), h('span', { class: 'hint', text: 'Sessions with no provider preference try other providers first. Does not hold anyone back; the ticks below do.' })),
           h('input', { type: 'checkbox', id: 'bal-save-lead', checked: !!balDraft.save_for_leads, 'aria-label': reserveLabel, onchange: (ev) => { balDraft.save_for_leads = ev.target.checked; } })),
-        numField('margin', 'Keep for leads (%)', `When ${provider} is projected to have less than this left at refill, ticked roles go to another provider, or wait if there is none`, 100),
-        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: `Held back when ${provider} runs short` })),
+        numField('margin', 'Keep for leads (%)', texts.margin, 100),
+        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: texts.held })),
           h('div', { class: 'ctl' }, [['worker', 'Workers'], ['reviewer', 'Reviewers'], ['verifier', 'Verifiers'], ['mapper', 'Mappers'], ['designer', 'Designers']].map(([role, label]) =>
             h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'bal-held-' + role, checked: balDraft.held_back[role], 'aria-label': label, onchange: (ev) => { balDraft.held_back[role] = ev.target.checked; } }), h('span', { text: label })))))),
-      h('div', { class: 'actions' }, save), noteEl());
-    return h('div', { class: 'models usage' },
-      h('div', {}, h('h1', { text: 'Usage' }),
-        h('p', { class: 'lede', text: 'How much of this week is left, per provider.' }),
-        usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
-      h('section', { class: 'usage-bars', 'aria-label': 'Providers' },
-        usage ? Object.entries(usage.providers).map(([p, f]) => providerBar(p, f)) : h('p', { class: 'v-empty waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Loading usage…'))),
-      settingsBox);
+      h('div', { class: 'actions' }, save), boxNote('balancing'));
+    return h('div', { class: 'models balance' }, settingsBox);
   }
 
-  // The lead order editor on the Models panel, under the lead model pickers.
-  function leadOrderRow() {
+  // The lead provider order, in its own box above Balancing, with its own Save.
+  function renderLeadOrder() {
     ensureDraft();
     const row = h('div', { class: 'row-line lead-order' },
       h('div', { class: 'what' }, h('span', { text: 'Leads try' }), h('span', { class: 'hint', text: 'Which provider a new lead starts on, in order' })),
       orderEditor('lead_order', 'Lead order'),
-      h('button', { type: 'button', class: 'primary small', id: 'lead-order-save', text: 'Save', onclick: () => saveBalancing(['lead_order'], row) }));
-    return row;
+      h('button', { type: 'button', class: 'primary small', id: 'lead-order-save', text: 'Save', onclick: () => saveBalancing('lead-order', ['lead_order'], row) }));
+    return group('models lead-order-box', 'lead-order-heading', 'Lead order', rows(row), boxNote('lead-order'));
   }
 
   // Background state belongs to a section visit, not to its replaceable DOM.
@@ -1838,7 +1962,7 @@
     v.opacity = m.opacity; v.image = null; v.token = bg.acquire();
   }
   function repaintBackground(v) {
-    if (section === 'background' && backgroundVisit === v) renderPanel();
+    if (youShown() && backgroundVisit === v) paint('background');
   }
   function backgroundStateKey(state) {
     const m = state.metadata;
@@ -1925,7 +2049,7 @@
       const cancel = document.getElementById('background-cancel'); if (cancel) cancel.disabled = false;
     });
     return h('div', { class: 'background-editor' },
-      h('div', {}, h('h1', { text: 'Background Customization' }), h('p', { class: 'lede', text: 'Previews stay on this page. Save applies your background across devices.' })),
+      h('div', {}, h('h2', { text: 'Background Customization' }), h('p', { class: 'lede', text: 'Previews stay on this page. Save applies your background across devices.' })),
       h('div', { class: 'box' }, h('label', {}, 'Choose an image', input),
         v.filename && h('p', { class: 'hint', text: v.filename + ' · ' + (v.size / 1024 / 1024).toFixed(2) + ' MiB' }),
         h('label', {}, 'Visibility ', value, slider),
@@ -1940,12 +2064,17 @@
         (v.error || state.error) && h('p', { class: 'inline-err', role: 'alert', text: v.error || state.error }),
         h('p', { class: 'note', role: 'status', text: v.status || (v.pending ? 'Loading image…' : (!m ? 'Loading background…' : '')) })));
   }
+  function syncBackground(state) {
+    if (!bg || !data || !youShown()) return;
+    const v = backgroundVisit;
+    // The phone list can uncover an existing editor that missed a saved change or restore.
+    if (!v || (!v.dirty && !v.pending && v.renderedState !== backgroundStateKey(state || bg.current()))) {
+      paint('background');
+    }
+  }
   if (bg) {
-    bg.subscribe(state => {
-      if (section === 'background' && backgroundVisit && !backgroundVisit.dirty && !backgroundVisit.pending
-          && backgroundVisit.renderedState !== backgroundStateKey(state)) repaintBackground(backgroundVisit);
-    });
-    window.addEventListener('backgroundrestore', () => { discardBackground(); if (section === 'background') repaintBackground(ensureBackground()); });
+    bg.subscribe(syncBackground);
+    window.addEventListener('backgroundrestore', () => { discardBackground(); syncBackground(); });
     window.addEventListener('backgrounddispose', discardBackground);
   }
 
@@ -1979,7 +2108,7 @@
     clearTimeout(hz.reachTimer); hz.reachTimer = null;
     hz.checked = null;
   }
-  function paintHarnesses() { if (section === 'harnesses') renderPanel(); }
+  function paintHarnesses() { paint('harnesses'); }
 
   function enterHarnesses() {
     stopHarnesses();
@@ -2081,7 +2210,7 @@
   // A just-installed CLI's version is read in the background on the machine, so the first
   // fresh status can say "installed" with no version yet. Re-fetch a few times, 2 s apart,
   // until the version shows, so the row fills in without reopening the section. A sign-in
-  // card opened meanwhile stops the retries: a repaint would take focus from its fields.
+  // card opened meanwhile stops the retries; closing it reads the status again anyway.
   async function refreshAfterInstall(machine, provider, tries = 4, first = true) {
     if (!first && signCard) return;
     await loadHarnesses(true);
@@ -2097,8 +2226,13 @@
       const res = await api('/settings/harnesses/' + encodeURIComponent(provider), { method: 'PUT', body: { enabled } });
       if (data && res && res.harnesses) data.harnesses = res.harnesses;
     } catch (e) { hz.rowErr[provider] = e.message; paintHarnesses(); return; }
-    if (!enabled && signCard && (signCard.harness === provider || signCard.provider === provider)) closeSignin();
-    if (adding) { const first = addProviders()[0]; if (!first) adding = null; else if (!addProviders().some(([v]) => v === adding.provider)) { adding.provider = first[0]; adding.plan = 'unknown'; adding.warn = false; } if (section === 'accounts') renderPanel(); }
+    if (!enabled && signCard && signCard.provider === provider) closeSignin();
+    // Accounts follows the switch at once, unless an account edit is open. An Add account form
+    // left on a provider that is now off moves to one still offered, which needs the repaint.
+    const chosen = adding && adding.provider;
+    if (adding) { const first = addProviders()[0]; if (!first) adding = null; else if (!addProviders().some(([v]) => v === adding.provider)) { adding.provider = first[0]; adding.plan = 'unknown'; adding.warn = false; } }
+    const moved = Boolean(chosen) && (!adding || adding.provider !== chosen);
+    if (!editing && (moved || !accountsBusy())) paint('accounts');
     paintHarnesses();
     await loadHarnesses(true);
     const machine = harnessMachine();
@@ -2106,16 +2240,27 @@
     else if (!enabled && machine) { stopPoll(machine.name + '/' + provider); delete hz.jobs[machine.name + '/' + provider]; paintHarnesses(); }
   }
 
-  // The first account of the provider that is neither retired nor paused.
+  // The first account card of the provider that can sign in: neither retired nor paused.
   function signinAccount(provider) {
-    const mine = ((data && data.accounts) || []).filter((a) => a.provider === provider && !((data.retired_accounts || []).includes(a.id)));
+    const mine = ((data && data.accounts) || []).filter((a) => a.provider === provider && !((data.retired_accounts || []).includes(a.id)) && (!toolOf(provider).singleAccount || a.id === `default-${provider}`));
     return { usable: mine.find((a) => !a.paused) || null, any: mine.length > 0 };
   }
 
   function linkReasons(text) {
-    return String(text).split(/(Workers try first|Leads try)/).map((part) => (part === 'Workers try first'
-      ? h('a', { href: '#usage', text: part }) : part === 'Leads try' ? h('a', { href: '#models', text: part }) : part));
+    return String(text).split(/(Workers try first|Leads try)/).map((part) => (part === 'Workers try first' || part === 'Leads try'
+      ? h('a', { href: '#usage', text: part }) : part));
   }
+
+  // Accounts is the block below Harnesses, so its links scroll there.
+  const accountsLink = (text) => h('a', { href: '#providers', text, onclick: () => blockHost('accounts')?.scrollIntoView() });
+
+  const providerGroup = (provider) => blockHost('accounts')?.querySelector(`.prov-group[data-provider="${provider}"]`);
+
+  // Sign-in happens with the account cards: the link opens it there, for the machine shown here.
+  const signinLink = (account, machine, name) => h('a', { class: 'btn-link primary', href: '#providers', text: 'Sign in', 'aria-label': `Sign in ${name}`, onclick: () => {
+    openSignin(account, machine, true);
+    providerGroup(account.provider)?.scrollIntoView();
+  } });
 
   function harnessRow(info, machine) {
     const [provider, name, vendor, docs] = info;
@@ -2154,9 +2299,9 @@
         else if (st.recipe === true) actions.append(install('Install'));
       } else if (!st.signed_in) {
         const { usable, any } = signinAccount(provider);
-        if (usable) actions.append(h('button', { type: 'button', class: 'small primary', text: 'Sign in', 'aria-label': `Sign in ${name}`, onclick: () => { openSignin(usable, machine.name, provider); paintHarnesses(); } }));
-        else if (any) actions.append(h('span', { class: 'hint', text: `All ${name} accounts are paused ` }), h('a', { href: '#accounts', text: 'Open Accounts' }));
-        else actions.append(h('a', { href: '#accounts', text: 'Add an account' }));
+        if (usable) actions.append(signinLink(usable, machine.name, name));
+        else if (any) actions.append(h('span', { class: 'hint', text: `All ${name} accounts are paused ` }), accountsLink('Open Accounts'));
+        else actions.append(accountsLink('Add an account'));
       }
     }
     const confirming = hz.confirmOff === provider;
@@ -2178,13 +2323,12 @@
         h('button', { type: 'button', class: 'danger small', text: 'Leave it out', onclick: () => setHarness(provider, false) }),
         h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { hz.confirmOff = null; paintHarnesses(); } })),
       (hz.rowErr[provider] || (job && job.state === 'running' && job.cancelErr)) && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] || job.cancelErr }),
-      extra,
-      h('div', { class: 'h-signin', 'data-signin-host': provider }, signCard && signCard.harness === provider && signCard.machine === machine.name ? signCard.el : null));
+      extra);
     return row;
   }
 
   function renderHarnesses() {
-    const head = h('div', {}, h('h1', { text: 'Harnesses' }),
+    const head = h('div', {}, h('h2', { text: 'Harnesses' }),
       h('p', { class: 'lede', text: 'The agent programs wheelchair can run. Install and sign in to the ones you use, and leave out the rest.' }));
     if (!hz.data) {
       return h('div', { class: 'models harnesses' }, head, hz.error
@@ -2225,52 +2369,131 @@
 
   // ---------------------------------------------------------------- shell
 
-  function renderSections() {
-    const nav = document.getElementById('sections');
-    const changed = nav.dataset.section !== section;
-    const scroll = nav.scrollLeft;
-    nav.dataset.section = section;
-    nav.replaceChildren(...SECTIONS.map(([key, label]) => {
-      const a = h('a', { href: '#' + key, text: label, 'data-section': key });
-      if (key === section) a.setAttribute('aria-current', 'page');
-      return a;
-    }));
-    if (changed && matchMedia('(max-width: 640px)').matches) {
-      nav.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    } else nav.scrollLeft = scroll;
-  }
-
   let projectToolsHost = null;
   function renderProjectTools() {
     if (!projectToolsHost) { projectToolsHost = h('div', {}); window.ProjectTools.render(projectToolsHost); }
     return projectToolsHost;
   }
 
-  function renderPanel() {
-    if (!data) return;
-    const view = section === 'background' && bg ? renderBackground() : section === 'tools' ? renderProjectTools()
-      : section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
-      : section === 'harnesses' ? renderHarnesses()
-      : section === 'accounts' ? renderAccounts() : section === 'usage' ? renderUsage() : renderModels();
-    const keep = document.getElementById('error');
-    panel.replaceChildren(keep, view);
-    renderSections();
-    if (section === 'models') { if (!diagram && !diagramLoading) loadDiagram(); drawDiagram(); }
-  }
+  const BLOCKS = {
+    name: renderName, writing: renderWriting, diagrams: renderDiagrams, enter: renderEnter,
+    background: () => (bg ? renderBackground() : null),
+    harnesses: renderHarnesses, accounts: renderAccounts,
+    usage: renderUsage, 'lead-order': renderLeadOrder, balancing: renderBalancing,
+    tiers: renderTiers, 'lead-models': renderLeadModels, escalation: renderEscalation, others: renderOthers,
+    conversations: renderConversations,
+    'thread-view': renderThreadView, permission: renderPermission, 'lead-names': renderLeadNames,
+    templates: renderTemplates, tools: renderProjectTools,
+  };
+  const blockHost = (name) => panel.querySelector(`.block[data-block="${name}"]`);
 
-  function readHash() {
-    const key = location.hash.replace(/^#/, '');
-    const lessonRole = (/^templates\/lessons\/([a-z-]+)$/.exec(key) || [])[1];
-    if (lessonRole && LESSON_PLURAL[lessonRole]) {
-      if (section !== 'templates') { if (section === 'background') discardBackground(); section = 'templates'; setNote('', false); styleNote = ''; diagram = null; }
-      if (selected !== 'lessons:' + lessonRole) select('lessons:' + lessonRole);
-      return;
+  // A button that moves mid-press loses the click. Hold an on-screen sign-in card even
+  // when the block above it is partly visible. Otherwise hold the next block only when
+  // the repaint is wholly above the screen.
+  function holdPlace(host) {
+    const top = document.getElementById('app-nav')?.getBoundingClientRect().bottom || 0;
+    const card = signCard?.el;
+    if (card?.isConnected && !host.contains(card) && (host.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+      const before = card.getBoundingClientRect();
+      if (before.bottom > top && before.top < window.innerHeight) {
+        return () => window.scrollBy(0, card.getBoundingClientRect().top - before.top);
+      }
     }
-    const next = SECTIONS.some(([k]) => k === key) ? key : 'models';
-    if (next !== section) { if (section === 'background') discardBackground(); section = next; setNote('', false); styleNote = ''; diagram = null; }
+    const next = host.nextElementSibling;
+    if (!next || !window.scrollY || !host.childElementCount || host.getBoundingClientRect().bottom > top) return () => {};
+    const was = next.getBoundingClientRect().top;
+    return () => window.scrollBy(0, next.getBoundingClientRect().top - was);
   }
 
-  window.addEventListener('hashchange', () => { readHash(); renderPanel(); syncSection(); });
+  // Rebuild only the named blocks, and only those in the open category: a block's save, timer
+  // or picker never touches what another one holds.
+  function paint(...names) {
+    if (!data) return;
+    for (const name of names) {
+      const host = blockHost(name);
+      if (!host) continue;
+      const hold = holdPlace(host);
+      const view = BLOCKS[name]();
+      host.replaceChildren(...(view ? [view] : []));
+      if (name === 'diagrams') drawDiagram();
+      hold();
+    }
+  }
+
+  // Build the open category from scratch: its heading, then one host per block.
+  function renderCategory() {
+    if (!data) return;
+    const cat = categoryOf(section);
+    panel.querySelector(':scope > .catview')?.remove();
+    panel.append(h('div', { class: 'catview', 'data-category': cat.key },
+      cat.lede && h('div', { class: 'cat-head' }, h('h1', { text: cat.title }), h('p', { class: 'lede', text: cat.lede }), cat.note && noteEl()),
+      cat.blocks.map((name) => h('div', { class: 'block', 'data-block': name }))));
+    paint(...cat.blocks);
+  }
+
+  // The phone's way in: the list of categories, and the way back to it. CSS shows them only
+  // at 899px and narrower, so crossing that width rebuilds nothing.
+  function renderPhoneNav() {
+    panel.append(
+      h('a', { class: 'back', href: '#', text: '‹  Settings' }),
+      h('div', { class: 'cat-root' },
+        h('h1', { text: 'Settings' }),
+        h('p', { class: 'lede', text: 'Choose a category.' }),
+        h('nav', { class: 'category-list', 'aria-label': 'Categories' }, CATEGORIES.map((c) => h('a', { class: 'cat-link', href: '#' + c.key, 'data-category': c.key },
+          h('span', {}, h('strong', { text: c.title }), h('span', { class: 'hint', text: c.line })),
+          h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' }))))));
+  }
+
+  function renderSections() {
+    document.getElementById('sections').replaceChildren(...CATEGORIES.map((c) => {
+      const a = h('a', { href: '#' + c.key, text: c.title, 'data-section': c.key });
+      if (c.key === section) a.setAttribute('aria-current', 'page');
+      return a;
+    }));
+  }
+
+  // Which category the hash names, and the lesson editor it may open. No hash is You, an old
+  // key is the category that holds it now, and anything unknown is You. The address stays as typed.
+  function parseHash() {
+    const key = location.hash.replace(/^#/, '');
+    const role = (/^(?:templates|behavior)\/lessons\/([a-z-]+)$/.exec(key) || [])[1];
+    if (role && LESSON_PLURAL[role]) return { root: false, next: 'behavior', role };
+    const named = Object.hasOwn(ALIASES, key) ? ALIASES[key] : key;
+    return { root: key === '', next: categoryOf(named) ? named : 'you', role: null };
+  }
+
+  // Take in the hash; true when the open category has to be built again.
+  function readHash() {
+    const { root, next, role } = parseHash();
+    // Going back to the list on a phone leaves the category, as picking another one does.
+    const leaving = next !== section || (root && !atRoot && phone.matches);
+    const moved = leaving || root !== atRoot;
+    atRoot = root;
+    document.querySelector('.settings').classList.toggle('at-root', root);
+    if (leaving) {
+      if (section === 'you') discardBackground();
+      section = next;
+      setNote('', false); styleNote = ''; balNote = { box: null, text: '' };
+    }
+    const lessons = role && selected !== 'lessons:' + role;
+    if (lessons) select('lessons:' + role);
+    if (moved && data) window.scrollTo(0, 0);
+    return { leaving, lessons };
+  }
+
+  function syncYou() {
+    syncDiagrams();
+    syncBackground();
+  }
+
+  window.addEventListener('hashchange', () => {
+    const { leaving, lessons } = readHash();
+    renderSections();
+    if (leaving) { renderCategory(); syncSection(); }
+    else if (lessons) paint('templates');
+    syncYou();
+  });
+  phone.addEventListener('change', syncYou);
   readHash();
   renderSections();
 
@@ -2279,8 +2502,10 @@
     try {
       data = await api('/settings');
       document.getElementById('loading')?.remove();
-      renderPanel();
+      renderPhoneNav();
+      renderCategory();
       syncSection();
+      syncYou();
     } catch (e) {
       error.hidden = false;
       error.textContent = 'Could not load settings: ' + e.message;

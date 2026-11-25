@@ -41,18 +41,18 @@ test.describe('Settings', () => {
 
   test('the entry and tag appear only when lessons exist; the address opens an empty entry', async ({ page }) => {
     await seed({});
-    await openSettings(page, '/app/settings#templates');
-    await expect(page.locator('.tpl-list h1')).toBeVisible();
+    await openSettings(page, '/app/settings#behavior');
+    await expect(page.locator('.tpl-list h2')).toBeVisible();
     await expect(page.locator('.tpl-lessons')).toHaveCount(0);
     await expect(page.getByText('Written by agents')).toHaveCount(0);
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await expect(page.locator('.lessons-edit')).toContainText('No lessons for workers right now.');
     await expect(page.locator('#using')).toHaveText('There is nothing to edit until an agent saves a lesson for workers.');
     await expect(page.locator('#save-lessons')).toHaveCount(0);
     await expect(page.locator('.lesson-warning')).toHaveText(WARNING);
 
     await seed({ worker: [lesson('L000001', 'Run the lint first.', { provider: 'gpt', project: '/tmp/proj-alpha', thread: made.id }), lesson('L000002', 'Keep commits small.', { saved_by: 'user' })], reviewer: [lesson('L00000b', 'Read the diff twice.')] });
-    await openSettings(page, '/app/settings#templates');
+    await openSettings(page, '/app/settings#behavior');
     const entries = page.locator('.tpl-lessons');
     await expect(entries).toHaveCount(2);
     await expect(entries.filter({ hasText: 'Written by agents · 2' })).toHaveCount(1);
@@ -64,7 +64,7 @@ test.describe('Settings', () => {
 
   test('the editor shows the warning, markers and the thread link; edits and removals save', async ({ page }) => {
     await seed({ worker: [lesson('L000001', 'Run the lint first.', { provider: 'gpt', project: '/tmp/proj-alpha', thread: made.id }), lesson('L000002', 'Keep commits small.', { saved_by: 'user' }), lesson('L000003', 'Delete me.')] });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await expect(page.locator('.lesson-warning')).toHaveText(WARNING);
     await expect(page.locator('#using')).toHaveText('Changes apply to workers started after you save.');
     await expect(page.locator('#lessons-live')).toHaveText('Agents save these as they go, and nothing waits for you. A lesson reaches workers started after it is saved, only on the AI and in the project it is marked for, if any. Saving on this screen is only for your own edits and removals.');
@@ -92,7 +92,7 @@ test.describe('Settings', () => {
 
   test('the fields are locked while a save is in flight', async ({ page }) => {
     await seed({ worker: [lesson('L0000e1', 'One.')] });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     const field = page.locator('.lesson-row[data-id="L0000e1"] textarea');
     await field.fill('One, changed.');
     let release;
@@ -110,7 +110,7 @@ test.describe('Settings', () => {
 
   test('a lesson an agent removed meanwhile shows the 409 text', async ({ page }) => {
     await seed({ worker: [lesson('L0000c1', 'One.'), lesson('L0000c2', 'Two.')] });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await page.locator('.lesson-row[data-id="L0000c1"] textarea').fill('One, changed.');
     await seed({ worker: [lesson('L0000c2', 'Two.')] });
     await page.locator('#save-lessons').click();
@@ -119,7 +119,7 @@ test.describe('Settings', () => {
 
   test('the preview caption names the AI and project markers', async ({ page }) => {
     await seed({});
-    await openSettings(page, '/app/settings#templates');
+    await openSettings(page, '/app/settings#behavior');
     await page.locator('#new-template').click();
     await page.locator('#see-full').click();
     await expect(page.locator('#full-prompt-caption')).toContainText('Lessons marked for one AI or one project reach only agents on that AI or in that project.');
@@ -130,7 +130,7 @@ test.describe('Settings', () => {
 
   test('History toggle lists versions and Restore brings one back; disabled with unsaved edits', async ({ page }) => {
     await seed({ worker: [lesson('L0000b1', 'Newest wording.')] }, { lesson_history: { L0000b1: { role: 'worker', versions: [version('v1', 'Oldest wording.', { provider: 'gpt', project: '/tmp/proj-alpha', changed_by: 'agent' }), version('v2', 'Middle wording.', { saved_by: 'user' })] } } });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     const row = page.locator('.lesson-row[data-id="L0000b1"]');
     await row.getByRole('button', { name: 'History (2)' }).click();
     const versions = row.locator('.lesson-version');
@@ -154,7 +154,7 @@ test.describe('Settings', () => {
   test('Keep and Discard keep unsaved typed text; a Restore that answers 409 reloads and shows the sentence', async ({ page }) => {
     const waiting = { role: 'worker', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wk' };
     await seed({ worker: [lesson('L0000f1', 'Fresh.'), lesson('L0000f2', 'Stale.', { saved_at: ago(120) })] }, { lesson_waiting: [waiting] });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     const fresh = page.locator('.lesson-row[data-id="L0000f1"] textarea');
     await fresh.fill('Typed, not saved.');
     await page.locator('.lesson-row[data-id="L0000f2"]').getByRole('button', { name: 'Keep' }).click();
@@ -169,7 +169,7 @@ test.describe('Settings', () => {
 
   test('a Restore that answers 409 reloads the editor and shows the sentence', async ({ page }) => {
     await seed({ worker: [lesson('L0000f3', 'Newest.')] }, { lesson_history: { L0000f3: { role: 'worker', versions: [version('gone', 'Older wording.')] } } });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     const row = page.locator('.lesson-row[data-id="L0000f3"]');
     await row.getByRole('button', { name: 'History (1)' }).click();
     await seed({ worker: [lesson('L0000f3', 'Newest.')] });
@@ -181,7 +181,7 @@ test.describe('Settings', () => {
 
   test('a draft whose lesson an agent removed is shown back, not lost behind a Saved note', async ({ page }) => {
     await seed({ worker: [lesson('L0000a5', 'Lesson A.'), lesson('L0000a6', 'Lesson B.', { saved_at: ago(120) })] });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await page.locator('.lesson-row[data-id="L0000a5"] textarea').fill('My draft for A.');
     await seed({ worker: [lesson('L0000a6', 'Lesson B.', { saved_at: ago(120) })] });
     await page.locator('.lesson-row[data-id="L0000a6"]').getByRole('button', { name: 'Keep' }).click();
@@ -192,7 +192,7 @@ test.describe('Settings', () => {
   test('Removed Restore names the newest version shown; a changed history answers 409', async ({ page }) => {
     const removed = { at: '2026-11-10T10:00:00.000Z', by: 'agent' };
     await seed({}, { lesson_history: { L0000a7: { role: 'worker', versions: [version('old', 'Old wording.'), version('shown', 'Shown wording.')], removed } } });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await expect(page.locator('.lesson-removed')).toContainText('Shown wording.');
     await seed({}, { lesson_history: { L0000a7: { role: 'worker', versions: [version('old', 'Old wording.'), version('newer', 'Newer wording.')], removed } } });
     await page.locator('.lesson-removed').getByRole('button', { name: 'Restore' }).click();
@@ -202,7 +202,7 @@ test.describe('Settings', () => {
 
   test('History says who replaced a version, not who saved it', async ({ page }) => {
     await seed({ worker: [lesson('L0000a8', 'Now.')] }, { lesson_history: { L0000a8: { role: 'worker', versions: [version('v1', 'Then.', { saved_by: 'agent', changed_by: 'user' })] } } });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await page.locator('.lesson-row[data-id="L0000a8"]').getByRole('button', { name: 'History (1)' }).click();
     await expect(page.locator('.lesson-version')).toContainText('replaced by you 2026-11-01');
   });
@@ -211,7 +211,7 @@ test.describe('Settings', () => {
     await seed({ worker: [lesson('L0000a1', 'Old one.', { saved_at: ago(120) })] }, { lesson_waiting: [{ role: 'worker', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wg' }] });
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await openSettings(page, '/app/settings#templates');
+      await openSettings(page, '/app/settings#behavior');
       const nm = page.locator('.tpl-lessons .nm');
       await expect(nm).toHaveText('Lessons learned');
       await expect(page.locator('.tpl-lessons')).toContainText('1 may be out of date');
@@ -225,7 +225,7 @@ test.describe('Settings', () => {
 
   test('Removed section lists removed lessons and Restore puts one back', async ({ page }) => {
     await seed({ worker: [lesson('L0000d0', 'Still here.')] }, { lesson_history: { L0000d0: { role: 'worker', versions: [] }, L0000d1: { role: 'worker', versions: [version('b', 'Gone early.')], removed: { at: '2026-11-02T10:00:00.000Z', by: 'agent' } }, L0000d2: { role: 'worker', versions: [version('c', 'Gone late.')], removed: { at: '2026-11-10T10:00:00.000Z', by: 'user' } } } });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     const removed = page.locator('.lesson-removed .lesson-row');
     await expect(removed).toHaveCount(2);
     await expect(removed.nth(0)).toContainText('Gone late.');
@@ -242,14 +242,14 @@ test.describe('Settings', () => {
   test('a restore into a full role shows the server sentence', async ({ page }) => {
     const twelve = Array.from({ length: 12 }, (_, i) => lesson('L0002' + i.toString(16).padStart(2, '0'), 'Full ' + i));
     await seed({ worker: twelve }, { lesson_history: { L000299: { role: 'worker', versions: [version('a1', 'Gone.')], removed: { at: '2026-11-10T10:00:00.000Z', by: 'agent' } } } });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await page.locator('.lesson-removed').getByRole('button', { name: 'Restore' }).click();
     await expect(page.locator('.inline-err')).toHaveText('Worker lessons are full (12): remove one before restoring');
   });
 
   test('a stale row shows the mark and Keep clears it; the list item counts', async ({ page }) => {
     await seed({ worker: [lesson('L0000c1', 'Old one.', { saved_at: ago(120) }), lesson('L0000c2', 'Fresh one.', { saved_at: ago(120), kept_at: ago(5) }), lesson('L0000c3', 'Also old.', { saved_at: ago(100) })] }, { lesson_waiting: [{ role: 'worker', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'w1' }] });
-    await openSettings(page, '/app/settings#templates');
+    await openSettings(page, '/app/settings#behavior');
     await expect(page.locator('.tpl-lessons')).toContainText('Written by agents · 3 · 2 may be out of date · 1 waiting to add');
     await page.locator('.tpl-lessons').click();
     const row = page.locator('.lesson-row[data-id="L0000c1"]');
@@ -264,7 +264,7 @@ test.describe('Settings', () => {
   test('a role with only waiting lessons still has an entry; Add and Discard work', async ({ page }) => {
     const waiting = (wid, text) => ({ role: 'reviewer', text, saved_by: 'agent', saved_at: ago(1), source: 'handoff', received_at: ago(0), wid });
     await seed({ reviewer: [lesson('L0000e0', 'Have it.')] }, { lesson_waiting: [waiting('wa', 'Add me.'), waiting('wb', 'Drop me.'), waiting('wc', 'Have it.')] });
-    await openSettings(page, '/app/settings#templates/lessons/reviewer');
+    await openSettings(page, '/app/settings#behavior/lessons/reviewer');
     const rows = page.locator('.lesson-waiting .lesson-row');
     await expect(rows).toHaveCount(3);
     await rows.filter({ hasText: 'Drop me.' }).getByRole('button', { name: 'Discard' }).click();
@@ -283,7 +283,7 @@ test.describe('Settings', () => {
     const history = { [id(0)]: { role: 'worker', versions: [version('v1', 'Older wording.')] } };
     const waiting = [{ role: 'worker', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wq' }];
     await seed({ worker: twelve }, { lesson_history: history, lesson_waiting: waiting });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     const row = page.locator('.lesson-row[data-id="' + id(0) + '"]');
     await row.getByRole('button', { name: 'History (1)' }).click();
     await row.locator('textarea').fill('My draft for the first.');
@@ -304,14 +304,14 @@ test.describe('Settings', () => {
   test('Add is disabled while the role is full', async ({ page }) => {
     const twelve = Array.from({ length: 12 }, (_, i) => lesson('L0001' + i.toString(16).padStart(2, '0'), 'Full ' + i));
     await seed({ mapper: twelve }, { lesson_waiting: [{ role: 'mapper', text: 'Queued.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'wf' }] });
-    await openSettings(page, '/app/settings#templates/lessons/mapper');
+    await openSettings(page, '/app/settings#behavior/lessons/mapper');
     await expect(page.locator('.lesson-waiting .add-waiting')).toBeDisabled();
     await expect(page.locator('.lesson-waiting')).toContainText('Remove one first');
   });
 
   test('Export downloads the file and Import shows the counts', async ({ page }, info) => {
     await seed({ worker: [lesson('L0000f1', 'Export me.'), lesson('L0000f2', 'Scoped.', { project: '/tmp/not-on-this-machine' })] });
-    await openSettings(page, '/app/settings#templates');
+    await openSettings(page, '/app/settings#behavior');
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#export-lessons').click()]);
     expect(download.suggestedFilename()).toBe('wheelchair-lessons.json');
     const file = info.outputPath('wheelchair-lessons.json');
@@ -336,7 +336,7 @@ test.describe('Settings', () => {
 
   test('Import keeps a draft for a lesson that remains and shows one whose lesson an agent removed', async ({ page }, info) => {
     await seed({ worker: [lesson('L0000b1', 'Lesson A.'), lesson('L0000b2', 'Lesson B.')] });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await page.locator('.lesson-row[data-id="L0000b1"] textarea').fill('My draft for A.');
     await page.locator('.lesson-row[data-id="L0000b2"] textarea').fill('My draft for B.');
     await seed({ worker: [lesson('L0000b2', 'Lesson B.')] });
@@ -353,7 +353,7 @@ test.describe('Settings', () => {
       lesson_history: { L0000a1: { role: 'worker', versions: [version('g', 'Lint before pushing.', { provider: 'gpt' })] }, L0000a3: { role: 'worker', versions: [version('h', 'Retired advice.')], removed: { at: ago(3), by: 'agent' } } },
       lesson_waiting: [{ role: 'worker', text: 'From a file.', saved_by: 'agent', saved_at: ago(1), source: 'file', received_at: ago(0), wid: 'ws' }],
     });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await page.locator('.lesson-row[data-id="L0000a1"]').getByRole('button', { name: 'History (1)' }).click();
     await expect(page.locator('.lesson-removed')).toBeVisible();
     await expect(page.locator('.lesson-waiting')).toBeVisible();
@@ -389,7 +389,7 @@ test.describe('thread notice', () => {
     await expect(page.locator('.card-needs')).toHaveCount(0);
     await expect.poll(async () => (await api(page, '/features')).needs.length).toBe(0);
     await notices.nth(0).getByRole('link', { name: 'Open in Settings' }).click();
-    await expect(page).toHaveURL(/\/app\/settings#templates\/lessons\/reviewer$/);
+    await expect(page).toHaveURL(/\/app\/settings#behavior\/lessons\/reviewer$/);
     await expect(page.locator('.lessons-edit h2')).toContainText('Reviewer');
     await expect(page.locator('.lesson-row textarea')).toHaveValue('Read the diff twice.');
     await expect(page.locator('.tpl-lessons[aria-current="true"]')).toContainText('Written by agents · 1');
@@ -402,7 +402,7 @@ test.describe('phone width', () => {
   test('the editor and the notice do not scroll sideways', async ({ page }) => {
     const long = 'A long lesson '.repeat(18).trim();
     await seed({ worker: [lesson('L0000d1', long, { provider: 'gpt', project: '/tmp/proj-alpha', thread: made.id }), lesson('L0000d2', 'x'.repeat(120))] });
-    await openSettings(page, '/app/settings#templates/lessons/worker');
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
     await expect(page.locator('.lesson-row')).toHaveCount(2);
     await noSideScroll(page);
     if (process.env.LESSON_SHOTS) await page.screenshot({ path: path.join(process.env.LESSON_SHOTS, 'lessons-editor.png') });

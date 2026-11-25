@@ -20,6 +20,8 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await context.server.stop(); });
 
+// By address: a phone has no side navigation to click.
+const goTo = (page, key) => page.evaluate((k) => { location.hash = k; }, key);
 const NAMES = ['claude', 'gpt', 'gemini', 'kimi', 'openrouter'];
 const h = (over = {}) => ({ installed: false, version: null, signed_in: false, recipe: true, ...over });
 function status(over = {}, extra = {}) {
@@ -58,6 +60,7 @@ async function stub(page, world) {
   await page.route('**/api/settings/harnesses/*', (route) => world.put(route));
 }
 const rows = (page) => page.locator('.h-row');
+const signinAt = (page, p) => page.locator(`.prov-group[data-provider="${p}"] .signin-card`);
 const row = (page, p) => page.locator(`.h-row[data-provider="${p}"]`);
 
 for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop', { width: 1280, height: 900 }]]) {
@@ -71,19 +74,19 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       s.machines[0].harnesses.gpt = h({ installed: true, version: '0.9.0' });
       s.machines[0].harnesses.gemini = h({ recipe: false });
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(rows(page)).toHaveCount(5);
       await expect(rows(page).locator('strong')).toHaveText(['Claude Code', 'Codex', 'Antigravity', 'Kimi Code', 'Pi (OpenRouter)']);
       await expect(row(page, 'claude')).toContainText('Signed in');
       await expect(row(page, 'claude').getByRole('button')).toHaveCount(0);
       await expect(row(page, 'gpt')).toContainText('Installed 0.9.0');
-      await expect(row(page, 'gpt').getByRole('button', { name: 'Sign in Codex' })).toBeVisible();
+      await expect(row(page, 'gpt').getByRole('link', { name: 'Sign in Codex' })).toBeVisible();
       await expect(row(page, 'gemini')).toContainText('Not installed');
       const link = row(page, 'gemini').getByRole('link', { name: "Install from Google's site" });
       await expect(link).toHaveAttribute('href', 'https://antigravity.google/cli');
       await expect(row(page, 'gemini').getByRole('button', { name: /Install/ })).toHaveCount(0);
       await expect(row(page, 'kimi').getByRole('button', { name: 'Install Kimi Code' })).toBeVisible();
-      await expect(page.locator('#sections a').first()).toHaveText('Harnesses');
+      await expect(page.locator('[data-block="harnesses"] h2')).toHaveText('Harnesses');
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     });
 
@@ -91,7 +94,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       const s = status();
       for (const n of NAMES) s.machines[0].harnesses[n] = h({ recipe: null });
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(page.getByText('This machine needs updating: re-run ./install.sh on it.')).toBeVisible();
       await expect(rows(page)).toHaveCount(5);
       await expect(page.getByRole('button', { name: /Install/ })).toHaveCount(0);
@@ -111,7 +114,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(row(page, 'kimi')).toContainText('Installing…');
       await expect(row(page, 'kimi').locator('.h-tail')).toContainText('unpacking');
       await expect(row(page, 'kimi')).toContainText('Installed 1.0', { timeout: 8000 });
@@ -137,7 +140,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await row(page, 'openrouter').getByRole('button', { name: 'Install' }).click();
       world.posted = true;
       await expect(row(page, 'openrouter')).toContainText('Installed 1.5.2', { timeout: 10000 });
@@ -163,16 +166,16 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await stub(page, world);
       await page.route('**/api/accounts/default-gemini/signin', (r) => json(r, {}));
       await page.route('**/api/accounts/default-gemini/signin/hub', (r) => json(r, { state: 'waiting', url: 'https://example.test/login' }));
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await row(page, 'gemini').getByRole('button', { name: 'Install' }).click();
       world.posted = true;
-      await row(page, 'gemini').getByRole('button', { name: 'Sign in Antigravity' }).click();
-      await expect(row(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+      await row(page, 'gemini').getByRole('link', { name: 'Sign in Antigravity' }).click();
+      await expect(signinAt(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
       // Once a sign-in card is open, no more version re-fetches repaint the rows under it.
       const seen = after;
       await page.waitForTimeout(5000);
       expect(after).toBe(seen);
-      await expect(row(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+      await expect(signinAt(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
     });
 
     test('install failed shows the tail and Try again, which POSTs and polls', async ({ page }) => {
@@ -188,7 +191,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(row(page, 'gpt')).toContainText('Install failed');
       await expect(row(page, 'gpt').locator('.h-tail')).toContainText('npm ERR! boom');
       await row(page, 'gpt').getByRole('button', { name: 'Try again Codex' }).click();
@@ -209,7 +212,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(row(page, 'kimi')).toContainText('Installing…');
       const cancel = row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' });
       await expect(cancel).toHaveText('Cancel');
@@ -236,7 +239,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       const cancel = row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' });
       await cancel.click();
       await expect(row(page, 'kimi').getByRole('alert')).toHaveText("Couldn't cancel: hub isn't reachable.", { timeout: 4000 });
@@ -263,7 +266,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       const cancel = row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' });
       await cancel.click();
       await expect(row(page, 'kimi')).toContainText('Cancelling…');
@@ -284,7 +287,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' }).click();
       await expect(row(page, 'kimi').getByRole('alert')).toHaveText("Couldn't cancel: hub isn't reachable.", { timeout: 4000 });
       state = 'cancelled';
@@ -305,7 +308,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' }).click();
       await expect(row(page, 'kimi').getByRole('alert')).toHaveText("Couldn't cancel: hub isn't reachable.", { timeout: 4000 });
       await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
@@ -326,7 +329,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(row(page, 'kimi').getByRole('button', { name: 'Cancel installing Kimi Code' })).toBeVisible();
       await expect(row(page, 'kimi')).toContainText("Can't reach hub, retrying…", { timeout: 6000 });
       await expect(row(page, 'kimi').getByRole('button', { name: /Cancel/ })).toHaveCount(0);
@@ -341,7 +344,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await row(page, 'gemini').getByRole('button', { name: 'Install Antigravity' }).click();
       await expect(row(page, 'gemini').getByRole('alert')).toHaveText('Antigravity is switched off', { timeout: 4000 });
       await expect(row(page, 'gemini')).not.toContainText('Installing…');
@@ -360,7 +363,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(row(page, 'gpt')).toContainText('Install failed');
       await expect(row(page, 'gpt').locator('.h-explain')).toHaveText('The disk on this machine is full. Free up some space, then try again.');
       await expect(row(page, 'gpt').locator('.h-explain + .h-tail')).toContainText('ENOSPC');
@@ -382,7 +385,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await row(page, 'kimi').getByRole('button', { name: 'Install Kimi Code' }).click();
       await expect(row(page, 'kimi').getByRole('link', { name: "Install from Kimi's site" })).toBeVisible();
     });
@@ -402,7 +405,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(row(page, 'openrouter')).toContainText("Can't reach hub, retrying…", { timeout: 6000 });
       await expect(row(page, 'openrouter')).toContainText('Installing…', { timeout: 6000 });
       await expect(row(page, 'openrouter').locator('.h-tail')).toContainText('b');
@@ -419,7 +422,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(page.locator('.h-offline')).toContainText("Can't reach hub, retrying…");
       await expect(rows(page)).toHaveCount(0);
       await expect(row(page, 'claude')).toContainText('Installing…', { timeout: 14000 });
@@ -430,21 +433,21 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       const s = status();
       s.machines.push({ name: 'node-2', reachable: true, harnesses: Object.fromEntries(NAMES.map((n) => [n, h({ installed: true, version: '7', signed_in: true })])) });
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(row(page, 'claude')).toContainText('Not installed');
       await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
       await expect(row(page, 'claude')).toContainText('Signed in');
     });
 
-    test('Sign in mounts the sign-in card under the row, also for a recipe:false harness', async ({ page }) => {
+    test('Sign in opens the card with the account cards, also for a recipe:false harness', async ({ page }) => {
       const s = status();
       s.machines[0].harnesses.gemini = h({ installed: true, version: '3', recipe: false });
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
       await page.route('**/api/accounts/default-gemini/signin', (r) => json(r, {}));
       await page.route('**/api/accounts/default-gemini/signin/hub', (r) => json(r, { state: 'waiting', url: 'https://example.test/login' }));
-      await openPage(page, context, '/app/settings#harnesses');
-      await row(page, 'gemini').getByRole('button', { name: 'Sign in Antigravity' }).click();
-      const card = row(page, 'gemini').locator('.signin-card');
+      await openPage(page, context, '/app/settings#providers');
+      await row(page, 'gemini').getByRole('link', { name: 'Sign in Antigravity' }).click();
+      const card = signinAt(page, 'gemini');
       await expect(card).toContainText('Sign in default on hub');
       await expect(card.getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
       await card.getByRole('button', { name: 'Close' }).click();
@@ -460,7 +463,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => { put = { url: r.request().url(), body: r.request().postDataJSON() }; s.switches.claude = false; return json(r, { harnesses: { ...s.switches } }); },
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await page.getByLabel('Use Claude Code').click();
       await expect(row(page, 'claude')).toContainText('2 threads use Claude Code. Their running agents keep going, but no new agent starts on it. Leave it out?');
       await row(page, 'claude').getByRole('button', { name: 'Keep' }).click();
@@ -477,7 +480,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       const s = status();
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }),
         put: (r) => json(r, { error: 'Lead order would have no harness left. Add another to Lead order first.' }, 409) });
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await page.getByLabel('Use Claude Code').click();
       await expect(row(page, 'claude').getByRole('alert')).toContainText('Lead order would have no harness left.');
       await expect(page.getByLabel('Use Claude Code')).toBeChecked();
@@ -489,7 +492,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       s.machines[0].harnesses.kimi = h();
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
       await page.route('**/api/settings', (r) => patchSettings(r, (b) => { b.harnesses = { ...s.switches }; return b; }));
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(page.getByLabel('Use Kimi Code')).not.toBeChecked();
       await expect(row(page, 'kimi').getByRole('button')).toHaveCount(0);
       await expect(row(page, 'claude').getByRole('button', { name: 'Install Claude Code' })).toBeVisible();
@@ -500,36 +503,38 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         lead: { ok: false, reason: 'New leads try Claude Code; none is installed and signed in on hub. Add Pi to Leads try in Settings.' },
         worker: { ok: false, reason: 'New workers try Codex; none is installed and signed in on hub. Add Pi to Workers try first in Settings.' } } });
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       const notice = page.locator('.h-notice');
       await expect(notice).toContainText("Agents can't start yet on hub:");
       await expect(notice).toContainText('New leads try Claude Code');
-      await expect(notice.getByRole('link', { name: 'Leads try' })).toHaveAttribute('href', '#models');
+      await expect(notice.getByRole('link', { name: 'Leads try' })).toHaveAttribute('href', '#usage');
       await expect(notice.getByRole('link', { name: 'Workers try first' })).toHaveAttribute('href', '#usage');
       s.can_start = { machine: 'hub', lead: { ok: true }, worker: { ok: true } };
       await notice.getByRole('link', { name: 'Leads try' }).click();
-      await expect(page.locator('#panel h1')).toHaveText('Models and preferences');
-      await page.locator('#sections a[data-section="harnesses"]').click();
+      await expect(page.locator('.catview h1')).toHaveText('Usage and balancing');
+      await goTo(page, 'providers');
       await expect(page.locator('.h-notice')).toHaveCount(0);
     });
 
     test('switching a harness off hides its account row, review-family option and order entries', async ({ page }) => {
       const s = status();
+      s.switches.gemini = false;
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
       await page.route('**/api/settings', (r) => patchSettings(r, (b) => {
         b.harnesses = { claude: true, gpt: true, gemini: false, kimi: true, openrouter: true };
         return b;
       }));
-      await openPage(page, context, '/app/settings#accounts');
+      await openPage(page, context, '/app/settings#providers');
       await expect(page.locator('.prov-group[data-provider="claude"]')).toBeVisible();
       await expect(page.locator('.prov-group[data-provider="gemini"]')).toHaveCount(0);
-      await page.locator('#sections a[data-section="models"]').click();
+      await goTo(page, 'models');
       await expect(page.locator('tr[data-provider="gemini"]')).toHaveCount(0);
       await expect(page.locator('tr[data-provider="claude"]')).toHaveCount(1);
       await expect(page.getByRole('radio', { name: 'Antigravity' })).toHaveCount(0);
       await expect(page.getByRole('radio', { name: 'Kimi Code' })).toHaveCount(1);
+      await goTo(page, 'usage');
+      await expect(page.locator('[data-order="lead_order"] li').first()).toBeVisible();
       await expect(page.locator('[data-order="lead_order"]').getByRole('button', { name: '+ Antigravity' })).toHaveCount(0);
-      await page.locator('#sections a[data-section="usage"]').click();
       await expect(page.locator('[data-order="worker_order"] li', { hasText: 'Antigravity' })).toHaveCount(0);
       await expect(page.locator('[data-order="worker_order"]').getByRole('button', { name: '+ Antigravity' })).toHaveCount(0);
     });
@@ -557,7 +562,6 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await page.locator('#bal-save').click();
       await expect.poll(() => saved && saved.worker_order).toEqual(['gpt', 'gemini', 'claude', 'kimi']);
       saved = null;
-      await page.locator('#sections a[data-section="models"]').click();
       const lo = page.locator('[data-order="lead_order"]');
       await lo.getByRole('button', { name: 'Move Claude down' }).click();
       await page.locator('#lead-order-save').click();
@@ -574,7 +578,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => json(r, {}),
       };
       await stub(page, world);
-      await openPage(page, context, '/app/settings#harnesses');
+      await openPage(page, context, '/app/settings#providers');
       await expect(row(page, 'claude').getByRole('button', { name: 'Install Claude Code' })).toBeVisible();
       hold = new Promise((res) => { release = res; });
       await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
@@ -592,9 +596,9 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => { s.switches.gemini = false; return json(r, { harnesses: { ...s.switches } }); } });
       await page.route('**/api/accounts/default-gemini/signin', (r) => json(r, {}));
       await page.route('**/api/accounts/default-gemini/signin/hub', (r) => json(r, { state: 'waiting', url: 'https://example.test/login' }));
-      await openPage(page, context, '/app/settings#harnesses');
-      await row(page, 'gemini').getByRole('button', { name: 'Sign in Antigravity' }).click();
-      await expect(row(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+      await openPage(page, context, '/app/settings#providers');
+      await row(page, 'gemini').getByRole('link', { name: 'Sign in Antigravity' }).click();
+      await expect(signinAt(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
       await page.getByLabel('Use Antigravity').click();
       await expect(page.getByLabel('Use Antigravity')).not.toBeChecked();
       await expect(page.locator('.signin-card')).toHaveCount(0);
@@ -618,7 +622,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       });
     }
     const switchOff = async (page, s, name, key) => {
-      await page.locator('#sections a[data-section="harnesses"]').click();
+      await goTo(page, 'providers');
       await page.getByLabel(`Use ${name}`).click();
       const leave = row(page, key).getByRole('button', { name: 'Leave it out' });
       if (await leave.count()) await leave.click();
@@ -631,7 +635,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       const posts = [];
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
       await stubAccounts(page, s, posts);
-      await openPage(page, context, '/app/settings#accounts');
+      await openPage(page, context, '/app/settings#providers');
       await page.locator('#add-account').click();
       await expect(page.locator('#add-provider')).toHaveValue('gpt');
       await page.locator('#add-name').fill('Spare');
@@ -648,12 +652,12 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }),
         put: (r) => { s.switches.gpt = false; return json(r, { harnesses: { ...s.switches } }); } });
       await stubAccounts(page, s, posts);
-      await openPage(page, context, '/app/settings#accounts');
+      await openPage(page, context, '/app/settings#providers');
       await page.locator('#add-account').click();
       await page.locator('#add-provider').selectOption('gpt');
       await page.locator('#add-name').fill('Spare');
       await switchOff(page, s, 'Codex', 'gpt');
-      await page.locator('#sections a[data-section="accounts"]').click();
+      await goTo(page, 'providers');
       const value = await page.locator('#add-provider').inputValue();
       expect(value).not.toBe('gpt');
       expect(await page.locator('#add-provider option').evaluateAll((o) => o.map((x) => x.value))).toContain(value);
@@ -674,11 +678,11 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await stubAccounts(page, s, []);
       await page.route('**/api/accounts/acct-claude/signin', (r) => json(r, {}));
       await page.route('**/api/accounts/acct-claude/signin/hub', (r) => json(r, { state: 'waiting', url: 'https://example.test/login' }));
-      await openPage(page, context, '/app/settings#accounts');
+      await openPage(page, context, '/app/settings#providers');
       await page.getByRole('button', { name: 'Sign in Work on hub' }).click();
       await expect(page.locator('.signin-card')).toHaveCount(1);
       await switchOff(page, s, 'Claude Code', 'claude');
-      await page.locator('#sections a[data-section="accounts"]').click();
+      await goTo(page, 'providers');
       await expect(page.locator('.signin-card')).toHaveCount(0);
     });
 
@@ -695,7 +699,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await expect(card.locator('.ob-step.done')).toHaveCount(2);
       await expect(card.locator('.ob-step[data-step="start"]')).toContainText('New leads try Claude Code');
       await expect(card).toContainText("Leave out the ones you don't use.");
-      await expect(card.getByRole('link', { name: 'Open Settings' })).toHaveAttribute('href', /\/app\/settings#harnesses$/);
+      await expect(card.getByRole('link', { name: 'Open Settings' })).toHaveAttribute('href', /\/app\/settings#providers$/);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
       body = { show: false, steps: [] };
       await expect(card).toHaveCount(0, { timeout: 8000 });

@@ -1,0 +1,30 @@
+{
+  "form": "before-after",
+  "explanation": "Left: today's 8 sections. Right: the proposal, now with its own category for the assistant and project leads so their future options have a home. Every setting is kept; only its place changes.",
+  "before": {
+    "title": "Today",
+    "items": [
+      "Harnesses",
+      "Accounts",
+      "Usage (with worker provider order)",
+      "Models and preferences (models, lead order, escalation, permissions, your name, project folder, assistant, auto-merge, Enter-to-send, diagrams, other agents)",
+      "Behavior templates (and lessons)",
+      "Writing style",
+      "Project tools",
+      "Background Customization"
+    ]
+  },
+  "after": {
+    "title": "Proposed",
+    "items": [
+      "You: your name, writing style, diagrams, Enter-to-send, background",
+      "AI providers: harnesses and accounts together",
+      "Usage and balancing: usage, worker AND lead provider order",
+      "Models: tiers, lead models, other agents, escalation",
+      "Assistant and project leads: their on/off switches now; their customization later",
+      "Threads: auto-merge, branch cleanup, tool steps, project folder, permissions, lead names",
+      "Agent behavior: templates and lessons",
+      "Project tools"
+    ]
+  }
+}

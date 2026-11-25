@@ -23,6 +23,8 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await context.server.stop(); });
 
+const KEYS = ['you', 'providers', 'usage', 'models', 'leads', 'threads', 'behavior', 'tools'];
+const TITLES = ['You', 'AI providers', 'Usage and balancing', 'Models', 'Assistant and project leads', 'Threads', 'Agent behavior', 'Project tools'];
 const settings = (page) => page.evaluate(async () => (await fetch('/wheelchair/api/settings')).json());
 const noSideScroll = async (page) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -39,22 +41,22 @@ test.describe('desktop', () => {
     await expect(page.locator('#app-nav .seg a[aria-current="page"]')).toHaveText('Settings');
     await expect(page.locator('#app-nav .seg .lbl')).toBeVisible();
     await expect(page.locator('#app-nav .seg .gear')).toBeHidden();
-    await expect(page.locator('#panel h1')).toHaveText('Models and preferences');
+    await expect(page.locator('.catview h1')).toHaveText('You');
   });
 
-  test('eight sections, kept across a reload through the hash', async ({ page }) => {
+  test('eight categories in order, kept across a reload through the hash', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const nav = page.locator('#sections a');
-    await expect(nav).toHaveText(['Harnesses', 'Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style', 'Project tools', 'Background Customization']);
-    await nav.nth(4).click();
-    await expect(page).toHaveURL(/#templates$/);
-    await expect(page.locator('.tpl-list h1')).toHaveText('Behavior templates');
+    await expect(nav).toHaveText(TITLES);
+    await nav.nth(6).click();
+    await expect(page).toHaveURL(/#behavior$/);
+    await expect(page.locator('.tpl-list h2')).toHaveText('Behavior templates');
     await page.reload();
-    await expect(page.locator('.tpl-list h1')).toBeVisible();
-    await expect(page.locator('#sections a[aria-current="page"]')).toHaveText('Behavior templates');
-    await nav.nth(5).click();
+    await expect(page.locator('.tpl-list h2')).toBeVisible();
+    await expect(page.locator('#sections a[aria-current="page"]')).toHaveText('Agent behavior');
+    await nav.nth(0).click();
     await page.reload();
-    await expect(page.locator('#panel h1')).toHaveText('Writing style');
+    await expect(page.locator('.catview h1')).toHaveText('You');
     await expect(page.locator('.covers')).not.toContainText('Phone notifications');
   });
 
@@ -67,7 +69,7 @@ test.describe('desktop', () => {
   });
 
   test('permission labels name the tools in their groups', async ({ page }) => {
-    await openPage(page, context, '/app/settings#models');
+    await openPage(page, context, '/app/settings#threads');
     await expect(page.getByText('Claude and Kimi sessions', { exact: true })).toBeVisible();
     await expect(page.getByText('Codex sessions', { exact: true })).toBeVisible();
     await expect(page.getByRole('radiogroup', { name: 'Claude and Kimi permission mode', exact: true })).toBeVisible();
@@ -117,20 +119,23 @@ test.describe('desktop', () => {
     await page.getByLabel('Claude heavy effort').selectOption('high');
     await expect.poll(async () => (await settings(page)).models.claude.heavy.effort).toBe('high');
 
+    await page.locator('#sections a[data-section="threads"]').click();
     await page.getByRole('radio', { name: 'Bypass' }).click();
     await expect.poll(async () => (await settings(page)).permission_mode).toBe('bypass');
     await expect(page.getByText('Never asks: it can write only inside its worktree.')).toBeVisible();
     await page.getByRole('radio', { name: 'Unrestricted' }).click();
     await expect.poll(async () => (await settings(page)).codex_mode).toBe('unrestricted');
     await expect(page.getByText(/it can change anything on the machine/)).toBeVisible();
+    await page.locator('#sections a[data-section="models"]').click();
     await page.getByLabel('Checker', { exact: true }).selectOption('critical');
     await expect.poll(async () => (await settings(page)).other_agents.verifier).toBe('critical');
 
     await page.reload();
     await expect(page.getByLabel('Claude standard model', { exact: true })).toHaveValue('__none');
+    await expect(page.getByLabel('Checker', { exact: true })).toHaveValue('critical');
+    await page.locator('#sections a[data-section="threads"]').click();
     await expect(page.getByRole('radio', { name: 'Bypass' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByRole('radio', { name: 'Unrestricted' })).toHaveAttribute('aria-checked', 'true');
-    await expect(page.getByLabel('Checker', { exact: true })).toHaveValue('critical');
   });
 
   test('effort selects: GPT tier and both leads save; GPT has no max', async ({ page }) => {
@@ -197,7 +202,7 @@ test.describe('desktop', () => {
   });
 
   test('creating and saving a template, marking it in use, and the worker-only switch', async ({ page }) => {
-    await openPage(page, context, '/app/settings#templates');
+    await openPage(page, context, '/app/settings#behavior');
     await page.getByRole('button', { name: '+ New template' }).click();
     await page.locator('#tname').fill('Careful');
     await expect(page.getByText("When the brief doesn't settle something")).toBeVisible();
@@ -258,7 +263,7 @@ test.describe('desktop', () => {
 
   test('a template whose project is gone says so', async ({ page }) => {
     await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/tmp/proj-alpha']));
-    await openPage(page, context, '/app/settings#templates');
+    await openPage(page, context, '/app/settings#behavior');
     await expect(page.locator('.tpl-item', { hasText: 'Careful' }).locator('.tag')).toContainText('project no longer listed');
     await page.locator('.tpl-item', { hasText: 'Careful' }).click();
     await expect(page.locator('#tscope option:checked')).toContainText('project no longer listed');
@@ -266,7 +271,7 @@ test.describe('desktop', () => {
   });
 
   test('the auto-merge switch says Saved, not applies to new sessions, and survives a reload', async ({ page }) => {
-    await openPage(page, context, '/app/settings#models');
+    await openPage(page, context, '/app/settings#threads');
     const merge = page.getByRole('radiogroup', { name: 'Merge pull requests when done' });
     await expect(page.getByRole('radiogroup', { name: 'Delete the branch after merging' })).toHaveCount(0);
     await merge.getByRole('radio', { name: 'On' }).click();
@@ -280,7 +285,7 @@ test.describe('desktop', () => {
   });
 
   test('the style saves', async ({ page }) => {
-    await openPage(page, context, '/app/settings#writing');
+    await openPage(page, context, '/app/settings#you');
     await page.getByRole('radio', { name: 'Thorough' }).click();
     await page.getByRole('radio', { name: 'Always' }).click();
     await page.getByLabel('Technical terms').selectOption('freely');
@@ -298,7 +303,7 @@ test.describe('desktop', () => {
   });
 
   test('preview: disabled with a spinner while pending, then the result; nothing is saved', async ({ page }) => {
-    await openPage(page, context, '/app/settings#writing');
+    await openPage(page, context, '/app/settings#you');
     const before = JSON.stringify((await settings(page)).style);
     let release;
     const gate = new Promise((resolve) => { release = resolve; });
@@ -323,7 +328,7 @@ test.describe('desktop', () => {
   });
 
   test('a failed preview shows one plain line under the panel', async ({ page }) => {
-    await openPage(page, context, '/app/settings#writing');
+    await openPage(page, context, '/app/settings#you');
     await page.route('**/api/settings/style/preview', (route) => route.fulfill({
       status: 502, contentType: 'application/json',
       body: JSON.stringify({ error: 'bad gateway', detail: 'Preview failed: Claude is not logged in.' }) }));
@@ -348,23 +353,16 @@ test.describe('phone', () => {
     await expect(page).toHaveURL(/\/app\/settings/);
   });
 
-  test('the sections are tabs above the section and the page never scrolls sideways', async ({ page }) => {
+  test('every category fits without scrolling sideways', async ({ page }) => {
     await openPage(page, context, '/app/settings');
-    const tabs = page.locator('#sections a');
-    await expect(tabs).toHaveCount(8);
-    const boxes = await tabs.evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().toJSON()));
-    expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(1);
-    const panel = await page.locator('#panel').boundingBox();
-    expect(boxes[0].bottom).toBeLessThanOrEqual(panel.y + 1);
-    for (const key of ['harnesses', 'accounts', 'usage', 'models', 'templates', 'writing']) {
-      await page.locator(`#sections a[data-section="${key}"]`).click();
-      await expect(page.locator('#sections a[aria-current="page"]')).toHaveAttribute('data-section', key);
+    await noSideScroll(page);
+    for (const [key, title] of KEYS.map((key, i) => [key, TITLES[i]])) {
+      await openPage(page, context, '/app/settings#' + key);
+      await expect(page.locator('.catview[data-category="' + key + '"]')).toBeVisible();
+      if (key !== 'tools') await expect(page.locator('.catview h1')).toHaveText(title);
       await page.waitForTimeout(200);
       await noSideScroll(page);
     }
-    await page.locator('#sections a[data-section="models"]').click();
-    await expect(page.getByLabel('Claude light model', { exact: true })).toBeVisible();
-    await noSideScroll(page);
   });
 
   for (const width of [390, 360]) {
@@ -410,7 +408,7 @@ test.describe('phone', () => {
   });
 
   test('Your name saves and survives a reload, and a too-long name is refused with the typed value kept', async ({ page }) => {
-    await openPage(page, context, '/app/settings');
+    await openPage(page, context, '/app/settings#you');
     const row = page.locator('.row-line', { hasText: 'Your name' });
     const input = page.getByLabel('Your name', { exact: true });
     await expect(input).toHaveValue('');
@@ -432,7 +430,7 @@ test.describe('phone', () => {
   });
 
   test('the Default project folder saves, and a refusal shows under it with the typed value kept', async ({ page }) => {
-    await openPage(page, context, '/app/settings');
+    await openPage(page, context, '/app/settings#threads');
     const input = page.getByLabel('Default project folder', { exact: true });
     await expect(input).toHaveValue('');
     await input.fill('~/projects');
@@ -463,7 +461,7 @@ test.describe('phone', () => {
 });
 
 test('picks a lead name list and uploads a custom one in Settings', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await page.getByLabel('Lead names', { exact: true }).selectOption('nato');
   await expect.poll(async () => (await settings(page)).lead_name_list).toBe('nato');
   await expect(page.getByLabel('Upload lead names')).toBeHidden();
@@ -477,14 +475,14 @@ test('picks a lead name list and uploads a custom one in Settings', async ({ pag
 });
 
 test('a quoted CSV upload keeps commas inside names', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await page.getByLabel('Lead names', { exact: true }).selectOption('custom');
   await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.csv', mimeType: 'text/csv', buffer: Buffer.from('"Ada","Grace, Jr."\n"Say ""Hi"""\n') });
   await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Ada', 'Grace, Jr.', 'Say "Hi"']);
 });
 
 test('a later dropdown choice wins over a slow upload save', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   const select = page.getByLabel('Lead names', { exact: true });
   await select.selectOption('custom');
   let release;
@@ -501,7 +499,7 @@ test('a later dropdown choice wins over a slow upload save', async ({ page }) =>
 });
 
 test('a slow upload does not undo a list picked after switching sections', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   const select = page.getByLabel('Lead names', { exact: true });
   await select.selectOption('custom');
   let release;
@@ -515,8 +513,8 @@ test('a slow upload does not undo a list picked after switching sections', async
   });
   await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\nGrace\n') });
   await sent;
-  await page.locator('#sections a').nth(5).click();
-  await page.locator('#sections a').nth(3).click();
+  await page.locator('#sections a[data-section="models"]').click();
+  await page.locator('#sections a[data-section="threads"]').click();
   const picked = page.waitForResponse((response) => response.url().includes('/settings/preferences') && JSON.parse(response.request().postData() || '{}').lead_name_list === 'people');
   await select.selectOption('people');
   // The old page sent this straight away; the fixed one waits behind the upload.
@@ -532,7 +530,7 @@ test('a slow upload does not undo a list picked after switching sections', async
 });
 
 test('picking Custom while another list saves keeps Custom and its file picker', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lead_names: [], lead_name_list: 'greek' }) }));
   await page.reload();
   const select = page.getByLabel('Lead names', { exact: true });
@@ -559,7 +557,7 @@ const clearLeadNames = async (page) => {
 };
 
 test('Custom picked again during a slow upload and another save stays Custom', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await clearLeadNames(page);
   const select = page.getByLabel('Lead names', { exact: true });
   await select.selectOption('custom');
@@ -583,7 +581,7 @@ test('Custom picked again during a slow upload and another save stays Custom', a
 });
 
 test('a failed save of another list keeps a later pick of Custom', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await clearLeadNames(page);
   const select = page.getByLabel('Lead names', { exact: true });
   let release;
@@ -603,7 +601,7 @@ test('a failed save of another list keeps a later pick of Custom', async ({ page
 });
 
 test('only the newest uploaded file is saved', async ({ page }) => {
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#threads');
   await clearLeadNames(page);
   await page.evaluate(() => {
     const read = File.prototype.text;
@@ -624,9 +622,566 @@ test('only the newest uploaded file is saved', async ({ page }) => {
   expect((await settings(page)).lead_names).toEqual(['Grace']);
 });
 
-test('models and preferences fits at 390px', async ({ page }) => {
+test('the preview panes are unfilled and Visibility is a short track under its label', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPage(page, context, '/app/settings#you');
+  await expect(page.locator('.pane')).toHaveCount(2);
+  const panes = await page.locator('.pane').evaluateAll((els) => els.map((el) => ({ fill: getComputedStyle(el).backgroundColor, line: getComputedStyle(el).borderTopColor })));
+  for (const pane of panes) expect(pane).toEqual({ fill: 'rgba(0, 0, 0, 0)', line: panes[0].line });
+  const slider = page.getByLabel('Visibility');
+  const track = await slider.boundingBox();
+  const box = await page.locator('.background-editor .box').boundingBox();
+  expect(track.width).toBeLessThan(box.width / 2);
+  const value = await slider.locator('xpath=preceding-sibling::span').boundingBox();
+  expect(track.y).toBeGreaterThanOrEqual(value.y + value.height - 1);
+});
+
+// mockup-phone-you.html: 14px text on 1.45 lines with a line's margin around each paragraph.
+test('the preview panes carry the mockup\u2019s text and are its height at 390px', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPage(page, context, '/app/settings#you');
+  await expect(page.locator('.pane')).toHaveCount(2);
+  await page.evaluate(() => document.fonts.ready);
+  const text = await page.locator('.pane p').evaluateAll((els) => els.map((el) => {
+    const css = getComputedStyle(el);
+    return { size: css.fontSize, line: Math.round(parseFloat(css.lineHeight) * 10) / 10, above: css.marginTop, below: css.marginBottom };
+  }));
+  for (const p of text) expect(p).toEqual({ size: '14px', line: 20.3, above: '14px', below: '14px' });
+  // The mockup in the app's own Inter measures 176px and 115px. (Opened as a file it loads no
+  // Inter, and its first pane wraps one line more in the fallback font.)
+  const heights = await page.locator('.pane').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+  expect(Math.abs(heights[0] - 176)).toBeLessThanOrEqual(4);
+  expect(Math.abs(heights[1] - 115)).toBeLessThanOrEqual(4);
+});
+
+test('Models fits at 390px', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openPage(page, context, '/app/settings#models');
   await expect(page.locator('tr[data-provider="gemini"]')).toBeVisible();
   await noSideScroll(page);
+});
+
+test.describe('categories', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  const view = (page, key) => page.locator(`.catview[data-category="${key}"]`);
+  const goTo = (page, hash) => page.evaluate((k) => { location.hash = k; }, hash);
+  const rename = (page) => page.getByRole('textbox', { name: 'Account name' });
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
+
+  // Two machines whose harnesses are all missing; `install` answers the status polls.
+  async function stubHarnesses(page, install = () => ({ state: 'idle' })) {
+    const names = ['claude', 'gpt', 'gemini', 'kimi', 'openrouter'];
+    const machine = (name) => ({ name, reachable: true, harnesses: Object.fromEntries(names.map((n) => [n, { installed: false, version: null, signed_in: false, recipe: true }])) });
+    await page.route('**/api/harnesses**', (r) => r.fulfill({ json: { switches: Object.fromEntries(names.map((n) => [n, true])), threads_using: {}, machines: [machine('hub'), machine('node-2')], can_start: { machine: 'hub', lead: { ok: true }, worker: { ok: true } } } }));
+    await page.route('**/api/machines/*/harnesses/*/install', (r) => r.fulfill({ json: install(r.request().url()) }));
+  }
+  async function openRename(page) {
+    await page.locator('.acct[data-account="default-claude"]').getByRole('button', { name: 'Rename' }).click();
+    await rename(page).fill('typed, not saved');
+  }
+
+  test('each moved control is in its category', async ({ page }) => {
+    await stubHarnesses(page);
+    await page.route('**/api/settings/diagram-sensitivity', (r) => r.fulfill({ json: { machines: { hub: { level: 'high', files: [] } } } }));
+    await openPage(page, context, '/app/settings#you');
+    await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ auto_merge: 'on' }) }));
+    await page.reload();
+    const radios = (name) => page.getByRole('radiogroup', { name, exact: true });
+    const found = {
+      you: [page.getByRole('textbox', { name: 'Your name' }), page.locator('#style-text'), radios('Diagram sensitivity'), radios('Enter to send'), page.getByLabel('Choose background image')],
+      providers: [page.locator('.h-row[data-provider="claude"]'), page.locator('.acct[data-account="default-claude"]')],
+      usage: [page.locator('[data-order="lead_order"]'), page.locator('#bal-save')],
+      models: [page.getByLabel('Claude standard model', { exact: true }), page.getByLabel('Claude lead model', { exact: true }), page.getByLabel('Checker', { exact: true }), radios('What steps up first')],
+      leads: [radios('Personal assistant'), radios('Project leads')],
+      threads: [radios('Tool steps'), radios('Merge pull requests when done'), radios('Delete the branch after merging'), page.getByLabel('Default project folder', { exact: true }), radios('Aside access'), page.getByRole('combobox', { name: 'Lead names' })],
+      behavior: [page.getByRole('button', { name: '+ New template' }), page.locator('#export-lessons')],
+    };
+    for (const [key, controls] of Object.entries(found)) {
+      await page.locator(`#sections a[data-section="${key}"]`).click();
+      await expect(view(page, key)).toBeVisible();
+      for (const control of controls) await expect(control, key).toBeVisible();
+    }
+    await page.locator('#sections a[data-section="usage"]').click();
+    const order = await page.locator('[data-order="lead_order"]').boundingBox();
+    const balancing = await page.locator('.balancing').boundingBox();
+    expect(order.y + order.height).toBeLessThan(balancing.y);
+  });
+
+  test('Diagrams choices show in You', async ({ page }) => {
+    await page.route('**/api/settings/diagram-sensitivity', (r) => r.fulfill({ json: { machines: { hub: { level: 'high', files: [] } } } }));
+    await openPage(page, context, '/app/settings#models');
+    await expect(page.locator('#diagram-choices')).toHaveCount(0);
+    await goTo(page, 'you');
+    await expect(view(page, 'you').getByRole('radio', { name: /High/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('old keys open the category holding them, and an unknown key opens You', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    const keys = { harnesses: 'providers', accounts: 'providers', writing: 'you', background: 'you', templates: 'behavior', nonsense: 'you', 'templates/lessons/nobody': 'you', constructor: 'you' };
+    for (const [old, key] of Object.entries(keys)) {
+      await goTo(page, 'models');
+      await expect(view(page, 'models')).toBeVisible();
+      await goTo(page, old);
+      await expect(view(page, key), old).toBeVisible();
+      await expect(page.locator('#sections a[aria-current="page"]')).toHaveAttribute('data-section', key);
+      await expect(page).toHaveURL(new RegExp(`#${old}$`));
+    }
+  });
+
+  test("both lesson addresses open that role's editor", async ({ page }) => {
+    for (const [address, role] of [['behavior/lessons/reviewer', 'Reviewer'], ['templates/lessons/worker', 'Worker']]) {
+      await openPage(page, context, '/app/settings#models');
+      await goTo(page, address);
+      await expect(page.locator('.lessons-edit h2')).toHaveText('Lessons learned · ' + role);
+      await openPage(page, context, '/app/settings#' + address);
+      await expect(page.locator('.lessons-edit h2')).toHaveText('Lessons learned · ' + role);
+    }
+    await goTo(page, 'behavior/lessons/mapper');
+    await expect(page.locator('.lessons-edit h2')).toHaveText('Lessons learned · Mapper');
+  });
+
+  test('on a phone no hash lists the categories, and ‹ Settings returns to the list', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openPage(page, context, '/app/settings');
+    const list = page.locator('.category-list');
+    const back = page.getByRole('link', { name: /Settings$/ }).and(page.locator('.back'));
+    await expect(list).toBeVisible();
+    await expect(list.locator('strong')).toHaveText(TITLES);
+    await expect(page.locator('.catview')).toBeHidden();
+    await expect(page.locator('#sections')).toBeHidden();
+    await expect(page.locator('.back')).toBeHidden();
+    await noSideScroll(page);
+    await list.getByRole('link', { name: /^Threads/ }).click();
+    await expect(view(page, 'threads')).toBeVisible();
+    await expect(list).toBeHidden();
+    await back.click();
+    await expect(list).toBeVisible();
+    await expect(view(page, 'you')).toBeHidden();
+    await page.goBack();
+    await expect(view(page, 'threads')).toBeVisible();
+    await openPage(page, context, '/app/settings#models');
+    await expect(list).toBeHidden();
+    await back.click();
+    await expect(list).toBeVisible();
+    await expect(page.locator('.catview')).toBeHidden();
+  });
+
+  test('crossing the phone width rebuilds nothing', async ({ page }) => {
+    await stubHarnesses(page);
+    await openPage(page, context, '/app/settings#providers');
+    await openRename(page);
+    await page.setViewportSize({ width: 899, height: 844 });
+    await expect(page.locator('#sections')).toBeHidden();
+    await expect(page.locator('.back')).toBeVisible();
+    await expect(rename(page)).toHaveValue('typed, not saved');
+    await page.setViewportSize({ width: 900, height: 844 });
+    await expect(page.locator('#sections')).toBeVisible();
+    await expect(page.locator('.back')).toBeHidden();
+    await expect(rename(page)).toHaveValue('typed, not saved');
+
+    await openPage(page, context, '/app/settings');
+    await expect(view(page, 'you')).toBeVisible();
+    await expect(page.locator('.category-list')).toBeHidden();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('.category-list')).toBeVisible();
+    await expect(view(page, 'you')).toBeHidden();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(view(page, 'you')).toBeVisible();
+    await expect(page.locator('.category-list')).toBeHidden();
+  });
+
+  test('switching the Harnesses machine keeps an open account rename', async ({ page }) => {
+    await stubHarnesses(page);
+    await openPage(page, context, '/app/settings#providers');
+    await expect(page.locator('.h-row')).toHaveCount(5);
+    await openRename(page);
+    await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
+    await expect(page.getByLabel('Machine', { exact: true })).toHaveValue('node-2');
+    await expect(page.locator('.h-row')).toHaveCount(5);
+    await expect(rename(page)).toHaveValue('typed, not saved');
+  });
+
+  test('an install progress tick keeps an open account rename', async ({ page }) => {
+    let ticks = 0;
+    await stubHarnesses(page, (url) => (url.includes('/claude/') ? { state: 'running', output_tail: `tick ${++ticks}` } : { state: 'idle' }));
+    await openPage(page, context, '/app/settings#providers');
+    const tail = page.locator('.h-row[data-provider="claude"] .h-tail');
+    await expect(tail).toContainText('tick');
+    await openRename(page);
+    const seen = ticks;
+    await expect(tail).toHaveText(`tick ${seen + 1}`, { timeout: 8000 });
+    await expect(rename(page)).toHaveValue('typed, not saved');
+  });
+
+  test('saving a background keeps text typed in Writing style', async ({ page }) => {
+    await openPage(page, context, '/app/settings#you');
+    await page.locator('#style-text').fill('typed, not saved');
+    // A phrase not yet added lives only in the page: rebuilding Writing style would drop it.
+    await page.getByLabel('Add a phrase').fill('half a phrase');
+    await expect.poll(() => page.evaluate(() => window.wcBackground.current().metadata !== null)).toBe(true);
+    await page.getByLabel('Choose background image').setInputFiles({ name: 'one.png', mimeType: 'image/png', buffer: PNG });
+    const editor = page.locator('.background-editor');
+    await editor.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(editor.getByRole('status')).toHaveText('Saved');
+    await expect(page.locator('#style-text')).toHaveValue('typed, not saved');
+    await expect(page.getByLabel('Add a phrase')).toHaveValue('half a phrase');
+    await editor.getByRole('button', { name: 'Remove background' }).click();
+    await editor.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(editor.getByRole('status')).toHaveText('Saved');
+    await expect(page.locator('#style-text')).toHaveValue('typed, not saved');
+  });
+
+  test('the phone list keeps the hidden background editor until You is reopened', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openPage(page, context, '/app/settings#you');
+    const editor = page.locator('.background-editor');
+    const visibility = editor.getByLabel('Visibility');
+    const save = editor.getByRole('button', { name: 'Save', exact: true });
+    await expect(editor.getByLabel('Choose background image')).toBeEnabled();
+    await editor.getByLabel('Choose background image').setInputFiles({ name: 'one.png', mimeType: 'image/png', buffer: PNG });
+    await save.click();
+    await expect(editor.getByRole('status')).toHaveText('Saved');
+    await expect(visibility).toHaveValue('35');
+
+    await page.locator('.back').click();
+    const you = page.locator('.cat-link[data-category="you"]');
+    await expect(you).toBeVisible();
+    await expect(editor).toBeHidden();
+    const hiddenNode = await editor.elementHandle();
+    const updated = await page.evaluate(async () => {
+      const { revision, image_id } = window.wcBackground.current().metadata;
+      const response = await fetch('/wheelchair/api/settings/background', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ revision, image_id, opacity: 42 }),
+      });
+      await window.wcBackground.refresh();
+      return response.ok;
+    });
+    expect(updated).toBe(true);
+    await expect(page.locator('.background-layer')).toHaveCSS('opacity', '0.42');
+    const sameEditor = (el) => el.isConnected && el === document.querySelector('.background-editor');
+    expect.soft(await hiddenNode.evaluate(sameEditor), 'editor after refresh').toBe(true);
+    await you.click();
+    await expect(editor).toBeVisible();
+    await expect(visibility).toHaveValue('42');
+
+    // The restore event used by pageshow must also leave the hidden editor in place.
+    await page.locator('.back').click();
+    await expect(you).toBeVisible();
+    const beforeRestore = await editor.elementHandle();
+    await page.evaluate(() => window.dispatchEvent(new Event('backgroundrestore')));
+    expect.soft(await beforeRestore.evaluate(sameEditor), 'editor after restore').toBe(true);
+    await you.click();
+    await expect(editor).toBeVisible();
+    await expect(visibility).toHaveValue('42');
+    await editor.getByRole('button', { name: 'Remove background' }).click();
+    await save.click();
+    await expect(editor.getByRole('status')).toHaveText('Saved');
+  });
+});
+
+test.describe('one place for sign-in, usage and each draft', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }); });
+  const NAMES = ['claude', 'gpt', 'gemini', 'kimi', 'openrouter'];
+  const goTo = (page, hash) => page.evaluate((k) => { location.hash = k; }, hash);
+  const group = (page, p) => page.locator(`.prov-group[data-provider="${p}"]`);
+  const row = (page, p) => page.locator(`.h-row[data-provider="${p}"]`);
+  const acct = (page, id) => page.locator(`.acct[data-account="${id}"]`);
+  const allOn = () => Object.fromEntries(NAMES.map((n) => [n, true]));
+
+  // One signed-out default account per provider shown, as the hub's /usage would answer.
+  function usageBody(state = 'signed_out', machines = ['hub'], reading = null) {
+    const one = (provider, label) => ({ label, left: null, accounts: [{ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false, machines: Object.fromEntries(machines.map((m) => [m, state])), reading, next: false, reason: '', live_sessions: 0 }] });
+    return { providers: { claude: one('claude', 'Claude'), gpt: one('gpt', 'GPT') } };
+  }
+  // Codex is installed and, unless `signedIn()` says otherwise, signed out on every machine.
+  function harnessBody({ machines = ['hub'], signedIn = () => false, switches = allOn() } = {}) {
+    const rowFor = (n) => ({ installed: n === 'gpt', version: n === 'gpt' ? '1' : null, signed_in: n === 'gpt' && signedIn(), recipe: true });
+    return { switches, threads_using: {}, machines: machines.map((name) => ({ name, reachable: true, harnesses: Object.fromEntries(NAMES.map((n) => [n, rowFor(n)])) })), can_start: { machine: 'hub', lead: { ok: true }, worker: { ok: true } } };
+  }
+  const idle = (page) => page.route('**/api/machines/*/harnesses/*/install', (r) => r.fulfill({ json: { state: 'idle' } }));
+  async function patchSettings(page, patch) {
+    await page.route('**/api/settings', async (r) => {
+      try { await r.fulfill({ json: { ...await (await r.fetch()).json(), ...patch() } }); } catch { await r.abort().catch(() => {}); }
+    });
+  }
+
+  test("Harnesses' sign-in link opens the account cards' sign-in for the Harnesses machine", async ({ page }) => {
+    const machines = ['hub', 'node-2'];
+    const posts = [];
+    await idle(page);
+    await page.route('**/api/harnesses**', (r) => r.fulfill({ json: harnessBody({ machines }) }));
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_out', machines) }));
+    await page.route('**/api/accounts/*/signin', (r) => { posts.push([new URL(r.request().url()).pathname, r.request().postDataJSON()]); return r.fulfill({ json: {} }); });
+    await page.route('**/api/accounts/*/signin/*', (r) => r.fulfill({ json: { state: 'waiting', url: 'https://example.test/login' } }));
+    await openPage(page, context, '/app/settings#providers');
+    await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
+    const link = row(page, 'gpt').getByRole('link', { name: 'Sign in Codex' });
+    await expect(link).toHaveAttribute('href', '#providers');
+    await expect(row(page, 'gpt').getByRole('button', { name: /Sign in/ })).toHaveCount(0);
+    await expect(page.locator('.signin-card')).toHaveCount(0);
+    expect(posts).toEqual([]);
+    await link.click();
+    const card = group(page, 'gpt').locator('.signin-card');
+    await expect(card).toContainText('Sign in default on node-2');
+    await expect(card.getByRole('link', { name: 'https://example.test/login' })).toBeVisible();
+    await expect(group(page, 'gpt')).toBeInViewport();
+    await expect(page.locator('.signin-card')).toHaveCount(1);
+    expect(posts).toEqual([['/wheelchair/api/accounts/default-gpt/signin', { machine: 'node-2' }]]);
+    // The 30-second repaint of Accounts keeps the card where it is.
+    await goTo(page, 'usage');
+    await goTo(page, 'providers');
+    await expect(group(page, 'gpt').locator('.signin-card')).toContainText('node-2');
+  });
+
+  test('account cards show one usage line and no usage bars', async ({ page }) => {
+    const hour = (n) => new Date(Date.now() + n * 3600000).toISOString();
+    const reading = { at: hour(0), five_hour: { used: 42, resets_at: hour(2) }, week: { used: 61, resets_at: hour(60) } };
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_in', ['hub'], reading) }));
+    await openPage(page, context, '/app/settings#providers');
+    const card = acct(page, 'default-claude');
+    await expect(card.locator('.acct-usage')).toHaveCount(1);
+    await expect(card.locator('.acct-usage')).toHaveText(/^5-hour 42% used · week 61% used · as of [^·]+$/);
+    await expect(card.locator('.win, .meter, .bar, meter, progress')).toHaveCount(0);
+    await expect(card).not.toContainText('resets');
+    const lines = await card.locator('.acct-usage').evaluate((el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight || '20'));
+    expect(lines).toBeLessThan(1.5);
+  });
+
+  test('the per-account table draws a bar for each window and account cards draw none', async ({ page }) => {
+    const hour = (n) => new Date(Date.now() + n * 3600000).toISOString();
+    const body = usageBody('signed_in', ['hub'], { at: hour(0), five_hour: { used: 42, resets_at: hour(2) }, week: { used: 61, resets_at: hour(60) } });
+    body.providers.claude.left = 0.39;
+    body.providers.claude.accounts.push({ ...body.providers.claude.accounts[0], id: 'spare', name: 'Spare', reading: { at: hour(0), five_hour: { used: 88, resets_at: hour(-1) } } });
+    await page.route('**/api/usage', (r) => r.fulfill({ json: body }));
+    await openPage(page, context, '/app/settings#usage');
+    const claude = page.locator('.usage-prov[data-provider="claude"]');
+    await claude.locator('.usage-toggle').click();
+    const bar = (id, label) => claude.locator(`tr[data-account="${id}"] td[data-label="${label}"] .meter`);
+    const share = (locator) => locator.evaluate((el) => Math.round(100 * el.firstElementChild.getBoundingClientRect().width / el.getBoundingClientRect().width));
+    for (const [id, label, n, name] of [['default-claude', '5-hour used', 42, '5-hour'], ['default-claude', 'Week used', 61, 'week'], ['spare', '5-hour used', 0, '5-hour']]) {
+      await expect(bar(id, label)).toHaveAttribute('aria-label', `${n}% of the ${name} window used`);
+      expect(await bar(id, label).evaluate((el) => el.getBoundingClientRect().width)).toBe(90);
+      expect(await share(bar(id, label))).toBe(n);
+      await expect(claude.locator(`tr[data-account="${id}"] td[data-label="${label}"]`)).toHaveText(`${n}%`);
+    }
+    await expect(bar('spare', 'Week used')).toHaveCount(0);
+    await page.evaluate(() => { location.hash = 'providers'; });
+    await expect(acct(page, 'default-claude')).toContainText('42% used');
+    await expect(page.locator('.acct .meter, .acct .bar')).toHaveCount(0);
+  });
+
+  test('Harnesses answering while a button below is pressed does not move it from under the press', async ({ page }) => {
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    await idle(page);
+    await page.route('**/api/harnesses**', async (r) => { await held; await r.fulfill({ json: harnessBody() }); });
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody() }));
+    await openPage(page, context, '/app/settings#providers');
+    // The browser's own scroll anchoring would sometimes hide a missing hold.
+    await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
+    await expect(acct(page, 'default-claude')).toBeVisible();
+    await page.locator('#add-account').click();
+    const cancel = page.locator('.add-form').getByRole('button', { name: 'Cancel' });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    expect(await page.locator('[data-block="harnesses"]').evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThan(0);
+    const box = await cancel.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    release();
+    await expect(page.locator('.h-row')).toHaveCount(5);
+    expect(Math.abs((await cancel.boundingBox()).y - box.y)).toBeLessThan(2);
+    await page.mouse.up();
+    await expect(page.locator('.add-form')).toHaveCount(0);
+  });
+
+  test('Harnesses answering during Send code keeps the sign-in card in place', async ({ page }) => {
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const codes = [];
+    const usage = usageBody();
+    usage.providers.openrouter = {
+      ...usage.providers.claude,
+      label: 'OpenRouter',
+      accounts: [{ ...usage.providers.claude.accounts[0], id: 'default-openrouter', provider: 'openrouter' }],
+    };
+    await idle(page);
+    await page.route('**/api/harnesses**', async (route) => { await held; await route.fulfill({ json: harnessBody() }); });
+    await page.route('**/api/usage', (route) => route.fulfill({ json: usage }));
+    await page.route('**/api/accounts/default-openrouter/signin', (route) => route.fulfill({ json: {} }));
+    await page.route('**/api/accounts/default-openrouter/signin/hub', (route) =>
+      route.fulfill({ json: { state: 'waiting', wantsCode: true } }));
+    await page.route('**/api/accounts/default-openrouter/signin/hub/code', (route) => {
+      codes.push(route.request().postDataJSON().code);
+      return route.fulfill({ status: 409, json: { error: 'The sign-in screen has moved on.' } });
+    });
+    await openPage(page, context, '/app/settings#providers');
+    await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
+    await acct(page, 'default-openrouter').getByRole('button', { name: 'Sign in default on hub' }).click();
+    const card = page.locator('.signin-card');
+    const key = card.getByPlaceholder('Paste your OpenRouter key');
+    const send = card.getByRole('button', { name: 'Send code' });
+    await key.fill('sk-or-test-1');
+    await send.click();
+    await expect(card.getByRole('button', { name: 'Start again' })).toBeVisible();
+    await key.fill('sk-or-test-2');
+    const harnesses = page.locator('[data-block="harnesses"]');
+    expect(await harnesses.evaluate((el) => {
+      const navBottom = document.getElementById('app-nav').getBoundingClientRect().bottom;
+      window.scrollBy(0, el.getBoundingClientRect().bottom - navBottom - 24);
+      return el.getBoundingClientRect().bottom > navBottom;
+    })).toBe(true);
+    await expect(send).toBeInViewport();
+    const box = await send.boundingBox();
+    const cardNode = await card.elementHandle();
+    const keyNode = await key.elementHandle();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    const focused = await page.evaluateHandle(() => document.activeElement);
+    release();
+    await expect(page.locator('.h-row')).toHaveCount(5);
+    const after = await send.boundingBox();
+    const preserved = await cardNode.evaluate((el, { field, focus }) => ({
+      card: el === document.querySelector('.signin-card'),
+      field: field === el.querySelector('input[type="password"]'),
+      focus: focus === document.activeElement,
+      key: field.value,
+    }), { field: keyNode, focus: focused });
+    await page.mouse.up();
+    await expect.poll(() => codes).toEqual(['sk-or-test-1', 'sk-or-test-2']);
+    expect(Math.abs(after.y - box.y)).toBeLessThan(2);
+    expect(after.x).toBe(box.x);
+    expect(preserved).toEqual({ card: true, field: true, focus: true, key: 'sk-or-test-2' });
+  });
+
+  for (const first of ['lead-order', 'balancing']) {
+    test(`pressing the ${first} Save keeps the other box's unsaved edit and updates the reserve label`, async ({ page }) => {
+      const saved = [];
+      await patchSettings(page, () => ({ harnesses: allOn(), lead_order: ['claude', 'gpt', 'any'], leave: 10, reserved_provider: 'Claude' }));
+      await page.route('**/api/settings/balancing', (r) => { const body = r.request().postDataJSON(); saved.push(body); return r.fulfill({ json: { ...body, reserved_provider: 'GPT' } }); });
+      await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_in', ['hub']) }));
+      await openPage(page, context, '/app/settings#usage');
+      const leads = page.locator('[data-order="lead_order"]');
+      const order = () => leads.locator('li span').allTextContents();
+      await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save Claude for leads');
+      await expect(page.locator('.usage-bars .usage-prov')).toHaveCount(2);
+      await leads.getByRole('button', { name: 'Move Claude down' }).click();
+      await page.locator('#bal-leave').fill('33');
+      const [one, other] = first === 'lead-order' ? ['#lead-order-save', '#bal-save'] : ['#bal-save', '#lead-order-save'];
+      await page.locator(one).click();
+      await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
+      await expect(page.locator('.balancing')).toContainText('When GPT is projected to have less than this left at refill');
+      await expect(page.locator('.balancing')).toContainText('Held back when GPT runs short');
+      await expect(page.locator('#bal-leave')).toHaveValue('33');
+      expect(await order()).toEqual(['GPT', 'Claude']);
+      expect(Object.hasOwn(saved[0], 'lead_order')).toBe(first === 'lead-order');
+      expect(Object.hasOwn(saved[0], 'leave')).toBe(first === 'balancing');
+      await page.locator(other).click();
+      await expect.poll(() => saved.length).toBe(2);
+      if (first === 'lead-order') expect(saved[1].leave).toBe(33);
+      else expect(saved[1].lead_order).toEqual(['gpt', 'claude', 'any']);
+    });
+  }
+
+  test('opening Usage and balancing re-reads the reserved provider and keeps what was typed', async ({ page }) => {
+    let reserved = 'Claude';
+    await patchSettings(page, () => ({ leave: 10, reserved_provider: reserved }));
+    await openPage(page, context, '/app/settings#usage');
+    await page.locator('#bal-leave').fill('33');
+    await goTo(page, 'models');
+    await expect(page.locator('#bal-leave')).toHaveCount(0);
+    reserved = 'GPT';
+    await goTo(page, 'usage');
+    await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
+    await expect(page.locator('.balancing')).toContainText('Save GPT for leads');
+    await expect(page.locator('.balancing')).toContainText('When GPT is projected');
+    await expect(page.locator('.balancing')).toContainText('Held back when GPT runs short');
+    await expect(page.locator('#bal-leave')).toHaveValue('33');
+  });
+
+  test('turning a harness on shows its account cards, waiting while an account edit is open', async ({ page }) => {
+    const switches = { ...allOn(), gpt: false, claude: false };
+    await idle(page);
+    await page.route('**/api/harnesses**', (r) => r.fulfill({ json: harnessBody({ switches }) }));
+    await patchSettings(page, () => ({ harnesses: { ...switches } }));
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody() }));
+    await page.route('**/api/settings/harnesses/*', (r) => { switches[r.request().url().split('/').pop()] = r.request().postDataJSON().enabled; return r.fulfill({ json: { harnesses: { ...switches } } }); });
+    await openPage(page, context, '/app/settings#providers');
+    await expect(row(page, 'gpt')).toBeVisible();
+    await expect(group(page, 'gpt')).toHaveCount(0);
+    await page.getByLabel('Use Codex').click();
+    await expect(group(page, 'gpt').locator('.acct[data-account="default-gpt"]')).toBeVisible();
+    await expect(page.locator('.catview h1')).toHaveText('AI providers');
+
+    await acct(page, 'default-gpt').getByRole('button', { name: 'Rename' }).click();
+    const name = page.getByRole('textbox', { name: 'Account name' });
+    await name.fill('typed, not saved');
+    await page.getByLabel('Use Claude Code').click();
+    await expect(page.getByLabel('Use Claude Code')).toBeChecked();
+    await expect(row(page, 'claude').getByRole('button', { name: 'Install Claude Code' })).toBeVisible();
+    await expect(name).toHaveValue('typed, not saved');
+    await expect(group(page, 'claude')).toHaveCount(0);
+    await acct(page, 'default-gpt').getByRole('button', { name: 'Cancel' }).click();
+    await expect(group(page, 'claude')).toHaveCount(1);
+  });
+
+  // The hub keeps each machine's answer for a while: only a fresh harness read renews what
+  // both /harnesses and /usage say.
+  test('after an account sign-in, Harnesses and the account card show the new status', async ({ page }) => {
+    let machine = false; let kept = false; let hold = null; let release = null; let heldAnswered = false;
+    await idle(page);
+    await page.route('**/api/harnesses**', async (r) => {
+      if (r.request().url().includes('fresh=1')) { await new Promise((done) => setTimeout(done, 300)); kept = machine; }
+      await r.fulfill({ json: harnessBody({ signedIn: () => kept }) });
+    });
+    await page.route('**/api/usage', async (r) => {
+      const body = usageBody(kept ? 'signed_in' : 'signed_out');
+      const wait = hold; hold = null;
+      if (wait) await wait;
+      await r.fulfill({ json: body });
+      if (wait) heldAnswered = true;
+    });
+    await page.route('**/api/accounts/default-gpt/signin', (r) => r.fulfill({ json: {} }));
+    await page.route('**/api/accounts/default-gpt/signin/hub', (r) => { machine = true; return r.fulfill({ json: { state: 'done', logged_in: true } }); });
+    await openPage(page, context, '/app/settings#providers');
+    const state = acct(page, 'default-gpt').locator('li[data-machine="hub"] .mstate');
+    await expect(state).toHaveText('signed out');
+    await expect(row(page, 'gpt').locator('.h-state')).toHaveText('Installed 1');
+    // A reading asked for before the sign-in, and answered after it, must not undo it.
+    hold = new Promise((done) => { release = done; });
+    await goTo(page, 'usage');
+    await expect.poll(() => hold === null).toBe(true);
+    // Coming back reads Harnesses afresh; let that finish so it cannot stand in for the sign-in's.
+    const entered = page.waitForResponse((res) => res.url().includes('/harnesses?fresh=1'));
+    await goTo(page, 'providers');
+    await entered;
+    await acct(page, 'default-gpt').getByRole('button', { name: 'Sign in default on hub' }).click();
+    await expect(row(page, 'gpt').locator('.h-state')).toHaveText('Signed in', { timeout: 8000 });
+    await expect(state).toHaveText('signed in');
+    release();
+    await expect.poll(() => heldAnswered).toBe(true);
+    await page.waitForTimeout(300);
+    await expect(state).toHaveText('signed in');
+  });
+
+  test('pausing and adding an account reload the Harnesses status', async ({ page }) => {
+    let paused = false; let added = false;
+    await idle(page);
+    await page.route('**/api/harnesses**', (r) => r.fulfill({ json: harnessBody({ signedIn: () => !paused || added }) }));
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_in') }));
+    await page.route('**/api/settings/accounts/default-gpt', (r) => { paused = true; return r.fulfill({ json: {} }); });
+    await page.route('**/api/settings/accounts', (r) => { added = true; return r.fulfill({ status: 201, json: { id: 'spare' } }); });
+    await openPage(page, context, '/app/settings#providers');
+    const status = row(page, 'gpt').locator('.h-state');
+    await expect(status).toHaveText('Signed in');
+    await acct(page, 'default-gpt').getByRole('button', { name: 'Pause' }).click();
+    await expect(status).toHaveText('Installed 1');
+    await page.locator('#add-account').click();
+    await page.locator('#add-provider').selectOption('gpt');
+    await page.locator('#add-name').fill('Spare');
+    await page.locator('.add-form button[type="submit"]').click();
+    await expect(status).toHaveText('Signed in');
+  });
 });

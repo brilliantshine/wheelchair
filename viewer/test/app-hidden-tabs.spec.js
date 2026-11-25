@@ -150,7 +150,7 @@ test('sign-in polling keeps going while the tab is hidden', async ({ page }) => 
   await page.route('**/api/usage', (route) => route.fulfill({ json: usage }));
   await page.route('**/api/accounts/*/signin{,/beelink}', (route) => route.fulfill({ status: route.request().method() === 'POST' ? 201 : 200, json: { state: 'waiting', url: 'https://claude.example/login', code: null, wantsCode: true, logged_in: false } }));
   await page.clock.install();
-  await page.goto(`${ctx.server.url}/app/settings#accounts`);
+  await page.goto(`${ctx.server.url}/app/settings#providers`);
   const button = page.locator('.acct[data-account="default-claude"] li[data-machine="beelink"] button');
   await expect(button).toBeVisible();
   await button.click();

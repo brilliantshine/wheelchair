@@ -1531,7 +1531,7 @@
         if (card.why) line.appendChild(el('span', 'lesson-why', card.why));
         for (const m of marks) line.appendChild(el('span', 'lesson-mark', m));
         const link = el('a', 'lesson-link', 'Open in Settings');
-        link.href = '/wheelchair/app/settings#templates/lessons/' + encodeURIComponent(card.for);
+        link.href = '/wheelchair/app/settings#behavior/lessons/' + encodeURIComponent(card.for);
         line.appendChild(link);
         box.appendChild(line);
         break;
@@ -1633,7 +1633,7 @@
     const lead = leads().filter((s) => s.live || s.status === 'waiting').pop();
     if (!lead) return '';
     if (lead.status === 'waiting' && lead.waiting_until) {
-      if (lead.waiting_reason && lead.waiting_reason.endsWith(' is left out in Settings')) return lead.waiting_reason + '. Turn it back on under Settings → Harnesses.';
+      if (lead.waiting_reason && lead.waiting_reason.endsWith(' is left out in Settings')) return lead.waiting_reason + '. Turn it back on under Settings → AI providers.';
       // The provider the wait is pinned to, else the lead's, else the thread's; none set → room.
       const provider = [lead.waiting_provider, lead.provider, thread().provider].find((p) => PROVIDER_LABEL[p]);
       if (!provider) return 'Waiting for room, about ' + clock(lead.waiting_until);

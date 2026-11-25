@@ -147,7 +147,7 @@
       }
       li.appendChild(steps);
       li.appendChild(el('p', 'dim', "Leave out the ones you don't use."));
-      const open = el('a', 'btn-link primary', 'Open Settings'); open.href = '/wheelchair/app/settings#harnesses';
+      const open = el('a', 'btn-link primary', 'Open Settings'); open.href = '/wheelchair/app/settings#providers';
       li.appendChild(open); listEl.appendChild(li);
     }
     for (const notice of showArchived ? [] : notices) {

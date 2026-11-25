@@ -1,6 +1,6 @@
 'use strict';
 
-// OpenRouter's spend line in Settings > Usage sits on one line on a wide row.
+// OpenRouter's spend line in Settings > Usage and balancing sits on one line on a wide row.
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');

@@ -282,7 +282,7 @@ done <<'PROBES'
 item 1, the three level names|Three levels — `ask`, `default`, `high`
 item 2, that the block is the repo's and is rewritten|owned by the wheelchair repo
 item 2, that it is never hand-edited|never by editing these lines
-item 2, how the dial is moved instead|wheelchair app's Settings page (Models, Diagrams)
+item 2, how the dial is moved instead|wheelchair app's Settings page (You, Diagrams)
 item 3, the trigger property|three or more things that relate to each other
 item 3, its other two limbs|it has a branch, or the order matters
 item 4, what ask draws|draw nothing unprompted

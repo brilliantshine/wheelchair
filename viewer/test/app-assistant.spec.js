@@ -106,7 +106,7 @@ test('Settings control turns the assistant on and off', async ({ page }) => {
   const ctx = await startWorld();
   try {
     await signIn(page, ctx);
-    await page.goto(`${ctx.server.url}/app/settings`);
+    await page.goto(`${ctx.server.url}/app/settings#leads`);
     const row = page.locator('#assistant-setting');
     await expect(row).toContainText('An assistant that sees all your threads and acts on what you tell it.');
     await expect(row.getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true');
@@ -253,7 +253,7 @@ test('failed assistant start shows saved On and allows turning Off', async ({ pa
     await api(ctx, '/settings/balancing', { method: 'PUT', body: { lead_order: ['gpt'] } });
     ctx.machine.preflightOk = false;
     await signIn(page, ctx);
-    await page.goto(`${ctx.server.url}/app/settings`);
+    await page.goto(`${ctx.server.url}/app/settings#leads`);
     const row = page.locator('#assistant-setting');
     await expect(row.getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true');
     await row.getByRole('radio', { name: 'On' }).click();
