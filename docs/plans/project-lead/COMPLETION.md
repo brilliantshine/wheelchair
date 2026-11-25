@@ -122,7 +122,8 @@ tip separately.
 - Accepted Risks 1-3 in PLAN.md stand (shell writes on Claude, linked worktrees, lost start
   reply + Off).
 - Other-project content filtering is by identifiers and quoted peer text (thread ids, session
-  names, titles, paths, `peer_log` text, ignoring strings under 8 characters). Text in a
+  names, paths, PR URLs, `peer_log` text, ignoring strings under 8 characters; titles no longer
+  count, after Remediation 1). Text in a
   same-project item that names another project in other words is not caught. An outside path
   that is a prefix of the caller's own path is not hidden.
 - No test checks that the composed prompt includes `cards.md` and `cards-lead.md` (the machine
@@ -136,4 +137,33 @@ tip separately.
 
 ## Remediation rounds
 
-(none yet)
+### Remediation 1 (after verification attempt 1, commit `6603a190`)
+
+Attempt 1: Claude verifier PASS; GPT verifier FAIL with 10 gaps (`REMEDIATION-1.md`).
+
+- Rare paths, recorded in PLAN.md Accepted Risks (verification-1): a queued message or card
+  reaching a lead whose stop is pending while Off; a stale `upstream/<old default>` ref after a
+  default-branch rename.
+- Deferred at the lead's answer (D4-D7): the four mockup-style gaps (pinned row title weight and
+  Archived alignment; thread composer height and divider; pop-up link underline and focus ring;
+  Settings heading and switch not in one screen). The built screens use the app's existing styles.
+- Fixed in task R1 (gpt-6.1-terra, standard), `viewer/app/project-lead-actions.js`:
+  - `refresh` waits up to 100 s for the machine (`:63`), within the machine relay's 120 s.
+  - Other projects' thread titles and peer-log titles no longer count as other-project content,
+    so same-project text that happens to contain one is kept (`:20-28`).
+  - Other projects' PR URLs (`pr_url`, URL `target_pr`, done card URL) are now hidden (`:20`).
+  - Tests in `viewer/test/project-lead.test.js`: "refresh waits for a slow machine", "outside
+    titles do not erase local question text", "outside pull request URLs are removed from recent
+    chat"; T9's redaction test now expects titles kept.
+
+Evidence after the merge:
+
+```
+$ node --test viewer/test/project-lead.test.js
+# pass 29
+# fail 0
+$ node --test viewer/test/*.test.js     # on the R1 branch
+# tests 1012
+# pass 1012
+# fail 0
+```
