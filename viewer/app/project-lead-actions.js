@@ -54,6 +54,7 @@ async function dispatch(hub, input) {
       if (['sudo', 'reach', 'permit'].includes(target.cards.find((card) => card.id === request.card)?.kind)) throw appError(403, 'that needs you');
     },
   };
+  if (!['threads', 'thread', 'start', 'message', 'press', 'restart', 'archive', 'refresh'].includes(input.action)) throw appError(400, 'unsupported project lead action');
   if (input.action === 'refresh') {
     try {
       const result = await hub.call(source.machine, '/v1/project-lead/refresh', 'POST', { thread_id: source.id, project_dir: source.project });

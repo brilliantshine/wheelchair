@@ -417,6 +417,7 @@ test('project lead actions enforce project scope and redact cross-project conten
     await assert.rejects(call(action, { thread: target.id }), /that thread is in another project/);
   }
   await assert.rejects(dispatch(hub, { calling_session: 'stranger', action: 'threads' }), /only a project lead/);
+  await assert.rejects(call('projects'), /unsupported project lead action/);
   const rows = (await call('threads')).threads;
   assert.deepEqual(rows.map((r) => r.id), [same.id]);
   const detail = await call('thread', { thread: same.id });
