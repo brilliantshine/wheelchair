@@ -104,7 +104,7 @@ clone's object store and never touching Collin's own working copy). A session re
 runs shared tools from the commit copy it started with, for its whole life: the copy's full
 path (project identity and commit), or an explicit "no shared copy", is recorded in the
 session's saved record, and a resume, account switch or `wc.js tool` lookup for that session
-uses that saved reference, never the current Settings choice. A newer commit gets a new copy, built in a temporary folder and renamed into place only when complete, so no session or page ever sees a partial copy. A copy is deleted only when it is not the newest
+uses that saved reference, never the current Settings choice. A newer commit gets a new copy, built in a temporary folder and renamed into place only when complete, so no session or page ever sees a partial copy. Refreshes of one shared repository run one at a time (a per-repository lock under the state directory; a start that finds one running waits for it within its own 20-second deadline, then uses the newest complete copy). "Newest" means the commit named in a per-repository pointer file, which only a finished refresh updates, under that lock, to the tip it fetched; it is never chosen by folder date. A copy is deleted only when it is not the newest
 and no session record that has not ended (including ones found after a machine service
 restart, and starts in progress) names it. If the fetch fails the newest existing copy is used; if there is none, no shared
 tools are offered and the problems card says "shared tools couldn't be fetched: <reason>". A project tool
@@ -215,7 +215,7 @@ programs: one whose starter is killed outright may keep running until the machin
 (Decision 22). Before each call the bridge re-reads the
 tool's `tool.json`; if it differs from what was offered at session start, the call returns
 an error saying the tool changed and to try it with `wc.js tool run` now or through MCP in
-the next session. In a session that runs sandboxed (Codex today), the bridge and the server launcher wrap every tool program with that connector's sandbox wrapper (`sandboxWrap`, as the screen launcher does), so folder tools reached through MCP get the same sandbox as the agent's own commands. Calls may run in parallel; the bridge never runs the
+the next session. In a session that runs sandboxed (Codex today), the bridge and the server launcher wrap every tool program with that connector's sandbox wrapper (`sandboxWrap`, as the screen launcher does). The wrapper is started with the session's worktree as its working folder, so the worktree is the writable root, and inside the sandbox it changes to the tool folder before running the program (a shared tool's copy is then readable but not writable). So folder tools reached through MCP get the same sandbox as the agent's own commands. Calls may run in parallel; the bridge never runs the
 same call twice.
 
 ### S10. The `wc.js tool` commands
@@ -268,8 +268,8 @@ All under `docs/plans/easy-tools/graphs/`:
 Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
-- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, Codex's bridge entry carrying `tool_timeout_sec = 260`, a failed or partial copy build falling back without stopping launch), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, tool programs wrapped by `sandboxWrap` in a sandboxed Codex session (a script writing outside the worktree fails), session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
+- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, Codex's bridge entry carrying `tool_timeout_sec = 260`, a failed or partial copy build falling back without stopping launch, two overlapping refreshes where the older one finishes last leaving the pointer on the newer commit), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
+- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, tool programs wrapped by `sandboxWrap` in a sandboxed Codex session (a project tool and a shared tool each write a file in the worktree successfully; a shared tool writing into its own copy, or any write outside the worktree, fails), session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
 - S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline and when `wc.js` gets SIGTERM, `run`/`check` stripping the session token, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
@@ -486,6 +486,18 @@ round where knowing it matters most.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 9:** S3 (copy built aside and renamed when complete; the deadline covers building it; a failed refresh never stops launch and its outcome is kept for the page), S4 (narrowed wording on paths; `sh -c` example for existing servers), S6 (no-copy message and last refresh failure), S9 (`sandboxWrap` for tool programs in sandboxed sessions), Check Once Built row 1, Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Sandbox root follows the tool folder, so tools can't write the project | upheld | S9: wrapper starts in the worktree, then changes to the tool folder |
+| mechanics | blocking | RE-RAISE: same sandbox root problem | upheld | Same fix; Validation checks both write boundaries |
+| mechanics | major | Overlapping refreshes can publish an older copy last | upheld | S3: per-repository lock and pointer file updated only by a finished refresh |
+
+### Round 11 — 2026-11-25
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 10:** S9 (sandbox wrapper starts in the worktree, then changes to the tool folder), S3 (one refresh at a time per repository; pointer file names the newest copy), Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
