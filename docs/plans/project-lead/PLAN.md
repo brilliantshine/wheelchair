@@ -537,3 +537,7 @@ The build matches these.
 - 2026-11-24 — R2a accepted (band: scout): whole-URL matching for outside PR URLs (string and `{url}` `target_pr`), cards.md `message` row; 31 project-lead tests pass. Worker reported "none" for choices; the scout listed these:
 - 2026-11-24 — Choice: R2a, project-lead-actions.js: a trailing `/` is trimmed from the whole text, not each occurrence, so an outside URL written with a trailing slash mid-sentence is not hidden.
 - 2026-11-24 — Choice: R2a, project-lead-actions.js: object-form `target_pr.url` accepted without an http(s) check; URL matching also applies to keys.
+- 2026-11-24 — R2b accepted (band: scout): Claude project leads launch with `--setting-sources user --strict-mcp-config`; Codex marks the clone untrusted; Pi uses `--no-approve`. I launched Codex 0.172.0 with the untrusted override and Pi 1.5.2 with `--no-approve` in tmux: both reached their ready prompt with no trust question (Pi: "Project .pi resources and packages are ignored"). Kimi and Antigravity have no switch to stop workspace config discovery; raised with the lead.
+- 2026-11-24 — Choice: R2b, connectors/claude/machine.js: reads `session.project_lead` in the adapter (no service.js change); `--strict-mcp-config` also drops user-scope MCP servers for project leads.
+- 2026-11-24 — Choice: R2b, connectors/codex/machine.js: suppresses project config through the existing trust override set to `untrusted`.
+- 2026-11-24 — Choice: R2b, connectors/pi/machine.js: `--no-approve` for project leads.
