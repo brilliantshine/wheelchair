@@ -1,6 +1,6 @@
 ---
 slug: project-lead
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-24
 ---
 
@@ -10,8 +10,7 @@ created: 2026-11-24
 
 ## Open Questions
 
-### Q4: Agree the mockups
-- Designer started 2026-11-24: threads list, project lead thread, pop-up (lead/assistant), settings; phone and desktop.
+(none)
 
 ## Watch List
 
@@ -36,6 +35,7 @@ created: 2026-11-24
 | 8 | Project knowledge comes from a read-only copy of the project on its own machine (a detached git worktree at the default branch tip, refreshed at every lead start and on request), plus git reads of thread branches. The project lead never edits files or writes git. | Depth needs the code, plans and history; leads still own changes. | defaulted |
 | 9 | Like the assistant, a project lead starts fresh after a restart; it rebuilds its picture from the project and its threads. | Matches the assistant; the project itself is the lasting memory. | defaulted |
 | 10 | Its messages and presses reuse the assistant's `[wc:assistant]` marker, so target threads label them "From your assistant". A distinct "From your project lead" label is deferred. | Reuses the built renderer; the label is cosmetic. | defaulted |
+| 11 | Mockups agreed: `graphs/mockup-{threads,thread,popup-lead,popup-assistant,settings}-{phone,desktop}.html` (version of commit c9a0acec). | Collin picked "Agree them". | user |
 
 ## Spec
 
@@ -165,7 +165,20 @@ Derived from `protocol/app/assistant.md`, with these changes:
 
 ### Mockups
 
-(listed once agreed)
+The build matches these.
+
+| File | Screen / state | Size |
+|---|---|---|
+| `docs/plans/project-lead/graphs/mockup-threads-phone.html` | Threads list: assistant pinned above all; a project lead row pinned per project (not started, and with preview + needs you) | 390×844 |
+| `docs/plans/project-lead/graphs/mockup-threads-desktop.html` | Threads list: assistant pinned above all; a project lead row pinned per project (not started, and with preview + needs you) | 1280×800 |
+| `docs/plans/project-lead/graphs/mockup-thread-phone.html` | Project lead thread answering where things stand | 390×844 |
+| `docs/plans/project-lead/graphs/mockup-thread-desktop.html` | Project lead thread answering where things stand | 1280×800 |
+| `docs/plans/project-lead/graphs/mockup-popup-lead-phone.html` | Pop-up on a project thread page, project lead selected | 390×844 |
+| `docs/plans/project-lead/graphs/mockup-popup-lead-desktop.html` | Pop-up on a project thread page, project lead selected | 1280×800 |
+| `docs/plans/project-lead/graphs/mockup-popup-assistant-phone.html` | Same pop-up switched to the assistant | 390×844 |
+| `docs/plans/project-lead/graphs/mockup-popup-assistant-desktop.html` | Same pop-up switched to the assistant | 1280×800 |
+| `docs/plans/project-lead/graphs/mockup-settings-phone.html` | Settings with the Project leads switch (off) | 390×844 |
+| `docs/plans/project-lead/graphs/mockup-settings-desktop.html` | Settings with the Project leads switch (off) | 1280×800 |
 
 ### Validation
 
@@ -195,6 +208,15 @@ Derived from `protocol/app/assistant.md`, with these changes:
 |------|--------------|-------|
 
 ## Review Rounds
+
+### Round 1 — 2026-11-24
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
