@@ -276,6 +276,22 @@ The build matches these.
 | mechanics | major | Same-name folders on one machine look identical | upheld | S5: path shown on collision; resolved machine identity |
 | mechanics | minor | Pop-up on an archived project page | upheld | S2 |
 
+### Round 2 — 2026-11-24
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 1:**
+- S1: first message queued before the start; no starts while off; stop retried.
+- S2: pop-up opens the assistant on a project lead's page and on pages whose project shows no group.
+- S3: folder is a separate local clone under `worktrees/`; three-step refresh and default-tip rule; "Locked down" enforcement list.
+- S4: `press` refuses `sudo`, `reach`, `permit`.
+- S5: grouping by resolved machine + path; path shown on name collisions.
+- S7 (new): `assistant.md` and router updates.
+- Decision 12, one Accepted Risk, Validation additions.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
