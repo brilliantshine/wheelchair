@@ -35,6 +35,8 @@ _None._
 | D11 | CONTRIBUTING.md (the repo law), AGENTS.md and viewer/AGENTS.md are edited to say the browser suite runs every spec in Chromium and only the listed specs in Firefox. | Follows D8; the law currently says the suite runs in both browsers (`CONTRIBUTING.md:94`). | user |
 | D12 | Supersedes D9: browser workers are a shared budget, not split "fairly". Each full run registers its worker count; a new full run takes `max(2, top − workers held by other live full runs)`. Counts are fixed at start, so a run that started first keeps its share. | Playwright cannot change workers mid-run; D9's formula let staggered runs exceed the budget (review round 1). | review-round-1 |
 | D13 | The worker measuring `CAP` also times a whole full run before and after the change on the same machine. | IDEA's first goal had no check (review round 1). | review-round-1 |
+| D14 | Supersedes D4, D12 and D13. No benchmarking: `CAP` is 8 (half of 16 cores). A full run takes `max(2, floor(top / (others + 1)))` at start, `others` the count of other live full runs. Counts are fixed at start: a run that started alone keeps 8 and one starting beside it gets 4, so two staggered runs can use 12 workers on 16 cores; accepted. | D12 gave a second run 2 workers, the same as today, so it fixed nothing; benchmarking needs full runs a worker may not run. The earlier cap of 6 was set because of the port clash S1 fixes. | review-round-2 |
+| D15 | Goal 1 (a faster full run) is checked by the sub-lead: COMPLETION.md records the build's full-run per-suite seconds and total beside the before figures in this plan (15–20 min, 2026-11-25 logs), noting what else was running. | Replaces D13's before run; the full run is the starter's. | review-round-2 |
 ## Spec
 
 Goal: shorten one full run and the wait after verification passes, without missing what a
@@ -54,6 +56,7 @@ the whole set.
 - An explicit `port` argument (sequential restart tests) never retries.
 - Each failed attempt's child is killed and awaited before the next starts, as the existing
   error path does; temp and state directories are reused across attempts.
+- `startServerWithEnv` in `viewer/test/routes.test.js` becomes a call to `startServer` with `env` (and `open`, `cacheRoot`), so it gets the same retry; its inline-port caller drops the port.
 - Callers: every `startServer(...)` call in `viewer/test/` that passes `port: await freePort()` inline (the port is not kept for later use) drops the `port` argument and reads `ctx.port` where it needs the port, so it gets the retry. A caller that keeps the port in a variable for a later start on the same port stays explicit.
 - For the test, `startServer` accepts an optional `nextPort` function (default `freePort`);
   only tests pass it.
@@ -72,7 +75,7 @@ the whole set.
   fixed order (viewer-browser first), whatever order they finish in:
   `suite <name> exit <n> seconds <s>`, `<s>` the suite's wall time in whole seconds. The
   printed progress lines gain the same seconds.
-- Stopping: the browser suite runs in its own process group. On `TERM`, `INT` or `HUP` the script kills that group and its current foreground suite, waits for them, and exits non-zero without claiming success; a stopped run leaves no browser suite or Playwright process behind.
+- Stopping: the browser suite runs in its own process group. On `TERM` or `HUP` the script kills that group and its current foreground suite, waits for them, and exits non-zero without claiming success; a stopped run leaves no browser suite or Playwright process behind.
 - Exit status, the dirty-worktree refusal, `WHEELCHAIR_FULL_RUN=1`, log file names and the
   sudo-helper pair's combined result are unchanged.
 - Anything that reads `summary.txt` keeps working: it only looks at the `commit` line and
@@ -84,24 +87,19 @@ the whole set.
   with the `seconds` field; the script exits 1 when one stub fails and 0 when all pass, including a case where the browser stub is the only failure (its line shows its exit and the script exits 1); sending `TERM` to the script mid-run leaves no stub process alive; the
   dirty-tree refusal still exits 2.
 
-### S3. Browser workers (D4, D9) — `test-support/browser-workers.js`
+### S3. Browser workers (D14) — `test-support/browser-workers.js`
 
-- `chooseWorkers({ full, held, cpus })`: a non-full run gets 2. A full run gets
-  `max(2, top − held)`, with `top = min(CAP, floor(cpus / 2))` and `held` the sum of the
-  worker counts registered by other live full runs (D12). With `CAP` 8 on 16 cores: alone 8;
-  starting while an 8-worker run is live, 2; starting while a 4-worker run is live, 4.
-- Registration stores the chosen count in the run's file (today an empty file named by PID);
-  an empty or unreadable file from an older run counts as 2.
-- Measuring (D4, D13), once S1, S2 and S4 are in, on the same machine with no other full run
-  live: run `bash test-support/full-run.sh` on the build's merge-base (before), then on the
-  build commit with `WHEELCHAIR_BROWSER_WORKERS=6` and `=8`. Set `CAP` to the faster passing
-  one of 6 and 8 by total wall time; ties keep 6. A failing run is retried once; if neither
-  6 nor 8 passes, `CAP` stays 6. Record each run's commit, per-suite seconds, total time, and
-  what else was running on the machine in the task report.
-- `decide()` passes the held total instead of a yes/no; the env override and registration
-  are unchanged. Update `viewer/playwright.config.js:10` comment and `viewer/AGENTS.md:57`.
-- Test: `test-support/test/browser-workers.test.js` covers alone, a staggered start beside an 8-worker run, two runs beside a 4-worker run,
-  empty legacy registration files, low-CPU machines and non-full runs.
+- `CAP = 8`, a named constant. `chooseWorkers({ full, others, cpus })`: a non-full run gets
+  2. A full run gets `max(2, floor(top / (others + 1)))`, `top = min(CAP, floor(cpus / 2))`,
+  `others` the number of other live full runs found by `liveOthers` (unchanged). On 16 cores:
+  alone 8; beside one other 4; beside three or more 2. Decided once at start (D14).
+- `decide()` passes the count instead of a yes/no; the env override and registration are
+  unchanged. Update the `viewer/playwright.config.js:10` comment and `viewer/AGENTS.md:57`.
+- Test: `test-support/test/browser-workers.test.js` covers alone, beside one, beside three,
+  low-CPU machines (8, 4, 2, 1 cores) and non-full runs.
+- Timing record (D15): the sub-lead puts its full run's `summary.txt` (with seconds) and total
+  wall time in COMPLETION.md beside the before figures (2026-11-25 logs: total 14–21 min,
+  browser 8–11 min, machine about 6 min, run alone), saying what else was running.
 
 ### S4. Firefox only where it matters (D8, D11)
 
@@ -113,7 +111,10 @@ the whole set.
   `app-mockup-png.spec.js`, `app-screenshot-view.spec.js`, `app-spot-comment.spec.js`,
   `app-chat-stability.spec.js` (drawing, images and scroll behaviour), `app-views.spec.js`
   (pointer-anchored zoom after scrolling), `app-ui.spec.js` (sticky header while scrolling),
-  `render.spec.js` (horizontal scroll containment). Each entry has a
+  `render.spec.js` (horizontal scroll containment), `app-picture-download.spec.js` (PNG
+  pixels), `app-agents-decks.spec.js` (wheel scrolling), `app-threads.spec.js` and
+  `app-assistant-phone.spec.js` (scrolling and jump to bottom). This list is the Spec's;
+  specs not on it lose Firefox coverage by D8 (see Accepted Risks). Each entry has a
   one-line comment saying why it needs Firefox.
 - `npm --prefix viewer run test:browser` still fails loudly if either browser is missing.
 - Edit the law and routers to match: `CONTRIBUTING.md:94` ("runs in both Chromium and
@@ -129,7 +130,8 @@ the whole set.
 
 - `protocol/app/lead.md` repair step 7: "and start the full run alongside it unless the
   commit is covered" becomes "and, with that heading, start the full run alongside it unless
-  the commit is covered". No other protocol change.
+  the commit is covered". No other protocol change. Validation: read the rendered step 7 and check it still tells a
+  lead in a project without the heading nothing about full runs (`CONTRIBUTING.md:94`).
 
 ### Validation commands
 
@@ -160,7 +162,8 @@ git diff --check
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Tests that keep a `freePort()` port in a variable for a later start on the same port keep the probe-then-bind race | Few such tests; the inline callers that make up most starts get the retry | review-round-1 |
-| Two full runs starting within the same instant can both see nothing held and take the full budget | Sub-second race between two actors (realism.md) | review-round-1 |
+| Two full runs starting within the same instant can both see no other and take 8 each | Sub-second race between two actors (realism.md) | review-round-1 |
+| A Firefox-only bug in a spec not on `viewer/test/firefox-specs.js` is not caught | Collin's trade in D8; the list covers drawing, touch, pixels and scroll known today | review-round-2 |
 
 ## Review Rounds
 
@@ -192,3 +195,15 @@ git diff --check
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Workers may not run the full-run benchmarks | upheld | D14 drops benchmarking; D15 timing by sub-lead |
+| intent | major | D12 gives a second run 2 workers, same as today | upheld | D14 start-time split |
+| intent | minor | IDEA still promises fewer runs per build, against D10 | user-decision | Asked Collin |
+| intent | minor | Rare path: legacy empty registration file counted as 2 | declined | Moot: D14 removes counts |
+| intent | minor | S3 heading cites D9; no rule if another run is live while measuring | upheld | Moot after D14 rewrite |
+| mechanics | blocking | INT cannot be trapped in a background bash run | upheld (minor) | INT dropped from the promise; TERM/HUP remain |
+| mechanics | blocking | Benchmarks assigned to a worker | upheld | D14/D15 (same as intent) |
+| mechanics | blocking | Firefox list omits four scroll/pixel specs | upheld (major) | Added; list declared authoritative, residual in Accepted Risks |
+| mechanics | minor | `startServerWithEnv` bypasses retry | upheld | S1 routes it through `startServer` |
+| mechanics | minor | Legacy fallback counts 6-worker run as 2 | declined | Moot: D14 |
+| mechanics | minor | Benchmark command lacks log dir; baseline has no seconds | declined | Moot: benchmark removed |
+| mechanics | minor | S5 lacks rendered-protocol check | upheld | Added to S5 |
