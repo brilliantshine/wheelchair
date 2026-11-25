@@ -530,3 +530,4 @@ The build matches these.
 - 2026-11-24 — Lead's answers on verification-1 gaps: fix refresh timeout, title redaction and PR URLs (REMEDIATION-1); defer the four mockup-style gaps as D4-D7.
 - 2026-11-24 — R1 accepted (band: scout): refresh timeout 100 s, titles out of the redaction set, outside PR URLs in. I re-ran the full viewer node suite on its branch (1012/1012) and `project-lead.test.js` after merge (29 pass).
 - 2026-11-24 — Choice: R1, project-lead-actions.js: `target_pr` counts only when it is an http(s) URL; `donePr` used with its defaults.
+- 2026-11-24 — Verification attempt 2 (9457fe87): both verifiers FAIL. Claude: outside PR URL substring hides local content. GPT: Claude project leads load project settings/MCP; object `target_pr` URL not filtered; cards.md message-card wording; two mockup style items. None judged rare; sent to the lead for per-gap answers.
