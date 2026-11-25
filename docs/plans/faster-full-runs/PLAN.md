@@ -11,12 +11,9 @@ created: 2026-11-25
 
 ## Open Questions
 
-### Q2: Which browsers run which browser tests?
-- **Context:** Every one of the 52 browser spec files runs in Chromium and in Firefox
-  (`viewer/playwright.config.js:12-20`); that doubling is about half of the 9–11 minute
-  browser suite. Only some specs are browser-sensitive (graph geometry, touch, pixels).
-- **Options:** (A) Chromium for all, Firefox only for marked browser-sensitive specs;
-  (B) both for everything (today).
+### Q1b: When does the full run start (revisits D7)?
+- **Context:** Collin: the slow part is the wait after verification passes. D7 makes that wait the whole run. Today the run overlaps the verifiers.
+- **Options:** (A) alongside the verifiers each round, as today; (B) once after they pass (D7).
 - **Recommendation:** A.
 
 ## Watch List
@@ -36,11 +33,15 @@ created: 2026-11-25
 | D6 | Qualify lead.md repair step 7's full-run phrase with the `Test picker and full run` heading (old Deferred row 5). | Protocol edits all map to every suite; batch it here. | defaulted |
 | D7 | A build runs one full run, only after its verifiers pass, on the final commit; remediation rounds rely on the picked tests. A failing full run is handled as a failed verification (one more round). | Six full runs in the Settings rework; the picker already checks each round. | user |
 
+| D8 | Every browser spec runs in Chromium; only specs marked browser-sensitive (graph geometry, touch, pixel sampling and the like) also run in Firefox. | Running everything twice is about half the browser suite's time. | user |
+| D9 | When full runs overlap (another thread's full run is live), browser workers are shared fairly across them instead of dropping each to 2. | `test-support/browser-workers.js:8` drops overlapping runs to 2 workers, likely why runs feel like 30 minutes. | defaulted |
 ## Spec
 
 _Filled in as decisions land._
 
 - **Full run timing (D7):** the sub-lead starts no full run alongside the verifiers. It starts one full run on the commit the verifiers passed. Its failure counts as a failed verification and leads to remediation; the next full run waits again for that round's verifiers to pass. Role rules (`protocol/app/sub-lead.md`, `lead.md`, `verifier.md`, `AGENTS.md`) change to match.
+
+- **Browsers (D8):** `viewer/playwright.config.js` runs every spec in Chromium; Firefox runs only specs marked browser-sensitive. The marking mechanism and the initial list (at least graph geometry in `browser.spec.js`, `touch.spec.js`, `background-rendering.spec.js`) are settled in the final Spec pass.
 
 ## Deferred
 
