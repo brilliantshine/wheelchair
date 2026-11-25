@@ -60,6 +60,7 @@ async function stub(page, world) {
   await page.route('**/api/settings/harnesses/*', (route) => world.put(route));
 }
 const rows = (page) => page.locator('.h-row');
+const signinAt = (page, p) => page.locator(`.prov-group[data-provider="${p}"] .signin-card`);
 const row = (page, p) => page.locator(`.h-row[data-provider="${p}"]`);
 
 for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop', { width: 1280, height: 900 }]]) {
@@ -79,7 +80,7 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await expect(row(page, 'claude')).toContainText('Signed in');
       await expect(row(page, 'claude').getByRole('button')).toHaveCount(0);
       await expect(row(page, 'gpt')).toContainText('Installed 0.9.0');
-      await expect(row(page, 'gpt').getByRole('button', { name: 'Sign in Codex' })).toBeVisible();
+      await expect(row(page, 'gpt').getByRole('link', { name: 'Sign in Codex' })).toBeVisible();
       await expect(row(page, 'gemini')).toContainText('Not installed');
       const link = row(page, 'gemini').getByRole('link', { name: "Install from Google's site" });
       await expect(link).toHaveAttribute('href', 'https://antigravity.google/cli');
@@ -168,13 +169,13 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await openPage(page, context, '/app/settings#providers');
       await row(page, 'gemini').getByRole('button', { name: 'Install' }).click();
       world.posted = true;
-      await row(page, 'gemini').getByRole('button', { name: 'Sign in Antigravity' }).click();
-      await expect(row(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+      await row(page, 'gemini').getByRole('link', { name: 'Sign in Antigravity' }).click();
+      await expect(signinAt(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
       // Once a sign-in card is open, no more version re-fetches repaint the rows under it.
       const seen = after;
       await page.waitForTimeout(5000);
       expect(after).toBe(seen);
-      await expect(row(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+      await expect(signinAt(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
     });
 
     test('install failed shows the tail and Try again, which POSTs and polls', async ({ page }) => {
@@ -438,15 +439,15 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await expect(row(page, 'claude')).toContainText('Signed in');
     });
 
-    test('Sign in mounts the sign-in card under the row, also for a recipe:false harness', async ({ page }) => {
+    test('Sign in opens the card with the account cards, also for a recipe:false harness', async ({ page }) => {
       const s = status();
       s.machines[0].harnesses.gemini = h({ installed: true, version: '3', recipe: false });
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
       await page.route('**/api/accounts/default-gemini/signin', (r) => json(r, {}));
       await page.route('**/api/accounts/default-gemini/signin/hub', (r) => json(r, { state: 'waiting', url: 'https://example.test/login' }));
       await openPage(page, context, '/app/settings#providers');
-      await row(page, 'gemini').getByRole('button', { name: 'Sign in Antigravity' }).click();
-      const card = row(page, 'gemini').locator('.signin-card');
+      await row(page, 'gemini').getByRole('link', { name: 'Sign in Antigravity' }).click();
+      const card = signinAt(page, 'gemini');
       await expect(card).toContainText('Sign in default on hub');
       await expect(card.getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
       await card.getByRole('button', { name: 'Close' }).click();
@@ -596,8 +597,8 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await page.route('**/api/accounts/default-gemini/signin', (r) => json(r, {}));
       await page.route('**/api/accounts/default-gemini/signin/hub', (r) => json(r, { state: 'waiting', url: 'https://example.test/login' }));
       await openPage(page, context, '/app/settings#providers');
-      await row(page, 'gemini').getByRole('button', { name: 'Sign in Antigravity' }).click();
-      await expect(row(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+      await row(page, 'gemini').getByRole('link', { name: 'Sign in Antigravity' }).click();
+      await expect(signinAt(page, 'gemini').getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
       await page.getByLabel('Use Antigravity').click();
       await expect(page.getByLabel('Use Antigravity')).not.toBeChecked();
       await expect(page.locator('.signin-card')).toHaveCount(0);

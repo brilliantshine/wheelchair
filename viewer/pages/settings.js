@@ -1369,6 +1369,8 @@
   let balDraft = null;         // unsaved balancing edits
   let balNote = { box: null, text: '' }; // which balancing box reports its last Save
   let signCard = null;         // {account, machine, el, timers…} while a sign-in card is open
+  let usageAsks = 0;           // only the newest usage request's answer is kept
+  let reserveReads = 0;        // a Save outdates a reserved-provider read still on its way
 
   const when = (iso) => {
     const d = new Date(iso);
@@ -1396,16 +1398,29 @@
   const signinHint = (st, tool) => (st.url ? (st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.') : (tool || TOOLS.find((t) => t.settings.signInKind === 'key')).settings.keyPrompt);
   const safeHref = (u) => (/^https?:\/\//i.test(String(u)) ? String(u) : '#');
 
-  async function refreshUsage() {
-    try {
-      usage = await api('/usage');
-      usageError = '';
-    } catch (e) { usageError = e.message; }
-    paint('usage');
-    // A repaint of Accounts would drop what is being typed, so it waits while a form is open.
+  // A repaint of Accounts would drop what is being typed, so it waits while a form is open.
+  function accountsBusy() {
     const focused = document.activeElement;
     const typing = focused && blockHost('accounts')?.contains(focused) && /^(INPUT|SELECT|TEXTAREA)$/.test(focused.tagName);
-    if (!editing && !adding && !typing) paint('accounts');
+    return Boolean(editing || adding || typing);
+  }
+
+  async function refreshUsage() {
+    const ask = ++usageAsks;
+    let next = null; let failure = '';
+    try { next = await api('/usage'); } catch (e) { failure = e.message; }
+    if (ask !== usageAsks) return;
+    if (next) usage = next;
+    usageError = failure;
+    paint('usage');
+    if (!accountsBusy()) paint('accounts');
+  }
+
+  // After a sign-in or an account change. The hub keeps each machine's answer for 15 seconds;
+  // the fresh harness read drops it, so it goes first and the usage read after it is current too.
+  async function refreshStatus() {
+    await loadHarnesses(true);
+    await refreshUsage();
   }
 
   // Each category's live work runs only while it is open: Harnesses polling and the account
@@ -1417,6 +1432,7 @@
     if (!live && usageTimer) { usageTimer.stop(); usageTimer = null; }
     if (live) refreshUsage();
     if (section === 'usage') {
+      readReserved();
       fetch(API + '/usage/seen', { method: 'POST' }).then(() => window.dispatchEvent(new CustomEvent('wc-usage-seen'))).catch(() => {});
     }
   }
@@ -1438,13 +1454,13 @@
     if (!signCard) return;
     clearInterval(signCard.poll); clearTimeout(signCard.close);
     signCard.el.remove();
-    const inRow = signCard.harness;
     signCard = null;
-    refreshUsage();
-    if (inRow) loadHarnesses(true);
+    refreshStatus();
   }
 
-  function openSignin(account, machine, harness) {
+  // `atCards` opens the card with the provider's account cards (the Harnesses link), not at the
+  // top of Accounts (a card's own Sign in).
+  function openSignin(account, machine, atCards) {
     closeSignin();
     const terminal = `/wheelchair/app/terminal?login=${encodeURIComponent(account.id)}&machine=${encodeURIComponent(machine)}`;
     const status = h('p', { class: 'hint waiting', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Starting sign-in on ' + machine + '…'));
@@ -1463,7 +1479,7 @@
         inlineErr(codeBox, e.message);
         if (e.status === 409 && toolOf(account.provider).settings.signInKind === 'key') {
           field.value = '';
-          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine, harness) }));
+          if (!codeBox.querySelector(':scope > .restart')) codeBox.append(h('button', { type: 'button', class: 'small restart', text: 'Start again', onclick: () => openSignin(account, machine, atCards) }));
         }
       }
     } });
@@ -1474,9 +1490,9 @@
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
       h('div', { class: 'head-line' }, h('h2', { text: `Sign in ${account.name} on ${machine}` }), closeBtn),
       status, actions, codeBox, pasteWrap, h('div', { class: 'actions' }, termLink));
-    const card = { account: account.id, provider: account.provider, machine, harness: harness || null, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
+    const card = { account: account.id, provider: account.provider, machine, atCards: Boolean(atCards), el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
     signCard = card;
-    const hostEl = harness ? document.querySelector(`[data-signin-host="${harness}"]`) : document.getElementById('signin-host');
+    const hostEl = atCards ? providerGroup(account.provider)?.querySelector('.prov-signin') : document.getElementById('signin-host');
     if (hostEl) hostEl.replaceChildren(root);
 
     const fail = () => {
@@ -1542,13 +1558,16 @@
 
   // ---- Accounts panel
 
-  function windowLine(label, w, at) {
-    if (!w) return h('div', { class: 'win' }, h('span', { class: 'k', text: label }), h('span', { class: 'v dim', text: 'no reading yet' }));
-    const expired = w.resets_at && Date.parse(w.resets_at) <= Date.now();
-    const used = expired ? 0 : w.used;
-    return h('div', { class: 'win' }, h('span', { class: 'k', text: label }),
-      h('span', { class: 'meter' }, h('span', { style: `width:${Math.min(100, Math.max(0, used))}%` })),
-      h('span', { class: 'v', text: `${pct(used)} used` + (w.resets_at && !expired ? `, resets ${when(w.resets_at)}` : '') }));
+  // One line on an account card; the bars and the per-account table are in Usage and balancing.
+  function usageLine(reading) {
+    const part = (label, w) => {
+      if (!w) return null;
+      const expired = w.resets_at && Date.parse(w.resets_at) <= Date.now();
+      return `${label} ${pct(expired ? 0 : w.used)} used`;
+    };
+    const parts = reading ? [part('5-hour', reading.five_hour), part('week', reading.week)].filter(Boolean) : [];
+    if (!parts.length) return 'no reading yet';
+    return [...parts, reading.at && 'as of ' + when(reading.at)].filter(Boolean).join(' · ');
   }
 
   async function mutate(host, fn) {
@@ -1558,6 +1577,7 @@
     data = await api('/settings');
     await refreshUsage();
     paint('accounts');
+    refreshStatus();
     return true;
   }
 
@@ -1590,10 +1610,7 @@
         h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[stateName(st)] || stateName(st)) }),
         st && st.warning && h('span', { class: 'mstate note', text: st.warning }),
         stateName(st) !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) })))),
-      h('div', { class: 'wins' },
-        windowLine('5-hour window', a.reading && a.reading.five_hour),
-        windowLine('This week', a.reading && a.reading.week),
-        h('span', { class: 'hint', text: a.reading && a.reading.at ? 'as of ' + when(a.reading.at) : 'no reading yet' })));
+      h('p', { class: 'hint acct-usage', text: usageLine(a.reading) }));
 
     const edit = editing && editing.id === a.id ? editing.kind : null;
     if (edit === 'rename') {
@@ -1638,6 +1655,7 @@
       data = await api('/settings');
       await refreshUsage();
       paint('accounts');
+      refreshStatus();
     } catch (e) { adding.warn = false; paint('accounts'); inlineErr(document.querySelector('.add-form') || form, e.message); }
   }
 
@@ -1685,10 +1703,11 @@
       h('div', {}, h('h2', { text: 'Accounts' }),
         h('p', { class: 'lede', text: 'The logins agents run on. New sessions pick the account with the most room.' }),
         usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
-      h('div', { id: 'signin-host' }, signCard && !signCard.harness ? signCard.el : null),
+      h('div', { id: 'signin-host' }, signCard && !signCard.atCards ? signCard.el : null),
       Object.entries(PROVIDER_NAME).filter(([provider]) => harnessOn(provider)).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
         h('h3', { text: label }),
         toolOf(provider).settings.accountPolicy && h('p', { class: 'hint', text: toolOf(provider).settings.accountPolicy }),
+        h('div', { class: 'prov-signin' }, signCard && signCard.atCards && signCard.provider === provider ? signCard.el : null),
         accountRows(provider).filter((a) => !toolOf(provider).singleAccount || a.id === `default-${provider}`).map(accountCard),
         !(data.accounts || []).some((a) => a.id === `default-${provider}`) && restoreDefault(provider))),
       addForm());
@@ -1740,14 +1759,18 @@
         h('span', { text: "then whatever's left" })));
   }
 
-  // Either box's Save rebuilds both from the saved values, so what is shown is what the next
-  // Save sends. `balNote.box` says which box reports it.
+  // The two boxes share one draft. A Save sends its own keys and refreshes only those, so the
+  // other box's unsaved edits stay; both are rebuilt for the reserved provider's name.
+  // `balNote.box` says which box reports it.
   async function saveBalancing(box, keys, host) {
     try {
       const res = await api('/settings/balancing', { method: 'PUT', body: balancingBody(keys) });
-      for (const k of keys) data[k] = res[k] !== undefined ? res[k] : balDraft[k];
+      for (const k of keys) {
+        data[k] = res[k] !== undefined ? res[k] : balDraft[k];
+        balDraft[k] = structuredClone(data[k]);
+      }
+      reserveReads++;
       data.reserved_provider = res.reserved_provider;
-      balDraft = null;
       inlineErr(host, '');
       balNote = { box, text: SAVED };
       paint('lead-order', 'balancing');
@@ -1759,6 +1782,34 @@
       if (status) status.textContent = '';
     }
   }
+  // The words that name the hub's reserved provider.
+  function reserveTexts() {
+    const provider = data.reserved_provider || "the lead's provider";
+    return {
+      save: `Save ${provider} for leads`,
+      margin: `When ${provider} is projected to have less than this left at refill, ticked roles go to another provider, or wait if there is none`,
+      held: `Held back when ${provider} runs short`,
+    };
+  }
+
+  // Opening Usage and balancing reads the reserved provider again (a harness may have been
+  // switched elsewhere). Only the words change, in place, so nothing typed or focused moves.
+  async function readReserved() {
+    const read = ++reserveReads;
+    let res;
+    try { res = await api('/settings'); } catch { return; }
+    if (read !== reserveReads) return;
+    data.reserved_provider = res.reserved_provider;
+    const box = document.getElementById('bal-save-lead');
+    if (!box) return;
+    const texts = reserveTexts();
+    const rowOf = (id) => document.getElementById(id).closest('.row-line');
+    box.setAttribute('aria-label', texts.save);
+    rowOf('bal-save-lead').querySelector('.what span').textContent = texts.save;
+    rowOf('bal-margin').querySelector('.hint').textContent = texts.margin;
+    rowOf('bal-held-worker').querySelector('.what span').textContent = texts.held;
+  }
+
   const boxNote = (box) => h('p', { class: 'note', role: 'status', 'data-box': box, text: balNote.box === box ? balNote.text : '' });
 
   const numField = (key, label, hint, max) => h('div', { class: 'row-line' },
@@ -1818,8 +1869,8 @@
   function renderBalancing() {
     ensureDraft();
     const settingsBox = h('section', { class: 'balancing', 'aria-labelledby': 'bal' });
-    const provider = data.reserved_provider || "the lead's provider";
-    const reserveLabel = `Save ${provider} for leads`;
+    const texts = reserveTexts();
+    const reserveLabel = texts.save;
     const within = h('select', { id: 'bal-within', 'aria-label': 'Within a provider', onchange: (ev) => { balDraft.within = ev.target.value; } },
       WITHIN.map(([v, l]) => h('option', { value: v, text: l, selected: v === balDraft.within })));
     const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing('balancing', ['worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'], settingsBox) });
@@ -1832,8 +1883,8 @@
         numField('notify_below', 'Warn me below (%)', 'Shows a dot on Settings when a provider drops under this', 100),
         h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: reserveLabel }), h('span', { class: 'hint', text: 'Sessions with no provider preference try other providers first. Does not hold anyone back; the ticks below do.' })),
           h('input', { type: 'checkbox', id: 'bal-save-lead', checked: !!balDraft.save_for_leads, 'aria-label': reserveLabel, onchange: (ev) => { balDraft.save_for_leads = ev.target.checked; } })),
-        numField('margin', 'Keep for leads (%)', `When ${provider} is projected to have less than this left at refill, ticked roles go to another provider, or wait if there is none`, 100),
-        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: `Held back when ${provider} runs short` })),
+        numField('margin', 'Keep for leads (%)', texts.margin, 100),
+        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: texts.held })),
           h('div', { class: 'ctl' }, [['worker', 'Workers'], ['reviewer', 'Reviewers'], ['verifier', 'Verifiers'], ['mapper', 'Mappers'], ['designer', 'Designers']].map(([role, label]) =>
             h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'bal-held-' + role, checked: balDraft.held_back[role], 'aria-label': label, onchange: (ev) => { balDraft.held_back[role] = ev.target.checked; } }), h('span', { text: label })))))),
       h('div', { class: 'actions' }, save), boxNote('balancing'));
@@ -2126,7 +2177,7 @@
   // A just-installed CLI's version is read in the background on the machine, so the first
   // fresh status can say "installed" with no version yet. Re-fetch a few times, 2 s apart,
   // until the version shows, so the row fills in without reopening the section. A sign-in
-  // card opened meanwhile stops the retries: a repaint would take focus from its fields.
+  // card opened meanwhile stops the retries; closing it reads the status again anyway.
   async function refreshAfterInstall(machine, provider, tries = 4, first = true) {
     if (!first && signCard) return;
     await loadHarnesses(true);
@@ -2142,8 +2193,13 @@
       const res = await api('/settings/harnesses/' + encodeURIComponent(provider), { method: 'PUT', body: { enabled } });
       if (data && res && res.harnesses) data.harnesses = res.harnesses;
     } catch (e) { hz.rowErr[provider] = e.message; paintHarnesses(); return; }
-    if (!enabled && signCard && (signCard.harness === provider || signCard.provider === provider)) closeSignin();
-    if (adding) { const first = addProviders()[0]; if (!first) adding = null; else if (!addProviders().some(([v]) => v === adding.provider)) { adding.provider = first[0]; adding.plan = 'unknown'; adding.warn = false; } paint('accounts'); }
+    if (!enabled && signCard && signCard.provider === provider) closeSignin();
+    // Accounts follows the switch at once, unless an account edit is open. An Add account form
+    // left on a provider that is now off moves to one still offered, which needs the repaint.
+    const chosen = adding && adding.provider;
+    if (adding) { const first = addProviders()[0]; if (!first) adding = null; else if (!addProviders().some(([v]) => v === adding.provider)) { adding.provider = first[0]; adding.plan = 'unknown'; adding.warn = false; } }
+    const moved = Boolean(chosen) && (!adding || adding.provider !== chosen);
+    if (!editing && (moved || !accountsBusy())) paint('accounts');
     paintHarnesses();
     await loadHarnesses(true);
     const machine = harnessMachine();
@@ -2151,9 +2207,9 @@
     else if (!enabled && machine) { stopPoll(machine.name + '/' + provider); delete hz.jobs[machine.name + '/' + provider]; paintHarnesses(); }
   }
 
-  // The first account of the provider that is neither retired nor paused.
+  // The first account card of the provider that can sign in: neither retired nor paused.
   function signinAccount(provider) {
-    const mine = ((data && data.accounts) || []).filter((a) => a.provider === provider && !((data.retired_accounts || []).includes(a.id)));
+    const mine = ((data && data.accounts) || []).filter((a) => a.provider === provider && !((data.retired_accounts || []).includes(a.id)) && (!toolOf(provider).singleAccount || a.id === `default-${provider}`));
     return { usable: mine.find((a) => !a.paused) || null, any: mine.length > 0 };
   }
 
@@ -2164,6 +2220,14 @@
 
   // Accounts is the block below Harnesses, so its links scroll there.
   const accountsLink = (text) => h('a', { href: '#providers', text, onclick: () => blockHost('accounts')?.scrollIntoView() });
+
+  const providerGroup = (provider) => blockHost('accounts')?.querySelector(`.prov-group[data-provider="${provider}"]`);
+
+  // Sign-in happens with the account cards: the link opens it there, for the machine shown here.
+  const signinLink = (account, machine, name) => h('a', { class: 'btn-link primary', href: '#providers', text: 'Sign in', 'aria-label': `Sign in ${name}`, onclick: () => {
+    openSignin(account, machine, true);
+    providerGroup(account.provider)?.scrollIntoView();
+  } });
 
   function harnessRow(info, machine) {
     const [provider, name, vendor, docs] = info;
@@ -2202,7 +2266,7 @@
         else if (st.recipe === true) actions.append(install('Install'));
       } else if (!st.signed_in) {
         const { usable, any } = signinAccount(provider);
-        if (usable) actions.append(h('button', { type: 'button', class: 'small primary', text: 'Sign in', 'aria-label': `Sign in ${name}`, onclick: () => { openSignin(usable, machine.name, provider); paintHarnesses(); } }));
+        if (usable) actions.append(signinLink(usable, machine.name, name));
         else if (any) actions.append(h('span', { class: 'hint', text: `All ${name} accounts are paused ` }), accountsLink('Open Accounts'));
         else actions.append(accountsLink('Add an account'));
       }
@@ -2226,8 +2290,7 @@
         h('button', { type: 'button', class: 'danger small', text: 'Leave it out', onclick: () => setHarness(provider, false) }),
         h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { hz.confirmOff = null; paintHarnesses(); } })),
       (hz.rowErr[provider] || (job && job.state === 'running' && job.cancelErr)) && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] || job.cancelErr }),
-      extra,
-      h('div', { class: 'h-signin', 'data-signin-host': provider }, signCard && signCard.harness === provider && signCard.machine === machine.name ? signCard.el : null));
+      extra);
     return row;
   }
 
