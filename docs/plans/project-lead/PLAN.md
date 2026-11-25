@@ -442,7 +442,7 @@ The build matches these.
 | T5 | Pages: Settings switch, Threads list grouping and lead rows, project lead thread page, pop-up switch, per-conversation seen; browser test (S1, S2, S5; all mockups) | `viewer/pages/`, `viewer/test/app-project-lead.spec.js`, `viewer/AGENTS.md` pages entries | standard, claude-sonnet-5-5 | wc-df22283a57e1-worker-9 | `npm --prefix viewer run test:browser -- app-project-lead.spec.js`; assistant browser specs; picker commands | in progress (start-on-use browser case parked as fixme until T6) |
 | T6 | tricky. Start on use (messages queued before the start, 202 with `start_error`) and Off with stop retry (S1) | `viewer/app/{routes (messages route),project-lead,hub,threads,sessions}.js`, `viewer/test/project-lead.test.js` (adds), `viewer/test/helpers/app-machine.js` | standard, gpt-6.1-terra | wc-df22283a57e1-worker-8 | same as T1 | done |
 | T7 | Doc-truth follow-ups from T4's review: `refresh` retries in `project-lead.md`; `lead.md:23` marker sentence (cards.md reader lists and cards-lead.md opening left as they are: they already omit the assistant, which is also a `lead`-role session) | `protocol/app/{project-lead,lead}.md` | light, gpt-6-luna | wc-df22283a57e1-worker-5 | `node --test viewer/test/*.test.js` | done |
-| T8 | Machine follow-ups from T3's review: project_dir basename guard, start refuses assistant/from_remote_branch with project_lead, recorded codex_mode, fetch timeout, clone push URL disabled, `git clean -fdx`, and the missing test cases | `machine/service.js`, `machine/lib/project-lead.js`, `machine/test/project-lead.test.js` | standard, gpt-6.1-terra | wc-df22283a57e1-worker-7 | same as T3 | in progress |
+| T8 | Machine follow-ups from T3's review: project_dir basename guard, start refuses assistant/from_remote_branch with project_lead, recorded codex_mode, fetch timeout, clone push URL disabled, `git clean -fdx`, and the missing test cases | `machine/service.js`, `machine/lib/project-lead.js`, `machine/test/project-lead.test.js` | standard, gpt-6.1-terra | wc-df22283a57e1-worker-7 | same as T3 | done |
 
 ## Log
 
@@ -482,3 +482,9 @@ The build matches these.
 - 2026-11-24 — T6 accepted (band: self, tricky): read the whole diff; re-ran `node --test viewer/test/project-lead.test.js` on the merged branch (16 pass).
 - 2026-11-24 — Choice: T6, project-lead.js: the first message is stored on a pending, non-live lead session that the first start reuses (`_waiting`); after a failed restart every waiting message is gathered onto the newest ended lead so the page shows it.
 - 2026-11-24 — Choice: T6, project-lead.js/hub.js: stop retries run asynchronously after a machine call, deduplicated per machine; a stop still pending stays marked for the next contact.
+- 2026-11-24 — T8 accepted (band: scout): items 1-6 in; 15 project-lead machine tests pass; full machine suite re-run on the merged branch. No test for the fetch timeout itself. Worker reported "none" for choices; the scout listed 5, logged below.
+- 2026-11-24 — Choice: T8, lib/project-lead.js: the path guard lives in `folder()`, so it covers every caller including `run()`.
+- 2026-11-24 — Choice: T8, service.js: `assistant`/`from_remote_branch`/`default_branch` refused if present at all (`Object.hasOwn`), even when false or null.
+- 2026-11-24 — Choice: T8, lib/project-lead.js: the push URL is reapplied before the default-branch lookup on each refresh.
+- 2026-11-24 — Choice: T8, lib/project-lead.js: the project fetch calls `commandAsync` directly with a 60 s timeout; the clone's own fetch has none.
+- 2026-11-24 — Choice: T8, service.js: recorded `codex_mode` forced only when `project_lead === true`.
