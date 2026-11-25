@@ -1,6 +1,6 @@
 'use strict';
 
-// Settings > Models > Diagrams against a real server; the hub's diagram routes are stubbed in
+// Settings > You > Diagrams against a real server; the hub's diagram routes are stubbed in
 // the page (page.route) so the machines' answers are whatever each test says.
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -36,12 +36,13 @@ async function stub(page, state, post) {
 
 const radio = (page, name) => page.getByRole('radiogroup', { name: 'Diagram sensitivity' }).getByRole('radio', { name });
 
-test('the section follows Threads and selects the level every machine agrees on', async ({ page }) => {
+test('Diagrams sits between Writing style and Enter to send and selects the level every machine agrees on', async ({ page }) => {
   await stub(page, { machines: { hub: ok('default'), 'node-2': ok('default') } }, () => ({ status: 200, body: {} }));
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#you');
   await expect(radio(page, /Default/)).toHaveAttribute('aria-checked', 'true');
   const headings = await page.locator('#panel h2').allTextContents();
-  expect(headings.indexOf('Diagrams')).toBe(headings.indexOf('Threads') + 1);
+  expect(headings.indexOf('Diagrams')).toBeGreaterThan(headings.indexOf('Writing style'));
+  expect(headings.indexOf('Enter to send')).toBe(headings.indexOf('Diagrams') + 1);
   await expect(radio(page, /Default/)).toHaveAttribute('aria-checked', 'true');
   await expect(radio(page, /Ask/)).toHaveAttribute('aria-checked', 'false');
   await expect(radio(page, /Ask/)).toContainText('Only when you ask, or a lead draws a proposed flow');
@@ -59,7 +60,7 @@ test('disagreeing machines select nothing and the note says why', async ({ page 
       'node-3': { error: 'did not answer' },
     },
   }, () => ({ status: 200, body: {} }));
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#you');
   for (const name of [/Ask/, /Default/, /High/]) await expect(radio(page, name)).toHaveAttribute('aria-checked', 'false');
   const lines = page.locator('.diagram-lines');
   await expect(lines).toContainText("hub: its CLIs' files disagree (claude ask, codex none)");
@@ -69,7 +70,7 @@ test('disagreeing machines select nothing and the note says why', async ({ page 
 
 test('two machines at different levels select nothing', async ({ page }) => {
   await stub(page, { machines: { hub: ok('ask'), 'node-2': ok('high') } }, () => ({ status: 200, body: {} }));
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#you');
   await expect(page.locator('.diagram-lines')).toContainText('hub: ask');
   for (const name of [/Ask/, /Default/, /High/]) await expect(radio(page, name)).toHaveAttribute('aria-checked', 'false');
 });
@@ -77,7 +78,7 @@ test('two machines at different levels select nothing', async ({ page }) => {
 test('picking a level saves, shows the note, and re-reads', async ({ page }) => {
   const state = { machines: { hub: ok('ask') } };
   const posts = await stub(page, state, (body) => { state.machines = { hub: ok(body.level) }; return { status: 200, body: { machines: { hub: { level: body.level } } } }; });
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#you');
   await radio(page, /High/).click();
   await expect(page.locator('.note').first()).toHaveText("Applies from each agent's next session");
   await expect(radio(page, /High/)).toHaveAttribute('aria-checked', 'true');
@@ -95,7 +96,7 @@ test('a 502 shows one line per failed machine, and pressing the same level again
     state.machines = { hub: ok(body.level), 'node-2': ok(body.level) };
     return { status: 200, body: { machines: { hub: { level: body.level }, 'node-2': { level: body.level } } } };
   });
-  await openPage(page, context, '/app/settings#models');
+  await openPage(page, context, '/app/settings#you');
   await radio(page, /High/).click();
   const note = page.locator('.note.bad').first();
   await expect(note).toHaveText('node-2: did not answer');

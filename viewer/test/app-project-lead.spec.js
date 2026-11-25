@@ -256,7 +256,7 @@ test('the unread dot is kept for each conversation', async ({ page }) => {
 });
 
 test('the Settings switch turns project leads on and off', async ({ page }) => {
-  await open(page, 'settings');
+  await open(page, 'settings#leads');
   const row = page.locator('#project-leads-setting');
   await expect(row).toContainText('A lead for each project that knows its threads and its work.');
   const value = async () => (await api(ctx, '/settings')).body.project_leads;
