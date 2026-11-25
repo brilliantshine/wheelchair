@@ -1059,10 +1059,12 @@ test.describe('one place for sign-in, usage and each draft', () => {
       const saved = [];
       await patchSettings(page, () => ({ harnesses: allOn(), lead_order: ['claude', 'gpt', 'any'], leave: 10, reserved_provider: 'Claude' }));
       await page.route('**/api/settings/balancing', (r) => { const body = r.request().postDataJSON(); saved.push(body); return r.fulfill({ json: { ...body, reserved_provider: 'GPT' } }); });
+      await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_in', ['hub']) }));
       await openPage(page, context, '/app/settings#usage');
       const leads = page.locator('[data-order="lead_order"]');
       const order = () => leads.locator('li span').allTextContents();
       await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save Claude for leads');
+      await expect(page.locator('.usage-bars .usage-prov')).toHaveCount(2);
       await leads.getByRole('button', { name: 'Move Claude down' }).click();
       await page.locator('#bal-leave').fill('33');
       const [one, other] = first === 'lead-order' ? ['#lead-order-save', '#bal-save'] : ['#bal-save', '#lead-order-save'];
