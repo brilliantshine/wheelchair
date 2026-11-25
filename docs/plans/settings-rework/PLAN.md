@@ -166,6 +166,21 @@ Round 2 fixes (for round 3): S5 blocks repaint independently (replaces the poll-
 | mechanics | minor | Back link vs browser Back after a direct link | upheld (minor) | S7 |
 | mechanics | minor | Missing send-now and openrouter-spend specs | upheld (minor) | S6 |
 
+### Round 3 — 2026-11-24
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 2:**
+- S5: each block inside a category repaints only itself; Diagrams read and draw move to You; Accounts' own edit guard kept.
+- S1: lead order keeps its own Save; each Save refreshes only its keys in the shared draft.
+- S2: Harnesses reloads status after any account sign-in, pause, resume or remove.
+- S3: lesson editor address `#behavior/lessons/<role>`, old one kept.
+- S7: breakpoint 899px; "‹ Settings" always opens the list; crossing the breakpoint rebuilds nothing.
+- S6: more specs and checks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
