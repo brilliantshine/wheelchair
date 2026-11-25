@@ -11,8 +11,8 @@ created: 2026-11-25
 
 One standard, well-documented way to make a tool that wheelchair's agents can use, and an
 easy way to connect it. A tool can belong to one project or be shared by every project on
-the machine. The same standard works whether Collin writes the tool by hand or asks a
-thread's agents to build it.
+the machine. The same standard works whether Collin writes the tool by hand or, ideally, just asks
+wheelchair's agents to make and connect it for him.
 
 ## Why — the problem
 
@@ -28,8 +28,9 @@ projects, and agents have nothing standard to follow when asked to make one.
   or learning to run an MCP server.
 - Connecting a tool is a small, obvious step, not hand-written server config.
 - A tool can be made for one project, or once for every project on the machine.
-- Asking a thread "make me a tool that does X" gets a working, connected tool that follows
-  the standard.
+- Asking a wheelchair agent to do it for you is easy: describe the tool in plain words
+  ("make me a tool that does X", or "connect this one") and get a working, connected tool
+  that follows the standard, without touching the files yourself.
 - Once connected, the tool shows up for the agents that get project tools today, on each
   AI that can use tools, and a clear message says when it cannot be used and why.
 
