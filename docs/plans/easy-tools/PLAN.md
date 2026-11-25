@@ -585,6 +585,13 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Core library: S7 rules, discovery, script runner, MCP stdio helper, bridge, launcher (S1, S7, S9) | `machine/lib/{folder-tools,tool-run,mcp-stdio,tool-bridge,tool-launch}.js`, `machine/test/folder-tools{,-run}.test.js` | standard | | `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js` | not started |
+| T2 | Shared tool copies: find, refresh with lock and deadline, pointer, read-only copies, cleanup (S3) | `machine/lib/shared-tools.js`, `machine/test/shared-tools.test.js` | standard | | `node --test machine/test/shared-tools.test.js` | not started |
+| T3 | Connectors take folder entries: Claude, Codex (budget, sandboxed none, 260 s), Antigravity, Kimi/Pi warnings (S8) | `connectors/{claude,codex,agy,kimi,pi}/machine.js`, `connectors/common.js`, `machine/test/project-mcp{,-codex,-agy}.test.js` | standard | | `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js` | not started |
+| T4 | tricky: Launch wiring: service discovery, shared pin per session, problems card and ready event, instructions line, `/v1/agent/tools`, hub setting and start body (S2, S3, S8, S11) | `machine/service.js`, `machine/lib/project-mcp.js`, `viewer/app/{sessions,settings,routes}.js` (setting only), `machine/test/folder-tools-launch.test.js`, `machine/test/folder-tools-run.test.js` (read-only copy case) | standard | | `node --test machine/test/folder-tools-launch.test.js` + S8 list | not started |
+| T5 | `wc.js tool new/list/check/run` and the two templates (S10) | `viewer/app/wc.js`, `viewer/app/tool-cli.js`, `machine/templates/tools/`, `viewer/test/wc-tool.test.js` | standard | | `node --test viewer/test/wc-tool.test.js` | not started |
+| T6 | Tools page folder list and Settings Shared tools picker (S6, Mockups) | `viewer/pages/{project-tools,settings}.js`, css, `machine/lib/project-tools.js`, page tests | standard (claude) | | S6 Validation line | not started |
+| T7 | Guide `protocol/tools.md`, role pointers, README, routers (S5, S11) | `protocol/tools.md`, `protocol/app/{lead,sub-lead,worker}.md`, `README.md`, routers | standard (claude) | | read against S1-S10 | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
