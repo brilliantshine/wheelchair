@@ -137,6 +137,21 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 | mechanics | minor | No step to refresh harness instructions from the canonical clone | declined | `install.sh` / `sensitivity/set.sh` refuse from a worktree (CONTRIBUTING.md); the refresh is Collin's update after merge, not a Spec validation. Goes in the check card's update text |
 | intent | minor | S3 "every in-repo link" would rewrite old plans; "Settings → Harnesses" texts unaddressed | upheld (minor) | S3 limited to live files; old-name texts renamed |
 
+### Round 2 — 2026-11-24
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 1:**
+- S7 added: phone category list, "‹ Settings" back link, breakpoint 640px; S3 no-hash rule split by width.
+- S3: renaming limited to live files; old-name texts renamed; New Thread hint links to `#threads`.
+- S1: lead provider order inside Balancing with one Save.
+- S2: Harnesses sign-in link carries the machine; Harnesses refresh after sign-in.
+- S5: background refresh stays page-wide; repaints wait for open edits.
+- S6: more specs and checks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
