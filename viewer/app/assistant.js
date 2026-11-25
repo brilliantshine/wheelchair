@@ -4,15 +4,18 @@ const settings = require('./settings.js');
 const { appError } = require('./state.js');
 
 async function isOn(hub) { return (await settings.load(hub)).assistant === 'on'; }
+function special(thread) { return !!(thread.assistant || thread.project_lead); }
+
 async function visible(hub, threads) {
-  if (!threads.some((thread) => thread.assistant)) return threads;
-  const on = await isOn(hub);
-  return threads.filter((thread) => !thread.assistant || on);
+  if (!threads.some(special)) return threads;
+  const value = await settings.load(hub);
+  return threads.filter((thread) => (!thread.assistant || value.assistant === 'on') && (!thread.project_lead || value.project_leads === 'on'));
 }
 async function guard(hub, id) {
   // A read-only snapshot: hub.thread() can save a provider migration, and this runs outside the thread's lock.
   const thread = await hub.threadSnapshot(id);
-  if (thread.assistant && !(await visible(hub, [thread])).length) throw appError(404, 'the assistant is off');
+  if (thread.assistant && !await isOn(hub)) throw appError(404, 'the assistant is off');
+  if (thread.project_lead) await require('./project-lead.js').guard(hub, thread);
 }
 async function status(hub) {
   if ((await settings.load(hub)).assistant !== 'on') return { on: false };
@@ -41,4 +44,4 @@ async function change(hub, on) {
   hub.assistantChange = work;
   return work;
 }
-module.exports = { isOn, visible, guard, status, change };
+module.exports = { isOn, special, visible, guard, status, change };

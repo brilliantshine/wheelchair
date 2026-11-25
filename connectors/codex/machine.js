@@ -120,7 +120,7 @@ module.exports = {
   },
   readSteps: require('./steps').readLines,
   stepsReady: session => !!session.codex_thread_id,
-  sandboxed: session => session.codex_mode !== 'unrestricted',
+  sandboxed: session => session.project_lead || session.codex_mode !== 'unrestricted',
   sandboxWrap: command => ['codex', 'sandbox', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '--', ...command],
   projectToolReason(name, entry) { const reason = codexEntryReason(name, entry); return reason ? `on Codex: ${reason}` : null; },
   projectToolFileWarning(servers) { return codexOverrides({ servers }).tooLarge ? 'project tools skipped on Codex: .mcp.json is too large to pass on the command line' : null; },
@@ -155,9 +155,9 @@ module.exports = {
     return { reading };
   },
   command(input, session, worktree, context) {
-    const trust = `projects={${JSON.stringify(worktree)}={trust_level="trusted"}}`;
+    const trust = `projects={${JSON.stringify(worktree)}={trust_level="${session.project_lead === true ? 'untrusted' : 'trusted'}"}}`;
     const notify = `notify=[${JSON.stringify(path.join(c.root, 'machine', 'hook.sh'))},"codex",${JSON.stringify(session.name)}]`;
-    const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
+    const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' && !session.project_lead ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
     // No startup update menu: it waits for a keypress no one sends (the tmux pane is unattended).
     const argv = ['codex', ...access, '-c', notify, '-c', trust, '-c', 'check_for_update_on_startup=false', ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
     const projectStart = argv.length;

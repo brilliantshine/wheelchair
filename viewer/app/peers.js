@@ -2,6 +2,7 @@
 
 const { frozen } = require('./handoff.js');
 const { currentDone } = require('./cards.js');
+const { special } = require('./assistant.js');
 
 async function sameMachine(hub, registry, a, b) {
   const first = await hub.state.resolveMachine(registry, a);
@@ -20,6 +21,7 @@ async function reachTarget(hub, thread, id) {
   let target;
   try { target = await hub.state.thread(match.id); }
   catch (error) { if (error.status === 404) return { reason: 'no such thread' }; throw error; }
+  if (target.project_lead && target.id !== thread.id) return { reason: await require('./project-lead.js').inboundRefusal(hub) };
   if (target.id === thread.id) return { reason: 'that is this thread' };
   if (!(await sameMachine(hub, await hub.machines(), thread.machine, target.machine))) return { reason: 'that thread is on another machine' };
   if (target.archived) return { reason: 'that thread is archived' };
@@ -43,7 +45,7 @@ async function listLeads(hub, callerThread, { allProjects = false } = {}) {
   const registry = await hub.state.machines();
   const leads = [];
   for (const thread of await hub.state.allThreads()) {
-    if (thread.assistant || thread.id === callerThread.id || !reachable(hub, thread) || !(await sameMachine(hub, registry, callerThread.machine, thread.machine))) continue;
+    if (special(thread) || thread.id === callerThread.id || !reachable(hub, thread) || !(await sameMachine(hub, registry, callerThread.machine, thread.machine))) continue;
     const sameProject = thread.project === callerThread.project;
     const isLinked = !sameProject && linked(callerThread, thread);
     const hasLead = (thread.sessions || []).some(s => s.role === 'lead');

@@ -7,9 +7,12 @@ const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
 const execFileAsync = require('node:util').promisify(execFile);
 const { appError } = require('./state.js');
+const { special } = require('./assistant.js');
 const { resolvable, retractable, truncateTitle, validate } = require('./card.js');
 
 const REPLAY = Symbol('replay');
+const ASSISTANT_REFUSED_CARDS = new Set(['title', 'diagram', 'offer', 'idea', 'deferred', 'approval', 'progress', 'done', 'check', 'stub', 'sudo', 'reach']);
+const PROJECT_LEAD_CARDS = new Set(['question', 'needs', 'resolve', 'retract', 'file', 'image']);
 const SINGLETONS = new Set(['offer', 'idea', 'deferred', 'progress']);
 
 // Spec §1 "The permit card": the hub's own checks on a pull request the lead wants to push to.
@@ -98,7 +101,10 @@ function currentDone(thread) {
 async function acceptCard(hub, payload) {
   const result = await hub.updateThread(payload.thread_id, async (thread) => {
     const session = hub.session(thread, payload.session);
-    if (thread.assistant && ['title', 'diagram', 'offer', 'idea', 'deferred', 'approval', 'progress', 'done', 'check', 'stub', 'sudo', 'reach'].includes(payload.kind)) throw appError(422, `the assistant doesn't post ${payload.kind}`);
+    if (special(thread)) {
+      const refused = thread.project_lead ? !PROJECT_LEAD_CARDS.has(payload.kind) : ASSISTANT_REFUSED_CARDS.has(payload.kind);
+      if (refused) throw appError(422, `${thread.project_lead ? 'a project lead' : 'the assistant'} doesn't post ${payload.kind}`);
+    }
     require('./handoff.js').refuseFrozen(hub, thread);
     if (thread.archived) throw appError(409, 'thread is archived');
     thread.delivered_ids ||= [];
@@ -220,6 +226,7 @@ async function acceptCard(hub, payload) {
       const match = (await hub.state.allThreads()).find((item) => item.sessions?.some((s) => s.name === checked.card.to));
       if (!match || !match.sessions.some((s) => s.name === checked.card.to && s.role === 'lead')) throw appError(422, 'no lead by that name');
       const target = await hub.state.thread(match.id);
+      if (target.project_lead) throw appError(422, await require('./project-lead.js').inboundRefusal(hub));
       if (!(await peers.sameMachine(hub, await hub.machines(), thread.machine, target.machine))) throw appError(422, 'that lead is on another machine');
       if (target.archived) throw appError(422, 'that thread is archived');
       if (require('./handoff.js').frozen(hub, target)) throw appError(422, 'that thread was handed off');

@@ -10,8 +10,17 @@ async function dispatch(hub, input) {
   const assistant = (await hub.allThreads()).find((thread) => thread.assistant);
   const lead = assistant?.sessions.filter((s) => s.role === 'lead' && s.live).at(-1);
   if (!lead || lead.name !== input.calling_session) throw appError(403, 'only the personal assistant may do that');
+  return run(hub, input, { source: assistant, target: async (id) => {
+    if (id === assistant.id) throw appError(403, 'the assistant thread cannot be a target');
+    const target = (await hub.allThreads()).find((thread) => thread.id === id);
+    if (target?.project_lead) throw appError(403, "that's a project lead; talk to it directly");
+  }, include: (t) => !assistantHelpers.special(t) });
+}
+
+async function run(hub, input, policy) {
+  const assistant = policy.source;
   const action = input.action;
-  if (input.thread && input.thread === assistant.id) throw appError(403, 'the assistant thread cannot be a target');
+  if (input.thread) await policy.target(input.thread);
   if (action === 'projects') {
     const initial = await routes.newThread(hub, 'hub');
     const machines = await Promise.all(initial.machines.map(async (name) => {
@@ -23,21 +32,27 @@ async function dispatch(hub, input) {
     return { machines };
   }
   if (action === 'threads' || action === 'thread') {
-    const list = (await routes.listThreads(hub)).filter((t) => !t.assistant && (action === 'thread' || input.archived || !t.archived));
+    const list = (await routes.listThreads(hub)).filter((t) => policy.include(t) && (action === 'thread' || input.archived || !t.archived));
     const rows = await Promise.all(list.map(async (summary) => {
-      const thread = await hub.thread(summary.id), needs = [];
+      let thread = await hub.thread(summary.id);
+      if (policy.clean) thread = policy.clean(thread);
+      const needs = [];
       require('./views.js').addNeeds(needs, thread);
-      const { asides, ...visibleSummary } = summary;
+      const { asides, ...visibleSummary } = policy.clean ? policy.clean(summary) : summary;
       const status = thread.slug ? await require('./views.js').currentStatus(hub, thread) : summary.last_status;
-      return { ...visibleSummary, last_status: status, lead_live: thread.sessions.some((s) => s.role === 'lead' && s.live), waiting: needs.map((n) => ({ id: n.card_id, kind: n.kind, text: n.title.split('\n')[0] })) };
+      return { ...visibleSummary, last_status: status, lead_live: thread.sessions.some((s) => s.role === 'lead' && s.live), waiting: needs.map((n) => ({ id: n.card_id, kind: n.kind, text: policy.waitingText?.(n) || n.title.split('\n')[0] })) };
     }));
     if (action === 'threads') return { threads: rows };
     const row = rows.find((t) => t.id === input.thread);
     if (!row) throw appError(404, 'thread not found');
-    const thread = await hub.thread(input.thread), chat = await hub.chat(input.thread);
+    let thread = await hub.thread(input.thread);
+    if (policy.clean) thread = policy.clean(thread);
+    const chat = await hub.chat(input.thread);
+    if (policy.cleanChat) chat.items = policy.cleanChat(chat.items);
     return { ...row, cards: thread.cards.filter((c) => !c.replaced && !c.answered && !c.retracted_at), queued: Object.entries(thread.queues || {}).filter(([name]) => thread.sessions.some((s) => s.name === name && s.role === 'lead')).flatMap(([, queue]) => queue.map((entry) => entry.text)), recent: chat.items.filter((item) => ['human', 'assistant', 'context'].includes(item.type)).slice(-30) };
   }
   if (action === 'start') {
+    if (policy.start) input = { ...input, ...policy.start };
     if (typeof input.message !== 'string' || !input.message.trim() || !input.machine || !input.project) throw appError(400, 'project, machine and message are required');
     try {
       const thread = await hub.createThread({ project: input.project, machine: input.machine, message: `[wc:assistant] ${input.message}`, _assistant_title: input.title ?? input.message });
@@ -75,6 +90,7 @@ async function dispatch(hub, input) {
     return { ok: true, result: publicSession(await hub.restartLead(input.thread, 'assistant')) };
   }
   if (action === 'archive') return { ok: true, result: await hub.archive(input.thread, 'assistant') };
+  if (policy.press) await policy.press(input);
   return { ok: true, result: await hub.press(input.thread, input.card, { action: input.press_action, value: input.value }, 'assistant') };
 }
-module.exports = { dispatch };
+module.exports = { dispatch, run };

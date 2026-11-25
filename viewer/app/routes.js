@@ -17,6 +17,8 @@ const balancer = require('./balancer.js');
 const harnesses = require('./harnesses.js');
 const { PROVIDERS, DISPLAY_NAMES, cliOf } = require('./providers.js');
 const threadsModule = require('./threads.js');
+const { guard, special, visible } = require('./assistant.js');
+const projectLead = require('./project-lead.js');
 const UPLOAD_LIMIT = 25 * 1024 * 1024;
 const HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox";
 const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff', 'content-security-policy': HTML_CSP };
@@ -45,7 +47,7 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   const suffix = url.pathname.slice('/wheelchair/api/'.length);
   const bits = suffix.split('/').filter(Boolean);
   if (bits[0] === 'settings' && bits[1] === 'background') return require('./background.js').handle(hub, request, response, url, bits, send);
-  if (bits[0] === 'threads' && bits[1] && bits[1] !== 'import' && ['GET', 'POST'].includes(request.method)) await require('./assistant.js').guard(hub, bits[1]);
+  if (bits[0] === 'threads' && bits[1] && bits[1] !== 'import') await guard(hub, bits[1]);
   if (request.method === 'POST' && bits[0] === 'threads' && bits[1] && bits[2] === 'uploads' && bits.length === 3) return upload(hub, request, response, url, bits[1]);
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'threads' && bits[1] === 'import') {
     const limit = 10 * 1024 * 1024;
@@ -98,6 +100,13 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   if (bits[0] === 'handoff-revokes' && bits[1] === 'dismiss' && request.method === 'POST') return send(response, 200, await require('./handoff-ops.js').dismiss(hub, body));
   if (bits[0] === 'threads') return handleThreads(hub, request, response, url, bits, body);
   if (bits[0] === 'assistant' && bits.length === 1 && request.method === 'GET') return send(response, 200, await require('./assistant.js').status(hub));
+  if (bits.length === 1 && bits[0] === 'project-lead' && request.method === 'GET') {
+    return send(response, 200, await projectLead.status(hub, url.searchParams.get('thread')));
+  }
+  if (bits.length === 1 && bits[0] === 'project-leads' && request.method === 'POST') {
+    const thread = await projectLead.ensure(hub, body || {});
+    return send(response, 200, { thread: thread.id });
+  }
   if (bits[0] === 'features' && request.method === 'GET') {
     return send(response, 200, await hub.features());
   }
@@ -186,7 +195,7 @@ async function newThread(hub, machine) {
   const matching = [];
   for (const thread of await hub.allThreads()) {
     const entry = thread.machine === machine ? known : await hub.state.resolveMachine(machines, thread.machine);
-    if (!thread.assistant && entry === known) matching.push(thread);
+    if (!special(thread) && entry === known) matching.push(thread);
   }
   matching.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)));
   result.previous = [...new Set(matching.map((thread) => thread.project))];
@@ -345,8 +354,10 @@ async function handleSettings(hub, request, response, url, bits, body) {
     return send(response, 200, { models: await settings.models(hub), heads_up: await settings.headsUp(hub) });
   }
   if (bits[1] === 'preferences' && request.method === 'PUT') {
-    const before = (await settings.load(hub)).assistant;
+    let beforeAssistant, beforeProjectLeads;
     const value = await settings.update(hub, (value) => {
+      beforeAssistant = value.assistant;
+      beforeProjectLeads = value.project_leads;
       if (body.lead_names !== undefined) {
         if (!Array.isArray(body.lead_names) || body.lead_names.some((name) => typeof name !== 'string')) throw appError(400, 'lead_names must be an array of names');
         const names = body.lead_names.map((name) => name.trim()).filter(Boolean);
@@ -376,6 +387,10 @@ async function handleSettings(hub, request, response, url, bits, body) {
       if (body.assistant !== undefined) {
         if (!['off', 'on'].includes(body.assistant)) throw appError(400, 'assistant must be off or on');
         value.assistant = body.assistant;
+      }
+      if (body.project_leads !== undefined) {
+        if (!['off', 'on'].includes(body.project_leads)) throw appError(400, 'project_leads must be off or on');
+        value.project_leads = body.project_leads;
       }
       if (body.auto_merge !== undefined) {
         if (!['off', 'on'].includes(body.auto_merge)) throw appError(400, 'auto_merge must be off or on');
@@ -416,11 +431,12 @@ async function handleSettings(hub, request, response, url, bits, body) {
       }
     });
     let assistantError;
-    if (value.assistant !== before) {
+    if (value.project_leads !== beforeProjectLeads) await projectLead.change(hub, value.project_leads === 'on');
+    if (value.assistant !== beforeAssistant) {
       try { await require('./assistant.js').change(hub, value.assistant === 'on'); }
       catch (error) { if (!error.assistantStart) throw error; assistantError = error.message; }
     }
-    return send(response, 200, { ...(assistantError ? { assistant_error: assistantError } : {}), assistant: value.assistant, lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { ...(assistantError ? { assistant_error: assistantError } : {}), assistant: value.assistant, project_leads: value.project_leads, lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));
@@ -519,6 +535,10 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
     try { return send(response, 200, await require('./assistant-actions.js').dispatch(hub, body)); }
     catch (error) { if (!error.status) throw error; return send(response, error.status, { error: error.message }); }
   }
+  if (bits[1] === 'project-lead' && request.method === 'POST') {
+    try { return send(response, 200, await require('./project-lead-actions.js').dispatch(hub, body)); }
+    catch (error) { if (!error.status) throw error; return send(response, error.status, { error: error.message }); }
+  }
   if (bits[1] === 'session' && request.method === 'POST') {
     return send(response, 200, await hub.sessionRequest(body));
   }
@@ -527,7 +547,12 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
 
 
 async function listThreads(hub, lean = true) {
-    const listed = await require('./assistant.js').visible(hub, await hub.allThreads());
+    const listed = await visible(hub, await hub.allThreads());
+    const registry = await hub.machines();
+    const machineKeys = new Map();
+    for (const machine of new Set(listed.map((thread) => thread.machine))) {
+      machineKeys.set(machine, await projectLead.machineKey(hub, registry, machine) || machine);
+    }
     const all = await Promise.all(listed.map((thread) => hub.withThread(thread.id, async () => {
       let current = await hub.readSnapshot(thread.id);
       if (await discoverSlug(current, hub)) {
@@ -540,7 +565,8 @@ async function listThreads(hub, lean = true) {
     // `?view=list` is what the pages poll: each thread's summary without its history
     // (cards, sent messages, briefs), which is most of the bytes and none of the list.
 
-    return all.map((thread) => {
+    return all.map((record) => {
+      const thread = { ...record, machine_key: machineKeys.get(record.machine) };
       if (!lean) return { ...thread, handed_off: thread.handed_off || null, sessions: thread.sessions.map(publicSession) };
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
@@ -626,7 +652,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const lock = bits.length === 3 && request.method === 'POST' ? hub.withChatThread.bind(hub) : hub.withThread.bind(hub);
     const result = await lock(id, async () => {
       const thread = await hub.thread(id);
-      if (thread.assistant) throw appError(403, 'no asides in the assistant thread');
+      if (special(thread)) throw appError(403, thread.project_lead ? 'no asides in a project lead thread' : 'no asides in the assistant thread');
       if (request.method !== 'GET') require('./handoff.js').refuseFrozen(hub, thread);
       if (request.method !== 'GET' && thread.archived) throw appError(409, 'this thread is archived');
       if (bits.length === 3 && request.method === 'POST') return { status: 201, body: asides.brief(await asides.create(hub, thread, body)) };
@@ -704,14 +730,17 @@ async function handleThreads(hub, request, response, url, bits, body) {
     return send(response, 200, await require('./threads.js').archivedGraph(hub, id, url.searchParams.get('file')));
   }
   if (request.method === 'POST' && bits[2] === 'messages') {
-    await hub.withThread(id, async () => {
+    const result = await hub.withThread(id, async () => {
       const thread = await hub.thread(id);
       require('./handoff.js').refuseFrozen(hub, thread);
-      const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
-      if (!lead) throw appError(409, 'no live lead');
+      if (thread.project_lead) await require('./project-lead.js').guard(hub, thread);
+      let lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
+      if (!lead && !thread.project_lead) throw appError(409, 'no live lead');
+      if (!lead) return require('./project-lead.js').message(hub, thread, String(body.text || ''));
       await hub.enqueue(thread, lead.name, String(body.text || ''), 'user');
+      return { queued: true };
     });
-    return send(response, 202, { queued: true });
+    return send(response, 202, result);
   }
   if (request.method === 'POST' && bits[2] === 'send-now') {
     return send(response, 202, { sent: await hub.sendNow(id, body.at) });

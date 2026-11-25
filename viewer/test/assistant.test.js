@@ -397,3 +397,16 @@ test('restart starts a fresh assistant after first preflight fails', async () =>
     assert.equal(c.machine.calls.filter((x) => x.path === '/v1/sessions').at(-1).body.prompt_role, 'assistant');
   } finally { await close(c); }
 });
+
+test('assistant actions exclude and refuse project lead threads', async () => {
+  const { c, call } = await assistantFixture();
+  try {
+    const record = { ...require('../app/threads.js').emptyThread({ project: '/tmp/project', machine: 'hub' }), project_lead: true };
+    await fs.writeFile(path.join(c.state, 'threads', `${record.id}.json`), JSON.stringify(record));
+    for (const action of ['thread', 'message', 'press', 'restart', 'archive']) {
+      const response = await call({ action, thread: record.id });
+      assert.equal(response.status, 403); assert.match(response.body.error, /that's a project lead; talk to it directly/);
+    }
+    assert.equal((await call({ action: 'threads' })).body.threads.some((row) => row.id === record.id), false);
+  } finally { await close(c); }
+});

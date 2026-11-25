@@ -37,9 +37,11 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
   let keptUploads;
   const projectToolsReplies = {};
   let usageReply = { status: 200, delay: 0, reading: null };
+  let refreshDelay = 0;
   let uploadsDir = options.uploadsDir;
   let preflightOk = true;
   let startOk = true;
+  let stopOk = true;
   // Start the next sessions but hang up before answering, as a start slower than the hub waits.
   // A number drops that many starts in a row; true drops one.
   let dropNextStart = 0;
@@ -107,6 +109,10 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
       if (reply.delay) await new Promise((resolve) => setTimeout(resolve, reply.delay));
       return send(response, reply.status || 200, reply.status && reply.status !== 200 ? { error: reply.error || 'usage failed' } : { reading: reply.reading || { account: input.account, five_hour: null, week: null } });
     }
+    if (request.method === 'POST' && url.pathname === '/v1/project-lead/refresh') {
+      if (refreshDelay) await new Promise((resolve) => setTimeout(resolve, refreshDelay));
+      return send(response, 200, { ok: true, commit: 'a'.repeat(40) });
+    }
     if (request.method === 'POST' && url.pathname === '/v1/sessions') {
       if (!startOk) return send(response, 503, { error: 'start refused' });
       if (dropNextStart > 0) {
@@ -139,6 +145,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
       return send(response, 200, { pane: 'fake pane' });
     }
     if (request.method === 'DELETE' && url.pathname.startsWith('/v1/sessions/')) {
+      if (!stopOk) return send(response, 503, { error: 'machine unavailable' });
       return stopSession(response, sessions, url);
     }
     if (request.method === 'POST' && url.pathname === '/v1/archive') {
@@ -164,6 +171,8 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
   return {
     port,
     secret,
+    get refreshDelay() { return refreshDelay; },
+    set refreshDelay(value) { refreshDelay = value; },
     get usageReply() { return usageReply; },
     set usageReply(value) { usageReply = value; },
     get uploadsDir() { return uploadsDir; },
@@ -178,6 +187,8 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     status,
     get dropNextStart() { return dropNextStart; },
     set dropNextStart(value) { dropNextStart = value === true ? 1 : Number(value) || 0; },
+    get stopOk() { return stopOk; },
+    set stopOk(value) { stopOk = Boolean(value); },
     get startOk() { return startOk; },
     set startOk(value) { startOk = Boolean(value); },
     get preflightOk() { return preflightOk; },

@@ -12,6 +12,7 @@ agents own neither tmux nor the machine secret.
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
 | `lib/harness-recipes.js`, `lib/harness-install.js` | Harness install recipes and detached jobs, persisted state, setup and validation. |
 | `test/harness-install.test.js` | Harness install job and route coverage. |
+| `lib/project-lead.js` | Project lead clone creation and serialized refresh from the project repository. |
 | `lib/try.js` | Folder-local Try records, checks, Git switches and metadata-only status. |
 | `test/try.test.js` | Try endpoint, record, switching and status tests against isolated repositories. |
 | `lib/aside-turns.js` | Durable headless aside turns, CLI spawning, parsing and restart recovery. |
