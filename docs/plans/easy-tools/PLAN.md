@@ -359,6 +359,15 @@ round where knowing it matters most.
 | intent | minor | `list` key status vs never receiving values | upheld | S10: names-only lookup |
 | intent | minor | Page shows shared project's tools twice | upheld | S6: shared copy not added for the shared project itself |
 
+### Round 4 — 2026-11-25
+
+**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+
+**Changed since Round 3:** Key handling split into its own thread (Decision 21): S4 replaced, `keys` removed from S7, S6 (no key status, no Shared keys section), S9 (no redaction; bridge environment), S10 (all commands in the caller's process; no role refusal; pinned commit lookup), S3 (no shared keys), S11, Mockups notes, Validation. Round 3 fixes also landed in S6, S9 and S10.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
