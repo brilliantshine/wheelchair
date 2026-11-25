@@ -167,6 +167,14 @@ git diff --check
 - No change to test content beyond S1's helper; no tests deleted.
 - Picker changes stay deferred.
 
+## Implementation Tasks
+
+| # | Objective | Ownership | Lane | Validation | Status |
+|---|-----------|-----------|------|------------|--------|
+| T1 | S1 port clash retry in startServer; inline `freePort()` callers drop `port`; new retry test | `viewer/test/helpers/server.js`, `viewer/test/server-port-retry.test.js`, startServer call sites in `viewer/test/` | standard / gpt-6.1-terra | S1 commands, whole node suite, pages/app-views chromium | dispatched (wc-870c1331c2ff-worker) |
+| T2 | S2 full-run.sh side by side with seconds and TERM/HUP cleanup; new full-run test; AGENTS.md:85; S5 lead.md step 7 | `test-support/full-run.sh`, `test-support/test/full-run.test.js`, `AGENTS.md:85`, `protocol/app/lead.md` step 7 | standard / gpt-6.1-terra | `node --test test-support/test/full-run.test.js` | dispatched (wc-870c1331c2ff-worker-2) |
+| T3 | S3 CAP 8 start-time split; S4 Firefox list, config, docs; new projects test | `test-support/browser-workers.js` + test, `viewer/playwright.config.js`, `viewer/test/firefox-specs.js`, `viewer/test/playwright-projects.test.js`, `CONTRIBUTING.md:94`, `AGENTS.md:67`, `viewer/AGENTS.md:57,94` | standard / gpt-6.1-terra | workers + projects tests, `--list`, touch/app-new-thread specs | dispatched (wc-870c1331c2ff-worker-3) |
+
 ## Deferred
 
 | # | Item | Why it can wait | Source | Notes for the follow-up |
