@@ -29,6 +29,7 @@ Map: `MAP.md`.
 | 3 | Show each repeated thing once: sign-in only on account cards (Harnesses links to them); detailed usage only in Usage, account cards keep a one-line reading | The repetition is a main source of clutter; each thing stays one tap away | user |
 | 4 | New section keys `you`, `providers`, `usage`, `models`, `leads`, `threads`, `behavior`, `tools`; old keys keep working as aliases (`harnesses`, `accounts` → providers; `writing`, `background` → you; `templates` and `templates/lessons/<role>` → behavior); in-repo links and texts that name old sections are updated | Lesson cards and onboarding already link to old keys; aliases cost a lookup table | defaulted |
 | 5 | Mockups agreed: graphs/mockup-phone-navigation.html, mockup-phone-you.html, mockup-phone-assistant.html, mockup-desktop-threads.html (versions at commit 9abeca2f) | Collin pressed "Looks good" | user |
+| 6 | Keep lead and worker provider orders together in Usage and balancing, as planned (Collin: "it makes sense to me that agent orders like lead order and worker orders sort of go in the same category") | Answer to the review-budget question; the mechanical issues are fixed in S1 | user |
 
 ## Spec
 
@@ -188,6 +189,18 @@ Round 2 fixes (for round 3): S5 blocks repaint independently (replaces the poll-
 | mechanics | major | Harness switch changes Accounts while an add-account form is open | accepted-risk | Rare path (Accepted Risks) |
 | mechanics | major | No-hash desktop resize to phone width during Background preview | accepted-risk | Rare path (Accepted Risks) |
 | mechanics | minor | Sign-in card left mid-sign-in doesn't resume on return | upheld (minor) | S5 |
+
+### Round 4 — 2026-11-24
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 3:**
+- S1: a successful lead-order Save also rebuilds the Balancing box from the shared draft, so its provider labels update and unsaved edits stay.
+- S5: an open sign-in card rechecks and resumes polling when AI providers is reopened.
+- Accepted Risks: two rare paths added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
