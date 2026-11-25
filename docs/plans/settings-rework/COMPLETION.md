@@ -69,3 +69,25 @@ T3's stale-reference check (`git grep -nE "settings#(harnesses|templates)|Settin
 - The generated harness-instruction block (`sensitivity/set.sh`) still says "(Models, Diagrams)" until Collin runs `./install.sh` or `sensitivity/set.sh` from the canonical clone after merge.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-25
+
+Verification attempt 1 (commit `6d7c4f03`) found six gaps that went to remediation (`REMEDIATION-1.md`); one rare path went to Accepted Risks and the mockup line wraps were deferred (PLAN.md Deferred row 1). Lane: claude standard (claude-sonnet-5-5). Report: `reports/R1.md`.
+
+| Gap | Fix | Check |
+|-----|-----|-------|
+| S2: no 5-hour bar in Usage | `settings.js` accountTable: meter bars in "5-hour used" and "Week used" cells; `settings.css` `.meter` | `app-settings.spec.js:884` |
+| S6: Add account flake (Firefox) | real bug: a Harnesses repaint above the screen moved Accounts' buttons mid-press; `settings.js` holdPlace keeps what is below in place | `app-settings.spec.js:907` |
+| S6: surfaces check flake (Chromium) | the test measured a node detached by a repaint; `background-settings-surfaces.spec.js` measures in one in-page step | that spec |
+| S5: Diagrams read while hidden / stale on opening You | `settings.js` syncDiagrams: read each time You becomes visible, never behind the phone list | `app-diagram-sensitivity.spec.js:55` |
+| S3: old test name | `app-settings.spec.js:637` "Models fits at 390px" | — |
+| S4: phone You preview panes and Visibility slider | `settings.css` `.pane`, Visibility short track | `app-settings.spec.js:623` |
+
+Validation on the merged branch (sub-lead):
+
+```
+S6 node tests: # pass 87, # fail 0
+bash sensitivity/test/run.sh: RESULT 67 passed, 0 failed
+S6 browser list: exit 0, 878 passed (10.0m)
+```
+
