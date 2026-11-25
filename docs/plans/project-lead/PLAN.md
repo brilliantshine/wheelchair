@@ -541,3 +541,4 @@ The build matches these.
 - 2026-11-24 — Choice: R2b, connectors/claude/machine.js: reads `session.project_lead` in the adapter (no service.js change); `--strict-mcp-config` also drops user-scope MCP servers for project leads.
 - 2026-11-24 — Choice: R2b, connectors/codex/machine.js: suppresses project config through the existing trust override set to `untrusted`.
 - 2026-11-24 — Choice: R2b, connectors/pi/machine.js: `--no-approve` for project leads.
+- 2026-11-24 — R2c accepted (band: scout): sparse-checkout keeps harness config paths out of the clone; 21 machine project-lead tests pass. Choice: R2c, lib/project-lead.js: `reset --hard` and `clean -fdx` before setting sparse-checkout, so dirty excluded files never survive or block checkout; an existing test now asserts an excluded file is absent.
