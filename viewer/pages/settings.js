@@ -60,8 +60,9 @@
   let styleDraft = null;
   let preview = { running: false, after: null, error: '' };
   let styleNote = '';
-  let diagram = null; // GET /settings/diagram-sensitivity, or null until read for this visit
-  let diagramLoading = false;
+  let diagram = null; // GET /settings/diagram-sensitivity, or null until read since You was shown
+  let diagramReads = 0; // only the newest read's answer is kept
+  let diagramShown = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
   let nameDraft = null; // the typed Your name, kept across re-renders until saved
   // Lead name saves, kept across re-renders: they run one after another in the order made,
@@ -156,11 +157,22 @@
   }
 
   async function loadDiagram() {
-    diagramLoading = true;
-    try { diagram = await api('/settings/diagram-sensitivity'); }
-    catch (e) { diagram = { machines: { hub: { error: e.message } } }; }
-    diagramLoading = false;
+    const read = ++diagramReads;
+    let next;
+    try { next = await api('/settings/diagram-sensitivity'); }
+    catch (e) { next = { machines: { hub: { error: e.message } } }; }
+    if (read !== diagramReads) return;
+    diagram = next;
     drawDiagram();
+  }
+
+  // Diagrams is read each time You comes on screen: opened, or uncovered when a phone's list
+  // is left or the window grows past it. Never while the list hides it.
+  function syncDiagrams() {
+    if (!data) return;
+    const shown = section === 'you' && !(atRoot && phone.matches);
+    if (shown && !diagramShown) { diagram = null; drawDiagram(); loadDiagram(); }
+    diagramShown = shown;
   }
 
   async function saveDiagram(level) {
@@ -1846,11 +1858,19 @@
       const r = a.reading || {};
       const cell = (label, text) => h('td', { 'data-label': label, text });
       const gone = (w) => !w || (w.resets_at && Date.parse(w.resets_at) <= Date.now());
+      const used = (label, w, windowName) => {
+        if (!w) return cell(label, '–');
+        const n = gone(w) ? 0 : w.used;
+        return h('td', { 'data-label': label },
+          h('span', { class: 'meter', role: 'img', 'aria-label': `${pct(n)} of the ${windowName} window used` },
+            h('span', { style: `width:${Math.min(100, Math.max(0, n))}%` })),
+          ' ' + pct(n));
+      };
       return h('tr', { class: a.next ? 'next' : '', 'data-account': a.id },
         h('th', { scope: 'row', 'data-label': 'Account' }, a.name, a.next && h('span', { class: 'v-badge ok', text: 'next' })),
-        cell('5-hour used', r.five_hour ? pct(gone(r.five_hour) ? 0 : r.five_hour.used) : '–'),
+        used('5-hour used', r.five_hour, '5-hour'),
         cell('5-hour resets', r.five_hour && r.five_hour.resets_at && !gone(r.five_hour) ? when(r.five_hour.resets_at) : '–'),
-        cell('Week used', r.week ? pct(gone(r.week) ? 0 : r.week.used) : '–'),
+        used('Week used', r.week, 'week'),
         cell('Week resets', r.week && r.week.resets_at && !gone(r.week) ? when(r.week.resets_at) : '–'),
         h('td', { 'data-label': 'Why', class: 'why', text: a.reason || '' }));
     });
@@ -2354,6 +2374,17 @@
   };
   const blockHost = (name) => panel.querySelector(`.block[data-block="${name}"]`);
 
+  // A block repainted wholly above the screen (Harnesses answering while Accounts is in use)
+  // must not move what is below it: a button that moves mid-press loses the click. Measure
+  // before the repaint; call the returned function after it.
+  function holdPlace(host) {
+    const next = host.nextElementSibling;
+    const top = document.getElementById('app-nav')?.getBoundingClientRect().bottom || 0;
+    if (!next || !window.scrollY || !host.childElementCount || host.getBoundingClientRect().bottom > top) return () => {};
+    const was = next.getBoundingClientRect().top;
+    return () => window.scrollBy(0, next.getBoundingClientRect().top - was);
+  }
+
   // Rebuild only the named blocks, and only those in the open category: a block's save, timer
   // or picker never touches what another one holds.
   function paint(...names) {
@@ -2361,9 +2392,11 @@
     for (const name of names) {
       const host = blockHost(name);
       if (!host) continue;
+      const hold = holdPlace(host);
       const view = BLOCKS[name]();
       host.replaceChildren(...(view ? [view] : []));
-      if (name === 'diagrams') { if (!diagram && !diagramLoading) loadDiagram(); drawDiagram(); }
+      if (name === 'diagrams') drawDiagram();
+      hold();
     }
   }
 
@@ -2420,7 +2453,7 @@
     if (leaving) {
       if (section === 'you') discardBackground();
       section = next;
-      setNote('', false); styleNote = ''; diagram = null; balNote = { box: null, text: '' };
+      setNote('', false); styleNote = ''; balNote = { box: null, text: '' };
     }
     const lessons = role && selected !== 'lessons:' + role;
     if (lessons) select('lessons:' + role);
@@ -2433,7 +2466,9 @@
     renderSections();
     if (leaving) { renderCategory(); syncSection(); }
     else if (lessons) paint('templates');
+    syncDiagrams();
   });
+  phone.addEventListener('change', syncDiagrams);
   readHash();
   renderSections();
 
@@ -2445,6 +2480,7 @@
       renderPhoneNav();
       renderCategory();
       syncSection();
+      syncDiagrams();
     } catch (e) {
       error.hidden = false;
       error.textContent = 'Could not load settings: ' + e.message;
