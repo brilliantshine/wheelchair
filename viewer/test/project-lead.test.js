@@ -405,9 +405,11 @@ test('project lead actions enforce project scope and redact cross-project conten
   const other = emptyThread({ machine: 'hub', project: '/elsewhere/project' });
   other.sessions.push({ name: 'other-lead', role: 'lead', live: true });
   const personal = { ...emptyThread({ machine: 'hub', project: null }), assistant: true };
+  same.sessions.push({ name: 'same-lead', role: 'lead', live: true });
+  same.queues = { 'same-lead': [{ text: '[wc:from other-lead] outside secret' }, { text: 'inside queued' }] };
   same.peer_log = [{ thread: other.id, text: 'outside secret', direction: 'received' }, { thread: same.id, text: 'inside text', direction: 'sent' }];
   same.lead_links = [other.id, same.id]; same.peer_pauses = { [other.id]: 'outside', [same.id]: 'inside' };
-  same.cards = [{ id: 'reach1', kind: 'reach', title: 'secret' }, { id: 'permit1', kind: 'permit', pr_number: 99 }, { id: 'msg1', kind: 'message', to: 'other-lead', text: 'outside secret' }, { id: 'sudo1', kind: 'sudo' }];
+  same.cards = [{ id: 'reach1', kind: 'reach', title: 'secret' }, { id: 'permit1', kind: 'permit', pr_number: 99 }, { id: 'msg1', kind: 'message', to: 'other-lead', text: 'outside secret' }, { id: 'local-message', kind: 'message', to: 'same-lead', text: 'inside card' }, { id: 'sudo1', kind: 'sudo' }];
   for (const record of [own, same, other, personal]) await hub.save(record);
   const dispatch = require('../app/project-lead-actions.js').dispatch;
   const call = (action, extra = {}) => dispatch(hub, { calling_session: 'project-lead-session', action, ...extra });
@@ -420,6 +422,8 @@ test('project lead actions enforce project scope and redact cross-project conten
   const detail = await call('thread', { thread: same.id });
   assert.doesNotMatch(JSON.stringify(detail), /outside secret|other-lead|secret|#99/);
   assert.match(JSON.stringify(detail), /inside text/);
+  assert.match(JSON.stringify(detail), /inside queued/); assert.match(JSON.stringify(detail), /inside card/);
+  assert.deepEqual(detail.lead_links, [same.id]); assert.deepEqual(Object.keys(detail.peer_pauses), [same.id]);
   assert.deepEqual(detail.cards.find((c) => c.id === 'reach1'), { id: 'reach1', kind: 'reach', text: "a request to talk to another project's lead" });
   assert.equal(detail.waiting.find((c) => c.id === 'permit1').text, "a request to push to someone else's pull request");
   for (const card of ['reach1', 'permit1', 'sudo1']) await assert.rejects(call('press', { thread: same.id, card }), /that needs you/);

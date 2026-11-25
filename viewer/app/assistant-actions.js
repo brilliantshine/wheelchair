@@ -13,8 +13,8 @@ async function dispatch(hub, input, policy) {
   if (!lead || lead.name !== input.calling_session) throw appError(403, 'only the personal assistant may do that');
   return run(hub, input, { source: assistant, target: async (id) => {
     if (id === assistant.id) throw appError(403, 'the assistant thread cannot be a target');
-    const target = await hub.thread(id);
-    if (target.project_lead) throw appError(403, "that's a project lead; talk to it directly");
+    const target = (await hub.allThreads()).find((thread) => thread.id === id);
+    if (target?.project_lead) throw appError(403, "that's a project lead; talk to it directly");
   }, include: (t) => !t.assistant && !t.project_lead });
 }
 
