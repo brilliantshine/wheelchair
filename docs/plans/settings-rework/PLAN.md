@@ -54,8 +54,17 @@ The Settings page has eight categories, in this order, each holding exactly thes
 
 - Keys: `you`, `providers`, `usage`, `models`, `leads`, `threads`, `behavior`, `tools`. An unknown key opens `you`.
 - Old keys open the category now holding them: `harnesses`, `accounts` → `providers`; `writing`, `background` → `you`; `templates` → `behavior`; `templates/lessons/<role>` opens that role's lesson editor as today.
-- The Settings nav (`viewer/pages/nav.js`) and any link into Settings open `#you` by default instead of `#models`.
-- Update every in-repo link and text naming an old section or "Models > Diagrams" (MAP.md Literal section-reference index): onboarding card, lesson card links, Harnesses' internal links, `protocol/sensitivity.md` (its delimited region: Settings page (You, Diagrams), and the later "Models > Diagrams" line becomes "You > Diagrams"), `sensitivity/test/run.sh`'s expected text, and tests.
+- Settings opened with no hash (the app nav's Settings link, `viewer/pages/nav.js`) shows `#you` on desktop, and the category list on a phone (S7). Nothing opens `#models` by default any more.
+- Update every live link and user-facing text naming an old section or "Models > Diagrams" in code, tests, `protocol/`, `README.md` and `AGENTS.md` files (MAP.md Literal section-reference index); never edit other plans' or reports' files under `docs/plans/`. Text naming a section by its old name says the new category ("Settings → Harnesses" becomes "Settings → AI providers", e.g. `viewer/pages/thread.js:1636`, `README.md:261`). Includes: onboarding card, lesson card links, Harnesses' internal links, `protocol/sensitivity.md` (its delimited region: Settings page (You, Diagrams), and the later "Models > Diagrams" line becomes "You > Diagrams"), `sensitivity/test/run.sh`'s expected text, and tests.
+
+### S7. Getting around on a phone
+
+At 640px wide or less (the page's existing phone breakpoint, `viewer/pages/settings.js:2235`), replacing today's horizontal tab strip:
+
+- Settings with no hash, or `#` alone, shows only the category list (`mockup-phone-navigation.html`): each of the eight categories with its one-line description, tapping one opens it.
+- A category (any key, including old keys and `templates/lessons/<role>`) shows only that category, full width, with a "‹ Settings" link at the top that opens the list (clears the hash). The browser's back button behaves the same way, since each is a hash change.
+- Above 640px there is no list screen and no back link: the side navigation (`mockup-desktop-threads.html`) is always shown and no hash means `#you`.
+- Crossing the breakpoint (rotating, resizing) re-renders with the rule for the new width, keeping the current hash.
 
 ### S4. Mockups
 
@@ -108,12 +117,14 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 
 ### Round 1 — 2026-11-24
 
-**Lanes:** (filled at launch).
+**Lanes:** intent: claude; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Phone mockup shows a category list with back links; Spec never says so and S3 sent no-hash to `#you` | upheld (major) | Added S7; S3 no-hash rule split by width |
+| intent | minor | S3 "every in-repo link" would rewrite old plans; "Settings → Harnesses" texts unaddressed | upheld (minor) | S3 limited to live files; old-name texts renamed |
 
 ## Implementation Tasks
 
