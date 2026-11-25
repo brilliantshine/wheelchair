@@ -62,13 +62,16 @@ Threads list shows.
   `emptyThread` plus `project_lead: true`, `project: <path>`, `machine: <machine>`,
   `title: "<folder name> lead"`, no branch, plan or PR. Creating it twice for the same
   project returns the existing record.
-- **Start on use**: the first message Collin sends (thread page composer or pop-up) starts
-  its lead and is delivered as its first message. Opening the thread page alone starts
-  nothing. A later message while no lead is live shows the usual Restart, as for the
-  assistant.
+- **Start on use**: the first message Collin sends (thread page composer or pop-up) is
+  saved to the thread's chat and queued as his message first, then its lead is started and
+  receives it as its first message. Opening the thread page alone starts nothing. If the
+  start fails, the thread shows the failure and Restart as for any thread, and the queued
+  message moves to the next lead as Collin's queued messages already do.
 - **Off**: the hub stops every live project lead session and keeps the records. While off,
   rows and the pop-up's project lead side are hidden, its routes answer 404 "project leads
-  are off", and every project lead action is refused with "project leads are off".
+  are off", every project lead action is refused with "project leads are off", and no
+  project lead is started. A stop that cannot reach its machine is retried whenever that
+  machine next reports in, while the setting is still off.
 - Never archived, handed off or exported (archive refused: "a project lead can't be
   archived"). When its project's last thread is archived, its row disappears with the
   group; the record stays and returns with the group.
@@ -79,7 +82,9 @@ Threads list shows.
   record if needed, starting nothing until a message is sent), with a two-way switch at
   its top: "<folder name> lead" and "Assistant". The switch only changes which
   conversation the pop-up shows and sends to.
-- On every other page it opens the assistant as today.
+- On every other page it opens the assistant as today. That includes a project lead's
+  own thread page and a thread page whose project shows no group (for example an archived
+  thread whose project has no other thread left); no project lead record is created there.
 - If only one of the two settings is on, the pop-up opens that one with no switch; on a
   non-project page with only project leads on, no pop-up is shown.
 - The pop-up is not shown on the open conversation's own thread page (as today for the
@@ -93,19 +98,38 @@ Threads list shows.
   `prompt_role: "project-lead"`: the machine builds the prompt from a new
   `protocol/app/project-lead.md` plus `cards.md` and `cards-lead.md`, with the usual lead
   role layers (as the assistant, `machine/service.js:198-213`).
-- **Its folder**: `<machine state dir>/project-leads/<thread id>`, a git worktree of the
-  project, detached at the default branch tip (`origin/<default>` when the project has an
-  `origin`, otherwise the local default branch). The machine service creates it on the
-  first start and, at every lead start, fetches (when there is an `origin`) and moves it to
-  the current tip, discarding any local changes in that folder. These git writes are done
-  by the machine service, never by the agent. A fetch failure does not block the start:
-  the folder stays at its last tip and the start goes ahead.
-- `wc.js project-lead refresh` (S4) does the same fetch-and-move on request.
-- The role allows reading any file in its folder and read-only git commands, including
-  `git log`, `git show origin/wc/<id>:docs/plans/<slug>/PLAN.md` for a thread's
-  in-progress plan, and `git diff`. It never edits files, runs git writes, starts helper
-  sessions or changes Settings (as the assistant, `protocol/app/assistant.md:10-13`). The
-  hub refuses `session start` from it ("a project lead starts threads, not helpers").
+- **Its folder**: `<machine state dir>/worktrees/<project folder name>/project-lead-<thread id>`,
+  a separate local git clone of the project folder (`git clone <project path>`, not a
+  worktree), so nothing done inside it can change the project's own branches or other
+  threads' worktrees. Being under `worktrees/`, its files can be sent as `file` cards
+  (`machine/service.js:421-427`). The name matches neither `wc/<id>` nor `wc-<id>-`, so
+  the machine's thread worktree scans ignore it (`machine/service.js:1963-1969`).
+- **Refresh**: on the first start and every later lead start, the machine service:
+  1. fetches `origin` in the project folder when the project has an `origin` remote (as a
+     thread start already does); a failure here is ignored;
+  2. in the clone, fetches from the project folder `+refs/heads/*:refs/remotes/origin/*`
+     (the project's local branches, including every thread's `wc/<id>` whether pushed
+     or not) and `+refs/remotes/origin/*:refs/remotes/upstream/*` (what the project last
+     fetched from its remote);
+  3. checks out, detached and discarding any local changes, the default tip:
+     `upstream/<default>` when it exists, else `origin/<default>`, where `<default>` is
+     the project's `origin/HEAD` target, else the first of `main` or `master` that exists
+     as a local branch, else the project folder's current branch.
+  Step 1 and 2 need no network beyond step 1, so a network outage still gives the last
+  fetched tip. If no default tip can be found at all, the start fails with "this project
+  has no branch to read" and shows like any failed start.
+  These git writes are done by the machine service, never by the agent.
+- `wc.js project-lead refresh` (S4) runs the same three steps on request.
+- **Locked down**: the role allows reading any file in its folder and read-only git
+  commands, e.g. `git log`, `git show origin/wc/<id>:docs/plans/<slug>/PLAN.md` for a
+  thread's plan (pushed or not), `git diff`. It never edits files, runs git writes, starts
+  helper sessions or changes Settings (as the assistant, `protocol/app/assistant.md:10-13`).
+  Enforced outside the prompt: the hub and machine refuse, for a project lead session,
+  `wc.js session start` ("a project lead starts threads, not helpers"), `wc.js session
+  leads`, every `wc.js git` action, and `sudo`, `reach` and `permit` cards. It is launched
+  without the project's tools (no project MCP servers or project tool settings), and with
+  the harness's read-only sandbox where it has one (Codex: read-only sandbox); an account
+  switch keeps the same launch.
 - **Fresh starts**: every new lead starts with no memory, exactly as the assistant's
   restart path (personal-assistant Spec §2 "Fresh starts"), with context line "Project
   lead restarted · starting fresh".
@@ -122,7 +146,7 @@ checks are done by the hub against the caller's own project (machine + path).
 | `threads [--archived]` | Only threads of its own project (excluding project lead and assistant threads). |
 | `thread <id>` | Refused for a thread outside its project: "that thread is in another project; ask your assistant". |
 | `start --message-file <f> [--title <t>]` | No `--project`/`--machine`: always its own project and machine. |
-| `message`, `press`, `restart`, `archive` | Same, with the out-of-project refusal above; `sudo` presses refused as for the assistant. |
+| `message`, `press`, `restart`, `archive` | Same, with the out-of-project refusal above. `press` also refuses `sudo`, `reach` and `permit` cards ("that needs you"), since those reach beyond this project or the machine. |
 | `refresh` | Moves its folder to the current default branch tip (S3). Prints `{ok, commit}`. |
 
 There is no `projects` action. Its own thread, the assistant thread and every project lead
@@ -134,8 +158,11 @@ lead; talk to it directly") and its `threads` leaves them out (Decision 5).
 
 ### S5. Threads list and thread page
 
-- Project groups key on machine + path (Decision 6). When two shown groups share a folder
-  name, each heading reads "<folder> · <machine>".
+- Project groups key on the resolved machine (the hub's own alias and its hostname are
+  one machine, as `viewer/app/peers.js:6-9`) plus the exact path (Decision 6). When two
+  shown groups share a folder name, each heading and its project lead row show the path
+  (home shortened to `~`) instead of the bare folder name, plus " · <machine>" when their
+  machines differ.
 - The project lead row is pinned at the top of its group, above the group's threads, and
   does not count among them. Before it has a record or any chat: label "<folder> lead",
   subtitle "Ask about this project". After: the latest-message preview and a "needs you"
@@ -162,6 +189,15 @@ Derived from `protocol/app/assistant.md`, with these changes:
 - A request about another project, or about Settings: say it can only act in this project
   and that the assistant can help, and do nothing else.
 - Card kinds as the assistant (`question`, `needs`, `resolve`, `retract`, `file`, `image`).
+
+### S7. Other files the change must update
+
+- `protocol/app/assistant.md`: its `threads` leaves out project leads, and project lead
+  threads are refused as targets ("that's a project lead; talk to it directly").
+- Routers, per `CONTRIBUTING.md`: `protocol/AGENTS.md` (the new `project-lead.md`),
+  `viewer/AGENTS.md` (new hub module(s) and the `pages/assistant-popup.js` entry, whose
+  seen key and "never on the assistant thread page" text change with S2), `machine/AGENTS.md`
+  if the clone and refresh live in a new file.
 
 ### Mockups
 
