@@ -438,4 +438,6 @@ The build matches these.
 
 ## Log
 
+- 2026-11-24 — Build accepted: approval e5f1fafd-6d83-43fb-83b4-fcb8f070c8ca
+
 - 2026-11-24 — Round 5: cut the round-4 poll-triggered restart (it drew a loop and a silent-failure finding); the stale-live window is Deferred D3.
