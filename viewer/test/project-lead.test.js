@@ -343,6 +343,7 @@ test('failed starts retain queued messages in order and a later start carries th
   assert.equal(first.status, 202); assert.match(first.body.start_error, /start refused/);
   assert.deepEqual((await savedLead(c, id)).sessions.at(-1).queue.map((m) => m.text), ['first']);
   const second = await sendMessage(c, id, 'second'); assert.equal(second.status, 202);
+  assert.deepEqual((await savedLead(c, id)).sessions.at(-1).queue.map((m) => m.text), ['first', 'second']);
   c.machine.startOk = true;
   assert.equal((await sendMessage(c, id, 'third')).status, 202);
   const record = await savedLead(c, id);

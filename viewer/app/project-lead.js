@@ -94,6 +94,18 @@ async function message(hub, thread, text) {
     } else await require('./threads.js').restartLead(hub, thread.id);
     return { queued: true };
   } catch (error) {
+    // A failed restart may have appended a new failed session before carrying queues.
+    // Keep every waiting message on the latest lead so the thread page can show it.
+    const current = await hub.thread(thread.id);
+    const ended = current.sessions.filter((item) => item.role === 'lead' && !item.live);
+    const latest = ended.at(-1);
+    if (latest) {
+      const queued = ended.flatMap((item) => item.queue || []);
+      for (const item of ended) { item.queue = []; delete current.queues[item.name]; }
+      latest.queue = queued;
+      current.queues[latest.name] = latest.queue;
+      await hub.save(current);
+    }
     return { queued: true, start_error: error.message };
   }
 }
