@@ -72,9 +72,7 @@ Threads list shows.
   `{queued: true}` once the message is queued, plus `start_error` when the start failed;
   both composers then clear the draft (the message is not resent) and, on `start_error`,
   show the failure with Restart as for any thread. The queued message moves to the next
-  lead as Collin's queued messages already do. If the hub finds a project lead's lead dead
-  (its session poll) while Collin's messages are queued for it, it starts a new lead the
-  same way (`viewer/app/routes.js:706-714` today
+  lead as Collin's queued messages already do. (`viewer/app/routes.js:706-714` today
   refuses with 409 "no live lead"; this replaces that for project lead threads only).
 - **Off**: the hub stops every live project lead session and keeps the records. While off,
   rows and the pop-up's project lead side are hidden, its routes answer 404 "project leads
@@ -106,9 +104,8 @@ Threads list shows.
 - Its lead runs on the project's own machine, on the lead model from Settings, with
   `prompt_role: "project-lead"`: the machine builds the prompt from a new
   `protocol/app/project-lead.md` plus `cards.md` and `cards-lead.md`. Of the hub's role
-  layers it gets only Collin's name, his writing style, the scout model line, and lessons
-  saved for leads that are unscoped or scoped to this project; no other role's lessons
-  (`viewer/app/settings.js:181-190,224-244`). A scout here is the harness's own in-session
+  layers it gets only Collin's name, his writing style and the scout model line; no
+  lessons for any role (`viewer/app/settings.js:181-190,224-244`). A scout here is the harness's own in-session
   helper reading its clone, which is allowed; "helper sessions" below means wheelchair
   sessions.
 - **Its folder**: `<machine state dir>/worktrees/<project folder name>/project-lead-<thread id>`,
@@ -123,7 +120,8 @@ Threads list shows.
   2. in the clone, fetches with `--prune` from the project folder `+refs/heads/*:refs/remotes/origin/*`
      (the project's local branches, including every thread's `wc/<id>` whether pushed
      or not, which on this machine are only this project's threads) and only the
-     project's `refs/remotes/origin/<default>` (`<default>` as step 3 defines it) into `refs/remotes/upstream/<default>`
+     project's `refs/remotes/origin/<default>` (`<default>` as step 3 defines it), when
+     that ref exists there, into `refs/remotes/upstream/<default>`
      (what the project last fetched of its default branch; other machines' pushed thread
      branches are not brought in); `--prune` drops refs deleted in the project folder, and
      since step 1's failure deletes nothing there, an outage keeps the last known refs;
@@ -173,10 +171,13 @@ checks are done by the hub against the caller's own project (machine + path).
 **Other projects' content**: `threads` and `thread` leave out every item that names or
 carries content from a thread in another project, whatever field it is in (for example
 `peer_log`, `queued`, `message` cards, `lead_links`, `peer_pauses`), filtered before the
-response is built. A `reach` card waiting on Collin stays in `waiting` and `cards` only as
-`{id, kind: "reach", text: "a request to talk to another project's lead"}`, with its
-target and reason removed. `permit` cards (this project's own repo) stay as they are.
+response is built. A `reach` or `permit` card waiting on Collin stays in `waiting` and `cards` only as
+`{id, kind, text}` with plain text ("a request to talk to another project's lead", "a
+request to push to someone else's pull request"), its target and details removed.
 Items between threads of the same project stay.
+
+Inbound: the hub refuses any cross-thread `message` or `reach` card whose target is a
+project lead thread ("a project lead takes messages only from Collin").
 
 There is no `projects` action. Its own thread, the assistant thread and every project lead
 thread are refused as targets of every action. Messages and presses are delivered with
@@ -254,9 +255,8 @@ The build matches these.
   queued second message delivered through them; `file`/`image` posts outside the clone
   refused; other-project `peer_log`, `queued`, `message` cards, `lead_links` and
   `peer_pauses` left out of `threads` and `thread` while same-project ones stay, a `reach`
-  card reduced to its plain text and `permit` cards kept; a lead found dead with queued
-  messages starts a new one; the composed prompt with lessons from two projects and other
-  roles carries only this project's and unscoped lead lessons; only `upstream/<default>`
+  and `permit` card reduced to plain text; a cross-thread message or `reach`
+  to a project lead refused; the composed prompt carries no lessons; only `upstream/<default>`
   fetched;
   start on first message only, with the message queued before the start and moved to the
   next lead after a failed start; `session start`, `session leads`, `wc.js git` and
@@ -272,7 +272,8 @@ The build matches these.
   `worktrees/` at the default tip, picked as S3 says (`upstream/`, `origin/`, `main`/
   `master`, current branch); an unpushed `wc/<id>` readable as `origin/wc/<id>`; refreshed
   at start and by `refresh`; local edits discarded; a project `origin` fetch failure does
-  not block start; no default tip fails the start; a `file` card from the clone accepted; `prompt_role: "project-lead"` builds the prompt from
+  not block start; no default tip fails the start; a project with no `origin/<default>` refreshes to its
+  local default; a `file` card from the clone accepted; `prompt_role: "project-lead"` builds the prompt from
   `project-lead.md`.
 - `npm --prefix viewer run test:browser -- app-project-lead.spec.js` (also: a message to a
   project lead with no live lead clears the draft in both composers and shows a start
@@ -286,6 +287,7 @@ The build matches these.
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | D2 | The pop-up shows Collin's accepted messages still waiting for a lead after a page reload | Only after a failed start plus a reload; the thread page shows them | review-round-3 | `viewer/pages/assistant-popup.js:82,118-154` keeps pending bubbles in memory; render the durable user queue as `viewer/pages/thread.js:849-863` does |
+| D3 | A message sent in the seconds after a project lead crashes (before the app notices) starts a new lead by itself | Until then it waits for Collin's next message or Restart, both of which deliver it | review-round-5 | `viewer/app/hub.js:87` polls every 10 s; on finding the lead dead with queued user messages, start once and show a failure line if that start fails (round 5 found an unbounded loop and a silent failure in the first try) |
 | D1 | Messages and presses from a project lead are labelled "From your project lead" in the target thread, not "From your assistant" | Cosmetic; both act for Collin and the action is still attributed | planning | `connectors/hub-common.js` `renderTurn` and `viewer/pages/thread.js` attribution; needs a distinct marker or a field on the queued entry |
 
 ## Accepted Risks
@@ -293,6 +295,7 @@ The build matches these.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | On a harness with no sandbox (Claude Code), a project lead that broke its rules could still run shell commands that write outside its clone, such as in the project folder. On any harness it can read files outside its clone, including other projects and the machine's own credential, and could misuse them | Rare path: needs the agent to act against its role; true read isolation needs an OS-level sandbox per agent, which no wheelchair session has today; machine-mediated writes, helper starts and cross-project actions are refused outside the prompt, and its clone is reset at every start | review-round-1 |
+| Two project paths that are linked worktrees of one git repo share local branches, so each project lead's clone can read the other's thread branches | Rare path: adding two worktrees of one repo as separate projects is unusual; it is a read of Collin's own branches | review-round-5 |
 | If the machine launched a project lead but its start reply was lost, and Collin then turns project leads off, the stop retry may miss that session | Rare path: needs a lost start reply and an Off together; every action it tries is refused while off | review-round-2 |
 
 ## Review Rounds
@@ -406,6 +409,15 @@ The build matches these.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Dead-lead restart can loop | accepted-risk | Rare path; the restart was cut anyway (D3) |
+| intent | minor | Lead lessons are noise with a dangling pointer | upheld | S3: no lessons |
+| intent | minor | Permit reason wrong | upheld | S4: permit reduced to plain text like reach |
+| mechanics | blocking | Explicit `origin/<default>` fetch aborts when absent | downgraded (minor) | Only projects with no fetched remote default, which cannot start threads (`machine/service.js:709-717`); S3 fetches it only when present |
+| mechanics | major | Linked worktrees as separate projects share branches | accepted-risk | Rare path; Accepted Risks |
+| mechanics | major | Path-only lesson scopes match two machines | downgraded (minor) | Lesson text only; resolved by giving no lessons |
+| mechanics | major | Permit card may name another repo's PR | downgraded (minor) | Needs a mistaken link; S4 plain text |
+| mechanics | major | Inbound reach/message from another project's lead | downgraded (minor) | Needs Collin's approval of a reach; S4 refuses inbound |
+| mechanics | minor | Poll-triggered restart failure silent | upheld | Restart cut; moved to Deferred D3 |
 
 ## Implementation Tasks
 
@@ -413,3 +425,5 @@ The build matches these.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-24 — Round 5: cut the round-4 poll-triggered restart (it drew a loop and a silent-failure finding); the stale-live window is Deferred D3.
