@@ -1,6 +1,6 @@
 ---
 slug: settings-rework
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-24
 ---
 
@@ -13,8 +13,7 @@ Map: `MAP.md`.
 
 ## Open Questions
 
-### Q2: Agree the mockups
-- **Context:** A designer mocks the agreed categories on phone and desktop once Q1 is settled.
+(none)
 
 ## Watch List
 
@@ -29,6 +28,7 @@ Map: `MAP.md`.
 | 2 | Eight categories: You; AI providers; Usage and balancing; Models; Assistant and project leads; Threads; Agent behavior; Project tools (graphs/categories.json) | Collin plans to add customization for the assistant and project leads; one shared home keeps Threads focused | user |
 | 3 | Show each repeated thing once: sign-in only on account cards (Harnesses links to them); detailed usage only in Usage, account cards keep a one-line reading | The repetition is a main source of clutter; each thing stays one tap away | user |
 | 4 | New section keys `you`, `providers`, `usage`, `models`, `leads`, `threads`, `behavior`, `tools`; old keys keep working as aliases (`harnesses`, `accounts` → providers; `writing`, `background` → you; `templates` and `templates/lessons/<role>` → behavior); in-repo links and texts that name old sections are updated | Lesson cards and onboarding already link to old keys; aliases cost a lookup table | defaulted |
+| 5 | Mockups agreed: graphs/mockup-phone-navigation.html, mockup-phone-you.html, mockup-phone-assistant.html, mockup-desktop-threads.html (versions at commit 9abeca2f) | Collin pressed "Looks good" | user |
 
 ## Spec
 
@@ -54,7 +54,40 @@ The Settings page has eight categories, in this order, each holding exactly thes
 
 - Keys: `you`, `providers`, `usage`, `models`, `leads`, `threads`, `behavior`, `tools`. An unknown key opens `you`.
 - Old keys open the category now holding them: `harnesses`, `accounts` → `providers`; `writing`, `background` → `you`; `templates` → `behavior`; `templates/lessons/<role>` opens that role's lesson editor as today.
-- Update every in-repo link and text naming an old section or "Models > Diagrams" (MAP.md Literal section-reference index): onboarding card, lesson card links, Harnesses' internal links, `protocol/sensitivity.md` (its delimited region: Settings page (You, Diagrams)), and tests.
+- The Settings nav (`viewer/pages/nav.js`) and any link into Settings open `#you` by default instead of `#models`.
+- Update every in-repo link and text naming an old section or "Models > Diagrams" (MAP.md Literal section-reference index): onboarding card, lesson card links, Harnesses' internal links, `protocol/sensitivity.md` (its delimited region: Settings page (You, Diagrams), and the later "Models > Diagrams" line becomes "You > Diagrams"), `sensitivity/test/run.sh`'s expected text, and tests.
+
+### S4. Mockups
+
+The built page matches these agreed files (in `docs/plans/settings-rework/graphs/`):
+
+| File | Screen / state | Size |
+|---|---|---|
+| mockup-phone-navigation.html | Category list, all eight categories | 390 x 844 |
+| mockup-phone-you.html | You open | 390 x 844 |
+| mockup-phone-assistant.html | Assistant and project leads open | 390 x 844 |
+| mockup-desktop-threads.html | Side navigation with Threads open | 1280 x 800 |
+
+Categories not mocked follow the same pattern: the moved controls keep today's wording and look, under a heading per former group.
+
+### S5. Boundaries and non-goals
+
+- No control changes behaviour, wording (beyond headings that name a moved group), stored value or save route. Server endpoints (`viewer/app/settings.js`, `routes.js`) do not change.
+- Section-specific live work moves with its controls: Harnesses install/sign-in polling, Accounts and Usage 30-second refresh, Background's 10-second refresh, Diagrams read on visit, Models diagram drawing. Each runs while the category holding it is open and stops when it is left, as today per section.
+- Enter-to-send stays in browser storage.
+- Not doing: new settings, the personal assistant changing settings, separate phone/computer backgrounds (other threads).
+
+### S6. Validation
+
+Run from the worktree:
+
+```bash
+node --test viewer/test/app-settings.test.js viewer/test/app-harnesses.test.js viewer/test/app-usage.test.js viewer/test/app-lessons.test.js viewer/test/background.test.js viewer/test/app-diagram-sensitivity.test.js
+npm --prefix viewer run test:browser -- app-settings.spec.js app-harnesses.spec.js app-accounts.spec.js app-diagram-sensitivity.spec.js app-lessons.spec.js app-project-tools.spec.js app-hidden-tabs.spec.js background-editor.spec.js background-network.spec.js background-readiness.spec.js background-rendering.spec.js background-settings-surfaces.spec.js
+bash sensitivity/test/run.sh
+```
+
+New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show: the eight categories in S1 order; each moved control is found in its S1 category; each old key in S3 opens the right category; Harnesses' sign-in link opens the provider's account cards; account cards show one usage line and no usage bars.
 
 ## Deferred
 
@@ -72,6 +105,15 @@ The Settings page has eight categories, in this order, each holding exactly thes
 |---|---------------|-------|
 
 ## Review Rounds
+
+### Round 1 — 2026-11-24
+
+**Lanes:** (filled at launch).
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
