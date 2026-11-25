@@ -4,8 +4,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-function chooseWorkers({ full, othersFull, cpus }) {
-  return full && !othersFull ? Math.max(2, Math.min(6, Math.floor(cpus / 2))) : 2;
+const CAP = 8;
+
+function chooseWorkers({ full, others, cpus }) {
+  if (!full) return 2;
+  const top = Math.min(CAP, Math.floor(cpus / 2));
+  return Math.max(2, Math.floor(top / (others + 1)));
 }
 
 function liveOthers(dir, selfPid) {
@@ -44,12 +48,12 @@ function unregister(dir, pid) {
 function decide() {
   const full = process.env.WHEELCHAIR_FULL_RUN === '1';
   // A run that is not full always takes 2, even if it inherits a full run's decision.
-  if (!full) return chooseWorkers({ full, othersFull: false, cpus: os.cpus().length });
+  if (!full) return chooseWorkers({ full, others: 0, cpus: os.cpus().length });
   if (process.env.WHEELCHAIR_BROWSER_WORKERS !== undefined)
     return Number(process.env.WHEELCHAIR_BROWSER_WORKERS);
   const dir = path.join(os.tmpdir(), 'wheelchair-browser-tests');
-  const othersFull = liveOthers(dir, process.pid) > 0;
-  const workers = chooseWorkers({ full, othersFull, cpus: os.cpus().length });
+  const others = liveOthers(dir, process.pid);
+  const workers = chooseWorkers({ full, others, cpus: os.cpus().length });
   register(dir, process.pid);
   process.on('exit', () => unregister(dir, process.pid));
   process.env.WHEELCHAIR_BROWSER_WORKERS = String(workers);
