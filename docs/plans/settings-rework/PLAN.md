@@ -60,11 +60,11 @@ The Settings page has eight categories, in this order, each holding exactly thes
 
 ### S7. Getting around on a phone
 
-At 640px wide or less (the page's existing phone breakpoint, `viewer/pages/settings.js:2235`), replacing today's horizontal tab strip:
+At 899px wide or less (the agreed mockups' breakpoint, also the page's first narrow rule, `viewer/pages/settings.css:126`), replacing today's horizontal tab strip:
 
 - Settings with no hash, or `#` alone, shows only the category list (`mockup-phone-navigation.html`): each of the eight categories with its one-line description, tapping one opens it.
 - A category (any key, including old keys and `templates/lessons/<role>`) shows only that category, full width, with a "‹ Settings" link at the top that opens the list (clears the hash). The browser's back button behaves the same way, since each is a hash change.
-- Above 640px there is no list screen and no back link: the side navigation (`mockup-desktop-threads.html`) is always shown and no hash means `#you`.
+- Above 899px there is no list screen and no back link: the side navigation (`mockup-desktop-threads.html`) is always shown and no hash means `#you`.
 - Crossing the breakpoint (rotating, resizing) re-renders with the rule for the new width, keeping the current hash.
 
 ### S4. Mockups
@@ -85,7 +85,7 @@ Categories not mocked follow the same pattern: the moved controls keep today's w
 - No control changes behaviour, wording (beyond headings that name a moved group), stored value or save route. Server endpoints (`viewer/app/settings.js`, `routes.js`) do not change.
 - Section-specific live work moves with its controls: Harnesses install/sign-in polling, Accounts and Usage 30-second refresh, Diagrams read on visit, Models diagram drawing. Each runs while the category holding it is open and stops when it is left, as today per section.
 - The saved background's 10-second refresh (`viewer/pages/background.js:68-105`) stays page-wide, running whatever category is open. Only the editor's repaint and preview cleanup are tied to the You visit (today's `section === 'background'` checks become "You is open").
-- A repaint from any timer or poll in a category (Harnesses install progress, Accounts/Usage refresh) never replaces the panel while an edit is open in that category: an account rename, plan or weight change, add-account form, or a text field with focus. It waits until the edit closes, as the Accounts refresh guard does today (`viewer/pages/settings.js:1371-1373`).
+- A repaint from any timer or poll in a category (Harnesses install progress, Accounts/Usage refresh) never replaces the panel while an account edit is open: a rename, plan or weight change, or the add-account form. It waits until the edit closes, as the Accounts refresh guard does today (`viewer/pages/settings.js:1371-1373`).
 - Enter-to-send stays in browser storage.
 - Not doing: new settings, the personal assistant changing settings, separate phone/computer backgrounds (other threads).
 
@@ -142,7 +142,7 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 **Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
 
 **Changed since Round 1:**
-- S7 added: phone category list, "‹ Settings" back link, breakpoint 640px; S3 no-hash rule split by width.
+- S7 added: phone category list, "‹ Settings" back link, breakpoint 899px; S3 no-hash rule split by width.
 - S3: renaming limited to live files; old-name texts renamed; New Thread hint links to `#threads`.
 - S1: lead provider order inside Balancing with one Save.
 - S2: Harnesses sign-in link carries the machine; Harnesses refresh after sign-in.
@@ -151,6 +151,8 @@ New or updated browser checks (in `viewer/test/app-settings.spec.js`) must show:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | S7 breakpoint 640px differs from the agreed mockups' 899px | upheld (minor) | S7 now 899px |
+| intent | minor | "a text field with focus" freezes Harnesses progress needlessly | upheld (minor) | S5 limited to account edits |
 
 ## Implementation Tasks
 
