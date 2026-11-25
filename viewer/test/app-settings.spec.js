@@ -620,7 +620,21 @@ test('only the newest uploaded file is saved', async ({ page }) => {
   expect((await settings(page)).lead_names).toEqual(['Grace']);
 });
 
-test('models and preferences fits at 390px', async ({ page }) => {
+test('the preview panes are unfilled and Visibility is a short track under its label', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPage(page, context, '/app/settings#you');
+  await expect(page.locator('.pane')).toHaveCount(2);
+  const panes = await page.locator('.pane').evaluateAll((els) => els.map((el) => ({ fill: getComputedStyle(el).backgroundColor, line: getComputedStyle(el).borderTopColor })));
+  for (const pane of panes) expect(pane).toEqual({ fill: 'rgba(0, 0, 0, 0)', line: panes[0].line });
+  const slider = page.getByLabel('Visibility');
+  const track = await slider.boundingBox();
+  const box = await page.locator('.background-editor .box').boundingBox();
+  expect(track.width).toBeLessThan(box.width / 2);
+  const value = await slider.locator('xpath=preceding-sibling::span').boundingBox();
+  expect(track.y).toBeGreaterThanOrEqual(value.y + value.height - 1);
+});
+
+test('Models fits at 390px', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openPage(page, context, '/app/settings#models');
   await expect(page.locator('tr[data-provider="gemini"]')).toBeVisible();
@@ -865,6 +879,53 @@ test.describe('one place for sign-in, usage and each draft', () => {
     await expect(card).not.toContainText('resets');
     const lines = await card.locator('.acct-usage').evaluate((el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight || '20'));
     expect(lines).toBeLessThan(1.5);
+  });
+
+  test('the per-account table draws a bar for each window and account cards draw none', async ({ page }) => {
+    const hour = (n) => new Date(Date.now() + n * 3600000).toISOString();
+    const body = usageBody('signed_in', ['hub'], { at: hour(0), five_hour: { used: 42, resets_at: hour(2) }, week: { used: 61, resets_at: hour(60) } });
+    body.providers.claude.left = 0.39;
+    body.providers.claude.accounts.push({ ...body.providers.claude.accounts[0], id: 'spare', name: 'Spare', reading: { at: hour(0), five_hour: { used: 88, resets_at: hour(-1) } } });
+    await page.route('**/api/usage', (r) => r.fulfill({ json: body }));
+    await openPage(page, context, '/app/settings#usage');
+    const claude = page.locator('.usage-prov[data-provider="claude"]');
+    await claude.locator('.usage-toggle').click();
+    const bar = (id, label) => claude.locator(`tr[data-account="${id}"] td[data-label="${label}"] .meter`);
+    const share = (locator) => locator.evaluate((el) => Math.round(100 * el.firstElementChild.getBoundingClientRect().width / el.getBoundingClientRect().width));
+    for (const [id, label, n, name] of [['default-claude', '5-hour used', 42, '5-hour'], ['default-claude', 'Week used', 61, 'week'], ['spare', '5-hour used', 0, '5-hour']]) {
+      await expect(bar(id, label)).toHaveAttribute('aria-label', `${n}% of the ${name} window used`);
+      expect(await bar(id, label).evaluate((el) => el.getBoundingClientRect().width)).toBe(90);
+      expect(await share(bar(id, label))).toBe(n);
+      await expect(claude.locator(`tr[data-account="${id}"] td[data-label="${label}"]`)).toHaveText(`${n}%`);
+    }
+    await expect(bar('spare', 'Week used')).toHaveCount(0);
+    await page.evaluate(() => { location.hash = 'providers'; });
+    await expect(acct(page, 'default-claude')).toContainText('42% used');
+    await expect(page.locator('.acct .meter, .acct .bar')).toHaveCount(0);
+  });
+
+  test('Harnesses answering while a button below is pressed does not move it from under the press', async ({ page }) => {
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    await idle(page);
+    await page.route('**/api/harnesses**', async (r) => { await held; await r.fulfill({ json: harnessBody() }); });
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody() }));
+    await openPage(page, context, '/app/settings#providers');
+    // The browser's own scroll anchoring would sometimes hide a missing hold.
+    await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
+    await expect(acct(page, 'default-claude')).toBeVisible();
+    await page.locator('#add-account').click();
+    const cancel = page.locator('.add-form').getByRole('button', { name: 'Cancel' });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    expect(await page.locator('[data-block="harnesses"]').evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThan(0);
+    const box = await cancel.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    release();
+    await expect(page.locator('.h-row')).toHaveCount(5);
+    expect(Math.abs((await cancel.boundingBox()).y - box.y)).toBeLessThan(2);
+    await page.mouse.up();
+    await expect(page.locator('.add-form')).toHaveCount(0);
   });
 
   for (const first of ['lead-order', 'balancing']) {

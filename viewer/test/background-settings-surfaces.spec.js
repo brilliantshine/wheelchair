@@ -7,9 +7,16 @@ let ctx;
 test.beforeEach(async ({ page }) => { ctx = await startWorld(); await signIn(page, ctx); });
 test.afterEach(async () => { await ctx.close(); });
 
-async function opaqueBackdrop(locator) {
-  await expect(locator).toBeVisible();
-  expect(await locator.evaluate(element => {
+// Which matches are hidden or have no opaque ancestor. Found and measured in one step in the
+// page: blocks repaint as answers arrive, and a node held across a repaint is detached, so its
+// styles read as empty.
+const bareSurfaces = (page, selector) => page.evaluate((css) => {
+  const visibleOnly = css.endsWith(':visible');
+  const shown = (element) => {
+    const box = element.getBoundingClientRect();
+    return box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== 'hidden';
+  };
+  const solid = (element) => {
     for (let node = element; node && node !== document.body; node = node.parentElement) {
       if (!/^rgb\(/.test(getComputedStyle(node).backgroundColor)) continue;
       let opaque = true;
@@ -19,8 +26,10 @@ async function opaqueBackdrop(locator) {
       if (opaque) return true;
     }
     return false;
-  }), 'content needs an opaque ancestor above the decorative image').toBe(true);
-}
+  };
+  const found = [...document.querySelectorAll(css.replace(/:visible$/, ''))].filter((element) => !visibleOnly || shown(element));
+  return found.filter((element) => !shown(element) || !solid(element)).map((element) => element.outerHTML.slice(0, 120));
+}, selector);
 
 test('all Settings categories keep content solid and outer gutters visible', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 850 });
@@ -44,9 +53,8 @@ test('all Settings categories keep content solid and outer gutters visible', asy
   ]) {
     await page.locator(`#sections a[data-section="${section}"]`).click();
     await expect(page.locator(`#sections a[data-section="${section}"]`)).toHaveAttribute('aria-current', 'page');
-    const surfaces = page.locator(selector);
-    await expect(surfaces.first()).toBeVisible();
-    for (const surface of await surfaces.all()) await opaqueBackdrop(surface);
+    await expect(page.locator(selector).first()).toBeVisible();
+    expect(await bareSurfaces(page, selector), 'content needs an opaque ancestor above the decorative image').toEqual([]);
     await expect(page.locator('.background-layer')).toHaveCSS('opacity', '1');
     await expect(page.locator('.settings .panel')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
