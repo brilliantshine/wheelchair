@@ -15,8 +15,8 @@ Map: `MAP.md`.
 
 ### Q1: What are the new categories, and what goes in each?
 - **Context:** MAP.md Inventory and Grouping observations. Models and preferences is a grab bag; lead order (Models) and worker order (Usage) are split.
-- **Options:** A) 7 categories as in graphs/categories.json; B) 4 broad groups with subsections; C) keep the 8 sections and only split Models and preferences.
-- **Recommendation:** A.
+- **Options:** A) 7 categories as in graphs/categories.json; A2) the same plus an "Assistant and project leads" category (Collin plans to add customization for both later); B) 4 broad groups with subsections; C) keep the 8 sections and only split Models and preferences.
+- **Recommendation:** A2.
 
 ### Q2: Agree the mockups
 - **Context:** A designer mocks the agreed categories on phone and desktop once Q1 is settled.
