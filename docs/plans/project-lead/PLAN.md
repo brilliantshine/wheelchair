@@ -15,6 +15,7 @@ created: 2026-11-24
 - **Recommendation:** to settle after Q1–Q2.
 
 ### Q4: Agree the mockups
+- Designer started 2026-11-24: threads list, project lead thread, pop-up (lead/assistant), settings; phone and desktop.
 
 ## Watch List
 
