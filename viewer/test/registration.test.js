@@ -87,7 +87,7 @@ test('open, show, and register-plan use the server registration writer', async (
 });
 
 test('register rejects unsigned, stale, foreign-origin, and out-of-scope paths', async () => {
-  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root, port: await freePort() });
+  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root });
   const graph = path.join(root, 'graphs', 'allowed.json'); await fs.mkdir(path.dirname(graph), { recursive: true });
   try {
     const unsigned = await register(ctx, { kind: 'graph', path: graph, opened: true, session: null, harness: 'other' }, { 'x-graph-signature': '' });
@@ -104,7 +104,7 @@ test('register rejects unsigned, stale, foreign-origin, and out-of-scope paths',
 });
 
 test('a refused POST /register leaves .registered and .plans byte-identical', async () => {
-  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root, port: await freePort() });
+  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root });
   const registered = path.join(root, '.registered'); const plans = path.join(root, '.plans');
   try {
     await fs.writeFile(registered, '{}\n'); await fs.writeFile(plans, '{}\n');
@@ -277,7 +277,7 @@ test('the nearest codex process wins over inherited CLAUDECODE and a claude ance
 });
 
 test('registration rejects every out-of-scope plan and graph path before open reaches a port', async () => {
-  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root, port: await freePort() }); const outside = await makeDir('outside-');
+  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root }); const outside = await makeDir('outside-');
   const markdownDir = path.join(outside, 'markdown'); await fs.mkdir(markdownDir); await fs.writeFile(path.join(markdownDir, 'README.md'), '# no');
   const badPlanLink = path.join(root, 'repo', 'docs', 'plans', 'linked'); await fs.mkdir(path.dirname(badPlanLink), { recursive: true }); await fs.symlink(markdownDir, badPlanLink);
   const plan = path.join(root, 'repo', 'docs', 'plans', 'ok'); const graphs = path.join(plan, 'graphs'); await fs.mkdir(graphs, { recursive: true }); const outsideGraph = path.join(outside, 'outside.json'); await fs.writeFile(outsideGraph, '{}'); const linkedGraph = path.join(graphs, 'linked.json'); await fs.symlink(outsideGraph, linkedGraph);
@@ -295,7 +295,7 @@ test('registration rejects every out-of-scope plan and graph path before open re
 });
 
 test('a registered graph replaced by an external symlink is refused on GET and PUT', async () => {
-  const root = await makeDir(); const graph = path.join(root, 'graphs', 'replace.json'); await fs.mkdir(path.dirname(graph), { recursive: true }); const ctx = await startServer({ cacheRoot: root, port: await freePort(), open: graph }); const outside = path.join(await makeDir('outside-'), 'outside.json'); await fs.writeFile(outside, '{}');
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'replace.json'); await fs.mkdir(path.dirname(graph), { recursive: true }); const ctx = await startServer({ cacheRoot: root, open: graph }); const outside = path.join(await makeDir('outside-'), 'outside.json'); await fs.writeFile(outside, '{}');
   try {
     await fs.writeFile(graph, '{}'); await fs.unlink(graph); await fs.symlink(outside, graph);
     assert.equal((await request(ctx, '/graph', { graphPath: graph })).status, 400);
@@ -315,7 +315,7 @@ test('pruning uses the newer graph mtime and added, and the newest plan markdown
   const stale = new Date(Date.now() - 31 * 86400000); await Promise.all([fs.utimes(old, stale, stale), fs.utimes(path.join(oldPlan, 'PLAN.md'), stale, stale)]);
   await fs.writeFile(path.join(root, '.registered'), JSON.stringify({ [old]: { added: stale.valueOf(), opened: true }, [recent]: { added: stale.valueOf(), opened: true } }));
   await fs.writeFile(path.join(root, '.plans'), JSON.stringify({ [oldPlan]: { added: stale.valueOf() }, [recentPlan]: { added: stale.valueOf() } }));
-  const ctx = await startServer({ cacheRoot: root, port: await freePort(), open: path.join(graphDir, 'starter.json') });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'starter.json') });
   try {
     const graphs = JSON.parse(await fs.readFile(path.join(root, '.registered'))); const plans = JSON.parse(await fs.readFile(path.join(root, '.plans')));
     assert.equal(graphs[old], undefined); assert.ok(graphs[recent]); assert.equal(plans[oldPlan], undefined); assert.ok(plans[recentPlan]);

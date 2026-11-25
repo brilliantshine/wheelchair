@@ -51,7 +51,9 @@ function waitForLine(child) {
     child.stderr.on('data', (chunk) => { errors += chunk; });
     child.once('exit', (code, signal) => {
       clearTimeout(timeout);
-      reject(new Error(`server exited before ready (${code ?? signal}): ${errors}`));
+      const error = new Error(`server exited before ready (${code ?? signal}): ${errors}`);
+      error.startupStderr = errors;
+      reject(error);
     });
   });
 }
@@ -63,31 +65,34 @@ function waitForExit(child) {
   });
 }
 
-async function startServer({ open, cacheRoot, stateDir, port, env, cwd = ROOT } = {}) {
+async function startServer({ open, cacheRoot, stateDir, port, env, cwd = ROOT, nextPort = freePort } = {}) {
   const root = cacheRoot || await makeDir();
   // One writer per state directory. Explicit reuse is for sequential restart tests only.
   const chosenStateDir = stateDir || await makeDir('server-state-');
   const graphDir = path.join(root, 'graphs');
   await fs.mkdir(graphDir, { recursive: true });
   const graphPath = open || path.join(graphDir, 'canonical.json');
-  const chosenPort = port || await freePort();
-  const args = ['viewer/server.js', '--port', String(chosenPort), '--cache-root', root, '--open', graphPath];
-  args.push('--state-dir', chosenStateDir);
-  const child = spawn(process.execPath, args, {
-    cwd,
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  trackChild(child);
-  let token;
-  try {
-    await waitForLine(child);
-    token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
-    assert.ok(token, 'server writes a token');
-  } catch (error) {
-    child.kill('SIGKILL');
-    await waitForExit(child);
-    throw error;
+  let chosenPort; let child; let token;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    chosenPort = port === undefined ? await nextPort() : port;
+    const args = ['viewer/server.js', '--port', String(chosenPort), '--cache-root', root, '--open', graphPath];
+    args.push('--state-dir', chosenStateDir);
+    child = spawn(process.execPath, args, {
+      cwd,
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    trackChild(child);
+    try {
+      await waitForLine(child);
+      token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
+      assert.ok(token, 'server writes a token');
+      break;
+    } catch (error) {
+      child.kill('SIGKILL');
+      await waitForExit(child);
+      if (port !== undefined || attempt === 4 || !/Refused to use a port held by a process it cannot identify|EADDRINUSE/.test(error.startupStderr || '')) throw error;
+    }
   }
   return {
     root, stateDir: chosenStateDir, graphDir, graphPath, port: chosenPort, child, url: `http://127.0.0.1:${chosenPort}/wheelchair`,
