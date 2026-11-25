@@ -186,7 +186,7 @@ test('a copied start id with a made-up pid and no proof is foreign', async () =>
 });
 
 test('/whoami supplies pid and code, and proof only for a nonce', async () => {
-  const ctx = await startServer({ port: await freePort() });
+  const ctx = await startServer();
   try {
     const plain = await request(ctx, '/whoami', { graphPath: undefined, token: undefined }); const nonce = 'c'.repeat(32);
     const signed = await request(ctx, `/whoami?nonce=${nonce}`, { graphPath: undefined, token: undefined });
@@ -196,7 +196,7 @@ test('/whoami supplies pid and code, and proof only for a nonce', async () => {
 });
 
 test('stopping refuses a mismatched .server pid', async () => {
-  const ctx = await startServer({ port: await freePort() });
+  const ctx = await startServer();
   try {
     const recordPath = path.join(ctx.root, '.server'); const record = JSON.parse(await fs.readFile(recordPath)); record.pid += 1; await fs.writeFile(recordPath, JSON.stringify(record));
     const result = await run(['--cache-root', ctx.root, '--port', String(ctx.port), '--stop']); assert.equal(result.code, 1); assert.equal(ctx.child.exitCode, null);
