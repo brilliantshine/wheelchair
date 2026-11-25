@@ -167,3 +167,37 @@ $ node --test viewer/test/*.test.js     # on the R1 branch
 # pass 1012
 # fail 0
 ```
+
+### Remediation 2 (after verification attempt 2, commit `9457fe87`)
+
+Attempt 2: Claude verifier FAIL (1 gap), GPT verifier FAIL (5 gaps) (`REMEDIATION-2.md`).
+
+- Deferred at the lead's answer: D8 (lead row preview one line), D9 (thread page link style).
+- R2a (gpt-6.1-terra), `viewer/app/project-lead-actions.js:7-17,33-46`: other projects' PR URLs
+  are hidden only on a whole-URL match (so `…/pull/18` no longer hides `…/pull/186`), taken from
+  `pr_url`, string or `{url}` `target_pr`, and the done card; `protocol/app/cards.md` `message`
+  row now excludes the assistant and project leads.
+- R2b (gpt-6.1-terra): project leads launch without project settings or MCP servers on Claude
+  (`--setting-sources user --strict-mcp-config`, `connectors/claude/machine.js:84`), Codex (clone
+  marked untrusted, `connectors/codex/machine.js:158`) and Pi (`--no-approve`,
+  `connectors/pi/machine.js:136`). Codex 0.172.0 and Pi 1.5.2 were launched that way in tmux by
+  the sub-lead and reached their ready prompts with no trust question.
+- R2c (gpt-6.1-terra), at the lead's choice for Kimi and Antigravity (no switch to stop workspace
+  config discovery): every refresh sets a non-cone sparse-checkout in the clone so `.kimi-code/`,
+  `.agents/`, `.mcp.json`, `.claude/`, `.codex/`, `.pi/` are never in its working tree
+  (`machine/lib/project-lead.js:5-7,32-35`); they stay readable with `git show HEAD:<path>`, which
+  `protocol/app/project-lead.md:27-28` tells the lead.
+
+Evidence after the merges:
+
+```
+$ node --test viewer/test/project-lead.test.js
+# tests 31
+# pass 31
+# fail 0
+$ node --test machine/test/project-lead.test.js
+# tests 21
+# pass 21
+# fail 0
+```
+
