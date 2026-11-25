@@ -528,3 +528,5 @@ The build matches these.
 - 2026-11-24 — Choice: T5, mockups: names keep the folder's own case ("wheelchair lead"); head meta "<folder> on <stored machine name>"; previews one line; the pop-up button also shows on Threads, Settings and a lead's own page (Spec S2).
 - 2026-11-24 — Verification attempt 1: Claude verifier PASS; GPT verifier FAIL with 10 gaps. Three judged rare paths and recorded in Accepted Risks (round verification-1); the rest sent to the lead for per-gap fix/defer answers (two-part mode).
 - 2026-11-24 — Lead's answers on verification-1 gaps: fix refresh timeout, title redaction and PR URLs (REMEDIATION-1); defer the four mockup-style gaps as D4-D7.
+- 2026-11-24 — R1 accepted (band: scout): refresh timeout 100 s, titles out of the redaction set, outside PR URLs in. I re-ran the full viewer node suite on its branch (1012/1012) and `project-lead.test.js` after merge (29 pass).
+- 2026-11-24 — Choice: R1, project-lead-actions.js: `target_pr` counts only when it is an http(s) URL; `donePr` used with its defaults.
