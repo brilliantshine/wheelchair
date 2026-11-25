@@ -24,6 +24,9 @@ async function dispatch(hub, input) {
       for (const value of [entry.text, entry.title, entry.session]) if (value) forbidden.add(value);
     }
   }
+  for (const value of forbidden) {
+    if (value === source.project || [...threads].some((thread) => allowed.has(thread.id) && value === thread.title) || source.project.includes(value)) forbidden.delete(value);
+  }
   const containsOutside = (value) => typeof value === 'string' && [...forbidden].some((part) => typeof part === 'string' && part.length >= 8 && value.includes(part));
   function clean(value, field) {
     if (typeof value === 'string') return containsOutside(value) ? undefined : value;

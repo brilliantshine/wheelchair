@@ -498,9 +498,9 @@ test('closed reach and permit cards are absent from waiting and cards', async ()
   for (const field of ['waiting', 'cards']) assert.deepEqual(detail[field].map((card) => card.id).sort(), ['permit-open', 'reach-open']);
 });
 
-test('cross-thread messages and recent chat omit other project identifiers, titles and paths', async () => {
+test('cross-thread messages and recent chat omit other project identifiers and titles', async () => {
   const { hub, local, outside, call } = await actionFixture();
-  const values = [outside.id, outside.title, outside.project];
+  const values = [outside.id, outside.title];
   local.cross_thread_messages = [...values.map((text) => ({ text: `mentions ${text}` })), { text: 'local message' }];
   await hub.save(local);
   hub.chat = async () => ({ items: [...values.map((text) => ({ type: 'human', text: `mentions ${text}` })), { type: 'human', text: 'local chat' }] });
@@ -515,6 +515,13 @@ test('short other-project titles do not redact same-project text', async () => {
   local.cross_thread_messages = [{ text: 'ok' }]; await hub.save(local);
   const detail = await call('thread', { thread: local.id });
   assert.deepEqual(detail.cross_thread_messages, [{ text: 'ok' }]);
+});
+
+test('same-project text mentioning its project path remains in recent chat', async () => {
+  const { hub, local, call } = await actionFixture();
+  hub.chat = async () => ({ items: [{ type: 'human', text: `working in ${project}` }] });
+  const detail = await call('thread', { thread: local.id });
+  assert.deepEqual(detail.recent.map((item) => item.text), [`working in ${project}`]);
 });
 
 test('every project lead action is refused when the setting is off', async () => {
