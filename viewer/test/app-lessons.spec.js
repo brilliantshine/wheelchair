@@ -65,6 +65,7 @@ test.describe('Settings', () => {
     await openSettings(page, '/app/settings#templates/lessons/worker');
     await expect(page.locator('.lesson-warning')).toHaveText(WARNING);
     await expect(page.locator('#using')).toHaveText('Changes apply to workers started after you save.');
+    await expect(page.locator('#lessons-live')).toHaveText('Agents save these as they go. Each lesson reaches workers started after it is saved; nothing waits for you. Save below is only for your own edits and removals.');
     const first = page.locator('.lesson-row[data-id="L000001"]');
     await expect(first).toContainText('only on GPT');
     await expect(first).toContainText('only in proj-alpha');

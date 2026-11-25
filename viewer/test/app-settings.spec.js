@@ -206,6 +206,8 @@ test.describe('desktop', () => {
     await page.locator('#trole').selectOption('lead');
     await expect(page.getByText("When the brief doesn't settle something")).toHaveCount(0);
     await expect(page.locator('#layer-footer')).not.toContainText('except');
+    await expect(page.locator('#layer-lessons')).toContainText('Lessons learned for leads');
+    await expect(page.locator('.layers .layer .n')).toHaveText(['1', '2', '3', '4']);
     await page.locator('#trole').selectOption('worker');
     await page.locator('#tunsettled').selectOption('decide');
     await page.getByLabel('Saves after every step').check();
