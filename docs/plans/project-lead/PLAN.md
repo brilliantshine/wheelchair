@@ -1,6 +1,6 @@
 ---
 slug: project-lead
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-24
 ---
 
@@ -51,6 +51,18 @@ assistant) behaves as today; S5's grouping change applies whether or not project
 compares (`viewer/app/peers.js:42-50`). The projects that get a project lead are the
 pairs that have at least one non-archived thread, i.e. the groups the
 Threads list shows.
+
+```mermaid
+flowchart TD
+  C[Collin writes in a project lead's thread or the pop-up] --> L{Lead running?}
+  L -- no --> Q[Save and queue the message, then start a lead on the project's machine]
+  Q --> F[Refresh its own copy of the project to the latest main]
+  F --> A
+  L -- yes --> A[Project lead reads its copy and asks the app about this project's threads]
+  A --> X{Action inside this project?}
+  X -- yes --> D[App starts, messages, presses or restarts that thread]
+  X -- no --> N[App refuses; the lead points Collin to the assistant]
+```
 
 ### S1. Switch and lifecycle
 
