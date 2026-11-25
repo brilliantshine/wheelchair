@@ -141,3 +141,26 @@ test('Windows stdio tools pass the bridge environment on WSL', () => {
   assert.deepEqual(overrides({ command: 'node' }, wsl), overrides({ command: 'node' }, {}));
   assert.deepEqual(overrides(win, { wsl: false, mount: '/custom' }), overrides(win, {}));
 });
+
+test('folder entries respect sandbox, order, budget and validation', () => {
+  const entry = { type: 'stdio', command: '/node', args: ['/tool'], env: {} };
+  const extras = [{ name: 'wheelchair-tools', folder: 'bridge', entry }, { name: 'server', folder: 'server', entry }];
+  const ctx = { tools: true, mcp: { names: ['existing'], servers: { existing: { command: 'existing' } } } };
+  const unrestricted = { ...session, codex_mode: 'unrestricted' };
+  const run = (s, c) => command(input, s, worktree, c);
+  const result = run(unrestricted, { ...ctx, extraServers: extras });
+  assert.ok(result.argv.includes('mcp_servers.project_wheelchair-tools.tool_timeout_sec=260'));
+  assert.ok(result.argv.indexOf('mcp_servers.project_wheelchair-tools.command="/node"') < result.argv.indexOf('mcp_servers.project_server.command="/node"'));
+  assert.deepEqual(result.loaded.map(x => x.name), ['existing', 'wheelchair-tools', 'server']);
+  const sandbox = run(session, { ...ctx, extraServers: extras });
+  assert.deepEqual(sandbox.warnings, [{ names: ['wheelchair-tools', 'server'], text: 'folder tools run from the shell here (`wc.js tool run`); server tools need Codex set to unrestricted' }]);
+  assert.deepEqual(sandbox.argv, run(session, ctx).argv);
+  assert.deepEqual(run(session, { ...ctx, extraServers: [] }), run(session, ctx));
+  assert.deepEqual(run(unrestricted, { ...ctx, extraServers: [] }), run(unrestricted, ctx));
+  assert.deepEqual(run(unrestricted, { ...ctx, tools: false, extraServers: extras }), run(unrestricted, { ...ctx, tools: false }));
+  const large = run(unrestricted, { ...ctx, extraServers: [{ name: 'huge', folder: 'server', entry: { ...entry, args: ["'".repeat(20000)] } }] });
+  assert.ok(large.argv.includes('mcp_servers.project_existing.command="existing"'));
+  assert.deepEqual(large.warnings, [{ names: ['huge'], text: "tool huge: left out on Codex: over Codex's launch size limit" }]);
+  const invalid = run(unrestricted, { ...ctx, extraServers: [{ name: 'bad', folder: 'server', entry: { ...entry, command: '${X}' } }] });
+  assert.match(invalid.warnings[0].text, /cannot pass through/);
+});
