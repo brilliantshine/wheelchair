@@ -44,7 +44,7 @@ A project lead is the personal assistant (`docs/plans/personal-assistant/PLAN.md
 built in PR #186) narrowed to one project and given read access to that project. Where this
 Spec says "as the assistant", reuse that code path with the project lead's own checks;
 do not copy it. Everything not named here (project threads, leads, the all-projects
-assistant) behaves as today.
+assistant) behaves as today; S5's grouping change applies whether or not project leads are on.
 
 **Project** means one machine plus one exact folder path, the pair `session leads`
 compares (`viewer/app/peers.js:42-50`). The projects that get a project lead are the
@@ -57,17 +57,22 @@ Threads list shows.
   beside the existing assistant control (`viewer/pages/settings.js:558-560`), saved by the
   same preferences route. It is independent of the assistant switch.
 - When on, every project group in the Threads list shows a pinned project lead row at its
-  top (S5). No record and no agent exist until Collin opens that row's thread or sends it
-  a message.
+  top (S5). No record and no agent exist until Collin opens that row's thread, opens the
+  pop-up panel on that project's page (not merely loading its button), or sends it a
+  message.
 - **Record**: created idempotently on first open or first message (one per project) with
   `emptyThread` plus `project_lead: true`, `project: <path>`, `machine: <machine>`,
   `title: "<folder name> lead"`, no branch, plan or PR. Creating it twice for the same
   project returns the existing record.
-- **Start on use**: the first message Collin sends (thread page composer or pop-up) is
-  saved to the thread's chat and queued as his message first, then its lead is started and
-  receives it as its first message. Opening the thread page alone starts nothing. If the
-  start fails, the thread shows the failure and Restart as for any thread, and the queued
-  message moves to the next lead as Collin's queued messages already do.
+- **Start on use**: whenever Collin sends a message (thread page composer or pop-up) and
+  no lead is live (the first message, or after Off, a crash or a machine restart), the
+  message is saved to the chat and queued as his first, then a lead is started and receives
+  it. Opening the thread page alone starts nothing. The messages route answers 202
+  `{queued: true}` once the message is queued, plus `start_error` when the start failed;
+  both composers then clear the draft (the message is not resent) and, on `start_error`,
+  show the failure with Restart as for any thread. The queued message moves to the next
+  lead as Collin's queued messages already do (`viewer/app/routes.js:706-714` today
+  refuses with 409 "no live lead"; this replaces that for project lead threads only).
 - **Off**: the hub stops every live project lead session and keeps the records. While off,
   rows and the pop-up's project lead side are hidden, its routes answer 404 "project leads
   are off", every project lead action is refused with "project leads are off", and no
@@ -108,10 +113,11 @@ Threads list shows.
 - **Refresh**: on the first start and every later lead start, the machine service:
   1. fetches `origin` in the project folder when the project has an `origin` remote (as a
      thread start already does); a failure here is ignored;
-  2. in the clone, fetches from the project folder `+refs/heads/*:refs/remotes/origin/*`
+  2. in the clone, fetches with `--prune` from the project folder `+refs/heads/*:refs/remotes/origin/*`
      (the project's local branches, including every thread's `wc/<id>` whether pushed
      or not) and `+refs/remotes/origin/*:refs/remotes/upstream/*` (what the project last
-     fetched from its remote);
+     fetched from its remote); `--prune` drops refs deleted in the project folder, and
+     since step 1's failure deletes nothing there, an outage keeps the last known refs;
   3. checks out, detached and discarding any local changes, the default tip:
      `upstream/<default>` when it exists, else `origin/<default>`, where `<default>` is
      the project's `origin/HEAD` target, else the first of `main` or `master` that exists
@@ -124,12 +130,14 @@ Threads list shows.
   commands, e.g. `git log`, `git show origin/wc/<id>:docs/plans/<slug>/PLAN.md` for a
   thread's plan (pushed or not), `git diff`. It never edits files, runs git writes, starts
   helper sessions or changes Settings (as the assistant, `protocol/app/assistant.md:10-13`).
-  Enforced outside the prompt: the hub and machine refuse, for a project lead session,
-  `wc.js session start` ("a project lead starts threads, not helpers"), `wc.js session
-  leads`, every `wc.js git` action, and `sudo`, `reach` and `permit` cards. It is launched
-  without the project's tools (no project MCP servers or project tool settings), and with
-  the harness's read-only sandbox where it has one (Codex: read-only sandbox); an account
-  switch keeps the same launch.
+  Enforced outside the prompt by an allow-list: the machine service accepts from a project
+  lead session only `wc.js project-lead` actions and `card.js` posts of its allowed kinds
+  (S6); every other agent route (`wc.js session`, `wc.js git`, screen, Windows bridge and
+  any added later) is refused with "a project lead can't do that". It is launched without
+  the project's tools (no project MCP servers or project tool settings). On Codex it runs
+  in the same sandbox as other sandboxed Codex sessions (workspace-write with network, so
+  `wc.js` and `card.js` reach the machine; `connectors/codex/machine.js:124`), whose
+  writable folder is its clone. An account switch keeps the same launch.
 - **Fresh starts**: every new lead starts with no memory, exactly as the assistant's
   restart path (personal-assistant Spec §2 "Fresh starts"), with context line "Project
   lead restarted · starting fresh".
@@ -144,7 +152,7 @@ checks are done by the hub against the caller's own project (machine + path).
 | Action | Differences from the assistant's action |
 |---|---|
 | `threads [--archived]` | Only threads of its own project (excluding project lead and assistant threads). |
-| `thread <id>` | Refused for a thread outside its project: "that thread is in another project; ask your assistant". |
+| `thread <id>` | Refused for a thread outside its project: "that thread is in another project; ask your assistant". Leaves out every cross-thread item (`peer_log`, and `queued` entries or `recent` items that came from another thread's lead), since a same-project thread may be linked to another project. |
 | `start --message-file <f> [--title <t>]` | No `--project`/`--machine`: always its own project and machine. |
 | `message`, `press`, `restart`, `archive` | Same, with the out-of-project refusal above. `press` also refuses `sudo`, `reach` and `permit` cards ("that needs you"), since those reach beyond this project or the machine. |
 | `refresh` | Moves its folder to the current default branch tip (S3). Prints `{ok, commit}`. |
@@ -158,7 +166,7 @@ lead; talk to it directly") and its `threads` leaves them out (Decision 5).
 
 ### S5. Threads list and thread page
 
-- Project groups key on the resolved machine (the hub's own alias and its hostname are
+- Whether or not project leads are on, project groups key on the resolved machine (the hub's own alias and its hostname are
   one machine, as `viewer/app/peers.js:6-9`) plus the exact path (Decision 6). When two
   shown groups share a folder name, each heading and its project lead row show the path
   (home shortened to `~`) instead of the bare folder name, plus " · <machine>" when their
@@ -194,7 +202,8 @@ Derived from `protocol/app/assistant.md`, with these changes:
 
 - `protocol/app/assistant.md`: its `threads` leaves out project leads, and project lead
   threads are refused as targets ("that's a project lead; talk to it directly").
-- Routers, per `CONTRIBUTING.md`: `protocol/AGENTS.md` (the new `project-lead.md`),
+- Routers, per `CONTRIBUTING.md`: `protocol/AGENTS.md` and `protocol/app/AGENTS.md` (the
+  new `project-lead.md`, and the card-reader entries it joins),
   `viewer/AGENTS.md` (new hub module(s) and the `pages/assistant-popup.js` entry, whose
   seen key and "never on the assistant thread page" text change with S2), `machine/AGENTS.md`
   if the clone and refresh live in a new file.
@@ -221,7 +230,9 @@ The build matches these.
 - `node --test viewer/test/project-lead.test.js`: record creation idempotent per project;
   start on first message only, with the message queued before the start and moved to the
   next lead after a failed start; `session start`, `session leads`, `wc.js git` and
-  `sudo`/`reach`/`permit` posts and presses refused for a project lead; off stops and
+  `sudo`/`reach`/`permit` posts and presses refused for a project lead; every non-allowed
+  agent route refused (session, git, screen, Windows bridge); `thread` leaves out
+  cross-thread items; a message with no live lead after the first is queued and starts one; off stops and
   refuses, and a stop is retried while off; every action's out-of-project,
   self, assistant and project-lead target refusals; `threads` filtering; the assistant
   refusing project lead targets; Needs you counting; exclusions from features,
@@ -233,7 +244,9 @@ The build matches these.
   at start and by `refresh`; local edits discarded; a project `origin` fetch failure does
   not block start; no default tip fails the start; a `file` card from the clone accepted; `prompt_role: "project-lead"` builds the prompt from
   `project-lead.md`.
-- `npm --prefix viewer run test:browser -- app-project-lead.spec.js`: rows pinned per
+- `npm --prefix viewer run test:browser -- app-project-lead.spec.js` (also: a message to a
+  project lead with no live lead clears the draft in both composers and shows a start
+  failure): rows pinned per
   group with both states; same-name headings show the machine; pop-up switch on a project
   thread page and assistant-only elsewhere; one-setting cases; Settings switch.
 - `node --test viewer/test/assistant.test.js` still passes.
@@ -248,7 +261,8 @@ The build matches these.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| On a harness with no read-only sandbox (Claude Code), a project lead that broke its rules could still run shell commands that write outside its clone, such as in the project folder | Rare path: needs the agent to act against its role; machine-mediated writes, helper starts and cross-project actions are refused outside the prompt, and its clone is reset at every start | review-round-1 |
+| On a harness with no sandbox (Claude Code), a project lead that broke its rules could still run shell commands that write outside its clone, such as in the project folder | Rare path: needs the agent to act against its role; machine-mediated writes, helper starts and cross-project actions are refused outside the prompt, and its clone is reset at every start | review-round-1 |
+| If the machine launched a project lead but its start reply was lost, and Collin then turns project leads off, the stop retry may miss that session | Rare path: needs a lost start reply and an Off together; every action it tries is refused while off | review-round-2 |
 
 ## Review Rounds
 
@@ -291,6 +305,18 @@ The build matches these.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Codex read-only sandbox has no network, so `wc.js`/`card.js` fail | upheld | S3: same sandbox as other Codex sessions, writable folder = clone |
+| intent | major | After the first message, a dead lead refuses Collin's messages (409) | upheld | S1: any message with no live lead queues and starts one |
+| intent | minor | Grouping change applies even when off | upheld | Spec preamble and S5: applies always |
+| intent | minor | Pop-up button load would create records | upheld | S1: created when the panel opens |
+| intent | minor | Deleted branches stay in the clone | upheld | S3: `--prune` |
+| mechanics | blocking | Codex read-only transport | upheld | Same as intent row |
+| mechanics | blocking | `thread` exposes linked other-project messages | upheld | S4: cross-thread items left out |
+| mechanics | blocking | Screen and Windows bridge routes not refused | upheld | S3: allow-list replaces the refusal list |
+| mechanics | major | Failed start after saving leads to a resend | downgraded (minor) | Worst case a repeated message; S1: 202 with `start_error`, composers clear draft |
+| mechanics | major | Off retry misses a session whose start reply was lost | accepted-risk | Rare path (lost reply + Off); Accepted Risks |
+| mechanics | major | Stale `upstream/<default>` wins after deletion | downgraded (minor) | Needs the default branch deleted upstream; fixed by `--prune` |
+| mechanics | minor | `protocol/app/AGENTS.md` missing | upheld | S7 |
 
 ## Implementation Tasks
 
