@@ -248,3 +248,41 @@ test('remote lacking the default branch uses the local default', async () => {
   try { const repo = await localRepo(root, 'main'); const remote = path.join(root, 'empty.git'); git(['init', '--bare', remote]); git(['-C', repo, 'remote', 'add', 'origin', remote]); const tip = await commitFile(repo, 'new local'); const result = await env.instance.projectLead().run(repo, 'missing-default', true); assert.equal(result.commit, tip); }
   finally { await env.close(); }
 });
+
+test('Claude project lead excludes project settings and MCP discovery', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true });
+  try {
+    const repo = await localRepo(root, 'main');
+    await write(path.join(repo, '.mcp.json'), '{"mcpServers":{"fixture":{"command":"fixture-server"}}}');
+    await write(path.join(repo, '.claude/settings.json'), '{"permissions":{"allow":["Bash"]}}');
+    git(['-C', repo, 'add', '.']); git(['-C', repo, 'commit', '-m', 'project tools']);
+    const result = await api(env, 'POST', '/v1/sessions', leadBody(repo), hubHeader);
+    assert.equal(result.status, 201, JSON.stringify(result.body));
+    await fs.access(path.join(result.body.worktree, '.mcp.json')); await fs.access(path.join(result.body.worktree, '.claude/settings.json'));
+    const adapter = require('../../connectors/claude/machine');
+    const context = { stateDir: env.state, promptPath: '/prompt', mcp: null, tools: false };
+    const session = env.instance.sessions[result.body.name];
+    const lead = adapter.command({ role: 'lead' }, session, result.body.worktree, context).argv;
+    const ordinary = adapter.command({ role: 'lead' }, { ...session, project_lead: false }, result.body.worktree, context).argv;
+    assert.deepEqual(lead.slice(lead.indexOf('--setting-sources'), lead.indexOf('--setting-sources') + 2), ['--setting-sources', 'user']);
+    assert.ok(lead.includes('--strict-mcp-config')); assert.ok(!ordinary.includes('--setting-sources')); assert.ok(!ordinary.includes('--strict-mcp-config'));
+  } finally { await env.close(); }
+});
+
+test('Codex project lead disables project config by marking the clone untrusted', () => {
+  const adapter = require('../../connectors/codex/machine');
+  const context = { tools: false }; const session = { name: 'test', codex_mode: 'sandboxed' };
+  const lead = adapter.command({ role: 'lead' }, { ...session, project_lead: true }, '/clone', context).argv;
+  const ordinary = adapter.command({ role: 'lead' }, session, '/clone', context).argv;
+  assert.ok(lead.includes('projects={"/clone"={trust_level="untrusted"}}'));
+  assert.ok(ordinary.includes('projects={"/clone"={trust_level="trusted"}}'));
+});
+
+test('Pi project lead ignores project inputs', () => {
+  const adapter = require('../../connectors/pi/machine');
+  const context = { stateDir: '/tmp', promptPath: '/prompt', tools: false }; const session = { name: 'test', cli_session_id: 'id' };
+  const lead = adapter.command({ role: 'lead' }, { ...session, project_lead: true }, '/clone', context).argv;
+  const ordinary = adapter.command({ role: 'lead' }, session, '/clone', context).argv;
+  assert.ok(lead.includes('--no-approve')); assert.ok(!lead.includes('--approve'));
+  assert.ok(ordinary.includes('--approve')); assert.ok(!ordinary.includes('--no-approve'));
+});
