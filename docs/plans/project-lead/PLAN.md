@@ -309,6 +309,8 @@ The build matches these.
 | On a harness with no sandbox (Claude Code), a project lead that broke its rules could still run shell commands that write outside its clone, such as in the project folder. On any harness it can read files outside its clone, including other projects and the machine's own credential, and could misuse them | Rare path: needs the agent to act against its role; true read isolation needs an OS-level sandbox per agent, which no wheelchair session has today; machine-mediated writes, helper starts and cross-project actions are refused outside the prompt, and its clone is reset at every start | review-round-1 |
 | Two project paths that are linked worktrees of one git repo share local branches, so each project lead's clone can read the other's thread branches | Rare path: adding two worktrees of one repo as separate projects is unusual; it is a read of Collin's own branches | review-round-5 |
 | If the machine launched a project lead but its start reply was lost, and Collin then turns project leads off, the stop retry may miss that session | Rare path: needs a lost start reply and an Off together; every action it tries is refused while off | review-round-2 |
+| While Off with a project lead's stop still pending, a message queued before Off can be delivered to that lead, and the lead can still post its allowed card kinds | Rare path: a stop stays pending only when the hub cannot reach the machine, while delivery and card posts need the machine reachable in one direction or the other at the same moment; its `wc.js project-lead` actions are all refused while off | verification-1 |
+| After the project renames its default branch and deletes the old one upstream, the clone keeps the stale `upstream/<old default>` ref (refresh checks out the new default correctly) | Rare path: renaming a project's default branch is unusual; the stale ref is a read-only copy of the user's own old branch and nothing names it | verification-1 |
 
 ## Review Rounds
 
@@ -520,3 +522,4 @@ The build matches these.
 - 2026-11-24 — Choice: T5, thread.js/assistant-popup.js: the old `wc-assistant-seen` value is not carried over (the assistant's dot may light once after the update).
 - 2026-11-24 — Choice: T5, settings.js: the mockup's hint wording, not the brief's.
 - 2026-11-24 — Choice: T5, mockups: names keep the folder's own case ("wheelchair lead"); head meta "<folder> on <stored machine name>"; previews one line; the pop-up button also shows on Threads, Settings and a lead's own page (Spec S2).
+- 2026-11-24 — Verification attempt 1: Claude verifier PASS; GPT verifier FAIL with 10 gaps. Three judged rare paths and recorded in Accepted Risks (round verification-1); the rest sent to the lead for per-gap fix/defer answers (two-part mode).
