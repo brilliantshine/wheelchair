@@ -109,7 +109,7 @@ restart, and starts in progress) names it. If the fetch fails the newest existin
 tools are offered and the problems card says "shared tools couldn't be fetched: <reason>". A project tool
 with the same name as a shared tool hides the shared one, and the problems card says so.
 Inside the shared tools project's own threads, its tools come from the thread's worktree
-(as project tools), so a tool being built can be tried before merge; the shared copy is not read for those sessions. The fetch is limited to 20 seconds; past that it counts as failed.
+(as project tools), so a tool being built can be tried before merge; the shared copy is not read for those sessions. One 20-second deadline covers the whole refresh (finding the default branch and fetching it); past that the git process group is killed, its pipes are not waited on, and it counts as failed.
 
 ### S4. Keys: not in this plan
 Key handling for folder tools was split into its own follow-up thread (Decision 21).
@@ -119,9 +119,12 @@ give a tool program the environment they themselves received, minus only
 `WHEELCHAIR_SESSION_TOKEN` (the agent's wheelchair login, as the screen launcher already
 strips it). That environment differs by AI and path (Codex forwards only its default set to
 MCP servers; `wc.js` gets the agent's shell), so the guide says a tool may rely only on
-`PATH`, `HOME` and variables it sets itself, and never on keys it happens to find: keys
+`PATH`, `HOME`, `WHEELCHAIR_PROJECT_DIR` and variables it sets itself, and never on keys it happens to find: keys
 already in the agent's environment are not removed (Decision 22), but they exist only on some
-AIs and projects. The guide also says a key must never be written into `tool.json` or any file in the tool folder
+AIs and projects. The bridge, the launcher and `wc.js tool run`/`check` set
+`WHEELCHAIR_PROJECT_DIR` to the session's worktree (outside a session, to the top of the
+current git checkout), so a shared tool can act on the project it is used in; the guide says
+tools use it, never paths relative to their own folder. The guide also says a key must never be written into `tool.json` or any file in the tool folder
 (they are committed); a tool that needs a token waits for key support, or is listed in
 `.mcp.json` with project keys as today.
 
@@ -144,7 +147,7 @@ not hidden. A server tool that passes these shows "server tools don't
 work on Kimi or Pi" as its status, as in the mockup (a fixed fact about the kind). The page lists tools from the project's default branch
 (read-only: it needs only a GitHub fetch origin, not the matching push destination the
 `.mcp.json` editor requires; for a project without a GitHub origin the list says
-"folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (if a shared tools project is chosen, it is on this machine and no copy exists yet, the list says "shared tools appear after the first agent session on this machine; if one has run, its problems card says why"; listed for every project, GitHub or not; for a non-GitHub project its rows add "not checked against this project's own tools", since a project tool of the same name would hide it) (not added when the
+"folder tools can only be listed for GitHub projects" for its own tools, and launch still works) plus the newest shared copy (if a shared tools project is chosen, it is on this machine and no copy exists yet, the list says "shared tools appear after the first agent session in another project on this machine"; listed for every project, GitHub or not; for a non-GitHub project its rows add "not checked against this project's own tools", since a project tool of the same name would hide it) (not added when the
 page's project is the shared tools project itself), and checks programs
 against the selected machine's PATH as the machine service sees it, so it can differ from a
 thread that changed a tool. Per-AI limits and Codex's budget are reported only on the
@@ -186,7 +189,7 @@ in its per-session plugin. The entries are:
 - one entry per usable server tool, running a wheelchair launcher that starts the tool's
   `start` command in its folder, in its own process group; when the launcher exits or its
   stdin closes, it sends that group SIGTERM, then SIGKILL after 5 seconds.
-Each connector applies its existing per-AI limits to these entries (Kimi and Pi load no
+The Codex translation gives the `wheelchair-tools` entry `tool_timeout_sec = 260` (the 240 s script limit plus cleanup grace), since Codex's default call deadline is shorter on some versions. Each connector applies its existing per-AI limits to these entries (Kimi and Pi load no
 servers and say so).  Folder entries never displace
 `.mcp.json` entries: where a connector has a size budget (Codex's argument budget,
 `connectors/codex/machine.js` `codexOverrides`), `.mcp.json` entries are measured first, then
@@ -264,8 +267,8 @@ All under `docs/plans/easy-tools/graphs/`:
 Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
-- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, and the 20 s fetch limit), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
+- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, and Codex's bridge entry carrying `tool_timeout_sec = 260`), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
+- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
 - S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline and when `wc.js` gets SIGTERM, `run`/`check` stripping the session token, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
@@ -301,6 +304,7 @@ stays as review history.
 
 | # | What to check | Round |
 |---|---------------|-------|
+| 1 | Claude's and Antigravity's MCP call deadlines are at least 260 s for the bridge, or the guide's per-AI limits state the lower limit | review-round-8 |
 
 ## Review Rounds
 
@@ -452,6 +456,20 @@ round where knowing it matters most.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:** S4 (tool environment is what the bridge/launcher received, minus the token; guide limits what tools rely on), S7 and Decision 23 (240 s limit), S9 (stdin close stops scripts and the bridge), S10 (`check` on servers without tools), S6 (first-copy line conditions), Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Shared tools can't find the project they're used in | upheld | S4: `WHEELCHAIR_PROJECT_DIR` set to the worktree; guide says to use it |
+| intent | minor | No per-AI deadline stated for Claude and Antigravity | check-once-built | Verifiers record each AI's MCP call deadline in the guide |
+| mechanics | major | RE-RAISE: Codex deadline shorter than 240 s on older versions | upheld | S8: Codex bridge entry gets `tool_timeout_sec = 260` |
+| mechanics | major | 20 s limit doesn't cover branch discovery; stalled git child | upheld | S3: one deadline for the whole refresh, process group killed |
+| mechanics | minor | RE-RAISE: first-copy message points to a card that may not exist | upheld | S6: message names the first session in another project |
+
+### Round 9 — 2026-11-25
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 8:** S4 (`WHEELCHAIR_PROJECT_DIR`), S3 (one 20 s deadline for the whole refresh), S8 (Codex bridge `tool_timeout_sec = 260`), S6 (first-copy message), Check Once Built row 1, Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
