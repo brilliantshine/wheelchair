@@ -507,6 +507,30 @@ test('outside pull request URLs are removed from recent chat', async () => {
   assert.deepEqual(detail.recent.map((item) => item.text), [own]);
 });
 
+test('outside PR URLs match whole URLs without hiding local PR prefixes', async () => {
+  const { hub, local, outside, call } = await actionFixture();
+  const url = 'https://github.com/wheelchair/wheelchair/pull/18';
+  outside.pr_url = url; await hub.save(outside);
+  local.pr_url = `${url}6`;
+  const question = `Should I rebase ${local.pr_url}?`;
+  local.cards = [{ id: 'q1', kind: 'question', question }]; await hub.save(local);
+  hub.chat = async () => ({ items: [local.pr_url, url, `${url}.`].map((text) => ({ type: 'human', text })) });
+  const detail = await call('thread', { thread: local.id });
+  assert.deepEqual(detail.recent.map((item) => item.text), [local.pr_url]);
+  assert.equal(detail.pr_url, local.pr_url);
+  assert.equal((await call('threads')).threads.find((row) => row.id === local.id).waiting[0].text, question);
+});
+
+test('outside object target PR URLs are removed from thread details', async () => {
+  const { hub, local, outside, call } = await actionFixture();
+  const url = 'https://github.com/wheelchair/wheelchair/pull/77';
+  outside.target_pr = { url, number: 77 }; await hub.save(outside);
+  hub.chat = async () => ({ items: [{ type: 'human', text: `See ${url}` }, { type: 'human', text: 'local' }] });
+  const detail = await call('thread', { thread: local.id });
+  assert.deepEqual(detail.recent.map((item) => item.text), ['local']);
+  assert.equal(JSON.stringify(detail).includes(url), false);
+});
+
 test('the same path on another registered machine is outside the project', async () => {
   const { local, outside, call } = await actionFixture();
   assert.deepEqual((await call('threads')).threads.map((row) => row.id), [local.id]);

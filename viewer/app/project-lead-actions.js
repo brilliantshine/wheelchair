@@ -4,6 +4,19 @@ const { appError } = require('./state.js');
 const projectLead = require('./project-lead.js');
 const { special } = require('./assistant.js');
 
+// A URL prefix is not a match when the next character continues the URL.
+function containsUrl(text, url) {
+  text = text.replace(/\/$/, '');
+  url = url.replace(/\/$/, '');
+  let index = text.indexOf(url);
+  while (index !== -1) {
+    const rest = text.slice(index + url.length);
+    if (!/^(?:[a-z0-9\/_?#=&%\-]|\.[a-z0-9])/i.test(rest)) return true;
+    index = text.indexOf(url, index + 1);
+  }
+  return false;
+}
+
 async function dispatch(hub, input) {
   if (!await projectLead.isOn(hub)) throw appError(403, 'project leads are off');
   const threads = await hub.allThreads();
@@ -17,7 +30,10 @@ async function dispatch(hub, input) {
     if (!special(thread) && key && await projectLead.identity(hub, registry, thread.machine, thread.project) === key) allowed.add(thread.id);
   }
   const outside = threads.filter((thread) => !allowed.has(thread.id));
-  const forbidden = new Set(outside.flatMap((thread) => [thread.id, thread.project, ...thread.sessions.map((s) => s.name), thread.pr_url, typeof thread.target_pr === 'string' && /^https?:\/\//i.test(thread.target_pr) ? thread.target_pr : null, require('./handoff.js').donePr(thread)].filter(Boolean)));
+  const forbidden = new Set(outside.flatMap((thread) => [thread.id, thread.project, ...thread.sessions.map((s) => s.name)].filter(Boolean)));
+  const outsideUrls = new Set(outside.flatMap((thread) => [thread.pr_url,
+    typeof thread.target_pr === 'string' && /^https?:\/\//i.test(thread.target_pr) ? thread.target_pr : thread.target_pr?.url,
+    require('./handoff.js').donePr(thread)].filter((url) => typeof url === 'string' && url)));
   // Cross-thread queues and cards can contain the other lead's message without its id.
   for (const thread of threads.filter((t) => allowed.has(t.id))) {
     for (const entry of thread.peer_log || []) if (!allowed.has(entry.thread)) {
@@ -27,7 +43,7 @@ async function dispatch(hub, input) {
   for (const value of forbidden) {
     if (value === source.project || source.project.includes(value)) forbidden.delete(value);
   }
-  const containsOutside = (value) => typeof value === 'string' && [...forbidden].some((part) => typeof part === 'string' && part.length >= 8 && value.includes(part));
+  const containsOutside = (value) => typeof value === 'string' && [...forbidden].some((part) => typeof part === 'string' && part.length >= 8 && value.includes(part)) || typeof value === 'string' && [...outsideUrls].some((url) => containsUrl(value, url));
   function clean(value, field) {
     if (typeof value === 'string') return containsOutside(value) ? undefined : value;
     if (Array.isArray(value)) return value.filter((item) => field !== 'cards' || !item.replaced && !item.answered && !item.retracted_at).map((item) => clean(item, field)).filter((item) => item !== undefined);

@@ -64,7 +64,7 @@ Rules for every card:
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
 | `retract` | never | lead | no |
-| `message` | never | any session except reviewer and verifier | no |
+| `message` | never | any session except reviewer, verifier, the assistant and a project lead | no |
 | `result` | never | worker, mapper, designer, sub-lead | no |
 
 A pinned kind sits at the top of the thread, and posting a new card of that kind replaces
