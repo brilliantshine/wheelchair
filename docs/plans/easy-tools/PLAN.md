@@ -53,6 +53,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 18 | One server template, Node.js, using a small zero-dependency MCP stdio helper shipped with wheelchair; other languages can still write a server by hand | One well-tested template beats several thin ones; Node is already required | defaulted |
 | 19 | Mockups agreed: mockup-tools-mixed-phone, mockup-tools-empty-phone, mockup-tools-mixed-desktop, mockup-shared-none-phone, mockup-shared-chosen-phone (designer's single version, commit 2e82b6fe) | Collin agreed them | user |
 | 20 | Windows-side folder tools and server templates in other languages go to Deferred (follow-up thread) | Hardening and reach, not needed for the feature to work | defaulted |
+| 21 | Supersedes 10: key handling for folder tools (tool-only keys, shared keys, keeping keys out of agent-visible output, the Shared keys section) is split into its own follow-up thread. This plan passes no keys to folder tools | Three review rounds kept finding problems only there; the rest had settled | user |
 
 ## Spec
 
@@ -91,7 +92,7 @@ reads it), not as a path. On each machine, the shared tools come from the first 
 saved projects (in their saved order) whose path is a git repository on that machine with
 that origin. If the machine has no such project, it offers
 no shared tools and the problems card says "the shared tools project isn't added on this
-machine". The shared keys section (S4) is per machine, as in the mockup. Threads in
+machine". Threads in
 that project make and change shared tools like any other work, ending in a pull request.
 At each agent session start the machine fetches that project's default branch and updates
 a machine-owned copy of that commit under the machine state directory
@@ -105,31 +106,14 @@ restart, and starts in progress) names it. If the fetch fails the newest existin
 tools are offered and the problems card says "shared tools couldn't be fetched: <reason>". A project tool
 with the same name as a shared tool hides the shared one, and the problems card says so.
 Inside the shared tools project's own threads, its tools come from the thread's worktree
-(as project tools), so a tool being built can be tried before merge; the shared copy is not
-read for those sessions, and the tools there use the shared keys (S4), not project keys. The fetch is limited to 20 seconds; past that it counts as failed.
+(as project tools), so a tool being built can be tried before merge; the shared copy is not read for those sessions. The fetch is limited to 20 seconds; past that it counts as failed.
 
-### S4. Keys
-A tool's description lists the key names it needs. When wheelchair runs a script tool or
-starts a server tool, it passes exactly those keys to that process as environment
-variables, and never puts them in the agent's own environment, config or instructions.
-Project tools read the project's existing keys (`machine/lib/project-keys.js`); shared
-tools read a new machine-local set of shared keys, stored the same way (private file
-modes, never committed) and edited in Settings. The bridge and the server launcher read the
-key store themselves when they spawn a tool (project identity of the thread's worktree, or
-the shared key set). Folder tools never use the existing agent-environment key injection
-(`injectProjectKeys`, `machine/lib/env-launch.js`), and no key value is written into any
-generated MCP config. A missing key puts the tool on the
-problems card, naming the key.
-
-The boundary is exactly this: wheelchair itself never hands a folder tool's key to the
-agent (environment, config files, instructions, tool output). It is not isolation from the
-agent's own operating-system account: an agent that reads the key store files on disk can
-still find them, as with project keys today. A key that a `.mcp.json` server also
-references keeps reaching the agent's environment through the existing injection for that
-server; the guide says so. Before returning any script tool output or error text (S9) or
-printing it (`wc.js tool run`), the bridge replaces every exact occurrence of the tool's key
-values with `[key <NAME>]`. Server tools' MCP traffic is not filtered; the guide tells
-authors never to return key values.
+### S4. Keys: not in this plan
+Key handling for folder tools was split into its own follow-up thread (Decision 21).
+Here wheelchair passes no keys to folder tools: `tool.json` has no `keys` field, the bridge
+and server tools get the agent's ordinary session environment, and nothing reads the key
+store for them. The guide says tools that need a token wait for key support, and that
+such servers can still be listed in `.mcp.json` with project keys as today.
 
 ### S5. Asking agents for a tool
 There is no new button. Every thread lead (and the sub-leads and workers it briefs) can read one
@@ -146,7 +130,7 @@ folder tools for the chosen project, including shared tools: each with its name,
 or server, project or shared, and whether it can be used or the reason it cannot (the same
 reasons the problems card gives). "Can be used" means these launch-time checks pass: valid
 `tool.json`; its `run`/`start` program found (in the tool folder or on the session's PATH);
-every listed key set; not hidden. A server tool that passes these shows "server tools don't
+not hidden. A server tool that passes these shows "server tools don't
 work on Kimi or Pi" as its status, as in the mockup (a fixed fact about the kind). The page lists tools from the project's default branch
 (as the page reads `.mcp.json` today) plus the newest shared copy (not added when the
 page's project is the shared tools project itself), and checks programs
@@ -156,7 +140,8 @@ thread's problems card, for the AI that session runs on. Whether a server actual
 script tool that fails when called returns its error to the agent (S9); a server tool whose
 launcher cannot start its program logs the reason to the machine log and exits non-zero,
 so the AI reports the server as failed. Settings gains a picker for the shared tools project (or
-none) and a shared keys section that works like the project keys section. Existing
+none). The shared keys section and key statuses shown in the mockups are not built here
+(S4). Existing
 `.mcp.json` editing is unchanged. Look: see Mockups. In the invalid-description example, the reason names the field actually missing (`start` for a server tool), per S7.
 
 ### S7. The description file and folder
@@ -165,7 +150,7 @@ project repository or in the shared tools repository. `<name>` matches `^[A-Za-z
 and equals `tool.json`'s `name`. The name `wheelchair-tools` is reserved for the bridge
 (S8) and refused. `tool.json` fields:
 - `name` (string), `description` (one line, shown to agents), `kind` (`script` or `server`).
-- `keys` (optional array of key names, same rules as project key names).
+
 - Script only: `inputs`, an object of input name to `{type, description, required}` with
   `type` one of `string`, `number`, `boolean`, `object`, `array`; `run`, an argv array whose
   first element is a program on PATH or a path relative to the tool folder; `timeout_seconds`
@@ -187,9 +172,9 @@ in its per-session plugin. The entries are:
 - one `wheelchair-tools` entry running a wheelchair bridge that offers every usable script
   tool as an MCP tool (name, description, input schema from `inputs`) and runs it per S9;
 - one entry per usable server tool, running a wheelchair launcher that starts the tool's
-  `start` command in its folder with its keys.
+  `start` command in its folder.
 Each connector applies its existing per-AI limits to these entries (Kimi and Pi load no
-servers and say so). The entries carry no key values (S4). Folder entries never displace
+servers and say so).  Folder entries never displace
 `.mcp.json` entries: where a connector has a size budget (Codex's argument budget,
 `connectors/codex/machine.js` `codexOverrides`), `.mcp.json` entries are measured first, then
 folder entries are added one at a time (bridge first, then server tools by name) while they
@@ -199,13 +184,9 @@ once per session start; a tool changed mid-session reaches the next session.
 
 ### S9. Running a script tool
 The bridge runs `run` with the tool folder as working directory, the inputs as one JSON
-object on stdin, and an environment made of the machine's normal session environment minus
-the agent's project keys, plus the tool's own `keys` (S4). stdout (cut at 1 MiB, saying so)
+object on stdin, and the bridge's own environment (the agent's session environment). stdout (cut at 1 MiB, saying so)
 is the result; a non-zero exit, a timeout or a launch failure returns an MCP error with the
-exit code and the last 4 KiB of stderr. Redaction (S4) runs on each stream as it is read,
-holding back the last (longest key length minus one) bytes until more arrives or the stream
-ends; capture stops at 2 MiB per stream, and when it stops there the held-back bytes are
-dropped. Returned text is cut only after redaction, so no key fragment survives any cut.
+exit code and the last 4 KiB of stderr. Capture stops at 2 MiB per stream.
 The script runs in its own process group; on timeout, or when the bridge exits, the whole
 group gets SIGTERM, then SIGKILL after 5 seconds. Before each call the bridge re-reads the
 tool's `tool.json`; if it differs from what was offered at session start, the call returns
@@ -214,35 +195,29 @@ the next session. Calls may run in parallel; the bridge never runs the
 same call twice.
 
 ### S10. The `wc.js tool` commands
-`node <root>/viewer/app/wc.js tool <command>`, refused (with the reason) for roles that do
-not get project tools (S8). Tools are read from the session's current worktree files plus
+`node <root>/viewer/app/wc.js tool <command>`. Tools are read from the session's current worktree files plus
 the shared copy the session is pinned to (S3), so a tool just made with `new` can be
 checked straight away.
 - `new <name> --kind script|server`: writes a working example tool from the template into
   `.wheelchair/tools/<name>/` of the current worktree (in the shared tools project, that
   makes a shared tool). If that folder already exists it is refused and nothing is written.
   The script template is a short shell script; the server template is Node.js.
-- `list`: the tools found, kind, source and status (S6's checks); whether each key is set
-  comes from the machine service as key names only, never values.
+- `list`: the tools found, kind, source and status (S6's checks).
 - `check [<name>]`: validates description files; for a server tool, starts it and confirms
-  it answers the MCP handshake and lists at least one tool, without its keys (if it lists
-  any, the output says a failure may be because of that, and the guide says keyed servers are
-  confirmed through MCP in the next session), with a 30-second deadline for
+  it answers the MCP handshake and lists at least one tool, with a 30-second deadline for
   the whole check; the server and its child processes are killed on success, failure,
   deadline or when `wc.js` exits.
 - `run <name> --input '<json>'`: runs a script tool as the bridge would (S9) and prints the
-  result. On Kimi or Pi (no MCP, no sandbox) it asks the machine service, authenticated by
-  the session token, which runs it with its keys and returns the redacted output; this is
-  how those agents call script tools. On other AIs it runs in the caller's own process
-  without keys and says so, for trying a tool just made; keyed tools are tried for real
-  through MCP in the next session.
-`new`, `list`, `check` and keyless `run` run inside the caller's own process (so inside its
-sandbox, if any) and never receive key values. Only `new` writes
+  result. Kimi and Pi agents call script tools this way; on any AI it also tries a tool
+  just made.
+All four commands run inside the caller's own process (so inside its sandbox, if any); the machine service runs
+nothing for them. They learn the session's pinned shared copy (S3) from the machine service,
+authenticated by the session token; outside a session they read only the current folder. Only `new` writes
 files, and the agent commits them as usual.
 
 ### S11. The guide
 `protocol/tools.md` is the one guide for people and agents: what a tool is, both kinds,
-`tool.json` fields with a full example of each, keys, project versus shared, the
+`tool.json` fields with a full example of each, that keys are not supported yet (S4), project versus shared, the
 `wc.js tool` commands, how to test before asking for review, and per-AI limits. The lead,
 sub-lead and worker role rules gain one line pointing to it for any request to make or
 change a tool. Agents on Kimi or Pi with at least one usable script tool get one added
@@ -259,20 +234,20 @@ README.md's project tools section gains a short paragraph pointing to it.
 All under `docs/plans/easy-tools/graphs/`:
 | File | Screen / state | Size |
 |---|---|---|
-| mockup-tools-mixed-phone.html | Tools page, folder tools with mixed statuses | 390x844 |
+| mockup-tools-mixed-phone.html | Tools page, folder tools with mixed statuses (the "needs key" status is not built here, S4) | 390x844 |
 | mockup-tools-empty-phone.html | Tools page, no folder tools yet | 390x844 |
 | mockup-tools-mixed-desktop.html | Tools page, mixed statuses, wide screen (same layout, wider frame) | 1280x900 |
 | mockup-shared-none-phone.html | Settings, Shared tools, none chosen | 390x844 |
-| mockup-shared-chosen-phone.html | Settings, Shared tools, project chosen, two keys (one missing) | 390x844 |
+| mockup-shared-chosen-phone.html | Settings, Shared tools, project chosen (its Shared keys part is not built here, S4) | 390x844 |
 
 ### Validation
 Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
 - S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, the shared project's own threads skipping the shared copy, and the 20 s fetch limit), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S4, S9 (keys reach only the tool process, never the agent's environment or config files; key values redacted from output, including a key straddling the returned-output cut and the 2 MiB capture limit; stdin/stdout, errors, timeout killing the whole process group, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new), `node --test machine/test/project-keys.test.js`.
-- S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, refusal for reviewer and mapper roles, `run` refused outside Kimi/Pi, `check` killing a stalled server at the deadline, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
-- S6, Mockups (list and Shared tools section): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
+- S9 (stdin/stdout, errors, timeout killing the whole process group, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
+- S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
+- S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
 - Routers: `machine/AGENTS.md` and `viewer/AGENTS.md` (and any other router whose file-to-role list changes) are updated in the same change.
 
