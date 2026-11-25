@@ -57,6 +57,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 22 | Simplify both safety rules: tool programs are stopped only on timeout or when the program that started them exits (no per-session tracking or session-end cleanup); tools get the agent's environment minus only the wheelchair login (no key-name stripping) | Review kept finding gaps in both; the agent can already read those keys and run tools from its shell | user |
 | 23 | Supersedes 14's limit: a script tool's `timeout_seconds` is 1 to 240 (default 120) | Codex ends MCP calls at 300 s; a longer script would finish after the agent was told it timed out | review-round-7 |
 | 24 | Keep reviewing with the full scope (no cut of shared tools or Codex) | Remaining findings are small runtime details; the design is stable | user |
+| 25 | Sandboxed Codex sessions get no folder MCP entries: script tools run from the shell with `wc.js tool run` (inside the agent's sandbox), server tools are unavailable there; unrestricted Codex, Claude and Antigravity unchanged. Supersedes the S9 sandbox-wrapper rules from rounds 9-12 | Keeping MCP-launched tools inside Codex's sandbox drew a serious finding four passes in a row | user |
 
 ## Spec
 
@@ -76,8 +77,10 @@ A tool is a folder with a description file and one of two kinds of body:
   template, or an existing server ("connect this one"): its `start` command may launch any
   stdio MCP server, such as `npx -y some-mcp-server`. Wheelchair starts it for the session
   and connects it. HTTP MCP servers stay in `.mcp.json` (Deferred).
-No author edits `.mcp.json` for either kind. Kimi and Pi load no MCP servers, so server
-tools are unavailable there (the problems card says so). File names and formats: S7.
+No author edits `.mcp.json` for either kind. Kimi and Pi load no MCP servers, and sandboxed Codex sessions (every Codex session not set
+to unrestricted, per `connectors/codex/machine.js` `sandboxed`) are given no folder entries
+(Decision 25), so server tools are unavailable there (the problems card says so) and script
+tools are run from the shell with `wc.js tool run`, inside the agent's own sandbox. File names and formats: S7.
 
 ### S2. Connecting
 No connect step. At each agent session start, wheelchair finds every tool in the project's
@@ -191,7 +194,9 @@ in its per-session plugin. The entries are:
   `start` command in its folder, in its own process group; when the launcher exits or its
   stdin closes, it sends that group SIGTERM, then SIGKILL after 5 seconds.
 The Codex translation gives the `wheelchair-tools` entry `tool_timeout_sec = 260` (the 240 s script limit plus cleanup grace), since Codex's default call deadline is shorter on some versions. Each connector applies its existing per-AI limits to these entries (Kimi and Pi load no
-servers and say so).  Folder entries never displace
+servers and say so). A sandboxed Codex session gets no folder entries at all; its problems
+card says "folder tools run from the shell here (`wc.js tool run`); server tools need Codex
+set to unrestricted".  Folder entries never displace
 `.mcp.json` entries: where a connector has a size budget (Codex's argument budget,
 `connectors/codex/machine.js` `codexOverrides`), `.mcp.json` entries are measured first, then
 folder entries are added one at a time (bridge first, then server tools by name) while they
@@ -214,7 +219,7 @@ their child on timeout, on exit and on SIGINT, SIGTERM or SIGHUP. Nothing else t
 programs: one whose starter is killed outright may keep running until the machine restarts
 (Decision 22). Before each call the bridge re-reads the
 tool's `tool.json`; if it differs from what this bridge offered when it started, the call returns
-an error saying the tool changed and to try it with `wc.js tool run` now or through MCP after the next agent start (a new session, a resume or an account switch). In a session that runs sandboxed (Codex today), the bridge and the server launcher wrap every tool program with that connector's sandbox wrapper (`sandboxWrap`, as the screen launcher does). The wrapper is started with the session's worktree as its working folder, so the worktree is the writable root, and inside the sandbox it changes to the tool folder before running the program (a shared tool's copy is then readable but not writable). So folder tools reached through MCP get the same sandbox as the agent's own commands. A resume or account switch of the same session re-discovers project tools from the worktree (the agent process restarts anyway), so it offers their current descriptions; only the shared copy stays pinned (S3). The policy that governs folder tools is the agent's own: for Codex, the bridge and launcher entries carry the session's `CODEX_HOME` (a path, not a secret) and the same worktree-trust override the agent launch passes (`connectors/codex/machine.js` command), and `sandboxWrap` is given both, so the wrapper loads exactly the account and project settings the agent runs under. Calls may run in parallel; the bridge never runs the
+an error saying the tool changed and to try it with `wc.js tool run` now or through MCP after the next agent start (a new session, a resume or an account switch). A resume or account switch of the same session re-discovers project tools from the worktree (the agent process restarts anyway), so it offers their current descriptions; only the shared copy stays pinned (S3). Calls may run in parallel; the bridge never runs the
 same call twice.
 
 ### S10. The `wc.js tool` commands
@@ -231,7 +236,7 @@ checked straight away.
   the whole check; the server and its child processes are killed on success, failure,
   deadline or when `wc.js` exits.
 - `run <name> --input '<json>'`: runs a script tool as the bridge would (S9) and prints the
-  result. Kimi and Pi agents call script tools this way; on any AI it also tries a tool
+  result. Kimi, Pi and sandboxed Codex agents call script tools this way; on any AI it also tries a tool
   just made.
 All four commands run inside the caller's own process (so inside its sandbox, if any); the machine service runs
 nothing for them. They learn the session's pinned shared copy (S3) from the machine service,
@@ -241,9 +246,9 @@ files, and the agent commits them as usual.
 ### S11. The guide
 `protocol/tools.md` is the one guide for people and agents: what a tool is, both kinds,
 `tool.json` fields with a full example of each, that keys are not supported yet (S4), project versus shared, the
-`wc.js tool` commands, how to test before asking for review, and per-AI limits (including that on sandboxed Codex a server tool can write only where the agent's own sandbox allows (normally the worktree and temp folders), so a server that caches under `HOME`, such as `npx`, needs its cache pointed at a temp folder in an `sh -c` start). The lead,
+`wc.js tool` commands, how to test before asking for review, and per-AI limits (including that sandboxed Codex sessions run script tools from the shell and have no server tools). The lead,
 sub-lead and worker role rules gain one line pointing to it for any request to make or
-change a tool. Agents on Kimi or Pi with at least one usable script tool get one added
+change a tool. Agents on Kimi, Pi or sandboxed Codex with at least one usable script tool get one added
 line in their starting instructions naming those tools and the `wc.js tool run` command.
 README.md's project tools section gains a short paragraph pointing to it.
 
@@ -267,8 +272,8 @@ All under `docs/plans/easy-tools/graphs/`:
 Each item ships with tests; verifiers run, for the commits checked, the commands
 `node test-support/pick-tests.js --base <comparison commit>` prints, plus:
 - S1, S7 (description rules, both kinds, invalid files): `node --test machine/test/folder-tools.test.js` (new).
-- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, Codex's bridge entry carrying `tool_timeout_sec = 260`, a failed or partial copy build falling back without stopping launch, two concurrent starts running only one refresh, a later refresh advancing the pointer, and a resume or account switch offering edited project tool descriptions while keeping the pinned shared copy), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
-- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, tool programs wrapped by `sandboxWrap` in a sandboxed Codex session (wiring only, with the fake Codex: the wrapper's argv, working folder, `CODEX_HOME` of a named account and the trust override; enforcement is Check Once Built row 2), shared copies read-only after building, session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
+- S2, S3, S8 (discovery from worktree and shared copy, name rules, fetch fallback, entries handed to connectors, `.mcp.json` precedence, roles): `node --test machine/test/folder-tools-launch.test.js` (new; must cover a repo with folder tools and no `.mcp.json` on each of Claude, Codex and Antigravity, every folder tool invalid with no `.mcp.json` (card shows them, then clears after a clean start), Codex budget leaving `.mcp.json` entries in place, a sandboxed Codex session getting no folder entries and the problems card line while an unrestricted one gets them, per-commit shared copies kept for a live session and reused on resume or account switch, including after the Settings choice changes or is cleared, the shared project's own threads skipping the shared copy, the 20 s limit covering branch discovery and fetch with a stalled git child, Codex's bridge entry carrying `tool_timeout_sec = 260`, a failed or partial copy build falling back without stopping launch, two concurrent starts running only one refresh, a later refresh advancing the pointer, and a resume or account switch offering edited project tool descriptions while keeping the pinned shared copy), `node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js machine/test/project-mcp-agy.test.js machine/test/project-tools-service.test.js`.
+- S9 (stdin/stdout, errors, timeout killing the whole process group, the group killed when the bridge or launcher exits or its stdin closes, 240 s timeout limit, `WHEELCHAIR_PROJECT_DIR` set to the worktree, shared copies read-only after building, session token stripped, a changed `tool.json` mid-session, output cap): `node --test machine/test/folder-tools-run.test.js` (new).
 - S10 (`wc.js tool new|list|check|run`, including `check` on the server template answering the MCP handshake, `check` killing a stalled server at the deadline and when `wc.js` gets SIGTERM, `run`/`check` stripping the session token, `new` refusing an existing folder): `node --test viewer/test/wc-tool.test.js` (new).
 - S6, Mockups (list and Shared tools project picker): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - S5, S11 (guide and role-rule pointers): no suite (protocol documents); verifiers read `protocol/tools.md` against S1-S10 and confirm the pointers in `protocol/app/lead.md`, `sub-lead.md`, `worker.md` and README.md.
@@ -283,6 +288,7 @@ Optional; present only in the lighter modes.
 | 1 | Windows-side folder tools (a script or server tool that runs on Windows from WSL) | The feature works on the Linux side; Windows needs the go-between and readiness wiring from MAP.md | planning | Reuse `machine/lib/win-tool-wrap.js` and the readiness file; see MAP.md "Windows wiring" |
 | 2 | Server templates in languages other than Node.js (for example Python) | One template is enough to follow the standard; others are convenience | planning | Keep `wc.js tool new --kind server` the entry point, add a `--lang` option |
 | 3 | Folder tools that are HTTP MCP servers (a `url` instead of `start`) | Existing HTTP servers keep working in `.mcp.json`; stdio covers making and wrapping servers | review-round-1 | Needs header keys; depends on the key-handling thread (Decision 21) |
+| 4 | Folder tools connected through MCP in sandboxed Codex sessions (script and server tools wrapped in the agent's sandbox) | Script tools work there from the shell; unrestricted Codex gets them through MCP | review-round-12 | Rounds 9-12 findings: writable root must be the worktree, same `CODEX_HOME` and trust override as the agent, enforcement needs a real Codex test (Decision 25) |
 
 ## Accepted Risks
 
@@ -304,7 +310,7 @@ stays as review history.
 
 | # | What to check | Round |
 |---|---------------|-------|
-| 2 | On a real sandboxed Codex session under a named account: a project tool and a shared tool each write a file in the worktree; a shared tool writing into its copy, and a write to a folder under `HOME` outside every writable root, both fail | review-round-12 |
+| 2 | Superseded by Decision 25 (no folder entries in sandboxed Codex sessions): nothing to check | review-round-12 |
 | 1 | Claude's and Antigravity's MCP call deadlines are at least 260 s for the bridge, or the guide's per-AI limits state the lower limit; the guide also states Codex's default call deadline for server tools | review-round-8, review-round-9 |
 
 ## Review Rounds
@@ -521,6 +527,15 @@ round where knowing it matters most.
 | mechanics | blocking | RE-RAISE: wrapper's effective policy differs from the agent's | upheld | S9: same `CODEX_HOME` and trust override as the agent launch; S11 wording |
 | mechanics | blocking | Sandbox enforcement untestable with the fake Codex | upheld | Validation tests wiring; enforcement moved to Check Once Built row 2 on real Codex |
 | mechanics | major | Shared servers can write into the shared copy | upheld | S3: copies read-only; guide: state in the project or temp |
+
+### Round 13 — 2026-11-25
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 12:** Decision 25 (Collin): sandboxed Codex sessions get no folder MCP entries; script tools there run via `wc.js tool run`; the S9 sandbox-wrapper, `CODEX_HOME` and trust-override rules are removed and moved to Deferred row 4; S1, S8, S10, S11 and Validation follow; Check Once Built row 2 superseded. Also from Round 12: S3 read-only copies and waiting lock, "next agent start" wording.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
