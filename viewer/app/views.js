@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const { special, visible } = require('./assistant.js');
 
 const execFileAsync = promisify(execFile);
 
@@ -30,16 +31,16 @@ async function features(hub) {
   // Read-only snapshot: no thread lock, so a thread busy starting a session (up to a minute)
   // does not hold up every page that asks for this list. A thread is locked only to record a
   // slug or status that changed, and then re-read under the lock so no concurrent write is lost.
-  const threads = (await require('./assistant.js').visible(hub, await hub.allThreads())).filter((thread) => !thread.archived);
+  const threads = (await visible(hub, await hub.allThreads())).filter((thread) => !thread.archived);
   const rows = await Promise.all(threads.map(async (listed) => {
     let thread = listed;
     const needs = [];
     addNeeds(needs, thread);
-    if (!thread.assistant && !thread.target_pr && !thread.slug && thread.worktree && !await require('./remote-plan.js').isRemote(hub, thread)) {
+    if (!special(thread) && !thread.target_pr && !thread.slug && thread.worktree && !await require('./remote-plan.js').isRemote(hub, thread)) {
       const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
       if (names.length === 1) { thread = structuredClone(thread); await recordSlug(hub, thread, names[0]); }
     }
-    if (thread.assistant) return { needs };
+    if (special(thread)) return { needs };
     if (thread.stub && !thread.sessions.length) return { needs };
     if (!thread.slug) return { needs };
     const status = await currentStatus(hub, thread);
@@ -100,7 +101,7 @@ async function newPlanDirectories(worktree, defaultBranch = 'main') {
 // the thread list, which every page polls, from spawning git for each one on every poll. A
 // worktree the archive failed to remove is still searched.
 async function discoverSlug(thread, hub) {
-  if (thread.assistant || thread.target_pr || thread.slug || !thread.worktree) return null;
+  if (special(thread) || thread.target_pr || thread.slug || !thread.worktree) return null;
   if (hub && await require('./remote-plan.js').isRemote(hub, thread)) return null;
   if (thread.archived && await fs.stat(thread.worktree).then(() => false, (error) => error.code === 'ENOENT' || error.code === 'ENOTDIR')) return null;
   const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
@@ -155,7 +156,7 @@ function addNeeds(needs, thread) {
 async function sessions(hub) {
   const groups = [];
   const allThreads = await hub.allThreads();
-  const visibleThreads = await require('./assistant.js').visible(hub, allThreads);
+  const visibleThreads = await visible(hub, allThreads);
   const hiddenSessions = new Set(allThreads.filter((t) => !visibleThreads.some((v) => v.id === t.id)).flatMap((t) => t.sessions.map((s) => s.name)));
   const registry = await hub.machines();
   const hubEntry = await hub.state.resolveMachine(registry, 'hub');

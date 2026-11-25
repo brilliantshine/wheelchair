@@ -107,6 +107,9 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
       if (reply.delay) await new Promise((resolve) => setTimeout(resolve, reply.delay));
       return send(response, reply.status || 200, reply.status && reply.status !== 200 ? { error: reply.error || 'usage failed' } : { reading: reply.reading || { account: input.account, five_hour: null, week: null } });
     }
+    if (request.method === 'POST' && url.pathname === '/v1/project-lead/refresh') {
+      return send(response, 200, { ok: true, commit: 'a'.repeat(40) });
+    }
     if (request.method === 'POST' && url.pathname === '/v1/sessions') {
       if (!startOk) return send(response, 503, { error: 'start refused' });
       if (dropNextStart > 0) {

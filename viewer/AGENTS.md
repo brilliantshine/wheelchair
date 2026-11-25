@@ -31,7 +31,9 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/documents.js` | Plan document eligibility, listing and live reads. |
 | `app/remote-plan.js` | Remote document reads and background discovery cache. |
 | `app/zip.js`, `app/html-download.js` | Stored ZIP creation and inert HTML download transformation. |
-| `app/assistant.js` | Assistant setting visibility, thread lifecycle and page status. |
+| `app/assistant.js` | Assistant setting visibility, thread lifecycle and page status, and the shared `special` check for conversation threads. |
+| `app/project-lead.js` | Project lead lifecycle, status, project identity and stopping sessions when switched off. |
+| `app/project-lead-actions.js` | Project lead action authorization, project-scoped reads and writes. |
 | `app/assistant-actions.js` | Personal assistant action authorization, reads and writes. |
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, including Project tools forwarding, module composition, and the page-facing JSON contract. |

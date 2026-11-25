@@ -6,6 +6,7 @@ const run = promisify(execFile);
 const { judgePr } = require('./pr-gate.js');
 const { currentDone, addCard } = require('./cards.js');
 const settings = require('./settings.js');
+const { special } = require('./assistant.js');
 const timing = { retryMs: 20000, waitMs: 120000, mergeTimeoutMs: 60000 };
 const runs = new Set();
 const unavailable = "couldn't reach GitHub to check the pull request; try again in a minute";
@@ -21,7 +22,7 @@ async function attempt(hub, threadId, checkCardId) {
   await hub.withThread(threadId, async () => {
     const thread = await hub.thread(threadId);
     // Gates 1–4: silently stop when the setting, head, attempt or check disallows it.
-    if (thread.assistant || (await settings.load(hub)).auto_merge !== 'on') return;
+    if (special(thread) || (await settings.load(hub)).auto_merge !== 'on') return;
     const check = thread.cards.find(c => c.id === checkCardId && c.kind === 'check');
     const done = currentDone(thread);
     if (!check || !done || check.head !== done.head) return;

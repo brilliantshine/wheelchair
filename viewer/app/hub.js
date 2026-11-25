@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { DEFAULT_STATE, State, appError } = require('./state.js');
 const { validate } = require('./card.js');
+const { special } = require('./assistant.js');
 const { MachineClient } = require('./machine-client.js');
 const cards = require('./cards.js');
 const chat = require('./chat.js');
@@ -198,12 +199,14 @@ class Hub {
   async acceptCard(payload) {
     if (payload.kind === 'done') {
       const thread = await this.state.thread(payload.thread_id);
-      const session = this.session(thread, payload.session);
-      const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
-      const checked = validate('done', input, session.role, { machine: true });
-      if (checked.ok) {
-        const result = await require('./pr-gate.js').checkPr(thread, checked.card);
-        if (!result.ok) throw appError(422, result.reason);
+      if (!special(thread)) {
+        const session = this.session(thread, payload.session);
+        const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
+        const checked = validate('done', input, session.role, { machine: true });
+        if (checked.ok) {
+          const result = await require('./pr-gate.js').checkPr(thread, checked.card);
+          if (!result.ok) throw appError(422, result.reason);
+        }
       }
     }
     const result = await this.withThread(payload.thread_id, () => cards.acceptCard(this, payload));
