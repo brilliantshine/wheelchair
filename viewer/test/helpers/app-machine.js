@@ -40,6 +40,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
   let uploadsDir = options.uploadsDir;
   let preflightOk = true;
   let startOk = true;
+  let stopOk = true;
   // Start the next sessions but hang up before answering, as a start slower than the hub waits.
   // A number drops that many starts in a row; true drops one.
   let dropNextStart = 0;
@@ -142,6 +143,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
       return send(response, 200, { pane: 'fake pane' });
     }
     if (request.method === 'DELETE' && url.pathname.startsWith('/v1/sessions/')) {
+      if (!stopOk) return send(response, 503, { error: 'machine unavailable' });
       return stopSession(response, sessions, url);
     }
     if (request.method === 'POST' && url.pathname === '/v1/archive') {
@@ -181,6 +183,8 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     status,
     get dropNextStart() { return dropNextStart; },
     set dropNextStart(value) { dropNextStart = value === true ? 1 : Number(value) || 0; },
+    get stopOk() { return stopOk; },
+    set stopOk(value) { stopOk = Boolean(value); },
     get startOk() { return startOk; },
     set startOk(value) { startOk = Boolean(value); },
     get preflightOk() { return preflightOk; },

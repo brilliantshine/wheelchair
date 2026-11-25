@@ -112,6 +112,7 @@ class Hub {
   machineSeen(name) { return this.lastSeen.get(name) || null; }
   async markMachineSeen(name, at = new Date().toISOString()) {
     this.lastSeen.set(name, at);
+    require('./project-lead.js').machineSeen(this, name);
     if (this.seenSaved.has(name) && this.now() - this.seenSaved.get(name) < 60_000) return at;
     const reservation = this.now();
     this.seenSaved.set(name, reservation);

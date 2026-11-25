@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { api, card, close, machinePost, setup, thread } = require('./helpers/app.js');
+const { api, card, close, event, machinePost, setup, thread } = require('./helpers/app.js');
 const { makeDir } = require('./helpers/server.js');
 const { Hub } = require('../app/hub.js');
 const settings = require('../app/settings.js');
@@ -321,4 +321,77 @@ test('account switching keeps the project lead identity', async () => {
   });
   assert.equal(Object.hasOwn(request.body, 'assistant'), false);
   await hub.withThread(record.id, async () => {});
+});
+
+const savedLead = async (c, id) => JSON.parse(await fs.readFile(path.join(c.state, 'threads', id + '.json'), 'utf8'));
+const sendMessage = (c, id, text) => post(c, `/threads/${id}/messages`, { text });
+const starts = (c, id) => c.machine.calls.filter((call) => call.path === '/v1/sessions' && call.method === 'POST' && call.body.thread_id === id);
+
+test('opening a project lead starts it only on the first message', async (t) => {
+  const c = await setup(); t.after(() => close(c)); await seed(c);
+  const id = await enableAndCreate(c);
+  await api(c, `/threads/${id}`);
+  assert.equal(starts(c, id).length, 0);
+  assert.deepEqual((await sendMessage(c, id, 'first')).body, { queued: true });
+  assert.equal(starts(c, id).length, 1);
+});
+
+test('failed starts retain queued messages in order and a later start carries them', async (t) => {
+  const c = await setup(); t.after(() => close(c)); await seed(c);
+  const id = await enableAndCreate(c); c.machine.startOk = false;
+  const first = await sendMessage(c, id, 'first');
+  assert.equal(first.status, 202); assert.match(first.body.start_error, /start refused/);
+  assert.deepEqual((await savedLead(c, id)).sessions.at(-1).queue.map((m) => m.text), ['first']);
+  const second = await sendMessage(c, id, 'second'); assert.equal(second.status, 202);
+  assert.deepEqual((await savedLead(c, id)).sessions.at(-1).queue.map((m) => m.text), ['first', 'second']);
+  c.machine.startOk = true;
+  assert.equal((await sendMessage(c, id, 'third')).status, 202);
+  const record = await savedLead(c, id);
+  assert.deepEqual(record.sessions.at(-1).queue.filter((m) => m.source === 'user').map((m) => m.text), ['first', 'second', 'third']);
+});
+
+test('concurrent first sends start only one lead and preserve order', async (t) => {
+  const c = await setup(); t.after(() => close(c)); await seed(c);
+  const id = await enableAndCreate(c);
+  const replies = await Promise.all([sendMessage(c, id, 'first'), sendMessage(c, id, 'second')]);
+  assert.ok(replies.every((r) => r.status === 202)); assert.equal(starts(c, id).length, 1);
+  const record = await savedLead(c, id);
+  assert.deepEqual([...record.sent.filter((m) => m.source === 'user'), ...record.sessions.at(-1).queue.filter((m) => m.source === 'user')].map((m) => m.text), ['first', 'second']);
+});
+
+test('a dead lead restarts on a message and turn ends deliver queued messages', async (t) => {
+  const c = await setup(); t.after(() => close(c)); await seed(c);
+  const id = await enableAndCreate(c);
+  await edit(c, id, (record) => record.sessions.push({ name: 'dead-lead', role: 'lead', live: false, queue: [] }));
+  await sendMessage(c, id, 'first'); await sendMessage(c, id, 'second');
+  assert.equal(starts(c, id).length, 1);
+  const lead = (await savedLead(c, id)).sessions.at(-1);
+  for (let i = 0; i < 3; i++) await event(c, id, lead.name, 'turn-ended');
+  const submitted = c.machine.calls.filter((call) => call.path.endsWith('/submit')).map((call) => call.body.text);
+  assert.ok(submitted.indexOf('first') >= 0); assert.ok(submitted.indexOf('second') > submitted.indexOf('first'));
+});
+
+test('off refuses messages and failed stops retry on machine contact only while off', async (t) => {
+  const c = await setup(); t.after(() => close(c)); await seed(c);
+  const id = await enableAndCreate(c); await preferences(c, { default_project_folder: '/tmp' }); await sendMessage(c, id, 'first');
+  const lead = (await savedLead(c, id)).sessions.at(-1);
+  c.machine.stopOk = false; await preferences(c, { project_leads: 'off' });
+  assert.equal((await savedLead(c, id)).stop_pending, true);
+  const count = starts(c, id).length;
+  refused(await sendMessage(c, id, 'off'), 404, /project leads are off/); assert.equal(starts(c, id).length, count);
+  c.machine.stopOk = true;
+  await api(c, '/new-thread');
+  for (let i = 0; i < 100 && (await savedLead(c, id)).stop_pending; i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal((await savedLead(c, id)).stop_pending, undefined); assert.equal(c.machine.sessions.get(lead.name).running, false);
+  await preferences(c, { project_leads: 'on' }); await sendMessage(c, id, 'again');
+  c.machine.stopOk = false; await preferences(c, { project_leads: 'off' });
+  await preferences(c, { project_leads: 'on' }); c.machine.stopOk = true;
+  const deletes = () => c.machine.calls.filter((call) => call.method === 'DELETE' && call.path.startsWith('/v1/sessions/')).length;
+  const before = deletes(); await api(c, '/new-thread'); await new Promise((r) => setTimeout(r, 100));
+  assert.equal(deletes(), before); assert.equal((await savedLead(c, id)).stop_pending, undefined);
+});
+
+test('ordinary threads still reject messages without a live lead', async (t) => {
+  const c = await setup(); t.after(() => close(c)); const record = await seed(c);
+  refused(await sendMessage(c, record.id, 'hello'), 409, /no live lead/);
 });

@@ -78,17 +78,82 @@ async function status(hub, id) {
   };
 }
 
+async function message(hub, thread, text) {
+  let lead = [...thread.sessions].reverse().find((item) => item.role === 'lead');
+  const first = !lead;
+  if (first) {
+    const sessions = require('./sessions.js');
+    lead = { name: sessions.newSessionName(thread, 'lead'), role: 'lead', token: require('node:crypto').randomBytes(32).toString('hex'), status: 'pending', live: false, ready: false, created_at: new Date().toISOString(), queue: [] };
+    thread.sessions.push(lead);
+  }
+  await hub.enqueue(thread, lead.name, text, 'user');
+  try {
+    if (first) {
+      const started = await require('./sessions.js').startSession(hub, thread, { role: 'lead', brief: '', tier: 'top', _waiting: lead });
+      await hub.deliver(thread, started.name);
+    } else await require('./threads.js').restartLead(hub, thread.id);
+    return { queued: true };
+  } catch (error) {
+    // A failed restart may have appended a new failed session before carrying queues.
+    // Keep every waiting message on the latest lead so the thread page can show it.
+    const current = await hub.thread(thread.id);
+    const ended = current.sessions.filter((item) => item.role === 'lead' && !item.live);
+    const latest = ended.at(-1);
+    if (latest) {
+      const queued = ended.flatMap((item) => item.queue || []);
+      for (const item of ended) { item.queue = []; delete current.queues[item.name]; }
+      latest.queue = queued;
+      current.queues[latest.name] = latest.queue;
+      await hub.save(current);
+    }
+    return { queued: true, start_error: error.message };
+  }
+}
+
+async function stop(hub, thread) {
+  let pending = false;
+  for (const session of thread.sessions.filter((item) => item.live)) {
+    try {
+      const result = await require('./sessions.js').stopManagedSession(hub, thread, session);
+      if (result?.pending) pending = true;
+    } catch { pending = true; }
+  }
+  if (pending) thread.stop_pending = true; else delete thread.stop_pending;
+  await hub.save(thread);
+}
+
 function change(hub, on) {
-  if (on) return;
   return serialize(hub, async () => {
     const threads = (await hub.allThreads()).filter((thread) => thread.project_lead);
     await Promise.all(threads.map((thread) => hub.withThread(thread.id, async () => {
-      if (await isOn(hub)) return;
       const current = await hub.thread(thread.id);
-      for (const session of current.sessions.filter((item) => item.live)) {
-        await require('./sessions.js').stopManagedSession(hub, current, session).catch(() => {});
-      }
+      if (on) { delete current.stop_pending; await hub.save(current); }
+      else if (!await isOn(hub)) await stop(hub, current);
     })));
+  });
+}
+
+// Run outside the machine call and thread lock; stop itself makes another machine call.
+function machineSeen(hub, machine) {
+  hub.projectLeadRetries ||= new Set();
+  if (hub.projectLeadRetries.has(machine)) return;
+  hub.projectLeadRetries.add(machine);
+  setImmediate(async () => {
+    try {
+      if (await isOn(hub)) return;
+      const registry = await hub.machines();
+      const key = await machineKey(hub, registry, machine);
+      if (!key) return;
+      for (const thread of await hub.allThreads()) {
+        if (!thread.project_lead || !thread.stop_pending || await machineKey(hub, registry, thread.machine) !== key) continue;
+        await hub.withThread(thread.id, async () => {
+          if (!await isOn(hub)) {
+            const current = await hub.thread(thread.id);
+            if (current.stop_pending) await stop(hub, current);
+          }
+        });
+      }
+    } catch {} finally { hub.projectLeadRetries.delete(machine); }
   });
 }
 
@@ -100,4 +165,4 @@ async function inboundRefusal(hub) {
   return `a project lead takes messages only from ${(await settings.load(hub)).user_name || 'the user'}`;
 }
 
-module.exports = { isOn, machineKey, identity, projects, find, ensure, status, change, guard, inboundRefusal };
+module.exports = { isOn, machineKey, identity, projects, find, ensure, status, change, message, machineSeen, guard, inboundRefusal };
