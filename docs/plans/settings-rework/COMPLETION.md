@@ -91,3 +91,21 @@ bash sensitivity/test/run.sh: RESULT 67 passed, 0 failed
 S6 browser list: exit 0, 878 passed (10.0m)
 ```
 
+### Remediation 2 — 2026-11-25
+
+Verification attempt 2 (commit `05eb9de3`): Claude verifier PASS, GPT verifier FAIL with three gaps sent to remediation (`REMEDIATION-2.md`); one rare path went to Accepted Risks. Full run on `05eb9de3`: every suite exit 0 except install, whose one failure ("real wheelchair directory is byte-identical after suite") fails the same way at the comparison commit `8440ad72` (running sessions write to `~/.wheelchair`). Lane: claude standard (claude-sonnet-5-5). Report: `reports/R2.md`.
+
+| Gap | Fix | Check |
+|-----|-----|-------|
+| S6: first-load timeout (Chromium, one run) | none needed: load-only. The page awaits only `GET /settings` (`settings.js:2482`), as at `8440ad72`; under 48 busy loops on 2 cores the same test fails the same way on both trees (traces in R2 report) | — |
+| S4: preview panes shorter than the mockup | `settings.css:128-130` pane text 14px/1.45, 14px paragraph margins, eyebrow 20.3px line; panes measure 176 and 115px, equal to the mockup rendered in the app's Inter font (196px is the mockup in a fallback font) | `app-settings.spec.js:638` |
+| S5: Diagrams read while You hidden after a late save | `settings.js:146` youShown guards drawDiagram and loadDiagram | `app-diagram-sensitivity.spec.js:89` |
+
+Validation on the merged branch (sub-lead):
+
+```
+S6 node tests: # pass 87, # fail 0
+bash sensitivity/test/run.sh: RESULT 67 passed, 0 failed
+S6 browser list: exit 0, 882 passed (9.9m)
+```
+
