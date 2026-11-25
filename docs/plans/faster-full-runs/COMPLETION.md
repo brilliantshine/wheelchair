@@ -2,7 +2,10 @@
 slug: faster-full-runs
 date: 2026-11-25
 implemented-by: "standard / gpt-6.1-terra (T1–T4); sub-lead claude-opus-5-5 (post-merge fixes named below)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: verifier, claude (not-provider gpt)
+    checks: standard / gpt-6.1-terra
 ---
 
 # Completion Report — Faster full test runs
@@ -76,7 +79,25 @@ Worker branches, re-run by the sub-lead at acceptance: whole viewer node suite o
 
 Before (plan, 2026-11-25 logs): total 14–21 min, browser 8–11 min, machine about 6 min, run alone.
 
-After: filled in from this build's full run below.
+After (this build, commit `36da8a13`, `bash test-support/full-run.sh`, started 07:02, finished 07:11:24 PST):
+
+```text
+commit 36da8a138d61c1eb57ad98e9bebe7cd7508d4998
+suite viewer-browser exit 0 seconds 349
+suite viewer-node exit 0 seconds 96
+suite machine exit 0 seconds 387
+suite test-support exit 0 seconds 25
+suite sensitivity exit 0 seconds 3
+suite codex exit 0 seconds 7
+suite install exit 0 seconds 33
+suite sudo-helper exit 0 seconds 10
+```
+
+- Total wall time: 561 s (9 min 21 s), against 14–21 min before.
+- Browser suite 349 s with 8 workers, in Chromium for all 52 specs and Firefox for the 15 listed, running alongside the sequential suites (sum of the sequential suites: 561 s, so the browser suite no longer adds to the total).
+- Also running: another thread's full run (`e1976e067aa7`, old script, in its non-browser suites, so this run still took 8 browser workers), and this build's verifier from about 07:03.
+- Wait between the verifier passing (reported about 07:11 PST) and the full run passing: 0 minutes; the full run had passed before the verifier reported.
+- Not like-for-like (D15): the before figures are from runs on other commits, run alone and one suite after another.
 
 ## Known gaps / residual risks
 
@@ -84,4 +105,14 @@ After: filled in from this build's full run below.
 - `viewer/test/playwright-projects.test.js` imports Playwright's internal `playwright/lib/util`; a Playwright upgrade may move it.
 - `docs/maps/full-test-runs.md` still describes the old summary format (Round 3 declined updating maps).
 
+## Full run
+
+`summary.txt` for the reported commit is above (Timing record); every suite exit is 0. No failures to confirm on main.
+
+## Verification
+
+Attempt 1 on `36da8a13`: PASS, no gaps, no rare paths. The verifier noted the branch now contains main's PR #192 (merge-base with `origin/main` is `a399cf8a`), so it used that for the law range and `git diff --check`.
+
 ## Remediation rounds
+
+None.
