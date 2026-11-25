@@ -10,11 +10,6 @@ created: 2026-11-24
 
 ## Open Questions
 
-### Q2: Which one does the pop-up open on a project's pages?
-- **Context:** the pop-up always opens the single assistant and sends no page context (`viewer/pages/nav.js:171-180`, `viewer/pages/assistant-popup.js:337-345`).
-- **Options:** project lead; assistant; project lead with a one-tap switch to the assistant.
-- **Recommendation:** project lead with a switch.
-
 ### Q3: How do the assistant and the project lead hand work to each other?
 - **Options:** no handoff (each says where to ask); assistant passes project questions to the project lead; both directions.
 - **Recommendation:** to settle after Q1–Q2.
@@ -37,6 +32,7 @@ created: 2026-11-24
 | 1 | Mode is two-part. | Collin picked it. | user |
 | 2 | Why: both less noise and deeper project knowledge. | Collin picked "Both" (after first picking "Too much noise" by mistake). | user |
 | 3 | One Settings switch turns project leads on (off by default). When on, every project shows a pinned project lead; its agent starts only when Collin first writes to it. | Collin picked "One switch, starts on use": idle projects cost nothing. | user |
+| 4 | On a project's pages the pop-up opens that project's lead, with a one-tap switch to the all-projects assistant; elsewhere it opens the assistant as today. | Collin picked "Project lead, with a switch". | user |
 
 ## Spec
 
@@ -45,6 +41,12 @@ created: 2026-11-24
 - A Settings switch "Project leads", off by default, separate from the personal assistant switch.
 - When on, every project in the threads list shows a pinned project lead row. No agent runs for it until Collin first sends it a message (from its thread or the pop-up); that message starts its lead.
 - Turning the switch off stops every live project lead and hides the rows.
+
+### S2. Pop-up
+
+- On a page that belongs to a project (that project's threads, and its project lead thread's own page excepted as today), the pop-up opens that project's lead, with a one-tap switch at its top to the all-projects assistant and back.
+- On every other page it opens the assistant as today.
+- With only one of the two switches on, the pop-up opens that one and shows no switch.
 
 ## Deferred
 
