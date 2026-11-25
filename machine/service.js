@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const projectLead = require('./lib/project-lead');
 const { wrapEntries, cacheKey } = require('./lib/win-tool-wrap');
 const { TryService } = require('./lib/try');
 const { providers, loadRecipes } = require('./lib/harness-recipes');
@@ -200,16 +201,17 @@ const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
 const ROLE_REPO_LAW = new Set(['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier']);
 function composeRolePrompt(input) {
   const first = `Role: ${input.role}`;
-  if (input.role_prompt && input.prompt_role !== 'assistant') return `${first}\n${input.role_prompt}`;
+  if (input.role_prompt && !['assistant', 'project-lead'].includes(input.prompt_role)) return `${first}\n${input.role_prompt}`;
   const cards = ROLE_CARDS[input.role] || [];
   const header = cards.length ? 'Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context.' : 'Your role rules are below, already loaded: do not read these files again unless this text is no longer in your context.';
   const read = file => fs.readFileSync(path.join(ROOT, 'protocol', 'app', file), 'utf8').trimEnd();
-  const parts = [`${first}\n${header} \`<root>\` is \`${ROOT}\`.`, read(`${input.prompt_role === 'assistant' ? 'assistant' : input.role}.md`)];
-  if (input.prompt_role !== 'assistant' && ROLE_REALISM.has(input.role)) parts.push(`--- realism.md ---\n${read('realism.md')}`);
-  if (input.prompt_role !== 'assistant' && ROLE_REPO_LAW.has(input.role)) parts.push(`--- repo-law.md ---\n${read('repo-law.md')}`);
+  const parts = [`${first}\n${header} \`<root>\` is \`${ROOT}\`.`, read(`${['assistant', 'project-lead'].includes(input.prompt_role) ? input.prompt_role : input.role}.md`)];
+  if (!['assistant', 'project-lead'].includes(input.prompt_role) && ROLE_REALISM.has(input.role)) parts.push(`--- realism.md ---\n${read('realism.md')}`);
+  if (!['assistant', 'project-lead'].includes(input.prompt_role) && ROLE_REPO_LAW.has(input.role)) parts.push(`--- repo-law.md ---\n${read('repo-law.md')}`);
   for (const file of cards) parts.push(`--- ${file} ---\n${read(file)}`);
   const layers = typeof input.role_layers === 'string' ? input.role_layers.trim() : '';
   if (layers) parts.push(layers);
+  if (input.prompt_role === 'project-lead') parts.push(`Your project: ${input.project} on ${input.project_machine}, at ${input.project_dir}. Your read-only copy of it is ${input.project_lead_folder}.`);
   return parts.join('\n\n');
 }
 // Validates the optional start fields; returns the normalised ones.
@@ -630,7 +632,9 @@ class MachineService {
     if (conflict) throw Object.assign(new Error(`worker worktree is in use (${conflict}): ${worktree}`), { status: 409 });
     this.startingWorktrees.add(worktree); // released by start() once this session is recorded or failed
   }
+  projectLead() { return projectLead({ stateDir: this.stateDir, commandAsync, inRepoQueue: this.inRepoQueue.bind(this) }); }
   async createWorktree(input, sessionName) {
+    if (input.project_lead === true) return this.projectLead().run(input.project_dir, threadName(input.thread_id), true);
     if (input.assistant === true) {
       const worktree = path.join(this.stateDir, 'assistant');
       if (Object.hasOwn(input, 'worktree') && (typeof input.worktree !== 'string' || path.resolve(input.worktree) !== worktree)) die('invalid start body');
@@ -797,6 +801,10 @@ class MachineService {
   }
 
   async start(input) {
+    if (input.project_lead === true || input.prompt_role === 'project-lead') {
+      if (input.role !== 'lead' || input.project_lead !== true || input.prompt_role !== 'project-lead' || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir) || !input.project || !input.project_machine || Object.hasOwn(input, 'worktree') || Object.hasOwn(input, 'branch')) die('invalid start body');
+      threadName(input.thread_id);
+    }
     if (input.prompt_role === 'assistant' && (input.role !== 'lead' || input.assistant !== true)) die('invalid start body');
     if (input.assistant === true && Object.hasOwn(input, 'worktree') && (typeof input.worktree !== 'string' || path.resolve(input.worktree) !== path.join(this.stateDir, 'assistant'))) die('invalid start body');
     for (const key of ['role', 'cli', 'thread_id', 'token']) if (!input[key]) die(`missing ${key}`);
@@ -823,12 +831,12 @@ class MachineService {
     await adapter.prepare?.(dir);
     const options = startOptions(input);
     if (!connectors.manifest(input.cli).models.efforts.length) options.effort = null;
-    const createdWorktree = input.assistant !== true && !input.worktree;
+    const createdWorktree = input.assistant !== true && input.project_lead !== true && !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
     if (reserved) this.refuseSharedWorktree(reserved, name);
     let created = null;
     try {
-      const rolePrompt = composeRolePrompt(input);
+      const rolePrompt = composeRolePrompt(input.project_lead ? { ...input, project_lead_folder: this.projectLead().folder(input.project_dir, input.thread_id) } : input);
       const promptPath = path.join(this.stateDir, 'prompts', `${name}.md`);
       await atomicWrite(promptPath, rolePrompt);
       created = await this.createWorktree(input, name);
@@ -845,8 +853,9 @@ class MachineService {
     const worktree = created.worktree;
     const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
-      branch: input.assistant === true ? null : created.branch || input.branch || null, default_branch: input.assistant === true ? null : created.defaultBranch || input.default_branch || input.defaultBranch || null,
+      branch: input.assistant === true || input.project_lead === true ? null : created.branch || input.branch || null, default_branch: input.assistant === true || input.project_lead === true ? null : created.defaultBranch || input.default_branch || input.defaultBranch || null,
       ...(input.assistant === true ? { assistant: true } : {}),
+      ...(input.project_lead === true ? { project_lead: true, project_dir: input.project_dir } : {}),
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     if (adapter.recordLaunch) adapter.recordLaunch(session, await this.versionGate(input.cli));
     let windowsTools;
@@ -881,6 +890,7 @@ class MachineService {
     const session = this.managed(name), adapter = adapters[session.cli];
     if (!connectors.manifest(session.cli)?.capabilities.liveSwitch) die('unsupported cli');
     if (!input || typeof input.switch_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.switch_id) || !input.account || typeof input.account.id !== 'string' || !Object.hasOwn(input.account, 'dir') || !(input.model === null || typeof input.model === 'string') || !(session.assistant === true && input.assistant === true) && (typeof input.project !== 'string' || !input.project || path.basename(input.project) !== input.project || typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir))) die('invalid switch body');
+    if (session.project_lead && (input.project_lead !== true || input.project_dir !== session.project_dir || input.project !== path.basename(session.project_dir))) die('invalid switch body');
     const dir = accountDir(input.account.dir, input.account.id);
     if (!dir && input.account.id !== defaultAccount(session.cli)) die('invalid default account');
     session.switches ||= {};
@@ -943,9 +953,9 @@ class MachineService {
   async prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, resume) {
     const name = session.name;
     const { wsl, mount } = this.win?.detected || { wsl: false, mount: '/mnt' };
-    const read = session.assistant ? { mcp: null, warnings: [], hash: null, dropped: [] } : await readProjectMcp(worktree, { wsl, mount, kernel: !!this.win?.detected?.kernel });
+    const read = session.assistant || session.project_lead ? { mcp: null, warnings: [], hash: null, dropped: [] } : await readProjectMcp(worktree, { wsl, mount, kernel: !!this.win?.detected?.kernel });
     const { mcp, warnings } = read;
-    const tools = TOOL_ROLES.has(input.role) && !session.assistant;
+    const tools = TOOL_ROLES.has(input.role) && !session.assistant && !session.project_lead;
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
@@ -2172,6 +2182,12 @@ class MachineService {
           return send(response, 200, { ok: true });
         }
       }
+      if (request.method === 'POST' && url.pathname === '/v1/project-lead/refresh') {
+        await this.authorize(request, 'hub'); const input = await bodyOf(request);
+        if (typeof input.project_dir !== 'string' || !path.isAbsolute(input.project_dir)) die('invalid project');
+        const result = await this.projectLead().run(input.project_dir, threadName(input.thread_id), false);
+        return send(response, 200, { ok: true, commit: result.commit });
+      }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); await this.reconcilePiExits(); return send(response, 200, this.sessionList()); }
       if (request.method === 'POST' && url.pathname === '/v1/uploads') {
@@ -2229,9 +2245,22 @@ class MachineService {
         try { return send(response, 200, await this.sudo.cancel(pathBits[2])); }
         catch (error) { if (!error.status) throw Object.assign(new Error('sudo helper unavailable'), { status: 503 }); throw error; }
       }
+      if (url.pathname.startsWith('/v1/agent/')) {
+        const agent = await this.authorize(request, 'agent');
+        if (agent.project_lead && !['/v1/agent/project-lead', '/v1/agent/hooks', '/v1/agent/cards'].includes(url.pathname)) throw Object.assign(new Error("a project lead can't do that"), { status: 403 });
+      }
       if (request.method === 'POST' && url.pathname === '/v1/agent/cards') {
         const agent = await this.authorize(request, 'agent');
         let input = await bodyOf(request);
+        if (agent.project_lead) {
+          if (!['question', 'needs', 'resolve', 'retract', 'file', 'image'].includes(input.kind)) throw Object.assign(new Error("a project lead can't do that"), { status: 403 });
+          if (['file', 'image'].includes(input.kind)) {
+            const real = typeof input.path === 'string' ? await fsp.realpath(input.path).catch(() => null) : null;
+            const root = await fsp.realpath(agent.worktree);
+            const relative = real && path.relative(root, real);
+            if (!real || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw Object.assign(new Error('a project lead can only send files from its own folder'), { status: 403 });
+          }
+        }
         if (input.kind !== 'file') delete input.warnings;
         if (input.kind === 'approval' && agent.role === 'lead') {
           const warnings = [];
@@ -2304,12 +2333,12 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/win') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.win.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
-      if (request.method === 'POST' && url.pathname === '/v1/agent/assistant') {
+      if (request.method === 'POST' && ['/v1/agent/assistant', '/v1/agent/project-lead'].includes(url.pathname)) {
         const agent = await this.authorize(request, 'agent');
         const input = await bodyOf(request);
         if (!this.config.hub_url) return send(response, 503, { error: 'hub unavailable' });
         let relay;
-        try { relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/assistant`, 'POST', { [HUB_HEADER]: await this.secret() }, { ...input, calling_session: agent.name }, 120000); }
+        try { relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/${url.pathname.endsWith('project-lead') ? 'project-lead' : 'assistant'}`, 'POST', { [HUB_HEADER]: await this.secret() }, { ...input, calling_session: agent.name }, 120000); }
         catch { return send(response, 503, { error: 'hub unavailable' }); }
         if (relay.status >= 502 && relay.status <= 504) return send(response, 503, { error: 'hub unavailable' });
         response.writeHead(relay.status >= 200 && relay.status < 300 ? 200 : relay.status, { 'content-type': 'application/json; charset=utf-8' });
