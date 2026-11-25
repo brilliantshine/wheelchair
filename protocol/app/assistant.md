@@ -46,7 +46,7 @@ report that outcome rather than assuming success.
 | Action | Result |
 |---|---|
 | `projects` | Machines and project folders offered by New thread: `{machines:[{name, projects:[{path,name}]}]}`. |
-| `threads [--archived]` | Non-archived threads across machines, excluding your own; `--archived` includes archived threads. Each has the Threads list summary and stage, `lead_live`, and `waiting` cards counted by Needs you as `{id, kind, text}`. |
+| `threads [--archived]` | Non-archived threads across machines, excluding your own and project lead threads; `--archived` includes archived threads. Each has the Threads list summary and stage, `lead_live`, and `waiting` cards counted by Needs you as `{id, kind, text}`. |
 | `thread <id>` | The same fields plus full open `cards`, `queued` text for every entry waiting for the lead, and `recent`, the last 30 chat items shown on the thread page. |
 | `start --project <path> --machine <name> --message-file <f> [--title <t>]` | Creates a thread with the file's text as its first message. The title is `--title` when supplied, otherwise derived from the text. Prints `{ok, thread, url}`. If it prints `{ok:false, error, thread, url}`, the thread was saved but its lead did not start: tell the user with the link and wait for them. |
 | `message <thread> --text-file <f>` | Queues the file's text for the latest live lead and prints `{ok:true, queued:true}`. Refused if no lead is live, or the thread is archived or handed off; it counts toward the 20 messages per thread per hour limit. |
@@ -54,4 +54,5 @@ report that outcome rather than assuming success.
 | `restart <thread>` | Restarts the lead as the browser does; refused for archived or handed-off threads. |
 | `archive <thread>` | Archives the thread as the browser does. |
 
-`<thread>` is a thread id. Your own thread is refused as a target of every action.
+`<thread>` is a thread id. Your own thread is refused as a target of every action. So is a
+project lead thread: “that's a project lead; talk to it directly”.
