@@ -15,9 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q5: How do you ask agents to make or connect a tool?
-- **Context:** IDEA.md wants it easy to just ask. Candidates: any thread (a small fix), the personal assistant, a dedicated "make a tool" action.
-
 ### Q6: What changes on screen?
 - **Context:** The Tools page in Settings lists `.mcp.json` tools today. Whether new tools show there decides whether mockups are needed.
 
@@ -49,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | When a project tool and a shared tool have the same name, the project tool wins and the problems card notes the shared one was hidden | The project knows its own needs best; the clash is visible | defaulted |
 | 9 | Supersedes 4 in part: a tool folder holds either a script tool (as in 4) or a server tool, a real MCP server made from a wheelchair template. Wheelchair starts and connects both kinds automatically; no hand-editing .mcp.json | Servers keep state, answer fast and use all of MCP; template + automatic connection removes the setup-and-connect chore that prompted this idea | user |
 | 10 | Keys: a tool's description lists the key names it needs; wheelchair passes only those to the tool's script or server process at start, never to the agent. Project tools read the project's keys; shared tools read a machine-wide set of shared keys typed once per machine in Settings | Keys out of the agent's reach; a shared tool's key typed once | user |
+| 11 | Tools are requested by asking in any thread; no new button. Every lead gets the tool guide. Shared tools are made in a thread of the shared tools project (the assistant can start one) | Reuses how Collin already asks for changes | user |
 
 ## Spec
 
@@ -99,6 +97,14 @@ Project tools read the project's existing keys (`machine/lib/project-keys.js`); 
 tools read a new machine-local set of shared keys, stored the same way (private file
 modes, never committed) and edited in Settings. A missing key puts the tool on the
 problems card, naming the key.
+
+### S5. Asking agents for a tool
+There is no new button. Every lead (and the sub-leads and workers it briefs) can read one
+tool guide that says how to make, connect and test both kinds of tool. A request like
+"make me a tool that does X" in a project's thread is handled like any other change there
+and ends in a pull request. A lead asked for a shared tool from another project's thread
+says it belongs in the shared tools project and names that project; the tool is made in
+a thread there.
 
 ## Deferred
 
