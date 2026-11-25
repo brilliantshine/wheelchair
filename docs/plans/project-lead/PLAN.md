@@ -72,7 +72,9 @@ Threads list shows.
   `{queued: true}` once the message is queued, plus `start_error` when the start failed;
   both composers then clear the draft (the message is not resent) and, on `start_error`,
   show the failure with Restart as for any thread. The queued message moves to the next
-  lead as Collin's queued messages already do (`viewer/app/routes.js:706-714` today
+  lead as Collin's queued messages already do. If the hub finds a project lead's lead dead
+  (its session poll) while Collin's messages are queued for it, it starts a new lead the
+  same way (`viewer/app/routes.js:706-714` today
   refuses with 409 "no live lead"; this replaces that for project lead threads only).
 - **Off**: the hub stops every live project lead session and keeps the records. While off,
   rows and the pop-up's project lead side are hidden, its routes answer 404 "project leads
@@ -103,8 +105,12 @@ Threads list shows.
 
 - Its lead runs on the project's own machine, on the lead model from Settings, with
   `prompt_role: "project-lead"`: the machine builds the prompt from a new
-  `protocol/app/project-lead.md` plus `cards.md` and `cards-lead.md`, with the usual lead
-  role layers (as the assistant, `machine/service.js:198-213`).
+  `protocol/app/project-lead.md` plus `cards.md` and `cards-lead.md`. Of the hub's role
+  layers it gets only Collin's name, his writing style, the scout model line, and lessons
+  saved for leads that are unscoped or scoped to this project; no other role's lessons
+  (`viewer/app/settings.js:181-190,224-244`). A scout here is the harness's own in-session
+  helper reading its clone, which is allowed; "helper sessions" below means wheelchair
+  sessions.
 - **Its folder**: `<machine state dir>/worktrees/<project folder name>/project-lead-<thread id>`,
   a separate local git clone of the project folder (`git clone <project path>`, not a
   worktree), so nothing done inside it can change the project's own branches or other
@@ -116,8 +122,10 @@ Threads list shows.
      thread start already does); a failure here is ignored;
   2. in the clone, fetches with `--prune` from the project folder `+refs/heads/*:refs/remotes/origin/*`
      (the project's local branches, including every thread's `wc/<id>` whether pushed
-     or not) and `+refs/remotes/origin/*:refs/remotes/upstream/*` (what the project last
-     fetched from its remote); `--prune` drops refs deleted in the project folder, and
+     or not, which on this machine are only this project's threads) and only the
+     project's `refs/remotes/origin/<default>` into `refs/remotes/upstream/<default>`
+     (what the project last fetched of its default branch; other machines' pushed thread
+     branches are not brought in); `--prune` drops refs deleted in the project folder, and
      since step 1's failure deletes nothing there, an outage keeps the last known refs;
   3. checks out, detached and discarding any local changes, the default tip:
      `upstream/<default>` when it exists, else `origin/<default>`, where `<default>` is
@@ -162,9 +170,13 @@ checks are done by the hub against the caller's own project (machine + path).
 | `message`, `press`, `restart`, `archive` | Same, with the out-of-project refusal above. `press` also refuses `sudo`, `reach` and `permit` cards ("that needs you"), since those reach beyond this project or the machine. |
 | `refresh` | Moves its folder to the current default branch tip (S3). Prints `{ok, commit}`. |
 
-**Other projects' content**: in both `threads` and `thread`, any `peer_log` or `queued`
-entry whose other thread is in another project is left out, and `reach` and `permit` cards
-are left out of `cards` and `waiting`. Entries between threads of the same project stay.
+**Other projects' content**: `threads` and `thread` leave out every item that names or
+carries content from a thread in another project, whatever field it is in (for example
+`peer_log`, `queued`, `message` cards, `lead_links`, `peer_pauses`), filtered before the
+response is built. A `reach` card waiting on Collin stays in `waiting` and `cards` only as
+`{id, kind: "reach", text: "a request to talk to another project's lead"}`, with its
+target and reason removed. `permit` cards (this project's own repo) stay as they are.
+Items between threads of the same project stay.
 
 There is no `projects` action. Its own thread, the assistant thread and every project lead
 thread are refused as targets of every action. Messages and presses are delivered with
@@ -240,8 +252,12 @@ The build matches these.
   opening the pop-up panel creates it but a page load does not; two sends before a
   successful start arrive in order; turn-end hooks from a project lead accepted and a
   queued second message delivered through them; `file`/`image` posts outside the clone
-  refused; other-project `peer_log`/`queued` entries and `reach`/`permit` cards left out
-  of `threads` and `thread` while same-project ones stay;
+  refused; other-project `peer_log`, `queued`, `message` cards, `lead_links` and
+  `peer_pauses` left out of `threads` and `thread` while same-project ones stay, a `reach`
+  card reduced to its plain text and `permit` cards kept; a lead found dead with queued
+  messages starts a new one; the composed prompt with lessons from two projects and other
+  roles carries only this project's and unscoped lead lessons; only `upstream/<default>`
+  fetched;
   start on first message only, with the message queued before the start and moved to the
   next lead after a failed start; `session start`, `session leads`, `wc.js git` and
   `sudo`/`reach`/`permit` posts and presses refused for a project lead; every non-allowed
@@ -372,6 +388,11 @@ The build matches these.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Hiding `reach`/`permit` cards hides same-project work waiting on Collin | downgraded (minor) | Wrong status, no lost decision; S4: permit kept, reach reduced to plain text |
+| mechanics | major | `message` cards, `lead_links`, `peer_pauses` still carry other projects | upheld | S4: one rule for every field, filtered before serializing |
+| mechanics | major | Upstream `wc/*` from other machines fetched into the clone | downgraded (minor) | Only reachable by browsing refs no `threads` result names; S3 fetches only `upstream/<default>` |
+| mechanics | major | Role layers carry other projects' lessons and a scout instruction | downgraded (minor) | Lesson text, not threads; S3 names the layers; in-harness scout allowed |
+| mechanics | minor | Send in the window before a crash is noticed stays queued | upheld | S1: a lead found dead with queued messages is restarted |
 
 ## Implementation Tasks
 
