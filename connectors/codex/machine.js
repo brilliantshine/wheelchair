@@ -162,13 +162,31 @@ module.exports = {
     const argv = ['codex', ...access, '-c', notify, '-c', trust, '-c', 'check_for_update_on_startup=false', ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
     const projectStart = argv.length;
     const { args, warnings, tooLarge } = codexOverrides(context?.tools ? context.mcp : null, context);
+    const extras = context?.tools ? context.extraServers || [] : [];
+    const folderNames = [];
+    if (extras.length && module.exports.sandboxed(session)) {
+      warnings.push({ names: extras.map(extra => extra.name), text: 'folder tools run from the shell here (`wc.js tool run`); server tools need Codex set to unrestricted' });
+    } else {
+      for (const extra of extras) {
+        const reason = codexEntryReason(extra.name, extra.entry);
+        if (reason) { warnings.push({ names: [extra.name], text: `tool ${extra.name}: skipped on Codex: ${reason}` }); continue; }
+        const folder = codexOverrides({ servers: { [extra.name]: extra.entry } });
+        const folderArgs = folder.args;
+        if (extra.folder === 'bridge') folderArgs.push('-c', `mcp_servers.project_${extra.name}.tool_timeout_sec=260`);
+        if (folder.tooLarge || [...args, ...folderArgs].reduce((sum, value) => sum + quotedLength(value), 0) > PROJECT_OVERRIDE_BUDGET) {
+          warnings.push({ names: [extra.name], text: `tool ${extra.name}: left out on Codex: over Codex's launch size limit` });
+          continue;
+        }
+        args.push(...folderArgs); folderNames.push(extra.name);
+      }
+    }
     argv.push(...args);
     // Every project override is redacted in the stored command (Spec §3): '-c' then 'key=value'.
     const redactions = [];
     for (let i = projectStart + 1; i < argv.length; i += 2) redactions.push(i);
     const names = context?.tools && !tooLarge ? Object.keys(context.mcp?.servers || {}).filter(name => { const entry = Object.hasOwn(context.replaceEntries || {}, name) ? context.replaceEntries[name] : context.mcp.servers[name]; return entry !== null && !codexEntryReason(name, entry); }) : [];
     if (context?.resume) argv.push('resume', session.codex_thread_id);
-    return { argv, warnings, redactions, loaded: c.loadedTools(names, context?.mcp, context?.mount, context?.replaceEntries) };
+    return { argv, warnings, redactions, loaded: [...c.loadedTools(names, context?.mcp, context?.mount, context?.replaceEntries), ...folderNames.map(name => ({ name, windows: false, wrapped: false }))] };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('Ask Codex to do anything'); }, answerPrompts() { return null; },
