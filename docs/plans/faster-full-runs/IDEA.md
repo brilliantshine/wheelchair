@@ -10,7 +10,7 @@ created: 2026-11-25
 ## What we're building
 
 Make the "full run" (the one run of every test suite that must pass before a build's
-work is pushed) take less time, and make a build need fewer of them. Along the way, fix
+work is pushed) take less time, so the wait at the end of a build (after its checks pass) is shorter. Along the way, fix
 the flaky clash where two test servers grab the same port, and tidy the leftovers from the
 earlier faster-verification work that help with this.
 
@@ -25,7 +25,7 @@ then because test servers started in parallel pick the same port, which forces a
 ## What good looks like
 
 - One full run finishes in clearly less time than today on the same machine.
-- A build that needs several rounds of fixes spends far less total time on full runs.
+- The wait between a build's checks passing and the build being done is clearly shorter.
 - The port clash between test servers no longer fails runs.
 - A full run's summary says how long each suite took, so the next speedup can be aimed.
 - Nothing that a full run catches today slips through unnoticed.

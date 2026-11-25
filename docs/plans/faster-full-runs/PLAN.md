@@ -37,6 +37,7 @@ _None._
 | D13 | The worker measuring `CAP` also times a whole full run before and after the change on the same machine. | IDEA's first goal had no check (review round 1). | review-round-1 |
 | D14 | Supersedes D4, D12 and D13. No benchmarking: `CAP` is 8 (half of 16 cores). A full run takes `max(2, floor(top / (others + 1)))` at start, `others` the count of other live full runs. Counts are fixed at start: a run that started alone keeps 8 and one starting beside it gets 4, so two staggered runs can use 12 workers on 16 cores; accepted. | D12 gave a second run 2 workers, the same as today, so it fixed nothing; benchmarking needs full runs a worker may not run. The earlier cap of 6 was set because of the port clash S1 fixes. | review-round-2 |
 | D15 | Goal 1 (a faster full run) is checked by the sub-lead: COMPLETION.md records the build's full-run per-suite seconds and total beside the before figures in this plan (15–20 min, 2026-11-25 logs), noting what else was running. | Replaces D13's before run; the full run is the starter's. | review-round-2 |
+| D16 | IDEA updated: the goal is shorter full runs and a shorter wait after the checks pass, not fewer runs per build. | Follows D10. | idea-change |
 ## Spec
 
 Goal: shorten one full run and the wait after verification passes, without missing what a
@@ -197,7 +198,7 @@ git diff --check
 |------|----------|---------|--------------|------------|
 | intent | blocking | Workers may not run the full-run benchmarks | upheld | D14 drops benchmarking; D15 timing by sub-lead |
 | intent | major | D12 gives a second run 2 workers, same as today | upheld | D14 start-time split |
-| intent | minor | IDEA still promises fewer runs per build, against D10 | user-decision | Asked Collin |
+| intent | minor | IDEA still promises fewer runs per build, against D10 | user-decision | Collin: update IDEA (D16) |
 | intent | minor | Rare path: legacy empty registration file counted as 2 | declined | Moot: D14 removes counts |
 | intent | minor | S3 heading cites D9; no rule if another run is live while measuring | upheld | Moot after D14 rewrite |
 | mechanics | blocking | INT cannot be trapped in a background bash run | downgraded (minor): only TERM/HUP are how runs get stopped | INT dropped from the promise; TERM/HUP remain |
@@ -207,3 +208,12 @@ git diff --check
 | mechanics | minor | Legacy fallback counts 6-worker run as 2 | declined | Moot: D14 |
 | mechanics | minor | Benchmark command lacks log dir; baseline has no seconds | declined | Moot: benchmark removed |
 | mechanics | minor | S5 lacks rendered-protocol check | upheld | Added to S5 |
+
+### Round 3 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 2:** S3 rewritten (D14: CAP 8, start-time split, no benchmarking; D15 timing record by the sub-lead); S1 routes `startServerWithEnv` through `startServer`; S2 promises cleanup on TERM/HUP only; S4 list grows to 12 files and is declared authoritative, with an Accepted Risk; S5 gains a rendered-protocol check; IDEA goals updated (D16).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
