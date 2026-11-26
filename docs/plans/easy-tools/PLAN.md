@@ -313,6 +313,7 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 |------|--------------|-------|
 | A tool program whose bridge, launcher or `wc.js` is killed outright (or whose session crashes hard) may keep running until the machine restarts | Collin chose simple cleanup (Decision 22) | review-round-6 |
 | Folder tools can read keys already in the agent's environment, including a shared tool in another project's session | The agent can read them anyway; Collin chose not to strip them (Decision 22) | review-round-6 |
+| Leaving Shared tools and returning before a picker save finishes can show the previous project until reload | Rare path: needs a return inside the save round-trip; the saved value is right | lead-check |
 
 ## Check Once Built
 
