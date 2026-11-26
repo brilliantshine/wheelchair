@@ -33,7 +33,12 @@ agent can read them.
 
 ## Not doing
 
-- (to be filled during planning)
+- Stopping an agent that deliberately goes looking for the key files on disk. Agents run
+  under the same user account as wheelchair, so file permissions cannot hide the files from
+  them. "Never sees" means the key is never handed to the agent: not in its environment,
+  its tool settings, or any output it gets back.
+- Syncing shared keys between machines. Each machine keeps its own set.
+- Outside secret stores (password managers, cloud vaults), key expiry or rotation.
 
 ## Constraints
 
