@@ -6,6 +6,13 @@ const { execFile } = require('node:child_process');
 const { promisify, getSystemErrorMap } = require('node:util');
 const connectors = require('../../connectors');
 const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
+const USABLE_KEY_CHAR = /^[A-Za-z0-9._~+/=-]$/;
+function usableReason(value) {
+  if (typeof value === 'string' && value.length < 8) return 'value too short (under 8 characters)';
+  if (typeof value === 'string' && value.length > 4096) return 'value too long';
+  if (typeof value !== 'string' || !/^[A-Za-z0-9._~+/=-]+$/.test(value)) return "value has characters folder tools can't use (letters, digits and . _ ~ + / = - only)";
+  return null;
+}
 const KEY_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const exact = ['IFS', 'OPTIND', 'OPTARG', 'PS1', 'PS2', 'PS4', 'PPID', 'ENV', 'CDPATH', 'HISTFILE', 'MAIL', 'MAILPATH', 'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'TMPDIR', 'PWD', 'LANG', 'TZ', 'NODE_OPTIONS', 'NODE_PATH', 'NODE_EXTRA_CA_CERTS', 'PYTHONPATH', 'PYTHONHOME', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID'];
 const prefixes = ['LD_', 'DYLD_', 'LC_', 'XDG_', 'TMUX', 'SSH_', 'DBUS_', 'GIT_', 'GH_', 'WHEELCHAIR_', 'CLAUDE_', 'CODEX_', 'ANTHROPIC_'];
@@ -73,4 +80,4 @@ function launchKeys(mcpServers, store) {
   for (const name of Object.keys(references)) if (!Object.hasOwn(heldBack, name) && Object.hasOwn(store.keys, name)) Object.defineProperty(env, name, { value: store.keys[name], enumerable: true });
   return { env, heldBack: Object.keys(references).filter(name => Object.hasOwn(heldBack, name) && Object.hasOwn(store.keys, name)) };
 }
-module.exports = { KEY_NAME, reservedNames, isReserved, keyReferences, projectIdentity, readKeyStore, writeKeyStore, launchKeys };
+module.exports = { USABLE_KEY_CHAR, usableReason, object, storeError, KEY_NAME, reservedNames, isReserved, keyReferences, projectIdentity, readKeyStore, writeKeyStore, launchKeys };
