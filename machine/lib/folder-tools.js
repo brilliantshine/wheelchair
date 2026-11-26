@@ -75,7 +75,7 @@ function inputSchema(inputs) {
   for (const [name, input] of Object.entries(inputs)) { Object.defineProperty(properties, name, { value: { type: input.type, description: input.description }, enumerable: true }); if (input.required) required.push(name); }
   return { type: 'object', properties, ...(required.length ? { required } : {}) };
 }
-function bridgeEntry(worktree, rows) { return { name: RESERVED, folder: 'bridge', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-bridge.js'), '--project-dir', worktree, ...rows.flatMap(r => ['--tool', r.dir])], env: {} } }; }
+function bridgeEntry(worktree, rows, { stateDir } = {}) { return { name: RESERVED, folder: 'bridge', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-bridge.js'), '--project-dir', worktree, ...(rows.some(r => r.tool?.keys?.length) ? ['--state-dir', stateDir] : []), ...rows.flatMap(r => ['--tool', r.dir, ...(r.tool?.keys?.length ? ['--key-store', r.key_store, ...r.tool.keys.flatMap(k => ['--key', k])] : [])])], env: {} } }; }
 function serverEntry(worktree, row) { return { name: row.name, folder: 'server', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-launch.js'), '--project-dir', worktree, '--tool', row.dir], env: {} } }; }
 function toolKeyStore(row, ownShared) { return row.source === 'shared' || ownShared ? 'shared' : 'project'; }
 module.exports = { toolKeyStore, NAME_RE, RESERVED, validateToolJson, readToolsDir, findProgram, discover, inputSchema, bridgeEntry, serverEntry };

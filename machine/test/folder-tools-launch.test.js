@@ -251,7 +251,7 @@ test('shell instructions require a usable script on Kimi, Pi or sandboxed Codex 
   const line = `Folder tools: this session can't call them through MCP. Run \`node ${path.resolve(__dirname, '../..')}/viewer/app/wc.js tool list\` to see them and \`node ${path.resolve(__dirname, '../..')}/viewer/app/wc.js tool run <name> --input '<json>'\` to run a script tool; give that shell command a timeout longer than the tool's timeout_seconds (default 120 s).`;
   for (const options of fallback) {
     const session = await f.start(options);
-    assert.doesNotMatch(await fs.readFile(f.promptPath(session.name), 'utf8'), /Folder tools:/);
+    assert.match(await fs.readFile(f.promptPath(session.name), 'utf8'), /Folder tools:/);
   }
   await putTool(f.worktree, 'script', 'Project script');
   for (const options of fallback) {
@@ -517,7 +517,7 @@ test('agent tools endpoint and wc tool list use the session pin', async t => {
     assert.equal(denied.status, 401);
     const response = await request(session.token);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { worktree: f.worktree, shared_copy: session.shared_tools.copy });
+    assert.deepEqual(await response.json(), { worktree: f.worktree, shared_copy: session.shared_tools.copy, keyed_unavailable: null });
     const result = await promisify(execFile)(process.execPath, [path.join(__dirname, '../../viewer/app/wc.js'), 'tool', 'list'], {
       env: { ...process.env, WHEELCHAIR_MACHINE_ORIGIN: origin, WHEELCHAIR_SESSION_TOKEN: session.token },
       timeout: 5000,
@@ -525,5 +525,15 @@ test('agent tools endpoint and wc tool list use the session pin', async t => {
     assert.match(result.stdout, /shared/);
   } finally {
     await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('shell-only sessions report keyed tools and include the starting clause', async t => {
+  const f = await fixture(t);
+  for (const name of ['first', 'second']) { const dir = await putTool(f.worktree, name, name); const file = path.join(dir, 'tool.json'); await fs.writeFile(file, JSON.stringify({ ...(await readJson(file)), keys: ['TOKEN'] })); }
+  for (const options of [{cli:'kimi'}, {cli:'pi'}, {cli:'codex',mode:'sandboxed'}]) {
+    const session = await f.start(options), lines = session.project_tools.keyed[session.name];
+    assert.equal(lines.length, 2); assert.match(lines[0].text, /needs keys, which/);
+    assert.match(await fs.readFile(f.promptPath(session.name),'utf8'), /Tools that need keys aren't available in this session/);
   }
 });

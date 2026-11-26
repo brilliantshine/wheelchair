@@ -85,3 +85,17 @@ test('bridge runs a shared copy without writing in its tool folder', { skip: pro
   const toolDir=path.join(copied.copy,'.wheelchair/tools/example'); const child=spawn(process.execPath,[bridge,'--project-dir',root,'--tool',toolDir]); const call=rpc(child);
   try { const result=await call('tools/call',{name:'example',arguments:{}}); assert.equal(result.result.isError,true); assert.equal(fs.existsSync(path.join(toolDir,'written')),false); } finally {child.stdin.end();}
 });
+test('keyed bridge reads shared keys on every call and binds names', async () => {
+  const {writeSharedKeys}=require('../lib/shared-keys');
+  const f=await fixture("require('fs').writeFileSync('seen',process.env.TOKEN); console.log('ok')",{keys:['TOKEN']});
+  const state=path.join(f.root,'state'); await writeSharedKeys(state,{set:{TOKEN:'firstvalue'}});
+  const args=[bridge,'--project-dir',f.root,'--state-dir',state,'--tool',f.dir,'--key-store','shared','--key','TOKEN'];
+  assert.ok(!args.includes('firstvalue'));
+  const child=spawn(process.execPath,args); const call=rpc(child), invoke=async()=> (await call('tools/call',{name:'example'})).result;
+  try {
+    assert.equal((await invoke()).isError,false); assert.equal(await fs.promises.readFile(path.join(f.dir,'seen'),'utf8'),'firstvalue');
+    await writeSharedKeys(state,{set:{TOKEN:'secondvalue'}}); assert.equal((await invoke()).isError,false); assert.equal(await fs.promises.readFile(path.join(f.dir,'seen'),'utf8'),'secondvalue');
+    await writeSharedKeys(state,{remove:['TOKEN']}); assert.match((await invoke()).content[0].text,/needs key TOKEN, not set/); assert.equal(await fs.promises.readFile(path.join(f.dir,'seen'),'utf8'),'secondvalue');
+    await fs.promises.writeFile(path.join(f.dir,'tool.json'),JSON.stringify({...f.tool,keys:['OTHER']})); assert.match((await invoke()).content[0].text,/Its keys are used from the next agent start/);
+  } finally { child.stdin.end(); }
+});
