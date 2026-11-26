@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, close, api } = require('./helpers/app');
+const { Hub } = require('../app/hub');
 const sessions = require('../app/sessions');
 
 test('shared tools setting defaults, validates and saves', async () => {
@@ -11,7 +12,9 @@ test('shared tools setting defaults, validates and saves', async () => {
     assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: 'owner/tools' } })).status, 200);
     assert.equal((await api(c, '/settings')).body.shared_tools_repo, 'owner/tools');
     assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: 'owner/bad/name' } })).status, 400);
+    assert.equal((await api(c, '/settings')).body.shared_tools_repo, 'owner/tools');
     assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: null } })).status, 200);
+    assert.equal((await api(c, '/settings')).body.shared_tools_repo, null);
   } finally { await close(c); }
 });
 
@@ -41,12 +44,30 @@ test('session start sends this machine’s saved paths in order and omits an uns
 });
 
 test('ready event updates folder problem card', async () => {
-  const { thread, event } = require('./helpers/app'); const c = await setup();
+  const { thread, event } = require('./helpers/app');
+  const c = await setup();
+  const hub = new Hub({ stateDir: c.state });
   try {
-    const made = await thread(c); const session = made.sessions[0];
-    const result = await event(c, made.id, session.name, 'ready', { created_at: '2026-01-01T00:00:00Z', project_tools: {boot:'b',seq:1,folder:[{names:['bad'],text:'bad tool'}]} });
+    const made = await thread(c);
+    const session = made.sessions[0];
+    const switching = await hub.thread(made.id);
+    switching.sessions.find(item => item.name === session.name).switching = { id: 'switch-1' };
+    await hub.save(switching);
+    const folder = [{ names: ['bad'], text: 'bad tool' }, { names: ['missing'], text: 'missing tool' }];
+    const state = { boot: 'b', seq: 1, file: [], programs: [], folder, clis: {} };
+    const payload = { created_at: session.created_at, project_tools: state };
+    const result = await event(c, made.id, session.name, 'ready', { ...payload, switch_id: 'switch-1' });
     assert.equal(result.status, 202);
-    const saved = (await api(c, `/threads/${made.id}`)).body;
-    assert.ok(saved.cards.some(card => card.items?.includes('bad tool')));
+    const cards = async () => (await hub.thread(made.id)).cards.filter(card => card.title === 'Project tools problem');
+    const [problem] = await cards();
+    assert.ok(problem);
+    assert.equal(Boolean(problem.answered), false);
+    assert.deepEqual(problem.items, ['bad tool', 'missing tool']);
+    const clean = await event(c, made.id, session.name, 'ready', { ...payload, project_tools: { ...state, seq: 2, folder: [] } });
+    assert.equal(clean.status, 202);
+    const [closed] = await cards();
+    assert.equal(closed.id, problem.id);
+    assert.equal(closed.answered, true);
+    assert.equal((await cards()).length, 1);
   } finally { await close(c); }
 });

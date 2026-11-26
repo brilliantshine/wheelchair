@@ -5,7 +5,7 @@ const { wrapEntries, cacheKey } = require('./lib/win-tool-wrap');
 const { TryService } = require('./lib/try');
 const { providers, loadRecipes } = require('./lib/harness-recipes');
 const harnessInstall = require('./lib/harness-install');
-const { createProjectTools, repoName } = require('./lib/project-tools');
+const { createProjectTools } = require('./lib/project-tools');
 const folderTools = require('./lib/folder-tools');
 const sharedTools = require('./lib/shared-tools');
 const { TOOL_ROLES, readProjectMcp, hasWindowsProgram, serverLabel } = require('./lib/project-mcp');
@@ -973,8 +973,7 @@ class MachineService {
         const choice = input.shared_tools;
         session.shared_tools = { repo: choice?.repo || null, copy: null };
         if (choice) {
-          const origin = await commandAsync('git', ['-C', worktree, 'remote', 'get-url', 'origin']);
-          if (repoName(origin.stdout.trim())?.toLowerCase() === choice.repo.toLowerCase()) session.shared_tools.own = true;
+          if (await sharedTools.findSharedProject(choice.repo, [worktree])) session.shared_tools.own = true;
           else {
             const projectPath = await sharedTools.findSharedProject(choice.repo, choice.candidates);
             if (!projectPath) session.shared_tools.reason = "the shared tools project isn't added on this machine";
@@ -983,7 +982,7 @@ class MachineService {
               session.shared_tools.copy = result.copy;
               if (result.error && !result.copy) session.shared_tools.reason = `shared tools couldn't be fetched: ${result.error}`;
               else if (result.error) console.error(`${name}: shared tools: ${result.error}`);
-              const pins = new Set([...Object.values(this.sessions), ...(this.startingToolPins || [])].filter(s => s.status !== 'stopped').map(s => s.shared_tools?.copy).filter(Boolean));
+              const pins = new Set([...Object.values(this.sessions), ...(this.startingToolPins || [])].filter(s => !s.ended_at && !['ended', 'stopped', 'failed'].includes(s.status)).map(s => s.shared_tools?.copy).filter(Boolean));
               await sharedTools.cleanupCopies(this.stateDir, pins).catch(error => this.log(error));
             }
           }
