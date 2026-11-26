@@ -177,5 +177,8 @@ commit, already started by the pusher, writes `summary.txt`. `full-run.sh` runs
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | S1: `staleEntries` export plus fixture and real-tree tests | `test-support/pick-tests.js`, `test-support/test/pick-tests.test.js` | standard, gpt-6.1-terra | wc-5a17c2d166c9-worker | `node --test test-support/test/pick-tests.test.js` | in progress |
+| T2 | S2: split round-trip test into nine files plus helper; README line | `machine/test/connectors-model-roundtrip*.test.js`, `machine/test/helpers/model-roundtrip.js`, `connectors/README.md:334` | light, gpt-6-luna | wc-5a17c2d166c9-worker-2 | `node --test machine/test/connectors-model-roundtrip-*.test.js` | in progress |
 
 ## Log
+- 2026-11-25 — T1 and T2 dispatched in parallel (disjoint files).
