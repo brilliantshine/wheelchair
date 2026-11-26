@@ -603,7 +603,7 @@ at least one valid, not hidden, script tool declares keys.
 | T3b | K7 pages: Tools page needs-key lines, key editor, key-only refresh; Settings Shared keys with machine chooser; hub pass-through routes | `viewer/pages/{project-tools,settings}.js`, `viewer/app/routes.js` shared-keys routes; viewer tests and specs for them | standard / gpt-6.1-terra (Claude unavailable) | wc-1d9da322519c-worker-11 | K7 Validation commands | running |
 | T3c | Follow-up to T3a: a dismissed card stays dismissed when lines only disappear; tests for the other session-end refreshes | `viewer/app/sessions.js` card code; `viewer/test/app-project-tools-card.test.js` | light / gpt-6-luna | wc-1d9da322519c-worker-3 | same as T3a | done |
 | T4 | K6 `wc.js tool` list/check/run with keys | `viewer/app/tool-cli.js`, `viewer/test/wc-tool.test.js` | standard / gpt-6.1-terra | wc-1d9da322519c-worker-7 | `node --test viewer/test/wc-tool.test.js` | done |
-| T5 | K8 guide `protocol/tools.md` | `protocol/tools.md` | standard / gpt-6.1-terra (Claude unavailable); attempt 2 light / gpt-6-luna (four named edits) | wc-1d9da322519c-worker-9, then worker-12 | K8 greps and rendered read | running |
+| T5 | K8 guide `protocol/tools.md` | `protocol/tools.md` | standard / gpt-6.1-terra (Claude unavailable); attempt 2 light / gpt-6-luna (four named edits) | wc-1d9da322519c-worker-9, then worker-12 | K8 greps and rendered read | done |
 
 ## Log
 - 2026-11-25: Ready check: hub and machine service answer; Claude and Codex installed and logged in; Codex preflight passed. Approval card f337e4d9-bd4e-4fdd-a8a8-f5c090893ceb posted.
@@ -636,3 +636,5 @@ at least one valid, not hidden, script tool declares keys.
 - 2026-11-26 — Choice: T2d, shared-keys-page.test.js: 3 s listing and 5 s concurrent-save deadlines.
 - 2026-11-26 — Choice: T2d, scout-listed: `entries` gains a `refresh` flag; `write`/`listing` split returning `{store, outcome}` to the service; `nothing to save` checked before name validation; save with no copy returns `tools: []` with no note; tests monkey-patch `shared-tools`/`folder-tools` exports; the key-status route test lives in shared-keys-page.test.js.
 - 2026-11-26 — T2d accepted (band: scout): fixes 1–9 present; tests a–j present; re-run 64/64 and 139/139. The unreadable-shared-store note has no test.
+- 2026-11-26 — Choice: T5, protocol/tools.md: example tool `lookup` with `LOOKUP_API_KEY` and no `timeout_seconds`; Keys section placed after Describe a tool; "their declared keys" added to the variables a tool may rely on; the which-agents sentence appended to the output paragraph.
+- 2026-11-26 — T5 accepted (band: scout): K8 greps pass (example line 58, rule line 70, no unsupported wording), `git diff --check` clean. The Keys section omits the "roles that receive project tools" qualifier that AI limits keeps.
