@@ -2,7 +2,10 @@
 slug: sharper-test-picks
 date: 2026-11-25
 implemented-by: "T1 standard (gpt-6.1-terra); T2 light (gpt-6-luna); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (verifier)
+    checks: gpt-6.1-terra (T1), gpt-6-luna (T2)
 ---
 
 # Completion Report — Sharper test picks
@@ -27,7 +30,7 @@ Comparison commit (merge-base with `main`): `6802372cdc5c1af28742818c90732cd3a83
 | S2 old file deleted; `machine/test/run.sh` finds the new files through its glob | this run | file absent; `machine/test/run.sh` unchanged | T2 report: `bash machine/test/run.sh` 836 pass, 2 skipped, 0 fail |
 | S2 `connectors/README.md:334` names the new glob and the helper | this run | `connectors/README.md:334` | read |
 | S2 split files finish under 150 s wall | this run | — | 62.0 s wall below |
-| Full-run check (max(viewer-browser, sum of the rest) < 480 s; machine < viewer-browser) | this run | — | the full run for the verified commit; summary pasted below once it finishes |
+| Full-run check (max(viewer-browser, sum of the rest) < 480 s; machine < viewer-browser) | this run | — | full run on `7e64b7da`: max(400, 331) = 400 s < 480; machine 138 s < viewer-browser 400 s (summary below) |
 
 ## Deviations from plan
 
@@ -36,7 +39,7 @@ Comparison commit (merge-base with `main`): `6802372cdc5c1af28742818c90732cd3a83
 
 ## Routers
 
-None. This change moved no ownership, and no router named a file it touched. `machine/test/helpers/` already existed for shared test helpers.
+None. This change moved no ownership, and no router named a file it touched. `machine/test/helpers/` is new in this change (the Spec names it); it falls under the existing `test/` row in `machine/AGENTS.md:54`.
 
 ## Validation evidence
 
@@ -59,6 +62,24 @@ real	1m1.973s
 ```
 
 For the old file the plan measured about 292 s.
+
+Full run (`bash test-support/full-run.sh <scratch>/fullrun1`, exit 0, wall 6m39.9s), `summary.txt`:
+
+```text
+commit 7e64b7dae5f9922b8ceb8cf0b24e2bcab7c9eea1
+suite viewer-browser exit 0 seconds 400
+suite viewer-node exit 0 seconds 110
+suite machine exit 0 seconds 138
+suite test-support exit 0 seconds 24
+suite sensitivity exit 0 seconds 5
+suite codex exit 0 seconds 9
+suite install exit 0 seconds 36
+suite sudo-helper exit 0 seconds 9
+```
+
+Sum of suites other than viewer-browser: 110 + 138 + 24 + 5 + 9 + 36 + 9 = 331 s. Run length is max(400, 331) = 400 s, under 480 s (561 s before). Machine (138 s) is below viewer-browser (400 s). The verifier ran its checks during this run, so this was not an idle machine.
+
+Verification attempt 1 (claude-opus-5-5): PASS on `7e64b7da`, with no gaps. It corrected the helpers-directory claim in Routers, fixed above.
 
 ## Known gaps / residual risks
 
