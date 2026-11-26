@@ -71,3 +71,17 @@ test('handshake abort discards a partial initialize response',async()=>{
   const deadline=Date.now()+2500; while(!fs.existsSync(file) && Date.now()<deadline) await new Promise(r=>setTimeout(r,50)); assert.equal(fs.existsSync(file),true);
   controller.abort(); assert.deepEqual(await pending,{ok:false,serverInfo:null,tools:null,error:'cancelled'});
 });
+test('bridge runs a shared copy without writing in its tool folder', { skip: process.getuid?.() === 0 }, async()=>{
+  const {execFileSync}=require('node:child_process'); const shared=require('../lib/shared-tools');
+  const root=await makeTemp(), bare=path.join(root,'bare'), source=path.join(root,'source'), stateDir=path.join(root,'state');
+  const git=(cwd,...args)=>execFileSync('git',['-C',cwd,...args],{stdio:'ignore'});
+  execFileSync('git',['init','--bare','--initial-branch=main',bare],{stdio:'ignore'}); execFileSync('git',['clone',bare,source],{stdio:'ignore'});
+  git(source,'config','user.email','test@example.com'); git(source,'config','user.name','Test');
+  const dir=path.join(source,'.wheelchair/tools/example'); await fs.promises.mkdir(dir,{recursive:true});
+  await fs.promises.writeFile(path.join(dir,'tool.json'),JSON.stringify({name:'example',description:'Example',kind:'script',inputs:{},run:[process.execPath,'main.js']}));
+  await fs.promises.writeFile(path.join(dir,'main.js'),"require('fs').writeFileSync('written','bad')");
+  git(source,'add','.'); git(source,'commit','-m','tool'); git(source,'push','origin','main');
+  const copied=await shared.refreshShared({stateDir,projectPath:source}); assert.equal(copied.error,null);
+  const toolDir=path.join(copied.copy,'.wheelchair/tools/example'); const child=spawn(process.execPath,[bridge,'--project-dir',root,'--tool',toolDir]); const call=rpc(child);
+  try { const result=await call('tools/call',{name:'example',arguments:{}}); assert.equal(result.result.isError,true); assert.equal(fs.existsSync(path.join(toolDir,'written')),false); } finally {child.stdin.end();}
+});
