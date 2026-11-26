@@ -13,17 +13,6 @@ plan carries forward unless a decision below changes them.
 
 ## Open Questions
 
-### Q1: Project keys that also reach the agent through `.mcp.json`
-- **Context:** Today, on Claude and Codex, a project key named in `.mcp.json` env/headers is
-  put into the agent's own environment at launch (`machine/service.js:1065`,
-  `machine/lib/env-launch.js:17`). A folder tool using the same project key gets it its own
-  way, but the agent still holds it through that older path.
-- **Options:** (a) Leave `.mcp.json` injection as it is; folder tools never add a key to the
-  agent, and a key shared with a `.mcp.json` server stays visible there (guide says so).
-  (b) Also stop `.mcp.json` injection, so no project key reaches any agent (existing
-  `.mcp.json` servers that need keys would need reworking).
-- **Recommendation:** (a).
-
 ### Q2: Keyed tools for sandboxed Codex agents
 - **Context:** Codex usually runs sandboxed (workspace-write) and gets no folder MCP entries
   there (easy-tools Decision 25). Running a keyed tool for it through the machine service
@@ -50,6 +39,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | Server tools' stdout (newline-delimited MCP JSON) is redacted line by line in the launcher, matching both the raw and JSON-escaped key value | Closes the server-output leak the earlier design left to authors; cheap since the launcher already pipes it | defaulted |
 | 6 | `check`/`run` as in easy-tools round 3: `check` never has keys and says a keyed server's failure may be that; keyless `run` in the caller's process on Claude, Codex and Antigravity, saying it ran without keys | Never crosses a sandbox; settled earlier | defaulted |
 | 7 | A tool whose key is not set does not run and shows "needs key X, not set on this machine" on the Tools page, as in the mockup | Agreed mockup | defaulted |
+| 8 | `.mcp.json` project-key injection into the agent's environment (Claude, Codex) stays as it is. Folder tools never add a key to the agent; a key also used by a `.mcp.json` server stays visible to the agent through that path, and the guide says so (moving that server to a folder tool removes it) | Collin: leave it; avoids breaking working setups | user |
 
 ## Spec
 
