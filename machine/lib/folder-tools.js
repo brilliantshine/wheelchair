@@ -33,7 +33,7 @@ function validateToolJson(folderName, value) {
   return { ok: true, tool };
 }
 function findProgram(argv0, toolDir, pathText) {
-  const candidates = argv0.includes('/') ? [path.resolve(toolDir, argv0)] : (pathText || '').split(path.delimiter).map(p => path.resolve(p || '.', argv0));
+  const candidates = argv0.includes('/') ? [path.resolve(toolDir, argv0)] : (pathText || '').split(path.delimiter).map(p => path.resolve(toolDir, p || '.', argv0));
   return candidates.some(p => { try { return fs.statSync(p).isFile() && (fs.accessSync(p, fs.constants.X_OK), true); } catch { return false; } });
 }
 async function readToolsDir(root, source) {
