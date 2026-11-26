@@ -470,14 +470,53 @@ test('folder key status and key-only refresh use the selected store', async () =
   const plain = path.join(f.repo, '.wheelchair/tools/plain'); await fs.mkdir(plain); await fs.writeFile(path.join(plain, 'tool.json'), JSON.stringify({ name: 'plain', description: 'Plain', kind: 'script', inputs: {}, run: ['node'] }));
   git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'tool'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
   const input = { path: f.repo }, read = (await f.tools.read(input)).body;
-  assert.equal(Object.hasOwn(read.folder_tools.rows[1], 'keys'), false); assert.equal(read.folder_tools.rows[0].key_missing, true); assert.deepEqual(read.key_info[0].tools, ['demo']);
-  await f.tools.save({ ...input, token: read.token, tools: null, keys: { TOKEN: 'short' } });
-  let status = (await f.tools.keyStatus(input)).body; assert.equal(status.key_revision, 1); assert.equal(status.key_info[0].folder_usable, false); assert.equal(status.source, undefined);
+  assert.equal(Object.hasOwn(read.folder_tools.rows[1], 'keys'), false); assert.equal(read.folder_tools.rows[0].key_missing, true); assert.deepEqual(read.folder_tools.rows[0].key_lines, ['needs key TOKEN, not set on this machine']); assert.deepEqual(read.key_info[0].tools, ['demo']);
+  await f.tools.save({ ...input, token: read.token, tools: null, keys: { TOKEN: 'zq7' } });
+  let status = (await f.tools.keyStatus(input)).body; assert.equal(status.key_revision, 1); assert.equal(status.key_info[0].folder_usable, false); assert.equal(status.source, undefined); assert.deepEqual(Object.keys(status).sort(), ['folder_tools', 'key_info', 'key_revision', 'keys']); assert.equal(status.key_info[0].reason, 'value too short (under 8 characters)'); assert(!JSON.stringify(status).includes('zq7'));
   const read2 = (await f.tools.read(input)).body;
   await f.tools.save({ ...input, token: read2.token, tools: null, keys: { TOKEN: 'longvalue' } });
   status = (await f.tools.keyStatus(input)).body; assert.deepEqual(status.folder_tools.rows[0].key_lines, ['uses keys: not available to sandboxed Codex, Kimi or Pi']);
   const own = (await f.tools.keyStatus({ ...input, shared_tools: { repo: 'OWNER/NAME', candidates: [] } })).body;
-  assert.equal(own.folder_tools.rows[0].key_store, 'shared'); assert.match(own.folder_tools.rows[0].key_lines[0], /Shared keys/); assert.deepEqual(own.key_info[0].tools, []);
+  assert.equal(own.folder_tools.rows[0].key_store, 'shared'); assert.equal(own.folder_tools.rows[0].key_lines[0], 'needs key TOKEN, not set on this machine; set it in Settings, Shared tools, Shared keys'); assert.deepEqual(own.key_info[0].tools, []);
   await require('../lib/shared-keys').writeSharedKeys(path.join(f.root, 'state'), { set: { TOKEN: 'sharedvalue' } });
   const shared = (await f.tools.keyStatus({ ...input, shared_tools: { repo: 'owner/name', candidates: [] } })).body; assert.equal(shared.folder_tools.rows[0].key_missing, false);
+});
+
+
+test('multiple missing project keys are named in order', async () => {
+  const f = await fixture(), dir = path.join(f.repo, '.wheelchair/tools/demo'); await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'demo', description: 'Demo', kind: 'script', inputs: {}, run: ['node'], keys: ['A', 'B'] }));
+  git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'tool'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const row = (await f.tools.read({ path: f.repo })).body.folder_tools.rows[0];
+  assert.deepEqual(row.key_lines, ['needs keys A, B, not set on this machine']);
+});
+
+test('other project shared rows omit Settings suffix and hidden rows omit key fields', async () => {
+  const f = await fixture(), dir = path.join(f.repo, '.wheelchair/tools/hidden'); await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'hidden', description: 'Own', kind: 'script', inputs: {}, run: ['node'] }));
+  git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'tool'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const shared = require('../lib/shared-tools'), folder = require('../lib/folder-tools');
+  const original = { find: shared.findSharedProject, identity: shared.identityFor, newest: shared.newestCopy, discover: folder.discover };
+  try {
+    shared.findSharedProject = async () => f.repo; shared.identityFor = async () => 'id'; shared.newestCopy = () => '/copy';
+    folder.discover = async () => ({ rows: ['visible', 'hidden'].map(name => ({ name, status: 'ok', tool: { keys: ['TOKEN'] } })) });
+    const rows = (await f.tools.read({ path: f.repo, shared_tools: { repo: 'other/repo', candidates: [f.repo] } })).body.folder_tools.rows;
+    const visible = rows.find(row => row.name === 'visible'), hidden = rows.find(row => row.name === 'hidden' && row.source === 'shared');
+    assert.deepEqual(visible.key_lines, ['needs key TOKEN, not set on this machine']);
+    assert.equal(hidden.status, 'hidden'); assert.equal(Object.hasOwn(hidden, 'keys'), false); assert.equal(Object.hasOwn(hidden, 'key_lines'), false);
+  } finally { shared.findSharedProject = original.find; shared.identityFor = original.identity; shared.newestCopy = original.newest; folder.discover = original.discover; }
+});
+
+test('key writes return store info without network and never expose values', async () => {
+  const f = await fixture(), calls = [];
+  const tools = createProjectTools({ stateDir: path.join(f.root, 'state'), commandAsync: (program, args, options) => { if (program === 'git') calls.push(args); return f.runner(program, args, options); } });
+  const input = { path: f.repo }, initial = (await tools.read(input)).body;
+  calls.length = 0;
+  const saved = (await tools.save({ ...input, token: initial.token, tools: null, keys: { KEEP: 'secretKeep987', REMOVE: 'secretRemove654' } })).body;
+  assert.equal(saved.outcome, 'saved'); assert.deepEqual(saved.key_info.map(info => info.name), ['KEEP', 'REMOVE']);
+  const removed = (await tools.removeKey({ ...input, token: { ...initial.token, key_revision: saved.key_revision }, name: 'REMOVE' })).body;
+  assert.equal(removed.outcome, 'removed'); assert.deepEqual(removed.key_info.map(info => info.name), ['KEEP']);
+  assert.deepEqual(calls.filter(args => args.includes('fetch') || args.includes('ls-remote')), []);
+  const read = (await tools.read(input)).body, status = (await tools.keyStatus(input)).body;
+  for (const response of [saved, removed, read, status]) for (const secret of ['secretKeep987', 'secretRemove654']) assert.equal(JSON.stringify(response).includes(secret), false);
 });

@@ -149,10 +149,10 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
   }
   async function decorate(input, origin, listing, store) {
     const ownShared = !!(origin && typeof input.shared_tools?.repo === 'string' && origin.repo.toLowerCase() === input.shared_tools.repo.toLowerCase());
-    let shared; try { shared = await readSharedKeys(stateDir); } catch { shared = { keys: {} }; }
+    let shared; try { shared = await readSharedKeys(stateDir); } catch { shared = { keys: {} }; listing.notes.push("the shared key store on this machine can't be read"); }
     const declarations = new Map();
     for (const row of listing.rows) {
-      if (!row.tool?.keys?.length) continue;
+      if (row.status === 'hidden' || !row.tool?.keys?.length) continue;
       const names = row.tool.keys, keyStore = folderTools.toolKeyStore(row, ownShared);
       const source = keyStore === 'shared' ? shared : store;
       const missing = names.filter(name => !Object.hasOwn(source.keys, name) || usableReason(source.keys[name]));
@@ -171,7 +171,8 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
     const configured = await git(input.path, 'config', '--get-all', 'remote.origin.url');
     const urls = configured.ok ? configured.stdout.trim().split('\n') : [];
     const repo = urls.length === 1 ? repoName(urls[0]) : null, origin = repo ? { repo, url: urls[0] } : null;
-    const folder_tools = await folderListing(input, origin);
+    const destination = await remote(input.path);
+    const folder_tools = await folderListing(input, destination || origin);
     const key_info = await decorate(input, origin, folder_tools, store);
     return { status: 200, body: { key_revision: store.revision, keys: keys(store), key_info, folder_tools } };
   }
@@ -226,7 +227,7 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
     if (input.start_over && (!toolsChanged || baseline?.source_state !== 'unreadable')) return refused('start over is only allowed for an unreadable file');
     if (!toolsChanged && !Object.keys(input.keys).length) return refused('nothing to save');
     const storeKeys = async () => { if (Object.keys(input.keys).length) store = await writeKeyStore(stateDir, projectId, { set: input.keys }); };
-    if (!toolsChanged) { try { await storeKeys(); return { status: 200, body: { outcome: 'saved', key_revision: store.revision, keys: keys(store), warnings: [] } }; } catch (e) { return failed(new Error("the key store on this machine can't be written")); } }
+    if (!toolsChanged) { try { await storeKeys(); return { status: 200, body: { outcome: 'saved', key_revision: store.revision, keys: keys(store), key_info: storeInfo(store), warnings: [] } }; } catch (e) { return failed(new Error("the key store on this machine can't be written")); } }
     if (!baseline) return changed();
     if (baseline.source_state === 'unreadable' && !input.start_over) return refused('unreadable source requires Start over');
     const destination = await remote(input.path); if (!destination || destination.repo.toLowerCase() !== String(baseline.repo).toLowerCase()) return changed();
@@ -265,8 +266,8 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
           const newBranch = `wc-tools/${id()}`;
           await must(git(worktree, 'push', `--force-with-lease=refs/heads/${newBranch}:`, destination.url, `HEAD:refs/heads/${newBranch}`));
           const pr = await run('gh', ['pr', 'create', '--repo', destination.repo, '--head', newBranch, '--base', branch, '--title', 'Update project tools', '--body', "Saved from the wheelchair app's Project tools screen."]);
-          if (!pr.ok) return { status: 200, body: { outcome: 'pr_failed', key_revision: store.revision, keys: keys(store), branch: newBranch, compare_url: `https://github.com/${destination.repo}/compare/${encBranch(branch)}...${encBranch(newBranch)}?expand=1`, error: reason(pr) } };
-          return { status: 200, body: { outcome: 'opened', key_revision: store.revision, keys: keys(store), pr_url: pr.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.startsWith('https://')).at(-1) || pr.stdout.trim(), warnings } };
+          if (!pr.ok) return { status: 200, body: { outcome: 'pr_failed', key_revision: store.revision, keys: keys(store), key_info: storeInfo(store), branch: newBranch, compare_url: `https://github.com/${destination.repo}/compare/${encBranch(branch)}...${encBranch(newBranch)}?expand=1`, error: reason(pr) } };
+          return { status: 200, body: { outcome: 'opened', key_revision: store.revision, keys: keys(store), key_info: storeInfo(store), pr_url: pr.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.startsWith('https://')).at(-1) || pr.stdout.trim(), warnings } };
         } catch (e) { return failed(e); } finally {
           if (worktree) {
             await git(input.path, 'worktree', 'remove', '--force', worktree);
@@ -282,17 +283,10 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
     if (input.token?.project !== projectId || input.token?.key_revision !== store.revision) return changed();
     const error = typeof input.name === 'string' ? validateName(input.name) : 'invalid key name'; if (error) return refused(error);
     if (!Object.hasOwn(store.keys, input.name)) return refused('key is not stored');
-    try { store = await writeKeyStore(stateDir, projectId, { remove: [input.name] }); return { status: 200, body: { outcome: 'removed', key_revision: store.revision, keys: keys(store) } }; }
+    try { store = await writeKeyStore(stateDir, projectId, { remove: [input.name] }); return { status: 200, body: { outcome: 'removed', key_revision: store.revision, keys: keys(store), key_info: storeInfo(store) } }; }
     catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: "the key store on this machine can't be written" } }; }
   }
-  const withInfo = action => async input => {
-    const result = await action(input);
-    if (result.body.keys && result.status === 200) {
-      const status = await keyStatus(input);
-      if (status.status === 200) result.body.key_info = status.body.key_info;
-    }
-    return result;
-  };
-  return { read, save: withInfo(save), removeKey: withInfo(removeKey), keyStatus, identity };
+  const storeInfo = store => Object.keys(store.keys).sort().map(name => { const why = usableReason(store.keys[name]); return { name, stored: true, folder_usable: !why, reason: why, tools: [] }; });
+  return { read, save, removeKey, keyStatus, identity };
 }
 module.exports = { createProjectTools, repoName, validateName };

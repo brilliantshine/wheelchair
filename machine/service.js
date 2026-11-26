@@ -2196,8 +2196,11 @@ class MachineService {
         const previous = this.sharedKeysLock;
         let release; this.sharedKeysLock = new Promise(resolve => { release = resolve; });
         await previous;
-        try { const result = await this.sharedKeysPage[action](input); return send(response, result.status, result.body); }
+        let written;
+        try { written = await this.sharedKeysPage.write(input, action === 'remove'); }
         finally { release(); }
+        const result = await this.sharedKeysPage.listing(written, input);
+        return send(response, result.status, result.body);
       }
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
       if (request.method === 'GET' && url.pathname === '/v1/spend') {
