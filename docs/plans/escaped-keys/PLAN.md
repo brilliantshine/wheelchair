@@ -28,6 +28,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | At a cut edge, trimming also passes over `%` and `\` (not only usable key characters), so no piece of an escaped key survives at a cut | `%` and `\` are separators today, so an escaped fragment can survive a cut (MAP.md) | defaulted |
 | 5 | An escaped key is replaced with `[key]` like a plain one; the rest of the output is kept (the parent's withhold-the-stream design is dropped) | Collin: just that part | user |
 | 6 | A capture with no `%` or `\` byte takes today's plain-only path; matching must stay fast enough for a 2 MiB capture (time limits in E1) | Escaped spellings always contain one of these; keeps ordinary output as fast as today | defaulted |
+| 7 | Supersedes 4: cut edges keep K4's trim and additionally drop only a stretch that is part of a cut-off spelling | 4 would drop key-free text and whole captures with no other separator | review-round-1 |
+| 8 | A capture too costly to check (past a fixed work limit) is withheld whole, never passed unchecked | Pathological escape-heavy output must not hang the bridge or leak; ordinary output stays well under the limit | review-round-1 |
 
 ## Spec
 
@@ -63,20 +65,43 @@ found). It must never work by decoding the capture first. Every byte of every sp
 is marked, and each run of marked bytes becomes one `[key]`, exactly as plain keys do today.
 Unmarked bytes are passed through unchanged.
 
-**Speed.** A capture with no `%` and no `\` byte gives exactly today's result by today's
-plain search. Otherwise the search may not backtrack without limit. On the test machine
-`redactCapture` finishes within 3 seconds for each of: (a) 2 MiB made of repeats of
-`%5C%25\\u00%2` with 5 key values of 4096 characters each; (b) 2 MiB of the same text with
-20 key values of 64 characters each, where every 1000 bytes hold one 3-layer spelling of one
-of the keys (and all of those are replaced).
+**Speed and the work limit.** A capture with no `%` and no `\` byte gives exactly today's
+result by today's plain search. Otherwise the search counts its work, and if finding the
+spellings in one capture would take more than a fixed limit, it stops and that whole
+capture becomes `[output withheld: too much escape-like text to check for keys]` (with
+`[output cut]` markers dropped). A capture is never passed on unchecked. The limit is set so
+that cases (o) and (c) below finish within it. Pinned fixtures, each through
+`redactCapture` with a timer on the test machine (random keys come from a fixed seed, using
+only usable key characters):
+- (o) ordinary JSON: 2 MiB of repeated `JSON.stringify` lines such as
+  `{"msg":"line 1 says \"hi\"\n","path":"a\/b"}`, 5 random 32-character keys, each placed
+  once as a two-layer spelling. Under 1 second, not withheld, all 5 replaced, everything else
+  unchanged.
+- (a) noise: 2 MiB of repeats of `%5C%25\\u00%2`, 5 random 4096-character keys. Under
+  3 seconds; the result is unchanged or withheld.
+- (b) late failures: 2 MiB of repeats of `%41`, 5 keys of 4095 `A`s followed by `1`, `2`,
+  `3`, `4`, `5`. Under 3 seconds; the result is unchanged or withheld.
+- (c) many keys: 2 MiB of the noise in (a) with 20 random 64-character keys, every 1000 bytes
+  holding one three-layer spelling of one of them. Under 3 seconds, not withheld, all
+  spellings replaced.
 
 ### E2. Cut edges
 
-K4 step 1 is unchanged except what counts as a separator: a byte that is not a usable key
-character (`A-Za-z0-9._~+/=-`) **and** is not `%` or `\`. So trimming a cut edge also passes
-over `%` and `\`. A cut start still drops the run and one separator byte; an edge with no
-separator still drops the whole capture with `[output cut]`. Because every spelling uses
-only usable characters, `%` and `\`, no piece of a spelling survives at a cut.
+K4 step 1 (trim each cut edge back to the nearest separator) is kept as it is. Then, at each
+cut edge, also remove the longest stretch at that edge that is part of a spelling cut off by
+the edge:
+- **Cut end:** the longest stretch ending at the trimmed end that is the beginning (not the
+  whole) of a spelling of any of the tool's keys.
+- **Cut start:** the longest stretch starting at the real start of the captured window that
+  is the ending (not the whole) of a spelling of any of the tool's keys; the body starts at
+  whichever of this point and K4's trimmed start is later.
+
+Spellings contain only usable key characters, `%` and `\`, so after K4's trim this extra step
+only ever removes something when the edge sits next to a `%` or `\`. This is the one place
+key-free output can change: text at a cut edge that happens to look like the start or end of
+an escaped key is dropped (for example a trailing lone `%`). If nothing is left, the capture
+is dropped with `[output cut]` as today. Output of repeated `%41` with an unrelated key keeps
+all but its last few bytes.
 
 ### E3. Order in `tool-run.js`
 
@@ -88,7 +113,8 @@ Unchanged: trim cut edges, then E1 on the whole capture, then the 1 MiB result c
 Replace the sentence about what is caught (`protocol/tools.md:70`) so it says: keys printed
 as-is or with common escapes (JSON or backslash escapes such as `\u002B`, `\x2B` or `\/`,
 and percent-encoding such as `%2B`), up to three layers, are replaced with `[key]`; base64,
-hashing, splitting, web-page codes such as `&#43;` and deeper escaping are not caught. Keep
+hashing, splitting and web-page codes such as `&#43;` are not caught, and deeper escaping
+may not be. A backslash right before a key is hidden with it. Keep
 "Never print or log a key in any form." Drop "(escaped forms not yet)".
 
 ### Not doing (this plan)
@@ -106,10 +132,17 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
   - the `progress=100%41CD%2BEFGH` case with key `41CD+EFGH`;
   - a spelling glued to other text on both sides keeps that text;
   - overlapping plain and escaped spellings become one `[key]`;
-  - four layers (`%2525252B` for `+`) is not caught (pins the limit);
+  - the fixture `%2525252BABCDEFGHIJK` (four layers of `+`) with key `+ABCDEFGHIJK` is
+    left unchanged (pins the limit for that case; three layers is the guarantee);
+  - `dir\ABCDEFGHIJKL` gives `dir[key]` (the backslash rule swallows it, by design);
   - output with `%` and `\` but no key is unchanged; keyless runs unchanged;
-  - a cut end ending in `… %41%42%` and a cut start beginning mid-spelling leave no part of
-    the spelling;
+  - `redactCapture` cut edges: with key `ABCDEFGHIJKL`, a cut end `safe text %41%42%` gives
+    `safe text [output cut]`; a cut start `42%43DEFGHIJKL rest` gives `[output cut] rest`
+    (exact output; nearby text kept); `%41` repeated with an unrelated key keeps all but the
+    last few bytes; `progress 100%` at a cut end gives `progress 100[output cut]`;
+  - `runScript` exact output: stdout over 2 MiB ending `… done %41%42%43` gives text ending
+    `done [output cut]`; a stderr window over 64 KiB whose start lands inside
+    `%41%42%43%44%45%46%47%48%49%4A%4B%4C` followed by ` tail` gives `[output cut] tail`;
   - the speed cases in E1, run through `redactCapture` with a timer;
   - one end-to-end `runScript` case: a script prints a key with `JSON.stringify` of an
     escaped string and with `encodeURIComponent` of a URL holding the key, and neither
@@ -127,12 +160,19 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 
 ### Round 1 — 2026-11-26
 
-**Lanes:** intent and mechanics; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | IDEA "key-free output as today" vs E2 trimming more at cuts | upheld | E2 rewritten, exception stated (Decision 7) |
+| intent | minor | No speed bound for ordinary JSON output | upheld | E1 case (o) |
+| intent | minor | Backslash-any rule swallows a backslash before a key | upheld | Kept; test and guide line |
+| mechanics | blocking | E2 drops whole key-free captures with no other separator | upheld | E2 rewritten (Decision 7) |
+| mechanics | minor | "Deeper escaping not caught" is false at any start | upheld | E4 wording; pinned four-layer fixture |
+| mechanics | minor | Speed fixtures unpinned; no late-failure case | upheld | E1 pinned fixtures (a)-(c), work limit (Decision 8) |
+| mechanics | minor | Cut-edge tests could pass by dropping everything | upheld | Exact-output tests in Validation |
 
 ## Implementation Tasks
 
