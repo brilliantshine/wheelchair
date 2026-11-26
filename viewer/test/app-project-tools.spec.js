@@ -1507,7 +1507,7 @@ test('folder tools show mixed and empty states', async ({ page }) => {
     { name: 'browser', source: 'shared', kind: 'server', status: 'ok' },
     { name: 'bad<b>', source: 'shared', kind: null, status: 'invalid', reason: 'bad <b>reason</b>' },
     { name: 'missing', source: 'shared', kind: 'script', status: 'missing-program', reason: 'program missing' },
-    { name: 'hidden', source: 'shared', kind: 'script', status: 'hidden', reason: 'hidden by the project tool of the same name' },
+    { name: 'hidden', source: 'shared', kind: 'script', status: 'hidden', reason: 'hidden: this project has its own tool with the same name' },
   ] } }) });
   const list = page.locator('.pt-folder-tools');
   await expect(list).toContainText('search');
@@ -1517,7 +1517,7 @@ test('folder tools show mixed and empty states', async ({ page }) => {
   await expect(list).toContainText('bad <b>reason</b>');
   await expect(list.locator('b')).toHaveCount(0);
   await expect(list).toContainText('program missing');
-  await expect(list).toContainText('hidden by the project tool of the same name');
+  await expect(list).toContainText('hidden: this project has its own tool with the same name');
   await expect(list.locator('button, input, select, textarea, [contenteditable]')).toHaveCount(0);
 });
 
@@ -1532,7 +1532,7 @@ test('capture folder tool screens', async ({ page, browserName }) => {
   const rows = [
     { name: 'search_docs', source: 'project', kind: 'script', status: 'ok' },
     { name: 'browser', source: 'shared', kind: 'server', status: 'ok' },
-    { name: 'search_docs', source: 'shared', kind: 'script', status: 'hidden', reason: 'hidden by the project tool of the same name' },
+    { name: 'search_docs', source: 'shared', kind: 'script', status: 'hidden', reason: 'hidden: this project has its own tool with the same name' },
     { name: 'calendar', source: 'project', kind: 'server', status: 'invalid', reason: 'tool.json is missing "start"' },
   ];
   let mixed = true;
