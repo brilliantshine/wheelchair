@@ -253,6 +253,7 @@ are unavailable there.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A keyed server's own request to the client that contains a key value and is withheld may leave the server waiting or misroute the error | Rare path: needs a server-originated request carrying its key | review-round-3 |
 | An agent that reads the key store files on disk can find key values | Same OS account; IDEA.md Not doing | planning |
 
 ## Review Rounds
@@ -303,12 +304,23 @@ are unavailable there.
 
 ### Round 3 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+**Lanes:** intent: gpt / gpt-6.2-sol (claude unavailable); mechanics: gpt / gpt-6.2-sol; cross-family: no.
 
 **Changed since Round 2:** K2 (usable values: 8 characters, no NUL; editors and names routes), K4 (server lines: unchanged, raw replacement, or withheld; launch errors), K5 (environment and PATH; registry), K7 (project editor lists folder-tool names; shared project's page points to Shared keys), Validation, Decisions 13–14.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Withheld reply copies a key-bearing `id` back | upheld | Pending split question |
+| intent | blocking | Script output leaks JSON-escaped keys (quotes, backslashes) | upheld | Pending: restrict usable key characters |
+| intent | blocking | Multiline keys pass line-by-line server stderr | upheld | Pending split question |
+| intent | minor | Project key editor lists shared project's tools under the project store | upheld | Pending: editor uses K2's store rule |
+| mechanics | blocking | Same as intent 1 (key in `id`) | upheld | Pending split question |
+| mechanics | blocking | Withheld reply may round a large `id` | upheld | Pending split question |
+| mechanics | blocking | Multiline keys across server line boundaries | upheld | Same as intent 3 |
+| mechanics | blocking | Withholding a server-originated request misroutes the error | accepted-risk | Rare path: a server request that itself carries the key |
+| mechanics | minor | Same as intent 4 | upheld | Pending: editor uses K2's store rule |
+| mechanics | minor | Tools page folder status stale after a key save | upheld | Pending: re-read status after save |
+| mechanics | minor | Kimi/Pi hint missing when only a key blocks a script | upheld | Pending: keep the hint |
 
 ## Implementation Tasks
 
