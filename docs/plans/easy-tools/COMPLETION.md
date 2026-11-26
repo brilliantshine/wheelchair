@@ -115,3 +115,39 @@ full run on the verified commit, pasted below once it finishes.
   the full run below.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1, commit 1a5669bd)
+
+Full run on `1a5669bd4345cd0d49c2660bb7475e7b8c1ec6ce` (attempt 1's commit):
+```
+commit 1a5669bd4345cd0d49c2660bb7475e7b8c1ec6ce
+suite viewer-browser exit 0
+suite viewer-node exit 0
+suite machine exit 0
+suite test-support exit 0
+suite sensitivity exit 0
+suite codex exit 0
+suite install exit 0
+suite sudo-helper exit 0
+```
+
+Verifier (claude-opus-5-5) reported two gaps; the lead had both fixed (`REMEDIATION-1.md`):
+
+- **Check Once Built row 1 (Antigravity deadline):** `connectors/agy/machine.js:60` gives the
+  `wheelchair-tools` bridge entry `timeoutSeconds: 260` in the per-session `mcp_config.json`; server
+  entries are unchanged. `protocol/tools.md:77` now states Claude Code 2.1.332's 100,000,000 ms default
+  (`MCP_TOOL_TIMEOUT`, milliseconds), the Antigravity bridge's 260 s, that Antigravity's default for server
+  tools was not established, and Codex's 300 s default and 260 s bridge. Test:
+  `machine/test/project-mcp-agy.test.js:70` (bridge has 260, a server extra has none).
+- **Mockup wording:** a hidden shared tool's reason is `hidden: this project has its own tool with the same
+  name` (`machine/lib/folder-tools.js:64`, `machine/lib/project-tools.js:138`); tests at
+  `viewer/test/app-project-tools.spec.js:1510`, `:1520`, `:1535`.
+
+Validation after the fix:
+```
+node --test machine/test/project-mcp-agy.test.js machine/test/folder-tools.test.js machine/test/folder-tools-launch.test.js machine/test/project-tools.test.js
+# pass 71  # fail 0
+npm --prefix viewer run test:browser -- app-project-tools.spec.js
+204 passed (2.0m) — exit 0
+grep -rn "hidden by the project tool" machine viewer protocol   # no output
+```
