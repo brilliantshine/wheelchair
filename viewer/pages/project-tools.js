@@ -948,8 +948,10 @@
     }
 
     async function refreshKeyStatus(c) {
-      const { status, body } = await post('/project-tools/key-status', { machine: c.machine, path: c.path });
-      if (!fresh(c) || status !== 200 || !body) throw new Error("Couldn't refresh key status");
+      let status, body;
+      try { ({ status, body } = await post('/project-tools/key-status', { machine: c.machine, path: c.path })); }
+      catch { return; }
+      if (!fresh(c) || status !== 200 || !body || !Number.isInteger(body.key_revision) || !Array.isArray(body.keys) || !Array.isArray(body.key_info) || !Array.isArray(body.folder_tools?.rows)) return;
       if (state.token) state.token.key_revision = body.key_revision;
       state.keys = (body.keys || []).slice();
       state.read.key_info = body.key_info || [];
@@ -973,7 +975,7 @@
       try {
         const { status: code, body } = await post('/project-tools/save', { machine: c.machine, path: c.path, token: state.token, ...extra });
         if (!fresh(c)) return false;
-        out = await handle(code, body, c, extra.tools === null);
+        out = await handle(code, body, c, extra.tools === null, Object.keys(extra.keys || {}));
       } finally { setBusy(false); }
       return out;
     }
@@ -983,16 +985,22 @@
     }
 
     // Shows a save or remove reply. Returns true when the keys/tools were stored.
-    async function handle(code, body, c, keyOnly = true) {
+    async function handle(code, body, c, keyOnly = true, writtenKeys = []) {
       const outcome = body && KNOWN_OUTCOMES.includes(body.outcome) ? body.outcome : null;
       if (!outcome) { setStatus(LOST, true); return false; }
       if (outcome === 'saved') {
-        if (keyOnly) await refreshKeyStatus(c); else applyKeys(body);
+        const pending = keyOnly ? copyObj(state.pending) : null;
+        applyKeys(body);
+        if (pending) for (const [name, value] of Object.entries(pending)) if (!writtenKeys.includes(name)) setOwn(state.pending, name, value);
+        if (keyOnly) await refreshKeyStatus(c);
         setStatus(['Saved', warningsList(body.warnings)].filter(Boolean));
         paintKeys(); paintSave();
         return true;
       }
       if (outcome === 'removed') {
+        const pending = copyObj(state.pending);
+        applyKeys(body);
+        for (const [name, value] of Object.entries(pending)) setOwn(state.pending, name, value);
         await refreshKeyStatus(c);
         setStatus('Key removed');
         paintKeys(); paintSave();
@@ -1037,9 +1045,8 @@
     }
 
     function keyUsage(name) {
-      if (!state.read?.token?.baseline) return 'unknown';
       const users = [...new Set([...(own(state.read.references, name) || []), ...((state.read.key_info || []).find(k => k.name === name)?.tools || [])])];
-      return users.length ? 'used by ' + users.join(', ') : 'not used on main';
+      return users.length ? 'used by ' + users.join(', ') : state.read?.token?.baseline ? 'not used on main' : 'unknown';
     }
 
     function paintKeys() {
@@ -1078,7 +1085,7 @@
         rm.hidden = true;
         confirmHost.hidden = false;
         confirmHost.replaceChildren(
-          h('p', { text: 'Remove ' + name + '? ' + (state.read?.token?.baseline ? (users.length ? 'Tools on main using it: ' + users.join(', ') + '. ' : 'No tools on main use it. ') : '') + 'Waiting pull requests may need it too.' }),
+          h('p', { text: 'Remove ' + name + '? ' + (users.length ? (state.read?.token?.baseline ? 'Tools on main using it: ' : 'Tools using it: ') + users.join(', ') + '. ' : state.read?.token?.baseline ? 'No tools on main use it. ' : '') + 'Waiting pull requests may need it too.' }),
           h('div', { class: 'actions' },
             lockBtn('Yes, remove ' + name, async () => {
               setBusy(true); setStatus('Removing…');

@@ -1265,3 +1265,51 @@ test('shared keys follow machine, show refusals and reload on revision conflicts
   await expect(page.getByText("couldn't read the shared tools: no copy")).toBeVisible();
   expect(reads).toContain('node-2');
 });
+
+test('shared key saves from two tabs use the read revision and reload the stale tab', async ({ page }) => {
+  const second = await page.context().newPage();
+  let revision = 1;
+  const writes = [];
+  for (const tab of [page, second]) {
+    await tab.route('**/wheelchair/api/new-thread*', route => route.fulfill({ json: { machine: 'hub', machines: ['hub'] } }));
+    await tab.route('**/wheelchair/api/shared-keys/*', async route => {
+      const action = new URL(route.request().url()).pathname.split('/').pop();
+      const body = route.request().postDataJSON();
+      if (action === 'read') return route.fulfill({ json: { revision, keys: [{ name: 'TOKEN', stored: revision > 1, tools: ['maps'] }], notes: [] } });
+      writes.push(body);
+      if (body.revision !== revision) return route.fulfill({ status: 409, json: { outcome: 'refused', reason: 'changed elsewhere, reload' } });
+      return route.fulfill({ json: { outcome: 'saved', revision: ++revision, keys: [] } });
+    });
+    await openPage(tab, context, '/app/settings#shared-tools');
+    await expect(tab.locator('[data-key="TOKEN"]')).toBeVisible();
+  }
+  for (const tab of [page, second]) {
+    const row = tab.locator('[data-key="TOKEN"]');
+    await row.getByLabel('Value for TOKEN').fill('abcdefgh');
+    await row.getByRole('button', { name: 'Set', exact: true }).click();
+    if (tab === page) await expect(row.locator('.pt-chip')).toHaveText('set');
+    else await expect(tab.getByRole('alert').filter({ hasText: 'changed elsewhere, reload' })).toBeVisible();
+  }
+  expect(writes.map(body => body.revision)).toEqual([1, 1]);
+  await expect(second.locator('[data-key="TOKEN"] .pt-chip')).toHaveText('set');
+  await second.close();
+});
+
+test('capture shared keys with a chosen project at phone size', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/wheelchair/api/settings', async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.shared_tools_repo = 'owner/shared-tools';
+    await route.fulfill({ response, json: body });
+  });
+  await page.route('**/wheelchair/api/new-thread*', route => route.fulfill({ json: { machine: 'hub', machines: ['hub'] } }));
+  await page.route('**/wheelchair/api/shared-keys/read', route => route.fulfill({ json: { revision: 1, keys: [
+    { name: 'MAPS_TOKEN', stored: true, folder_usable: true, tools: ['maps'] },
+    { name: 'WEATHER_TOKEN', stored: false, folder_usable: null, tools: ['weather'] },
+  ], notes: [] } }));
+  await openPage(page, context, '/app/settings#shared-tools');
+  await expect(page.getByLabel('Shared tools project')).toHaveValue('owner/shared-tools');
+  await expect(page.locator('[data-key="WEATHER_TOKEN"]')).toBeVisible();
+  await page.screenshot({ path: '/tmp/t3b-shared-chosen-phone.png' });
+});

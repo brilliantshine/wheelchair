@@ -6,6 +6,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const { api, close, setup } = require('./helpers/app.js');
+const { startMachine } = require('./helpers/app-machine.js');
 const { handle } = require('../app/routes.js');
 
 async function files(dir) {
@@ -131,11 +132,20 @@ test('read forwards the configured shared project and this machine’s saved pat
 
 test('key status and shared key routes inject the chosen machine configuration without persisting values', async (t) => {
   const ctx = await setup(); t.after(() => close(ctx));
+  let output = '';
+  ctx.server.child.stdout.on('data', chunk => { output += chunk; });
+  ctx.server.child.stderr.on('data', chunk => { output += chunk; });
   await api(ctx, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: 'owner/tools' } });
   const file = path.join(ctx.state, 'settings.json');
   const config = JSON.parse(await fs.readFile(file, 'utf8'));
   config.saved_dirs = [{ name: 'here', machine: 'hub', path: '/here' }, { name: 'other', machine: 'other', path: '/else' }];
   await fs.writeFile(file, JSON.stringify(config));
+  const machinesFile = path.join(ctx.state, 'machines.json');
+  const machines = JSON.parse(await fs.readFile(machinesFile, 'utf8'));
+  const other = await startMachine();
+  t.after(() => other.stop());
+  machines.other = { name: 'other', address: '127.0.0.1', port: other.port, secret: other.secret };
+  await fs.writeFile(machinesFile, JSON.stringify(machines));
   const secret = 'unique-shared-key-secret-8273';
   for (const action of ['read', 'save', 'remove']) {
     const reply = { status: action === 'save' ? 409 : 200, body: action === 'save' ? { outcome: 'refused', reason: 'changed elsewhere, reload' } : { revision: 2, keys: [] } };
@@ -149,7 +159,13 @@ test('key status and shared key routes inject the chosen machine configuration w
   ctx.machine.projectToolsReplies['key-status'] = { status: 200, body: { key_revision: 2, keys: [] } };
   await api(ctx, '/project-tools/key-status', { method: 'POST', body: { path: '/p', machine: 'hub' } });
   assert.deepEqual(ctx.machine.calls.findLast(c => c.path === '/v1/project-tools/key-status').body.shared_tools, { repo: 'owner/tools', candidates: ['/here'] });
+  for (const route of ['/project-tools/key-status', '/shared-keys/read', '/shared-keys/save', '/shared-keys/remove']) {
+    await api(ctx, route, { method: 'POST', body: { path: '/p', machine: 'other' } });
+    const sent = other.calls.findLast(c => c.path === '/v1' + route);
+    assert.deepEqual(sent.body.shared_tools, { repo: 'owner/tools', candidates: ['/else'] });
+  }
   assert.ok((await files(ctx.state)).every(content => !content.includes(secret)));
+  assert.equal(output.includes(secret), false);
   assert.equal((await api(ctx, '/shared-keys/read', { method: 'POST', body: { machine: 'missing' } })).status, 404);
   ctx.machine.sharedKeysReplies.read = { status: 200, raw: 'invalid' };
   assert.equal((await api(ctx, '/shared-keys/read', { method: 'POST', body: {} })).status, 504);

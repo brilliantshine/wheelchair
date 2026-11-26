@@ -265,6 +265,8 @@ button.danger { color: var(--bad-text); }
 .pt-savebar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .pt-key-ctl, .pt-addkey { display: flex; flex-wrap: wrap; gap: 6px; }
 .pt-key-ctl input, .pt-addkey input { flex: 1 1 140px; min-width: 0; }
+.pt-shared .pt-key .inline-err:empty { display: none; }
+.pt-shared .pt-keys > .hint { margin: 0; }
 .pt-confirm { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .pt-confirm p { margin: 0; overflow-wrap: anywhere; }
 .pt-warnings { margin: 4px 0 0; padding-left: 18px; }

@@ -2455,7 +2455,7 @@
         h('p', { class: 'hint', text: 'Key values are stored on this machine and never shown again. Other machines need their own keys entered.' }),
         h('div', { class: 'pt-keylist' }, rows),
         h('div', { class: 'pt-addkey' }, name, value, h('button', { type: 'button', text: 'Add a key', onclick: () => change('save', { keys: { [name.value]: value.value } }, error) })), error,
-        notes.map(text => h('p', { class: 'hint', text })));
+        ...notes.map(text => h('p', { class: 'hint', text })));
     }
     machine.addEventListener('change', readKeys);
     api('/new-thread?machine=hub').then(result => {

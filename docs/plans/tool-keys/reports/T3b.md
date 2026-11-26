@@ -1,242 +1,199 @@
-# T3b report — blocked
+# T3b report — attempt 2
 
-Implemented preliminary hub forwarding in `viewer/app/routes.js`, folder key lines and partial key-status refresh in `viewer/pages/project-tools.js`, and the Shared keys editor in `viewer/pages/settings.js`. Added route and browser coverage in the named viewer tests and extended the fake machine and project-tools browser fixture.
+Merged `wc/1d9da322519c` before working and kept the first attempt's forwarding and UI work. The Shared keys switch did make the second read: the bug was that the returned note elements were passed as an array to native `replaceChildren`, which converted the array to text. Spreading the elements fixes the display.
 
-The Shared keys machine-switch browser check failed twice. The first attempted fix waited for the existing shared-project picker to finish loading; the same assertion still failed. Per the worker gate rule I stopped rather than iterate again. The implementation is incomplete and needs investigation before merge: the requested full behavior coverage, mutation checks, and final passing validation remain undone. `reports/T2d.md` is absent from this worktree; I asked the lead whether its commit must be merged.
+- `viewer/app/routes.js`: forwards project key status and shared-key actions to the selected machine, adding that machine's configured shared-project candidates and retaining the existing timeout/error mapping.
+- `viewer/pages/project-tools.js`: renders folder key lines, key usage and unusable values. Successful key writes apply the reply first, then refresh status best effort; conflicts refresh best effort without discarding drafts. Unrelated pending key values survive key-only writes, including when a reply lists a key newly stored elsewhere. Folder usage and removal text also work when there is no `.mcp.json` baseline.
+- `viewer/pages/settings.js`, `viewer/pages/settings.css`: machine-specific Shared keys editor, revision conflicts, inline refusals and notes, including when no shared project is chosen. Empty error elements and hint margins no longer add extra card spacing.
+- `viewer/test/helpers/app-machine.js`, `viewer/test/app-project-tools.test.js`, `viewer/test/app-project-tools.spec.js`, `viewer/test/app-settings.spec.js`: fake routes and coverage for forwarding, two machines, key secrecy, failed and successful status refreshes, retained drafts, conflicts, combined saves, usage, machine switching, shared-key refusals and the no-copy note. The shared-project Tools page check uses a machine-response fixture; the machine's store selection is independently covered by its tests.
 
-Screenshots, captured at 390×844 and compared with rendered mockups:
+## Screenshots
 
-- `/tmp/t3b-tools-phone.png` against `/tmp/t3b-mockup-tools-mixed-phone.png`: the fixture has one weather row instead of the mockup's mixed rows, and the app's existing navigation differs. The owned warning line and card styling match in layout and color.
-- `/tmp/t3b-shared-phone.png` against `/tmp/t3b-mockup-shared-chosen-phone.png`: the fixture shows None rather than the chosen project and deliberately shows an unusable key reason; the machine chooser is required by the brief and absent from the mockup. Existing navigation also differs.
+Captured at 390×844 in the browser specs and compared with rendered mockups:
 
-The two exact requested validation commands were run before the latest test and fixture edits; their outputs follow. The browser gate failed. The focused retry output is included as evidence of the stop condition.
+- `/tmp/t3b-tools-phone.png` versus `/tmp/t3b-mockup-tools-mixed-phone.png` (`docs/plans/tool-keys/graphs/mockup-tools-mixed-phone.html`). The key warning and mixed folder rows have the same hierarchy, color and spacing. Existing phone navigation differs; fixture machine/project names differ, and weather is labeled this project instead of shared.
+- `/tmp/t3b-shared-chosen-phone.png` versus `/tmp/t3b-mockup-shared-chosen-phone.png` (`docs/plans/tool-keys/graphs/mockup-shared-chosen-phone.html`). The chosen project uses its fixture repository name. Existing phone navigation differs; the machine chooser is added by Decision 12 and shifts the keys downward.
+
+## Mutation checks
+
+Each temporary mutation was restored after its focused test failed; logs are `/tmp/t3b-mut-<name>.log`. The exit was 1 for each: `route-machine` (wrong shared machine), `route-config` (wrong candidates), `route-secret-log` (log a key), `route-errors` (hide transport errors), `folder-line`, `key-usage`, `confirm-users`, `project-unusable`, `shared-unusable`, `status-refresh`, `save-reply`, `conflict-refresh`, `combined-reload`, `combined-keys-reload`, `shared-switch`, `shared-note`, `shared-reason`, `shared-revision`, `pending`, and `no-baseline`. Failures were read from each log. The tests use fixtures for browser responses and do not replace end-to-end machine integration verification.
 
 ## Choices
 
-- `viewer/pages/settings.js`: show Shared keys even if no shared project is chosen, allowing access to stored names and the machine's explanatory note.
+- `viewer/pages/project-tools.js`: treat a malformed key-status success body as a failed best-effort refresh so it cannot partially replace current status.
+- `viewer/pages/project-tools.js`: when folder users are known but no baseline exists, removal says `Tools using it` rather than `Tools on main using it`.
+- `viewer/test/app-project-tools.test.js`: use a second fake machine service to verify routing to the chosen machine independently of candidate injection.
 
 ## Validation
 
-`node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`:
+`node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`
 
 ```text
 exit 0
-ok 58 - lead name settings trim and validate names
+ok 62 - lead name settings trim and validate names
   ---
-  duration_ms: 178.104191
+  duration_ms: 250.737333
   type: 'test'
   ...
 # Subtest: lead name list choice saves, validates and migrates
-ok 59 - lead name list choice saves, validates and migrates
+ok 63 - lead name list choice saves, validates and migrates
   ---
-  duration_ms: 174.728144
+  duration_ms: 210.526067
   type: 'test'
   ...
 # Subtest: gemini settings migrate and enforce account and model rules
-ok 60 - gemini settings migrate and enforce account and model rules
+ok 64 - gemini settings migrate and enforce account and model rules
   ---
-  duration_ms: 153.803643
+  duration_ms: 175.718354
   type: 'test'
   ...
 # Subtest: removed worker providers stay removed after saving
-ok 61 - removed worker providers stay removed after saving
+ok 65 - removed worker providers stay removed after saving
   ---
-  duration_ms: 177.101851
+  duration_ms: 188.438701
   type: 'test'
   ...
 # Subtest: scout preferences and session layers follow the selected provider
-ok 62 - scout preferences and session layers follow the selected provider
+ok 66 - scout preferences and session layers follow the selected provider
   ---
-  duration_ms: 752.133061
+  duration_ms: 868.954623
   type: 'test'
   ...
 # Subtest: model ID limits protect near-limit scout role layers
-ok 63 - model ID limits protect near-limit scout role layers
+ok 67 - model ID limits protect near-limit scout role layers
   ---
-  duration_ms: 527.235827
+  duration_ms: 584.82431
   type: 'test'
   ...
 # Subtest: your name is saved, validated, and told to every agent only when set
-ok 64 - your name is saved, validated, and told to every agent only when set
+ok 68 - your name is saved, validated, and told to every agent only when set
   ---
-  duration_ms: 212.94056
+  duration_ms: 263.154658
   type: 'test'
   ...
 # Subtest: shared tools project choice saves and clears
-ok 65 - shared tools project choice saves and clears
+ok 69 - shared tools project choice saves and clears
   ---
-  duration_ms: 174.229018
+  duration_ms: 243.744849
   type: 'test'
   ...
 # Subtest: shared tools setting defaults, validates and saves
-ok 66 - shared tools setting defaults, validates and saves
+ok 70 - shared tools setting defaults, validates and saves
   ---
-  duration_ms: 413.532126
+  duration_ms: 367.408355
   type: 'test'
   ...
 # Subtest: folder problem lines appear and clear on a newer update
-ok 67 - folder problem lines appear and clear on a newer update
+ok 71 - folder problem lines appear and clear on a newer update
   ---
-  duration_ms: 1.536373
+  duration_ms: 1.497182
   type: 'test'
   ...
 # Subtest: session start sends this machine’s saved paths in order and omits an unset choice
-ok 68 - session start sends this machine’s saved paths in order and omits an unset choice
+ok 72 - session start sends this machine’s saved paths in order and omits an unset choice
   ---
-  duration_ms: 405.392473
+  duration_ms: 428.437441
   type: 'test'
   ...
 # Subtest: ready event updates folder problem card
-ok 69 - ready event updates folder problem card
+ok 73 - ready event updates folder problem card
   ---
-  duration_ms: 256.152914
+  duration_ms: 269.387466
   type: 'test'
   ...
-1..69
-# tests 69
+1..73
+# tests 73
 # suites 0
-# pass 69
+# pass 73
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 8790.32021
+# duration_ms 9735.984492
 ```
 
-`npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`:
+`npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`
 
 ```text
-exit 1
-      505 |   await page.getByLabel('Value for K1').fill('s');
-      506 |   await page.getByRole('button', { name: 'Set K1' }).click();
-    > 507 |   await expect(keyRow(page, 'K1').locator('.pt-chip.set')).toBeVisible();
-          |                                                            ^
-      508 |   await expect(tool(page, 'ro')).not.toContainText('needs K1');
-      509 |   await expect(tool(page, 'multi')).toContainText('needs A, not set on this machine');
-      510 |   await expect(tool(page, 'al')).toContainText('needs TOKEN, not set on this machine');
-        at /home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-1d9da322519c-w11/viewer/test/app-project-tools.spec.js:507:60
+exit 0
+  ✓   99 [chromium] › test/app-project-tools.spec.js:952:1 › R7-1: a setting with a newline is read-only, refuses a kind change and is sent unchanged (343ms)
+  ✓   98 [chromium] › test/app-settings.spec.js:729:3 › categories › each moved control is in its category (760ms)
+  ✓  100 [chromium] › test/app-project-tools.spec.js:965:1 › R7-1: a header value with a tab is read-only (280ms)
+  ✓  101 [chromium] › test/app-settings.spec.js:756:3 › categories › Diagrams choices show in You (240ms)
+  ✓  102 [chromium] › test/app-project-tools.spec.js:971:1 › R7-1: a command with a control character is read-only and kept on an unrelated edit (342ms)
+  ✓  103 [chromium] › test/app-settings.spec.js:764:3 › categories › old keys open the category holding them, and an unknown key opens You (398ms)
+  ✓  104 [chromium] › test/app-project-tools.spec.js:982:1 › R7-1: a tool name with a newline shows read-only with no Edit button (243ms)
+  ✓  106 [chromium] › test/app-project-tools.spec.js:989:1 › R7-1: a read-only web tool card shows every raw field and its key chip (258ms)
+  ✓  105 [chromium] › test/app-settings.spec.js:777:3 › categories › both lesson addresses open that role's editor (617ms)
+  ✓  107 [chromium] › test/app-project-tools.spec.js:997:1 › R7-2: a read-only value with a newline shows in its JSON form, not collapsed (246ms)
+  ✓  109 [chromium] › test/app-project-tools.spec.js:1002:1 › R8-2: a tool with both url and command shows every raw field in file order (259ms)
+  ✓  110 [chromium] › test/app-project-tools.spec.js:1011:1 › R8-2: an unknown type is shown as written with all its fields (244ms)
+  ✓  108 [chromium] › test/app-settings.spec.js:789:3 › categories › on a phone no hash lists the categories, and ‹ Settings returns to the list (535ms)
+  ✓  112 [chromium] › test/app-settings.spec.js:815:3 › categories › crossing the phone width rebuilds nothing (460ms)
+  ✓  111 [chromium] › test/app-project-tools.spec.js:1019:1 › R8-2: an editable header row with a key and trailing text shows the key status (486ms)
+  ✓  114 [chromium] › test/app-project-tools.spec.js:1031:1 › R8-2: a tool the form cannot edit shows a key line from the machine checks (251ms)
+  ✓  113 [chromium] › test/app-settings.spec.js:839:3 › categories › switching the Harnesses machine keeps an open account rename (273ms)
+  ✓  115 [chromium] › test/app-project-tools.spec.js:1038:1 › R8-2: a field value with HTML is shown as text and creates no element (260ms)
+  ✓  116 [chromium] › test/app-settings.spec.js:850:3 › categories › an install progress tick keeps an open account rename (2.6s)
+  ✓  118 [chromium] › test/app-settings.spec.js:862:3 › categories › saving a background keeps text typed in Writing style (385ms)
+  ✓  119 [chromium] › test/app-settings.spec.js:880:3 › categories › the phone list keeps the hidden background editor until You is reopened (674ms)
+  ✓  120 [chromium] › test/app-settings.spec.js:957:3 › one place for sign-in, usage and each draft › Harnesses' sign-in link opens the account cards' sign-in for the Harnesses machine (330ms)
+  ✓  117 [chromium] › test/app-project-tools.spec.js:1045:1 › Unity preset adds distinct tools and reports preparation (3.8s)
+  ✓  121 [chromium] › test/app-settings.spec.js:985:3 › one place for sign-in, usage and each draft › account cards show one usage line and no usage bars (246ms)
+  ✓  122 [chromium] › test/app-project-tools.spec.js:1060:1 › Unity preset reports a failed fetch (330ms)
+  ✓  123 [chromium] › test/app-settings.spec.js:999:3 › one place for sign-in, usage and each draft › the per-account table draws a bar for each window and account cards draw none (322ms)
+  ✓  124 [chromium] › test/app-project-tools.spec.js:1066:1 › Unity button ignores a double press while the first request is held (320ms)
+  ✓  125 [chromium] › test/app-settings.spec.js:1022:3 › one place for sign-in, usage and each draft › Harnesses answering while a button below is pressed does not move it from under the press (277ms)
+  ✓  126 [chromium] › test/app-project-tools.spec.js:1092:1 › the Runs on Windows switch shows only on WSL for eligible web addresses and follows URL edits (319ms)
+  ✓  128 [chromium] › test/app-project-tools.spec.js:1110:1 › the switch is hidden when the machine is not WSL (249ms)
+  ✓  127 [chromium] › test/app-settings.spec.js:1046:3 › one place for sign-in, usage and each draft › Harnesses answering during Send code keeps the sign-in card in place (582ms)
+  ✓  129 [chromium] › test/app-project-tools.spec.js:1118:1 › a switch change alone is dirty and saves windows with tools (402ms)
+  ✓  130 [chromium] › test/app-settings.spec.js:1106:5 › one place for sign-in, usage and each draft › pressing the lead-order Save keeps the other box's unsaved edit and updates the reserve label (304ms)
+  ✓  131 [chromium] › test/app-project-tools.spec.js:1134:3 › open editor follows card switch off through save (384ms)
+  ✓  132 [chromium] › test/app-settings.spec.js:1106:5 › one place for sign-in, usage and each draft › pressing the balancing Save keeps the other box's unsaved edit and updates the reserve label (391ms)
+  ✓  133 [chromium] › test/app-project-tools.spec.js:1134:3 › open editor follows card switch on through save (377ms)
+  ✓  134 [chromium] › test/app-settings.spec.js:1134:3 › one place for sign-in, usage and each draft › opening Usage and balancing re-reads the reserved provider and keeps what was typed (358ms)
+  ✓  135 [chromium] › test/app-project-tools.spec.js:1147:1 › the form switch follows the card until touched, then the form choice wins (394ms)
+  ✓  136 [chromium] › test/app-settings.spec.js:1150:3 › one place for sign-in, usage and each draft › turning a harness on shows its account cards, waiting while an account edit is open (412ms)
+  ✓  137 [chromium] › test/app-project-tools.spec.js:1162:1 › cancel discards the form switch choice but keeps the card switch change (376ms)
+  ✓  139 [chromium] › test/app-project-tools.spec.js:1174:1 › rename and delete update the saved windows list; marks on hidden entries are kept (372ms)
+  ✓  140 [chromium] › test/app-project-tools.spec.js:1186:1 › a mark on a hidden entry stays; deleting an entry removes its mark (492ms)
+  ✓  141 [chromium] › test/app-project-tools.spec.js:1200:1 › a key-only save sends no windows (295ms)
+  ✓  142 [chromium] › test/app-project-tools.spec.js:1210:1 › the status line shows each state with its check time and Check again (1.2s)
+  ✓  143 [chromium] › test/app-project-tools.spec.js:1237:1 › a failed request says Couldn't check (1.0s)
+  ✓  138 [chromium] › test/app-settings.spec.js:1178:3 › one place for sign-in, usage and each draft › after an account sign-in, Harnesses and the account card show the new status (4.2s)
+  ✓  145 [chromium] › test/app-settings.spec.js:1215:3 › one place for sign-in, usage and each draft › pausing and adding an account reload the Harnesses status (480ms)
+  ✓  146 [chromium] › test/app-settings.spec.js:1235:1 › shared keys follow machine, show refusals and reload on revision conflicts (389ms)
+  ✓  147 [chromium] › test/app-settings.spec.js:1269:1 › shared key saves from two tabs use the read revision and reload the stale tab (555ms)
+  ✓  144 [chromium] › test/app-project-tools.spec.js:1242:1 › after an opened pull request the reread clears the store and a stale reply is dropped (2.0s)
+  ✓  148 [chromium] › test/app-settings.spec.js:1298:1 › capture shared keys with a chosen project at phone size (249ms)
+  ✓  149 [chromium] › test/app-project-tools.spec.js:1258:1 › two rows with the same name and different URLs each get their own result (1.1s)
+  ✓  150 [chromium] › test/app-project-tools.spec.js:1271:1 › Cancel, Keep changes, a reload and the Unity poll end with a line for the current values (3.5s)
+  ✓  151 [chromium] › test/app-project-tools.spec.js:1290:1 › a URL edited A to B to A before the check fires shows A's result; rename keeps the line; kind change hides it (1.9s)
+  ✓  152 [chromium] › test/app-project-tools.spec.js:1310:1 › a reply that arrives after switching project or for an old URL is not applied (2.2s)
+  ✓  153 [chromium] › test/app-project-tools.spec.js:1323:1 › a stale reply for an old URL is not applied (2.2s)
+  ✓  154 [chromium] › test/app-project-tools.spec.js:1345:1 › timing: URL A to B to A inside the debounce shows A's stored result and sends no request for B (1.9s)
+  ✓  155 [chromium] › test/app-project-tools.spec.js:1358:1 › timing: Keep changes before the debounce fires still ends on a result (1.1s)
+  ✓  156 [chromium] › test/app-project-tools.spec.js:1371:1 › timing: renaming during a check keeps the pending request and shows its result (2.0s)
+  ✓  157 [chromium] › test/app-project-tools.spec.js:1385:1 › timing: changing kind away and back during a check never leaves the line on Checking (1.9s)
+  ✓  158 [chromium] › test/app-project-tools.spec.js:1401:1 › timing: a Unity poll re-render while a check is pending still ends on the held reply (5.0s)
+  ✓  159 [chromium] › test/app-project-tools.spec.js:1420:1 › timing: a same-project reload while a check is pending drops the old reply and ends on a result (2.5s)
+  ✓  160 [chromium] › test/app-project-tools.spec.js:1438:1 › timing: a save clears the store and a reply to a request made before it is not stored (2.4s)
+  ✓  161 [chromium] › test/app-project-tools.spec.js:1457:1 › timing: two rows with the same name and different URLs go in one request with distinct ids (1.0s)
+  ✓  162 [chromium] › test/app-project-tools.spec.js:1470:1 › timing: same-name rows with different URLs go in one request, distinct ids, each shows its own result (card and form copy) (1.1s)
+  ✓  163 [chromium] › test/app-project-tools.spec.js:1487:1 › timing: two keys due in one debounce window go out in one request, not before it ends (1.2s)
+  ✓  164 [chromium] › test/app-project-tools.spec.js:1501:1 › timing: a network abort says Couldn't check (1.0s)
+  ✓  165 [chromium] › test/app-project-tools.spec.js:1507:1 › folder tools show mixed and empty states (243ms)
+  ✓  166 [chromium] › test/app-project-tools.spec.js:1527:1 › folder tools empty state (223ms)
+  -  167 [chromium] › test/app-project-tools.spec.js:1532:1 › capture folder tool screens
+  ✓  168 [chromium] › test/app-project-tools.spec.js:1554:1 › folder key status refresh preserves drafts and conflict retry uses the new revision (482ms)
+  ✓  169 [chromium] › test/app-project-tools.spec.js:1584:1 › key writes apply their replies when key status is unavailable (395ms)
+  ✓  170 [chromium] › test/app-project-tools.spec.js:1600:1 › a key conflict keeps drafts even when status refresh fails (365ms)
+  ✓  171 [chromium] › test/app-project-tools.spec.js:1613:1 › shared project folder keys point to Settings and are absent from the project editor (229ms)
+  ✓  172 [chromium] › test/app-project-tools.spec.js:1620:1 › folder tool users appear beside server users and in removal confirmation (259ms)
+  ✓  173 [chromium] › test/app-project-tools.spec.js:1629:1 › folder tool users remain visible when the project has no baseline (245ms)
+  ✓  174 [chromium] › test/app-project-tools.spec.js:1637:1 › key-only writes retain unrelated pending values for a combined save (494ms)
 
-    Error Context: test-results/app-project-tools-machine--c2f60-s-and-follow-the-key-status-chromium/error-context.md
-
-    Error Context: test-results/app-project-tools-machine--c2f60-s-and-follow-the-key-status-chromium/error-context.md
-
-  5) [chromium] › test/app-project-tools.spec.js:666:1 › key warnings and shared with follow the loaded checks, not draft edits 
-
-    Error: expect(locator).toContainText(expected) failed
-
-    Locator: locator('.pt-tool[data-tool="a"]')
-    Expected substring: "needs TOKEN, not set on this machine"
-    Received string:    "acommandxSettingsTOKEN ‹key TOKEN› setRuns on WindowsTurn on if this tool's server runs on Windows. Agents here reach it through wheelchair.shared with b (TOKEN)EditRemove"
-    Timeout: 5000ms
-
-    Call log:
-      - Expect "toContainText" with timeout 5000ms
-      - waiting for locator('.pt-tool[data-tool="a"]')
-        14 × locator resolved to <div data-tool="a" class="pt-tool">…</div>
-           - unexpected value "acommandxSettingsTOKEN ‹key TOKEN› setRuns on WindowsTurn on if this tool's server runs on Windows. Agents here reach it through wheelchair.shared with b (TOKEN)EditRemove"
-
-
-      676 |   await keyRow(page, 'TOKEN').getByRole('button', { name: 'Remove TOKEN' }).click();
-      677 |   await page.getByRole('button', { name: 'Yes, remove TOKEN' }).click();
-    > 678 |   for (const n of ['a', 'b']) await expect(tool(page, n)).toContainText(NEEDS_TOKEN);
-          |                                                           ^
-      679 |   // an unsaved edit that drops a's TOKEN setting changes nothing
-      680 |   await tool(page, 'a').getByRole('button', { name: 'Edit a' }).click();
-      681 |   await page.getByRole('button', { name: 'Remove setting' }).click();
-        at /home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-1d9da322519c-w11/viewer/test/app-project-tools.spec.js:678:59
-
-    Error Context: test-results/app-project-tools-key-warn-ff391-aded-checks-not-draft-edits-chromium/error-context.md
-
-    Error Context: test-results/app-project-tools-key-warn-ff391-aded-checks-not-draft-edits-chromium/error-context.md
-
-  6) [chromium] › test/app-project-tools.spec.js:819:1 › the open editor shows the value field when a key is removed from the Keys list 
-
-    Error: expect(locator).toHaveText(expected) failed
-
-    Locator:  locator('.pt-key[data-key="API_KEY"]').locator('.pt-chip')
-    Expected: "not set"
-    Received: "set"
-    Timeout:  5000ms
-
-    Call log:
-      - Expect "toHaveText" with timeout 5000ms
-      - waiting for locator('.pt-key[data-key="API_KEY"]').locator('.pt-chip')
-        14 × locator resolved to <span class="pt-chip set">set</span>
-           - unexpected value "set"
-
-
-      826 |   await page.getByLabel('Setting name').fill('API_KEY');
-      827 |   await page.getByLabel('Setting kind').selectOption('key');
-    > 828 |   await expect(page.getByLabel('Value for the new key')).toBeHidden();
-          |                                                             ^
-      829 |   await keyRow(page, 'API_KEY').getByRole('button', { name: 'Remove API_KEY' }).click();
-      830 |   await page.getByRole('button', { name: 'Yes, remove API_KEY' }).click();
-      831 |   await expect(keyRow(page, 'API_KEY').locator('.pt-chip')).toHaveText('not set');
-        at /home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-1d9da322519c-w11/viewer/test/app-project-tools.spec.js:828:61
-
-    Error Context: test-results/app-project-tools-the-open-7b933--removed-from-the-Keys-list-chromium/error-context.md
-
-    Error Context: test-results/app-project-tools-the-open-7b933--removed-from-the-Keys-list-chromium/error-context.md
-
-  6 failed
-    [chromium] › test/app-project-tools.spec.js:153:1 › adding and removing keys rebuilds the Keys list while an unsaved tool edit stays 
-    [chromium] › test/app-project-tools.spec.js:403:1 › the pickers are locked while a save is pending, and the reply lands on its own project 
-    [chromium] › test/app-project-tools.spec.js:439:1 › key warnings follow the current key status ─
-    [chromium] › test/app-project-tools.spec.js:484:1 › machine key warnings show for read-only tools and rows, and follow the key status 
-    [chromium] › test/app-project-tools.spec.js:666:1 › key warnings and shared with follow the loaded checks, not draft edits 
-    [chromium] › test/app-project-tools.spec.js:819:1 › the open editor shows the value field when a key is removed from the Keys list 
   2 skipped
-  156 passed (1.7m)
-```
-
-`npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js --grep 'folder key status refresh|shared keys follow machine|adding and removing keys'` (second focused attempt):
-
-```text
-exit 1
-
-> agent-graph-viewer@1.0.0 test:browser
-> playwright test --reporter=list app-project-tools.spec.js app-settings.spec.js --grep folder key status refresh|shared keys follow machine|adding and removing keys
-
-
-Running 3 tests using 2 workers
-
-(node:1381852) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:1381853) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-(Use `node --trace-warnings ...` to show where the warning was created)
-  ✓  2 [chromium] › test/app-project-tools.spec.js:156:1 › adding and removing keys rebuilds the Keys list while an unsaved tool edit stays (803ms)
-  ✓  3 [chromium] › test/app-project-tools.spec.js:1554:1 › folder key status refresh preserves drafts and conflict retry uses the new revision (488ms)
-  ✘  1 [chromium] › test/app-settings.spec.js:1235:1 › shared keys follow machine, show refusals and reload on revision conflicts (6.7s)
-
-
-  1) [chromium] › test/app-settings.spec.js:1235:1 › shared keys follow machine, show refusals and reload on revision conflicts 
-
-    Error: expect(locator).toBeVisible() failed
-
-    Locator: getByText('couldn\'t read the shared tools: no copy')
-    Expected: visible
-    Timeout: 5000ms
-    Error: element(s) not found
-
-    Call log:
-      - Expect "toBeVisible" with timeout 5000ms
-      - waiting for getByText('couldn\'t read the shared tools: no copy')
-
-
-      1263 |   await expect(page.getByRole('alert').filter({ hasText: 'changed elsewhere, reload' })).toBeVisible();
-      1264 |   await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
-    > 1265 |   await expect(page.getByText("couldn't read the shared tools: no copy")).toBeVisible();
-           |                                                                           ^
-      1266 |   expect(reads).toContain('node-2');
-      1267 | });
-      1268 |
-        at /home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-1d9da322519c-w11/viewer/test/app-settings.spec.js:1265:75
-
-    Error Context: test-results/app-settings-shared-keys-f-d291c-eload-on-revision-conflicts-chromium/error-context.md
-
-    Error Context: test-results/app-settings-shared-keys-f-d291c-eload-on-revision-conflicts-chromium/error-context.md
-
-  1 failed
-    [chromium] › test/app-settings.spec.js:1235:1 › shared keys follow machine, show refusals and reload on revision conflicts 
-  2 passed (7.6s)
+  172 passed (1.2m)
 ```

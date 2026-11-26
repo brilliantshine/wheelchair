@@ -50,7 +50,7 @@ async function stub(page, { read = readBody(), replies = [], gate = null, unity 
       const out = typeof read === 'function' ? await read(calls.read.length, body) : read;
       return Array.isArray(out) ? route.fulfill({ status: out[0], json: out[1] }) : route.fulfill({ json: out });
     }
-    if (kind === 'key-status') { calls.keyStatus.push(body); if (keyStatus) return route.fulfill({ json: await keyStatus(calls.keyStatus.length, body) }); return route.fulfill({ json: { key_revision: latest.key_revision ?? latest.token?.key_revision ?? 1, keys: latest.keys || [], key_info: latest.key_info || [], folder_tools: latest.folder_tools || { rows: [], notes: [] } } }); }
+    if (kind === 'key-status') { calls.keyStatus.push(body); if (keyStatus) { const out = await keyStatus(calls.keyStatus.length, body); return Array.isArray(out) ? route.fulfill({ status: out[0], json: out[1] }) : route.fulfill({ json: out }); } return route.fulfill({ json: { key_revision: latest.key_revision ?? latest.token?.key_revision ?? 1, keys: latest.keys || [], key_info: latest.key_info || [], folder_tools: latest.folder_tools || { rows: [], notes: [] } } }); }
     if (kind === 'windows-status') {
       calls.status.push(body); calls.statusAt.push(Date.now());
       const out = winStatus ? await winStatus(calls.status.length, body) : null;
@@ -1555,7 +1555,11 @@ test('folder key status refresh preserves drafts and conflict retry uses the new
   await page.setViewportSize({ width: 390, height: 844 });
   const folder = { name: 'weather', source: 'project', kind: 'script', status: 'ok', key_missing: true, key_lines: ['needs key WEATHER_TOKEN, not set on this machine'] };
   const info = { name: 'WEATHER_TOKEN', stored: true, folder_usable: false, reason: 'value too short', tools: ['weather'] };
-  const calls = await open(page, { read: readBody({ folder_tools: { rows: [folder], notes: [] }, key_info: [info] }), replies: [
+  const calls = await open(page, { read: readBody({ folder_tools: { rows: [
+    { name: 'search_docs', source: 'project', kind: 'script', status: 'ok' }, folder,
+    { name: 'browser', source: 'shared', kind: 'server', status: 'ok' },
+    { name: 'search_docs', source: 'shared', kind: 'script', status: 'hidden', reason: 'hidden: this project has its own tool with the same name' },
+  ], notes: [] }, key_info: [info] }), replies: [
     [409, { outcome: 'refused', reason: 'changed elsewhere' }],
     [200, { outcome: 'saved', key_revision: 3, keys: ['API_KEY', 'WEATHER_TOKEN'] }],
   ], keyStatus: n => ({ key_revision: n + 1, keys: ['API_KEY', 'WEATHER_TOKEN'], key_info: [info], folder_tools: { rows: [{ ...folder, key_missing: n === 1, key_lines: n === 1 ? folder.key_lines : ['uses keys: not available to sandboxed Codex, Kimi or Pi'] }], notes: [] } }) });
@@ -1575,4 +1579,79 @@ test('folder key status refresh preserves drafts and conflict retry uses the new
   await expect(page.getByText(folder.key_lines[0])).toHaveCount(0);
   await expect(tool(page, 'web')).toContainText('https://draft.example/mcp');
   expect(calls.save[1].token.key_revision).toBe(2);
+});
+
+test('key writes apply their replies when key status is unavailable', async ({ page }) => {
+  const calls = await open(page, { replies: [
+    [200, { outcome: 'saved', key_revision: 2, keys: ['API_KEY', 'DB_TOKEN'] }],
+    [200, { outcome: 'removed', key_revision: 3, keys: ['API_KEY'] }],
+  ], keyStatus: () => [502, { outcome: 'failed', error: 'unavailable' }] });
+  await keyRow(page, 'DB_TOKEN').getByLabel('Value for DB_TOKEN').fill('short');
+  await keyRow(page, 'DB_TOKEN').getByRole('button', { name: 'Set DB_TOKEN' }).click();
+  await expect(keyRow(page, 'DB_TOKEN').locator('.pt-chip')).toHaveText('set');
+  await expect(page.locator('.pt-status')).toContainText('Saved');
+  await keyRow(page, 'DB_TOKEN').getByRole('button', { name: 'Remove DB_TOKEN' }).click();
+  await page.getByRole('button', { name: 'Yes, remove DB_TOKEN' }).click();
+  await expect(keyRow(page, 'DB_TOKEN').locator('.pt-chip')).toHaveText('not set');
+  await expect(page.locator('.pt-status')).toContainText('Key removed');
+  expect(calls.remove[0].token.key_revision).toBe(2);
+});
+
+test('a key conflict keeps drafts even when status refresh fails', async ({ page }) => {
+  const calls = await open(page, { replies: [[409, { outcome: 'refused', reason: 'changed elsewhere' }]], keyStatus: () => [502, { outcome: 'failed', error: 'unavailable' }] });
+  await tool(page, 'web').getByRole('button', { name: 'Edit web' }).click();
+  await page.getByLabel('URL', { exact: true }).fill('https://draft.example/mcp');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await keyRow(page, 'DB_TOKEN').getByLabel('Value for DB_TOKEN').fill('secret');
+  await keyRow(page, 'DB_TOKEN').getByRole('button', { name: 'Set DB_TOKEN' }).click();
+  await expect(page.locator('.pt-status')).toContainText('changed elsewhere; key status refreshed — try again');
+  await expect(tool(page, 'web')).toContainText('https://draft.example/mcp');
+  await expect(keyRow(page, 'DB_TOKEN').getByLabel('Value for DB_TOKEN')).toHaveValue('secret');
+  expect(calls.read).toHaveLength(1);
+});
+
+test('shared project folder keys point to Settings and are absent from the project editor', async ({ page }) => {
+  const line = 'needs key WEATHER_TOKEN, not set on this machine; set it in Settings, Shared tools, Shared keys';
+  await open(page, { read: readBody({ folder_tools: { rows: [{ name: 'weather', source: 'project', kind: 'script', status: 'ok', key_missing: true, key_lines: [line] }], notes: [] }, key_info: [] }) });
+  await expect(page.locator('.pt-folder-tools')).toContainText(line);
+  await expect(keyRow(page, 'WEATHER_TOKEN')).toHaveCount(0);
+});
+
+test('folder tool users appear beside server users and in removal confirmation', async ({ page }) => {
+  await open(page, { read: readBody({ key_info: [{ name: 'API_KEY', stored: true, folder_usable: false, reason: 'value too short', tools: ['weather'] }] }) });
+  const row = keyRow(page, 'API_KEY');
+  await expect(row).toContainText('used by web, other-tool, weather');
+  await expect(row).toContainText("can't be used by folder tools: value too short");
+  await row.getByRole('button', { name: 'Remove API_KEY' }).click();
+  await expect(row).toContainText('Tools on main using it: web, other-tool, weather.');
+});
+
+test('folder tool users remain visible when the project has no baseline', async ({ page }) => {
+  await open(page, { read: readBody({ mode: 'keys-only', token: { project: '/p', baseline: null, key_revision: 1 }, source: null, references: {}, keys: ['TOKEN'], key_info: [{ name: 'TOKEN', stored: true, folder_usable: true, tools: ['weather'] }] }) });
+  const row = keyRow(page, 'TOKEN');
+  await expect(row).toContainText('used by weather');
+  await row.getByRole('button', { name: 'Remove TOKEN' }).click();
+  await expect(row).toContainText('Tools using it: weather.');
+});
+
+test('key-only writes retain unrelated pending values for a combined save', async ({ page }) => {
+  const calls = await open(page, { replies: [
+    [200, { outcome: 'saved', key_revision: 2, keys: ['API_KEY', 'DB_TOKEN', 'FRESH_KEY'] }],
+    [200, { outcome: 'opened', key_revision: 3, keys: ['API_KEY', 'DB_TOKEN', 'FRESH_KEY'], pr_url: 'https://example.test/pr', warnings: [] }],
+  ] });
+  await page.locator('#pt-add').click();
+  await page.getByLabel('Name', { exact: true }).fill('fresh');
+  await page.getByLabel('Command', { exact: true }).fill('node');
+  await page.getByRole('button', { name: 'Add a setting' }).click();
+  await page.getByLabel('Setting name').fill('FRESH_KEY');
+  await page.getByLabel('Setting kind').selectOption('key');
+  await page.getByLabel('Value for the new key').fill('pending-value');
+  await page.getByRole('button', { name: 'Add to the list' }).click();
+  await keyRow(page, 'DB_TOKEN').getByLabel('Value for DB_TOKEN').fill('other-value');
+  await keyRow(page, 'DB_TOKEN').getByRole('button', { name: 'Set DB_TOKEN' }).click();
+  await expect(page.locator('.pt-status')).toContainText('Saved');
+  await page.locator('#pt-save').click();
+  await expect(page.locator('.pt-status a')).toHaveAttribute('href', 'https://example.test/pr');
+  expect(calls.save[1].keys).toEqual({ FRESH_KEY: 'pending-value' });
+  expect(calls.read).toHaveLength(2);
 });
