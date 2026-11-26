@@ -465,3 +465,13 @@ test('your name is saved, validated, and told to every agent only when set', asy
     assert.equal((await put('')).body.user_name, '');
   });
 });
+
+test('shared tools project choice saves and clears', async () => {
+  await withContext(async context => {
+    await api(context, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: 'old/repo' } });
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: 'owner/tools' } })).body.shared_tools_repo, 'owner/tools');
+    assert.equal((await api(context, '/settings')).body.shared_tools_repo, 'owner/tools');
+    await api(context, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: null } });
+    assert.equal((await api(context, '/settings')).body.shared_tools_repo, null);
+  });
+});
