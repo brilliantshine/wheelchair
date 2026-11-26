@@ -139,9 +139,10 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
      survives at a cut, and a long single line loses only its last unfinished word. If
      an edge has no separator at all, that capture is dropped. Where something was dropped,
      the text ends (or starts) with `[output cut]`.
-  2. **Plain keys.** Every occurrence of any of the tool's key values is replaced with
-     `[key]`, longest values first, so a value inside another value never leaves the rest of
-     the longer one. The marker names no key, so it can never contain a value (values are at
+  2. **Plain keys.** Every occurrence of every one of the tool's key values is found in the
+     capture as it is (before any replacing). Every byte inside any occurrence is marked, and
+     each run of marked bytes, however many keys overlap in it, becomes one `[key]`. So keys
+     inside or overlapping other keys never leave a piece showing. The marker names no key, so it can never contain a value (values are at
      least 8 characters; `[key]` holds 3 usable characters).
   3. **Cuts for the agent.** Only then come the 1 MiB result cut and the 4 KiB stderr tail.
 - **The limit.** Only keys printed as-is are hidden. A key printed in an escaped form
@@ -169,6 +170,7 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   machine works these lines out itself (using the connector's `sandboxed(session)`) and keeps
   them with that session only. They stay on the problems card while that session runs, even
   when it has no MCP entries at all, and whatever other agents start in the same worktree.
+  They are removed from the card when that session ends.
   `wc.js tool list` shows the same status. `wc.js tool run` on a keyed tool runs it without
   keys in the caller's process, as for any other tool there, and its output starts by saying
   so.
@@ -196,6 +198,9 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
     ends before the body is complete, or the body is not valid JSON, `run` exits non-zero
     with `lost the connection to the machine before the tool's result arrived; the tool may
     already have run, so check before running it again`, and prints no partial result.
+  - **Service shutdown:** when the machine service stops or restarts, it kills the process
+    group of every keyed tool it is running, the same way the runner's exit handlers do for
+    the bridge.
   - **Lifetime:** the route kills the tool's process group if the request's connection
     closes before the tool ends (the CLI exiting or being killed), as the CLI's own exit
     handlers do for a local run.
@@ -286,7 +291,9 @@ makes it usable mid-session (K3).
 - K4 (redaction including a key split across chunks, at the 2 MiB capture limit and at the
   1 MiB cut and in a forced-close or timed-out stream; a stderr window with a clipped start keeping its
   complete end; stderr's end trimmed only on timeout or forced close; two keys where one
-  value is another key's name and one value contains another; refusal with `NODE_DEBUG=*`,
+  value is another key's name, one value inside another, and three overlapping keys
+  (`ABCDEFGHIJKL`, `123456789ABC`, `IJKL987654321` printed as `123456789ABCDEFGHIJKL
+  ABCDEFGHIJKL987654321` leaves nothing of any of them); refusal with `NODE_DEBUG=*`,
   `child*` and `CHILD_PROCESS`, keyless runs unaffected; stdout of exactly 2 MiB at a normal
   end versus overflow; a long single line keeping all but its last word; only the plain value is replaced; non-ASCII values
   counted as not set; launch errors
@@ -294,7 +301,7 @@ makes it usable mid-session (K3).
   `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
 - K5 (per-AI availability, sandboxed Codex problems text, Kimi/Pi route and its refusal
   for other providers):
-  `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/kimi.test.js machine/test/pi.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`, after regenerating `connectors/registry.json` with `node connectors/export.js` (committed). The route tests cover refusals for a reviewer, an assistant, a project lead and a non-Kimi/Pi session, and killing the process group when the connection closes.
+  `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/kimi.test.js machine/test/pi.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`, after regenerating `connectors/registry.json` with `node connectors/export.js` (committed). The route tests cover refusals for a reviewer, an assistant, a project lead and a non-Kimi/Pi session, and killing the process group when the connection closes and when the service shuts down with a keyed tool running. The hub card keeping the sandboxed line through a Claude start and dropping it when its session ends: `node --test viewer/test/app-project-tools-card.test.js`.
 - K6 (including `list` on sandboxed and on unrestricted Codex, the sandboxed problems line
   with no `.mcp.json` and surviving a Claude worker's start in the same worktree, a changed-tool error for a tool that gained `keys`, no session token, a machine-run result with a multibyte character split
   across chunks, and a connection lost mid-body): `node --test viewer/test/wc-tool.test.js`.
@@ -491,12 +498,16 @@ makes it usable mid-session (K3).
 
 ### Round 10 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 9:** K4 step 1 (overflow only), step 2 (`[key]`, longest first), Node diagnostics (refuse when Node's own check is on); K5 (sandboxed lines per session; project-lead clause removed); Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Overlapping keys leave a piece | upheld | K4 step 2: mark all matches, one `[key]` per run |
+| mechanics | blocking | Overlapping keys reconstructable | upheld | Same fix as intent 1 |
+| mechanics | major | Keyed tools survive a service restart | upheld | K5: service kills keyed tool groups on shutdown |
+| mechanics | minor | Sandboxed line never removed | upheld | K5: removed when its session ends; hub card test |
 
 ## Implementation Tasks
 
