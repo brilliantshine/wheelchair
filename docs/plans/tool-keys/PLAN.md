@@ -47,6 +47,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 21 | Cut edges are trimmed by whole lines, not by a byte count | Keys contain no newline in any spelling, so this covers escaped keys at any cut | review-round-6 |
 | 22 | Supersedes 21: cut edges are trimmed back to the nearest byte no key spelling can contain, each edge on its own | Keeps long single-line output; covers both stderr ends | review-round-7 |
 | 23 | Catching keys printed in escaped forms (K4's former step 3) split into its own thread; here only keys printed as-is are hidden; supersedes 19 and narrows 20 | Collin: split it off, after four review rounds of findings in that part | idea-change |
+| 24 | Keyed tools only through MCP; Kimi, Pi and sandboxed Codex (`shellToolsOnly`) get a clear "not available" line. Running keyed tools on the machine for Kimi and Pi is split into its own thread | Collin: drop Kimi/OpenRouter for now, after that piece drew serious findings in four rounds | idea-change |
 
 ## Spec
 
@@ -114,13 +115,11 @@ behaves exactly as today.
 - **Missing key.** At discovery, a keyed tool with any declared key not set is not offered
   through MCP. The session's tool problems name it: `tool <name> needs key <KEY>, not set
   on this machine` (for a shared tool, `shared tool <name> …`), naming every missing key.
-- **Changes mid-session.** Every run reads the store when it starts: each bridge call and
-  each machine-route run (K5). Replacing a value takes effect on the next run. Removing a key
-  makes the next run return the missing-key text as an error and run nothing. Adding a key that was missing at
-  session start makes the tool usable on Kimi and Pi at once (their `wc.js tool list` and
-  `run` read live), and through MCP from the next agent start (a new session, a resume or
-  an account switch, which rediscover tools), because the MCP tool list is
-  fixed at start.
+- **Changes mid-session.** Each bridge call reads the store when it starts. Replacing a
+  value takes effect on the next call. Removing a key makes the next call return the
+  missing-key text as an error and run nothing. Adding a key that was missing at session
+  start makes the tool usable from the next agent start (a new session, a resume or an
+  account switch, which rediscover tools), because the MCP tool list is fixed at start.
 
 ### K4. Hiding key values in output
 Redaction lives in `machine/lib/key-redact.js` and works on the tool's own key values (K2).
@@ -152,72 +151,45 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   key in any form, and warns that escaped forms are not yet hidden.
 - **Node's own diagnostics.** Node prints a child's environment to its own stderr when its
   `child_process` debug output is on (`NODE_DEBUG`, including wildcards and any case). The
-  bridge and the K5 route check this in their own process with
-  `util.debuglog('child_process').enabled`. When it is on, they refuse keyed runs with the
+  bridge checks this in its own process with `util.debuglog('child_process').enabled`. When
+  it is on, it refuses keyed runs with the
   reason `Node debug output for child processes is on; keyed tools won't run`. Keyless runs
   and their inherited environment are unchanged.
-- **Launch errors** for a keyed tool (spawn failing in the bridge or the K5 route) report
+- **Launch errors** for a keyed tool (spawn failing in the bridge) report
   only `cannot start <program>: <error code>`, never the error's own message, which can echo
   environment values.
 
 ### K5. Which agents can use keyed tools
+Keyed tools are used only through MCP (the standard tool connection, where the bridge starts
+the tool and can add its keys). Agents that call folder tools from the shell instead
+(the connector's existing `shellToolsOnly(session)`: Kimi, Pi and sandboxed Codex) can't use
+keyed tools in this plan (Decision 24).
 - **Claude, Antigravity (Gemini), unrestricted Codex:** keyed script tools through MCP, with
-  keys, as in K3.
-  No added prompt, setting or step (Decision 9).
-- **Sandboxed Codex** (the default for Codex sessions):
-  keyed tools are not available. The session's tool problems say `tool <name> needs keys,
-  which sandboxed Codex can't use; set Codex to unrestricted in Settings to use it`. The
-  machine works these lines out itself (using the connector's `sandboxed(session)`) and keeps
-  them with that session only. They stay on the problems card while that session runs, even
-  when it has no MCP entries at all, and whatever other agents start in the same worktree.
-  They are removed from the card when that session ends.
-  `wc.js tool list` shows the same status. `wc.js tool run` on a keyed tool runs it without
-  keys in the caller's process, as for any other tool there, and its output starts by saying
-  so.
-- **Kimi and Pi (OpenRouter)** run without a sandbox and have no MCP. There `wc.js tool run`
-  on a keyed tool asks the machine service to run it, through a new agent route
-  (`POST /v1/agent/tools/run`, authenticated by the session token). The machine runs it as
-  the bridge would (K3, K4), from the session's worktree and pinned shared copy, and returns
-  the redacted result.
-  - **Environment and program lookup:** the CLI sends its own `PATH` with the request. The
-    machine runs the tool with `toolEnv` of the machine's environment, with `PATH` set to
-    the caller's and the tool's keys added. `list`'s program check for keyed tools on these
-    AIs uses that same caller `PATH`, so `list` and `run` agree.
-  - **Who may use the route:** the machine checks it before running anything, refusing with
-    the reason otherwise. The session must be one that gets project tools at launch (the
-    same eligibility discovery uses: not a reviewer, assistant or project lead), and its
-    connector must declare the new manifest capability `keyedToolsByMachine: true` (set on
-    Kimi and Pi only). The connector rule forbids checking provider names outside
-    `connectors/`; `connectors/contract.js` and `connectors/README.md` list the new field.
-  - **How the CLI picks:** `/v1/agent/tools` adds `keyed_run: "machine" | "local"` from
-    that same eligibility, and `keyed_unavailable`: `null`, or the K5 sandboxed-Codex text
-    when the connector's existing `sandboxed(session)` says the session is sandboxed. `list`
-    shows that text for keyed tools.
-  - **Reading the result:** the CLI collects the whole response body as bytes and decodes
-    it as UTF-8 once, so a character split across chunks is never damaged. If the connection
-    ends before the body is complete, or the body is not valid JSON, `run` exits non-zero
-    with `lost the connection to the machine before the tool's result arrived; the tool may
-    already have run, so check before running it again`, and prints no partial result.
-  - **Service shutdown:** when the machine service stops or restarts, it kills the process
-    group of every keyed tool it is running, the same way the runner's exit handlers do for
-    the bridge.
-  - **Lifetime:** the route kills the tool's process group if the request's connection
-    closes before the tool ends (the CLI exiting or being killed), as the CLI's own exit
-    handlers do for a local run.
-  - Keyless tools on Kimi and Pi run locally, as today.
+  keys, as in K3. No added prompt, setting or step (Decision 9).
+- **Sandboxed Codex:** the session's tool problems say `tool <name> needs keys, which
+  sandboxed Codex can't use; set Codex to unrestricted in Settings to use it`.
+- **Kimi and Pi (OpenRouter):** the session's tool problems say `tool <name> needs keys,
+  which this AI can't use yet`.
+- The machine works these lines out itself (using the connector's `sandboxed(session)` to
+  pick the text) and keeps them with that session only. They stay on the problems card
+  while that session runs, even when it has no MCP entries at all, and whatever other agents
+  start in the same worktree. They are removed from the card when that session ends.
+- `/v1/agent/tools` adds `keyed_unavailable`: `null`, or that session's text, and
+  `wc.js tool list` shows it for keyed tools. `wc.js tool run` on a keyed tool runs it
+  without keys in the caller's process, as for any other tool there, and its output starts
+  by saying so.
 - Reviewers get no project tools, as today.
 
 ### K6. `wc.js tool` commands
 - `list`: in a session, adds each keyed tool's key names, set or not set, read live through a
-  new names-only agent route (never values). For sandboxed Codex it shows the K5 status.
+  new names-only agent route (never values). Where `keyed_unavailable` is set it shows that.
   Without a session token (a scratch checkout), it lists the names with `key status
   unknown outside a session`.
 - `check`: never uses keys, as now. For a script tool that declares keys, its output says
   the tool was validated without using keys. A server tool with `keys` gets the K1 status.
-- `run`: when `keyed_run` is `machine`, a keyed tool goes through the K5 route. Otherwise
-  (Claude, Antigravity, Codex, or no session token) it runs in the caller's process without
-  keys, and for a keyed tool its output starts by saying so. On those AIs keyed tools are
-  tried for real through MCP, on the next call in a session that offered them.
+- `run`: always runs in the caller's process without keys, and for a keyed tool its output
+  starts by saying so. Keyed tools are tried for real through MCP, on the next call in a
+  session that offered them.
 - The bridge's changed-tool error, when the re-read `tool.json` declares keys (even if the
   definition offered at start did not), says to try it with keys from
   the next agent start (`wc.js tool run` there runs it without keys). The guide's matching
@@ -270,14 +242,13 @@ hashing or splitting are not),
 the rule that a tool must never print or log a key in any form, never writing a key into a
 tool's files, which agents can use keyed tools (K5),
 and how to try one (K6), and that server tools can't have keys yet. The starting-instructions
-line for Kimi, Pi and sandboxed Codex (easy-tools S11) is unchanged, except that on
-sandboxed Codex it adds that keyed tools are unavailable there. It is also given on Kimi
-and Pi when the only thing stopping a script tool is a missing key, since adding the key
-makes it usable mid-session (K3).
+line for Kimi, Pi and sandboxed Codex (easy-tools S11) is unchanged, except that it adds
+that keyed tools are unavailable there.
 
 ### Not doing (this plan)
 - No change to `.mcp.json` key injection (Decision 8).
-- No keyed tools in sandboxed Codex (Decision 9).
+- No keyed tools in sandboxed Codex (Decision 9), or on Kimi and Pi: their own thread
+  (Decision 24).
 - No keys for server tools: their own thread (Decision 15).
 - No catching of keys printed in escaped forms: their own thread (Decision 23).
 - No HTTP folder tools (easy-tools Deferred 3) and no Windows-side folder tools.
@@ -299,13 +270,11 @@ makes it usable mid-session (K3).
   counted as not set; launch errors
   without values; output unchanged without keys):
   `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
-- K5 (per-AI availability, sandboxed Codex problems text, Kimi/Pi route and its refusal
-  for other providers):
-  `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/kimi.test.js machine/test/pi.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`, after regenerating `connectors/registry.json` with `node connectors/export.js` (committed). The route tests cover refusals for a reviewer, an assistant, a project lead and a non-Kimi/Pi session, and killing the process group when the connection closes and when the service shuts down with a keyed tool running. The hub card keeping the sandboxed line through a Claude start and dropping it when its session ends: `node --test viewer/test/app-project-tools-card.test.js`.
-- K6 (including `list` on sandboxed and on unrestricted Codex, the sandboxed problems line
-  with no `.mcp.json` and surviving a Claude worker's start in the same worktree, a changed-tool error for a tool that gained `keys`, no session token, a machine-run result with a multibyte character split
-  across chunks, and a connection lost mid-body): `node --test viewer/test/wc-tool.test.js`.
-- K8 hint on Kimi/Pi when only a key is missing: `node --test machine/test/project-tools-service.test.js`.
+- K5 (per-AI availability and problems texts for sandboxed Codex, Kimi and Pi; keyed tools
+  absent from generated entries there): `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/folder-tools-launch.test.js`. The hub card keeping a session's line through a Claude start and dropping it when its session ends: `node --test viewer/test/app-project-tools-card.test.js`.
+- K6 (including `list` on sandboxed and on unrestricted Codex, a changed-tool error for a
+  tool that gained `keys`, no session token, keyless `run` of a keyed tool):
+  `node --test viewer/test/wc-tool.test.js`.
 - K7 (including the shared tools project's own Tools page, switching machine in Shared keys,
   two saves on the same revision, unusable-value marking and refusals, folder-tool names in
   the project key editor (not on the shared project's page), status refresh after a save
@@ -325,7 +294,6 @@ makes it usable mid-session (K3).
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A keyed server's own request to the client that contains a key value and is withheld may leave the server waiting or misroute the error | Rare path: needs a server-originated request carrying its key | review-round-3 |
-| An agent on Kimi or Pi can choose, through its `PATH`, which program a bare-named keyed tool runs, and so hand a key to its own program | Tampering by a local agent (realism.md), which can already read the key store files on disk | review-round-8 |
 | An agent that reads the key store files on disk can find key values | Same OS account; IDEA.md Not doing | planning |
 
 ## Review Rounds
@@ -508,6 +476,15 @@ makes it usable mid-session (K3).
 | mechanics | blocking | Overlapping keys reconstructable | upheld | Same fix as intent 1 |
 | mechanics | major | Keyed tools survive a service restart | upheld | K5: service kills keyed tool groups on shutdown |
 | mechanics | minor | Sandboxed line never removed | upheld | K5: removed when its session ends; hub card test |
+
+### Round 11 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 10:** Kimi and Pi keyed runs dropped (Decision 24, IDEA.md): K5 rewritten (MCP only; per-session lines), K3 mid-session, K4 (bridge only), K6 `run` and `list`, K8, Not doing, Validation; one Accepted Risk removed. Round 10 fixes: K4 step 2 (marked runs).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 

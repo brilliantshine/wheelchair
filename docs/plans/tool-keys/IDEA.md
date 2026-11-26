@@ -37,6 +37,9 @@ agent can read them.
 
 - Keys for server tools (folder tools that run as an MCP server). They moved to their own
   thread, "Keys for server tools"; here only script tools get keys.
+- Keyed tools for Kimi and OpenRouter agents (they call tools from the shell, not through
+  the standard tool connection). They show "not available on this AI" for now; that moved
+  to its own thread, "Keyed tools for Kimi and OpenRouter".
 - Hiding keys a tool prints in escaped form (JSON codes, web-address codes). That moved to
   its own thread, "Hide escaped keys in tool output".
 
