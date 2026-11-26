@@ -35,6 +35,13 @@ agents own neither tmux nor the machine secret.
 | `lib/screen-input.js` | X-tool layer for screens: window listing, screenshots, pointer, typing, key deadlines and releases, auto-focus. |
 | `lib/screen-args.js` | Pure validation of `wc.js screen` arguments (fixed key list, limits) and `xwininfo` output parsing. |
 | `lib/usage-probe.js` | Asynchronous, timed CLI usage probe runner. |
+| `lib/folder-tools.js` | Discovers and validates folder tools and builds MCP entries. |
+| `lib/tool-run.js` | Runs script tools and manages their process groups. |
+| `lib/mcp-stdio.js` | Standalone stdio MCP server and handshake helper. |
+| `lib/tool-bridge.js` | Exposes script tools through MCP. |
+| `lib/tool-launch.js` | Launches a folder tool MCP server. |
+| `lib/shared-tools.js` | Refreshes, pins and cleans shared tool copies. |
+| `templates/tools/` | Script and server tool templates. |
 | `lib/project-mcp.js` | Reads project MCP servers (including the `wheelchair.windows` marks) and exposes shared document and entry validation. |
 | `lib/project-tools.js` | Reads and saves project tools and manages stored keys through GitHub PRs. |
 | `lib/project-keys.js` | Shared project key references, identity, storage and launch selection. |

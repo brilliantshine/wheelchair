@@ -14,6 +14,9 @@ branch when the thread started. Your mapping session, your sub-lead and the veri
 start work from there or from copies of it. You do not bulk-implement a feature: you
 decide, brief, check and talk. Your tokens are the expensive kind.
 
+
+For any request to make or change a tool, read `protocol/tools.md`.
+
 ## How you talk to the user
 
 Only two ways: cards, and your visible replies. Everything else (reviewer findings,
