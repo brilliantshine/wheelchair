@@ -1,5 +1,15 @@
 # Map: usage readings and placement
 
+**Historical map:** covered files changed since the commit below; do not rely on its line references without rechecking. Current Settings repaint and phone details are in `docs/plans/settings-solid/MAP.md`.
+
+## Current follow-up: Settings usage refresh
+
+Checked against: `672764aeaa4a1170c7cd6d15af0cfb9673ced4e2` (origin/main). Files rechecked: `viewer/pages/settings.js`, `viewer/pages/nav.js`, `viewer/test/app-accounts.spec.js`.
+
+Opening AI providers or Usage starts an immediate usage read and a visible-tab 30-second poll; the newest answer paints Usage and paints Accounts unless an account edit, add form or focused field makes it busy (`viewer/pages/settings.js:1422-1455`, `viewer/pages/nav.js:6-14`). The interval is tested at `viewer/test/app-accounts.spec.js:528`. The current repaint implications are in `docs/plans/settings-solid/MAP.md`; the server-side material below remains historical and was not rechecked.
+
+## Historical snapshot
+
 Checked against: `dbdc97c540f8c9226a3d0762bdd6fe9b548b9ecf` (origin/main)
 Files covered: `viewer/app/usage-poll.js`, `viewer/app/usage.js`, `viewer/app/hub.js`, `viewer/app/routes.js`, `viewer/app/providers.js`, `viewer/app/balancer.js`, `viewer/app/sessions.js`, `viewer/pages/settings.js`
 
