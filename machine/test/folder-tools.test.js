@@ -23,3 +23,54 @@ test('directory reading, collision, programs and entries', async () => {
   for (const name of ['absent','pathless']) assert.equal(result.rows.find(r=>r.name===name).status,'missing-program');
   await fs.promises.writeFile(path.join(dir,'local-program'), '#!/bin/sh\n', {mode:0o755}); assert.equal(f.findProgram('local-program',dir,'.'),true); assert.equal(f.findProgram(process.execPath,dir,''),true); assert.equal(f.bridgeEntry(root,result.usable).entry.args.at(-1),dir); assert.equal(f.serverEntry(root,{name:'x',dir}).folder,'server'); assert.deepEqual(await f.readToolsDir(path.join(root,'none'),'project'),[]);
 });
+test('required and invalid fields have distinct reasons; argv elements and limits', () => {
+  const server={name:'weather',description:'Server',kind:'server',start:['sh']};
+  assert.equal(f.validateToolJson('weather',{...server,start:undefined}).reason,'tool.json has an invalid "start"');
+  const {start,...missing}=server;
+  assert.equal(f.validateToolJson('weather',missing).reason,'tool.json is missing "start"');
+  assert.equal(f.validateToolJson('weather',{...script,description:'two\nlines'}).ok,false);
+  for (const argv of [[],['sh',''],['sh',1]]) {
+    assert.equal(f.validateToolJson('weather',{...script,run:argv}).ok,false);
+    assert.equal(f.validateToolJson('weather',{...server,start:argv}).ok,false);
+  }
+  for (const timeout_seconds of [null,'1']) assert.equal(f.validateToolJson('weather',{...script,timeout_seconds}).ok,false);
+  const name='x'.repeat(40); assert.equal(f.validateToolJson(name,{...script,name}).ok,true);
+});
+test('valid JSON size boundary', async () => {
+  const root=await makeTemp();
+  for (const [name,size] of [['under',32768],['over',32769]]) {
+    const dir=path.join(root,'.wheelchair/tools',name); await fs.promises.mkdir(dir,{recursive:true});
+    const base=JSON.stringify({...script,name,description:'x'}); const data=base+' '.repeat(size-Buffer.byteLength(base));
+    await fs.promises.writeFile(path.join(dir,'tool.json'),data);
+  }
+  const rows=await f.readToolsDir(root,'project');
+  assert.equal(rows.find(r=>r.name==='under').status,'ok');
+  assert.match(rows.find(r=>r.name==='over').reason,/over 32 KiB/);
+});
+test('entry shapes and input schema', () => {
+  const root=path.resolve('/tmp/project'), rows=[{name:'a',dir:'/tmp/a'},{name:'b',dir:'/tmp/b'}];
+  assert.deepEqual(f.bridgeEntry(root,rows),{name:'wheelchair-tools',folder:'bridge',entry:{type:'stdio',command:process.execPath,args:[path.resolve(__dirname,'../lib/tool-bridge.js'),'--project-dir',root,'--tool','/tmp/a','--tool','/tmp/b'],env:{}}});
+  assert.deepEqual(f.serverEntry(root,rows[0]),{name:'a',folder:'server',entry:{type:'stdio',command:process.execPath,args:[path.resolve(__dirname,'../lib/tool-launch.js'),'--project-dir',root,'--tool','/tmp/a'],env:{}}});
+  const inputs=Object.fromEntries(['string','number','boolean','object','array'].map((type,i)=>[type,{type,description:`desc ${type}`,required:i%2===0}]));
+  assert.deepEqual(f.inputSchema(inputs),{type:'object',properties:Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,{type:v.type,description:v.description}])),required:['string','boolean','array']});
+  assert.deepEqual(f.inputSchema({x:{type:'string',description:'X',required:false}}),{type:'object',properties:{x:{type:'string',description:'X'}}});
+});
+test('missing server program, real PATH, and non-executable relative program', async () => {
+  const root=await makeTemp();
+  for (const [name,tool] of [['server',{name:'server',description:'x',kind:'server',start:['missing-program-wc-xyz']}],['local',{...script,name:'local',run:['./local']} ]]) {
+    const dir=path.join(root,'.wheelchair/tools',name); await fs.promises.mkdir(dir,{recursive:true}); await fs.promises.writeFile(path.join(dir,'tool.json'),JSON.stringify(tool));
+    if(name==='local') await fs.promises.writeFile(path.join(dir,'local'),'hello',{mode:0o644});
+  }
+  const found=await f.discover({worktree:root,shared:null,path:process.env.PATH});
+  for (const row of found.rows) assert.equal(row.status,'missing-program');
+  assert.equal(f.findProgram('sh',root,process.env.PATH),true);
+});
+test('non-directory tools path and per-tool read errors', async () => {
+  const root=await makeTemp(); await fs.promises.mkdir(path.join(root,'.wheelchair')); await fs.promises.writeFile(path.join(root,'.wheelchair/tools'),'x');
+  assert.deepEqual(await f.readToolsDir(root,'project'),[]);
+  assert.deepEqual((await f.discover({worktree:root,shared:null,path:''})).rows,[]);
+  await fs.promises.unlink(path.join(root,'.wheelchair/tools')); const dir=path.join(root,'.wheelchair/tools/bad'); await fs.promises.mkdir(dir,{recursive:true});
+  const original=fs.promises.readFile;
+  fs.promises.readFile=async (...args)=>{if(args[0]===path.join(dir,'tool.json')) throw Object.assign(new Error('permission denied'),{code:'EACCES'}); return original(...args);};
+  try { await fs.promises.writeFile(path.join(dir,'tool.json'),'{}'); const rows=await f.readToolsDir(root,'project'); assert.equal(rows[0].status,'invalid'); assert.equal(rows[0].reason,'permission denied'); } finally { fs.promises.readFile=original; }
+});

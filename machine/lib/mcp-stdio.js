@@ -20,11 +20,15 @@ function serve({ name, version, tools, onClose }) {
   });
   line.on('close', () => { if (onClose) onClose(); });
 }
-function handshake({ command, args = [], cwd, env, timeoutMs }) {
+function handshake({ command, args = [], cwd, env, timeoutMs, signal }) {
   return new Promise(resolve => {
     let child, done = false, serverInfo = null, buffer = '', stage = 0;
-    const finish = (ok, tools, error) => { if (done) return; done = true; clearTimeout(timer); if (child?.pid) { try { process.kill(-child.pid, 'SIGTERM'); } catch {} const reaper = spawn(process.execPath, ['-e', "setTimeout(() => { try { process.kill(-Number(process.argv[1]), 'SIGKILL'); } catch {} }, 5000)", String(child.pid)], { detached: true, stdio: 'ignore' }); reaper.on('error', () => {}); reaper.unref(); } resolve({ ok, serverInfo, tools, error }); };
+    const finish = (ok, tools, error) => { if (done) return; done = true; clearTimeout(timer); signal?.removeEventListener('abort', cancel); if (child?.pid) { try { process.kill(-child.pid, 'SIGTERM'); } catch {} const reaper = spawn(process.execPath, ['-e', "setTimeout(() => { try { process.kill(-Number(process.argv[1]), 'SIGKILL'); } catch {} }, 5000)", String(child.pid)], { detached: true, stdio: 'ignore' }); reaper.on('error', () => {}); reaper.unref(); } resolve({ ok, serverInfo, tools, error }); };
     const timer = setTimeout(() => finish(false, null, 'Server handshake timed out'), timeoutMs);
+    const cancel = () => { serverInfo = null; finish(false, null, 'cancelled'); };
+    if (signal?.aborted) { cancel(); return; }
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) { cancel(); return; }
     try { child = spawn(command, args, { cwd, env, detached: true, stdio: ['pipe','pipe','pipe'] }); } catch (e) { finish(false, null, e.message); return; }
     child.stderr.resume(); child.stdin.on('error', () => {}); child.on('error', e => finish(false, null, e.message)); child.on('exit', () => finish(false, null, 'Server exited during handshake'));
     const send = x => child.stdin.write(JSON.stringify(x) + '\n');
