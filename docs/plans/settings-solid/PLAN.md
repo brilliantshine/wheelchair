@@ -163,6 +163,19 @@ npm --prefix viewer run test:browser -- app-settings-hold.spec.js app-settings.s
 | intent | minor | Row hint still describes the old option | upheld | New hint in S1 |
 | intent | minor | Default free text still says "Build up to technical terms…" | upheld | Default drops that line (S1) |
 
+### Round 2 — 2026-11-26
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 1:**
+- S2: sign-in guard moved from `accountsBusy()` into `refreshUsage` only, and only while the card is still waiting.
+- S3 (old): press queue removed. New S3: the pressed element is the first anchor `holdPlace` holds; pointer position forgotten on `pointerleave`.
+- S1: new row hint; default free text drops its "Build up…" line; width rule allows 24px for the arrow.
+- Validation rewritten (Lead order press/hover/focus tests, failed/expired card, harness toggle, `overflow-anchor: none`).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
