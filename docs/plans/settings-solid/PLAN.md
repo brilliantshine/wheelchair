@@ -11,11 +11,6 @@ rows 1-4 of `docs/plans/settings-rework/PLAN.md`.
 
 ## Open Questions
 
-### Q2: Should the taller phone rows and boxes be tightened to the mockups?
-- **Context:** Real Inter wraps the phone You list line and the assistant title onto an extra line (rows 7-37px taller); Writing style box and Diagrams stack are ~12px taller; desktop Threads folder hint wraps differently. Nothing is cut off or overlapping.
-- **Options:** leave as is; tighten to match the mockups.
-- **Recommendation:** leave as is.
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -33,6 +28,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | While a sign-in card is open in Accounts, usage answers do not repaint Accounts (its usage lines refresh once the card closes or the sign-in finishes); Usage still repaints | Certain fix for lost focus and dropped presses; the frozen numbers are only visible while signing in | defaulted |
 | 4 | Any Settings block repaint holds the position of the focused control or the control under a pressed pointer when it lies below the repainted block and is on screen; a repaint that would land during a press waits until the press ends | Covers Lead order under Usage and any later case, not only the sign-in card | defaulted |
 | 5 | Q1: shorten the Technical terms option to "Build up to them, unless already used" (label only; stored value `build-up` and the agent sentence at `viewer/app/settings.js:144` unchanged). Collin: "we can do shorter wording" | The label is display only; agents get the fixed sentence from the stored value | user |
+| 6 | Q2: leave the taller phone rows and boxes (and the desktop Threads folder hint) as they are; no change to match the settings-rework mockups' heights | Collin picked "Leave them"; nothing is cut off or overlapping | user |
 
 ## Spec
 
