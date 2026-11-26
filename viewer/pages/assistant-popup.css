@@ -2,6 +2,12 @@
    the project lead pop-up mockups' two-way switch. */
 .wc-asst-float { position: fixed; right: 24px; bottom: 24px; z-index: 40; background: var(--accent); color: var(--accent-ink);
   border: 0; border-radius: 999px; padding: 13px 17px; box-shadow: 0 4px 20px #0008; font-weight: 600; cursor: pointer; }
+/* Wide screens: the button sits in the corner over the files panel. Where the thread's composer runs to the right
+   edge instead (files panel folded, an aside open, or the assistant's own thread), lift it clear of Send. */
+@media (min-width: 900px) {
+  html:has(.shell.on-thread.side-collapsed) .wc-asst-float, html:has(body.aside-open .shell.on-thread) .wc-asst-float,
+  html:has(body.assistant-thread .shell.on-thread) .wc-asst-float { bottom: 96px; }
+}
 .wc-asst-float:hover { background: var(--accent-hi); color: var(--accent-ink); }
 .wc-asst-unread { position: absolute; right: 2px; top: 1px; width: 12px; height: 12px; border-radius: 50%;
   background: #d9a441; border: 2px solid var(--bg); }
