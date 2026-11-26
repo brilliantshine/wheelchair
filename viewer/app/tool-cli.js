@@ -9,7 +9,7 @@ const { handshake } = require('../../machine/lib/mcp-stdio');
 async function roots(request) {
   const token = process.env.WHEELCHAIR_SESSION_TOKEN;
   if (!token) {
-    try { return { worktree: execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(), shared: null }; }
+    try { return { worktree: execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(), shared: null, keyed_unavailable: null }; }
     catch { throw new Error('not inside a git checkout'); }
   }
   const origin = process.env.WHEELCHAIR_MACHINE_ORIGIN || 'http://127.0.0.1:7374';
@@ -18,7 +18,7 @@ async function roots(request) {
   if (response.status < 200 || response.status >= 300) throw new Error(response.output || `machine request failed (${response.status})`);
   const value = JSON.parse(response.output);
   if (typeof value.worktree !== 'string' || !(value.shared_copy === null || typeof value.shared_copy === 'string')) throw new Error('invalid machine tools response');
-  return { worktree: value.worktree, shared: value.shared_copy };
+  return { worktree: value.worktree, shared: value.shared_copy, keyed_unavailable: value.keyed_unavailable ?? null };
 }
 async function main(args, io = {}) {
   const out = io.stdout || process.stdout;
@@ -26,7 +26,7 @@ async function main(args, io = {}) {
   const override = Number(process.env.WHEELCHAIR_TOOL_CHECK_DEADLINE_MS);
   const deadline = Date.now() + (Number.isFinite(override) && override > 0 ? override : 30000);
   if (!['new', 'list', 'check', 'run'].includes(command)) throw new Error('usage: wc.js tool <new|list|check|run>');
-  const { worktree, shared } = await roots(io.request);
+  const { worktree, shared, keyed_unavailable } = await roots(io.request);
   if (command === 'new') {
     const [name, flag, kind] = tail;
     if (tail.length !== 3 || flag !== '--kind' || !['script', 'server'].includes(kind)) throw new Error('usage: wc.js tool new <name> --kind script|server');
@@ -45,8 +45,34 @@ async function main(args, io = {}) {
   const found = await discover({ worktree, shared, path: process.env.PATH });
   if (command === 'list') {
     if (tail.length && (tail.length !== 1 || tail[0] !== '--json')) throw new Error('usage: wc.js tool list [--json]');
-    if (tail.length) out.write(`${JSON.stringify(found.rows)}\n`);
-    else for (const row of found.rows) out.write(`${row.name}\t${row.kind || '-'}\t${row.source}\t${row.status === 'ok' ? 'ok' : row.reason}\n`);
+    const token = process.env.WHEELCHAIR_SESSION_TOKEN;
+    let statuses = [], error = null;
+    if (token && found.rows.some(row => row.tool?.keys.length)) {
+      try {
+        const origin = process.env.WHEELCHAIR_MACHINE_ORIGIN || 'http://127.0.0.1:7374';
+        const base = process.env.WHEELCHAIR_MACHINE_URL || `${origin}/v1/agent`;
+        const response = await io.request(`${base}/tool-keys`, token, {});
+        if (response.status < 200 || response.status >= 300) throw new Error(response.output || `machine request failed (${response.status})`);
+        const value = JSON.parse(response.output);
+        if (!Array.isArray(value.tools)) throw new Error('invalid machine tool keys response');
+        statuses = value.tools;
+      } catch (e) { error = e.message; }
+    }
+    const rows = found.rows.map(row => {
+      const status = statuses.find(item => item.name === row.name && item.source === row.source) || null;
+      return { ...row, key_status: status, ...(row.tool?.keys.length ? { keyed_unavailable } : {}) };
+    });
+    if (tail.length) out.write(`${JSON.stringify(rows)}\n`);
+    else for (const row of rows) {
+      let suffix = '';
+      if (row.tool?.keys.length) {
+        if (keyed_unavailable) suffix = `needs keys, which ${keyed_unavailable}`;
+        else if (!token) suffix = `keys: ${row.tool.keys.join(', ')} (key status unknown outside a session)`;
+        else if (error || !row.key_status) suffix = `key status unavailable: ${error || 'tool missing from machine response'}`;
+        else suffix = `keys: ${row.key_status.keys.map(key => `${key.name} ${key.set ? 'set' : key.reason && key.reason !== 'not set on this machine' ? key.reason : 'not set'}`).join(', ')}`;
+      }
+      out.write(`${row.name}\t${row.kind || '-'}\t${row.source}\t${row.status === 'ok' ? 'ok' : row.reason}${suffix ? `\t${suffix}` : ''}\n`);
+    }
     return;
   }
   if (command === 'check') {
@@ -64,7 +90,7 @@ async function main(args, io = {}) {
     try {
       for (const row of rows) {
         if (row.status !== 'ok') { out.write(`${row.name}: ${row.reason}\n`); failed = true; continue; }
-        if (row.kind !== 'server') { out.write(`${row.name}: ok\n`); continue; }
+        if (row.kind !== 'server') { out.write(`${row.name}: ok${row.tool.keys.length ? ' (validated without using keys)' : ''}\n`); continue; }
         const remaining = deadline - Date.now();
         if (remaining <= 0) { out.write(`${row.name}: check deadline exceeded\n`); failed = true; continue; }
         const [program, ...argv] = row.tool.start;
@@ -88,6 +114,7 @@ async function main(args, io = {}) {
   if (!row) throw new Error(`unknown tool: ${name}`);
   if (row.status !== 'ok') throw new Error(`${name}: ${row.reason}`);
   if (row.kind !== 'script') throw new Error('server tools must be used through MCP or check');
+  if (row.tool.keys.length) out.write('Ran without folder-tool keys; variables already in your environment were passed as usual. Keyed tools get their keys through MCP, from the next call in a session that offered them.\n');
   installExitHandlers();
   const result = await runScript({ dir: row.dir, tool: row.tool, input, env: toolEnv(process.env, worktree) });
   if (!result.ok) throw new Error(`tool failed (exit code ${result.code}, signal ${result.signal}${result.timedOut ? ', timed out' : ''})${result.stderr ? `: ${result.stderr}` : ''}`);
