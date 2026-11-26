@@ -82,7 +82,7 @@ half of that with a link walk. `byName`, the map, fan-out, the fallbacks (includ
 ### S2. Stale map check (`test-support/test/pick-tests.test.js`)
 
 A new test reads the working `test-support/test-map.json` and the files tracked at the
-checkout's `HEAD` (`git ls-files`), and fails listing every entry where: a `tests` item
+checkout's `HEAD` commit (`git ls-tree -r --name-only HEAD`; the index and working tree do not count), and fails listing every entry where: a `tests` item
 is neither one of the picker's suite names (`pick-tests.js:20-28`) nor a tracked file
 the picker recognises as a test (`viewer/test/*.test.js`, `viewer/test/*.spec.js`,
 `machine/test/*.test.js`); or the `glob`, compiled with the picker's glob rules
@@ -113,7 +113,10 @@ Existing cases keep passing unchanged. Add:
 `machine/test/connectors-model-roundtrip.test.js` (about 292 s alone; its three tests ran
 120 s, 118 s and 54 s in one timed run) becomes several top-level
 `machine/test/connectors-model-roundtrip-*.test.js` files plus one shared non-test module
-`machine/test/helpers/model-roundtrip.js` holding `roundTrip` and `slots` unchanged.
+`machine/test/helpers/model-roundtrip.js` holding `roundTrip` and `slots`. Moving them
+one directory down means three paths gain one `..`: the `codex/model.sh` spawn path and
+the `test-support/run-dir` and `connectors` requires (`connectors-model-roundtrip.test.js:7-8,19`).
+Those path changes are the only edits to the moved code.
 One `roundTrip` call per test, each in its own file:
 
 - the real-connector round trip (today's first test);
@@ -124,7 +127,9 @@ One `roundTrip` call per test, each in its own file:
 
 Every assertion, mutation and error pattern stays as it is; no case is dropped. Each test
 keeps `timeout: 120000`. The old file is deleted. `bash machine/test/run.sh` still finds
-every new file through its `*.test.js` glob.
+every new file through its `*.test.js` glob. `connectors/README.md:334` names the old
+file; it is updated to name `machine/test/connectors-model-roundtrip-*.test.js` and the
+shared helper, with the sentence otherwise unchanged.
 
 ### Non-goals
 
@@ -145,6 +150,11 @@ node test-support/pick-tests.js --base <comparison commit> --json  # sanity: pic
 The split files, run together with the command above on an idle machine, finish in
 under 150 s wall (S4), against about 292 s for the old file.
 
+Full-run check (IDEA "What good looks like", last bullet): the full run for the built
+commit, already started by the pusher, writes `summary.txt`. Its `machine` seconds are
+below its `viewer-browser` seconds, and the slowest suite's seconds are below 561
+(9 min 21 s).
+
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
@@ -160,6 +170,17 @@ under 150 s wall (S4), against about 292 s for the old file.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Following links fully makes most targeted picks much larger (e.g. `viewer/app/sessions.js` 16 viewer-node tests today → 73 + 51 specs); only whole-suite fallbacks narrow. Decision 6's rationale is wrong: these files run no specs today | user-decision | Asked Collin how to proceed with the picker change |
+| intent | major | No check that picks get narrower on the real tree | upheld | Waits on the picker decision |
+| intent | minor | Full-run speed goal not measured | upheld | Validation: full-run summary check |
+| intent | minor | Named-literal suffix matching crosses components (`server.js`, `model.sh`) | upheld | Waits on the picker decision |
+| mechanics | blocking | `machine/lib/hook-post.js`: walk suppresses the machine fallback but misses `pi-turns.test.js`, which reaches it via `machine/hook.sh:8` `"$root/machine/lib/hook-in.js"` | upheld | Waits on the picker decision; shows lexical links miss real readers when they narrow a fallback |
+| mechanics | blocking | S4 moved `roundTrip`'s relative paths break one level down | upheld | S4 allows exactly those three path changes |
+| mechanics | minor | S2 says HEAD but names `git ls-files` (index) | upheld | S2 uses `git ls-tree -r --name-only HEAD` |
+| mechanics | minor | `codex/model.sh` real-tree case is satisfied by the whole-suite map | upheld | Waits on the picker decision |
+| mechanics | minor | 5.5 MB batch read overflows the default `execFileSync` buffer | upheld | Waits on the picker decision |
+| mechanics | minor | `connectors/README.md:334` names the deleted file | upheld | S4 updates the router line |
+| mechanics | minor | Full-run criteria not measured | declined | Duplicate of the intent full-run finding, fixed there |
 
 ## Implementation Tasks
 
