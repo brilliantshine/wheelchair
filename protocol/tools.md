@@ -61,7 +61,7 @@ $ wc.js tool new demo --kind script
 /tmp/wc-t7-demo.480ZI9/.wheelchair/tools/demo
 Next: wc.js tool check demo
 $ wc.js tool list
-demo    script    project    ok
+demo	script	project	ok
 $ wc.js tool check demo
 demo: ok
 $ wc.js tool run demo --input '{"text":"hi"}'
