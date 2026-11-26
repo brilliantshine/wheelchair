@@ -1094,7 +1094,7 @@ class MachineService {
       try { version = (await fsp.readFile(path.join(worktree, 'ProjectSettings', 'ProjectVersion.txt'), 'utf8')).match(/^m_EditorVersion:\s*(\S+)/m)?.[1]; } catch {}
       const unityExists = !!version && fs.existsSync(path.join(mount, 'c/Program Files/Unity/Hub/Editor', version, 'Editor/Unity.exe'));
       const lines = require('./lib/win-prompt').promptLines({ health: this.win?.bridgeHealth(), wsl, loaded, mcp, copy: extra.WHEELCHAIR_WINDOWS_PROJECT, cli: session.cli, codexMode: session.codex_mode, version, unityExists });
-      if (!resume && scriptRows.length && (['kimi', 'pi'].includes(session.cli) || (session.cli === 'codex' && adapters.codex.sandboxed(session)))) lines.push(`Folder tools: this session can't call them through MCP. Run \`node ${ROOT}/viewer/app/wc.js tool list\` to see them and \`node ${ROOT}/viewer/app/wc.js tool run <name> --input '<json>'\` to run a script tool; give that shell command a timeout longer than the tool's timeout_seconds (default 120 s).`);
+      if (!resume && scriptRows.length && adapters[session.cli].shellToolsOnly?.(session)) lines.push(`Folder tools: this session can't call them through MCP. Run \`node ${ROOT}/viewer/app/wc.js tool list\` to see them and \`node ${ROOT}/viewer/app/wc.js tool run <name> --input '<json>'\` to run a script tool; give that shell command a timeout longer than the tool's timeout_seconds (default 120 s).`);
       if (!resume && lines.length) await atomicWrite(promptPath, rolePrompt + "\n\n" + lines.join("\n"));
     }
     env.splice(adapter.sessionNameEnv ? 3 : 2, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
