@@ -312,6 +312,15 @@ makes it usable mid-session (K3).
 | mechanics | minor | Tools page folder status stale after a key save | upheld | K7: statuses re-read after a save |
 | mechanics | minor | Kimi/Pi hint missing when only a key blocks a script | upheld | K8: hint kept when only a key is missing |
 
+### Round 4 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 3:** Server-tool keys split off (Decision 15, IDEA.md Not doing): K1 (server tools with keys not connected), K3 (bridge only), K4 (script redaction only; `\/` form), K6, K8 (no server keys; Kimi/Pi hint when only a key is missing). K2 usable-value character rule (Decision 16). K7 (project editor uses K2's store rule; statuses refresh after a save). Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
