@@ -74,7 +74,8 @@ result by today's plain search. Otherwise all searching for one capture (complet
 here and cut-off pieces in E2) shares one work budget, counted by the implementation and
 fixed so that cases (o), (c) and (d) below finish within it. If the budget runs out, the
 search stops and the **fallback** applies to that capture. All of it is found on the
-capture as captured: plain keys as today, K4's cut-edge trim, and every run of bytes made
+capture as captured: plain keys as today, K4's cut-edge trim, E2's both-edges-cut rule
+(so such a capture still gives `[output cut][output cut]`), and every run of bytes made
 only of usable key characters, `%` and `\` that contains at least one `%` or `\` (an
 **unchecked run**). These are combined and rendered once (E3). Every escaped spelling, and
 every piece of one at a cut edge, lies inside one such run, so nothing unchecked gets
@@ -97,7 +98,8 @@ keys come from a fixed seed, using only usable key characters):
 - (d) cut edges: (o)'s JSON text with (c)'s 20 keys, one three-layer spelling of one of
   them every 1000 bytes; the capture starts with the last 40 bytes of a three-layer spelling
   of key 1 followed by a space, and ends with a space followed by the first 40 bytes of one
-  of key 2; both `cutStart` and `cutEnd` set. Under 3 seconds, no fallback; the result is
+  of key 2, each spelling chosen so every character is escaped (so each 40-byte piece holds
+  a `%` or `\`); both `cutStart` and `cutEnd` set. Under 3 seconds, no fallback; the result is
   exactly `[output cut] ` + the JSON text with every spelling replaced by `[key]` +
   ` [output cut]`.
 
@@ -173,7 +175,8 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
   - the fallback, forcing a tiny budget (a test-only option), key `ABCDEFGHIJKL`:
     `ok %41%42 then ABCDEFGHIJKL` gives `ok [not checked for keys] then [key]`; cut start
     `%41BCDEFGHIJKL rest` gives `[output cut][not checked for keys] rest`; cut start
-    `1%44EFGHIJKL rest` gives `[output cut][not checked for keys] rest`; `x ABCDEFGHIJKL%4D`
+    `1%44EFGHIJKL rest` gives `[output cut][not checked for keys] rest`; both edges cut on
+    `%41%42%43` gives `[output cut][output cut]`; `x ABCDEFGHIJKL%4D`
     with keys `ABCDEFGHIJKL` and `GHIJKLMN` gives `x [not checked for keys]`;
   - `runScript` exact output, each failing with today's redactor: a script that writes
     `safe done %41%42%43` to stdout and `safe tail %41%42` to stderr, then hangs past a
@@ -194,6 +197,7 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Today's plain-key scan can take tens of seconds on 2 MiB of one repeated character with many long overlapping keys made of it, also in the fallback | Rare path: needs keys and output built from one repeated character; unchanged from today | review-round-4 |
 
 ## Review Rounds
 
@@ -256,6 +260,9 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Plain-key scan in fallback can stall on repeated-character keys | accepted-risk | Rare path; existing behaviour (Accepted Risks) |
+| mechanics | minor | Fallback skips the both-edges-cut rule | upheld | E1 fallback includes it; test |
+| mechanics | minor | Fixture (d) edge pieces may hold no escape byte | upheld | Edge spellings pinned |
 
 ## Implementation Tasks
 
