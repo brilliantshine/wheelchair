@@ -33,6 +33,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | Supersedes 8: past the budget only escape-like runs become `[not checked for keys]`, not the whole capture; one budget covers all searching | Keeps Collin's Decision 5 (just that part) and bounds the cut-edge search too | review-round-2 |
 | 10 | Spellings and cut-off pieces are found on the capture as captured, then combined | Trimming first hid the rest of a key that overlapped a cut-off piece | review-round-2 |
 | 11 | Both edges cut and the capture one escape-like run: dropped whole | A spelling can be longer than the stderr window | review-round-2 |
+| 12 | The fallback's unchecked runs and plain keys are found on the capture as captured and rendered once with the cut edges; each cut edge shows one `[output cut]` | Finding them after trimming or replacing left part of a key visible | review-round-3 |
 
 ## Spec
 
@@ -72,11 +73,12 @@ Unmarked bytes are passed through unchanged.
 result by today's plain search. Otherwise all searching for one capture (complete spellings
 here and cut-off pieces in E2) shares one work budget, counted by the implementation and
 fixed so that cases (o), (c) and (d) below finish within it. If the budget runs out, the
-search stops and the **fallback** applies to that capture: plain keys are still replaced as
-today and K4's cut-edge trim still applies; then every run of bytes made only of usable key
-characters, `%` and `\` that contains at least one `%` or `\` becomes
-`[not checked for keys]`. Every escaped spelling lies inside one such run, so nothing
-unchecked gets through, and the rest of the output is kept. A capture is never passed on
+search stops and the **fallback** applies to that capture. All of it is found on the
+capture as captured: plain keys as today, K4's cut-edge trim, and every run of bytes made
+only of usable key characters, `%` and `\` that contains at least one `%` or `\` (an
+**unchecked run**). These are combined and rendered once (E3). Every escaped spelling, and
+every piece of one at a cut edge, lies inside one such run, so nothing unchecked gets
+through, and the rest of the output is kept. A capture is never passed on
 unchecked.
 
 Pinned fixtures, each through `redactCapture` with a timer on the test machine (random
@@ -92,8 +94,12 @@ keys come from a fixed seed, using only usable key characters):
 - (c) many keys: 2 MiB of the noise in (a) with 20 random 64-character keys, every 1000 bytes
   holding one three-layer spelling of one of them. Under 3 seconds, no fallback, all
   spellings replaced.
-- (d) cut edges: (c)'s capture with both `cutStart` and `cutEnd` set. Under 3 seconds, no
-  fallback.
+- (d) cut edges: (o)'s JSON text with (c)'s 20 keys, one three-layer spelling of one of
+  them every 1000 bytes; the capture starts with the last 40 bytes of a three-layer spelling
+  of key 1 followed by a space, and ends with a space followed by the first 40 bytes of one
+  of key 2; both `cutStart` and `cutEnd` set. Under 3 seconds, no fallback; the result is
+  exactly `[output cut] ` + the JSON text with every spelling replaced by `[key]` +
+  ` [output cut]`.
 
 ### E2. Cut edges
 
@@ -108,8 +114,9 @@ At a cut edge, `redactCapture` removes (and shows as `[output cut]`):
   stderr window).
 
 Each edge removes the larger of its stretches. Spellings contain only usable key characters,
-`%` and `\`, so beyond K4's trim this only ever removes text next to a `%` or `\`. If nothing
-is left, the capture is dropped with `[output cut]` as today. Output of repeated `%41` with an
+`%` and `\`, so beyond K4's trim this only ever removes text next to a `%` or `\`. Each cut
+edge shows exactly one `[output cut]`, even when nothing else is left (both edges cut and
+nothing left gives `[output cut][output cut]`, as today). Output of repeated `%41` with an
 unrelated key keeps all but its last few bytes.
 
 Key-free output changes in only two places: text at a cut edge that looks like the start or
@@ -119,8 +126,10 @@ end of an escaped key (for example a trailing lone `%`), and the fallback in E1.
 
 1. Search the capture as captured: complete spellings (E1) and cut-off pieces (E2), within
    one budget.
-2. Build the result: removed edges become `[output cut]`; in what remains, each run of bytes
-   inside any complete spelling becomes `[key]`. A spelling that overlaps a removed edge
+2. Build the result once, from ranges all found on the capture as captured: removed edges
+   become one `[output cut]` each; in what remains, each maximal run of bytes inside any
+   complete spelling or unchecked run (E1 fallback) becomes `[not checked for keys]` if any
+   of its bytes is in an unchecked run, else `[key]`. A spelling that overlaps a removed edge
    still marks its remaining part, so with keys `ABCDEFGH` and `EFGHIJKLM`, a cut start
    `42%43DEFGHIJKLM rest` gives `[output cut][key] rest`.
 3. Unchanged in `tool-run.js`: then the 1 MiB result cut and the 4 KiB stderr tail. stdout
@@ -141,7 +150,7 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 
 ### Validation
 
-- `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js`, with
+- `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js machine/test/name-guard.test.js`, with
   `machine/test/key-redact.test.js` changed and extended to show, for key `ABCDEFGHIJKL`
   and others:
   - the old expectation that `%41…` and `\u0041…` stay visible now expects `[key]`;
@@ -159,13 +168,18 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
     (exact output; nearby text kept); `%41` repeated with an unrelated key keeps all but the
     last few bytes; `progress 100%` at a cut end gives `progress 100[output cut]`;
   - the two-key overlap case in E3 step 2;
-  - both edges cut on a capture made only of a spelling's middle: `[output cut]`;
-  - the fallback: forcing a tiny budget (a test-only option), `ok %41%42 then ABCDEFGHIJKL`
-    gives `ok [not checked for keys] then [key]`;
-  - `runScript` exact output: stdout over 2 MiB ending `… done %41%42%43` gives text ending
-    `done [output cut]`; stderr of `'x'.repeat(100)`, the 36-byte spelling
-    `%41%42%43%44%45%46%47%48%49%4A%4B%4C`, a space, `'y'.repeat(65500)` and ` tail` (so the
-    64 KiB window starts inside the spelling) gives exactly `'y'.repeat(4091) + ' tail'`;
+  - both edges cut on a capture made only of a spelling's middle: `[output cut][output cut]`;
+  - the fallback, forcing a tiny budget (a test-only option), key `ABCDEFGHIJKL`:
+    `ok %41%42 then ABCDEFGHIJKL` gives `ok [not checked for keys] then [key]`; cut start
+    `%41BCDEFGHIJKL rest` gives `[output cut][not checked for keys] rest`; `x ABCDEFGHIJKL%4D`
+    with keys `ABCDEFGHIJKL` and `GHIJKLMN` gives `x [not checked for keys]`;
+  - `runScript` exact output, each failing with today's redactor: a script that writes
+    `safe done %41%42%43` to stdout and `safe tail %41%42` to stderr, then hangs past a
+    1-second timeout, gives text `safe done [output cut]` and stderr `safe tail [output cut]`;
+    with key `'A'.repeat(4096)`, a script writing to stderr `'x '.repeat(10)`, then
+    `\u005Cu005Cu0041` 4096 times (a three-layer spelling of the key, exactly 64 KiB), then
+    ` tail`, and exiting, gives stderr exactly `[output cut] tail` (the 64 KiB window starts
+    5 bytes into the spelling);
   - the speed cases in E1, run through `redactCapture` with a timer;
   - one end-to-end `runScript` case: a script prints a key with `JSON.stringify` of an
     escaped string and with `encodeURIComponent` of a URL holding the key, and neither
@@ -221,6 +235,11 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Fallback runs found after trimming/replacing leave part of a key | upheld | E1 fallback and E3 step 2 on original bytes (Decision 12); tests |
+| mechanics | minor | Fixture (d) need not exercise edge searches | upheld | (d) rewritten with separators and exact result |
+| mechanics | minor | Marker count when nothing is left | upheld | E2: one per cut edge, as today |
+| mechanics | minor | Runner fixtures pass with today's redactor | upheld | Runner fixtures pinned to fail today |
+| mechanics | minor | name-guard test missing from targeted command | upheld | Added |
 
 ## Implementation Tasks
 
