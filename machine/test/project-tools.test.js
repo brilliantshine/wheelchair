@@ -405,12 +405,14 @@ test('folder program checks use executable tree modes, absolute paths and PATH',
     await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name, description: 'test', kind: 'script', inputs: {}, run: [program] }));
     if (program === './run') await fs.writeFile(path.join(dir, 'run'), 'run', { mode: name === 'plain' ? 0o644 : 0o755 });
   }
+  const sibling = path.join(base, 'sibling'); await fs.mkdir(sibling);
+  await fs.writeFile(path.join(sibling, 'tool.json'), JSON.stringify({ name: 'sibling', description: 'test', kind: 'script', inputs: {}, run: ['../executable/run'] }));
   const symlink = path.join(base, 'symlink'); await fs.mkdir(symlink);
   await fs.writeFile(path.join(symlink, 'tool.json'), JSON.stringify({ name: 'symlink', description: 'test', kind: 'script', inputs: {}, run: ['./run'] }));
   await fs.symlink('target', path.join(symlink, 'run')); await fs.writeFile(path.join(symlink, 'target'), 'ok', { mode: 0o755 });
   git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'programs'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
   const rows = (await f.tools.read({ path: f.repo })).body.folder_tools.rows, byName = Object.fromEntries(rows.map(row => [row.name, row]));
-  assert.equal(byName.executable.status, 'ok'); assert.equal(byName.symlink.status, 'ok'); assert.equal(byName.absolute.status, 'ok'); assert.equal(byName.bare.status, 'ok');
+  assert.equal(byName.executable.status, 'ok'); assert.equal(byName.sibling.status, 'ok'); assert.equal(byName.symlink.status, 'ok'); assert.equal(byName.absolute.status, 'ok'); assert.equal(byName.bare.status, 'ok');
   assert.equal(byName.missing.status, 'missing-program'); assert.equal(byName.plain.status, 'missing-program'); assert.match(byName.plain.reason, /not executable|isn't executable/);
   assert.match(byName['star[abc]'].reason, /name/i);
 });
