@@ -33,6 +33,9 @@ agent can read them.
 
 ## Not doing
 
+- Keys for server tools (folder tools that run as an MCP server). They moved to their own
+  thread, "Keys for server tools"; here only script tools get keys.
+
 - Stopping an agent that deliberately goes looking for the key files on disk. Agents run
   under the same user account as wheelchair, so file permissions cannot hide the files from
   them. "Never sees" means the key is never handed to the agent: not in its environment,

@@ -38,6 +38,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Shared keys get a machine chooser (same control as the Tools page), not drawn in the mockup | Shared keys are per machine; the mockup had no chooser | review-round-1 |
 | 13 | Supersedes 10 for server stdout: lines with no key pass byte for byte; raw replacement when the result checks clean; otherwise a reply is withheld with an error keeping its id, a notification dropped | JSON round-trips changed numbers and ids; property-name and escaped keys can't always be rewritten safely | review-round-2 |
 | 14 | Usable key value: at least 8 characters and no NUL; Shared keys refuses others; project editor marks them for folder tools | Env-safe values, one rule in both places | review-round-2 |
+| 15 | Keys for server tools split into their own thread; here only script tools get keys, and a server tool with `keys` is not connected and says so | Collin: split it off, after three review rounds of leak findings in server output | idea-change |
+| 16 | Usable key values: 8–4096 characters of letters, digits and `. _ ~ + / = -`; redaction also matches `/` written as `\/` (supersedes 14's value rule) | Removes escaped and multiline leaks in script output | review-round-3 |
 
 ## Spec
 
@@ -50,8 +52,12 @@ there stays as it is except where an item below changes it. Current code is mapp
 match `KEY_NAME` and must not be reserved (`isReserved`), both in `machine/lib/project-keys.js`.
 Anything else makes the tool invalid, and the reason names `keys`. The validated tool
 (`validateToolJson`, `machine/lib/folder-tools.js`) carries `keys` (an empty array when
-absent), so discovery, the bridge's changed-tool check and the launcher all see it. A tool
-with no `keys` behaves exactly as today.
+absent), so discovery and the bridge's changed-tool check see it. A tool with no `keys`
+behaves exactly as today.
+- **Script tools only.** Keys for server tools are split into their own thread (Decision 15).
+  A server tool whose `tool.json` has a non-empty `keys` is not connected, and its status
+  everywhere (session tool problems, `wc.js tool list`, the Tools page) is `keys for server
+  tools aren't supported yet`. The launcher (`machine/lib/tool-launch.js`) is unchanged.
 
 ### K2. Where a tool's keys come from
 - A **project tool** (from the session's worktree) uses the project's key store, the one
@@ -64,26 +70,26 @@ with no `keys` behaves exactly as today.
   the tools there are its project tools, but they use the shared key store, so a shared
   tool can be tried before merge.
 - A key is **set** for folder tools when the store has that name with a value that is
-  **usable**: at least 8 characters, with no NUL character (an environment variable can't hold
-  one). Any other stored value counts as not set, and the status gives the reason: `value too
-  short (under 8 characters)` or `value can't be used as an environment variable`. Real API
-  keys are long, and short ones would mangle output when hidden (K4).
+  **usable**: 8 to 4096 characters, each a letter, a digit or one of `. _ ~ + / = -` (what
+  real API keys use). Any other stored value counts as not set, and the status gives the
+  reason: `value too short (under 8 characters)`, `value too long` or `value has characters
+  folder tools can't use (letters, digits and . _ ~ + / = - only)`. With these characters a
+  key can't span lines, and JSON or shell escaping can change it only by writing `/` as
+  `\/`, which K4 also catches.
 - The Shared keys editor refuses an unusable value, with that same wording. The project key
   editor still accepts any non-empty value (`.mcp.json` servers may use short ones). It
-  refuses a NUL character, and it marks a stored value that folder tools can't use with
-  `too short for folder tools` (or the environment reason) beside its name. The key-names
+  marks a stored value that folder tools can't use with `can't be used by folder tools:
+  <reason>` beside its name. The key-names
   routes return, per name, `set` and `folder_usable` (with the reason), never the value. A
   name whose value is unusable still shows its Remove control.
 - **Which store a tool uses** (the execution rule) is decided only by K2, and every place
   that shows key status (K6, K7) uses the same rule.
 
 ### K3. What reaches the tool, and what never reaches the agent
-- The bridge (`machine/lib/tool-bridge.js`) reads the right store itself on **each call**.
-  The server launcher (`machine/lib/tool-launch.js`) reads it **when it starts** the
-  server. Each adds exactly the tool's declared keys to the environment it builds with
-  `toolEnv`. The generated MCP entry (`bridgeEntry`, `serverEntry`) passes only what it
-  takes to find the store: `--state-dir`, and `--key-store project|shared` per tool.
-  It never carries a key value.
+- The bridge (`machine/lib/tool-bridge.js`) reads the right store itself on **each call**
+  and adds exactly the tool's declared keys to the environment it builds with `toolEnv`.
+  The generated bridge entry (`bridgeEntry`) passes only what it takes to find the store:
+  `--state-dir`, and `project` or `shared` per tool. It never carries a key value.
 - No key value is written into any generated MCP config, any connector config file, the
   agent's environment or its starting instructions. Folder tools never use the
   `.mcp.json` env injection (`injectProjectKeys`, `machine/lib/env-launch.js`), which is
@@ -96,48 +102,29 @@ with no `keys` behaves exactly as today.
   on this machine` (for a shared tool, `shared tool <name> …`), naming every missing key.
 - **Changes mid-session.** Every run reads the store when it starts: each bridge call and
   each machine-route run (K5). Replacing a value takes effect on the next run. Removing a key
-  makes the next run return the missing-key text as an error and run nothing. A server that
-  is already running keeps the keys it started with. Adding a key that was missing at
+  makes the next run return the missing-key text as an error and run nothing. Adding a key that was missing at
   session start makes the tool usable on Kimi and Pi at once (their `wc.js tool list` and
   `run` read live), and through MCP from the next session, because the MCP tool list is
   fixed at start.
 
 ### K4. Hiding key values in output
-Redaction lives in `machine/lib/key-redact.js`. It works on the tool's own key values (all
-at least 8 characters, K2) and replaces every exact occurrence with `[key <NAME>]`. A tool
-with no keys gets no redaction, and its output is passed through exactly as today.
+Redaction lives in `machine/lib/key-redact.js`. It works on the tool's own key values (K2)
+and replaces every occurrence of each value, and of its form with every `/` written as `\/`,
+with `[key <NAME>]`. A tool with no keys gets no redaction, and its output is passed through
+exactly as today.
 - **Script tools** (`machine/lib/tool-run.js`): stdout and stderr each go through a
   streaming redactor before the 2 MiB capture limit, the 1 MiB result cut and the 4 KiB
-  stderr tail. It holds back the last (longest value − 1) bytes until more arrives or the
+  stderr tail. It holds back the last (longest pattern − 1) bytes until more arrives or the
   stream ends. Where a capture limit stops reading, the held-back bytes are dropped, never
-  sent. No cut can leave part of a key showing. The launch-error text is redacted too.
-  This hold-back is fine because a script's result is only returned once it exits.
-- **Server tools** (the launcher): stdout is handled **one line at a time** (MCP stdio
-  messages are newline-terminated). Each line is passed on as soon as its newline arrives,
-  so nothing waits for the server's next output. For each line:
-  1. **No key anywhere:** no key value occurs in the raw line text, nor, if it parses as
-     JSON, in any decoded string value or property name. The line passes on **byte for byte
-     unchanged**. It is never re-encoded, so numbers and ids are untouched.
-  2. **Raw replacement works:** otherwise every raw occurrence is replaced with `[key <NAME>]`.
-     If the line was JSON, the result is checked again. It passes on when it still parses,
-     no key remains in any decoded string or property name, and its top-level `jsonrpc`,
-     `id` and `method` are unchanged. A line that was not JSON passes on after the raw
-     replacement.
-  3. **Otherwise the message is withheld.** For example the key is only present escaped
-     (such as `\u00e9`), or replacing it would break the message. A message with an `id`
-     is replaced by `{"jsonrpc":"2.0","id":<its id>,"error":{"code":-32603,"message":"wheelchair
-     withheld this reply: it contained a key value"}}`. A message without an `id` (a
-     notification) is dropped. Either way, the launcher writes one line to stderr naming the
-     tool and that a message was withheld.
+  sent. No cut can leave part of a key showing. This hold-back is fine because a script's
+  result is only returned once it exits.
+- **Launch errors** for a keyed tool (spawn failing in the bridge or the K5 route) report
+  only `cannot start <program>: <error code>`, never the error's own message, which can echo
+  environment values.
 
-  A final partial line at stream end is handled the same way. stderr is piped (no longer
-  inherited raw) and redacted line by line as raw text. What the agent sends to the server
-  is not filtered.
-- **Launch errors** for a keyed tool (spawn failing in the bridge, the launcher or the K5
-  route) report only `cannot start <program>: <error code>`, never the error's own message,
-  which can echo environment values.
 ### K5. Which agents can use keyed tools
-- **Claude, Antigravity (Gemini), unrestricted Codex:** through MCP, with keys, as in K3.
+- **Claude, Antigravity (Gemini), unrestricted Codex:** keyed script tools through MCP, with
+  keys, as in K3.
   No added prompt, setting or step (Decision 9).
 - **Sandboxed Codex** (the default for Codex sessions, and always for Codex project leads):
   keyed tools are not available. The session's tool problems say `tool <name> needs keys,
@@ -174,12 +161,11 @@ with no keys gets no redaction, and its output is passed through exactly as toda
   Without a session token (a scratch checkout), it lists the names with `key status
   unknown outside a session`.
 - `check`: never uses keys, as now. When the tool declares keys, its output says it ran
-  without them; for a server tool, it adds that a failure may come from that.
+  without them. A server tool with `keys` gets the K1 status.
 - `run`: when `keyed_run` is `machine`, a keyed tool goes through the K5 route. Otherwise
   (Claude, Antigravity, Codex, or no session token) it runs in the caller's process without
   keys, and for a keyed tool its output starts by saying so. On those AIs keyed tools are
-  tried for real through MCP: script tools on the next call in a session that offered them,
-  server tools from the next session.
+  tried for real through MCP, on the next call in a session that offered them.
 - `new`: the script template is unchanged. The guide shows how to add `keys`.
 
 ### K7. What you see
@@ -187,12 +173,15 @@ with no keys gets no redaction, and its output is passed through exactly as toda
   selected machine, a keyed tool with any key not set shows `needs key <KEY>, not set on
   this machine`, as in the mockup. Each row is checked against the store K2 says it uses,
   including the shared tools project's own Tools page, where its tools use the shared keys.
-  There, a missing-key line adds `set it in Settings, Shared tools, Shared keys`.
-- The project's **Keys on this machine** editor also lists every key name that the
-  project's folder tools declare (set or not set), and its usage and remove texts name those
-  tools beside any `.mcp.json` servers. A keyed tool that is otherwise working
-  adds one line: `uses keys: not available to sandboxed Codex`. Key values never reach the
-  page.
+  There, a missing-key line adds `set it in Settings, Shared tools, Shared keys`. A keyed
+  tool that is otherwise working adds one line: `uses keys: not available to sandboxed
+  Codex`. Key values never reach the page.
+- The project's **Keys on this machine** editor also lists every key name declared by the
+  folder tools that use the project store (K2), set or not set. Its usage and remove texts
+  name those tools beside any `.mcp.json` servers. On the shared tools project's own page,
+  its folder tools use the shared store, so the editor lists only its `.mcp.json` names.
+- After any key save or removal on the Tools page, the folder tool statuses are read again,
+  so a `needs key` line clears without a reload.
 - **Settings, Shared tools** (`viewer/pages/settings.js`): a Shared keys part under the
   shared tools picker, as in the mockup. Above it sits a machine chooser, the same control
   the project Tools page uses for its keys (not drawn in the mockup). Every read and write
@@ -212,34 +201,35 @@ with no keys gets no redaction, and its output is passed through exactly as toda
 example, where each kind of tool's keys come from (K2), what reaches the agent and what
 doesn't (K3, including the `.mcp.json` caveat and the same-account limit in IDEA.md), output
 redaction, never writing a key into a tool's files, which agents can use keyed tools (K5),
-and how to try one (K6). The starting-instructions line for Kimi, Pi and sandboxed Codex
-(easy-tools S11) is unchanged, except on sandboxed Codex, where it adds that keyed tools
-are unavailable there.
+and how to try one (K6), and that server tools can't have keys yet. The starting-instructions
+line for Kimi, Pi and sandboxed Codex (easy-tools S11) is unchanged, except that on
+sandboxed Codex it adds that keyed tools are unavailable there. It is also given on Kimi
+and Pi when the only thing stopping a script tool is a missing key, since adding the key
+makes it usable mid-session (K3).
 
 ### Not doing (this plan)
 - No change to `.mcp.json` key injection (Decision 8).
 - No keyed tools in sandboxed Codex (Decision 9).
+- No keys for server tools: their own thread (Decision 15).
 - No HTTP folder tools (easy-tools Deferred 3) and no Windows-side folder tools.
 
 ### Validation
 - K1, K2, K3 (declaring keys, store choice, keys only in the tool process and never in
-  generated entries or the agent's environment, missing-key problems, mid-session removal):
-  `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js machine/test/project-keys.test.js machine/test/shared-keys.test.js` (shared-keys new).
+  generated entries or the agent's environment, missing-key problems, mid-session removal,
+  server tools with keys not connected):
+  `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js machine/test/project-keys.test.js machine/test/shared-keys.test.js` (shared-keys new).
 - K4 (redaction including a key split across chunks, at the 2 MiB capture limit and at the
-  1 MiB cut; short and NUL values counted as not set; server lines passed on at their
-  newline, with a client that waits for each reply before sending more; a keyless line with
-  id `9007199254740993` and a `1.0` passed byte for byte; raw replacement keeping `jsonrpc`,
-  `id`, `method`; a `\u`-escaped key and a key as a property name each handled with the
-  result checked against decoded content; withheld reply keeping its id; launch errors
-  without values; non-JSON lines and stderr; output unchanged without keys):
-  `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js` (key-redact new).
+  1 MiB cut; the `\/` form; values outside K2's rule counted as not set; launch errors
+  without values; output unchanged without keys):
+  `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
 - K5 (per-AI availability, sandboxed Codex problems text, Kimi/Pi route and its refusal
   for other providers):
   `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/kimi.test.js machine/test/pi.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`, after regenerating `connectors/registry.json` with `node connectors/export.js` (committed). The route tests cover refusals for a reviewer, an assistant, a project lead and a non-Kimi/Pi session, and killing the process group when the connection closes.
 - K6 (including no session token): `node --test viewer/test/wc-tool.test.js`.
+- K8 hint on Kimi/Pi when only a key is missing: `node --test machine/test/project-tools-service.test.js`.
 - K7 (including the shared tools project's own Tools page, switching machine in Shared keys,
-  two saves on the same revision, short-value marking and refusals, folder-tool names in the
-  project key editor): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
+  two saves on the same revision, unusable-value marking and refusals, folder-tool names in
+  the project key editor (not on the shared project's page), status refresh after a save): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - K8: `grep -n '"keys"' protocol/tools.md` finds the example, and `grep -n -i "keys yet\|key support\|not supported yet" protocol/tools.md` finds nothing. Then read the rendered guide (CONTRIBUTING.md: protocol documents are reviewed as rendered).
 
 ### Mockups
@@ -310,17 +300,17 @@ are unavailable there.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | blocking | Withheld reply copies a key-bearing `id` back | upheld | Pending split question |
-| intent | blocking | Script output leaks JSON-escaped keys (quotes, backslashes) | upheld | Pending: restrict usable key characters |
-| intent | blocking | Multiline keys pass line-by-line server stderr | upheld | Pending split question |
-| intent | minor | Project key editor lists shared project's tools under the project store | upheld | Pending: editor uses K2's store rule |
-| mechanics | blocking | Same as intent 1 (key in `id`) | upheld | Pending split question |
-| mechanics | blocking | Withheld reply may round a large `id` | upheld | Pending split question |
-| mechanics | blocking | Multiline keys across server line boundaries | upheld | Same as intent 3 |
+| intent | blocking | Withheld reply copies a key-bearing `id` back | upheld | Moved to the server-tools thread (Decision 15) |
+| intent | blocking | Script output leaks JSON-escaped keys (quotes, backslashes) | upheld | K2 character rule, K4 `\/` form (Decision 16) |
+| intent | blocking | Multiline keys pass line-by-line server stderr | upheld | Moved to the server-tools thread (Decision 15) |
+| intent | minor | Project key editor lists shared project's tools under the project store | upheld | K7: editor uses K2's store rule |
+| mechanics | blocking | Same as intent 1 (key in `id`) | upheld | Moved to the server-tools thread (Decision 15) |
+| mechanics | blocking | Withheld reply may round a large `id` | upheld | Moved to the server-tools thread (Decision 15) |
+| mechanics | blocking | Multiline keys across server line boundaries | upheld | Moved to the server-tools thread (Decision 15) |
 | mechanics | blocking | Withholding a server-originated request misroutes the error | accepted-risk | Rare path: a server request that itself carries the key |
-| mechanics | minor | Same as intent 4 | upheld | Pending: editor uses K2's store rule |
-| mechanics | minor | Tools page folder status stale after a key save | upheld | Pending: re-read status after save |
-| mechanics | minor | Kimi/Pi hint missing when only a key blocks a script | upheld | Pending: keep the hint |
+| mechanics | minor | Same as intent 4 | upheld | K7: editor uses K2's store rule |
+| mechanics | minor | Tools page folder status stale after a key save | upheld | K7: statuses re-read after a save |
+| mechanics | minor | Kimi/Pi hint missing when only a key blocks a script | upheld | K8: hint kept when only a key is missing |
 
 ## Implementation Tasks
 
