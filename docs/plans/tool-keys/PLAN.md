@@ -596,3 +596,4 @@ at least one valid, not hidden, script tool declares keys.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+- 2026-11-25: Ready check: hub and machine service answer; Claude and Codex installed and logged in; Codex preflight passed. Approval card f337e4d9-bd4e-4fdd-a8a8-f5c090893ceb posted.
