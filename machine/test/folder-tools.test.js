@@ -21,5 +21,5 @@ test('directory reading, collision, programs and entries', async () => {
   assert.equal(result.usable.length,1); assert.equal(result.rows.find(r=>r.source==='shared').status,'hidden'); assert.match(result.problems.find(p=>p.text.startsWith('shared')).text,/hidden/);
   for (const name of ['bad','huge','non','missing']) assert.equal(result.rows.find(r=>r.name===name).status,'invalid');
   for (const name of ['absent','pathless']) assert.equal(result.rows.find(r=>r.name===name).status,'missing-program');
-  assert.equal(f.findProgram(process.execPath,dir,''),true); assert.equal(f.bridgeEntry(root,result.usable).entry.args.at(-1),dir); assert.equal(f.serverEntry(root,{name:'x',dir}).folder,'server'); assert.deepEqual(await f.readToolsDir(path.join(root,'none'),'project'),[]);
+  await fs.promises.writeFile(path.join(dir,'local-program'), '#!/bin/sh\n', {mode:0o755}); assert.equal(f.findProgram('local-program',dir,'.'),true); assert.equal(f.findProgram(process.execPath,dir,''),true); assert.equal(f.bridgeEntry(root,result.usable).entry.args.at(-1),dir); assert.equal(f.serverEntry(root,{name:'x',dir}).folder,'server'); assert.deepEqual(await f.readToolsDir(path.join(root,'none'),'project'),[]);
 });
