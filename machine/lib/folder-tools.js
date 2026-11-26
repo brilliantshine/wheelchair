@@ -5,14 +5,14 @@ const NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const RESERVED = 'wheelchair-tools';
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 function validateToolJson(folderName, value) {
-  const bad = field => ({ ok: false, reason: `tool.json has invalid or missing "${field}"` });
+  const bad = field => { const parts = field.split('.'); let parent = value; for (const part of parts.slice(0, -1)) parent = object(parent) ? parent[part] : undefined; const missing = !object(parent) || !Object.hasOwn(parent, parts.at(-1)); return { ok: false, reason: missing ? `tool.json is missing "${field}"` : `tool.json has an invalid "${field}"` }; };
   if (!NAME_RE.test(folderName) || folderName === RESERVED) return bad('name');
   if (!object(value)) return bad('name');
   if (value.name !== folderName) return bad('name');
   if (typeof value.description !== 'string' || !value.description.trim() || /[\r\n]/.test(value.description)) return bad('description');
   if (!['script', 'server'].includes(value.kind)) return bad('kind');
   const tool = { name: value.name, description: value.description, kind: value.kind };
-  const argv = field => Array.isArray(value[field]) && value[field].length > 0 && value[field].every(x => typeof x === 'string') && value[field][0].length > 0;
+  const argv = field => Array.isArray(value[field]) && value[field].length > 0 && value[field].every(x => typeof x === 'string' && x.length > 0);
   if (value.kind === 'server') {
     if (!argv('start')) return bad('start');
     tool.start = value.start.slice();
@@ -39,7 +39,7 @@ function findProgram(argv0, toolDir, pathText) {
 async function readToolsDir(root, source) {
   const base = path.resolve(root, '.wheelchair/tools');
   let entries;
-  try { entries = await fs.promises.readdir(base, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+  try { entries = await fs.promises.readdir(base, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return []; throw e; }
   const rows = [];
   for (const ent of entries.filter(e => e.isDirectory()).sort((a,b) => a.name.localeCompare(b.name))) {
     const dir = path.join(base, ent.name), row = { name: ent.name, source, dir, kind: null, tool: null, status: 'invalid', reason: null };
@@ -47,7 +47,8 @@ async function readToolsDir(root, source) {
       const file = path.join(dir, 'tool.json'), stat = await fs.promises.stat(file);
       if (!stat.isFile()) throw new Error('tool.json is not a regular file');
       if (stat.size > 32768) throw new Error('tool.json is over 32 KiB');
-      let value; try { value = JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { throw new Error('tool.json is not JSON'); }
+      const content = await fs.promises.readFile(file, 'utf8');
+      let value; try { value = JSON.parse(content); } catch { throw new Error('tool.json is not JSON'); }
       const result = validateToolJson(ent.name, value);
       if (!result.ok) throw new Error(result.reason);
       row.tool = result.tool; row.kind = result.tool.kind; row.status = 'ok';
@@ -69,7 +70,7 @@ async function discover({ worktree, shared, path: pathText }) {
 function inputSchema(inputs) {
   const properties = {}, required = [];
   for (const [name, input] of Object.entries(inputs)) { Object.defineProperty(properties, name, { value: { type: input.type, description: input.description }, enumerable: true }); if (input.required) required.push(name); }
-  return { type: 'object', properties, required };
+  return { type: 'object', properties, ...(required.length ? { required } : {}) };
 }
 function bridgeEntry(worktree, rows) { return { name: RESERVED, folder: 'bridge', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-bridge.js'), '--project-dir', worktree, ...rows.flatMap(r => ['--tool', r.dir])], env: {} } }; }
 function serverEntry(worktree, row) { return { name: row.name, folder: 'server', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-launch.js'), '--project-dir', worktree, '--tool', row.dir], env: {} } }; }
