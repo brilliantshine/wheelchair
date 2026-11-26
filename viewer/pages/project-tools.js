@@ -305,6 +305,18 @@
       const parts = [];
       const toolsMode = r.mode === 'tools';
       if (r.notice) parts.push(h('p', { class: 'pt-notice', text: r.notice }));
+      const folders = r.folder_tools || { rows: [], notes: [] };
+      const folderCards = (folders.rows || []).map(row => h('div', { class: 'pt-tool' },
+        h('div', { class: 'pt-tool-head' }, h('h3', { text: row.name }),
+          row.kind && h('span', { class: 'pt-chip', text: row.kind }),
+          h('span', { class: 'pt-chip', text: row.source === 'project' ? 'this project' : 'shared' })),
+        h('p', { class: row.status === 'ok' && row.kind === 'script' ? 'pt-folder-good' : 'pt-warn', text: row.status === 'ok' ? (row.kind === 'server' ? "server tools don't work on Kimi, Pi or sandboxed Codex" : 'Working') : row.reason }),
+        row.note && h('p', { class: 'hint', text: row.note })));
+      parts.push(h('section', { class: 'pt-folder-tools' }, h('h2', { text: 'Folder tools' }),
+        h('p', { class: 'hint', text: 'To add or change a folder tool, ask in a thread.' }),
+        h('div', { class: 'pt-tools' }, ...(folders.notes || []).map(text => h('p', { class: 'hint', text })),
+          ...(folderCards.length ? folderCards : [h('p', { class: 'hint', text: 'No folder tools yet. Ask in a thread to make one for this project or the shared tools project.' })]))));
+
       if (toolsMode) {
         els.waiting = h('div', {});
         if (r.source?.state === 'unreadable') {
