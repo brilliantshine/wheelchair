@@ -1,6 +1,6 @@
 ---
 slug: tool-keys
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-25
 ---
 
@@ -54,6 +54,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 Builds on the merged easy-tools work (`docs/plans/easy-tools/PLAN.md`, PR #196); everything
 there stays as it is except where an item below changes it. Current code is mapped in
 `docs/maps/folder-tool-keys.md`.
+
+How a keyed script tool's keys flow (K2 to K5); the agent only ever sees names and redacted output:
+
+```mermaid
+flowchart LR
+  TJ["tool.json keys: names only (K1)"] --> D["Agent start: discovery"]
+  PS["Project key store (Tools page)"] --> D
+  SS["Shared key store (Settings, Shared keys)"] --> D
+  D -->|"all keys set, Claude / Gemini / unrestricted Codex"| E["MCP bridge entry: store + key names, no values (K3)"]
+  D -->|"a key missing"| P1["Problems: needs key KEY, not set on this machine"]
+  D -->|"sandboxed Codex, Kimi, Pi"| P2["Problems: needs keys, which this AI can't use (K5)"]
+  E --> B["Bridge, each call: reads the store"]
+  PS --> B
+  SS --> B
+  B -->|"env with declared keys"| T["Tool script"]
+  T -->|"raw output"| R["Redact every key, then cut (K4)"]
+  R --> A["Agent"]
+```
 
 ### K1. Declaring keys
 `tool.json` gains an optional `keys`: an array of 1 to 20 unique key names. Each name must
@@ -189,8 +207,8 @@ keyed tools in this plan (Decision 24).
   start in the same worktree. They are removed from the card when that session ends. If
   Collin dismissed the problems card, a line with a new text for a tool brings it back (a
   dismissal covers the lines it was shown with, not every later line for that tool's name).
-  When it comes back, the new lines are listed first, so the 20-line cap never hides the line
-  that brought it back.
+  When it comes back, the new lines are listed first, and they stay ahead of older lines on
+  later updates while they last, so the 20-line cap never hides the line that brought it back.
 - `/v1/agent/tools` adds `keyed_unavailable`: `null`, or that session's reason (no tool
   name), and `wc.js tool list` shows `needs keys, which <reason>` on each keyed tool's row. `wc.js tool run` on a keyed tool runs it
   without keys in the caller's process, as for any other tool there, and its output starts
@@ -304,7 +322,8 @@ at least one valid, not hidden, script tool declares keys.
   `node --test machine/test/project-tools-service.test.js`.
 - K5 texts chosen without naming providers outside `connectors/`:
   `node --test machine/test/name-guard.test.js`.
-- Dismissed problems card returning for a new line, including with more than 20 lines:
+- Dismissed problems card returning for a new line, including with more than 20 lines and
+  after a second agent start while it is open:
   `node --test viewer/test/app-project-tools-card.test.js`.
 - K6 (including `list` on sandboxed and on unrestricted Codex, a changed-tool error for a
   tool that gained `keys`, no session token, keyless `run` of a keyed tool and its message):
@@ -330,6 +349,7 @@ at least one valid, not hidden, script tool declares keys.
 | A keyed server's own request to the client that contains a key value and is withheld may leave the server waiting or misroute the error | Rare path: needs a server-originated request carrying its key | review-round-3 |
 | A pending key value in a `.mcp.json` draft can overwrite the same key set meanwhile from another tab | Rare path: needs the same key edited in two tabs at once | review-round-13 |
 | An agent that reads the key store files on disk can find key values | Same OS account; IDEA.md Not doing | planning |
+| Adding keyed details to a mixed bridge pushes it over Codex's 64 KiB launch limit, so Codex leaves out the whole bridge, keyless tools included | Rare path: needs a setup already within a few hundred bytes of the limit | review-round-14 |
 
 ## Review Rounds
 
@@ -567,6 +587,8 @@ at least one valid, not hidden, script tool declares keys.
 |------|----------|---------|--------------|------------|
 | intent | minor | Hidden-tool rules tested only in the viewer suite | upheld | Validation: machine-side tests for K5 and K8 hidden cases |
 | intent | minor | Garbled name-guard Validation line | upheld | Validation: split into its own line |
+| mechanics | major | Keyed details push a mixed bridge over Codex's size limit | accepted-risk | Rare path: needs a setup already within a few hundred bytes of Codex's 64 KiB limit |
+| mechanics | minor | Reopening line pushed below the cap by a later start | upheld | K5: new lines stay first while they last |
 
 ## Implementation Tasks
 
