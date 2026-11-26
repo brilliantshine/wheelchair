@@ -67,3 +67,27 @@ test('failed copy extraction leaves pointer and no temporary folder', async () =
   try { const result = await shared.refreshShared({ stateDir:s.stateDir, projectPath:s.clone }); assert.ok(result.error); assert.equal(result.copy, first.copy); assert.equal((await fs.readdir(path.dirname(first.copy))).filter(n => n.startsWith('.tmp-')).length, 0); }
   finally { process.env.PATH = old; }
 });
+
+test('a waiting caller has its own deadline and stale temporary copies are removed', async () => {
+  const s = await setup(); const first = await shared.refreshShared({ stateDir:s.stateDir, projectPath:s.clone });
+  const bin = path.join(s.dir, 'bin'), marker = path.join(s.dir, 'started'); await fs.mkdir(bin);
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  await fs.writeFile(path.join(bin, 'git'), `#!/bin/sh\ncase " $* " in *" fetch "*) touch '${marker}'; sleep 3;; esac\nexec '${realGit}' "$@"\n`, { mode:0o755 });
+  const old = process.env.PATH; process.env.PATH = `${bin}:${old}`;
+  try {
+    const ongoing = shared.refreshShared({ stateDir:s.stateDir, projectPath:s.clone, deadlineMs:8000 });
+    const until = Date.now() + 5000;
+    while (true) { try { await fs.stat(marker); break; } catch (e) { if (e.code !== 'ENOENT' || Date.now() >= until) throw e; await new Promise(resolve => setTimeout(resolve, 25)); } }
+    const start = Date.now(); const waiting = await shared.refreshShared({ stateDir:s.stateDir, projectPath:s.clone, deadlineMs:1200 });
+    assert.ok(Date.now() - start < 2200); assert.match(waiting.error, /still running/); assert.equal(waiting.copy, first.copy);
+    assert.equal((await ongoing).error, null);
+    const stale = path.join(path.dirname(first.copy), '.tmp-stale'); await fs.mkdir(stale); await fs.chmod(stale, 0o555);
+    await shared.cleanupCopies(s.stateDir, new Set()); await assert.rejects(fs.stat(stale), { code:'ENOENT' });
+  } finally { process.env.PATH = old; }
+});
+
+test('a commit without tools produces an empty copy', async () => {
+  const s = await setup(); git(s.source, 'rm', '-r', '.wheelchair'); git(s.source, 'commit', '-m', 'remove tools'); git(s.source, 'push', 'origin', 'main');
+  const result = await shared.refreshShared({ stateDir:s.stateDir, projectPath:s.clone });
+  assert.equal(result.error, null); assert.deepEqual(await fs.readdir(result.copy), []);
+});
