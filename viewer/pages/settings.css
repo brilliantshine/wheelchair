@@ -328,5 +328,5 @@ button.danger { color: var(--bad-text); }
 .pt-folder-good { color: var(--good-text); font-size: 13px; line-height: 1.5; }
 .pt-folder-tools { display: flex; flex-direction: column; gap: 10px; }
 .pt-folder-tools > .hint { margin: 0; }
-.pt-shared > .hint { margin: 8px 0 0; }
+.pt-shared > .hint { margin: -8px 0 0; }
 .pt-folder-tools .pt-tools > .hint { margin: 0; }
