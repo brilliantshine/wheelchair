@@ -594,7 +594,7 @@ Filled by Stage 3. One row per worker brief.
 | T4b | Finish T4: fix hub ready test, copy cleanup ended rule, complete the S2/S3/S8 launch test matrix | T4 files | heavy / gpt-6.2-sol (rung 2; rung 1 was standard xhigh: guardrail) | wc-7fac691ef321-worker-10 | in progress |
 | T5 | `wc.js tool new/list/check/run` and the two templates (S10) | `viewer/app/wc.js`, `viewer/app/tool-cli.js`, `machine/templates/tools/`, `viewer/test/wc-tool.test.js` | standard / gpt-6.1-terra | wc-7fac691ef321-worker-5 | done |
 | T6 | Tools page folder list and Settings Shared tools picker (S6, Mockups) | `viewer/pages/{project-tools,settings}.js`, css, `machine/lib/project-tools.js`, page tests | standard / gpt-6.1-terra (asked for claude; hub sent gpt) | wc-7fac691ef321-worker-9 | done (fixes in T6b) |
-| T6b | Fixes for T6: folder listing never breaks the editor, program checks match launch, literal paths, picker from saved projects, missing tests | T6 files | standard, effort xhigh (rung 1) | | S6 Validation line | in progress |
+| T6b | Fixes for T6: folder listing never breaks the editor, program checks match launch, literal paths, picker from saved projects, missing tests | T6 files | standard / gpt-6.1-terra, effort xhigh (rung 1; asked for claude, hub sent gpt) | wc-7fac691ef321-worker-11 | in progress |
 | T7 | Guide `protocol/tools.md`, role pointers, README, routers (S5, S11) | `protocol/tools.md`, `protocol/app/{lead,sub-lead,worker}.md`, `README.md`, routers | standard (claude) | | read against S1-S10 | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
