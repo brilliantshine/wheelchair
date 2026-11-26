@@ -234,3 +234,69 @@ test('dismissed project tools card stays closed until problem names change', asy
     t = await f.get(); assert.equal(open(t).length, 1); assert.notEqual(open(t)[0].id, id);
   } finally { await finish(f); }
 });
+
+test('keyed lines survive another start and leave when their session stops', async () => {
+  const f = await fixture();
+  try {
+    const name = f.made.sessions[0].name;
+    const keyed = { [name]: [line('keyed unavailable', 'weather')] };
+    await f.apply({ project_tools: tools({ keyed }) });
+    assert.deepEqual(open(await f.get())[0].items, ['keyed unavailable']);
+    await f.apply({ project_tools: tools({ seq: 2, keyed, clis: { claude: { lines: [line('Claude problem', 'other')] } } }) });
+    assert.deepEqual(open(await f.get())[0].items, ['Claude problem', 'keyed unavailable']);
+    await f.hub.withThread(f.made.id, async () => {
+      const t = await f.get();
+      await sessions.stopManagedSession(f.hub, t, t.sessions.find((s) => s.name === name));
+    });
+    assert.deepEqual(open(await f.get())[0].items, ['Claude problem']);
+    await f.apply({ project_tools: tools({ seq: 3, keyed }) });
+    assert.equal(open(await f.get()).length, 0);
+  } finally { await finish(f); }
+});
+
+test('ended and malformed keyed entries do not appear', () => {
+  const t = { sessions: [{ name: 'ended', live: false, ended_at: 'now' }], cards: [] };
+  sessions.applyProjectTools(t, { project_tools: tools({ keyed: { ended: [line('old', 'a')] } }) });
+  assert.equal(open(t).length, 0);
+  t.sessions.push({ name: 'live', live: true });
+  sessions.applyProjectTools(t, { project_tools: tools({ seq: 2, keyed: { live: 'bad' } }) });
+  assert.deepEqual(t.project_tools.state.keyed, {});
+  assert.equal(open(t).length, 0);
+});
+
+test('dismissal covers shown keyed texts and prioritizes new text across later starts', async () => {
+  const f = await fixture();
+  try {
+    const name = f.made.sessions[0].name;
+    const old = line('old keyed', 'a');
+    const programs = Array.from({ length: 22 }, (_, i) => line(`problem ${i}`, 'a'));
+    await f.apply({ project_tools: tools({ programs: [old, ...programs], keyed: { [name]: [old] } }) });
+    let t = await f.get(); const id = open(t)[0].id;
+    assert.equal((await api(f.c, `/threads/${f.made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} })).status, 200);
+    await f.apply({ project_tools: tools({ seq: 2, programs: [old, ...programs], keyed: { [name]: [old] } }) });
+    assert.equal(open(await f.get()).length, 0);
+    const fresh = line('new keyed', 'a');
+    await f.apply({ project_tools: tools({ seq: 3, programs: [old, ...programs], keyed: { [name]: [old, fresh] } }) });
+    t = await f.get();
+    assert.equal(open(t)[0].items[0], 'new keyed');
+    assert.equal(open(t)[0].items.at(-1), 'and 4 more');
+    await f.apply({ project_tools: tools({ seq: 4, programs: [old, ...programs], clis: { claude: { lines: [line('another start', 'a')] } }, keyed: { [name]: [old, fresh] } }) });
+    t = await f.get();
+    assert.equal(open(t)[0].items[0], 'new keyed');
+    assert.equal(open(t)[0].items.at(-1), 'and 5 more');
+  } finally { await finish(f); }
+});
+
+test('stopping the only session with a keyed problem closes the card', async () => {
+  const f = await fixture();
+  try {
+    const name = f.made.sessions[0].name;
+    await f.apply({ project_tools: tools({ keyed: { [name]: [line('only keyed', 'a')] } }) });
+    assert.equal(open(await f.get()).length, 1);
+    await f.hub.withThread(f.made.id, async () => {
+      const t = await f.get();
+      await sessions.stopManagedSession(f.hub, t, t.sessions.find((s) => s.name === name));
+    });
+    assert.equal(open(await f.get()).length, 0);
+  } finally { await finish(f); }
+});
