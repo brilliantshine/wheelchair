@@ -101,15 +101,18 @@ behaves exactly as today.
   that shows key status (K6, K7) uses the same rule.
 
 ### K3. What reaches the tool, and what never reaches the agent
-- The bridge (`machine/lib/tool-bridge.js`) reads the right store itself on **each call**
-  and adds exactly the tool's declared keys to the environment it builds with `toolEnv`.
-  The generated bridge entry (`bridgeEntry`) passes only what it takes to find the store:
-  `--state-dir`, and `project` or `shared` per tool. It never carries a key value.
-- **Bound to agent start.** The bridge entry also lists, for each tool it offers, a hash of
-  that tool's `tool.json` as discovery read it at agent start. The bridge's changed-tool
-  check compares against that hash, not against what it reads when its own process starts
-  or reconnects. So a tool edited after agent start (for example one that gains `keys`)
-  is refused as changed and never run with keys before the next agent start.
+- The generated bridge entry (`bridgeEntry`) passes, per offered tool, its folder as today
+  plus `project` or `shared` (the store, K2) and the key **names** discovery found declared
+  at agent start (none for a keyless tool), and `--state-dir` once. It never carries a key
+  value.
+- The bridge (`machine/lib/tool-bridge.js`) reads that store itself on **each call** and
+  adds exactly the entry's key names, with their values, to the environment it builds with
+  `toolEnv`.
+- **Bound to agent start.** Before each call the bridge checks the tool's current `keys`
+  against the entry's names. If they differ (a tool gained, lost or changed keys after agent
+  start), the call is refused as changed and nothing runs: keys are only ever used as
+  declared when the agent started. Everything else about the changed-tool check, and every
+  keyless tool, behaves exactly as today.
 - No key value is written into any generated MCP config, any connector config file, the
   agent's environment or its starting instructions. Folder tools never use the
   `.mcp.json` env injection (`injectProjectKeys`, `machine/lib/env-launch.js`), which is
@@ -171,18 +174,19 @@ the tool and can add its keys). Agents that call folder tools from the shell ins
 keyed tools in this plan (Decision 24).
 - **Claude, Antigravity (Gemini), unrestricted Codex:** keyed script tools through MCP, with
   keys, as in K3. No added prompt, setting or step (Decision 9).
-- **Sandboxed Codex:** the session's tool problems say `tool <name> needs keys, which
-  sandboxed Codex can't use; set Codex to unrestricted in Settings to use it`.
-- **Kimi and Pi (OpenRouter):** the session's tool problems say `tool <name> needs keys,
-  which this AI can't use yet`.
+- Each such session has one **reason**, and its tool problems show `tool <name> needs keys,
+  which <reason>` for each valid keyed script tool:
+  - **sandboxed Codex:** `sandboxed Codex can't use; set Codex to unrestricted in Settings
+    to use it`;
+  - **Kimi and Pi (OpenRouter):** `this AI can't use yet`.
 - The machine works these lines out itself (using the connector's `sandboxed(session)` to
   pick the text) and keeps them with that session only. They stay on the problems card
   while that session runs, even when it has no MCP entries at all, and whatever other agents
   start in the same worktree. They are removed from the card when that session ends. If
   Collin dismissed the problems card, a line with a new text for a tool brings it back (a
   dismissal covers the lines it was shown with, not every later line for that tool's name).
-- `/v1/agent/tools` adds `keyed_unavailable`: `null`, or that session's text, and
-  `wc.js tool list` shows it for keyed tools. `wc.js tool run` on a keyed tool runs it
+- `/v1/agent/tools` adds `keyed_unavailable`: `null`, or that session's reason (no tool
+  name), and `wc.js tool list` shows `needs keys, which <reason>` on each keyed tool's row. `wc.js tool run` on a keyed tool runs it
   without keys in the caller's process, as for any other tool there, and its output starts
   by saying so.
 - Reviewers get no project tools, as today.
@@ -215,7 +219,8 @@ keyed tools in this plan (Decision 24).
 - The project's **Keys on this machine** editor also lists every key name declared by the
   folder tools that use the project store (K2), set or not set. Its usage and remove texts
   name those tools beside any `.mcp.json` servers. On the shared tools project's own page,
-  its folder tools use the shared store, so the editor lists only its `.mcp.json` names.
+  its folder tools use the shared store, so their declarations are left out of this editor.
+  Its stored project keys and `.mcp.json` names still show, with their Remove controls.
 - After a **key-only** save or removal on the Tools page, only the key names and folder tool
   statuses are read again, so a `needs key` line clears without a reload. Unsaved
   `.mcp.json` tool edits, Windows settings and other pending key values stay as they are. The refresh also returns
@@ -251,7 +256,8 @@ the rule that a tool must never print or log a key in any form, never writing a 
 tool's files, which agents can use keyed tools (K5),
 and how to try one (K6), and that server tools can't have keys yet. The starting-instructions
 line for Kimi, Pi and sandboxed Codex (easy-tools S11) is shown when the session has any
-valid script tool, keyed or not, and adds that keyed tools are unavailable there.
+valid script tool, keyed or not. It adds that keyed tools are unavailable there only when
+at least one valid script tool declares keys.
 
 ### Not doing (this plan)
 - No change to `.mcp.json` key injection (Decision 8).
@@ -280,10 +286,12 @@ valid script tool, keyed or not, and adds that keyed tools are unavailable there
   `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
 - K5 (per-AI availability and problems texts for sandboxed Codex, Kimi and Pi; keyed tools
   absent from generated entries there): `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/folder-tools-launch.test.js`. The hub card keeping a session's line through a Claude start and dropping it when its session ends: `node --test viewer/test/app-project-tools-card.test.js`.
-- K3 binding (a bridge started after a tool gained `keys` refuses it as changed):
+- K3 binding (a bridge started or reconnected after a tool gained, lost or changed `keys`
+  refuses it as changed; a keyless tool edited the same way behaves as today):
   `node --test machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js`.
 - K8 starting line in the actual starting instructions when the only script tool is keyed,
-  on Kimi and on sandboxed Codex: `node --test machine/test/project-tools-service.test.js`.
+  on Kimi and on sandboxed Codex, and without the keyed clause when no tool is keyed;
+  K5 lines for two keyed tools in one session; `node --test machine/test/name-guard.test.js`: `node --test machine/test/project-tools-service.test.js`.
 - Dismissed problems card returning for a new line: `node --test viewer/test/app-project-tools-card.test.js`.
 - K6 (including `list` on sandboxed and on unrestricted Codex, a changed-tool error for a
   tool that gained `keys`, no session token, keyless `run` of a keyed tool and its message):
@@ -507,9 +515,25 @@ valid script tool, keyed or not, and adds that keyed tools are unavailable there
 
 ### Round 12 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 11:** K3 (bridge bound to discovery-time hashes), K5 (dismissed card and new lines), K6 `run` message, K7 Tools page text, K8 starting line, Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Hash binding changes keyless behavior | upheld | K3: bind keys only (names in the entry); keyless unchanged |
+| intent | minor | Keyed clause in every keyless session | upheld | K8: only when a keyed tool exists |
+| mechanics | major | Hashes can't keep the listing fixed | upheld | Cut: K3 binds only the key names, refusing calls whose keys changed; listing as today |
+| mechanics | minor | Raw hash breaks keyless edits | upheld | Same fix as intent 1 |
+| mechanics | minor | One unavailable string for many tools | upheld | K5: per-session reason, rendered per row |
+| mechanics | minor | Shared project's editor hides stored keys | upheld | K7: only shared-store declarations left out |
+| mechanics | minor | Name-guard test missing | upheld | Added |
+
+### Round 13 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 12:** K3 (entry carries store and key names; calls refused when keys changed since agent start; hashes removed), K5 (per-session reason), K7 (shared project's editor), K8 (keyed clause), Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
