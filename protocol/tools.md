@@ -52,7 +52,7 @@ A lead asked for a shared tool in another project's thread says it belongs in th
 
 ## Make and test
 
-Run `node <wheelchair-root>/viewer/app/wc.js tool` followed by these commands. In a session they use its worktree and pinned shared copy; outside a session they use the current git checkout only. `new` writes into the current worktree and refuses an existing folder. `list` shows name, kind, source and status (`--json` gives JSON). `check [name]` validates tools and checks a server's MCP handshake and advertised tool list, with a 30-second deadline. `run name --input '<json>'` runs a script, with `{}` as the default input.
+Run `node <wheelchair-root>/viewer/app/wc.js tool` followed by these commands. In a session they use its worktree and pinned shared copy; outside a session they use the current git checkout only. `new` writes into the current worktree and refuses an existing folder. `list` shows each tool's name, kind, source and `ok` or the reason it can't be used (`--json` gives JSON). `check [name]` validates tools and checks a server's MCP handshake and advertised tool list, with a 30-second deadline. `run name --input '<json>'` runs a script, with `{}` as the default input.
 
 For example, in a scratch checkout:
 
@@ -72,6 +72,6 @@ Create a template with `new`, edit it, run `check` and `run` with representative
 
 ## AI limits
 
-Claude, unrestricted Codex and Antigravity receive folder tools through MCP in roles that receive project tools. Kimi, Pi and sandboxed Codex run script tools from the shell with `wc.js tool run`; set the shell call timeout above the tool's `timeout_seconds`. They have no server tools; Codex needs unrestricted mode for those. Codex has a launch argument size limit: `.mcp.json` entries are kept first, then folder entries are added while they fit, and omitted entries appear on the problems card.
+Claude, unrestricted Codex and Antigravity receive folder tools through MCP in roles that receive project tools. Kimi, Pi and sandboxed Codex run script tools from the shell with `wc.js tool run`; set the shell call timeout above the tool's `timeout_seconds`. They have no server tools; Codex needs unrestricted mode for those. Codex keeps `.mcp.json` entries first, then tries folder entries one at a time (bridge first, then server tools by name). Any entry that would push the launch arguments over Codex's 64 KiB budget is left out and named on the problems card; later smaller entries can still fit.
 
-Codex sets the bridge's MCP call deadline to 260 seconds. Codex 0.172.0 defaults to 300 seconds per call for server tools. Claude's and Antigravity's MCP call deadlines are also unchecked, including whether they allow 260 seconds; a long script may therefore time out earlier on those clients.
+Codex sets the bridge's MCP call deadline to 260 seconds. Codex 0.172.0 defaults to 300 seconds per call for server tools. Claude Code reads a per-call MCP timeout from the `MCP_TOOL_TIMEOUT` environment variable (milliseconds); its default was not checked. Claude's and Antigravity's MCP call deadlines are unchecked, including whether they allow 260 seconds; a long script may therefore time out earlier on those clients.

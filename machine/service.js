@@ -992,7 +992,7 @@ class MachineService {
       folder = [...found.problems];
       if (session.shared_tools.reason) folder.push({ names: [], text: session.shared_tools.reason });
       scriptRows = found.usable.filter(row => row.kind === 'script');
-      const servers = found.usable.filter(row => row.kind === 'server');
+      const servers = found.usable.filter(row => row.kind === 'server').sort((a, b) => a.name.localeCompare(b.name));
       const entries = [...(scriptRows.length ? [folderTools.bridgeEntry(worktree, scriptRows)] : []), ...servers.map(row => folderTools.serverEntry(worktree, row))];
       context.extraServers = entries.filter(entry => {
         if (!mcp?.names.includes(entry.name)) return true;
