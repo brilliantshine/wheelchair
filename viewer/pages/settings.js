@@ -2247,24 +2247,16 @@
   async function loadSharedProjects() {
     if (sharedLoading || sharedProjects) return;
     sharedLoading = true;
-    const projects = [];
     try {
-      const initial = await api('/new-thread?machine=hub');
-      const machines = initial.machines || ['hub'];
-      for (const machine of machines) {
-        const listing = machine === 'hub' ? initial : await api('/new-thread?machine=' + encodeURIComponent(machine));
-        const seen = new Set();
-        const entries = [...(listing.saved || []), ...(listing.found || []), ...(listing.previous || []).map(path => ({ path, name: path.split('/').filter(Boolean).pop() }))];
-        for (const entry of entries) {
-          if (!entry.path || seen.has(entry.path)) continue;
-          seen.add(entry.path);
-          try {
-            const result = await api('/project-tools/read', { method: 'POST', body: { machine, path: entry.path } });
-            projects.push({ name: entry.name || entry.path, repo: result.repo });
-          } catch { projects.push({ name: entry.name || entry.path, repo: null }); }
-        }
-      }
-      sharedProjects = projects;
+      const entries = (data.saved_dirs || []).filter(entry => entry.path && entry.machine);
+      const machines = new Set(entries.map(entry => entry.machine));
+      sharedProjects = await Promise.all(entries.map(async entry => {
+        const name = (entry.name || entry.path) + (machines.size > 1 ? ` (${entry.machine})` : '');
+        try {
+          const result = await api('/project-tools/read', { method: 'POST', body: { machine: entry.machine, path: entry.path, repo_only: true } });
+          return { name, repo: result.repo };
+        } catch { return { name, repo: null }; }
+      }));
     } catch { sharedProjects = []; }
     sharedLoading = false;
     if (section === 'shared-tools') renderPanel();
@@ -2275,7 +2267,6 @@
     select.append(h('option', { value: '', text: 'None' }));
     const seen = new Set();
     for (const item of sharedProjects || []) {
-      if (item.repo && seen.has(item.repo.toLowerCase())) continue;
       if (item.repo) seen.add(item.repo.toLowerCase());
       select.append(h('option', { value: item.repo || '', disabled: !item.repo, text: item.repo ? item.name : item.name + ' (no GitHub origin)' }));
     }
