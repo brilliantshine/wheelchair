@@ -7,7 +7,8 @@ const { entryReason, checkDocumentText } = require('./project-mcp');
 const folderTools = require('./folder-tools');
 const connectors = require('../../connectors');
 const projectConnectors = connectors.list().filter(m => m.capabilities.projectTools).map(m => connectors.machine(m.cli));
-const { KEY_NAME, reservedNames, isReserved, keyReferences, projectIdentity, readKeyStore, writeKeyStore } = require('./project-keys');
+const { KEY_NAME, reservedNames, isReserved, keyReferences, projectIdentity, readKeyStore, writeKeyStore, usableReason } = require('./project-keys');
+const { readSharedKeys } = require('./shared-keys');
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const reason = r => (r.stderr || r.stdout || 'command failed').trim();
 const keys = store => Object.keys(store.keys);
@@ -35,6 +36,7 @@ function checksFor(servers, store) {
   return { checks, references, file_warnings: projectConnectors.map(connector => connector.projectToolFileWarning(valid)).filter(Boolean) };
 }
 const marks = document => object(document?.wheelchair) && Array.isArray(document.wheelchair.windows) && document.wheelchair.windows.every(x => typeof x === 'string') ? document.wheelchair.windows : [];
+function validateName(name) { if (!KEY_NAME.test(name)) return `invalid key name: ${name}`; if (isReserved(name)) return `${name} can't be set here: it would change how the agent itself runs`; return null; }
 function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = () => crypto.randomBytes(6).toString('hex') }) {
   const run = (program, args, options = {}) => commandAsync(program, args, { ...options, timeout: 60000, env: { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0' } });
   const git = (dir, ...args) => run('git', ['-C', dir, ...args]);
@@ -59,14 +61,14 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
     const text = await must(git(dir, 'cat-file', 'blob', oid)), checked = checkDocumentText(text);
     return checked.ok ? { state: 'ok', reason: null, document: checked.data, mode, oid } : { state: 'unreadable', reason: checked.reason, document: null, mode, oid };
   }
-  async function fetched(dir, destination, action) {
+  async function fetched(dir, destination, action, includeSource = true) {
     const output = await must(git(dir, 'ls-remote', '--symref', destination.url, 'HEAD'));
     const match = /^ref: refs\/heads\/(.+)\s+HEAD$/m.exec(output);
     if (!match) throw new Error('could not determine default branch');
     const branch = match[1], ref = `refs/wheelchair/tools/${id()}`;
     try {
       await must(git(dir, 'fetch', '--no-write-fetch-head', '--no-tags', destination.url, `+refs/heads/${branch}:${ref}`));
-      return await action({ branch, ref, source: await sourceAt(dir, ref) });
+      return await action({ branch, ref, source: includeSource ? await sourceAt(dir, ref) : null });
     } finally { await git(dir, 'update-ref', '-d', ref); }
   }
   async function project(dir) { if (typeof dir !== 'string' || !dir) throw new Error('invalid project path'); return identity(dir); }
@@ -117,7 +119,7 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
   async function folderListing(input, origin, projectRows = null) {
     const result = { rows: projectRows || [], notes: [] };
     if (!origin) result.notes.push('folder tools can only be listed for GitHub projects');
-    else if (!projectRows) try { result.rows = await fetched(input.path, origin, ({ ref }) => folderRows(input.path, ref)); }
+    else if (!projectRows) try { result.rows = await fetched(input.path, origin, ({ ref }) => folderRows(input.path, ref), false); }
     catch (e) { result.notes.push(folderError(e)); }
     const choice = input.shared_tools;
     try { if (choice && typeof choice.repo === 'string' && Array.isArray(choice.candidates) && origin?.repo.toLowerCase() !== choice.repo.toLowerCase()) {
@@ -145,6 +147,34 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
     } catch (e) { result.notes.push(folderError(e)); }
     return result;
   }
+  async function decorate(input, origin, listing, store) {
+    const ownShared = !!(origin && typeof input.shared_tools?.repo === 'string' && origin.repo.toLowerCase() === input.shared_tools.repo.toLowerCase());
+    let shared; try { shared = await readSharedKeys(stateDir); } catch { shared = { keys: {} }; }
+    const declarations = new Map();
+    for (const row of listing.rows) {
+      if (!row.tool?.keys?.length) continue;
+      const names = row.tool.keys, keyStore = folderTools.toolKeyStore(row, ownShared);
+      const source = keyStore === 'shared' ? shared : store;
+      const missing = names.filter(name => !Object.hasOwn(source.keys, name) || usableReason(source.keys[name]));
+      row.keys = names; row.key_store = keyStore; row.key_missing = !!missing.length;
+      row.key_lines = missing.length ? [`needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine${ownShared ? '; set it in Settings, Shared tools, Shared keys' : ''}`] : row.status === 'ok' ? ['uses keys: not available to sandboxed Codex, Kimi or Pi'] : [];
+      if (keyStore === 'project') for (const name of names) { if (!declarations.has(name)) declarations.set(name, []); declarations.get(name).push(row.name); }
+    }
+    return [...new Set([...Object.keys(store.keys), ...declarations.keys()])].sort().map(name => {
+      const stored = Object.hasOwn(store.keys, name), why = stored ? usableReason(store.keys[name]) : null;
+      return { name, stored, folder_usable: stored ? !why : null, reason: why, tools: (declarations.get(name) || []).sort() };
+    });
+  }
+  async function keyStatus(input) {
+    let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
+    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', error: e.message } }; }
+    const configured = await git(input.path, 'config', '--get-all', 'remote.origin.url');
+    const urls = configured.ok ? configured.stdout.trim().split('\n') : [];
+    const repo = urls.length === 1 ? repoName(urls[0]) : null, origin = repo ? { repo, url: urls[0] } : null;
+    const folder_tools = await folderListing(input, origin);
+    const key_info = await decorate(input, origin, folder_tools, store);
+    return { status: 200, body: { key_revision: store.revision, keys: keys(store), key_info, folder_tools } };
+  }
   async function read(input) {
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
     if (input.repo_only === true) {
@@ -162,13 +192,14 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
     base.repo = originRepo;
     const destination = await remote(input.path);
     if (!destination) base.folder_tools = await folderListing(input, origin);
-    if (!destination) { if (notice) base.notice += `; ${notice}`; return { status: 200, body: base }; }
+    if (!destination) { base.key_info = await decorate(input, origin, base.folder_tools, store); if (notice) base.notice += `; ${notice}`; return { status: 200, body: base }; }
     try {
       return await fetched(input.path, destination, async ({ branch, ref, source }) => {
         let rows = [], folderFailure = null;
         try { rows = await folderRows(input.path, ref); } catch (e) { folderFailure = folderError(e); }
         base.folder_tools = await folderListing(input, origin, rows);
         if (folderFailure) base.folder_tools.notes.unshift(folderFailure);
+        base.key_info = await decorate(input, origin, base.folder_tools, store);
         const result = { ...base, mode: 'tools', notice, repo: destination.repo, default_branch: branch, source: { state: source.state, reason: source.reason, document: source.document }, token: { ...base.token, baseline: { repo: destination.repo, source_state: source.state, branch, mode: source.mode, oid: source.oid } } };
         if (source.document) { result.windows = marks(source.document); Object.assign(result, checksFor(source.document.mcpServers, store)); }
         const listed = await run('gh', ['pr', 'list', '--repo', destination.repo, '--base', branch, '--state', 'open', '--limit', '1000', '--json', 'number,url,title,headRefName,isCrossRepository']);
@@ -176,9 +207,8 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
         else try { result.waiting = JSON.parse(listed.stdout).filter(p => !p.isCrossRepository && p.headRefName.startsWith('wc-tools/')).map(p => ({ number: p.number, url: p.url, title: p.title, branch: p.headRefName })); } catch { result.waiting_error = 'invalid pull request response'; }
         return { status: 200, body: result };
       });
-    } catch (e) { if (!base.folder_tools) { base.folder_tools = await folderListing(input, origin, []); base.folder_tools.notes.unshift(folderError(e)); } base.mode = 'unreachable'; base.notice = `Couldn't reach GitHub: ${e.message}${notice ? `; ${notice}` : ''}`; return { status: 200, body: base }; }
+    } catch (e) { if (!base.folder_tools) { base.folder_tools = await folderListing(input, origin, []); base.folder_tools.notes.unshift(folderError(e)); } base.key_info = await decorate(input, origin, base.folder_tools, store); base.mode = 'unreachable'; base.notice = `Couldn't reach GitHub: ${e.message}${notice ? `; ${notice}` : ''}`; return { status: 200, body: base }; }
   }
-  function validateName(name) { if (!KEY_NAME.test(name)) return `invalid key name: ${name}`; if (isReserved(name)) return `${name} can't be set here: it would change how the agent itself runs`; return null; }
   async function save(input) {
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
     let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: 0, keys: [], error: "the key store on this machine can't be read" } }; }
@@ -255,6 +285,14 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
     try { store = await writeKeyStore(stateDir, projectId, { remove: [input.name] }); return { status: 200, body: { outcome: 'removed', key_revision: store.revision, keys: keys(store) } }; }
     catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: "the key store on this machine can't be written" } }; }
   }
-  return { read, save, removeKey, identity };
+  const withInfo = action => async input => {
+    const result = await action(input);
+    if (result.body.keys && result.status === 200) {
+      const status = await keyStatus(input);
+      if (status.status === 200) result.body.key_info = status.body.key_info;
+    }
+    return result;
+  };
+  return { read, save: withInfo(save), removeKey: withInfo(removeKey), keyStatus, identity };
 }
-module.exports = { createProjectTools, repoName };
+module.exports = { createProjectTools, repoName, validateName };

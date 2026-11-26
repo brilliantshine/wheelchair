@@ -464,3 +464,20 @@ test('literal tool paths do not interpret wildcard folder names', async () => {
   assert.equal(row.name, 'bad[abc]'); assert.match(row.reason, /name/i); assert.doesNotMatch(row.reason, /missing/i);
   assert.ok(calls.length >= 2); assert.ok(calls.every(args => args.includes('--literal-pathspecs')));
 });
+test('folder key status and key-only refresh use the selected store', async () => {
+  const f = await fixture(), dir = path.join(f.repo, '.wheelchair/tools/demo'); await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'demo', description: 'Demo', kind: 'script', inputs: {}, run: ['node'], keys: ['TOKEN'] }));
+  const plain = path.join(f.repo, '.wheelchair/tools/plain'); await fs.mkdir(plain); await fs.writeFile(path.join(plain, 'tool.json'), JSON.stringify({ name: 'plain', description: 'Plain', kind: 'script', inputs: {}, run: ['node'] }));
+  git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'tool'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const input = { path: f.repo }, read = (await f.tools.read(input)).body;
+  assert.equal(Object.hasOwn(read.folder_tools.rows[1], 'keys'), false); assert.equal(read.folder_tools.rows[0].key_missing, true); assert.deepEqual(read.key_info[0].tools, ['demo']);
+  await f.tools.save({ ...input, token: read.token, tools: null, keys: { TOKEN: 'short' } });
+  let status = (await f.tools.keyStatus(input)).body; assert.equal(status.key_revision, 1); assert.equal(status.key_info[0].folder_usable, false); assert.equal(status.source, undefined);
+  const read2 = (await f.tools.read(input)).body;
+  await f.tools.save({ ...input, token: read2.token, tools: null, keys: { TOKEN: 'longvalue' } });
+  status = (await f.tools.keyStatus(input)).body; assert.deepEqual(status.folder_tools.rows[0].key_lines, ['uses keys: not available to sandboxed Codex, Kimi or Pi']);
+  const own = (await f.tools.keyStatus({ ...input, shared_tools: { repo: 'OWNER/NAME', candidates: [] } })).body;
+  assert.equal(own.folder_tools.rows[0].key_store, 'shared'); assert.match(own.folder_tools.rows[0].key_lines[0], /Shared keys/); assert.deepEqual(own.key_info[0].tools, []);
+  await require('../lib/shared-keys').writeSharedKeys(path.join(f.root, 'state'), { set: { TOKEN: 'sharedvalue' } });
+  const shared = (await f.tools.keyStatus({ ...input, shared_tools: { repo: 'owner/name', candidates: [] } })).body; assert.equal(shared.folder_tools.rows[0].key_missing, false);
+});

@@ -283,6 +283,8 @@ class MachineService {
     this.tryService = new TryService({ stateDir: this.stateDir, root: ROOT, projects: params => this.projects(params) });
     this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir, wsl: () => !!this.win?.detected?.kernel });
     this.projectToolsLocks = new Map();
+    this.sharedKeysPage = require('./lib/shared-keys-page').createSharedKeysPage({ stateDir: this.stateDir });
+    this.sharedKeysLock = Promise.resolve();
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
@@ -2152,11 +2154,11 @@ class MachineService {
         }));
         return send(response, 200, { wsl: true, status });
       }
-      if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
+      if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key', '/v1/project-tools/key-status'].includes(url.pathname)) {
         await this.authorize(request, 'hub');
         const input = await bodyOf(request);
-        const action = url.pathname.endsWith('/read') ? 'read' : url.pathname.endsWith('/save') ? 'save' : 'removeKey';
-        if (action === 'read') { const result = await this.projectTools.read(input); return send(response, result.status, result.body); }
+        const action = url.pathname.endsWith('/read') ? 'read' : url.pathname.endsWith('/save') ? 'save' : url.pathname.endsWith('/key-status') ? 'keyStatus' : 'removeKey';
+        if (action === 'read' || action === 'keyStatus') { const result = await this.projectTools[action](input); return send(response, result.status, result.body); }
         let identity;
         try { identity = await this.projectTools.identity(input.path); } catch { const result = await this.projectTools[action](input); return send(response, result.status, result.body); }
         const previous = this.projectToolsLocks.get(identity) || Promise.resolve();
@@ -2165,6 +2167,16 @@ class MachineService {
         await previous;
         try { const result = await this.projectTools[action](input); return send(response, result.status, result.body); }
         finally { if (this.projectToolsLocks.get(identity) === current) this.projectToolsLocks.delete(identity); release(); }
+      }
+      if (request.method === 'POST' && ['/v1/shared-keys/read', '/v1/shared-keys/save', '/v1/shared-keys/remove'].includes(url.pathname)) {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request), action = url.pathname.split('/').pop();
+        if (action === 'read') { const result = await this.sharedKeysPage.read(input); return send(response, result.status, result.body); }
+        const previous = this.sharedKeysLock;
+        let release; this.sharedKeysLock = new Promise(resolve => { release = resolve; });
+        await previous;
+        try { const result = await this.sharedKeysPage[action](input); return send(response, result.status, result.body); }
+        finally { release(); }
       }
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
       if (request.method === 'GET' && url.pathname === '/v1/spend') {
