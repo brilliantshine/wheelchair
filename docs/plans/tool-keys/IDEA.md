@@ -29,14 +29,16 @@ agent can read them.
 - A tool whose key is missing shows "needs key X, not set on this machine" on the Tools
   page and does not run.
 - Collin can add, change and remove shared keys in a Shared keys section of Settings.
-- A key's value never shows up in tool output an agent receives, whether printed as-is or
-  under standard escapes (JSON, web addresses). Keys a tool deliberately transforms (base64,
-  hashing, splitting) are beyond what wheelchair can catch; tool authors must never print keys.
+- A key a tool prints as-is never shows up in the output an agent receives. Keys a tool
+  transforms (base64, hashing, splitting) are beyond what wheelchair can catch; tool authors
+  must never print keys.
 
 ## Not doing
 
 - Keys for server tools (folder tools that run as an MCP server). They moved to their own
   thread, "Keys for server tools"; here only script tools get keys.
+- Hiding keys a tool prints in escaped form (JSON codes, web-address codes). That moved to
+  its own thread, "Hide escaped keys in tool output".
 
 - Stopping an agent that deliberately goes looking for the key files on disk. Agents run
   under the same user account as wheelchair, so file permissions cannot hide the files from

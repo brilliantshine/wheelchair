@@ -46,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 20 | Confirms 19: the redaction limit is common escapes (JSON/backslash, percent, up to three layers); base64, hashing and splitting are not caught and the guide forbids printing keys. IDEA.md "What good looks like" updated | Collin: common escapes, clear limit | idea-change |
 | 21 | Cut edges are trimmed by whole lines, not by a byte count | Keys contain no newline in any spelling, so this covers escaped keys at any cut | review-round-6 |
 | 22 | Supersedes 21: cut edges are trimmed back to the nearest byte no key spelling can contain, each edge on its own | Keeps long single-line output; covers both stderr ends | review-round-7 |
+| 23 | Catching keys printed in escaped forms (K4's former step 3) split into its own thread; here only keys printed as-is are hidden; supersedes 19 and narrows 20 | Collin: split it off, after four review rounds of findings in that part | idea-change |
 
 ## Spec
 
@@ -87,7 +88,7 @@ behaves exactly as today.
   real API keys use). Any other stored value counts as not set, and the status gives the
   reason: `value too short (under 8 characters)`, `value too long` or `value has characters
   folder tools can't use (letters, digits and . _ ~ + / = - only)`. With these characters a
-  key can't span lines, and K4's cut and decoding rules can rely on that. K4 states what is
+  key can't span lines, and K4's cut rule can rely on that. K4 states what is
   not caught.
 - The Shared keys editor refuses an unusable value, with that same wording. The project key
   editor still accepts any non-empty value (`.mcp.json` servers may use short ones). It
@@ -138,21 +139,12 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
      an edge has no separator at all, that capture is dropped. Where something was dropped,
      the text ends (or starts) with `[output cut]`.
   2. **Plain keys.** Every occurrence of a key value is replaced with `[key <NAME>]`.
-  3. **Disguised keys.** If the text contains a key in any spelling made by up to three
-     layers of JSON/backslash escapes (`\uXXXX`, `\/` and the like) and percent-encoding
-     (`%XX`), in any order and any hex case, that stream's whole text becomes `[output
-     withheld: it contained a key value]`. The search must find a spelling wherever it
-     starts, even right after text that itself looks like an escape. For example the key
-     `41CD+EFGH` inside `progress=100%41CD%2BEFGH` is found, so decoding the whole stream
-     first is not enough. One way is a matcher built per key, where each character may be
-     itself or any of its escape spellings, nested up to three layers. This catches .NET's
-     `\u002B`, PHP's `\/`, URL encoding, a URL inside a URL, and escaped text logged again
-     as JSON. A stray `100%` or a lone backslash elsewhere never stops the search.
-  4. **Cuts for the agent.** Only then come the 1 MiB result cut and the 4 KiB stderr tail.
-- **The limit.** Redaction catches a key as written and under up to three layers of those
-  standard escapes. Other transforms are not caught: base64 (for example an HTTP Basic auth
-  header), hashing, or splitting the key up. The guide tells authors never to print or log a
-  key in any form (Decision 19).
+  3. **Cuts for the agent.** Only then come the 1 MiB result cut and the 4 KiB stderr tail.
+- **The limit.** Only keys printed as-is are hidden. A key printed in an escaped form
+  (JSON `\uXXXX` or `\/` escapes, percent-encoding in a web address) is not caught here.
+  Catching those is split into its own thread (Decision 23). Other transforms (base64,
+  hashing, splitting) are not caught either. The guide tells authors never to print or log a
+  key in any form, and warns that escaped forms are not yet hidden.
 - **Launch errors** for a keyed tool (spawn failing in the bridge or the K5 route) report
   only `cannot start <program>: <error code>`, never the error's own message, which can echo
   environment values.
@@ -254,7 +246,8 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
 `protocol/tools.md` replaces "keys are not supported yet" with: the `keys` field and an
 example, where each kind of tool's keys come from (K2), what reaches the agent and what
 doesn't (K3, including the `.mcp.json` caveat and the same-account limit in IDEA.md), output
-redaction and its limit (K4: what is caught, and that base64, hashing or splitting are not),
+redaction and its limit (K4: only keys printed as-is are hidden; escaped forms, base64,
+hashing or splitting are not),
 the rule that a tool must never print or log a key in any form, never writing a key into a
 tool's files, which agents can use keyed tools (K5),
 and how to try one (K6), and that server tools can't have keys yet. The starting-instructions
@@ -267,6 +260,7 @@ makes it usable mid-session (K3).
 - No change to `.mcp.json` key injection (Decision 8).
 - No keyed tools in sandboxed Codex (Decision 9).
 - No keys for server tools: their own thread (Decision 15).
+- No catching of keys printed in escaped forms: their own thread (Decision 23).
 - No HTTP folder tools (easy-tools Deferred 3) and no Windows-side folder tools.
 
 ### Validation
@@ -278,11 +272,7 @@ makes it usable mid-session (K3).
 - K4 (redaction including a key split across chunks, at the 2 MiB capture limit and at the
   1 MiB cut and in a forced-close or timed-out stream, plain and escaped (a `\u`-escaped
   key cut mid-way leaves nothing of it); stderr trimmed at both ends, on timeout and on forced
-  close; a long single line keeping all but its last word; `41CD+EFGH` found in
-  `progress=100%41CD%2BEFGH`; plain keys replaced;
-  a `%2B` key in a stream that also holds a stray `100%`; withheld for
-  `\u002B`, `\/`, `%2B`, `%252B` (a URL inside a URL) and a `JSON.stringify` of
-  already-escaped text; a base64 form is not caught (the stated limit); non-ASCII values
+  close; a long single line keeping all but its last word; plain keys replaced; an escaped key passes (the stated limit); non-ASCII values
   counted as not set; launch errors
   without values; output unchanged without keys):
   `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
@@ -446,6 +436,15 @@ makes it usable mid-session (K3).
 | mechanics | blocking | Whole-stream decoding swallows an escaped key | upheld | K4 step 3: find spellings at any start |
 | mechanics | minor | CLI can't tell sandboxed Codex | upheld | K5: `keyed_unavailable` field |
 | mechanics | minor | Changed-tool error points to keyless run | upheld | K6: error and guide point to next agent start |
+
+### Round 8 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 7:** Escaped-key detection split off (Decision 23, IDEA.md): K4 step 3 removed and the limit restated; K2 and K8 wording; Not doing; Validation. Round 7 fixes: K4 step 1 (separator trim at each edge; Decision 22), K5 (`keyed_unavailable`, lost-connection text), K6 (changed-tool error).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
