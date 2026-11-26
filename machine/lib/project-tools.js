@@ -72,14 +72,14 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
   async function project(dir) { if (typeof dir !== 'string' || !dir) throw new Error('invalid project path'); return identity(dir); }
   async function folderRows(dir, ref) {
     const base = '.wheelchair/tools';
-    const listing = await must(git(dir, 'ls-tree', '-z', ref, '--', base + '/'));
+    const listing = await must(git(dir, '--literal-pathspecs', 'ls-tree', '-z', ref, '--', base + '/'));
     const rows = [];
     for (const item of listing.split('\0').filter(Boolean)) {
       const match = /^(\d+) (\S+) ([0-9a-f]+)\t([\s\S]+)$/.exec(item);
       if (!match || match[2] !== 'tree') continue;
       const name = match[4].slice(base.length + 1), toolDir = path.resolve(dir, base, name);
       const row = { name, source: 'project', dir: toolDir, kind: null, tool: null, status: 'invalid', reason: null };
-      const file = await must(git(dir, 'ls-tree', '-z', ref, '--', `${base}/${name}/tool.json`));
+      const file = await must(git(dir, '--literal-pathspecs', 'ls-tree', '-z', ref, '--', `${base}/${name}/tool.json`));
       const meta = /^(\d+) (\S+) ([0-9a-f]+)\t/.exec(file);
       if (!meta) row.reason = 'tool.json is missing';
       else if (!['100644', '100755'].includes(meta[1]) || meta[2] !== 'blob') row.reason = 'tool.json is not a regular file';
@@ -100,24 +100,27 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
       if (row.status === 'ok') {
         const program = row.kind === 'script' ? row.tool.run[0] : row.tool.start[0];
         let found;
-        if (program.includes('/')) {
-          const target = path.posix.normalize(`${base}/${name}/${program}`);
-          const result = await git(dir, 'ls-tree', ref, '--', target);
-          found = result.ok && /^100(?:644|755) blob /.test(result.stdout);
+        let notExecutable = false;
+        if (program.includes('/') && !path.isAbsolute(program)) {
+          const folder = `${base}/${name}`, target = path.posix.normalize(`${folder}/${program}`);
+          const result = target.startsWith(folder + '/') ? await must(git(dir, '--literal-pathspecs', 'ls-tree', ref, '--', target)) : '';
+          found = /^(?:100755|120000) blob /.test(result);
+          notExecutable = /^100644 blob /.test(result);
         } else found = folderTools.findProgram(program, toolDir, process.env.PATH);
-        if (!found) { row.status = 'missing-program'; row.reason = `its program ${program} wasn't found`; }
+        if (!found) { row.status = 'missing-program'; row.reason = notExecutable ? `its program ${program} isn't executable` : `its program ${program} wasn't found`; }
       }
       rows.push(row);
     }
     return rows.sort((a, b) => a.name.localeCompare(b.name));
   }
+  const folderError = e => `couldn't list folder tools: ${String(e?.message || e).replace(/\s+/g, ' ').trim()}`;
   async function folderListing(input, origin, projectRows = null) {
     const result = { rows: projectRows || [], notes: [] };
     if (!origin) result.notes.push('folder tools can only be listed for GitHub projects');
     else if (!projectRows) try { result.rows = await fetched(input.path, origin, ({ ref }) => folderRows(input.path, ref)); }
-    catch (e) { result.notes.push(`couldn't list folder tools: ${e.message}`); }
+    catch (e) { result.notes.push(folderError(e)); }
     const choice = input.shared_tools;
-    if (choice && typeof choice.repo === 'string' && Array.isArray(choice.candidates) && origin?.repo.toLowerCase() !== choice.repo.toLowerCase()) {
+    try { if (choice && typeof choice.repo === 'string' && Array.isArray(choice.candidates) && origin?.repo.toLowerCase() !== choice.repo.toLowerCase()) {
       const shared = require('./shared-tools');
       const projectPath = await shared.findSharedProject(choice.repo, choice.candidates);
       if (!projectPath) result.notes.push("the shared tools project isn't added on this machine");
@@ -139,10 +142,16 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
         }
       }
     }
+    } catch (e) { result.notes.push(folderError(e)); }
     return result;
   }
   async function read(input) {
     let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
+    if (input.repo_only === true) {
+      const configured = await git(input.path, 'config', '--get-all', 'remote.origin.url');
+      const urls = configured.ok ? configured.stdout.trim().split('\n') : [];
+      return { status: 200, body: { repo: urls.length === 1 ? repoName(urls[0]) : null } };
+    }
     let store, notice = null;
     try { store = await readKeyStore(stateDir, projectId); } catch (e) { store = { revision: 0, keys: Object.create(null) }; notice = "the key store on this machine can't be read"; }
     const base = { wsl: !!wsl(), windows: [], mode: 'keys-only', notice: "Tools can't be shown or edited here: pull requests need a GitHub origin", repo: null, default_branch: null, token: { project: projectId, baseline: null, key_revision: store.revision }, source: null, checks: Object.create(null), file_warnings: [], keys: keys(store), references: Object.create(null), reserved: reservedNames(), waiting: [], waiting_error: null };
@@ -156,7 +165,10 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
     if (!destination) { if (notice) base.notice += `; ${notice}`; return { status: 200, body: base }; }
     try {
       return await fetched(input.path, destination, async ({ branch, ref, source }) => {
-        base.folder_tools = await folderListing(input, origin, await folderRows(input.path, ref));
+        let rows = [], folderFailure = null;
+        try { rows = await folderRows(input.path, ref); } catch (e) { folderFailure = folderError(e); }
+        base.folder_tools = await folderListing(input, origin, rows);
+        if (folderFailure) base.folder_tools.notes.unshift(folderFailure);
         const result = { ...base, mode: 'tools', notice, repo: destination.repo, default_branch: branch, source: { state: source.state, reason: source.reason, document: source.document }, token: { ...base.token, baseline: { repo: destination.repo, source_state: source.state, branch, mode: source.mode, oid: source.oid } } };
         if (source.document) { result.windows = marks(source.document); Object.assign(result, checksFor(source.document.mcpServers, store)); }
         const listed = await run('gh', ['pr', 'list', '--repo', destination.repo, '--base', branch, '--state', 'open', '--limit', '1000', '--json', 'number,url,title,headRefName,isCrossRepository']);
@@ -164,7 +176,7 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
         else try { result.waiting = JSON.parse(listed.stdout).filter(p => !p.isCrossRepository && p.headRefName.startsWith('wc-tools/')).map(p => ({ number: p.number, url: p.url, title: p.title, branch: p.headRefName })); } catch { result.waiting_error = 'invalid pull request response'; }
         return { status: 200, body: result };
       });
-    } catch (e) { if (!base.folder_tools) { base.folder_tools = await folderListing(input, origin, []); base.folder_tools.notes.unshift(`couldn't list folder tools: ${e.message}`); } base.mode = 'unreachable'; base.notice = `Couldn't reach GitHub: ${e.message}${notice ? `; ${notice}` : ''}`; return { status: 200, body: base }; }
+    } catch (e) { if (!base.folder_tools) { base.folder_tools = await folderListing(input, origin, []); base.folder_tools.notes.unshift(folderError(e)); } base.mode = 'unreachable'; base.notice = `Couldn't reach GitHub: ${e.message}${notice ? `; ${notice}` : ''}`; return { status: 200, body: base }; }
   }
   function validateName(name) { if (!KEY_NAME.test(name)) return `invalid key name: ${name}`; if (isReserved(name)) return `${name} can't be set here: it would change how the agent itself runs`; return null; }
   async function save(input) {
