@@ -198,15 +198,15 @@ test('Codex keeps .mcp.json entries when folder entries exceed the launch budget
 test('sandboxed Codex omits folder entries and warns only with a usable folder tool', async t => {
   const f = await fixture(t);
   const dir = await putTool(f.worktree, 'server', 'Project server', 'server');
+  const unrestricted = await f.start();
+  assert.match(await f.command(), /mcp_servers\.project_server\.command=/);
+  assert.deepEqual(unrestricted.project_tools.clis.codex.lines, []);
   const sandbox = await f.start({ mode: 'sandboxed' });
   assert.doesNotMatch(await f.command(), /mcp_servers\.project_/);
   assert.deepEqual(sandbox.project_tools.clis.codex.lines, [{
     names: ['server'],
     text: 'folder tools run from the shell here (`wc.js tool run`); server tools need Codex set to unrestricted',
   }]);
-  const unrestricted = await f.start();
-  assert.match(await f.command(), /mcp_servers\.project_server\.command=/);
-  assert.deepEqual(unrestricted.project_tools.clis.codex.lines, []);
   await fs.unlink(path.join(dir, 'tool.json'));
   const invalid = await f.start({ mode: 'sandboxed' });
   assert.equal(invalid.project_tools.folder.length, 1);
@@ -243,6 +243,10 @@ test('.mcp.json entries win over a folder server and the script bridge', async t
 test('shell instructions require a usable script on Kimi, Pi or sandboxed Codex and are not rewritten on resume', async t => {
   const f = await fixture(t);
   await putTool(f.worktree, 'server', 'Project server', 'server');
+  const unusable = await putTool(f.worktree, 'script', 'Project script');
+  const descriptionFile = path.join(unusable, 'tool.json');
+  const tool = await readJson(descriptionFile);
+  await fs.writeFile(descriptionFile, JSON.stringify({ ...tool, run: ['./missing-program'] }));
   const fallback = [{ cli: 'kimi' }, { cli: 'pi' }, { cli: 'codex', mode: 'sandboxed' }];
   const line = `Folder tools: this session can't call them through MCP. Run \`node ${path.resolve(__dirname, '../..')}/viewer/app/wc.js tool list\` to see them and \`node ${path.resolve(__dirname, '../..')}/viewer/app/wc.js tool run <name> --input '<json>'\` to run a script tool; give that shell command a timeout longer than the tool's timeout_seconds (default 120 s).`;
   for (const options of fallback) {
