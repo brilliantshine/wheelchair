@@ -40,6 +40,8 @@ A complete server description:
 "start": ["sh", "-c", "cd \"$WHEELCHAIR_PROJECT_DIR\" && exec some-server \"$WHEELCHAIR_PROJECT_DIR\""]
 ```
 
+Use `WHEELCHAIR_PROJECT_DIR` for the project's files, never a path climbing out of the tool folder. Reach the tool's own helper files relative to its folder. Keep state in `WHEELCHAIR_PROJECT_DIR` or a temporary folder: shared copies are read-only.
+
 ## Keys
 
 Script tools can declare `keys`: an array of 1–20 unique environment-variable names. Names contain letters, digits and `_`, cannot start with a digit, and cannot be names that change how the agent runs. For example:
@@ -63,13 +65,11 @@ A project tool uses the project's keys, set on its Tools page under Keys on this
 
 At each call, the values are added only to the tool's own process, never to the agent's environment, MCP configs or instructions. A key also used by a `.mcp.json` server still reaches the agent that way; moving that server to a folder tool removes it. Agents run as the same OS user, so an agent that looks for key files on disk can find them.
 
-A tool with a missing key is not offered; problems show `needs key <KEY>, not set on this machine`. A key added mid-session is usable from the next agent start (a new session, resume or account switch). A replaced value applies from the next call; a removed key makes the next call fail without running. If a tool's `keys` change mid-session, it is refused as changed until the next agent start.
+A tool with a missing key is not offered; problems show `needs key <KEY>, not set on this machine` (or `needs keys A, B, …` for several). A key added mid-session is usable from the next agent start (a new session, resume or account switch). A replaced value applies from the next call; a removed key makes the next call fail without running. If a tool's `keys` change mid-session, it is refused as changed until the next agent start.
 
-Keys printed as-is are replaced with `[key]` in output. Escaped forms (JSON `\uXXXX` or `\/`, or percent-encoding in a web address), base64, hashing and splitting are not caught; escaped forms are not caught yet. Never print or log a key in any form. Never write a key into a tool's files: they are committed. Node's child-process debug output (`NODE_DEBUG`) on in the bridge refuses keyed tools.
+Keys printed as-is are replaced with `[key]` in output. Escaped forms (JSON `\uXXXX` or `\/`, or percent-encoding in a web address), base64, hashing and splitting are not caught (escaped forms not yet). Never print or log a key in any form. Never write a key into a tool's files: they are committed. Node's child-process debug output (`NODE_DEBUG`) on in the bridge refuses keyed tools. Claude, Antigravity and unrestricted Codex use keyed tools through MCP with no extra step; sandboxed Codex, Kimi and Pi can't use them yet, and their problems and `wc.js tool list` say so (for sandboxed Codex: set Codex to unrestricted in Settings to use it).
 
 Tools may rely only on `PATH`, `HOME`, `WHEELCHAIR_PROJECT_DIR`, their declared keys and variables they set themselves. Keys a tool happens to find in its environment exist only on some AIs and projects.
-
-Use `WHEELCHAIR_PROJECT_DIR` for the project's files, never a path climbing out of the tool folder. Reach the tool's own helper files relative to its folder. Keep state in `WHEELCHAIR_PROJECT_DIR` or a temporary folder: shared copies are read-only.
 
 ## Project and shared tools
 
@@ -79,7 +79,7 @@ A lead asked for a shared tool in another project's thread says it belongs in th
 
 ## Make and test
 
-Run `node <wheelchair-root>/viewer/app/wc.js tool` followed by these commands. In a session they use its worktree and pinned shared copy; outside a session they use the current git checkout only. `new` writes into the current worktree and refuses an existing folder. `list` shows each tool's name, kind, source and `ok` or the reason it can't be used (`--json` gives JSON). `check [name]` validates tools and checks a server's MCP handshake and advertised tool list, with a 30-second deadline. `run name --input '<json>'` runs a script, with `{}` as the default input. In a session, `list` shows each keyed tool’s key names and whether each is set. `check` validates without using keys. `run` runs in your own shell without folder-tool keys and says so; variables already in your environment pass as usual. To try a keyed tool for real, use it through MCP in a session that offered it.
+Run `node <wheelchair-root>/viewer/app/wc.js tool` followed by these commands. In a session they use its worktree and pinned shared copy; outside a session they use the current git checkout only. `new` writes into the current worktree and refuses an existing folder. `list` shows each tool's name, kind, source and `ok` or the reason it can't be used (`--json` gives JSON). `check [name]` validates tools and checks a server's MCP handshake and advertised tool list, with a 30-second deadline. `run name --input '<json>'` runs a script, with `{}` as the default input. In a session, `list` shows each keyed tool's key names and whether each is set. `check` validates without using keys. `run` runs in your own shell without folder-tool keys and says so; variables already in your environment pass as usual. To try a keyed tool for real, use it through MCP in a session that offered it.
 
 For example, in a scratch checkout:
 
