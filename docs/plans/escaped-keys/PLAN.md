@@ -248,9 +248,20 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 | mechanics | minor | Runner fixtures pass with today's redactor | upheld | Runner fixtures pinned to fail today |
 | mechanics | minor | name-guard test missing from targeted command | upheld | Added |
 
+### Round 4 — 2026-11-26
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: not claude.
+
+**Changed since Round 3:** E1 fallback now finds unchecked runs and plain keys on the capture as captured and renders once (Decision 12); fixture (d) rewritten; E2 one `[output cut]` per cut edge and three places key-free output changes; E3 step 2 rendering rule; E4 sentence; Validation (fallback cut-start cases, runner fixtures via timeout and a 64 KiB stderr spelling, name-guard test). Collin chose to keep going after three rounds (budget reset).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- After round 3, budget card: Collin chose Keep going (budget reset).
