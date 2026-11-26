@@ -13,7 +13,17 @@ get buried as this file grows.
 ## Open Questions
 
 ### Q2: How to make the machine suite faster
-- **Context:** waiting on per-file timings (being measured).
+- **Context:** one timed run on a quiet machine (Node 22, load 0.01): the machine suite took
+  4 min 52 s wall. 832 tests; the three tests in `machine/test/connectors-model-roundtrip.test.js`
+  took 120 s, 118 s and 54 s, run one after another in that one file (about 292 s, the whole
+  wall time). Every other test is under 21 s and runs in parallel files. Two of the three
+  sit at their 120 s timeout (`connectors-model-roundtrip.test.js:82,85,96`). Each spawns
+  `codex/model.sh` hundreds of times; `model.sh show --json` takes about 0.4 s per call,
+  the other subcommands about 0.03 s.
+- **Options:** (a) split the file into several files, one per test case or connector, so
+  node runs them side by side, assertions unchanged; (b) make `model.sh show` faster;
+  (c) both.
+- **Recommendation:** (a).
 
 ## Watch List
 
