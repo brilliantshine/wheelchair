@@ -177,8 +177,17 @@ commit, already started by the pusher, writes `summary.txt`. `full-run.sh` runs
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S1: `staleEntries` export plus fixture and real-tree tests | `test-support/pick-tests.js`, `test-support/test/pick-tests.test.js` | standard, gpt-6.1-terra | wc-5a17c2d166c9-worker | `node --test test-support/test/pick-tests.test.js` | in progress |
-| T2 | S2: split round-trip test into nine files plus helper; README line | `machine/test/connectors-model-roundtrip*.test.js`, `machine/test/helpers/model-roundtrip.js`, `connectors/README.md:334` | light, gpt-6-luna | wc-5a17c2d166c9-worker-2 | `node --test machine/test/connectors-model-roundtrip-*.test.js` | in progress |
+| T1 | S1: `staleEntries` export plus fixture and real-tree tests | `test-support/pick-tests.js`, `test-support/test/pick-tests.test.js` | standard, gpt-6.1-terra | wc-5a17c2d166c9-worker | `node --test test-support/test/pick-tests.test.js` | done |
+| T2 | S2: split round-trip test into nine files plus helper; README line | `machine/test/connectors-model-roundtrip*.test.js`, `machine/test/helpers/model-roundtrip.js`, `connectors/README.md:334` | light, gpt-6-luna | wc-5a17c2d166c9-worker-2 | `node --test machine/test/connectors-model-roundtrip-*.test.js` | done |
 
 ## Log
 - 2026-11-25 — T1 and T2 dispatched in parallel (disjoint files).
+- 2026-11-25 — Sub-lead replaced after a usage limit; both workers had committed finished work on their branches, checked from the branches.
+- 2026-11-25 — Choice: T1, `pick-tests.js`: exported only `staleEntries`; `glob` and `testSuite` stay private (moved to module scope).
+- 2026-11-25 — Choice: T1, `pick-tests.js`: problem texts are "not a suite name or a tracked test file" and "glob matches no tracked file"; a glob problem is one item per entry with `target: null`.
+- 2026-11-25 — Choice: T1, fixture test: the unknown-suite entry is marked additive, and a valid `viewer/**` entry is the control.
+- 2026-11-25 — T1 accepted (band: scout): validation re-run, 15/15 pass; CLI output unchanged on identical inputs per the scout.
+- 2026-11-25 — Choice: T2, `machine/test/connectors-model-roundtrip-invalid-*.test.js`: short case labels in test names (e.g. "...: capital model").
+- 2026-11-25 — Choice: T2, test names: the worker did not report renaming "sixth connector and none defaults round trip" to "sixth connector with none defaults round trip" and naming the defaults file's test "sixth connector round trip"; the scout listed them.
+- 2026-11-25 — Choice: T2, `connectors/README.md:334`: verb "runs" became "run" for the plural subject; the sub-lead changed the following "checks" to "check" to match.
+- 2026-11-25 — T2 accepted (band: scout): validation re-run, 9/9 pass in 62.4 s wall (under 150 s).
