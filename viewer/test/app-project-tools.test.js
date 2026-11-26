@@ -114,3 +114,17 @@ test('project tools forwards windows-status like the other routes', async () => 
   assert.equal(sent, 200);
   assert.deepEqual(args, ['hub', '/v1/project-tools/windows-status', 'POST', forwarded, 120_000]);
 });
+
+test('read forwards the configured shared project and this machine’s saved paths', async (t) => {
+  const ctx = await setup(); t.after(() => close(ctx));
+  await api(ctx, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: 'owner/tools' } });
+  const file = path.join(ctx.state, 'settings.json');
+  const settings = JSON.parse(await fs.readFile(file, 'utf8'));
+  settings.saved_dirs = [{ name: 'one', machine: 'hub', path: '/one' }, { name: 'other', machine: 'other', path: '/other' }, { name: 'two', machine: 'hub', path: '/two' }];
+  await fs.writeFile(file, JSON.stringify(settings));
+  await api(ctx, '/project-tools/read', { method: 'POST', body: { path: '/project', shared_tools: { repo: 'injected/repo', candidates: [] } } });
+  assert.deepEqual(ctx.machine.calls.findLast(call => call.path === '/v1/project-tools/read').body.shared_tools, { repo: 'owner/tools', candidates: ['/one', '/two'] });
+  await api(ctx, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: null } });
+  await api(ctx, '/project-tools/read', { method: 'POST', body: { path: '/project' } });
+  assert.equal(Object.hasOwn(ctx.machine.calls.findLast(call => call.path === '/v1/project-tools/read').body, 'shared_tools'), false);
+});
