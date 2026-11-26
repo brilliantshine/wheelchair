@@ -44,9 +44,15 @@ test('ready event updates folder problem card', async () => {
   const { thread, event } = require('./helpers/app'); const c = await setup();
   try {
     const made = await thread(c); const session = made.sessions[0];
-    const result = await event(c, made.id, session.name, 'ready', { created_at: '2026-01-01T00:00:00Z', project_tools: {boot:'b',seq:1,folder:[{names:['bad'],text:'bad tool'}]} });
+    const state = { boot: 'b', seq: 1, file: [], programs: [], folder: [{ names: ['bad'], text: 'bad tool' }], clis: {} };
+    const payload = { created_at: session.created_at, project_tools: state };
+    const result = await event(c, made.id, session.name, 'ready', payload);
     assert.equal(result.status, 202);
-    const saved = (await api(c, `/threads/${made.id}`)).body;
-    assert.ok(saved.cards.some(card => card.items?.includes('bad tool')));
+    let saved = (await api(c, `/threads/${made.id}`)).body;
+    assert.ok(saved.cards.some(card => !card.answered && card.items?.includes('bad tool')));
+    const clean = await event(c, made.id, session.name, 'ready', { ...payload, project_tools: { ...state, seq: 2, folder: [] } });
+    assert.equal(clean.status, 202);
+    saved = (await api(c, `/threads/${made.id}`)).body;
+    assert.ok(saved.cards.some(card => card.answered && card.items?.includes('bad tool')));
   } finally { await close(c); }
 });
