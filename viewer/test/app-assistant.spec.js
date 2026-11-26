@@ -174,7 +174,7 @@ test('Threads list: assistant row counts its open question, shows the first repl
   } finally { await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
 });
 
-test('assistant page composer says Message the assistant and has no plan hint; other threads keep theirs', async ({ page }) => {
+test('assistant and lead composers keep their labels without a plan hint', async ({ page }) => {
   const ctx = await startWorld();
   try {
     const other = await ctx.make({ cli: 'claude', title: 'Usage page' });
@@ -188,7 +188,7 @@ test('assistant page composer says Message the assistant and has no plan hint; o
     await expect(page.locator('#composer .hint')).toBeHidden();
     await page.goto(`${ctx.server.url}/app/thread?id=${other.id}`);
     await expect(page.locator('#msg')).toHaveAttribute('placeholder', 'Message the lead');
-    await expect(page.locator('#composer .hint')).toBeVisible();
+    await expect(page.locator('#composer .hint')).toHaveCount(0);
     await expect(page.locator('#attach')).toBeVisible();
     await expect(page.locator('.col-side')).toBeVisible();
     await expect(page.locator('#head').getByText('Open in terminal')).toBeVisible();
