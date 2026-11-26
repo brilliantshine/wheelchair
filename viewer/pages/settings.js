@@ -5,7 +5,7 @@
 // copy of its own beyond the unsaved editor drafts.
 (() => {
   const API = '/wheelchair/api';
-  const SECTIONS = [['harnesses', 'Harnesses'], ['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools'], ['background', 'Background Customization']];
+  const SECTIONS = [['harnesses', 'Harnesses'], ['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools'], ['shared-tools', 'Shared tools'], ['background', 'Background Customization']];
   const TIERS = [
     ['light', 'Light', 'Spelled-out changes, few files'],
     ['standard', 'Standard', 'Most building'],
@@ -2242,9 +2242,60 @@
     return projectToolsHost;
   }
 
+  let sharedProjects = null;
+  let sharedLoading = false;
+  async function loadSharedProjects() {
+    if (sharedLoading || sharedProjects) return;
+    sharedLoading = true;
+    const projects = [];
+    try {
+      const initial = await api('/new-thread?machine=hub');
+      const machines = initial.machines || ['hub'];
+      for (const machine of machines) {
+        const listing = machine === 'hub' ? initial : await api('/new-thread?machine=' + encodeURIComponent(machine));
+        const seen = new Set();
+        const entries = [...(listing.saved || []), ...(listing.found || []), ...(listing.previous || []).map(path => ({ path, name: path.split('/').filter(Boolean).pop() }))];
+        for (const entry of entries) {
+          if (!entry.path || seen.has(entry.path)) continue;
+          seen.add(entry.path);
+          try {
+            const result = await api('/project-tools/read', { method: 'POST', body: { machine, path: entry.path } });
+            projects.push({ name: entry.name || entry.path, repo: result.repo });
+          } catch { projects.push({ name: entry.name || entry.path, repo: null }); }
+        }
+      }
+      sharedProjects = projects;
+    } catch { sharedProjects = []; }
+    sharedLoading = false;
+    if (section === 'shared-tools') renderPanel();
+  }
+  function renderSharedTools() {
+    if (!sharedProjects) loadSharedProjects();
+    const select = h('select', { id: 'shared-tools-project', 'aria-label': 'Shared tools project', disabled: !sharedProjects });
+    select.append(h('option', { value: '', text: 'None' }));
+    const seen = new Set();
+    for (const item of sharedProjects || []) {
+      if (item.repo && seen.has(item.repo.toLowerCase())) continue;
+      if (item.repo) seen.add(item.repo.toLowerCase());
+      select.append(h('option', { value: item.repo || '', disabled: !item.repo, text: item.repo ? item.name : item.name + ' (no GitHub origin)' }));
+    }
+    if (data.shared_tools_repo && !seen.has(data.shared_tools_repo.toLowerCase())) select.append(h('option', { value: data.shared_tools_repo, text: data.shared_tools_repo }));
+    select.value = data.shared_tools_repo || '';
+    const message = h('p', { class: 'hint', role: 'status' });
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      try { const result = await api('/settings/preferences', { method: 'PUT', body: { shared_tools_repo: select.value || null } }); data.shared_tools_repo = result.shared_tools_repo; message.textContent = 'Saved'; }
+      catch (error) { select.value = data.shared_tools_repo || ''; message.textContent = error.message; }
+      finally { select.disabled = false; }
+    });
+    return h('div', { class: 'pt pt-shared' }, h('div', {}, h('h1', { text: 'Shared tools' }), h('p', { class: 'lede', text: 'Choose the project that holds tools shared across your projects.' })),
+      h('div', { class: 'pt-picker' }, h('label', {}, h('span', { text: 'Shared tools project' }), select)),
+      h('p', { class: 'hint', text: 'To add or change a shared tool, ask in a thread in the shared tools project.' }), message);
+  }
+
   function renderPanel() {
     if (!data) return;
-    const view = section === 'background' && bg ? renderBackground() : section === 'tools' ? renderProjectTools()
+    const view = section === 'background' && bg ? renderBackground() : section === 'tools' ? renderProjectTools() : section === 'shared-tools' ? renderSharedTools()
       : section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
       : section === 'harnesses' ? renderHarnesses()
       : section === 'accounts' ? renderAccounts() : section === 'usage' ? renderUsage() : renderModels();
