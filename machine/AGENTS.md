@@ -48,6 +48,7 @@ agents own neither tmux nor the machine secret.
 | `lib/shared-keys.js` | Machine-local shared key storage. |
 | `lib/shared-keys-page.js` | Shared key listing, validation and changes. |
 | `lib/key-redact.js` | Redacts tool key values from output. |
+| `lib/key-spell.js` | Finds escaped tool key spellings and cut-edge fragments within a shared work budget. |
 | `lib/env-launch.js` | Session key launcher: reads and deletes the mode-600 JSON env file, then execs the CLI; never prints values. |
 | `lib/project-programs.js` | Synchronous check that each project stdio server's program exists, for the thread's project-tools lines. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |
