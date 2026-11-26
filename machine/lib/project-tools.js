@@ -135,7 +135,7 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
           const names = new Set(result.rows.map(row => row.name));
           for (const row of discovered.rows) {
             row.source = 'shared';
-            if (names.has(row.name)) { row.status = 'hidden'; row.reason = 'hidden by the project tool of the same name'; }
+            if (names.has(row.name)) { row.status = 'hidden'; row.reason = 'hidden: this project has its own tool with the same name'; }
             if (!origin) row.note = "not checked against this project's own tools";
             result.rows.push(row);
           }
