@@ -28,6 +28,9 @@ Never end a turn on a status `message` while work remains: only a `result`, or a
 with `asks: true`, tells your starter you are waiting. After a plain status update, keep
 working.
 
+
+For any request to make or change a tool, read `protocol/tools.md`.
+
 ## Starting, and resuming after a restart
 
 1. Read IDEA.md, then the whole PLAN.md, then MAP.md.
